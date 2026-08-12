@@ -26,7 +26,17 @@ import { __resetPollRegistry } from '../usePolledCollection';
 const SPACE = '019f98b3-3989-7cd2-826a-af4291250e52';
 const VIEWER = '019f98b3-3989-7d23-a745-8cfbc91081a1';
 
-function task(id: string, title: string, parentId: string | null = null, workStatus = 'open') {
+function actor(id: string, displayName: string) {
+  return { id, kind: 'member', displayName, avatar: null, isAgent: false };
+}
+
+function task(
+  id: string,
+  title: string,
+  parentId: string | null = null,
+  workStatus = 'open',
+  extra: { assignees?: unknown[]; dueDate?: string | null } = {},
+) {
   return {
     id, spaceId: SPACE, kind: 'task', title, parentId, position: 1,
     visibility: 'space', version: 7,
@@ -37,8 +47,8 @@ function task(id: string, title: string, parentId: string | null = null, workSta
     createdBy: { id: VIEWER, kind: 'member', displayName: 'Owner', avatar: null, isAgent: false },
     counters: { likes: 0, dislikes: 0, stars: 0, points: 0, messages: 0, viewerReaction: null },
     state: {
-      kind: 'task', workStatus, priority: 'high', axes: {}, dueDate: null,
-      assignees: [], acceptance: { total: 0, completed: 0 },
+      kind: 'task', workStatus, priority: 'high', axes: {}, dueDate: extra.dueDate ?? null,
+      assignees: extra.assignees ?? [], acceptance: { total: 0, completed: 0 },
     },
     badges: {},
   };
@@ -176,6 +186,131 @@ describe('reading tasks', () => {
 
     fireEvent.click(screen.getByTestId('task-filter-done'));
     await waitFor(() => expect(screen.getByTestId('task-empty').textContent).toMatch(/the server filtered these/i));
+  });
+});
+
+describe('filtering by assignee', () => {
+  const ADA = actor('act_ada', 'Ada');
+  const BRAM = actor('act_bram', 'Bram');
+  const PAST = '2020-01-01T00:00:00.000Z';
+  const FUTURE = '2999-01-01T00:00:00.000Z';
+
+  // Deliberately client-side, and this is the one design call worth pinning:
+  // `filters.assigneeIds` exists server-side, but the option list has to come
+  // from somewhere and `RealFacade.getSpace` reports `unavailable.members`.
+  // Filtering the page keeps the option list stable — a server-side filter would
+  // shrink the very rows the options are read from, so selecting Ada would erase
+  // Bram from the menu and strand the user inside their own filter.
+  const ASSIGNED = [
+    task('t_ada', 'Ada task', null, 'open', { assignees: [ADA], dueDate: PAST }),
+    task('t_ada_future', 'Ada later task', null, 'open', { assignees: [ADA], dueDate: FUTURE }),
+    task('t_bram', 'Bram task', null, 'open', { assignees: [BRAM], dueDate: PAST }),
+    task('t_both', 'Shared task', null, 'open', { assignees: [ADA, BRAM] }),
+    task('t_nobody', 'Unassigned task'),
+  ];
+
+  const titles = () => screen.queryAllByTestId(/^task-title-/).map((el) => el.getAttribute('data-testid'));
+
+  async function open() {
+    stubNode(ASSIGNED);
+    render(panel());
+    await waitFor(() => expect(screen.getByTestId('task-title-t_ada')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('task-filter-assignee'));
+  }
+
+  it('offers the people on the loaded tasks, once each and by name', async () => {
+    await open();
+    const options = screen.getByTestId('task-assignee-options');
+    expect(options.textContent).toContain('Ada');
+    expect(options.textContent).toContain('Bram');
+    // Ada is on three tasks; she is one option, not three.
+    expect(screen.getAllByTestId('task-filter-assignee-act_ada')).toHaveLength(1);
+  });
+
+  it('shows only that person’s tasks when one is selected', async () => {
+    await open();
+    fireEvent.click(screen.getByTestId('task-filter-assignee-act_ada'));
+
+    expect(titles()).toEqual(expect.arrayContaining([
+      'task-title-t_ada', 'task-title-t_ada_future', 'task-title-t_both',
+    ]));
+    expect(titles()).not.toContain('task-title-t_bram');
+    // No new server round-trip: this narrows the page the panel already has.
+    expect(bodyOf('/v2/collections/query')?.filters?.assigneeIds).toBeUndefined();
+  });
+
+  it('is OR across the selection, not AND', async () => {
+    // THE EDGE CASE. An `every` over the selected ids returns the empty list,
+    // because almost no task is assigned to everyone you picked — and an empty
+    // list reads as "nobody has any tasks" rather than as a broken predicate.
+    await open();
+    fireEvent.click(screen.getByTestId('task-filter-assignee-act_ada'));
+    fireEvent.click(screen.getByTestId('task-filter-assignee-act_bram'));
+
+    expect(titles()).toEqual(expect.arrayContaining([
+      'task-title-t_ada', 'task-title-t_bram', 'task-title-t_both',
+    ]));
+    expect(titles()).not.toContain('task-title-t_nobody');
+  });
+
+  it('hides a task with no assignees while any person is selected, and brings it back', async () => {
+    await open();
+    fireEvent.click(screen.getByTestId('task-filter-assignee-act_ada'));
+    expect(titles()).not.toContain('task-title-t_nobody');
+
+    fireEvent.click(screen.getByTestId('task-filter-assignee-act_ada'));
+    expect(titles()).toContain('task-title-t_nobody');
+  });
+
+  it('composes with Overdue and counts as an active filter', async () => {
+    await open();
+    // From a clean slate: the panel BOOTS with sort `priority`, which is itself
+    // one active filter, so the badge reads 1 before anything is touched.
+    // Clearing first makes this assert the two filters under test, not that plus
+    // a default the user never chose.
+    fireEvent.click(screen.getByText('All'));
+    await waitFor(() => expect(screen.queryByTestId('task-filter-count')).toBeNull());
+    fireEvent.click(screen.getByTestId('task-filter-assignee'));
+    fireEvent.click(screen.getByTestId('task-filter-assignee-act_ada'));
+    fireEvent.click(screen.getByText('Overdue'));
+
+    // Ada AND overdue: her future-dated task and Bram's overdue one both drop.
+    expect(titles()).toContain('task-title-t_ada');
+    expect(titles()).not.toContain('task-title-t_ada_future');
+    expect(titles()).not.toContain('task-title-t_bram');
+    // The badge must learn about the new filter or it under-reports what is on.
+    expect(screen.getByTestId('task-filter-count').textContent).toBe('2');
+  });
+
+  it('keeps a selected person selectable after their last visible task moves away', async () => {
+    // Otherwise the filter stays ON, keeps hiding rows, and the only control
+    // that could turn it off has disappeared from the menu.
+    await open();
+    fireEvent.click(screen.getByTestId('task-filter-assignee-act_ada'));
+    stubNode([task('t_bram', 'Bram task', null, 'open', { assignees: [BRAM] })]);
+
+    await waitFor(() => expect(screen.getByTestId('task-filter-assignee-act_ada')).toBeTruthy());
+    // 2 = the selected person plus the panel's default `priority` sort.
+    expect(screen.getByTestId('task-filter-count').textContent).toBe('2');
+  });
+
+  it('clearing with All drops the assignee filter too', async () => {
+    await open();
+    fireEvent.click(screen.getByTestId('task-filter-assignee-act_ada'));
+    fireEvent.click(screen.getByText('All'));
+
+    // All also resets tab, statuses and sort, which re-asks the server — hence
+    // the wait: the rows blank out until that answer lands.
+    await waitFor(() => expect(titles()).toContain('task-title-t_nobody'));
+    expect(screen.queryByTestId('task-filter-count')).toBeNull();
+  });
+
+  it('says an assignee-empty list is scoped to the page, not settled by the server', async () => {
+    await open();
+    fireEvent.click(screen.getByTestId('task-filter-assignee-act_ada'));
+    fireEvent.change(screen.getByPlaceholderText('Search tasks'), { target: { value: 'zzzz' } });
+
+    expect(screen.getByTestId('task-empty').textContent).toMatch(/on the tasks loaded/i);
   });
 });
 

@@ -8,7 +8,7 @@ import {
   type CSSProperties, type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import type {
-  EntityId, EntitySummary, WorkStatus,
+  ActorSummary, EntityId, EntitySummary, WorkStatus,
 } from '../../collab-v2/types/contract';
 import type { RealFacade } from '../RealFacade';
 import { SPAWN_REQUEST_EVENT } from '../tm8Kinds';
@@ -294,6 +294,9 @@ function TaskRowView({
         {selected && <span className="pn-tt__activedot" title="Selected task" />}
 
         <div className="pn-tt__inline">
+          {/* activityAt, because this list sorts by activityAt_desc by default:
+              the row's time is the reason it sits where it sits. */}
+          <span/>
           {state.acceptance.total > 0 && (
             <span className="pn-mini" title="Acceptance criteria completed">
               {state.acceptance.completed}/{state.acceptance.total}
@@ -367,7 +370,9 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
   const [search, setSearch] = useState('');
   const [highOnly, setHighOnly] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [assignees, setAssignees] = useState<readonly ActorSummary[]>([]);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -463,6 +468,32 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
     });
   }, []);
 
+  const assigneeIds = useMemo(() => new Set(assignees.map((actor) => actor.id)), [assignees]);
+
+  /**
+   * The people you can filter by are read off the tasks THIS PAGE returned,
+   * unioned with whatever is already selected.
+   *
+   * There is no member list to ask for: `RealFacade.getSpace` returns
+   * `members: []` behind `unavailable.members`, so the loaded rows are the only
+   * honest source of names. Two consequences, both deliberate:
+   *   - the list is page-scoped, so with `truncated` showing there may be
+   *     assignees further down the space that never appear here;
+   *   - the union with `assignees` keeps a SELECTED person on the list after
+   *     their last visible task is reassigned away. Dropping them would leave a
+   *     filter that is on, hiding rows, and no longer reachable to turn off.
+   * Derived from the flat page rather than the tree because `rows` is already
+   * every task, expanded or not.
+   */
+  const assigneeOptions = useMemo(() => {
+    const byId = new Map<EntityId, ActorSummary>();
+    for (const actor of assignees) byId.set(actor.id, actor);
+    for (const task of rows ?? []) {
+      for (const actor of taskState(task).assignees) if (!byId.has(actor.id)) byId.set(actor.id, actor);
+    }
+    return [...byId.values()].sort((a, b) => (a.displayName ?? '').localeCompare(b.displayName ?? ''));
+  }, [assignees, rows]);
+
   const filtered = useMemo(() => {
     if (!tree) return [];
     const now = Date.now();
@@ -473,9 +504,14 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
       if (needle && !task.title.toLocaleLowerCase().includes(needle)) return false;
       if (highOnly && state.priority !== 'high' && state.priority !== 'urgent') return false;
       if (overdueOnly && (!state.dueDate || new Date(state.dueDate).getTime() >= now || isFinished(task))) return false;
+      // OR across the selection, not AND: `some`, because a task assigned to A
+      // must survive "A or B" even though it is not also assigned to B. An
+      // `every` here returns the empty list for any two-person selection. A task
+      // with no assignees matches no one, so it drops while the filter is on.
+      if (assigneeIds.size > 0 && !state.assignees.some((actor) => assigneeIds.has(actor.id))) return false;
       return true;
     });
-  }, [expanded, highOnly, overdueOnly, search, statuses.length, tab, tree]);
+  }, [assigneeIds, expanded, highOnly, overdueOnly, search, statuses.length, tab, tree]);
 
   const inProgress = useMemo(
     () => filtered.filter(({ task }) => taskState(task).workStatus === 'working'),
@@ -499,6 +535,14 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
     ));
   };
 
+  const toggleAssignee = (actor: ActorSummary) => {
+    setAssignees((previous) => (
+      previous.some((item) => item.id === actor.id)
+        ? previous.filter((item) => item.id !== actor.id)
+        : [...previous, actor]
+    ));
+  };
+
   const showCurrent = () => {
     setTab('current');
     setStatuses([]);
@@ -517,7 +561,10 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
     void writes.create(title);
   };
 
-  const activeFilterCount = statuses.length + Number(highOnly) + Number(overdueOnly) + Number(sort !== 'activityAt_desc');
+  // Assignees count like statuses do — one per selected value, so the badge says
+  // how many things are narrowing the list rather than how many kinds of thing.
+  const activeFilterCount = statuses.length + assignees.length
+    + Number(highOnly) + Number(overdueOnly) + Number(sort !== 'activityAt_desc');
 
   const renderRow = ({ task, depth, hasChildren, expanded: open }: ReturnType<typeof flattenTree>[number]) => (
     <TaskRowView
@@ -607,7 +654,10 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
 
       <div className="pn-filters" role="group" aria-label="Task filters">
         <button type="button" className={`pn-filter ${activeFilterCount === 0 ? 'pn-filter--active' : ''}`}
-          onClick={() => { showCurrent(); setHighOnly(false); setOverdueOnly(false); setSort('activityAt_desc'); }}>
+          onClick={() => {
+            showCurrent(); setHighOnly(false); setOverdueOnly(false); setSort('activityAt_desc');
+            setAssignees([]);
+          }}>
           All
         </button>
         <button type="button" className={`pn-filter ${highOnly ? 'pn-filter--active' : ''}`}
@@ -615,10 +665,19 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
         <button type="button" className={`pn-filter ${overdueOnly ? 'pn-filter--active' : ''}`}
           onClick={() => setOverdueOnly((value) => !value)}>Overdue</button>
         <button type="button" className={`pn-filter ${statuses.length ? 'pn-filter--active' : ''}`}
-          onClick={() => setStatusOpen((open) => !open)} aria-expanded={statusOpen}>
+          onClick={() => { setAssigneeOpen(false); setStatusOpen((open) => !open); }} aria-expanded={statusOpen}>
           Status{statuses.length ? ` · ${statuses.length}` : ''}<Icon name="chevronD" size={12} />
         </button>
-        <button type="button" className="pn-filter" onClick={() => setFiltersOpen((open) => !open)}
+        {/* Both popovers are `position: absolute; left: 0` on the same row, so
+            they are mutually exclusive rather than stacked on top of each other. */}
+        <button type="button" className={`pn-filter ${assignees.length ? 'pn-filter--active' : ''}`}
+          data-testid="task-filter-assignee"
+          onClick={() => { setStatusOpen(false); setFiltersOpen(false); setAssigneeOpen((open) => !open); }}
+          aria-expanded={assigneeOpen}>
+          Assignee{assignees.length ? ` · ${assignees.length}` : ''}<Icon name="chevronD" size={12} />
+        </button>
+        <button type="button" className="pn-filter"
+          onClick={() => { setAssigneeOpen(false); setFiltersOpen((open) => !open); }}
           aria-expanded={filtersOpen}>Priority <Icon name="chevronD" size={12} /></button>
         <label className={`pn-filter pn-sort ${sort !== 'activityAt_desc' ? 'pn-filter--active' : ''}`}>
           <Icon name="sliders" size={13} /> Sort
@@ -628,10 +687,10 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
           </select>
         </label>
         <button type="button" className={`pn-filter ${filtersOpen ? 'pn-filter--active' : ''}`}
-          onClick={() => setFiltersOpen((open) => !open)} title="Expand filters"
+          onClick={() => { setAssigneeOpen(false); setFiltersOpen((open) => !open); }} title="Expand filters"
           aria-label="Expand filters" aria-expanded={filtersOpen}>
           <Icon name="filter" size={13} />
-          {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
+          {activeFilterCount > 0 && <span data-testid="task-filter-count">{activeFilterCount}</span>}
         </button>
 
         <div className={`pn-filter-controls ${statusOpen || filtersOpen ? 'pn-filter-controls--open' : ''}`}>
@@ -646,6 +705,28 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
               <StatusGlyph status={status} size={14} />
               <span>{status.replace('_', ' ')}</span>
               {statuses.includes(status) && <Icon name="check" className="pn-opt__chk" />}
+            </button>
+          ))}
+        </div>
+
+        <div
+          className={`pn-filter-controls ${assigneeOpen ? 'pn-filter-controls--open' : ''}`}
+          data-testid="task-assignee-options"
+        >
+          {assigneeOptions.length === 0 ? (
+            // Named for what it is. "No assignees" would read as "this space
+            // assigns nobody"; the truth is that nothing on THIS page is assigned.
+            <span className="pn-opt">No assignees on the tasks loaded</span>
+          ) : assigneeOptions.map((actor) => (
+            <button
+              key={actor.id}
+              type="button"
+              className={`pn-opt ${assigneeIds.has(actor.id) ? 'pn-opt--cur' : ''}`}
+              data-testid={`task-filter-assignee-${actor.id}`}
+              onClick={() => toggleAssignee(actor)}
+            >
+              <span>{actor.displayName || actor.id}</span>
+              {assigneeIds.has(actor.id) && <Icon name="check" className="pn-opt__chk" />}
             </button>
           ))}
         </div>
@@ -676,9 +757,16 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
         {rows === null && !error && <p className="pn-empty">Loading tasks…</p>}
         {rows !== null && filtered.length === 0 && (
           <p className="pn-empty" data-testid="task-empty">
-            {tab === 'completed' || statuses.length > 0 || search || highOnly || overdueOnly
+            {/* Status and the tab are the SERVER's answer, so an empty result
+                there is authoritative. Search, High, Overdue and Assignee narrow
+                the page in the browser, and with `truncated` showing the page is
+                not the space — claiming the server settled it would overstate
+                what this zero means. */}
+            {tab === 'completed' || statuses.length > 0
               ? 'No tasks with those filters — the server filtered these, so this is a real answer.'
-              : 'No tasks in this space yet. Create one above.'}
+              : search || highOnly || overdueOnly || assignees.length > 0
+                ? 'No tasks match these filters on the tasks loaded.'
+                : 'No tasks in this space yet. Create one above.'}
           </p>
         )}
         <Section label="In progress" rows={inProgress} renderRow={renderRow} />
