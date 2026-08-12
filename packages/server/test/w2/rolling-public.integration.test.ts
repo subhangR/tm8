@@ -561,7 +561,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 70 -> 73: the three credentials.* command bodies are bound.
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its body.
     // 75 -> 78 (2026-08-10): the three projects.folderUploads.* bodies bind.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(78);
+    // 78 -> 79 (2026-08-12): execution.terminal.start binds its command body (100).
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(79);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -709,8 +710,9 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 130/128 -> 134/132: the four credentials.* routes, all mounted.
     // 136/134 -> 137/135 (2026-08-09, merge): execution.dispatch, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 141, implemented: 139 });
-    expect(harness.production.server.registry.size).toBe(139);
+    // 141/139 -> 142/140 (2026-08-12): execution.terminal.start, mounted (100).
+    expect(health).toMatchObject({ ok: true, operations: 142, implemented: 140 });
+    expect(harness.production.server.registry.size).toBe(140);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -728,7 +730,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 128 -> 132: credentials.*.
-    expect(registered.size + residual.length).toBe(139);
+    // 139 -> 140 (2026-08-12): execution.terminal.start (100).
+    expect(registered.size + residual.length).toBe(140);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 
