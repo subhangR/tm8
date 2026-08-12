@@ -117,13 +117,48 @@ export function tasksQuery(
   spaceId: string,
   sort: TaskSort,
   statuses: readonly WorkStatus[],
+  assigneeIds: readonly EntityId[] = [],
 ): CollectionQuery {
   const query: CollectionQuery = { spaceId, kinds: ['task'], sort, limit: TASK_LIMIT };
   // `collections.query` is `.strict()` server-side — an empty `filters` object
   // is accepted but pointless, and a `workStatus: []` would filter everything
   // out rather than nothing. Omit the key entirely when nothing is selected.
-  if (statuses.length > 0) query.filters = { workStatus: [...statuses] };
+  const filters: NonNullable<CollectionQuery['filters']> = {};
+  if (statuses.length > 0) filters.workStatus = [...statuses];
+  // `assigneeIds` is an `assigned_to` EDGE server-side, not a column, and the
+  // SQL is `dst_id = any(...)` — OR across the selection, which is the semantics
+  // this filter needs. Doing it here rather than over the fetched page also
+  // keeps the hierarchy honest: a task whose PARENT does not match is promoted
+  // to a root by `buildTaskTree`, so it is still reachable. A client-side
+  // predicate cannot do that — a match inside a collapsed parent is simply not
+  // in the flattened list, and the panel would report zero while holding the row.
+  if (assigneeIds.length > 0) filters.assigneeIds = [...assigneeIds];
+  if (Object.keys(filters).length > 0) query.filters = filters;
   return query;
+}
+
+/**
+ * The space's people, for the assignee filter's menu.
+ *
+ * `member` and `team_member` are ordinary rows in `public.entities`
+ * (`db/migrations/007_rpc_catalog.sql:459`) and `collections.query` applies
+ * `kinds` with no allowlist, so this is a real roster read today — the same
+ * shape `queries.ts` documents and `agentsQuery` already ships. Both kinds,
+ * because an agent is assignable exactly like a person and a menu that omitted
+ * them would hide real work.
+ *
+ * Deliberately NOT derived from the loaded tasks: options read off the page can
+ * only ever offer people who already appear on it, and pairing that with a
+ * server-side filter is circular — narrowing to one person removes everyone
+ * else from the menu you picked them in.
+ */
+export const ACTOR_KINDS = ['member', 'team_member'] as unknown as EntitySummary['kind'][];
+
+/** People change far more slowly than tasks; polling them at task cadence is waste. */
+export const ACTOR_POLL_MS = 30_000;
+
+export function spaceActorsQuery(spaceId: string): CollectionQuery {
+  return { spaceId, kinds: ACTOR_KINDS, limit: 200, sort: 'activityAt_desc' };
 }
 
 // ---------------------------------------------------------------------------
@@ -213,9 +248,10 @@ export function useTasks(
   spaceId: string,
   sort: TaskSort,
   statuses: readonly WorkStatus[],
+  assigneeIds: readonly EntityId[] = [],
 ): UseTasksResult {
   const { items, error, reload } = usePolledCollection(
-    facade, tasksQuery(spaceId, sort, statuses), TASK_POLL_MS,
+    facade, tasksQuery(spaceId, sort, statuses, assigneeIds), TASK_POLL_MS,
   );
   return {
     rows: items,
