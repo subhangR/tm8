@@ -160,6 +160,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     () => ({
       livenessOf: data.livenessOf,
       capabilitiesOf: (id: string) => data.detailOf(id)?.capabilities,
+      /* The read `capabilitiesOf` above is projecting. `pull` is the same
+         idempotent fill `renderPanel` uses; before this it was the ONLY caller,
+         so a row expanded in a LIST never learned its permissions and its
+         whole control strip — Archive included — stayed inert. */
+      onNeedDetail: (id: string) => data.pull?.(id),
       onSetState: rowLifecycle.setState,
       onArchive: rowLifecycle.archive,
       onSetValue: rowLifecycle.setValue,
@@ -556,7 +561,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           // stays refused — passing a literal all-true object here would make
           // the panel claim a permission the shell was never told it has,
           // which is the optimistic-enable the rule exists to prevent.
+          //
+          // "Not hydrated" must therefore be a state a row can LEAVE, and for
+          // a list row nothing used to leave it: the expanded strip's Archive
+          // sat in `CheckingPermission` forever. `onNeedDetail` is what asks.
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          onNeedDetail={(id) => data.pull?.(id)}
           // The quick-config's escape to the full sheet. A1c's
           // LaunchTeammateOption is deliberately NOT my LaunchTeammate:
           // panels/ importing views/ would point the dependency backwards,
@@ -660,6 +670,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           assignableActors={rowLifecycle.assignable}
           onKindChange={props.onRightKindChange}
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          onNeedDetail={(id) => data.pull?.(id)}
           launch={launchPort}
         />
       }

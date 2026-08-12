@@ -282,6 +282,9 @@ export function EntityView(props: EntityViewProps) {
       ctx,
       livenessOf: data.livenessOf,
       capabilitiesOf: (id) => data.detailOf(id)?.capabilities,
+      /* See WorkspaceView's copy: without this the expanded row's controls
+         never learn their permissions and Archive never fires. */
+      onNeedDetail: (id: string) => data.pull?.(id),
       onSetState: rowLifecycle.setState,
       onArchive: rowLifecycle.archive,
       onSetValue: rowLifecycle.setValue,
@@ -685,7 +688,9 @@ export function EntityView(props: EntityViewProps) {
           // Capability truth comes from the DETAIL, never the summary: a row
           // whose detail is not hydrated genuinely has unknown capabilities
           // and correctly stays refused (WorkspaceView states the same rule).
+          // `onNeedDetail` is how an expanded row leaves that state.
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          onNeedDetail={(id) => data.pull?.(id)}
           selectedId={selectedId}
           onSelect={selectFromList}
           onKindChange={props.onKindChange}

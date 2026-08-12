@@ -137,6 +137,15 @@ export interface EntityListPanelProps {
   liveIds?: readonly string[];
   /** Server capability truth per row. Absent ⇒ unknown ⇒ NOT permitted. */
   capabilitiesOf?: (id: string) => EntityCapabilities | undefined;
+  /**
+   * Load one row's DETAIL — the read `capabilitiesOf` is backed by.
+   *
+   * Called only from an EXPANDED row's control strip, never per rendered row:
+   * see `ControlHost.onNeedDetail` for what went wrong without it (every
+   * control in the expanded row, Archive included, stuck in the checking state
+   * forever) and why the trigger is a deliberate expand rather than a render.
+   */
+  onNeedDetail?: (entityId: string) => void;
   /** Real `working_on` targets for session tiles, projected by the shell. */
   linkedTasksOf?: (id: string) => readonly EntitySummary[];
 

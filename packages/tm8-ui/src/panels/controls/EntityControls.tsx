@@ -39,7 +39,7 @@
  * restated, and nothing here names a kind: the registry names the field
  * (`priority`), the edge (`assigned_to`) and the words, exactly as before.
  */
-import { Fragment, useId, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ActorSummary, EntityCapabilities, EntityKind } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
@@ -83,7 +83,7 @@ export interface ControlSubject {
 }
 
 /**
- * The nine members these controls need from a host. Optional handlers are
+ * The members these controls need from a host. Optional handlers are
  * NOT-WIRED rather than absent-and-silent: a missing one renders the control
  * disabled with that reason, never as a live button that does nothing.
  */
@@ -98,6 +98,29 @@ export interface ControlHost {
   ctx: ActionContext;
   livenessOf?: (id: string) => SessionLiveness;
   capabilitiesOf?: (id: string) => EntityCapabilities | undefined;
+  /**
+   * ASK THE HOST TO LOAD THIS ROW'S DETAIL — the read `capabilitiesOf` is
+   * backed by, and the reason the strip could not act on a list row at all.
+   *
+   * `EntityCapabilities` rides on `EntityDetail`, never on the `EntitySummary`
+   * a `collections.query` returns. Every control below therefore renders
+   * `CheckingPermission` while `capabilitiesOf(id)` is `undefined` — the
+   * loading vocabulary, whose whole promise is "it resolves on its own".
+   *
+   * On a LIST ROW it did not resolve on its own. The only caller of the host's
+   * detail read was `WorkspaceView.renderPanel`, i.e. an OPEN DETAIL PANEL, so
+   * a row whose strip the user expanded from the list sat in the checking
+   * state permanently: state, priority, assignment, Run and — the reported
+   * defect — Archive were all inert spans that swallowed the click and issued
+   * no request. Deleting a task from the task list simply did nothing.
+   *
+   * So the strip asks. It is injected rather than reached for, like every
+   * other signal here (the panel never taps the seam), and it fires ONLY from
+   * the mounted strip — one deliberate expand, one row — never per rendered
+   * row, which would put a detail read behind every row of a 100-row list.
+   * Absent ⇒ the controls keep their honest checking state, exactly as before.
+   */
+  onNeedDetail?: (entityId: string) => void;
   onAction?: (ref: ActionRef, entityId: string) => void;
   onSetState?: (entityId: string, next: string, via: ActionRef) => void;
   onArchive?: (ref: ActionRef, entityId: string) => void;
@@ -169,6 +192,26 @@ export function EntityControlStrip({
   const control = list.stateControl;
   const archived = row.deletedAt != null;
   const chips = variant === 'chips';
+
+  /**
+   * THE STRIP IS MOUNTED, SO THE ROW'S PERMISSIONS ARE NOW WORTH KNOWING.
+   *
+   * Every control below gates on `capabilitiesOf(row.id)`, which is `undefined`
+   * until the host has read this row's DETAIL. In a list that read had no other
+   * trigger, so the strip rendered permanently "checking permissions" and its
+   * Archive swallowed the click — see `ControlHost.onNeedDetail`.
+   *
+   * IN AN EFFECT, NOT IN RENDER: this asks the host to fetch, which is a state
+   * write, and React forbids one during render. The host's read is idempotent
+   * and claim-guarded, so the re-run when `capabilitiesOf` changes identity
+   * (every store update re-creates it) costs nothing — but the `undefined`
+   * check keeps even that from being asked twice for a row already loaded.
+   */
+  const { onNeedDetail, capabilitiesOf } = props;
+  const capabilities = capabilitiesOf?.(row.id);
+  useEffect(() => {
+    if (capabilities === undefined) onNeedDetail?.(row.id);
+  }, [capabilities, onNeedDetail, row.id]);
 
   /**
    * A labelled control, in whichever of the two layouts this strip is drawn.
