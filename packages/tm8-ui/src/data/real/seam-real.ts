@@ -285,6 +285,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       list: (projectId, path) => ops.projectFiles(projectId, path),
       read: (projectId, path) => ops.readProjectFile(projectId, path),
       attach: (projectId, input) => ops.attachProjectFile(projectId, input),
+      archiveHref: (projectId, path) => ops.projectArchiveHref(projectId, path),
     },
     // Seam Amendment 8: browser-originated folder import (R7 materialization).
     projectFolderUploads: {

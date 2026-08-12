@@ -331,6 +331,23 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    /**
+     * The URL of `projects.files.archive` — a whole subtree as one zip.
+     *
+     * An HREF, unlike `readProjectFile` right above it, and for the reason
+     * §4.4 gives: a single project file must not become a document on the app
+     * origin, so it travels as a DTO. An archive cannot be a document —
+     * `application/zip`, `attachment`, `nosniff` — so the browser's own
+     * download path is both safe and the only sane transport for a tree that
+     * may be hundreds of megabytes. Built from the CATALOG binding for the
+     * same reason `fileDownloadHref` is: if the route moves, this moves with
+     * it rather than silently 404ing.
+     */
+    projectArchiveHref(projectId: ProjectId, path?: string): string {
+      const query = path === undefined ? '' : `?path=${encodeURIComponent(path)}`;
+      return `${http.baseUrl}${bindPath('projects.files.archive', { projectId })}${query}`;
+    },
+
     attachProjectFile(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult> {
       return http.call<CommandResult>('projects.files.attach', { params: { projectId }, body: input });
     },

@@ -991,7 +991,7 @@ export interface KindConfig {
    * `list.quickCreate` continues to decide whether the header has a create
    * affordance at all.
    */
-  createForm?: 'scheduled-work';
+  createForm?: 'scheduled-work' | 'file-upload';
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

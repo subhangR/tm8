@@ -21,7 +21,9 @@ import type {
   FilesExplorerPort,
 } from './port';
 import { EXPLORER_REASONS } from './port';
+import { PreviewBody } from './PreviewBody';
 import { createUploadQueue, type UploadQueue, type UploadQueueSnapshot } from './upload-queue';
+import type { FolderImportProgress } from './folder-import';
 import {
   filesFromDataTransfer,
   filesFromInput,
@@ -69,6 +71,73 @@ function isImage(entry: ExplorerEntry): boolean {
     && entry.mime.startsWith('image/') && entry.mime !== 'image/svg+xml';
 }
 
+export type ExplorerSort = 'name' | 'size' | 'modified';
+
+/**
+ * Directories first, then the chosen key. Folders-before-files is not a
+ * preference — a listing that interleaves them makes "where does this folder
+ * end" a reading exercise, and every file manager worth using does the same.
+ *
+ * `null` size/date means NOT KNOWN (D7.2), and unknown sorts LAST rather than
+ * as zero: a project directory has no size, and letting it rank above a 4 GB
+ * file because `null < 1` would be the numeric version of the same lie the
+ * dash in the size column exists to avoid.
+ */
+export function sortEntries(
+  entries: readonly ExplorerEntry[],
+  sort: ExplorerSort,
+): ExplorerEntry[] {
+  const rank = (entry: ExplorerEntry) => (entry.type === 'dir' ? 0 : 1);
+  const missingLast = (a: number | null, b: number | null, compare: (x: number, y: number) => number) => {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return compare(a, b);
+  };
+  return [...entries].sort((a, b) => {
+    const byKind = rank(a) - rank(b);
+    if (byKind !== 0) return byKind;
+    if (sort === 'size') {
+      const bySize = missingLast(a.sizeBytes, b.sizeBytes, (x, y) => y - x);
+      if (bySize !== 0) return bySize;
+    }
+    if (sort === 'modified') {
+      const at = a.modifiedAt === null ? null : Date.parse(a.modifiedAt);
+      const bt = b.modifiedAt === null ? null : Date.parse(b.modifiedAt);
+      const byTime = missingLast(
+        Number.isNaN(at as number) ? null : at,
+        Number.isNaN(bt as number) ? null : bt,
+        (x, y) => y - x,
+      );
+      if (byTime !== 0) return byTime;
+    }
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/** Case-insensitive substring match on the display name. */
+export function filterEntries(
+  entries: readonly ExplorerEntry[],
+  query: string,
+): ExplorerEntry[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return [...entries];
+  return entries.filter((entry) => entry.name.toLowerCase().includes(needle));
+}
+
+/**
+ * What an import is doing, in words plus real counts. The phase matters: the
+ * checksum pass runs before any upload, so an import that showed only
+ * "0 of 1208" would look wedged for its slowest stretch.
+ */
+export function importCaption(progress: FolderImportProgress): string {
+  const { phase, filesDone, filesTotal } = progress;
+  if (phase === 'hashing') return `Checking ${filesTotal} file${filesTotal === 1 ? '' : 's'}…`;
+  if (phase === 'starting') return 'Reserving a destination on the node…';
+  if (phase === 'finishing') return 'Linking the project…';
+  return `${filesDone} of ${filesTotal} file${filesTotal === 1 ? '' : 's'} · ${formatSize(progress.bytesDone)} of ${formatSize(progress.bytesTotal)}`;
+}
+
 type Listing =
   | { phase: 'loading' }
   | { phase: 'error'; message: string }
@@ -84,6 +153,10 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
   const [activeRootId, setActiveRootId] = useState<string | null>(null);
   const [path, setPath] = useState('');
   const [mode, setMode] = useState<ExplorerMode>('list');
+  const [sort, setSort] = useState<ExplorerSort>('name');
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [branches, setBranches] = useState<Record<string, ExplorerEntry[] | 'loading' | 'error'>>({});
+  const [filter, setFilter] = useState('');
   const [trashTab, setTrashTab] = useState(false);
   const [listing, setListing] = useState<Listing>({ phase: 'loading' });
   const [preview, setPreview] = useState<ExplorerEntry | null>(null);
@@ -91,7 +164,9 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
   const [renameValue, setRenameValue] = useState('');
   const [conflictAsk, setConflictAsk] = useState<{ picked: PickedFile[]; count: number } | null>(null);
   const [queueSnap, setQueueSnap] = useState<UploadQueueSnapshot | null>(null);
-  const [imports, setImports] = useState<Array<{ rootName: string; cancel: () => void }>>([]);
+  const [imports, setImports] = useState<
+    Array<{ rootName: string; cancel: () => void; progress: FolderImportProgress }>
+  >([]);
   const [dragOver, setDragOver] = useState(false);
   const queueRef = useRef<UploadQueue | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -144,6 +219,10 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
 
   useEffect(() => {
     refresh();
+    // Branches belong to the directory that was open when they were read; a
+    // new root, path or tab makes them stale rather than merely unused.
+    setExpanded(new Set());
+    setBranches({});
   }, [refresh]);
 
   // -- upload queue -----------------------------------------------------------
@@ -192,7 +271,18 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
           group.map(({ file, relativePath }) => ({ file, relativePath })),
           rootName,
         );
-        setImports((current) => [...current, { rootName, cancel: task.cancel }]);
+        setImports((current) => [
+          ...current,
+          { rootName, cancel: task.cancel, progress: task.progress() },
+        ]);
+        // The denominator is known, so the ledger reports counts rather than
+        // an indeterminate spinner. See folder-import.ts for why this is not
+        // the fake-percentage the single-file queue refuses to draw.
+        task.subscribe((progress) =>
+          setImports((current) =>
+            current.map((item) => (item.cancel === task.cancel ? { ...item, progress } : item)),
+          ),
+        );
         void task.result
           .then(({ replacedCount, merged }) => {
             onNotice?.(
@@ -259,6 +349,75 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
     }
   }
 
+  /**
+   * Save a project file's bytes. A truncated read is REFUSED rather than
+   * written: a download that silently produces the first 5 MB of a 200 MB
+   * file is worse than one that does not happen, because nothing about the
+   * saved file says it is incomplete. The folder zip streams past that
+   * ceiling, so the refusal points there.
+   */
+  const downloadEntryBytes = useCallback(
+    async (entry: ExplorerEntry) => {
+      if (!port.readBytes) return;
+      try {
+        const bytes = await port.readBytes(entry);
+        if (bytes.truncated) {
+          onNotice?.(EXPLORER_REASONS.PREVIEW_TOO_LARGE);
+          return;
+        }
+        const url = URL.createObjectURL(bytes.blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = entry.name;
+        anchor.click();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      } catch (error) {
+        onNotice?.(
+          error instanceof Error && error.message
+            ? `Download: ${error.message}`
+            : 'Download failed.',
+        );
+      }
+    },
+    [port, onNotice],
+  );
+
+  const loadBranch = useCallback(
+    async (entry: ExplorerEntry) => {
+      if (!activeRoot) return;
+      setBranches((current) => ({ ...current, [entry.path]: 'loading' }));
+      try {
+        const listing = await port.list(activeRoot, entry.path, { trashed: trashTab });
+        setBranches((current) => ({ ...current, [entry.path]: listing.entries }));
+      } catch {
+        setBranches((current) => ({ ...current, [entry.path]: 'error' }));
+      }
+    },
+    [port, activeRoot, trashTab],
+  );
+
+  const toggleBranch = useCallback(
+    (entry: ExplorerEntry) => {
+      setExpanded((current) => {
+        const next = new Set(current);
+        if (next.has(entry.path)) {
+          next.delete(entry.path);
+          return next;
+        }
+        next.add(entry.path);
+        return next;
+      });
+      // Fetch once per path; a re-expand reuses what is already cached.
+      if (branches[entry.path] === undefined) void loadBranch(entry);
+    },
+    [branches, loadBranch],
+  );
+
+  const archiveHrefFor = useCallback(
+    (target: ExplorerEntry | ExplorerRoot) => port.archiveHref?.(target) ?? null,
+    [port],
+  );
+
   const submitRename = () => {
     if (!renaming || !port.rename) return;
     const entry = renaming;
@@ -293,6 +452,28 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
           {href ? (
             <a className="fx-act" href={href} download={entry.name} aria-label={`Download ${entry.name}`}>
               ↓
+            </a>
+          ) : entry.type === 'file' && port.readBytes ? (
+            // A project file has no URL (§4.4): its bytes come back as a DTO
+            // and are saved from a Blob. Same glyph, because to the user it is
+            // the same verb — the transport difference is ours, not theirs.
+            <button
+              type="button"
+              className="fx-act"
+              aria-label={`Download ${entry.name}`}
+              onClick={() => void downloadEntryBytes(entry)}
+            >
+              ↓
+            </button>
+          ) : null}
+          {entry.type === 'dir' && archiveHrefFor(entry) ? (
+            <a
+              className="fx-act"
+              href={archiveHrefFor(entry)!}
+              aria-label={`Download ${entry.name} as a zip archive`}
+              title="Download as zip"
+            >
+              🗜
             </a>
           ) : null}
           {!trashTab && entry.entityId && port.rename ? (
@@ -349,8 +530,8 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
         </div>
       );
     }
-    const entries = listing.listing.entries;
-    if (entries.length === 0) {
+    const all = listing.listing.entries;
+    if (all.length === 0) {
       return (
         <p className="fx-empty" data-testid="fx-measured-empty">
           {trashTab
@@ -359,43 +540,59 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
         </p>
       );
     }
+    const entries = sortEntries(filterEntries(all, filter), sort);
+    // A filter that hides everything is a DIFFERENT state from an empty
+    // folder, and says so — otherwise the user reads their own typing as
+    // "this folder is empty" and goes looking for missing files.
+    if (entries.length === 0) {
+      return (
+        <div className="fx-empty" data-testid="fx-filtered-empty">
+          <p>Nothing here matches “{filter}”. {all.length} item{all.length === 1 ? '' : 's'} hidden by the filter.</p>
+          <button type="button" onClick={() => setFilter('')}>Clear filter</button>
+        </div>
+      );
+    }
     if (mode === 'gallery') {
       return (
         <ul className="fx-gallery" aria-label="Files, gallery">
-          {entries
-            .filter((e) => e.type === 'file')
-            .map((entry) => {
-              const href = isImage(entry) ? port.downloadHref(entry) : null;
-              return (
-                <li key={entry.path} className="fx-tile">
-                  <button
-                    type="button"
-                    className="fx-tile-btn"
-                    onClick={() => setPreview(entry)}
-                    aria-label={`Preview ${entry.name}`}
-                  >
-                    {href ? (
-                      <img className="fx-thumb" src={href} alt="" />
-                    ) : (
-                      <span className="fx-thumb fx-thumb-none" aria-hidden="true">
-                        ⬚
-                      </span>
-                    )}
-                    <span className="fx-tile-name">{entry.name}</span>
-                  </button>
-                </li>
-              );
-            })}
+          {/* Directories are TILES here, not omissions. Filtering them out
+              made gallery the one mode a folder could not be opened from,
+              so switching to it silently stranded the user at whatever
+              depth they had reached. */}
+          {entries.map((entry) => {
+            const href = isImage(entry) ? port.downloadHref(entry) : null;
+            return (
+              <li key={`${entry.type}:${entry.path}`} className="fx-tile">
+                <button
+                  type="button"
+                  className="fx-tile-btn"
+                  onClick={() => (entry.type === 'dir' ? setPath(entry.path) : setPreview(entry))}
+                  aria-label={entry.type === 'dir' ? `Open ${entry.name}` : `Preview ${entry.name}`}
+                >
+                  {href ? (
+                    <img className="fx-thumb" src={href} alt="" />
+                  ) : (
+                    <span className="fx-thumb fx-thumb-none" aria-hidden="true">
+                      {entry.type === 'dir' ? '📁' : '⬚'}
+                    </span>
+                  )}
+                  <span className="fx-tile-name">{entry.name}</span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       );
     }
     if (mode === 'tree') {
+      // A REAL tree. This used to render the same single-level listing with
+      // `role="tree"` on it — no nesting, no expansion — which is worse than
+      // a plain list, because a screen reader announces "tree" and then
+      // reports every item at level 1 with nothing to expand.
       return (
         <ul role="tree" aria-label="Folder tree" className="fx-list">
           {entries.map((entry) => (
-            <li key={`${entry.type}:${entry.path}`} role="treeitem" aria-selected={false} className="fx-tree-item">
-              {entryRowInner(entry)}
-            </li>
+            <TreeNode key={`${entry.type}:${entry.path}`} entry={entry} depth={0} />
           ))}
         </ul>
       );
@@ -410,6 +607,67 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
   // Tree rows reuse the list row's content without the <li> wrapper.
   function entryRowInner(entry: ExplorerEntry) {
     return entryRow(entry).props.children;
+  }
+
+  /**
+   * One tree row, and its children once expanded.
+   *
+   * Children are fetched ON EXPAND and cached by path, so opening a tree does
+   * not fan out a request per directory before the user has asked for any of
+   * them — a project root with 200 folders would otherwise storm the node on
+   * a mode switch. A failed load renders as a retryable row rather than a
+   * silently empty branch, because "this folder is empty" and "we could not
+   * read this folder" are different facts.
+   */
+  function TreeNode({ entry, depth }: { entry: ExplorerEntry; depth: number }) {
+    const open = expanded.has(entry.path);
+    const children = branches[entry.path];
+    if (entry.type !== 'dir') {
+      return (
+        <li role="treeitem" aria-selected={false} className="fx-tree-item" style={{ '--fx-depth': depth } as never}>
+          {entryRowInner(entry)}
+        </li>
+      );
+    }
+    return (
+      <li
+        role="treeitem"
+        aria-selected={false}
+        aria-expanded={open}
+        className="fx-tree-item"
+        style={{ '--fx-depth': depth } as never}
+      >
+        <span className="fx-tree-row">
+          <button
+            type="button"
+            className="fx-twisty"
+            aria-label={`${open ? 'Collapse' : 'Expand'} ${entry.name}`}
+            onClick={() => toggleBranch(entry)}
+          >
+            {open ? '▾' : '▸'}
+          </button>
+          {entryRowInner(entry)}
+        </span>
+        {open ? (
+          <ul role="group" className="fx-list">
+            {children === 'loading' ? (
+              <li className="fx-empty">Loading…</li>
+            ) : children === 'error' ? (
+              <li className="fx-empty">
+                Could not read {entry.name}.{' '}
+                <button type="button" onClick={() => void loadBranch(entry)}>Retry</button>
+              </li>
+            ) : children && children.length === 0 ? (
+              <li className="fx-empty">Empty.</li>
+            ) : (
+              (children ?? []).map((child) => (
+                <TreeNode key={`${child.type}:${child.path}`} entry={child} depth={depth + 1} />
+              ))
+            )}
+          </ul>
+        ) : null}
+      </li>
+    );
   }
 
   const crumbs = breadcrumbSegments(path);
@@ -485,6 +743,27 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
               </span>
             ))}
           </nav>
+          <input
+            className="fx-filter"
+            type="search"
+            value={filter}
+            placeholder="Filter this folder…"
+            aria-label="Filter this folder by name"
+            onChange={(e) => setFilter(e.currentTarget.value)}
+          />
+          <div className="fx-tools" role="group" aria-label="Sort">
+            {(['name', 'size', 'modified'] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                className="fx-tool"
+                aria-pressed={sort === key}
+                onClick={() => setSort(key)}
+              >
+                {key}
+              </button>
+            ))}
+          </div>
           <div className="fx-tools" role="group" aria-label="Layout">
             {(['list', 'tree', 'gallery'] as const).map((m) => (
               <button
@@ -538,6 +817,15 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
                 Import folder
               </button>
             ) : null}
+            {activeRoot && archiveHrefFor(activeRoot) ? (
+              <a
+                className="fx-tool"
+                href={archiveHrefFor(activeRoot)!}
+                title="Download this whole project as a zip"
+              >
+                Download zip
+              </a>
+            ) : null}
             {port.createFolder ? (
               <button
                 type="button"
@@ -570,7 +858,14 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
             <ul className="fx-queue-list">
               {imports.map((item, i) => (
                 <li key={`${item.rootName}:${i}`} className="fx-queue-row" data-status="uploading">
-                  <span className="fx-queue-name">Importing {item.rootName} as a linked project…</span>
+                  <span className="fx-queue-name">{item.rootName}</span>
+                  <span className="fx-queue-status">{importCaption(item.progress)}</span>
+                  <progress
+                    className="fx-progress"
+                    aria-label={`Import progress for ${item.rootName}`}
+                    max={item.progress.bytesTotal || 1}
+                    value={item.progress.bytesDone}
+                  />
                   <button type="button" onClick={() => item.cancel()}>
                     Cancel
                   </button>
@@ -584,7 +879,10 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
           <section className="fx-queue" aria-label="Upload queue">
             <header className="fx-queue-head">
               <span>
-                Uploads — {queueSnap.done} done
+                Uploads — {queueSnap.done} of {queueSnap.items.length} done
+                {queueSnap.bytesTotal > 0
+                  ? ` · ${formatSize(queueSnap.bytesDone)} of ${formatSize(queueSnap.bytesTotal)}`
+                  : ''}
                 {queueSnap.failed > 0 ? ` · ${queueSnap.failed} failed` : ''}
                 {queueSnap.busy ? ` · ${queueSnap.queued + queueSnap.uploading} in progress` : ''}
               </span>
@@ -662,20 +960,7 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
               ✕
             </button>
           </header>
-          {(() => {
-            const href = port.downloadHref(preview);
-            if (href && isImage(preview)) return <img className="fx-preview-img" src={href} alt={preview.name} />;
-            return (
-              <div className="fx-empty">
-                <p>{EXPLORER_REASONS.PREVIEW_UNAVAILABLE}</p>
-                {href ? (
-                  <a href={href} download={preview.name}>
-                    Download {preview.name}
-                  </a>
-                ) : null}
-              </div>
-            );
-          })()}
+          <PreviewBody entry={preview} port={port} />
         </div>
       ) : null}
 

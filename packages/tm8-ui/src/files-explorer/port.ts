@@ -75,10 +75,29 @@ export interface ExplorerEntry {
   mime: string | null;
   /** Library entries carry their entity id; project entries carry null. */
   entityId: EntityId | null;
+  /**
+   * Project entries carry the project they came from; library entries do not.
+   * The two id fields are how an entry says WHICH byte route it has without
+   * the screen ever naming a root kind.
+   */
+  projectId?: ProjectId;
   /** Library soft-delete state; the trash tab lists these. */
   trashed: boolean;
   /** Optimistic-concurrency version for library mutations. */
   version: number | null;
+}
+
+/** Bytes fetched for an entry the browser cannot simply link to. */
+export interface ExplorerBytes {
+  blob: Blob;
+  mime: string;
+  /**
+   * True when the node returned only a PREFIX — it inlines up to a ceiling.
+   * A preview may show a prefix and say so; a DOWNLOAD may not, which is why
+   * the screen refuses to save a truncated read rather than writing a file
+   * that is quietly the wrong length.
+   */
+  truncated: boolean;
 }
 
 export interface ExplorerListing {
@@ -117,8 +136,32 @@ export interface ExplorerFolderImport {
 export interface FilesExplorerPort {
   roots(): Promise<ExplorerRoot[]>;
   list(root: ExplorerRoot, path: string, opts?: { trashed?: boolean }): Promise<ExplorerListing>;
-  /** Null when this entry's bytes are not reachable from a browser (project files today). */
+  /**
+   * A URL the browser may follow for these bytes. LIBRARY entries only:
+   * `files.download` is a blob route with an entity id behind it. A project
+   * entry answers null and reaches its bytes through `readBytes` instead —
+   * see the §4.4 note there.
+   */
   downloadHref(entry: ExplorerEntry): string | null;
+  /**
+   * Bytes for an entry with no URL — project files, per FILES-DESIGN §4.4:
+   * nothing off a project's disk may become a document on the app origin, so
+   * it arrives as a DTO and the CLIENT decides what to render it into. That
+   * is a stricter posture than a download link, not a weaker one.
+   *
+   * Absent when the seam cannot read project files at all.
+   */
+  readBytes?(entry: ExplorerEntry): Promise<ExplorerBytes>;
+  /**
+   * A URL that downloads a DIRECTORY as one zip. Project roots only: the
+   * library is flat, so it has no directory to archive.
+   *
+   * An href here and a DTO for `readBytes` is the same §4.4 line drawn once:
+   * an archive is `application/zip` served `attachment`, which no browser can
+   * render as a document, so it may travel as a URL where a single file may
+   * not.
+   */
+  archiveHref?(entry: ExplorerEntry | ExplorerRoot): string | null;
   // -- writes: OPTIONAL capabilities; absence renders disabled-with-reason ---
   upload?: ExplorerUploadCapability;
   /** R7: a folder becomes a linked Project on the node. Unbound until the
@@ -154,8 +197,16 @@ export const EXPLORER_REASONS = {
     'This is a live project directory on the node. It is browsable here, but changing it belongs to a session working in that project.',
   PROJECT_BROWSE_UNAVAILABLE:
     'This node build cannot list project directories from the browser.',
-  PREVIEW_UNAVAILABLE:
+  // TWO reasons, because the screen used to print the first one for both and
+  // the two are not the same fact. Saying "no byte route exists" beside a
+  // working Download link — which is what a non-image library file used to
+  // render — is a lie the user can see through in one glance.
+  NO_BYTE_ROUTE:
     'No byte route exists for this entry in this build, so there is nothing honest to preview.',
+  NO_RENDERER:
+    'This file type has no in-browser preview. The bytes are fine — download it to open it.',
+  PREVIEW_TOO_LARGE:
+    'This file is larger than the node will inline, so a preview would only show part of it. Download the folder as a zip to get the whole file.',
   PATHS_NOT_PRESERVED:
     'This node has no folder namespace yet: every file uploads, but the folder structure will not be preserved.',
 } as const;
@@ -245,6 +296,7 @@ export function filesExplorerPortFromSeam(
         modifiedAt: null,
         mime: null,
         entityId: null,
+        projectId: root.projectId,
         trashed: false,
         version: null,
       }));
@@ -256,6 +308,7 @@ export function filesExplorerPortFromSeam(
         modifiedAt: file.modifiedAt,
         mime: file.mime,
         entityId: null,
+        projectId: root.projectId,
         trashed: false,
         version: null,
       }));
@@ -266,6 +319,49 @@ export function filesExplorerPortFromSeam(
       // Only a library entry has a byte route the browser may follow.
       return entry.entityId ? seam.files.downloadHref(entry.entityId) : null;
     },
+
+    // §4.4: a project file arrives as a DTO and becomes a Blob HERE, in the
+    // client, so it never has a document context on the app origin. Base64 is
+    // decoded rather than handed to a `data:` URL for the same reason — a
+    // `data:` URL in an iframe IS a document.
+    ...(projectFiles
+      ? {
+          async readBytes(entry: ExplorerEntry): Promise<ExplorerBytes> {
+            const projectId = entry.projectId;
+            if (!projectId) {
+              throw Object.assign(new Error(EXPLORER_REASONS.NO_BYTE_ROUTE), {
+                code: 'not_implemented',
+              });
+            }
+            const result = await projectFiles.read(projectId, entry.path);
+            const bytes =
+              result.encoding === 'base64'
+                ? Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0))
+                : new TextEncoder().encode(result.content);
+            return {
+              blob: new Blob([bytes], { type: result.mime }),
+              mime: result.mime,
+              truncated: result.truncated,
+            };
+          },
+        }
+      : {}),
+
+    // A directory in a project root; the library is flat and has none.
+    ...(projectFiles
+      ? {
+          archiveHref(target: ExplorerEntry | ExplorerRoot): string | null {
+            if ('kind' in target) {
+              return target.kind === 'project' && target.projectId
+                ? projectFiles.archiveHref(target.projectId)
+                : null;
+            }
+            return target.type === 'dir' && target.projectId
+              ? projectFiles.archiveHref(target.projectId, target.path)
+              : null;
+          },
+        }
+      : {}),
 
     upload: {
       // Honest: the shipped upload lifecycle stores a flat library blob.

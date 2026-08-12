@@ -33,9 +33,36 @@ export interface FolderImportOutcome {
   merged: boolean;
 }
 
+/**
+ * MEASURED progress, not a spinner.
+ *
+ * `upload-queue.ts` refuses to invent a percentage for ONE file, and it is
+ * right to: a `fetch` PUT reports no byte counter, so any bar would be
+ * animation over a number nobody measured. A FOLDER is a different question —
+ * the denominator is `files.length`, known before the first byte moves. So
+ * counts here are real counts, and `bytesDone` accumulates only file sizes
+ * that actually completed their PUT.
+ *
+ * `phase` exists because the slowest part of a large import is often the
+ * CHECKSUM pass, before any upload starts. An import that says "0 of 1208"
+ * for forty seconds looks hung; one that says "hashing" does not.
+ */
+export type FolderImportPhase = 'hashing' | 'starting' | 'uploading' | 'finishing';
+
+export interface FolderImportProgress {
+  phase: FolderImportPhase;
+  filesDone: number;
+  filesTotal: number;
+  bytesDone: number;
+  bytesTotal: number;
+}
+
 export interface FolderImportTask {
   result: Promise<FolderImportOutcome>;
   cancel(): void;
+  /** Fires on every measurable change. Returns an unsubscribe. */
+  subscribe(listener: (progress: FolderImportProgress) => void): () => void;
+  progress(): FolderImportProgress;
 }
 
 interface FolderImportDeps {
@@ -89,6 +116,19 @@ export function startFolderImport(
   let completed = false;
   let aborting: Promise<void> | null = null;
 
+  const listeners = new Set<(progress: FolderImportProgress) => void>();
+  let snapshot: FolderImportProgress = {
+    phase: 'hashing',
+    filesDone: 0,
+    filesTotal: files.length,
+    bytesTotal: files.reduce((total, entry) => total + entry.file.size, 0),
+    bytesDone: 0,
+  };
+  const advance = (patch: Partial<FolderImportProgress>): void => {
+    snapshot = { ...snapshot, ...patch };
+    for (const listener of listeners) listener(snapshot);
+  };
+
   const abortSession = (): Promise<void> => {
     if (sessionId === null || completed) return Promise.resolve();
     const id = sessionId;
@@ -129,6 +169,7 @@ export function startFolderImport(
       ];
       await assertActive();
 
+      advance({ phase: 'starting' });
       const destinationParent = (await directories()).path;
       await assertActive();
 
@@ -157,6 +198,18 @@ export function startFolderImport(
       await assertActive();
 
       // Bounded byte PUTs. Zero-byte files legitimately have no grant.
+      // Files WITHOUT a grant are already done as far as the user is
+      // concerned — counting only granted files would leave a tree of empty
+      // files reporting "0 of 40" right up until it succeeded.
+      const granted = new Set(grant.files.map((file) => file.relativePath));
+      const ungrantedBytes = files
+        .filter((entry) => !granted.has(entry.relativePath))
+        .reduce((total, entry) => total + entry.file.size, 0);
+      advance({
+        phase: 'uploading',
+        filesDone: files.length - grant.files.length,
+        bytesDone: ungrantedBytes,
+      });
       const queue = [...grant.files];
       const worker = async (): Promise<void> => {
         for (;;) {
@@ -171,6 +224,10 @@ export function startFolderImport(
             );
           }
           await putBytes(fileGrant, file);
+          advance({
+            filesDone: snapshot.filesDone + 1,
+            bytesDone: snapshot.bytesDone + file.size,
+          });
         }
       };
       await Promise.all(
@@ -178,6 +235,7 @@ export function startFolderImport(
       );
       await assertActive();
 
+      advance({ phase: 'finishing' });
       const done = await folderUploads.complete(sessionId, { clientMutationId: newMutationId() });
       completed = true;
       return {
@@ -201,5 +259,11 @@ export function startFolderImport(
       cancelled = true;
       void abortSession();
     },
+    subscribe(listener) {
+      listeners.add(listener);
+      listener(snapshot);
+      return () => listeners.delete(listener);
+    },
+    progress: () => snapshot,
   };
 }
