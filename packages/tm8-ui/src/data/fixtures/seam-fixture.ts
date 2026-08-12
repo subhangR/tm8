@@ -118,6 +118,19 @@ import {
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
 
+/**
+ * Re-exported because seam-level tests address the fixture space through the
+ * SEAM module they exercise. This was imported here and NOT re-exported for a
+ * while, and the failure mode is worth recording: importing the missing name
+ * from this module did not throw under the test transform — it arrived as
+ * `undefined`, `openSpace(undefined)` does not validate, and `createEntity`
+ * then minted rows with `spaceId: undefined` that consistently matched
+ * queries carrying the same undefined. Whole test files ran green against a
+ * space that does not exist. The re-export makes the name real; the lens
+ * test that caught this now queries the actual dataset space.
+ */
+export { FIXTURE_SPACE_ID };
+
 const FIXTURE_PROJECTS: readonly ProjectResource[] = [
   {
     id: 'proj-tm8ui',
@@ -955,6 +968,21 @@ export function createFixtureSeam(): FixtureSeam {
           && f.sessionStatus.includes(s.state.status))) return false;
         if (f?.assigneeIds && !(s.state.kind === 'task'
           && s.state.assignees.some((a) => f.assigneeIds!.includes(a.id)))) return false;
+        /* The `edge` clause the server executes as an EXISTS over
+           public.edges (collections.ts): keep this row exactly when it has an
+           edge of `type` in `direction` whose OTHER endpoint is `entityId`.
+           The collection lens rides this — members of collection X are the
+           rows with an INCOMING `contains` from X — and a fixture that
+           ignored the clause would render the lens as a silent no-op. */
+        if (f?.edge) {
+          const { type, direction, entityId } = f.edge;
+          const groups = direction === 'incoming'
+            ? extrasOf(s.id).connections.incoming
+            : extrasOf(s.id).connections.outgoing;
+          const hit = groups.some((group) => group.type === type && group.edges.some((edge) =>
+            (direction === 'incoming' ? edge.source.id : edge.target.id) === entityId));
+          if (!hit) return false;
+        }
         return true;
       });
       const sort = input.sort ?? 'activityAt_desc';
@@ -1723,6 +1751,12 @@ export function createFixtureSeam(): FixtureSeam {
           throw new CollabError('invariant_violation', `${collectionId} is not a collection`);
         }
         const member = requireSummary(input.entityId);
+        // Same refusal as `set_collection_item` (migration 100): `contains`
+        // is registered non-acyclic, so nothing else stops a collection from
+        // listing itself in its own items.
+        if (member.id === collection.id) {
+          throw new CollabError('invalid_input', 'a collection cannot contain itself');
+        }
         const c = extrasOf(collection.id).connections;
         let group = c.outgoing.find((g) => g.type === 'contains');
         if (!group) {

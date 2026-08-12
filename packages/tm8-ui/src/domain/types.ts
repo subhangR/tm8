@@ -581,6 +581,38 @@ export interface ListConfig {
    * or tone field here would be the second copy that disagrees first.
    */
   board?: { groupBy: GroupByKey };
+  /**
+   * Curated-set membership on the LIST surface (the `contains` pair,
+   * migration 100): the expanded row's "Collections" picker, and the list's
+   * collection LENS — pick a set and the list narrows to its members via the
+   * contract's `filters.edge` clause, which the server already executes.
+   *
+   * ITS OWN FIELD, NOT `assignControl`, because the write is different in
+   * kind: an assignment is an edge FROM this row to an actor, written by the
+   * generic edge verbs; membership is an edge FROM the set TO this row,
+   * written by the `collections.addItem`/`removeItem` pair (auto-position,
+   * pair-addressed remove). Folding them together would force one dispatch
+   * rule onto two operations — the same reason `valueControls` is not
+   * `stateControl`.
+   */
+  membership?: MembershipListControl;
+}
+
+/**
+ * The list surface's membership declaration. The panel never spells the edge
+ * or the set kind itself — a kind whose rows can be curated declares them
+ * here, and the hosts hydrate `setKind` exactly as they hydrate the assign
+ * roster's `actorKinds`.
+ */
+export interface MembershipListControl {
+  /** User copy for the control and the lens chip ("Collections"). */
+  label: string;
+  /** Shown when the row is in no set. Not an option: absence is not a value. */
+  emptyLabel: string;
+  /** The edge a membership IS. `contains` runs set → member (incoming here). */
+  edgeType: string;
+  /** The kind whose rows are the curated sets. Hosts hydrate it as data. */
+  setKind: string;
 }
 
 /** One value in a `ValueControl`'s vocabulary. */

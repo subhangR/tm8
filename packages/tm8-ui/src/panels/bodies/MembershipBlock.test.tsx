@@ -120,6 +120,37 @@ describe('fixture seam — the membership pair', () => {
       seam.commands.removeFromCollection(collectionId, taskUuidTitle.id, { clientMutationId: cmid() }),
     ).rejects.toMatchObject({ code: 'not_found' });
   });
+
+  it('refuses self-containment, exactly as set_collection_item does', async () => {
+    const seam = await openSeam();
+    const collectionId = await createCollection(seam, 'Not my own member');
+    await expect(
+      seam.commands.addToCollection(collectionId, { clientMutationId: cmid(), entityId: collectionId }),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
+  it('executes the `filters.edge` clause — the collection lens is a real query here too', async () => {
+    const seam = await openSeam();
+    const collectionId = await createCollection(seam, 'Lens set');
+    await seam.commands.addToCollection(collectionId, { clientMutationId: cmid(), entityId: taskUuidTitle.id });
+
+    // Members of the set: rows with an INCOMING `contains` from it. The
+    // fixture must execute this exactly as collections.ts does, or the lens
+    // renders as a silent no-op against fixtures.
+    const members = await seam.query({
+      spaceId: FIXTURE_SPACE_ID,
+      filters: { edge: { type: 'contains', direction: 'incoming', entityId: collectionId } },
+    });
+    expect(members.page.items.map((item) => item.id)).toEqual([taskUuidTitle.id]);
+
+    // And kind-scoped, because that is the exact query a lensed list issues.
+    const none = await seam.query({
+      spaceId: FIXTURE_SPACE_ID,
+      kinds: ['doc'],
+      filters: { edge: { type: 'contains', direction: 'incoming', entityId: collectionId } },
+    });
+    expect(none.page.items).toHaveLength(0);
+  });
 });
 
 describe('useCollectionMembership — the direction decides which endpoint is the collection', () => {

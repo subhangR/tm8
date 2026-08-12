@@ -291,6 +291,11 @@ export function EntityView(props: EntityViewProps) {
       onSetValue: rowLifecycle.setValue,
       onAssign: rowLifecycle.assign,
       assignableActors: rowLifecycle.assignable,
+      onMembership: rowLifecycle.membership,
+      membershipSets: rowLifecycle.membershipSets,
+      /* The live projection, not `detail.connections`: the ✓ marks must move
+         with the write the menu just made. */
+      connectionsOf: data.connectionsOf,
     }),
     [config.kind, ctx, data, rowLifecycle],
   );
@@ -745,6 +750,9 @@ export function EntityView(props: EntityViewProps) {
           onSetValue={rowLifecycle.setValue}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
+          onMembership={rowLifecycle.membership}
+          membershipSets={rowLifecycle.membershipSets}
+          connectionsOf={data.connectionsOf}
           /* The SAME sources the workspace passes. `onFullOptions` rides in
              when the shell wired `onLaunchOpen` — this screen mounts the
              sheet itself now — and stays absent otherwise, keeping the
