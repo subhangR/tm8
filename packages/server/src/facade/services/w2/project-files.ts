@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
-import { open, readdir, realpath, stat } from 'node:fs/promises';
+import { open, readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 
 import {
@@ -389,4 +389,185 @@ async function hashFile(path: string): Promise<string> {
 /** Bytes for the blob store, read from the canonical path resolved above. */
 export function projectFileStream(path: string): AsyncIterable<Uint8Array> {
   return createReadStream(path);
+}
+
+// ---------------------------------------------------------------------------
+// Folder archive — the whole-subtree read (`projects.files.archive`)
+// ---------------------------------------------------------------------------
+
+/**
+ * ARCHIVE CEILINGS, deliberately larger than the picker's `MAX_PROJECT_FILES`
+ * and deliberately finite. A picker cap of 500 exists so a wide directory
+ * stays responsive; these exist so one request cannot walk an unbounded tree
+ * or mint a 4 GiB response. Both are REFUSALS naming the limit, never silent
+ * truncation: an archive missing files it did not mention is the one outcome a
+ * download must never produce.
+ */
+export const MAX_ARCHIVE_FILES = 20_000;
+export const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024; // 1 GiB of file bytes
+
+/** The manifest an archive carries when the policy withheld anything. */
+export const ARCHIVE_EXCLUSION_MANIFEST = '_tm8-excluded.txt';
+
+export interface ArchivePlanEntry {
+  /** Canonical absolute path on the node's disk. */
+  absolutePath: string;
+  /** POSIX path inside the archive, always under a single root directory. */
+  archivePath: string;
+  sizeBytes: number;
+}
+
+export interface ArchivePlan {
+  /** Basename of the subtree, used for the archive root and the filename. */
+  rootName: string;
+  entries: ArchivePlanEntry[];
+  totalBytes: number;
+  /** Archive-relative paths the policy withheld, with the reason, in order. */
+  excluded: Array<{ path: string; reason: string }>;
+}
+
+/**
+ * Walk a subtree and decide EVERYTHING before a single byte is written.
+ *
+ * The walk is separate from the streaming for one reason: once a response's
+ * headers are on the wire an error can no longer be an error, only a severed
+ * connection. So every refusal this operation can raise — outside the project,
+ * over a ceiling, unreadable root — is raised here, while a typed error still
+ * reaches the client as a typed error. The walk only stats; the bytes are read
+ * later, one file at a time.
+ *
+ * Withheld files are OMITTED and RECORDED. A secret silently dropped from an
+ * archive is indistinguishable from a secret that was never there, and the
+ * difference matters to whoever unzips it.
+ */
+export async function planProjectArchive(
+  workingDir: string,
+  requestedPath: string | undefined,
+  rawRoots?: readonly string[],
+  // Injectable so the ceiling behaviour is testable without building a 20,000
+  // file tree — a limit that can only be reached by exhausting it in earnest
+  // is a limit nobody ever tests.
+  limits?: { maxFiles?: number; maxBytes?: number },
+): Promise<ArchivePlan> {
+  const maxFiles = limits?.maxFiles ?? MAX_ARCHIVE_FILES;
+  const maxBytes = limits?.maxBytes ?? MAX_ARCHIVE_BYTES;
+  const { root } = await browsableWorkingDir(workingDir, rawRoots);
+  const subtree = await directoryInProject(root, requestedPath);
+  const rootName = basename(subtree) || 'project';
+
+  const entries: ArchivePlanEntry[] = [];
+  const excluded: Array<{ path: string; reason: string }> = [];
+  let totalBytes = 0;
+
+  const walk = async (dir: string, prefix: string): Promise<void> => {
+    let rows;
+    try {
+      rows = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'EACCES' || code === 'EPERM') {
+        excluded.push({ path: prefix || rootName, reason: 'directory is not readable' });
+        return;
+      }
+      throw new CollabError('upstream_unavailable', `could not list directory: ${dir}`);
+    }
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    for (const row of rows) {
+      const absolute = join(dir, row.name);
+      const archivePath = prefix === '' ? row.name : `${prefix}/${row.name}`;
+      // Symlinks are skipped for the same reason listing skips them: the
+      // canonical target may lie outside the project, and an archive that
+      // silently escaped its root would be a jail break with a .zip on it.
+      if (row.isSymbolicLink()) {
+        excluded.push({ path: archivePath, reason: 'symbolic link' });
+        continue;
+      }
+      if (row.isDirectory()) {
+        if (EXCLUDED_DIRECTORY_NAMES.has(row.name)) {
+          excluded.push({ path: archivePath, reason: 'excluded directory' });
+          continue;
+        }
+        const secret = secretReason(root, absolute);
+        if (secret !== null) {
+          excluded.push({ path: archivePath, reason: secret });
+          continue;
+        }
+        await walk(absolute, archivePath);
+        continue;
+      }
+      if (!row.isFile()) continue;
+      const secret = secretReason(root, absolute);
+      if (secret !== null) {
+        excluded.push({ path: archivePath, reason: secret });
+        continue;
+      }
+      if (await withinTm8DataDir(absolute)) {
+        excluded.push({ path: archivePath, reason: 'tm8 data directory' });
+        continue;
+      }
+      let info;
+      try {
+        info = await stat(absolute);
+      } catch {
+        excluded.push({ path: archivePath, reason: 'unreadable' });
+        continue;
+      }
+      entries.push({
+        absolutePath: absolute,
+        archivePath: `${rootName}/${archivePath}`,
+        sizeBytes: info.size,
+      });
+      totalBytes += info.size;
+      if (entries.length > maxFiles) {
+        throw new CollabError(
+          'payload_too_large',
+          `this folder holds more than ${maxFiles} files, which is the archive limit`,
+        );
+      }
+      if (totalBytes > maxBytes) {
+        throw new CollabError(
+          'payload_too_large',
+          `this folder is larger than ${maxBytes} bytes, which is the archive limit`,
+        );
+      }
+    }
+  };
+
+  await walk(subtree, '');
+  return { rootName, entries, totalBytes, excluded };
+}
+
+/**
+ * The plan's bytes, one file at a time. Read errors become an EXCLUSION note
+ * rather than a thrown error: by the time this runs the response is already
+ * streaming, so the only honest ways to report a late failure are a severed
+ * connection or a line in the manifest, and a file that vanished between the
+ * walk and the read does not deserve to kill the whole archive.
+ */
+export async function* projectArchiveEntries(
+  plan: ArchivePlan,
+): AsyncGenerator<{ path: string; bytes: Buffer }> {
+  const lateExclusions: Array<{ path: string; reason: string }> = [];
+  for (const entry of plan.entries) {
+    let bytes: Buffer;
+    try {
+      bytes = await readFile(entry.absolutePath);
+    } catch {
+      lateExclusions.push({ path: entry.archivePath, reason: 'disappeared while archiving' });
+      continue;
+    }
+    yield { path: entry.archivePath, bytes };
+  }
+  const excluded = [...plan.excluded, ...lateExclusions];
+  if (excluded.length === 0) return;
+  const manifest = [
+    'These paths were NOT included in this archive.',
+    '',
+    ...excluded.map((item) => `${item.path}\t${item.reason}`),
+    '',
+  ].join('\n');
+  yield {
+    path: `${plan.rootName}/${ARCHIVE_EXCLUSION_MANIFEST}`,
+    bytes: Buffer.from(manifest, 'utf8'),
+  };
 }

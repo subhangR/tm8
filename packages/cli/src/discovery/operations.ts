@@ -1031,6 +1031,19 @@ const ROWS: Record<OperationName, Row> = {
       'a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
     ],
   },
+  'projects.files.archive': {
+    cmd: null,
+    sum: 'Download a whole subtree of a connected project folder as one zip',
+    authz: 'project',
+    input: 'none',
+    tags: ['file', 'folder', 'download', 'archive', 'zip', 'local', 'browse'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'answers `application/zip` as an attachment, never an inline document, so §4.4 holds for a whole tree as it does for one file',
+      'withheld paths are omitted and listed in `_tm8-excluded.txt` inside the archive; the counts are also response headers',
+      'a CLI caller already holds the node filesystem and reaches the same bytes with `zip`/`tar`',
+    ],
+  },
   'projects.folderUploads.init': {
     cmd: null,
     sum: 'Freeze a browser folder-upload manifest and issue per-file byte grants',

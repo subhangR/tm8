@@ -128,6 +128,14 @@ export const OPERATIONS = [
   // never raw bytes and never an inline document, so nothing off a project's
   // disk gets a document context on the app origin (FILES-DESIGN §4.4).
   { name: 'projects.files.read',     method: 'GET',    path: '/v2/projects/:projectId/files/content',       kind: 'read',    status: 'v1' },
+  // A whole subtree as one zip. This is the one project-disk read that answers
+  // BYTES rather than a DTO, and it does not weaken §4.4: an archive is
+  // `application/zip` with an unconditional `attachment` disposition, so there
+  // is no browser context in which it becomes a document on the app origin.
+  // The response is chunked — a STORED zip's length is not known until the
+  // central directory is written, and a guessed content-length is worse than
+  // none.
+  { name: 'projects.files.archive',  method: 'GET',    path: '/v2/projects/:projectId/files/archive',       kind: 'read',    status: 'v1' },
 
   // Browser-originated project folder import. Unlike projects.files.*, these
   // operations never read a path on the browser's machine: init freezes a
