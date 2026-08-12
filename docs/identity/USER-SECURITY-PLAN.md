@@ -2,7 +2,16 @@
 
 **Task:** `019ff232-2524-78bd-a605-f2d093b76934` (User Security, high) · **Branch:** `plan/user-security` off `origin/main` @ `77f2887`
 **Author:** Opus 5 Teammate · **Date:** 2026-08-11
-**Status:** plan for review — nothing in here is implemented
+**Status:** findings stand; **phase structure superseded** by [`USER-SECURITY-CONTROL-PLANE.md`](./USER-SECURITY-CONTROL-PLANE.md)
+
+> **Supersession note (2026-08-11).** §1–§4 (the measured findings) and §10 (the evidence
+> index) remain the authority for *what is wrong*. §5's phases 0–5 and §6's target model were
+> written before the architecture was settled, and are replaced: the user chose **cross-space
+> delegation** (one space per user; reaching another user's session is a scoped grant, not a
+> membership) and **per-user OS accounts**. Two findings not in this document were discovered
+> during that design — the `074`-reverted-`072` agent-bearer liveness gate, and the fact that
+> every space member can already drive any agent's PTY via `075`'s `can_act_as` widening. Both
+> are in the successor.
 
 ---
 
