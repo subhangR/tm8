@@ -301,9 +301,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and 126 adds projects.branches.list.
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
-    expect(SURFACE).toHaveLength(139);
-    expect(rows).toHaveLength(139);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(139);
+    // +4 (2026-08-11): the control plane's users.* rows.
+    expect(SURFACE).toHaveLength(143);
+    expect(rows).toHaveLength(143);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(143);
   });
 
   /**
@@ -475,7 +476,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // capabilities, personal spaces, user_homes). Re-measured with
     // `ls db/migrations/*.sql | wc -l` = 96, not incremented — which is how the
     // two-in-one-wave case stays correct rather than landing at 95.
-    expect(server.appliedMigrations.length).toBe(96);
+    // 96 -> 97: 102 (ensure_personal_space — the repair for accounts made
+    // outside the control plane, i.e. the loopback owner). Re-measured = 97.
+    expect(server.appliedMigrations.length).toBe(97);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

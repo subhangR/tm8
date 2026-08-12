@@ -243,6 +243,22 @@ export const OPERATIONS = [
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
 
+  // The control plane (101). `auth.signup` writes an account and stops — no
+  // space, no member row — so a signed-up person logs in and is told the node
+  // has no spaces. `users.create` provisions the WHOLE user in one transaction:
+  // account, their own space, and the record of the home their agents will run
+  // in. `auth.signup` remains as a thin alias so the UI's first-run gate keeps
+  // working, and there is exactly one provisioning path underneath both.
+  //
+  // Capabilities replace the single `node_admin` flag, which bundles "register
+  // a working directory" with "reset any account's password" — the reason 7 of
+  // the 8 accounts on this node hold it. Grant and revoke are separate
+  // operations because they are separately auditable acts.
+  { name: 'users.create',                                method: 'POST',   path: '/v2/users',                                                          kind: 'command', status: 'v1' },
+  { name: 'users.list',                                  method: 'GET',    path: '/v2/users',                                                          kind: 'read',    status: 'v1' },
+  { name: 'users.capabilities.grant',                    method: 'POST',   path: '/v2/users/:accountId/capabilities',                                  kind: 'command', status: 'v1' },
+  { name: 'users.capabilities.revoke',                   method: 'POST',   path: '/v2/users/:accountId/capabilities/revoke',                           kind: 'command', status: 'v1' },
+
   // Tier B per-member credentials (sub-doc 11 §D). A member connects their OWN
   // vendor account in a login terminal tm8 opens for them, so an agent they
   // spawn runs as them instead of as the node.

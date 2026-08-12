@@ -278,6 +278,11 @@ export async function loginWithPassword(
       null,
       input.label ?? null,
     ]);
+    // "Once they log in it has to load their space" — made true here rather
+    // than hoped for. Idempotent and self-scoped (102): one indexed lookup
+    // once the space exists, which is every login after the first. It repairs
+    // accounts made outside the control plane, notably the loopback owner.
+    await q.rpc('public.ensure_personal_space', []);
     const profile = await q.query<{ display_name: string | null }>(
       'select display_name from public.user_profiles where identity_id = $1',
       [row.identityId],
@@ -304,50 +309,4 @@ export async function loginWithPassword(
       expiresAt: session.expires_at,
     },
   };
-}
-
-export interface SignupInput {
-  username: string;
-  password: string;
-  displayName?: string | null;
-  email?: string | null;
-  isNodeAdmin?: boolean;
-}
-
-/**
- * Node-admin provisioning of a local account. The guard is in SQL:
- * `ensure_account` (007 F1) demands an authenticated node admin the moment
- * the node has any account, so this function simply runs under the CALLER's
- * claims and lets Postgres refuse. There is no open self-registration path.
- *
- * `ensure_account` is idempotent by lookup — an existing username returns the
- * existing row rather than raising — so signup detects that case by identity
- * and refuses with `conflict` instead of silently handing back someone
- * else's account.
- */
-export async function signupAccount(
-  db: Db,
-  claims: { identityId?: string; nodeAdmin?: boolean; requestId?: string },
-  input: SignupInput,
-): Promise<AccountRowJson> {
-  const identityId = `id_${randomUUID()}`;
-  const passwordHash = await hasher.hash(input.password);
-
-  const account = await db.rpc<AccountRowJson | null>(claims, 'ensure_account', [
-    identityId,
-    input.username,
-    input.displayName ?? null,
-    input.email ?? null,
-    false, // p_is_owner — signup never mints an owner
-    input.isNodeAdmin ?? false,
-    hasher.algorithm,
-    passwordHash,
-  ]);
-  if (!account) {
-    throw new CollabError('upstream_unavailable', 'ensure_account returned no row');
-  }
-  if (account.identity_id !== identityId) {
-    throw new CollabError('conflict', 'an account with this username already exists');
-  }
-  return account;
 }

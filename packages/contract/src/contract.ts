@@ -959,6 +959,107 @@ export interface AuthSignupResult {
   account: AuthAccountView;
 }
 
+/**
+ * The named node-level capabilities (migration 101).
+ *
+ * These replace `accounts.is_node_admin`, one flag that gated eighteen RPCs
+ * spanning "register a working directory" and "reset any account's password".
+ * Nothing distinguished those two, so onboarding a teammate meant granting both
+ * — which is why seven of the eight accounts on the production node hold it.
+ */
+export type NodeCapability =
+  | 'users.provision'
+  | 'users.credentials'
+  | 'users.suspend'
+  | 'users.delete'
+  | 'projects.register'
+  | 'projects.register.any'
+  | 'connections.manage'
+  | 'node.maintain'
+  | 'capabilities.grant';
+
+/**
+ * `users.create` — provision a whole user, not just an account.
+ *
+ * The difference from `auth.signup` is the whole point of the operation: this
+ * also creates the person's OWN space and the record of the home their agents
+ * will run in, so that logging in lands them somewhere instead of on "this node
+ * has no spaces". `auth.signup` is now an alias over this, so there is exactly
+ * one provisioning path.
+ */
+export interface UsersCreateInput {
+  username: string;
+  password: string;
+  displayName?: string;
+  email?: string;
+  /**
+   * Durable idempotency key. Unlike a `clientMutationId`, which the command
+   * ledger forgets after 24 hours, this is stored on the user's home record and
+   * replays forever — so a retry a week later returns the original user rather
+   * than provisioning a second one.
+   */
+  requestKey?: string;
+}
+
+/** The home a user's agents run in. In `db_ready` until a node provisions it. */
+export interface UserHomeView {
+  osUsername: string;
+  osUid: number | null;
+  homePath: string;
+  state: 'db_ready' | 'fs_ready' | 'ready' | 'failed';
+  /** What was ACHIEVED, never what was requested. */
+  isolation: 'pending' | 'shared-uid' | 'os-users';
+  quotaBackend: string | null;
+  lastError: string | null;
+}
+
+export interface UsersCreateResult {
+  account: AuthAccountView;
+  home: UserHomeView;
+  /** The user's own space. They land here on login. */
+  spaceId: SpaceId;
+  /** True when a `requestKey` replayed; nothing was created. */
+  replayed: boolean;
+}
+
+/** One row of `users.list` — the operator's view of who exists on this node. */
+export interface UserSummary {
+  accountId: string;
+  identityId: string;
+  username: string;
+  displayName: string | null;
+  email: string | null;
+  status: 'active' | 'disabled';
+  isOwner: boolean;
+  /** Retained through the capability transition; being retired. */
+  isNodeAdmin: boolean;
+  home: UserHomeView | null;
+  personalSpaceId: SpaceId | null;
+  personalSpaceName: string | null;
+  capabilities: NodeCapability[];
+}
+
+export interface UsersListResult {
+  users: UserSummary[];
+}
+
+/**
+ * `users.capabilities.grant` / `.revoke`.
+ *
+ * Separate operations rather than one with a boolean, because they are
+ * separately auditable acts and read differently in a log. `capabilities.grant`
+ * and `users.credentials` are owner-only in both directions — they are the two
+ * that can be used to take the node — and no account may grant itself anything.
+ */
+export interface UserCapabilityInput {
+  capability: NodeCapability;
+}
+
+export interface UserCapabilityResult {
+  accountId: string;
+  capability: NodeCapability;
+}
+
 /** `auth.login` — exchange a local credential for a `tm8s_…` bearer token. */
 export interface AuthLoginInput {
   username: string;

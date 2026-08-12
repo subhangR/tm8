@@ -195,6 +195,51 @@ const ROWS: Record<OperationName, Row> = {
       'the password travels in the request body — a real deployment needs TLS before using this',
     ],
   },
+  'users.create': {
+    cmd: ['user', 'create'],
+    syn: 'tm8 user create <username> --password <password> [--display-name <name>] [--email <email>] [--request-key <key>]',
+    sum: 'Provision a whole user: an account, their own Space, and the record of their home',
+    authz: 'server',
+    input: 'bound',
+    tags: ['user', 'provision', 'account', 'space', 'onboard', 'admin', 'control-plane'],
+    notes: [
+      'this is what `auth signup` should have been: signup wrote an account and stopped, so the person it created logged in and was told the node had no spaces',
+      'requires the users.provision capability, except on a node with no accounts yet',
+      '--request-key replays durably and forever, unlike a clientMutationId, whose ledger row is pruned after 24h',
+    ],
+  },
+  'users.list': {
+    cmd: ['user', 'list'],
+    syn: 'tm8 user list',
+    sum: 'Every account on this Server with its personal Space, home state and capabilities',
+    authz: 'server',
+    input: 'none',
+    tags: ['user', 'account', 'list', 'capability', 'home', 'admin'],
+    notes: ['requires the users.provision capability', 'never returns password material'],
+  },
+  'users.capabilities.grant': {
+    cmd: ['user', 'grant'],
+    syn: 'tm8 user grant <account-id> <capability>',
+    sum: 'Grant one named node capability, replacing the all-or-nothing node-admin flag',
+    authz: 'server',
+    input: 'bound',
+    tags: ['capability', 'grant', 'permission', 'admin', 'node'],
+    notes: [
+      'capabilities.grant and users.credentials are owner-only — they are the two that can take the node',
+      'no account may grant itself a capability',
+    ],
+  },
+  'users.capabilities.revoke': {
+    cmd: ['user', 'revoke'],
+    syn: 'tm8 user revoke <account-id> <capability>',
+    sum: 'Revoke one named node capability',
+    authz: 'server',
+    input: 'bound',
+    tags: ['capability', 'revoke', 'permission', 'admin', 'node'],
+    notes: [
+      'refuses a revoke that would leave this node with no account able to reset a credential',
+    ],
+  },
   'auth.login': {
     cmd: ['auth', 'login'],
     syn: 'tm8 auth login <username> --password <password> [--kind browser|cli] [--label <label>] [--print-token]',
@@ -1715,6 +1760,10 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
   // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
   credentials: 'credential',
+  // The control plane. Distinct from `auth`, which is about proving who you
+  // ALREADY are; `user` is about a person existing on this node at all — their
+  // account, their Space, their home and their capabilities.
+  users: 'user',
 };
 
 function nounFor(operation: OperationName): string {
@@ -1765,7 +1814,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:e169fda4c4b4fd7cfdee7a854c3a0fb5068165c695bca188fd797728717d50bf';
+  'sha256:774c89c3fdfbd3c7c40c6fcebd9813262ccf22cdb6cc86e92edaed26bb20ad59';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -27,6 +27,8 @@ import {
   AuthLoginInputSchema,
   AuthLogoutInputSchema,
   AuthSignupInputSchema,
+  UsersCreateInputSchema,
+  UserCapabilityInputSchema,
   CollectionQuerySchema,
   CredentialsDeleteInputSchema,
   CredentialsLoginSessionFinishInputSchema,
@@ -125,6 +127,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'auth.signup': AuthSignupInputSchema,
   'auth.login': AuthLoginInputSchema,
   'auth.logout': AuthLogoutInputSchema,
+  'users.create': UsersCreateInputSchema,
+  'users.capabilities.grant': UserCapabilityInputSchema,
+  'users.capabilities.revoke': UserCapabilityInputSchema,
 
   // credentials (Tier B). All three command bodies are BOUND rather than
   // enumerated as unbound gaps, because strictness here is a security control

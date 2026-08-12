@@ -283,6 +283,81 @@ describe('capability administration', () => {
   });
 });
 
+describe('ensure_personal_space — the repair for accounts made outside the control plane', () => {
+  it('gives a space to an account created straight through ensure_account', async () => {
+    // Exactly what `resolveLoopbackOwner` does on a virgin node: mint an
+    // account with no space. Before 102 that account stayed spaceless forever,
+    // which is the defect this phase exists to remove surviving on the one path
+    // that cannot go through the control plane.
+    const identity = `id_${randomUUID()}`;
+    await asOwner(async (client) => {
+      await client.query(
+        `insert into public.user_profiles(identity_id, display_name) values ($1,'Node Owner')`,
+        [identity]);
+      await client.query(
+        `insert into public.accounts(identity_id, username, display_name, is_node_admin)
+         values ($1,'nodeowner','Node Owner',true)`, [identity]);
+    });
+
+    const first = await asApp(identity, async (client) =>
+      (await client.query<{ v: { spaceId: string | null; created: boolean } }>(
+        `select public.ensure_personal_space() v`)).rows[0]!.v);
+    expect(first.created).toBe(true);
+    expect(first.spaceId).not.toBeNull();
+
+    const space = await asOwner(async (client) =>
+      (await client.query<{ name: string; personal: string }>(
+        `select name, personal_for_identity personal from public.spaces where id=$1`,
+        [first.spaceId],
+      )).rows[0]!);
+    expect(space).toMatchObject({ name: "Node Owner's Space", personal: identity });
+
+    // The home record and the baseline capability come with it, and the home is
+    // honest about what this node actually gives an agent today.
+    const home = await asOwner(async (client) =>
+      (await client.query<{ isolation: string; state: string }>(
+        `select isolation, state from public.user_homes where identity_id=$1`, [identity],
+      )).rows[0]!);
+    expect(home).toMatchObject({ isolation: 'shared-uid', state: 'db_ready' });
+  });
+
+  it('is idempotent and cheap on the second call — it runs on every login', async () => {
+    const identity = `id_${randomUUID()}`;
+    await asOwner(async (client) => {
+      await client.query(`insert into public.user_profiles(identity_id) values ($1)`, [identity]);
+      await client.query(
+        `insert into public.accounts(identity_id, username) values ($1,'repeat-caller')`, [identity]);
+    });
+    const first = await asApp(identity, async (client) =>
+      (await client.query<{ v: { spaceId: string; created: boolean } }>(
+        `select public.ensure_personal_space() v`)).rows[0]!.v);
+    const second = await asApp(identity, async (client) =>
+      (await client.query<{ v: { spaceId: string; created: boolean } }>(
+        `select public.ensure_personal_space() v`)).rows[0]!.v);
+
+    expect(second.created).toBe(false);
+    expect(second.spaceId).toBe(first.spaceId);
+    expect(await asOwner(async (client) =>
+      (await client.query<{ n: string }>(
+        `select count(*)::text n from public.spaces where personal_for_identity=$1`, [identity],
+      )).rows[0]!.n)).toBe('1');
+  });
+
+  it('answers honestly for an identity with no account rather than inventing a space', async () => {
+    // A graph-side profile with no way to log in is not a person this node
+    // provisions for. Manufacturing a space would create one nobody can reach.
+    const identity = `id_${randomUUID()}`;
+    await asOwner(async (client) => {
+      await client.query(`insert into public.user_profiles(identity_id) values ($1)`, [identity]);
+    });
+    const result = await asApp(identity, async (client) =>
+      (await client.query<{ v: { spaceId: string | null; reason?: string } }>(
+        `select public.ensure_personal_space() v`)).rows[0]!.v);
+    expect(result.spaceId).toBeNull();
+    expect(result.reason).toBe('no account');
+  });
+});
+
 describe('personal-space adoption is conservative', () => {
   it('never adopts a SHARED space — the production node depends on this', async () => {
     // A space with two members, created by one of them. The backfill predicate

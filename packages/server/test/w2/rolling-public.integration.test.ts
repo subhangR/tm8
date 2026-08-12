@@ -264,6 +264,19 @@ const GIT_NET_NEW_OPERATIONS = [
   'projects.branches.list',
 ] as const;
 
+/**
+ * The control plane (2026-08-11). Net-new, and deliberately NOT folded into
+ * `IDENTITY_V2_NET_NEW_OPERATIONS`: those rows are about proving who you
+ * already are, while these are about a person existing on this node at all —
+ * their account, their own Space, their home and their capabilities.
+ */
+const CONTROL_PLANE_NET_NEW_OPERATIONS = [
+  'users.create',
+  'users.list',
+  'users.capabilities.grant',
+  'users.capabilities.revoke',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
@@ -271,6 +284,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...IDENTITY_V2_NET_NEW_OPERATIONS,
   ...PROJECT_FOLDER_NET_NEW_OPERATIONS,
   ...GIT_NET_NEW_OPERATIONS,
+  ...CONTROL_PLANE_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -366,7 +380,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  it('replaces G02\'s eight and G04\'s two legacy registrations and mounts the exact 92-operation facade tranche', () => {
+  it('replaces G02\'s eight and G04\'s two legacy registrations and mounts the exact 96-operation facade tranche', () => {
     // The premise of "replacement, not duplication": all eight were already
     // registered at tranche-v1, and none of the eleven were.
     for (const operation of G02_REPLACED_OPERATIONS) {
@@ -403,7 +417,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 117 -> 119: projects.files.list + projects.files.attach.
     // 119 -> 122: projects.folderUploads.init/complete/abort.
     // 122 -> 123: projects.files.read (the viewer half).
-    expect(registry.size).toBe(123);
+    // +4 (2026-08-11): the control plane's users.* rows.
+    expect(registry.size).toBe(127);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -411,7 +426,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + CONSOLIDATION_NET_NEW_OPERATIONS.length
         + IDENTITY_V2_NET_NEW_OPERATIONS.length
         + PROJECT_FOLDER_NET_NEW_OPERATIONS.length
-        + GIT_NET_NEW_OPERATIONS.length,
+        + GIT_NET_NEW_OPERATIONS.length
+        + CONTROL_PLANE_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -561,7 +577,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 70 -> 73: the three credentials.* command bodies are bound.
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its body.
     // 75 -> 78 (2026-08-10): the three projects.folderUploads.* bodies bind.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(78);
+    // +4 (2026-08-11): the control plane's users.* rows. — three carry bodies; users.list is a GET and carries none.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(81);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -675,7 +692,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     await harness?.close();
   }, 30_000);
 
-  it('reports the exact 99-handler production composition and preserves 501/404 honesty', async () => {
+  it('reports the exact 103-handler production composition and preserves 501/404 honesty', async () => {
     const healthResponse = await fetch(`${harness.baseUrl}/health`);
     const health = await healthResponse.json() as {
       ok: boolean;
@@ -709,8 +726,9 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 130/128 -> 134/132: the four credentials.* routes, all mounted.
     // 136/134 -> 137/135 (2026-08-09, merge): execution.dispatch, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 141, implemented: 139 });
-    expect(harness.production.server.registry.size).toBe(139);
+    // +4 (2026-08-11): the control plane's users.* rows.
+    expect(health).toMatchObject({ ok: true, operations: 145, implemented: 143 });
+    expect(harness.production.server.registry.size).toBe(143);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -728,7 +746,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 128 -> 132: credentials.*.
-    expect(registered.size + residual.length).toBe(139);
+    expect(registered.size + residual.length).toBe(143);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

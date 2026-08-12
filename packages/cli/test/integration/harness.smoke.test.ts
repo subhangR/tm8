@@ -18,9 +18,10 @@ it('starts a real Server and reports an un-enveloped /health', async () => {
   expect(h.ok).toBe(true);
   expect(h.server).toBe('tm8-server');
   // 136 -> 137 (2026-08-09): execution.dispatch. NOTE this counts ROUTES, not
-  // catalog rows — the catalog is 138, of which `events.subscribe` is WS and
-  // never becomes an HTTP route.
-  expect(h.operations).toBe(141);
+  // catalog rows — the catalog is 146, of which `events.subscribe` is WS and
+  // never becomes an HTTP route, so 145 routes.
+  // 141 -> 145 (2026-08-11): the control plane's four users.* rows.
+  expect(h.operations).toBe(145);
   expect(h.implemented).toBeGreaterThan(0);
   console.log(`[harness] ${server.baseUrl} operations=${h.operations} registered=${h.implemented}`);
 });

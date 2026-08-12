@@ -20,8 +20,6 @@ import type {
   AuthLogoutInput,
   AuthLogoutResult,
   AuthSessionGetResult,
-  AuthSignupInput,
-  AuthSignupResult,
 } from '@tm8/contract';
 
 import { clearSessionCookie, sessionCookie } from '../../../http/session-cookie.js';
@@ -29,10 +27,10 @@ import { json, type OperationHandler, type RequestContext } from '../../../http/
 import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
+import { authSignupViaControlPlane } from './users.js';
 import {
   loginWithPassword,
   resolveBearerIdentity,
-  signupAccount,
   type AccountRowJson,
 } from '../../../identity/pg-auth.js';
 
@@ -48,25 +46,12 @@ function accountView(row: AccountRowJson): AuthAccountView {
 }
 
 /**
- * `auth.signup` — node-admin provisioning. The gate is `ensure_account`'s F1
- * guard, evaluated in SQL under the CALLER's claims: an unauthenticated
- * caller gets 28000, a non-admin 42501. No open self-registration.
+ * `auth.signup` now runs through the control plane — see
+ * `handlers/w2/users.ts` `authSignupViaControlPlane`. The handler that used to
+ * live here called `signupAccount`, which wrote an account and nothing else;
+ * both it and that function are gone rather than kept as a second, divergent
+ * way to make a user.
  */
-function authSignup(deps: FacadeDeps): OperationHandler {
-  return async (ctx) => {
-    const owner = await deps.owner();
-    const body = ctx.body as AuthSignupInput;
-    const account = await signupAccount(deps.db, claimsFor(owner, ctx), {
-      username: body.username,
-      password: body.password,
-      displayName: body.displayName ?? null,
-      email: body.email ?? null,
-      isNodeAdmin: body.isNodeAdmin ?? false,
-    });
-    const result: AuthSignupResult = { account: accountView(account) };
-    return result;
-  };
-}
 
 /** `auth.login` — claim-free credential exchange; the only path that returns a token. */
 function authLogin(deps: FacadeDeps): OperationHandler {
@@ -212,7 +197,9 @@ async function profileDisplayName(
 /** The complete auth seam — one registration, one honest group. */
 export function registerW2AuthHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
   registry.registerAll({
-    'auth.signup': authSignup(deps),
+    // Over the control plane, so signup and `users.create` cannot drift into
+    // two different notions of what a user is.
+    'auth.signup': authSignupViaControlPlane(deps),
     'auth.login': authLogin(deps),
     'auth.logout': authLogout(deps),
     'auth.session.get': authSessionGet(deps),

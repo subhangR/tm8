@@ -1211,6 +1211,15 @@ describe.sequential('W3.G02 universal entities, commands and tracking through th
     }).toEqual({ form: 'two spaces', status: 202, error: null, message: null, requestIds: 2 });
 
     // Unscoped — every readable Space.
+    //
+    // 2 -> 3 (2026-08-11, the control plane): this fixture's two Spaces, plus
+    // the node owner's PERSONAL Space. `ensure_personal_space` (migration 102)
+    // runs at boot for the loopback owner, because that account is minted by
+    // `resolveLoopbackOwner` through `ensure_account` and so never passes
+    // through `provision_user`. Without it the owner would hold an account and
+    // no Space — the exact defect the control plane removes for everyone else.
+    // The count moving here is that repair being observable, not drift: this
+    // assertion is the unscoped form's whole point, so it SHOULD notice.
     const unscoped = await harness.request<RefreshAccepted>('POST', '/v2/tracking/refresh', {
       clientMutationId: 'w3-g02-refresh-unscoped',
     });
@@ -1220,7 +1229,7 @@ describe.sequential('W3.G02 universal entities, commands and tracking through th
       error: unscoped.body.error?.code ?? null,
       message: unscoped.body.error?.message ?? null,
       requestIds: unscoped.body.data?.requestIds.length ?? null,
-    }).toEqual({ form: 'unscoped', status: 202, error: null, message: null, requestIds: 2 });
+    }).toEqual({ form: 'unscoped', status: 202, error: null, message: null, requestIds: 3 });
 
     const rows = await harness.rows<{ spaces: number; ledger: number }>(
       `select
@@ -1229,7 +1238,10 @@ describe.sequential('W3.G02 universal entities, commands and tracking through th
            where client_mutation_id like 'w3-g02-refresh-%space%'
               or client_mutation_id = 'w3-g02-refresh-unscoped') ledger`,
     );
-    expect(rows[0]).toMatchObject({ spaces: 2 });
+    // 2 -> 3, the same owner personal Space as above, now visible as a distinct
+    // `space_id` in the queue. `ledger` is unchanged at 3: the unscoped call is
+    // still ONE command, however many Spaces it fans out to.
+    expect(rows[0]).toMatchObject({ spaces: 3 });
     expect(rows[0]!.ledger).toBe(3);
   }, 60_000);
 

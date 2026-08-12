@@ -32,7 +32,7 @@ import type {
   ActivityItem, ActorSummary, AddMessageAttachmentsInput,
   AuthAccountView, AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthSessionGetResult, AuthSessionView, AuthSignupInput,
-  AuthSignupResult, ChannelTab,
+  AuthSignupResult, ChannelTab, UsersCreateInput, UserCapabilityInput,
   ClosedPromptPolicy, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
@@ -1111,6 +1111,24 @@ export const AuthSignupInputSchema: z.ZodType<AuthSignupInput> = z.object({
   displayName: z.string().min(1).max(200).optional(),
   email: z.string().min(3).max(320).optional(),
   isNodeAdmin: z.boolean().optional(),
+}).strict();
+
+const NodeCapabilitySchema = z.enum([
+  'users.provision', 'users.credentials', 'users.suspend', 'users.delete',
+  'projects.register', 'projects.register.any', 'connections.manage',
+  'node.maintain', 'capabilities.grant',
+]);
+
+export const UsersCreateInputSchema: z.ZodType<UsersCreateInput> = z.object({
+  username: AuthUsernameSchema,
+  password: AuthPasswordSchema,
+  displayName: z.string().min(1).max(200).optional(),
+  email: z.string().min(3).max(320).optional(),
+  requestKey: z.string().min(1).max(200).optional(),
+}).strict();
+
+export const UserCapabilityInputSchema: z.ZodType<UserCapabilityInput> = z.object({
+  capability: NodeCapabilitySchema,
 }).strict();
 
 export const AuthLoginInputSchema: z.ZodType<AuthLoginInput> = z.object({

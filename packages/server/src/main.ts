@@ -213,6 +213,25 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     }
   }
 
+  // The loopback owner is minted by `resolveLoopbackOwner` through
+  // `ensure_account`, which skips the control plane — so on a virgin node the
+  // owner would hold an account and no Space, the exact defect 101 removes for
+  // everyone else. The auto-owner never "logs in", so the login-side repair
+  // cannot reach it. Idempotent, and never fatal: a node whose graph is briefly
+  // unreachable must still start.
+  if (db && owner) {
+    try {
+      const o = await owner();
+      await db.rpc({ identityId: o.identityId, requestId: 'boot-personal-space' },
+        'public.ensure_personal_space', []);
+    } catch (error) {
+      console.warn(
+        `  personal space for the node owner not ensured: ${
+          error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   if (db && config.launchBootstrap) {
     const seeded = await ensureLaunchResources({
       db,

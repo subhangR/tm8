@@ -22,9 +22,10 @@ function fixturePath(path: string): string {
 }
 
 describe('W1 stub route and honesty oracle', () => {
-  it('recognizes all 141 HTTP catalog bindings as 501, never 404', async () => {
+  it('recognizes all 145 HTTP catalog bindings as 501, never 404', async () => {
     const http = OPERATIONS.filter(({ method }) => method !== 'WS');
-    expect(http).toHaveLength(141);
+        // +4 (2026-08-11): the control plane's users.* rows (users.create, users.list, users.capabilities.grant/revoke).
+    expect(http).toHaveLength(145);
 
     for (const operation of http) {
       const response = await fetch(new URL(fixturePath(operation.path), baseUrl), {

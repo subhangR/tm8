@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:e169fda4c4b4fd7cfdee7a854c3a0fb5068165c695bca188fd797728717d50bf",
+  "catalogDigest": "sha256:774c89c3fdfbd3c7c40c6fcebd9813262ccf22cdb6cc86e92edaed26bb20ad59",
   "catalog": {
-    "total": 142,
-    "v1": 140,
+    "total": 146,
+    "v1": 144,
     "reserved": 2,
-    "http": 141,
+    "http": 145,
     "ws": 1,
-    "registerableV1Http": 139,
+    "registerableV1Http": 143,
     "methods": {
-      "GET": 53,
-      "POST": 62,
+      "GET": 54,
+      "POST": 65,
       "PATCH": 10,
       "DELETE": 9,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 56,
-      "command": 85,
+      "read": 57,
+      "command": 88,
       "stream": 1
     },
-    "uniqueNames": 142,
-    "uniqueBindings": 142
+    "uniqueNames": 146,
+    "uniqueBindings": 146
   },
   "reservedOperations": [
     "search.query",
@@ -1146,6 +1146,34 @@
         "source": "server-router"
       },
       {
+        "operation": "users.create",
+        "method": "POST",
+        "path": "/v2/users",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "users.list",
+        "method": "GET",
+        "path": "/v2/users",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "users.capabilities.grant",
+        "method": "POST",
+        "path": "/v2/users/:accountId/capabilities",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "users.capabilities.revoke",
+        "method": "POST",
+        "path": "/v2/users/:accountId/capabilities/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "credentials.status",
         "method": "GET",
         "path": "/v2/identity/credentials",
@@ -1398,7 +1426,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 111
+    "unimplementedV1Http": 115
   },
   "schemas": {
     "additive": {
@@ -3816,6 +3844,72 @@
           "auth",
           "session",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "users.create",
+        "noun": "user",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/users.create",
+        "intentTags": [
+          "users",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "users.list",
+        "noun": "user",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/users.list",
+        "intentTags": [
+          "users",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "users.capabilities.grant",
+        "noun": "user",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/users.capabilities.grant",
+        "intentTags": [
+          "users",
+          "capabilities",
+          "grant"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "users.capabilities.revoke",
+        "noun": "user",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/users.capabilities.revoke",
+        "intentTags": [
+          "users",
+          "capabilities",
+          "revoke"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
