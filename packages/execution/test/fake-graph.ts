@@ -42,7 +42,9 @@ export interface FakeGraphOptions {
 export class FakeGraph implements GraphPort {
   readonly created: CreateWorkSessionInput[] = [];
   /** Vanilla-terminal rows minted through `start_shell_session` (100). */
-  readonly shellsCreated: Array<ShellSessionRequest & { nodeId: string | null }> = [];
+  readonly shellsCreated: Array<
+    ShellSessionRequest & { nodeId: string | null; workdirPath: string | null }
+  > = [];
   readonly transitions: TransitionInput[] = [];
   readonly commands: RecordCommandInput[] = [];
   readonly manifests: Array<{
@@ -147,7 +149,7 @@ export class FakeGraph implements GraphPort {
 
   async createShellSession(
     auth: GraphAuth,
-    input: ShellSessionRequest & { nodeId: string | null },
+    input: ShellSessionRequest & { nodeId: string | null; workdirPath: string | null },
   ): Promise<StartShellSessionResult> {
     this.authSeen.push(auth);
     if (this.failNextCreate) {

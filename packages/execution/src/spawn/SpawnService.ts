@@ -1046,6 +1046,10 @@ export class SpawnService {
     const { sessionId, commandResult, replayed } = await this.graph.createShellSession(auth, {
       ...request,
       nodeId: this.nodeId,
+      // Recorded so the row says where the shell actually is. Null for a
+      // projectless terminal rather than the `.../pending` placeholder
+      // `execution_spawn` writes — see the migration for why.
+      workdirPath: context.project ? context.project.workingDir : null,
     });
 
     // A projectless terminal's directory is named for the session, which only

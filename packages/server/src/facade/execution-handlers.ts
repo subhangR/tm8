@@ -554,8 +554,8 @@ export class DbGraphPort implements GraphPort {
    *
    * Positional, in the migration's declared order, and the same warning applies
    * as on `createWorkSession`: getting the order wrong is a silent semantic
-   * swap, not a type error. `p_title` and `p_node_id` are adjacent text
-   * parameters and are the pair to watch.
+   * swap, not a type error. `p_title`, `p_node_id` and `p_workdir_path` are
+   * three adjacent text parameters and are the set to watch.
    *
    * `this.terminalCap`, NOT `this.sessionCap`. They are separate ceilings on
    * purpose (see the migration's externality 1): a member with terminals open
@@ -563,7 +563,7 @@ export class DbGraphPort implements GraphPort {
    */
   async createShellSession(
     auth: GraphAuth,
-    input: ShellSessionRequest & { nodeId: string | null },
+    input: ShellSessionRequest & { nodeId: string | null; workdirPath: string | null },
   ): Promise<StartShellSessionResult> {
     const result = await this.db.rpc<Record<string, unknown>>(
       this.claims(auth),
@@ -573,6 +573,7 @@ export class DbGraphPort implements GraphPort {
         input.projectId,
         input.title ?? null,
         input.nodeId,
+        input.workdirPath,
         input.confirmUntrusted ?? false,
         this.terminalCap,
         null, // p_actor_id — resolve_actor derives it from the claims

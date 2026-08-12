@@ -179,6 +179,9 @@ describe('SpawnService.startShell — a real shell, no agent', () => {
     expect(result.cwd).toBe(projectDir);
     expect(graph.shellsCreated).toHaveLength(1);
     expect(graph.shellsCreated[0]?.nodeId).toBe('test-node');
+    // The ROW records where the shell is, so a reader does not have to
+    // re-derive it from a project id and a convention.
+    expect(graph.shellsCreated[0]?.workdirPath).toBe(projectDir);
 
     // The oracle: bytes the shell process itself produced. A graph row and a
     // `hasSession` are both true of a shell that died on its first instruction.
@@ -284,6 +287,10 @@ describe('SpawnService.startShell — a real shell, no agent', () => {
     // Never the server's own cwd, which would let a member write into the tm8
     // checkout from a terminal.
     expect(result.cwd).toBe(join(dataDir, 'scratch', result.sessionId));
+    // NULL in the row, not `.../pending`: the directory is named for a session
+    // id that does not exist when the row is written, and a path no process
+    // ever had is worse than an honest absence.
+    expect(projectless.shellsCreated[0]?.workdirPath).toBeNull();
     pty.write(result.sessionId, 'pwd\n');
     await waitForOutput(pty, result.sessionId, result.sessionId);
   });

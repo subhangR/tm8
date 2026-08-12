@@ -126,6 +126,9 @@ comment on function internal.shell_session_count(uuid) is
 --     root, so 'project' is the only legal value and it is written here rather
 --     than accepted. A worktree exists so concurrent agents do not collide on
 --     one checkout; a human who names a project means that directory.
+--     `p_workdir_path` IS accepted, because the caller has already resolved and
+--     re-validated the project's recorded `working_dir`; the column's own CHECK
+--     (absolute, no `..`) is the backstop.
 --
 -- What it KEEPS from 048, because none of it is agent-specific: the ledger
 -- replay guard, `require_space_member`, `resolve_actor`/`bind_actor`, the
@@ -140,7 +143,8 @@ comment on function internal.shell_session_count(uuid) is
 -- -----------------------------------------------------------------------------
 create or replace function public.start_shell_session(
   p_space_id uuid, p_project_id uuid default null, p_title text default null,
-  p_node_id text default null, p_confirm_untrusted boolean default false,
+  p_node_id text default null, p_workdir_path text default null,
+  p_confirm_untrusted boolean default false,
   p_session_cap integer default 4, p_actor_id uuid default null,
   p_client_mutation_id text default null
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
@@ -187,10 +191,17 @@ begin
   -- can record the session it spawned; a vanilla terminal is started by a human
   -- from the UI and has no spawning session to descend from.
   session_id := internal.create_envelope(p_space_id, 'work_session', actor, null, null);
+  -- `workdir_path` IS RECORDED, and NULL when it genuinely cannot be. A
+  -- projectless terminal's directory is named for the session id, which does
+  -- not exist until the line above runs — the same chicken-and-egg
+  -- `execution_spawn` has, and it resolves it by writing the scratch ROOT with
+  -- a literal `pending` on the end. A row saying `.../pending` is a path no
+  -- process ever had; NULL says "not recorded", which is true and which a
+  -- reader can act on. The project case has a real answer and gets it.
   insert into public.work_sessions(entity_id, title, node_id, project_id, workdir_mode,
-                                   status, session_kind)
+                                   workdir_path, status, session_kind)
   values (session_id, coalesce(nullif(btrim(p_title), ''), 'Terminal'), p_node_id,
-          p_project_id, 'project', 'spawning', 'shell');
+          p_project_id, 'project', p_workdir_path, 'spawning', 'shell');
 
   return internal.ledger_record(p_client_mutation_id, 'execution.terminal.start',
            internal.command_result(session_id, null,
@@ -204,10 +215,10 @@ end
 $$;
 
 revoke all on function public.start_shell_session(
-  uuid, uuid, text, text, boolean, integer, uuid, text
+  uuid, uuid, text, text, text, boolean, integer, uuid, text
 ) from public;
 grant execute on function public.start_shell_session(
-  uuid, uuid, text, text, boolean, integer, uuid, text
+  uuid, uuid, text, text, text, boolean, integer, uuid, text
 ) to tm8_app;
 
 -- -----------------------------------------------------------------------------

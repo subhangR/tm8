@@ -440,7 +440,15 @@ export interface GraphPort {
   /** `public.start_shell_session` (100) — the `session_kind='shell'` row. */
   createShellSession(
     auth: GraphAuth,
-    input: ShellSessionRequest & { nodeId: string | null },
+    input: ShellSessionRequest & {
+      nodeId: string | null;
+      /**
+       * The project's recorded `working_dir`, already re-validated by the
+       * caller. NULL for a projectless terminal, whose directory is named for
+       * a session id that does not exist yet — see the migration.
+       */
+      workdirPath: string | null;
+    },
   ): Promise<StartShellSessionResult>;
   /** Resolve the immutable profile selection before launch. */
   resolveInteractionProfile(
