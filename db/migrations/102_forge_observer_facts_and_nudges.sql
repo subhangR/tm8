@@ -1,5 +1,5 @@
 -- =============================================================================
--- 084 — The forge observer stops being a state-fetcher and becomes a WATCHER.
+-- 102 — The forge observer stops being a state-fetcher and becomes a WATCHER.
 --
 -- 081 shipped a queue drainer: something asked for a refresh, the observer
 -- fetched the PR, wrote `title/state/head_sha`, and stopped. 082 made the state
@@ -38,9 +38,9 @@
 -- stream would give the ledger two vocabularies for one fact.
 --
 -- ORDER-INDEPENDENCE WAS CHECKED, and this is a decision rather than an
--- accident. 084 gap-fills BELOW ordinals that deployed nodes have already
+-- accident. 102 gap-fills BELOW ordinals that deployed nodes have already
 -- applied (085 rename_work_session, 086 manifest_guard_token_boundary), so on
--- those nodes it runs out of numeric order. That is safe here because 084
+-- those nodes it runs out of numeric order. That is safe here because 102
 -- shares no table, function or trigger with either: 085 touches only
 -- work_sessions.title, 086 only the manifest guard token surface. The one real
 -- coupling in this file is to 083 (credential sessions), which every node has
@@ -75,10 +75,10 @@ alter table public.pull_requests
 
 comment on column public.pull_requests.head_ref is
   'Source branch. Also the provenance key: a session working in a worktree on '
-  'this branch owns this PR (084 internal.pr_owning_session).';
+  'this branch owns this PR (102 internal.pr_owning_session).';
 comment on column public.pull_requests.base_ref is
   'Target branch. A PR whose base_ref is another open PR''s head_ref is '
-  'STACKED, which is why its conflicts are suppressed (084 §G).';
+  'STACKED, which is why its conflicts are suppressed (102 §G).';
 
 -- Stacked detection reads (space, repo, head_ref); so does branch provenance.
 create index if not exists pull_requests_space_repo_head_ref_idx
@@ -226,7 +226,7 @@ create table if not exists public.pr_check_facts (
 -- one place, deliberately conservative about what counts as red.
 comment on table public.pr_check_facts is
   'Last-observed CI check runs per (pull request, head sha). The subtrahend the '
-  '084 watcher computes "went red" against; not a client surface.';
+  '102 watcher computes "went red" against; not a client surface.';
 
 -- =============================================================================
 -- D. Review-thread facts — one row per (pull request, thread).
@@ -839,7 +839,7 @@ create table if not exists public.session_nudge_signatures (
 
 comment on table public.session_nudge_signatures is
   'One row per nudge actually delivered. Durable so a server restart does not '
-  're-spam a live session with facts it has already been told (084 §J).';
+  're-spam a live session with facts it has already been told (102 §J).';
 
 -- =============================================================================
 -- K. THE OUTBOX — a detected transition survives having nobody to tell.
@@ -913,7 +913,7 @@ create index if not exists pending_session_nudges_pending_idx
 
 comment on table public.pending_session_nudges is
   'Detected-but-untold semantic transitions. Written in the same statement as '
-  'the facts they were derived from (084 K), so a transition detected while no '
+  'the facts they were derived from (102 K), so a transition detected while no '
   'addressee was live is delivered when one appears instead of being consumed.';
 
 -- -----------------------------------------------------------------------------

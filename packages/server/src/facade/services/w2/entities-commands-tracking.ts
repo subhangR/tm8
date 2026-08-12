@@ -265,7 +265,7 @@ function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): Entity
           url: contentString(content, 'url') ?? undefined,
           fetchedAt,
           stale: fetchedAt === null,
-          // 084: entity_content carries the whole pull_requests row, so the two
+          // 102: entity_content carries the whole pull_requests row, so the two
           // forge facts arrive here with no query change.
           ...projectForgeFacts(content.ci_status, content.mergeable_state),
         },

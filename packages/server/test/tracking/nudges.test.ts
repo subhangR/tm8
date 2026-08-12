@@ -341,7 +341,7 @@ describe('delivery hands the whole decision to the door', () => {
     expect(calls.map((c) => c.fn)).toContain('public.record_pending_nudge_failure');
   });
 
-  it('the signature is the client mutation id — 019 idempotency under 084 dedup', async () => {
+  it('the signature is the client mutation id — 019 idempotency under 102 dedup', async () => {
     const { db, calls } = fakeDb({});
     await deliverPendingNudges(db, {}, [queued()], rendered);
     const post = calls.find((c) => c.fn === 'public.post_session_nudge');

@@ -49,9 +49,9 @@ export interface PullRequestFacts {
   /** Mapped onto the four states `public.pull_requests` allows. */
   state: 'open' | 'merged' | 'closed' | 'draft';
   headSha: string | null;
-  /** 084 §A: the branch, which is also how the owning session is resolved. */
+  /** 102 §A: the branch, which is also how the owning session is resolved. */
   headRef: string | null;
-  /** 084 §G: a base that is another open PR's head means STACKED. */
+  /** 102 §G: a base that is another open PR's head means STACKED. */
   baseRef: string | null;
   /** GitHub's own word. `dirty` is the conflict; `unknown` is "still computing". */
   mergeableState: MergeableState | null;

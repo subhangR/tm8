@@ -122,7 +122,7 @@ function route(over: {
   };
 }
 
-/** One row as 084 §K's drain read returns it. */
+/** One row as 102 §K's drain read returns it. */
 function pendingRow(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     pendingId: 'pending-1',

@@ -2,7 +2,7 @@
  * Getting a stored message onto a live agent's terminal.
  *
  * EXTRACTED VERBATIM from the `messages.post` handler (messages-handoffs.ts),
- * because it stopped having exactly one caller. The forge watcher (084) posts
+ * because it stopped having exactly one caller. The forge watcher (102) posts
  * nudges from a background job, and a background job that writes messages but
  * cannot deliver them produces durable rows no agent ever sees — which is worse
  * than not posting, because the graph then says the agent was told.

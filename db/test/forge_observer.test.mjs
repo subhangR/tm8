@@ -1,5 +1,5 @@
 // =============================================================================
-// 084 — the forge observer's facts, its watch list, and its dedup.
+// 102 — the forge observer's facts, its watch list, and its dedup.
 //
 // Every assertion here is about a DIFFERENCE, because that is the only thing
 // this migration exists to compute. A door that stores check runs correctly and
@@ -477,7 +477,7 @@ test('a lookup for an unknown key is an empty object, not a failure', () => {
 // this lane is squarely that: a credential login terminal has no agent reading
 // its anchor, so a nudge routed to one closes no loop.
 //
-// The predicate is created conditionally (084 §F0) because this branch predates
+// The predicate is created conditionally (102 §F0) because this branch predates
 // 083, so the assertion adapts: where the column exists, a credential session
 // must be refused; where it does not, every session is an agent and the door
 // behaves as it did before 083 was written. Both are stated, so whichever tree
