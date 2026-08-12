@@ -1216,14 +1216,30 @@ const ROWS: Record<OperationName, Row> = {
     ],
   },
   'execution.terminal.start': {
-    cmd: ['session', 'terminal'],
-    syn: 'tm8 session terminal [--space <space-id>] [--launch-project <project-resource-id>] [--title <text>] [--confirm-untrusted] [--mutation-id <id>]',
+    // NO CLI COMMAND, and it is a SCOPE DECISION rather than a refusal — the
+    // same shape `credentials.*` takes above, and the same reasoning.
+    //
+    // 100 delivered this operation for the UI: "starting a shell session with
+    // no agent FROM THE UI". Advertising `session terminal` in the grammar
+    // without wiring a handler would break a real invariant, not just a count
+    // — `discovery-commands.test.ts` asserts that EVERY command in the frozen
+    // grammar is registered, and it has been empty-by-construction until now.
+    // Documented-but-unwired is a state `run.ts` still models (exit 8), and
+    // that test records out loud that no live example exists; manufacturing
+    // one to save a row here would be the wrong way to spend that property.
+    //
+    // A CLI form would need no security change — a `cli`-kind human session is
+    // the same principal a browser one is. It is simply not this task's scope,
+    // and the row stays here so the operation is still DISCOVERABLE by exact
+    // lookup and by tag.
+    cmd: null,
     sum: 'Open a vanilla terminal — a shell session with no agent attached',
     authz: 'space',
     input: 'bound',
     side: 'execution',
     tags: ['terminal', 'shell', 'pty', 'vanilla', 'console'],
     notes: [
+      'NO CLI COMMAND — a scope decision, not a refusal; 100 delivered this for the UI. A `cli` human session is the same principal a browser one is, so a CLI form would need no security change',
       'no Teammate, no model, no persona: this is the shell you get without `claude-code` or `codex` in front of it',
       'the shell is resolved Server-side and CANNOT be named by the caller — there is no command, args or flags input',
       'the cwd is the project ROOT, never a provisioned worktree; omit `--launch-project` for a Server-owned scratch directory',

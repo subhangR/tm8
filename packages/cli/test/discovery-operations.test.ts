@@ -185,6 +185,10 @@ describe('the CLI command projection', () => {
       'credentials.loginSessions.start',
       'credentials.status',
       'execution.prompt',
+      // 100. A vanilla terminal is a UI affordance; a CLI form would need no
+      // security change (a `cli` human session is the same principal) and is
+      // simply not that task's scope. The row's own note says so.
+      'execution.terminal.start',
       'projects.directories.list',
       'projects.files.attach',
       'projects.files.list',
@@ -211,8 +215,8 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the THIRTEEN commandless rows named exactly in the test above.
-    expect(counted).toBe(EXPECTED_ROWS - 13);
+    // Minus the FOURTEEN commandless rows named exactly in the test above.
+    expect(counted).toBe(EXPECTED_ROWS - 14);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {
