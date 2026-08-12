@@ -463,6 +463,22 @@ export interface Seam {
      */
     read(projectId: ProjectId, path: string): Promise<ProjectFileReadResult>;
     attach(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult>;
+    /**
+     * Amendment 9 (2026-08-12, folder download): the URL of
+     * `projects.files.archive` — a whole subtree as one zip.
+     *
+     * An HREF here and a DTO for `read` is not an inconsistency, it is §4.4.
+     * A single file off a project's disk must never get a document context on
+     * the app origin, so it travels as JSON and the UI decides how to render
+     * it. An archive cannot BE a document: it is `application/zip` served
+     * `attachment` with `nosniff`, so the browser's own download path is both
+     * safe and the only sensible transport — streaming a 200 MB tree through
+     * JSON to rebuild it as a Blob would buy nothing and cost the heap.
+     *
+     * `path` is ABSOLUTE, the same vocabulary the rest of this group speaks;
+     * omitted means the project root.
+     */
+    archiveHref(projectId: ProjectId, path?: string): string;
   };
   /**
    * Amendment 8 (2026-08-10, folder import — owner ruling R7): the
