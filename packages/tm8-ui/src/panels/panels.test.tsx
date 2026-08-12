@@ -302,7 +302,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
   });
 
   /**
-   * VANILLA TERMINALS (100), and the ruling behind the placement: the start
+   * VANILLA TERMINALS (101), and the ruling behind the placement: the start
    * controls belong at the TOP of the sessions list, beside Launch session.
    */
   it('draws ▮ Terminal in the sessions header, beside Launch session', () => {

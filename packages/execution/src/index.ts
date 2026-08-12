@@ -63,7 +63,7 @@ export * from './worktree/index.js';
 // of `spawn/`, so that importing a login primitive is a deliberate act and a
 // reader can see at the import site which of the two environments is in play.
 export * from './credentials/index.js';
-// The vanilla-terminal block (100) — a PTY on the login shell with no agent
+// The vanilla-terminal block (101) — a PTY on the login shell with no agent
 // attached. Same reasoning as the line above: a separate barrel so the import
 // site names which of the three environments is being composed.
 export * from './shell/index.js';

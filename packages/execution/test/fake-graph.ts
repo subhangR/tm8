@@ -41,7 +41,7 @@ export interface FakeGraphOptions {
 
 export class FakeGraph implements GraphPort {
   readonly created: CreateWorkSessionInput[] = [];
-  /** Vanilla-terminal rows minted through `start_shell_session` (100). */
+  /** Vanilla-terminal rows minted through `start_shell_session` (101). */
   readonly shellsCreated: Array<
     ShellSessionRequest & { nodeId: string | null; workdirPath: string | null }
   > = [];
@@ -127,7 +127,7 @@ export class FakeGraph implements GraphPort {
     return { sessionId, commandResult: { entityId: sessionId, patches: [sessionId] }, replayed: false };
   }
 
-  // --- vanilla terminals (100) ------------------------------------------------
+  // --- vanilla terminals (101) ------------------------------------------------
 
   async loadShellContext(
     auth: GraphAuth,

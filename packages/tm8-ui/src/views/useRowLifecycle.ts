@@ -41,7 +41,7 @@
  * left to infer from a row that did not move.
  */
 import { useCallback, useMemo } from 'react';
-import type { ActorSummary, CommandResult, EntityId } from '@tm8/contract';
+import type { ActorSummary, CommandResult, EntityId, EntitySummary } from '@tm8/contract';
 import { nextMutationId } from '../authoring';
 import { allKinds } from '../domain';
 import type { ActionRef, SetStateOutcome } from '../domain';
@@ -119,6 +119,21 @@ export interface RowLifecycle {
   setValue: (entityId: string, source: string, next: string, label: string) => void;
   /** Bound to `EntityListPanel.onAssign` — ONE actor's edge, added or removed. */
   assign: (entityId: string, actorId: string, edgeType: string, assigned: boolean) => void;
+  /**
+   * Bound to `EntityListPanel.onMembership` — ONE curated-set membership,
+   * added or removed, through the `collections.addItem`/`removeItem` pair
+   * (migration 100). NOT `assign` with different literals: the edge runs
+   * FROM the set TO the row, add auto-positions server-side, and remove is
+   * addressed by the (set, row) pair so no edge-id read precedes it.
+   */
+  membership: (entityId: string, setId: string, member: boolean) => void;
+  /**
+   * Bound to `EntityListPanel.membershipSets` — one bounded recency page of
+   * every set kind the registry's `list.membership` declarations name.
+   * Same posture as `assignable`: empty means not loaded (or none exist),
+   * and the control states which; it fills in as the kind hydrates.
+   */
+  membershipSets: readonly EntitySummary[];
   /**
    * Bound to `EntityListPanel.assignableActors` — everyone the menu may offer.
    *
@@ -329,6 +344,38 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
     [seam, settle],
   );
 
+  const membership = useCallback(
+    (entityId: string, setId: string, member: boolean) => {
+      const id = entityId as EntityId;
+      const collectionId = setId as EntityId;
+      const settled = member
+        ? settle(
+            entityId,
+            'Could not add to collection',
+            // UPSERT on the (set, row, type) triple server-side — a re-add
+            // re-positions rather than duplicating, so no read precedes this.
+            seam.commands.addToCollection(collectionId, {
+              clientMutationId: nextMutationId(),
+              entityId: id,
+            }),
+          )
+        : settle(
+            entityId,
+            'Could not remove from collection',
+            // Pair-addressed: the whole reason removeItem exists is that this
+            // caller never saw the edge row, so there is no id to name.
+            seam.commands.removeFromCollection(collectionId, id, commandContext()),
+          );
+      void settled.then((outcome) => {
+        // The ✓ marks read the row's own connections, which a summary patch
+        // does not carry — re-read the detail so the menu the user is still
+        // holding open reflects the write.
+        if (outcome.ok) data.refetchDetail(entityId);
+      });
+    },
+    [data, seam, settle],
+  );
+
   /**
    * The union of every assign control's `actorKinds`, resolved once — the
    * registry decides who is assignable and this file only reads it, which is
@@ -386,5 +433,22 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
     );
   }, [data, rosterKinds]);
 
-  return { setState, archive, setValue, assign, assignable };
+  /**
+   * The sets the membership menus offer — the union of `list.membership`
+   * declarations across the registry, hydrated through the same `rowsFor`
+   * read every list panel uses (a key it has not seen schedules its own
+   * query, so no `ensureKind` call is owed here). One page per set kind,
+   * recency-ordered: the honest bounded list, since `search.query` is
+   * reserved.
+   */
+  const setKinds = useMemo(
+    () => [...new Set(allKinds().flatMap((k) => (k.list.membership ? [k.list.membership.setKind] : [])))],
+    [],
+  );
+  const membershipSets = useMemo(
+    () => setKinds.flatMap((kind) => data.rowsFor(kind)(undefined)),
+    [data, setKinds],
+  );
+
+  return { setState, archive, setValue, assign, assignable, membership, membershipSets };
 }

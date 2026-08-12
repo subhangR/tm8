@@ -127,14 +127,14 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
     // 137 -> 138 (2026-08-09, merge): execution.dispatch.
     // 142 -> 143 (2026-08-12): execution.terminal.start, one POST command — a
-    // vanilla terminal, the shell session with no agent attached (100).
-    expect(OPERATIONS).toHaveLength(143);
-    expect(V1_OPERATIONS).toHaveLength(141);
+    // vanilla terminal, the shell session with no agent attached (101).
+    expect(OPERATIONS).toHaveLength(145);
+    expect(V1_OPERATIONS).toHaveLength(143);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(142);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(144);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
@@ -146,7 +146,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // execution.transcript moved it to 125; projects.branches.list moves it to 126.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(140);
+    )).toHaveLength(142);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

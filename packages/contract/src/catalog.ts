@@ -97,6 +97,8 @@ export const OPERATIONS = [
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },
+  { name: 'collections.addItem',     method: 'POST',   path: '/v2/collections/:id/items',                   kind: 'command', status: 'v1' },
+  { name: 'collections.removeItem',  method: 'DELETE', path: '/v2/collections/:id/items/:entityId',         kind: 'command', status: 'v1' },
   { name: 'graph.query',             method: 'POST',   path: '/v2/graph/query',                             kind: 'read',    status: 'v1' },
   { name: 'placements.apply',        method: 'POST',   path: '/v2/placements',                              kind: 'command', status: 'v1' },
   { name: 'commands.undo',           method: 'POST',   path: '/v2/undo',                                    kind: 'command', status: 'v1' },
@@ -164,7 +166,7 @@ export const OPERATIONS = [
 
   // execution.* family (R16) — server-hosted PTY is the only spawn path (AM-1)
   { name: 'execution.spawn',          method: 'POST',  path: '/v2/execution/spawn',                         kind: 'command', status: 'v1' },
-  // A VANILLA TERMINAL (100) — a shell session with no agent attached. Its own
+  // A VANILLA TERMINAL (101) — a shell session with no agent attached. Its own
   // door rather than a flag on `execution.spawn`, because spawn's body IS agent
   // setup (persona authorization, manifest, agent token, profile pin, trust
   // probes) and none of it applies. See `ExecutionTerminalStartInput`.

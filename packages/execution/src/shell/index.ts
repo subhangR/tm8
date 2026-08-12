@@ -1,4 +1,4 @@
-// The VANILLA TERMINAL block (100) — a PTY on the login shell, no agent.
+// The VANILLA TERMINAL block (101) — a PTY on the login shell, no agent.
 //
 // Its own barrel rather than part of `spawn/`, for the reason `credentials/`
 // has one: importing a terminal primitive should be a deliberate act, and a

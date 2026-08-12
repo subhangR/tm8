@@ -615,7 +615,14 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   }>(
     `select id, src_id, dst_id, type, props, created_at
        from public.edges
-      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'has_member', 'depends_on', 'contains', 'based_on', 'copy_of', 'completed_by'))
+      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'has_member', 'depends_on', 'based_on', 'copy_of', 'completed_by'))
+         -- \`contains\` alone filters tombstoned members: itemCount must agree
+         -- with every list the UI draws (content.items, connections and
+         -- collections.query all exclude deleted endpoints), and the projector
+         -- counts with the same predicate. The other relations keep their raw
+         -- semantics untouched.
+         or (src_id = any($1::uuid[]) and type = 'contains'
+             and exists (select 1 from public.entities m where m.id = dst_id and m.deleted_at is null))
          or (dst_id = any($1::uuid[]) and type in ('pulled', 'working_on', 'supersedes', 'disputes', 'verifies'))`,
     [unique],
   );

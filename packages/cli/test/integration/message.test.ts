@@ -251,7 +251,10 @@ describe('the node this suite measured', () => {
         `bind ${server.bindStart.files}/${server.bindStart.digest}`,
     );
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(137); // +1: projects.files.read, the viewer half. MEASURED off /health (routes, not catalog rows).
+    // This pin was already red at 141 before the collections membership rows
+    // landed (it said 137 while four other lanes' routes had mounted); 143 is
+    // MEASURED off /health on the merged tree (routes, not catalog rows).
+    expect(health.operations).toBe(143);
     // `implemented` is `registry.size` — REGISTERED, never "behaviourally
     // implemented". It is reported, never re-labelled.
     expect(health.implemented).toBeGreaterThan(0);

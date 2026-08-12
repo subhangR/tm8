@@ -53,8 +53,8 @@ import { createOutput } from '../src/output.js';
 // 131 -> 135: credentials.* Tier B.
 // 135 -> 137: projects.files.list/attach (public, UI-only, commandless).
 // 137 -> 138: execution.dispatch.
-// 142 -> 143: execution.terminal.start (public, with a command).
-const EXPECTED_ROWS = 143;
+// 142 -> 144 (2026-08-12): collections.addItem/removeItem (public, with commands).
+const EXPECTED_ROWS = 145;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -166,7 +166,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 139, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 141, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -816,7 +816,7 @@ describe('flag parseability: what the projection publishes, the parser can repre
         }
       }
     }
-    expect(swept).toBeGreaterThan(100);
+    expect(swept).toBeGreaterThan(101);
     expect(collisions.sort()).toEqual([...PARSER_COLLISIONS_PENDING].sort());
   });
 

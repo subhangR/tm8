@@ -41,18 +41,25 @@
  */
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { ActorSummary, EntityCapabilities, EntityKind } from '@tm8/contract';
+import type {
+  ActorSummary,
+  Connections,
+  EntityCapabilities,
+  EntityKind,
+  EntitySummary,
+} from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type {
   ActionContext,
   ActionRef,
   AssignControl,
   KindConfig,
+  MembershipListControl,
   StateControl,
   StatusPillSpec,
   ValueControl,
 } from '../../domain';
-import { REASONS, getKind, resolveAction } from '../../domain';
+import { KindIcon, REASONS, getKind, resolveAction } from '../../domain';
 import { Avatar, type PillTone } from '../../kit';
 import {
   CheckingPermission,
@@ -134,6 +141,25 @@ export interface ControlHost {
   onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
   onAssign?: (entityId: string, actorId: string, edgeType: string, assigned: boolean) => void;
   assignableActors?: readonly ActorSummary[];
+  /**
+   * Put this row into / take it out of ONE curated set (the registry's
+   * `list.membership`, today the `contains` pair of migration 100). Per-set
+   * and not a whole-array write, for the same reason `onAssign` is per-actor:
+   * a whole-collection write silently clobbers a concurrent curator.
+   */
+  onMembership?: (entityId: string, setId: string, member: boolean) => void;
+  /**
+   * The sets the membership menu may offer — one bounded recency page of the
+   * registry's `setKind`, hydrated by the host exactly like the assign
+   * roster. Empty ⇒ not loaded (or none exist), and the control says which.
+   */
+  membershipSets?: readonly EntitySummary[];
+  /**
+   * The row's LIVE edges, for the ✓ marks: which sets currently contain it.
+   * Backed by the host's `connectionsOf` projection — `undefined` until the
+   * row's detail is hydrated, which `onNeedDetail` above already triggers.
+   */
+  connectionsOf?: (id: string) => Connections | undefined;
 }
 
 /**
@@ -249,6 +275,13 @@ export function EntityControlStrip({
         ? line(
             list.assignControl.label,
             <RowAssignControl row={row} props={props} control={list.assignControl} />,
+          )
+        : null}
+
+      {list.membership
+        ? line(
+            list.membership.label,
+            <RowMembershipControl row={row} props={props} control={list.membership} />,
           )
         : null}
 
@@ -524,6 +557,138 @@ function RowAssignControl({
                   src={actor.avatar ?? null}
                 />
                 <span className="lp__assignopt-name">{actor.displayName}</span>
+                <span className="lp__assignopt-mark" aria-hidden>
+                  {on ? '✓' : ''}
+                </span>
+              </button>
+            );
+          })}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * The curated-set picker — "Collections" on every list row (migration 100).
+ *
+ * THE SAME MECHANIC AS ASSIGNMENT, MIRRORED: one edge per menu row, toggled
+ * individually, current state marked ✓. The differences are exactly the ones
+ * the registry field's docblock names — the edge runs FROM the set TO this
+ * row, so the current marks come from the row's INCOMING `connectionsOf`
+ * projection rather than a state field, and the write goes through the
+ * addItem/removeItem pair rather than the generic edge verbs.
+ *
+ * THE MENU IS A BOUNDED RECENCY PAGE, stated as such: `search.query` is
+ * reserved, so the host hydrates one `collections.query` page of the set kind
+ * and this menu offers that page — never "everything".
+ *
+ * NO ROW-CAPABILITY GATE beyond the loading state, deliberately: adding a row
+ * to a set edits the SET (the `contains` edge hangs off the collection), so
+ * the row's own `canEdit`/`canLink` answers the wrong question. The node
+ * authorizes the write, and a refusal surfaces through the host's notice —
+ * attempted-and-refused, the same posture as the board (§8.5).
+ */
+function RowMembershipControl({
+  row,
+  props,
+  control,
+}: {
+  row: ControlSubject;
+  props: ControlHost;
+  control: MembershipListControl;
+}) {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLSpanElement>(null);
+  useDismissable(open, boxRef, () => setOpen(false));
+
+  // The sets currently containing this row: its incoming edges of the
+  // declared type, sources collected. Live — the projection advances with
+  // edge events and detail refetches, so a just-added ✓ appears without a
+  // second click.
+  const connections = props.connectionsOf?.(row.id);
+  const containing = new Map<string, string>();
+  for (const group of connections?.incoming ?? []) {
+    if (group.type !== control.edgeType) continue;
+    for (const edge of group.edges) containing.set(edge.source.id, edge.source.title);
+  }
+  const names = [...containing.values()];
+
+  const face = (
+    <span className="pn-badge pn-badge--membership" data-testid="row-membership-face">
+      {names.length === 0
+        ? control.emptyLabel
+        : names.length === 1
+          ? names[0]
+          : `${names[0]} +${names.length - 1}`}
+    </span>
+  );
+
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
+    return <CheckingPermission label={`Change ${control.label.toLowerCase()}`} />;
+  }
+  if (!props.onMembership || !props.connectionsOf) {
+    return (
+      <DisabledAction label={`Change ${control.label.toLowerCase()}`} reason={NOT_WIRED_REASON}>
+        {face}
+      </DisabledAction>
+    );
+  }
+
+  /**
+   * A set can never offer ITSELF as its own container — the node refuses the
+   * self-edge, so offering it would be a menu row that can only fail.
+   */
+  const sets = (props.membershipSets ?? []).filter((candidate) => candidate.id !== row.id);
+  if (sets.length === 0) {
+    return (
+      <DisabledAction
+        label={`Change ${control.label.toLowerCase()}`}
+        reason={{
+          cause: `No ${control.label.toLowerCase()} are loaded for this space.`,
+          remedy: 'Create one from its own list first; the menu offers the most recent page once any exist.',
+        }}
+      >
+        {face}
+      </DisabledAction>
+    );
+  }
+
+  return (
+    <span className="lp__assignwrap" ref={boxRef}>
+      <button
+        type="button"
+        className="lp__assignbtn"
+        data-testid="row-membership-trigger"
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-label={`Change ${control.label.toLowerCase()} for ${row.title}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+      >
+        {face}
+      </button>
+      {open ? (
+        <span className="lp__assignmenu" role="group" aria-label={`${control.label} for ${row.title}`}>
+          {sets.map((set) => {
+            const on = containing.has(set.id);
+            return (
+              <button
+                key={set.id}
+                type="button"
+                className={on ? 'lp__assignopt lp__assignopt--on' : 'lp__assignopt'}
+                data-testid="row-membership-option"
+                data-set={set.id}
+                aria-pressed={on}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onMembership?.(row.id, set.id, !on);
+                }}
+              >
+                <KindIcon kind={set.kind} />
+                <span className="lp__assignopt-name">{set.title}</span>
                 <span className="lp__assignopt-mark" aria-hidden>
                   {on ? '✓' : ''}
                 </span>

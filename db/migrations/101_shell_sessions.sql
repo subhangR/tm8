@@ -1,9 +1,14 @@
--- 100 — VANILLA TERMINALS: `work_sessions.session_kind = 'shell'`.
+-- 101 — VANILLA TERMINALS: `work_sessions.session_kind = 'shell'`.
 --
 -- A shell session is a real PTY running the node's login shell and nothing
 -- else: no persona, no manifest, no agent token, no interaction pin,
 -- `agent_tool` NULL. It is the terminal you get without `claude-code` or
 -- `codex` in front of it.
+--
+-- RENUMBERED 100 -> 101 ON LANDING. `100_collection_membership.sql` claimed the
+-- number first (#158); this file had never been applied outside scratch
+-- databases, so renaming it is free — `public.applied_migrations` keys on
+-- FILENAME, and renaming an already-applied file is what makes it re-apply.
 --
 -- 083's column comment says "Read the 083 header before adding a third value."
 -- This is that read, and its five externalities are answered here one by one.
@@ -98,9 +103,9 @@ alter table public.work_sessions
 comment on column public.work_sessions.session_kind is
   'agent = a real agent session. credential = an interactive vendor-login '
   'terminal (083). shell = a vanilla terminal, a PTY on the login shell with '
-  'no agent attached (100). Anything that assumed a work_sessions row is an '
-  'agent must narrow on this. Read the 083 and 100 headers before adding a '
-  'fourth value, and redo 100''s audit rather than assuming it covered you.';
+  'no agent attached (101). Anything that assumed a work_sessions row is an '
+  'agent must narrow on this. Read the 083 and 101 headers before adding a '
+  'fourth value, and redo 101''s audit rather than assuming it covered you.';
 
 -- -----------------------------------------------------------------------------
 -- 2. The shell cap — a third disjoint count, mirroring 083 §3.
@@ -287,7 +292,7 @@ language sql stable security definer set search_path = public, internal, pg_temp
      and e.deleted_at is null
      and internal.is_space_member(p_space_id)
      and internal.entity_readable(e.id)
-     -- CHANGED IN 100: was `ws.session_kind <> 'agent'`. Spelled as the exact
+     -- CHANGED IN 101: was `ws.session_kind <> 'agent'`. Spelled as the exact
      -- kind being hidden, so the third kind (and any fourth) is COUNTED unless
      -- someone writes it in here. 083 excluded a login terminal because a
      -- member would see a bold unseen "1" for a terminal they opened seconds

@@ -155,11 +155,17 @@ function readQuerier(rows: Array<EntityRow & { __sort: string; __sort_cursor: st
 }
 
 describe('W2.G05 collection, graph, and undo handlers', () => {
-  it('registers exactly the three frozen G05 operations', () => {
+  it('registers exactly the G05 operations plus the collection membership writes', () => {
     const db = new FakeDb(readQuerier([]));
     const registry = new HandlerRegistry();
     registerW2CollectionsGraphUndoHandlers(registry, deps(db));
-    expect(registry.implemented()).toEqual(['collections.query', 'commands.undo', 'graph.query']);
+    expect(registry.implemented()).toEqual([
+      'collections.addItem',
+      'collections.query',
+      'collections.removeItem',
+      'commands.undo',
+      'graph.query',
+    ]);
   });
 
   it('binds a collection cursor to the normalized query fingerprint and operation scope', async () => {

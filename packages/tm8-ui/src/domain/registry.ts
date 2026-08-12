@@ -27,12 +27,14 @@ import type {
   ActionRef,
   AssignControl,
   CollectionMode,
+  ContentBlockRef,
   FilterSpec,
   KindConfig,
   ListConfig,
   LifecycleTier,
   ListRowFacts,
   LiveTreatment,
+  MembershipListControl,
   QueryFilter,
   SortSpec,
   StateControl,
@@ -295,6 +297,40 @@ const also = (spec: SortSpec): SortSpec => ({ ...spec, default: false });
  */
 const DEFAULT_SORT: readonly SortSpec[] = [BY_ACTIVITY, also(BY_UPDATED), BY_CREATED, BY_POSITION];
 
+/**
+ * COLLECTION MEMBERSHIP ON EVERY LIST (migration 101). `contains` is
+ * registered collection → `*` (001:921), so any kind's rows can be curated —
+ * which is why this rides `baseList` rather than being declared kind by kind.
+ * One declaration powers two affordances: the expanded row's Collections
+ * picker (add/remove this row) and the list's collection lens (narrow the
+ * list to one set's members via `filters.edge`).
+ */
+const COLLECTION_MEMBERSHIP: MembershipListControl = {
+  label: 'Collections',
+  emptyLabel: 'In no collection',
+  edgeType: 'contains',
+  setKind: 'collection',
+};
+
+/**
+ * The entity side of the `membership` BLOCK — which collections hold this
+ * entity, and the affordance to add it to one. INCOMING because `contains`
+ * runs collection → entity. One constant, many rows: the task's subtree
+ * section and every generic body's COLLECTIONS section must be the same
+ * declaration, or the two surfaces drift into two renderings of one fact.
+ */
+const COLLECTIONS_BLOCK: ContentBlockRef = {
+  block: 'membership',
+  label: 'COLLECTIONS',
+  params: {
+    edgeType: 'contains',
+    direction: 'incoming',
+    pickerKind: 'collection',
+    addLabel: '+ add to collection',
+    empty: 'In no collection yet.',
+  },
+};
+
 /** The shape every kind gets before its own divergence is layered on. */
 function baseList(overrides: Partial<ListConfig> & Pick<ListConfig, 'tile'>): ListConfig {
   return {
@@ -305,6 +341,9 @@ function baseList(overrides: Partial<ListConfig> & Pick<ListConfig, 'tile'>): Li
     // out of having tiers at all. A row that forgot them would silently lose
     // its tabs, so absence is not an available state.
     lifecycle: statelessTiers(),
+    // Universal for the same reason: `contains` accepts every dst kind, so
+    // every list can be lensed by a collection and every row added to one.
+    membership: COLLECTION_MEMBERSHIP,
     ...overrides,
   };
 }
@@ -545,6 +584,12 @@ const ROWS: readonly KindConfig[] = [
             empty: 'Not triggered by a loop — this task was created directly.',
           },
         },
+        /* The entity side of collection membership (2026-08-12): which
+           collections hold this task, and the affordance to add it to one.
+           Same defect class as `remembers`/`triggered_by` before their own
+           rows: without this the edge fell through `peersOf` into LINKED as
+           an anonymous chip, and nothing could write one. */
+        COLLECTIONS_BLOCK,
       ],
       // The detail header keeps one task action: Run. Coordinate and Complete
       // remain available from their task-specific surfaces, not this compact
@@ -997,6 +1042,7 @@ const ROWS: readonly KindConfig[] = [
       blocks: [
         { block: 'link-summary', label: 'PULL REQUEST' },
         { block: 'fields', label: 'DETAILS' },
+        COLLECTIONS_BLOCK,
       ],
       statusPill: {
         source: 'prState',
@@ -1028,6 +1074,7 @@ const ROWS: readonly KindConfig[] = [
       blocks: [
         { block: 'link-summary', label: 'COMMIT' },
         { block: 'fields', label: 'DETAILS' },
+        COLLECTIONS_BLOCK,
       ],
     },
   },
@@ -1055,6 +1102,7 @@ const ROWS: readonly KindConfig[] = [
       blocks: [
         { block: 'file-preview', label: 'PREVIEW' },
         { block: 'fields', label: 'DETAILS' },
+        COLLECTIONS_BLOCK,
       ],
     },
     palette: { createLabel: 'Upload file' },
@@ -1082,6 +1130,7 @@ const ROWS: readonly KindConfig[] = [
       blocks: [
         { block: 'fields', label: 'DEFINITION' },
         { block: 'items', label: 'EQUIPPED BY' },
+        COLLECTIONS_BLOCK,
       ],
     },
     palette: { createLabel: 'New spell' },
@@ -1109,6 +1158,7 @@ const ROWS: readonly KindConfig[] = [
       blocks: [
         { block: 'fields', label: 'DEFINITION' },
         { block: 'items', label: 'EQUIPPED BY' },
+        COLLECTIONS_BLOCK,
       ],
     },
     palette: { createLabel: 'New skill' },
@@ -1134,7 +1184,16 @@ const ROWS: readonly KindConfig[] = [
     panel: {
       archetype: 'generic',
       blocks: [
-        { block: 'items', label: 'ITEMS' },
+        /* ITEMS stopped being the inert `content.items` chip list on
+           2026-08-12: membership is a `contains` edge and this block writes
+           it (add via picker, remove per row). `count: true` puts the edge
+           count in the eyebrow, so the tile's itemCount badge and this label
+           read the same fact. */
+        {
+          block: 'membership',
+          label: 'ITEMS',
+          params: { edgeType: 'contains', direction: 'outgoing', count: true, addLabel: '+ add entity' },
+        },
         { block: 'fields', label: 'DETAILS' },
       ],
     },
@@ -1400,6 +1459,7 @@ const ROWS: readonly KindConfig[] = [
             empty: 'No firings recorded yet. Each firing derives a task and edges back here, so this list IS the run history — an empty one means it has not fired.',
           },
         },
+        COLLECTIONS_BLOCK,
       ],
     },
     palette: { createLabel: 'New loop' },
@@ -1432,6 +1492,7 @@ const ROWS: readonly KindConfig[] = [
       blocks: [
         { block: 'artifact-preview', label: 'PREVIEW' },
         { block: 'fields', label: 'DETAILS' },
+        COLLECTIONS_BLOCK,
       ],
     },
   },
@@ -1463,6 +1524,7 @@ const ROWS: readonly KindConfig[] = [
       archetype: 'generic',
       blocks: [
         { block: 'fields', label: 'CHECKOUT' },
+        COLLECTIONS_BLOCK,
       ],
       capabilityReasons: {
         canEdit:
@@ -1492,7 +1554,9 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'fields', label: 'FIELDS' }],
+      /* Custom kinds get the COLLECTIONS section for free, like everything
+         else on this row: `contains` accepts any dst kind, custom included. */
+      blocks: [{ block: 'fields', label: 'FIELDS' }, COLLECTIONS_BLOCK],
     },
   },
 ];

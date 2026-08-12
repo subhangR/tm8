@@ -47,6 +47,7 @@ import { ReaderSurface } from './bodies/ReaderSurface';
 import type { DocCommands } from '../doc-edit';
 import { HubBody } from './bodies/HubBody';
 import { ProfileBody, type MemoryAuthoring } from './bodies/ProfileBody';
+import type { MembershipAuthoring } from './bodies/MembershipBlock';
 import type { MemoryMarkKind } from '../domain/memory';
 import { GovernedBody } from './bodies/GovernedBody';
 import { RestrictedBody } from './bodies/RestrictedBody';
@@ -181,6 +182,12 @@ export interface EntityDetailPanelProps {
    * panel does not perform the writes itself, it only forwards the intent.
    */
   memoryAuthoring?: MemoryAuthoring | null;
+  /**
+   * Collection-membership authoring for the `membership` block (migration
+   * 100). Same intent-only contract as `memoryAuthoring`: absent ⇒ the block
+   * renders read-only rather than drawing dead controls.
+   */
+  membershipAuthoring?: MembershipAuthoring | null;
   /**
    * Begin a `supersedes`/`disputes` mark against the open memory (056 §5).
    * Absent ⇒ the `epistemics` block states that marking is unwired rather than
@@ -888,6 +895,7 @@ function PanelBody(
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
         memoryAuthoring={props.memoryAuthoring}
+        membershipAuthoring={props.membershipAuthoring}
         descriptionDraft={typeof save.edits.description === 'string' ? save.edits.description : undefined}
         onDescriptionChange={
           save.unavailable ? undefined : (description) => save.edit({ description })
@@ -1004,6 +1012,7 @@ function PanelBody(
       commands={props.commands}
       onSaved={props.onSaved}
       downloadHref={props.attachments?.downloadHref}
+      membership={props.membershipAuthoring}
     />
   );
 }

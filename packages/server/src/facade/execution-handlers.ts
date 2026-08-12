@@ -240,7 +240,7 @@ export class DbGraphPort implements GraphPort {
      */
     private readonly sessionCap = resolveSessionCap(),
     /**
-     * The VANILLA TERMINAL cap (100) — disjoint from `sessionCap` above and
+     * The VANILLA TERMINAL cap (101) — disjoint from `sessionCap` above and
      * from the credential cap, so no one kind of session can starve another.
      * See `resolveTerminalCap`.
      */
@@ -509,7 +509,7 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
-   * The ONE read behind a vanilla terminal (100) — the project, or nothing.
+   * The ONE read behind a vanilla terminal (101) — the project, or nothing.
    *
    * Query-for-query identical to `loadSpawnContext`'s project block, including
    * the not-linked/not-found conflation and the reason for it. What it does not
@@ -550,7 +550,7 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
-   * `public.start_shell_session` (100) — mint the `session_kind='shell'` row.
+   * `public.start_shell_session` (101) — mint the `session_kind='shell'` row.
    *
    * Positional, in the migration's declared order, and the same warning applies
    * as on `createWorkSession`: getting the order wrong is a silent semantic
@@ -1113,7 +1113,7 @@ export function resolveSessionCap(env: NodeJS.ProcessEnv = process.env): number 
 }
 
 /**
- * How many vanilla terminals (100) may be live on this node at once.
+ * How many vanilla terminals (101) may be live on this node at once.
  *
  * A THIRD, DISJOINT CEILING, mirroring `resolveCredentialSessionCap`. The
  * default is deliberately small: a terminal is a human-driven session, one
@@ -2433,7 +2433,7 @@ function registerHandlers(
   });
 
   /**
-   * execution.terminal.start (100) — a VANILLA TERMINAL.
+   * execution.terminal.start (101) — a VANILLA TERMINAL.
    *
    * Compare this handler with `execution.spawn` above. Spawn resolves
    * assignment anchors, threads twelve launch fields into a `SpawnRequest`, and
@@ -2517,7 +2517,16 @@ function registerHandlers(
       subjectId: input.subjectId,
       dispatcherSessionId,
       note: input.note ?? null,
-      requesterActorId: envelope.actorId ?? owner.identityId,
+      // NULL, never the owner's `identityId`. This reaches SQL as
+      // `w2_post_message_batch(p_actor_id uuid)`, and an identity id is
+      // deliberately NOT a uuid (`identity/ids.ts`: `id_` + random) — the
+      // fallback raised 22P02 `invalid input syntax for type uuid` on every
+      // dispatch whose caller did not name an actor, which is every dispatch
+      // from the UI. Null is also the RIGHT value, not merely a safe one:
+      // `internal.resolve_actor(null, space)` (002:277) falls back to the
+      // caller's own actor claim and then to their member row in this space,
+      // so the request message is authored by the requester either way.
+      requesterActorId: envelope.actorId ?? null,
       requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
       requestId: ctx.requestId,
       clientMutationId: `${envelope.clientMutationId ?? input.clientMutationId}:dispatch-request`,

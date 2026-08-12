@@ -221,7 +221,7 @@ describe('THE GATE — composed T0-1 master screen', () => {
       // reaches the sheet — and the Sessions header must not be counted as if
       // it did.
       //
-      // THE ASSERTION MOVED IN 100, AND THE RULE DID NOT. It used to be "that
+      // THE ASSERTION MOVED IN 101, AND THE RULE DID NOT. It used to be "that
       // header row does not exist", because the only thing in it was a
       // DISABLED `Launch session ▸` sentence that had once been miscounted as
       // proof of reachability. The row exists now: it carries `▮ Terminal`,

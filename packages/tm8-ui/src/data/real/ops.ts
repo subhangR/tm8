@@ -35,6 +35,7 @@ import {
   type AttentionRequestListQuery,
   type AttentionRequestMutationResult,
   type AttentionRequestPage,
+  type CollectionAddItemInput,
   type CollectionQuery,
   type CollectionResult,
   type CommandContext,
@@ -580,6 +581,29 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('edges.delete', { params: { edgeId }, body: ctx ?? {} });
     },
 
+    addToCollection(collectionId: EntityId, input: CollectionAddItemInput): Promise<CommandResult> {
+      return http.call<CommandResult>('collections.addItem', {
+        params: { id: collectionId },
+        body: input,
+      });
+    },
+
+    /**
+     * Same DELETE-carries-a-body rule as `deleteEdge`: the server binds
+     * `RequiredCommandContextSchema` to `collections.removeItem` and refuses
+     * without a `clientMutationId`.
+     */
+    removeFromCollection(
+      collectionId: EntityId,
+      entityId: EntityId,
+      ctx?: CommandContext,
+    ): Promise<CommandResult> {
+      return http.call<CommandResult>('collections.removeItem', {
+        params: { id: collectionId, entityId },
+        body: ctx ?? {},
+      });
+    },
+
     fileUploadInit(input: FileUploadInitInput): Promise<FileUploadGrant> {
       return http.call<FileUploadGrant>('files.uploadInit', { body: input });
     },
@@ -649,7 +673,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('execution.spawn', { body: input });
     },
 
-    /** A vanilla terminal (100). Its own op, not `spawn` with nulls. */
+    /** A vanilla terminal (101). Its own op, not `spawn` with nulls. */
     startTerminal(input: ExecutionTerminalStartInput): Promise<CommandResult> {
       return http.call<CommandResult>('execution.terminal.start', { body: input });
     },

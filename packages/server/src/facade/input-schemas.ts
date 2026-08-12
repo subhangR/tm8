@@ -27,6 +27,7 @@ import {
   AuthLoginInputSchema,
   AuthLogoutInputSchema,
   AuthSignupInputSchema,
+  CollectionAddItemInputSchema,
   CollectionQuerySchema,
   CredentialsDeleteInputSchema,
   CredentialsLoginSessionFinishInputSchema,
@@ -198,6 +199,10 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
 
   // collections / graph / placements
   'collections.query': CollectionQuerySchema,
+  'collections.addItem': CollectionAddItemInputSchema,
+  // The removed member travels in the path (:id/:entityId); the body carries
+  // only the command envelope.
+  'collections.removeItem': RequiredCommandContextSchema,
   'graph.query': GraphQuerySchema,
   'placements.apply': PlacementInputSchema,
   'commands.undo': UndoCommandInputSchema,

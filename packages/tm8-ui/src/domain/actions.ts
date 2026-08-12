@@ -310,7 +310,7 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   ),
 
   /**
-   * A VANILLA TERMINAL (100) — the shell you get without an agent in front.
+   * A VANILLA TERMINAL (101) — the shell you get without an agent in front.
    *
    * NOT wrapped in `launching()`, and that is the whole difference from its
    * neighbour above. `launch-session` opens the quick config because a spawn

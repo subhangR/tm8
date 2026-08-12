@@ -171,6 +171,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       onSetValue: rowLifecycle.setValue,
       onAssign: rowLifecycle.assign,
       assignableActors: rowLifecycle.assignable,
+      onMembership: rowLifecycle.membership,
+      membershipSets: rowLifecycle.membershipSets,
+      /* The live projection, not `detail.connections`: the ✓ marks must move
+         with the write the menu just made. */
+      connectionsOf: data.connectionsOf,
     }),
     [data, rowLifecycle],
   );
@@ -233,7 +238,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const handleSessionClose = primaries.terminate;
 
   /**
-   * The session list's HEADER verbs (100). Same reason `primaries` is a hook:
+   * The session list's HEADER verbs (101). Same reason `primaries` is a hook:
    * this panel is mounted twice here and once in `EntityView`, and wiring it at
    * one site would leave `▮ Terminal` dead on the other two — the exact "two
    * screens, one wired and one not" shape `useLaunchPort` was extracted to end.
@@ -585,6 +590,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onSetValue={rowLifecycle.setValue}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
+          onMembership={rowLifecycle.membership}
+          membershipSets={rowLifecycle.membershipSets}
+          connectionsOf={data.connectionsOf}
           onKindChange={props.onLeftKindChange}
           // Capability truth comes from the DETAIL, not the summary
           // (EntityCapabilities lives on EntityDetail). A row whose detail is
@@ -604,7 +612,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           // since views compose panels. One map at the seam, no cast on
           // either side.
           launch={launchPort}
-          /* The header verbs (100). `wiredActions` is what makes the pair
+          /* The header verbs (101). `wiredActions` is what makes the pair
              honest: `▮ Terminal` commits, `Launch session ▸` renders its
              not-wired refusal beside it rather than being drawn as a live
              button this dispatcher would drop. */
@@ -705,11 +713,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onSetValue={rowLifecycle.setValue}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
+          onMembership={rowLifecycle.membership}
+          membershipSets={rowLifecycle.membershipSets}
+          connectionsOf={data.connectionsOf}
           onKindChange={props.onRightKindChange}
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
           onNeedDetail={(id) => data.pull?.(id)}
           launch={launchPort}
-          /* The header verbs (100). `wiredActions` is what makes the pair
+          /* The header verbs (101). `wiredActions` is what makes the pair
              honest: `▮ Terminal` commits, `Launch session ▸` renders its
              not-wired refusal beside it rather than being drawn as a live
              button this dispatcher would drop. */

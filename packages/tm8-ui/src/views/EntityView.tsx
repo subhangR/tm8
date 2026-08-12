@@ -52,6 +52,7 @@ import {
   MemoryComposer,
   MemoryMarkComposer,
   placeholderTitleFor,
+  useCollectionMembership,
   useMemoryMarks,
   useMemoryWorkingSet,
   useNewTask,
@@ -291,6 +292,11 @@ export function EntityView(props: EntityViewProps) {
       onSetValue: rowLifecycle.setValue,
       onAssign: rowLifecycle.assign,
       assignableActors: rowLifecycle.assignable,
+      onMembership: rowLifecycle.membership,
+      membershipSets: rowLifecycle.membershipSets,
+      /* The live projection, not `detail.connections`: the ✓ marks must move
+         with the write the menu just made. */
+      connectionsOf: data.connectionsOf,
     }),
     [config.kind, ctx, data, rowLifecycle],
   );
@@ -381,7 +387,7 @@ export function EntityView(props: EntityViewProps) {
   }, [openEntity, boardMode, setSelectedId]);
 
   /**
-   * The session list's HEADER verbs (100) — the SAME hook the workspace calls,
+   * The session list's HEADER verbs (101) — the SAME hook the workspace calls,
    * for the reason `useLaunchPort`'s docblock gives: this screen mounts the
    * same `EntityListPanel`, and wiring only the workspace would leave
    * `▮ Terminal` dead here and working there, which reads from outside like
@@ -493,6 +499,50 @@ export function EntityView(props: EntityViewProps) {
   });
 
   /**
+   * Collection-membership authoring for whatever the centre is showing —
+   * offered exactly where a row declares a `membership` block, the same
+   * registry test the working set uses. The block's `direction` decides which
+   * endpoint of the `contains` pair the open entity is (a collection's ITEMS
+   * vs. an entity's COLLECTIONS); the hook owns that mapping.
+   */
+  const membershipBlock = detail
+    ? (getKind(detail.state.kind).panel.blocks ?? []).find((block) => block.block === 'membership')
+    : undefined;
+  const membershipHost = membershipBlock ? detail : null;
+  const membership = useCollectionMembership({
+    spaceId: data.spaceId,
+    subjectId: membershipHost?.id ?? null,
+    direction: membershipBlock?.params?.direction === 'incoming' ? 'incoming' : 'outgoing',
+    /* Registry DATA, never a literal here — the entity side narrows the picker
+       to collections, the collection side accepts any kind. */
+    pickerKind: typeof membershipBlock?.params?.pickerKind === 'string'
+      ? (membershipBlock.params.pickerKind as EntityKind)
+      : null,
+    refusal: membershipHost && !membershipHost.capabilities.canEdit
+      ? 'The node refuses edits to this entity, so its membership is read-only here.'
+      : null,
+    commands: data.seam.commands,
+    /* One bounded recent page — `search.query` is reserved, so the picker is
+       honest about being a recency list the block filters locally. */
+    searchPage: async (kind) => {
+      const result = await data.seam.query({
+        spaceId: data.spaceId,
+        ...(kind ? { kinds: [kind] } : {}),
+        limit: 50,
+      });
+      return result.page.items;
+    },
+    onChanged: (id) => props.data.refetchDetail(id),
+    onError: (title, body) => props.onNotice({
+      id: `collection-membership:${String(membershipHost?.id ?? 'none')}`,
+      tone: 'error',
+      title,
+      body,
+      ttlMs: 12_000,
+    }),
+  });
+
+  /**
    * Marking a memory (`supersedes` / `disputes`, 056 §5).
    *
    * OFFERED WHERE THE ROW DECLARES AN `epistemics` BLOCK — the same registry
@@ -541,6 +591,7 @@ export function EntityView(props: EntityViewProps) {
       onAction={panelActions.onAction}
       wiredActions={panelActions.wiredActions}
       memoryAuthoring={memoryWorkingSet.authoring}
+      membershipAuthoring={membership.authoring}
       onMarkMemory={memoryMarks.begin}
       launch={launchPort}
       /* The tombstone's way back. `restore` is the same verb the strip's
@@ -725,12 +776,15 @@ export function EntityView(props: EntityViewProps) {
           onSetValue={rowLifecycle.setValue}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
+          onMembership={rowLifecycle.membership}
+          membershipSets={rowLifecycle.membershipSets}
+          connectionsOf={data.connectionsOf}
           /* The SAME sources the workspace passes. `onFullOptions` rides in
              when the shell wired `onLaunchOpen` — this screen mounts the
              sheet itself now — and stays absent otherwise, keeping the
              honest disabled-with-reason state on hosts without one. */
           launch={launchPort}
-          /* The header verbs (100) — see the same pair in `WorkspaceView`. */
+          /* The header verbs (101) — see the same pair in `WorkspaceView`. */
           onAction={sessionStart.onAction}
           wiredActions={sessionStart.wiredActions}
         />

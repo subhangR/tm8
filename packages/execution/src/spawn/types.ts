@@ -290,7 +290,7 @@ export interface CreateWorkSessionResult {
   replayed: boolean;
 }
 
-// --- vanilla terminals (100) -------------------------------------------------
+// --- vanilla terminals (101) -------------------------------------------------
 
 /**
  * What `SpawnService.startShell` needs, and the shape is the argument.
@@ -437,7 +437,7 @@ export interface GraphPort {
     auth: GraphAuth,
     input: { spaceId: string; projectId: string | null },
   ): Promise<ShellSessionContext>;
-  /** `public.start_shell_session` (100) — the `session_kind='shell'` row. */
+  /** `public.start_shell_session` (101) — the `session_kind='shell'` row. */
   createShellSession(
     auth: GraphAuth,
     input: ShellSessionRequest & {

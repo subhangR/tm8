@@ -145,7 +145,7 @@ describe('the node itself', () => {
     // 137 -> 142 (2026-08-12), and FIVE of those are not mine. This pin was
     // already red on main before this branch existed — measured against the
     // #157 run, where it reads 141 against a pinned 137, so four routes had
-    // landed without it moving. `execution.terminal.start` (100) is the fifth.
+    // landed without it moving. `execution.terminal.start` (101) is the fifth.
     // Re-pinned to the MEASURED value rather than 137+1, which would have been
     // a number no tree ever produced.
     expect(health.operations).toBe(142); // MEASURED off /health (routes, not catalog rows).

@@ -38,6 +38,7 @@ export type {
   ListRowFacts,
   ListSection,
   LiveTreatment,
+  MembershipListControl,
   PanelConfig,
   PulseBinding,
   QueryFilter,

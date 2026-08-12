@@ -41,17 +41,17 @@ import { isExitCode } from '../src/exit.js';
 // 135 -> 137 (2026-08-09): projects.files.list/attach (connected project folder reads).
 // 137 -> 138 (2026-08-09): execution.dispatch — route an entity to the space's
 // dispatcher, which chooses the teammate and spawns it.
-// 142 -> 143 (2026-08-12): execution.terminal.start — a vanilla terminal, a
-// shell session with no agent attached (100).
-const EXPECTED_ROWS = 143;
+// 142 -> 144 (2026-08-12): collections.addItem/removeItem — the collection
+// family's first write verbs (membership over the `contains` edge).
+const EXPECTED_ROWS = 145;
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
 
 describe('the catalog itself is the shape W4 was briefed on', () => {
-  it('143 rows = 141 v1 + 2 reserved, 142 HTTP + 1 WS', () => {
+  it('145 rows = 143 v1 + 2 reserved, 144 HTTP + 1 WS', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(141);
+    expect(V1_OPERATIONS.length).toBe(143);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
   });

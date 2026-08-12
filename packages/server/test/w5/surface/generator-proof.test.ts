@@ -179,7 +179,7 @@ describe('W5.C generator proof', () => {
     // 69 -> 70: entities.commands.gate; 70 -> 73: credentials.* command bodies.
     // 73 -> 74: projects.files.attach.
     // 74 -> 75 (2026-08-09, merge): execution.dispatch.
-    // 78 -> 79 (2026-08-12): execution.terminal.start binds its command body (100).
-    expect(ENTRIES).toHaveLength(79);
+    // 78 -> 79 (2026-08-12): execution.terminal.start binds its command body (101).
+    expect(ENTRIES).toHaveLength(81);
   });
 });

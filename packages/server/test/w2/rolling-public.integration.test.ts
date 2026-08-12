@@ -264,6 +264,16 @@ const GIT_NET_NEW_OPERATIONS = [
   'projects.branches.list',
 ] as const;
 
+/**
+ * Collection membership writes (2026-08-12): the collection family's first
+ * write verbs, mounted in the same G05 seam as `collections.query`. Net-new —
+ * no replacements.
+ */
+const COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS = [
+  'collections.addItem',
+  'collections.removeItem',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
@@ -271,6 +281,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...IDENTITY_V2_NET_NEW_OPERATIONS,
   ...PROJECT_FOLDER_NET_NEW_OPERATIONS,
   ...GIT_NET_NEW_OPERATIONS,
+  ...COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -403,7 +414,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 117 -> 119: projects.files.list + projects.files.attach.
     // 119 -> 122: projects.folderUploads.init/complete/abort.
     // 122 -> 123: projects.files.read (the viewer half).
-    expect(registry.size).toBe(123);
+    // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
+    expect(registry.size).toBe(125);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -411,7 +423,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + CONSOLIDATION_NET_NEW_OPERATIONS.length
         + IDENTITY_V2_NET_NEW_OPERATIONS.length
         + PROJECT_FOLDER_NET_NEW_OPERATIONS.length
-        + GIT_NET_NEW_OPERATIONS.length,
+        + GIT_NET_NEW_OPERATIONS.length
+        + COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -561,8 +574,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 70 -> 73: the three credentials.* command bodies are bound.
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its body.
     // 75 -> 78 (2026-08-10): the three projects.folderUploads.* bodies bind.
-    // 78 -> 79 (2026-08-12): execution.terminal.start binds its command body (100).
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(79);
+    // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(81);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -710,9 +723,9 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 130/128 -> 134/132: the four credentials.* routes, all mounted.
     // 136/134 -> 137/135 (2026-08-09, merge): execution.dispatch, mounted.
-    // 141/139 -> 142/140 (2026-08-12): execution.terminal.start, mounted (100).
-    expect(health).toMatchObject({ ok: true, operations: 142, implemented: 140 });
-    expect(harness.production.server.registry.size).toBe(140);
+    // 141/139 -> 143/141 (2026-08-12): collections.addItem/removeItem, mounted.
+    expect(health).toMatchObject({ ok: true, operations: 144, implemented: 142 });
+    expect(harness.production.server.registry.size).toBe(142);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -730,8 +743,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 128 -> 132: credentials.*.
-    // 139 -> 140 (2026-08-12): execution.terminal.start (100).
-    expect(registered.size + residual.length).toBe(140);
+    // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
+    expect(registered.size + residual.length).toBe(142);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

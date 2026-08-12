@@ -338,7 +338,7 @@ export type ActionRef =
   | 'run'
   | 'coordinate'
   | 'launch-session'
-  // A VANILLA TERMINAL (100) — a shell session with no agent attached. Its own
+  // A VANILLA TERMINAL (101) — a shell session with no agent attached. Its own
   // verb rather than `launch-session` with a null tool, because it opens no
   // launch config: there is no teammate, model or profile to choose, so the
   // two-clicks-to-launch rule that governs a spawn has nothing to show in
@@ -598,6 +598,38 @@ export interface ListConfig {
    * or tone field here would be the second copy that disagrees first.
    */
   board?: { groupBy: GroupByKey };
+  /**
+   * Curated-set membership on the LIST surface (the `contains` pair,
+   * migration 101): the expanded row's "Collections" picker, and the list's
+   * collection LENS — pick a set and the list narrows to its members via the
+   * contract's `filters.edge` clause, which the server already executes.
+   *
+   * ITS OWN FIELD, NOT `assignControl`, because the write is different in
+   * kind: an assignment is an edge FROM this row to an actor, written by the
+   * generic edge verbs; membership is an edge FROM the set TO this row,
+   * written by the `collections.addItem`/`removeItem` pair (auto-position,
+   * pair-addressed remove). Folding them together would force one dispatch
+   * rule onto two operations — the same reason `valueControls` is not
+   * `stateControl`.
+   */
+  membership?: MembershipListControl;
+}
+
+/**
+ * The list surface's membership declaration. The panel never spells the edge
+ * or the set kind itself — a kind whose rows can be curated declares them
+ * here, and the hosts hydrate `setKind` exactly as they hydrate the assign
+ * roster's `actorKinds`.
+ */
+export interface MembershipListControl {
+  /** User copy for the control and the lens chip ("Collections"). */
+  label: string;
+  /** Shown when the row is in no set. Not an option: absence is not a value. */
+  emptyLabel: string;
+  /** The edge a membership IS. `contains` runs set → member (incoming here). */
+  edgeType: string;
+  /** The kind whose rows are the curated sets. Hosts hydrate it as data. */
+  setKind: string;
 }
 
 /** One value in a `ValueControl`'s vocabulary. */
@@ -742,6 +774,10 @@ export type ContentBlockKind =
   // Scheduled-work management. The block owns enable/disable and queue-now;
   // its presence is registry data, so GenericBody never asks for a kind.
   | 'loop-controls'
+  // Collection membership over the `contains` edge, both directions: a
+  // collection's ITEMS (outgoing) and an entity's COLLECTIONS (incoming).
+  // Edge-typed like `memory-set`; which side it is on is registry params.
+  | 'membership'
   // Profile wave: the six blocks ProfileBody draws (T0-4 MEMBER lines 400–448,
   // AGENT lines 452–496). `items` above is reused deliberately — one block
   // name, one meaning, two renderers (GenericBody and ProfileBody).

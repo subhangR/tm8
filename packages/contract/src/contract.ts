@@ -127,7 +127,7 @@ export type CoreEntityState =
       /**
        * WHAT KIND OF SESSION THIS IS — the discriminator that lets a client
        * tell a private credential login terminal from ordinary work (083), and
-       * a vanilla shell from an agent (100).
+       * a vanilla shell from an agent (101).
        *
        * OPTIONAL, AND ITS ABSENCE IS LOAD-BEARING. A node that predates 083,
        * or a row hydrated from a payload cached before the column shipped,
@@ -143,12 +143,12 @@ export type CoreEntityState =
        * fresh data and silently blanks the session list for anyone holding an
        * older payload.
        *
-       * 100 IS THE CASE THAT COMMENT WAS WRITTEN FOR. `shell` — a vanilla
+       * 101 IS THE CASE THAT COMMENT WAS WRITTEN FOR. `shell` — a vanilla
        * terminal with no agent attached — is a third value, and every
        * allow-list filter anywhere in the tree drops it while continuing to
        * pass every test.
        *
-       * 100's header carries an audit of every SQL surface that branches on
+       * 101's header carries an audit of every SQL surface that branches on
        * this column, including the one that had to change. It does NOT
        * enumerate the TypeScript ones — those were checked and are deny-lists,
        * but "checked once" is not a list you can rely on. If you add a FOURTH
@@ -1287,6 +1287,17 @@ export interface CreateEdgeInput extends CommandContext {
 }
 export interface PatchEdgeInput extends CommandContext { props: Record<string, unknown> }
 
+/**
+ * Membership sugar over the `contains` edge (collection → entity). The
+ * collection id travels in the path; omitting `position` appends after the
+ * current maximum. Re-adding an existing member updates its position rather
+ * than duplicating it.
+ */
+export interface CollectionAddItemInput extends CommandContext {
+  entityId: EntityId;
+  position?: number;
+}
+
 export type PlacementIntent = 'attach'|'assign'|'depend'|'subtask'|'embed'|'reparent';
 export interface PlacementInput extends CommandContext {
   sourceId: EntityId;
@@ -1713,7 +1724,7 @@ export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
 
 /**
  * What a work_session IS, mirroring 083's `work_sessions.session_kind` as
- * widened by 100.
+ * widened by 101.
  *
  * `agent` is ordinary work. `credential` is a private login terminal minted by
  * `credentials.loginSessions.start` so a member can authenticate an agent tool
@@ -1721,7 +1732,7 @@ export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
  * lists pretending to be. See the note on `EntityState`'s work_session arm for
  * why every client filter must be written as the INVERSE of the SQL one.
  *
- * `shell` is a VANILLA TERMINAL (100): a real PTY running the node's login
+ * `shell` is a VANILLA TERMINAL (101): a real PTY running the node's login
  * shell and nothing else. It has no persona, no manifest, no agent token and
  * `agentTool === null` — which is why `agentTool` being null must never be
  * read as "a broken agent session". Unlike `credential` it IS ordinary work
@@ -2158,7 +2169,7 @@ export interface ExecutionSpawnInput extends CommandContext {
 }
 
 /**
- * execution.terminal.start — POST /v2/execution/terminal (100).
+ * execution.terminal.start — POST /v2/execution/terminal (101).
  *
  * A VANILLA TERMINAL: the shell you get without `claude-code` or `codex` in
  * front of it. It mints a `work_session` with `sessionKind: 'shell'` and

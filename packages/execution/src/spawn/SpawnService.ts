@@ -978,7 +978,7 @@ export class SpawnService {
   }
 
   /**
-   * execution.terminal.start — a VANILLA TERMINAL (100).
+   * execution.terminal.start — a VANILLA TERMINAL (101).
    *
    * ===========================================================================
    * WHY THIS LIVES ON `SpawnService` WHEN IT SPAWNS NO AGENT

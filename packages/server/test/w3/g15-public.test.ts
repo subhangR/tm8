@@ -73,15 +73,15 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // 128 -> 129 (2026-08-09): projects.branches.list.
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
     // 131 -> 135: credentials.*; all four are mounted.
-    // 142 -> 143 (2026-08-12): execution.terminal.start, mounted (100).
-    expect(OPERATIONS).toHaveLength(143);
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(142);
+    // 142 -> 143 (2026-08-12): execution.terminal.start, mounted (101).
+    expect(OPERATIONS).toHaveLength(145);
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(144);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
-      operations: 142,
-      implemented: 140,
+      operations: 144,
+      implemented: 142,
     });
   });
 
@@ -120,8 +120,8 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // (the six artifacts rows joined `OPERATIONS`, the 111->117 family; all six
     // are mounted, so none answers 501).
     // The four credentials.* rows bring the mounted set to 132.
-    // execution.terminal.start (100) brings it to 140.
-    expect(implemented).toHaveLength(140);
+    // execution.terminal.start (101) brings it to 140.
+    expect(implemented).toHaveLength(142);
   });
 
   /**

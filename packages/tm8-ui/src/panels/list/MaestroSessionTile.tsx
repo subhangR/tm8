@@ -34,7 +34,7 @@ export function MaestroSessionTile({
   title: string;
   agentTool: string | null;
   /**
-   * The row's `sessionKind`, when the server sent one (100).
+   * The row's `sessionKind`, when the server sent one (101).
    *
    * Read ONLY to tell a vanilla terminal from an agent. Absent — a pre-083
    * node, or a payload cached before the column shipped — keeps the pre-100

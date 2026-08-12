@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type {
   ActorSummary,
   CollectionGroup,
+  Connections,
   EntityCapabilities,
   EntitySummary,
   ExecutionSpawnInput,
@@ -20,6 +21,7 @@ import type {
   ListPageState,
   ListRowFacts,
   LiveTreatment,
+  MembershipListControl,
   ProfileResolution,
   QueryFilter,
   SetStateOutcome,
@@ -189,7 +191,7 @@ export interface EntityListPanelProps {
    * host's switch silently drops. Absent ⇒ every declared verb is wired, the
    * pre-existing behaviour.
    *
-   * This became load-bearing when the sessions header grew a SECOND verb (100).
+   * This became load-bearing when the sessions header grew a SECOND verb (101).
    * Before that the header was all-or-nothing, so `onAction` alone said enough;
    * with `Terminal` wired and `Launch session ▸` not yet, one prop cannot
    * answer for both.
@@ -290,6 +292,19 @@ export interface EntityListPanelProps {
    * rendering an empty menu that looks like "nobody exists in this space".
    */
   assignableActors?: readonly ActorSummary[];
+
+  /**
+   * Curated-set membership (registry `list.membership`, migration 101) — the
+   * three injected sources behind the expanded row's Collections picker and
+   * this panel's collection LENS. Same split as assignment: the registry
+   * names the edge and the set kind, the host hydrates the sets and executes
+   * the write, and this panel knows neither the kind nor the verb.
+   */
+  onMembership?: (entityId: string, setId: string, member: boolean) => void;
+  /** One bounded recency page of the declared set kind (host-hydrated). */
+  membershipSets?: readonly EntitySummary[];
+  /** The row's live edges, for the picker's ✓ marks. */
+  connectionsOf?: (id: string) => Connections | undefined;
 }
 
 /** Everything the inline launch config needs, supplied by the shell. */
@@ -347,6 +362,31 @@ export function EntityListPanel(props: EntityListPanelProps) {
 
   const activeTier = list.lifecycle?.find((t) => t.id === tierId) ?? null;
   const members = props.members ?? EMPTY_MEMBERS;
+
+  /**
+   * THE COLLECTION LENS (registry `list.membership`). One selected set at a
+   * time — membership is an OR across sets, so two lenses cannot compose by
+   * the intersection rule every other axis uses, and a second selection
+   * REPLACES the first rather than pretending to narrow it.
+   *
+   * Resolved against the sets page the host injected: a set that has left the
+   * page (deleted, renamed out of the recency window) deactivates the lens
+   * rather than filtering by an id the menu can no longer explain.
+   */
+  const [lensId, setLensId] = useState<string | null>(null);
+  const lensSet =
+    list.membership && lensId
+      ? ((props.membershipSets ?? []).find((set) => set.id === lensId) ?? null)
+      : null;
+  const lensFilter: QueryFilter | undefined =
+    list.membership && lensSet
+      ? ({
+          /* The contract's own `filters.edge` clause, which the server already
+             executes: members of the set are the rows with an INCOMING edge of
+             the declared type from it. */
+          edge: { type: list.membership.edgeType, direction: 'incoming', entityId: lensSet.id },
+        } as QueryFilter)
+      : undefined;
 
   // A space switch may keep this panel instance mounted. A selected member
   // from the prior space must not survive as a hidden createdByIds filter.
@@ -452,7 +492,21 @@ export function EntityListPanel(props: EntityListPanelProps) {
               : [...current, actorId],
           )
         }
+        membership={list.membership}
+        membershipSets={props.membershipSets}
+        lensSet={lensSet}
+        onLens={setLensId}
       />
+
+      {/* THE LENS SAYS WHAT IT HIDES. A kind-scoped list showing one set's
+          members is NOT the set: a mixed collection holds items of every
+          kind, and a list that silently showed five of twelve would let the
+          page read as the whole collection. The note carries both numbers —
+          the lens query's own count (of exactly the rows below) and the
+          set's total membership off its summary. */}
+      {lensSet && lensFilter ? (
+        <LensNote set={lensSet} filter={lensFilter} props={props} config={config} />
+      ) : null}
 
       <div className="lp__body">
         {mode === 'board' && list.board ? (
@@ -469,6 +523,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
                 config,
                 props.ctx,
                 selectedPeople,
+                lensFilter,
               ) ?? {}
             }
             query={query}
@@ -491,6 +546,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
                 config,
                 props.ctx,
                 selectedPeople,
+                lensFilter,
               )}
               sort={sortKey}
               collapsed={collapsed.has(section.id)}
@@ -517,6 +573,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
               config,
               props.ctx,
               selectedPeople,
+              lensFilter,
             )}
             sort={sortKey}
             props={props}
@@ -634,6 +691,10 @@ function bandFilter(
   config: KindConfig,
   ctx: ActionContext,
   selectedPeople: readonly string[] = [],
+  /* The collection lens — a fourth axis, composed by the same `narrow` rules.
+     `edge` is a scalar clause (an object, not an array), and only the lens
+     writes it, so the later-wins rule cannot produce a contradiction here. */
+  lens?: QueryFilter,
 ): QueryFilter | null {
   return narrow(
     filter,
@@ -648,6 +709,7 @@ function bandFilter(
        The people filter is therefore very likely inert at the seam; giving it
        a real member is a contract amendment and a separate task. */
     selectedPeople.length > 0 ? ({ createdByIds: [...selectedPeople] } as QueryFilter) : undefined,
+    lens,
   );
 }
 
@@ -708,6 +770,39 @@ function tierCount(
   if (merged === null) return { n: 0, label: '0' };
   const n = props.rowsFor(merged).length;
   return { n, label: countLabel(n, props.pageStateOf?.(merged)) };
+}
+
+/**
+ * The lens's honesty line. TWO numbers from TWO sources, both named for what
+ * they are: the count of THIS KIND's members is the lens query's own result
+ * size (`countLabel` adds the `+` when the page saturated), and the set's
+ * total membership is its summary's own aggregate, read structurally —
+ * `state.itemCount` where the set kind carries one, absent otherwise. When
+ * the total is unknown the sentence simply stops after the kind count rather
+ * than inventing a denominator.
+ */
+function LensNote({
+  set,
+  filter,
+  props,
+  config,
+}: {
+  set: EntitySummary;
+  filter: QueryFilter;
+  props: EntityListPanelProps;
+  config: KindConfig;
+}) {
+  const rows = props.rowsFor(filter);
+  const label = countLabel(rows.length, props.pageStateOf?.(filter));
+  const itemCount = (set.state as unknown as Record<string, unknown>).itemCount;
+  const total = typeof itemCount === 'number' ? itemCount : null;
+  return (
+    <div className="lp__lensnote" data-testid="collection-lens-note">
+      {total !== null
+        ? `Only members of “${set.title}” are shown — ${label} of its ${total} item${total === 1 ? '' : 's'} are ${config.labelPlural.toLowerCase()}.`
+        : `Only members of “${set.title}” are shown.`}
+    </div>
+  );
 }
 
 /**
@@ -1133,6 +1228,10 @@ function FilterRow({
   selectedPeople,
   onTogglePerson,
   viewerActorId,
+  membership,
+  membershipSets,
+  lensSet,
+  onLens,
 }: {
   config: KindConfig;
   selected: Readonly<Record<string, readonly string[]>>;
@@ -1150,10 +1249,17 @@ function FilterRow({
   onTogglePerson: (actorId: string) => void;
   /** Absent ⇒ the viewer-scoped options render disabled with their reason. */
   viewerActorId?: string;
+  /** The registry's lens declaration; absent ⇒ this kind has no lens. */
+  membership?: MembershipListControl;
+  /** The host-hydrated sets page. `undefined` ⇒ the host wired no source. */
+  membershipSets?: readonly EntitySummary[];
+  /** The active lens, resolved to its summary (title for the chip). */
+  lensSet: EntitySummary | null;
+  onLens: (setId: string | null) => void;
 }) {
   // One popover at a time, sort included. Two independent booleans would let
   // the sort menu and a filter picker sit open over each other.
-  const [picker, setPicker] = useState<'filters' | 'people' | 'sort' | null>(null);
+  const [picker, setPicker] = useState<'filters' | 'people' | 'sets' | 'sort' | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
   useDismissable(picker !== null, barRef, useCallback(() => setPicker(null), []));
   const sort = config.list.sort;
@@ -1230,6 +1336,35 @@ function FilterRow({
         >
           {selectedPeople.length > 0 ? `people · ${selectedPeople.length}` : 'people ▾'}
         </button>
+      ) : null}
+      {/* The collection lens trigger. Rendered exactly when the registry
+          declares the lens AND the host wired a sets source — an unwired
+          source is the panel's ordinary "this host has no X" absence, the
+          same rule the people chip and `boardFor` follow. The active lens
+          renders as its own dismissable chip like every other active filter. */}
+      {membership && membershipSets !== undefined ? (
+        lensSet ? (
+          <button
+            type="button"
+            className="lp__chip lp__chip--active"
+            onClick={() => onLens(null)}
+            title={`Clear ${membership.label.toLowerCase()} lens: ${lensSet.title}`}
+            data-testid="collection-lens-chip"
+          >
+            {`${lensSet.title} ✕`}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="lp__chip"
+            onClick={() => setPicker((open) => (open === 'sets' ? null : 'sets'))}
+            aria-expanded={picker === 'sets'}
+            aria-haspopup="menu"
+            data-testid="collection-lens-trigger"
+          >
+            {`${membership.label.toLowerCase()} ▾`}
+          </button>
+        )
       ) : null}
 
       <span className="lp__spacer" />
@@ -1317,6 +1452,42 @@ function FilterRow({
               })}
             </div>
           ))}
+        </div>
+      ) : null}
+      {picker === 'sets' && membership ? (
+        <div className="lp__filtermenu" role="menu" data-testid="collection-lens-menu">
+          <div className="lp__filtergroup">{membership.label.toUpperCase()}</div>
+          {(membershipSets ?? []).length === 0 ? (
+            /* An empty page is a real answer, said in its own words — never a
+               bare menu that reads as "the space has none" when the truth may
+               be "none exist YET". The sets source is a bounded recency page,
+               so this is also where that bound is stated. */
+            <p className="lp__filterempty" data-testid="collection-lens-empty">
+              {`No ${membership.label.toLowerCase()} yet — create one from its own list. This menu offers the most recent page once any exist.`}
+            </p>
+          ) : (
+            (membershipSets ?? []).map((set) => {
+              const on = lensSet?.id === set.id;
+              return (
+                <button
+                  key={set.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={on}
+                  className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                  data-testid="collection-lens-option"
+                  onClick={() => {
+                    onLens(on ? null : set.id);
+                    setPicker(null);
+                  }}
+                >
+                  <KindIcon kind={set.kind} />
+                  {set.title}
+                  {on ? <span className="lp__filtercheck">✓</span> : null}
+                </button>
+              );
+            })
+          )}
         </div>
       ) : null}
       {picker === 'people' ? (
@@ -2305,7 +2476,7 @@ function Tile({
     const recordedStatus = typeof state.status === 'string' ? state.status : 'idle';
     const agentTool = typeof state.agentTool === 'string' ? state.agentTool : null;
     // Passed through so the tile can tell a vanilla terminal from an agent
-    // whose tool was never recorded (100). Absent stays absent — see the prop.
+    // whose tool was never recorded (101). Absent stays absent — see the prop.
     const sessionKind = typeof state.sessionKind === 'string' ? state.sessionKind : null;
     const model = typeof state.model === 'string' ? state.model : null;
     const live = verdict === 'live';

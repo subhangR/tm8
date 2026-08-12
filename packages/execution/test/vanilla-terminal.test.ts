@@ -1,4 +1,4 @@
-// VANILLA TERMINALS (100), against a REAL PTY.
+// VANILLA TERMINALS (101), against a REAL PTY.
 //
 // A real PtyHostService rather than a fake, for the same reason spawn-loop.test
 // uses one: the claims worth testing here are about a live shell process, and a

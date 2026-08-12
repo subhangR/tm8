@@ -808,6 +808,26 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
     examples: ['tm8 entity query --kind task --assignee <actor-id> --work-status working'],
   },
+  'collections.addItem': {
+    cmd: ['collection', 'add'],
+    syn: 'tm8 collection add <collection-id> <entity-id> [--position <number>] [--mutation-id <id>]',
+    sum: 'Put an entity into a collection — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['membership', 'curate', 'pin', 'list'],
+    notes: [
+      're-adding an existing member re-positions it rather than duplicating it',
+      'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
+    ],
+  },
+  'collections.removeItem': {
+    cmd: ['collection', 'remove'],
+    syn: 'tm8 collection remove <collection-id> <entity-id> --yes [--mutation-id <id>]',
+    sum: 'Take an entity out of a collection — deletes the `contains` edge; the entity itself is untouched',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['membership', 'curate', 'unpin'],
+  },
   'graph.query': {
     cmd: ['graph', 'query'],
     syn: 'tm8 graph query [--space <space-id>] [--focus <entity-id>] [--hops <n>] [--edge-type <type>...] [--mode free|dependency] [--limit <count>] [--cursor <cursor>]',
@@ -1219,7 +1239,7 @@ const ROWS: Record<OperationName, Row> = {
     // NO CLI COMMAND, and it is a SCOPE DECISION rather than a refusal — the
     // same shape `credentials.*` takes above, and the same reasoning.
     //
-    // 100 delivered this operation for the UI: "starting a shell session with
+    // 101 delivered this operation for the UI: "starting a shell session with
     // no agent FROM THE UI". Advertising `session terminal` in the grammar
     // without wiring a handler would break a real invariant, not just a count
     // — `discovery-commands.test.ts` asserts that EVERY command in the frozen
@@ -1239,7 +1259,7 @@ const ROWS: Record<OperationName, Row> = {
     side: 'execution',
     tags: ['terminal', 'shell', 'pty', 'vanilla', 'console'],
     notes: [
-      'NO CLI COMMAND — a scope decision, not a refusal; 100 delivered this for the UI. A `cli` human session is the same principal a browser one is, so a CLI form would need no security change',
+      'NO CLI COMMAND — a scope decision, not a refusal; 101 delivered this for the UI. A `cli` human session is the same principal a browser one is, so a CLI form would need no security change',
       'no Teammate, no model, no persona: this is the shell you get without `claude-code` or `codex` in front of it',
       'the shell is resolved Server-side and CANNOT be named by the caller — there is no command, args or flags input',
       'the cwd is the project ROOT when a project is named, never a provisioned worktree; with no project it is a Server-owned scratch directory and the row records `workdir_mode = scratch`',
@@ -1798,7 +1818,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:e5d6daf264df74f231e5a963375506e93c51e1f712477309cdfcb53be57b7992';
+  'sha256:612f8299da865418b6b403d9d4a6d608aa56a0f2f2c407c9b4a0e1fc1590b03e';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -2138,7 +2158,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   tracking: 'Refresh external pull-request and commit tracking state',
   edge: 'Typed relationships between entities, and the edge-type registry',
   'edge-type': 'The registered edge types and their endpoint rules',
-  collection: 'Structured entity queries across a Space (invoked as `entity query`)',
+  collection: 'Curated-set membership (add/remove), plus the Space-wide entity query (invoked as `entity query`)',
   message: 'Durable messages — the only public communication action for text',
   'read-mark': 'Per-anchor read cursors (invoked as `message mark-read`)',
   graph: 'Graph traversal outward from a focus entity',
