@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:e169fda4c4b4fd7cfdee7a854c3a0fb5068165c695bca188fd797728717d50bf",
+  "catalogDigest": "sha256:c95e6de9b0ca67c4255d41ac304ca1f92e701c069f273c5eaa5ab86d7218f856",
   "catalog": {
-    "total": 142,
-    "v1": 140,
+    "total": 144,
+    "v1": 142,
     "reserved": 2,
-    "http": 141,
+    "http": 143,
     "ws": 1,
-    "registerableV1Http": 139,
+    "registerableV1Http": 141,
     "methods": {
       "GET": 53,
-      "POST": 62,
+      "POST": 63,
       "PATCH": 10,
-      "DELETE": 9,
+      "DELETE": 10,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
       "read": 56,
-      "command": 85,
+      "command": 87,
       "stream": 1
     },
-    "uniqueNames": 142,
-    "uniqueBindings": 142
+    "uniqueNames": 144,
+    "uniqueBindings": 144
   },
   "reservedOperations": [
     "search.query",
@@ -603,6 +603,20 @@
         "operation": "collections.query",
         "method": "POST",
         "path": "/v2/collections/query",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "collections.addItem",
+        "method": "POST",
+        "path": "/v2/collections/:id/items",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "collections.removeItem",
+        "method": "DELETE",
+        "path": "/v2/collections/:id/items/:entityId",
         "status": "registered",
         "source": "server-router"
       },
@@ -1398,7 +1412,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 111
+    "unimplementedV1Http": 113
   },
   "schemas": {
     "additive": {
@@ -2518,6 +2532,40 @@
           "query"
         ],
         "inputSchemaRef": "CollectionQuerySchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "collections.addItem",
+        "noun": "collection",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/collections.addItem",
+        "intentTags": [
+          "collections",
+          "add",
+          "item"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "collections.removeItem",
+        "noun": "collection",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/collections.removeItem",
+        "intentTags": [
+          "collections",
+          "remove",
+          "item"
+        ],
+        "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,

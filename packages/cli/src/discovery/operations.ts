@@ -808,6 +808,26 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
     examples: ['tm8 entity query --kind task --assignee <actor-id> --work-status working'],
   },
+  'collections.addItem': {
+    cmd: ['collection', 'add'],
+    syn: 'tm8 collection add <collection-id> <entity-id> [--position <number>] [--mutation-id <id>]',
+    sum: 'Put an entity into a collection — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['membership', 'curate', 'pin', 'list'],
+    notes: [
+      're-adding an existing member re-positions it rather than duplicating it',
+      'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
+    ],
+  },
+  'collections.removeItem': {
+    cmd: ['collection', 'remove'],
+    syn: 'tm8 collection remove <collection-id> <entity-id> --yes [--mutation-id <id>]',
+    sum: 'Take an entity out of a collection — deletes the `contains` edge; the entity itself is untouched',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['membership', 'curate', 'unpin'],
+  },
   'graph.query': {
     cmd: ['graph', 'query'],
     syn: 'tm8 graph query [--space <space-id>] [--focus <entity-id>] [--hops <n>] [--edge-type <type>...] [--mode free|dependency] [--limit <count>] [--cursor <cursor>]',
@@ -1765,7 +1785,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:e169fda4c4b4fd7cfdee7a854c3a0fb5068165c695bca188fd797728717d50bf';
+  'sha256:c95e6de9b0ca67c4255d41ac304ca1f92e701c069f273c5eaa5ab86d7218f856';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -2105,7 +2125,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   tracking: 'Refresh external pull-request and commit tracking state',
   edge: 'Typed relationships between entities, and the edge-type registry',
   'edge-type': 'The registered edge types and their endpoint rules',
-  collection: 'Structured entity queries across a Space (invoked as `entity query`)',
+  collection: 'Curated-set membership (add/remove), plus the Space-wide entity query (invoked as `entity query`)',
   message: 'Durable messages — the only public communication action for text',
   'read-mark': 'Per-anchor read cursors (invoked as `message mark-read`)',
   graph: 'Graph traversal outward from a focus entity',

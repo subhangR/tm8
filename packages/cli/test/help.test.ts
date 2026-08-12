@@ -113,7 +113,8 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
     // credentials.* are reachable-by-name though not CLI-invocable.
     // 134 -> 135: execution.dispatch is public and reachable under session.
-    expect(wanted).toHaveLength(139);
+    // 139 -> 141 (2026-08-12): collection add/remove (public, with commands).
+    expect(wanted).toHaveLength(141);
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 
@@ -123,7 +124,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
       expect(discoveryFor(op.name).intentTags.length, op.name).toBeGreaterThan(0);
       swept++;
     }
-    expect(swept).toBe(142);
+    expect(swept).toBe(144);
   });
 
   it('a family noun whose command lives elsewhere still resolves', () => {
@@ -210,7 +211,7 @@ describe('exact operation lookup — TOTAL over all 138 (conformance D2)', () =>
       digests.add(shard?.catalogDigest as string);
       seen.add(op.name);
     }
-    expect(seen.size).toBe(142);
+    expect(seen.size).toBe(144);
     expect([...digests]).toEqual([CATALOG_DIGEST]);
   });
 

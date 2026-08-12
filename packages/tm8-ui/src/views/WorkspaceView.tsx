@@ -170,6 +170,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       onSetValue: rowLifecycle.setValue,
       onAssign: rowLifecycle.assign,
       assignableActors: rowLifecycle.assignable,
+      onMembership: rowLifecycle.membership,
+      membershipSets: rowLifecycle.membershipSets,
+      /* The live projection, not `detail.connections`: the ✓ marks must move
+         with the write the menu just made. */
+      connectionsOf: data.connectionsOf,
     }),
     [data, rowLifecycle],
   );
@@ -554,6 +559,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onSetValue={rowLifecycle.setValue}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
+          onMembership={rowLifecycle.membership}
+          membershipSets={rowLifecycle.membershipSets}
+          connectionsOf={data.connectionsOf}
           onKindChange={props.onLeftKindChange}
           // Capability truth comes from the DETAIL, not the summary
           // (EntityCapabilities lives on EntityDetail). A row whose detail is
@@ -668,6 +676,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onSetValue={rowLifecycle.setValue}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
+          onMembership={rowLifecycle.membership}
+          membershipSets={rowLifecycle.membershipSets}
+          connectionsOf={data.connectionsOf}
           onKindChange={props.onRightKindChange}
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
           onNeedDetail={(id) => data.pull?.(id)}

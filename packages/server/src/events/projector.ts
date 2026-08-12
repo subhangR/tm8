@@ -529,11 +529,31 @@ export class PgEntityProjector implements EntityProjector {
     // feed or over a read. Skipped entirely when no channel is in the batch.
     const unreadCounts = await loadUnreadCounts(q, rows);
 
+    // The same aggregate the facade assembler computes, so a collection's item
+    // count is identical over the event feed and over a read. Skipped entirely
+    // when no collection is in the batch. LIVE members only: soft delete
+    // leaves the `contains` edge in place, and a count of raw edges would
+    // exceed every list the UI can draw (content.items, connections and
+    // collections.query all exclude tombstones) with no cap in sight.
+    const containsCounts = new Map<string, number>();
+    const collectionIds = rows.filter((r) => r.kind === 'collection').map((r) => r.id);
+    if (collectionIds.length > 0) {
+      const counted = await q.query<{ src_id: string; n: number }>(
+        `select g.src_id, count(*)::int as n
+           from public.edges g
+           join public.entities m on m.id = g.dst_id and m.deleted_at is null
+          where g.type = 'contains' and g.src_id = any($1::uuid[])
+          group by g.src_id`,
+        [collectionIds],
+      );
+      for (const row of counted) containsCounts.set(row.src_id, Number(row.n));
+    }
+
     for (const r of rows) {
       out.set(
         r.id,
         this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], memberIds.get(r.id) ?? [],
-          viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts),
+          viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts, containsCounts),
       );
     }
     return out;
@@ -604,6 +624,7 @@ export class PgEntityProjector implements EntityProjector {
     viewerReaction: EntityCounters['viewerReaction'],
     attention: EntityAttentionSummary | undefined,
     unreadCounts: ReadonlyMap<string, number>,
+    containsCounts: ReadonlyMap<string, number>,
   ): EntitySummary {
     const counters: EntityCounters = {
       likes: r.likes ?? 0,
@@ -629,7 +650,7 @@ export class PgEntityProjector implements EntityProjector {
       deletedAt: iso(r.deleted_at),
       createdBy: actors.get(r.created_by) ?? this.unknownActor(r.created_by),
       counters,
-      state: this.stateOf(r, actors, assignees, members, unreadCounts),
+      state: this.stateOf(r, actors, assignees, members, unreadCounts, containsCounts),
       // `EntityBadges` fields are all optional, so `{}` is a valid and honest
       // "no badges computed" — unlike `state`, which has required fields and
       // cannot be honestly empty. `restricted` is the one badge derivable from
@@ -803,6 +824,7 @@ export class PgEntityProjector implements EntityProjector {
     assignees: readonly string[],
     members: readonly string[],
     unreadCounts: ReadonlyMap<string, number>,
+    containsCounts: ReadonlyMap<string, number>,
   ): EntityState {
     switch (r.kind) {
       case 'task': {
@@ -937,7 +959,7 @@ export class PgEntityProjector implements EntityProjector {
         return {
           kind: 'collection',
           collectionType: r.collection_type ?? 'manual',
-          itemCount: 0,
+          itemCount: containsCounts.get(r.id) ?? 0,
         };
       // The two arms below were MISSING while their kinds sat in the frozen
       // contract (CoreEntityKindSchema includes 'project' and
@@ -1051,7 +1073,6 @@ export class PgEntityProjector implements EntityProjector {
  * - `state.doc.childCount` — 0. Needs a child count per doc.
  * - `state.member.taskDoneCount` — 0. Needs a completed-task aggregate.
  * - `state.team_member.liveWork` — null. Needs the live `working_on` join.
- * - `state.collection.itemCount` — 0. Needs a `contains` edge count.
  */
 export const KNOWN_GAPS = Object.freeze([
   'badges.blocked',
@@ -1067,5 +1088,6 @@ export const KNOWN_GAPS = Object.freeze([
   'state.doc.childCount',
   'state.member.taskDoneCount',
   'state.team_member.liveWork',
-  'state.collection.itemCount',
+  // `state.collection.itemCount` used to be here. It is now computed, from
+  // the same `contains` count the facade assembler uses.
 ]);

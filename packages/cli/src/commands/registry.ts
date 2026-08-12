@@ -38,6 +38,7 @@ import { SPACE_COMMANDS } from './space.js';
 import { IDENTITY_COMMANDS } from './identity.js';
 import { AUTH_COMMANDS } from './auth.js';
 import { EDGE_COMMANDS } from './edge.js';
+import { COLLECTION_COMMANDS } from './collection.js';
 import { PLACEMENT_COMMANDS } from './placement.js';
 import { INBOX_COMMANDS } from './inbox.js';
 import { SAVED_VIEW_COMMANDS } from './saved-view.js';
@@ -109,6 +110,7 @@ export const COMMANDS: CommandModule[] = [
   ...IDENTITY_COMMANDS,
   ...AUTH_COMMANDS,
   ...EDGE_COMMANDS,
+  ...COLLECTION_COMMANDS,
   ...PLACEMENT_COMMANDS,
   ...INBOX_COMMANDS,
   ...SAVED_VIEW_COMMANDS,

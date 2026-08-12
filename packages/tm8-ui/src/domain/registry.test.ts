@@ -84,9 +84,10 @@ describe('loop management is registry-declared and fully wired', () => {
     expect(loop.panel.primaries).toEqual(['edit']);
     // RUNS is the third block on purpose: a loop's firing history IS its
     // inbound `triggered_by` edges, so a panel without it hides the only
-    // record of what the loop has done.
+    // record of what the loop has done. `membership` follows (2026-08-12) —
+    // the COLLECTIONS section every generic body gained with migration 100.
     expect(loop.panel.blocks?.map((block) => block.block)).toEqual([
-      'loop-controls', 'fields', 'peer-rows',
+      'loop-controls', 'fields', 'peer-rows', 'membership',
     ]);
     expect(loop.panel.blocks?.find((block) => block.block === 'peer-rows')?.params).toMatchObject({
       edgeType: 'triggered_by',
@@ -383,6 +384,11 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
          only the grouping axis, because vocabulary/order/tone stay owned by
          stateControl and statusPill (doc 06 §1.2). */
       'board',
+      /* Opened 2026-08-12 with collection membership (migration 100): the
+         expanded row's Collections picker and the list's collection lens.
+         Not `assignControl` because the write is the addItem/removeItem pair
+         (set → member), not a generic edge from the row. */
+      'membership',
     ];
     for (const row of allKinds()) {
       for (const key of Object.keys(row.list)) {

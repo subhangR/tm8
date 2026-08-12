@@ -264,6 +264,10 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // attachment reached this op from two different features at once; it is
       // ONE Amendment 5, not two. Sorts around `createEntity` / `deleteEntity`,
       // beside the entity verbs they mirror.
+      // 2026-08-12: the collection-membership pair — sugar over the `contains`
+      // edge (auto-position on add, remove addressed by the pair). They sort
+      // beside the edge verbs they specialize.
+      'addToCollection',
       'complete', 'createEdge', 'createEntity', 'createTask', 'deleteEdge', 'deleteEntity',
       // 2026-08-09: `dispatch` — `execution.dispatch` (Dreamer & Dispatcher
       // D5). It sorts next to `deleteEntity` and reads nothing like it, which
@@ -284,6 +288,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // `resolveAttention` shipped into the seam without this lock being
       // updated, so the guard was red in-tree before the attention inbox
       // landed. Recorded here rather than silently corrected.
+      'removeFromCollection',
       'resolveAttention',
       // 2026-08-01: resume — the exited card's button. Sorts AFTER
       // restoreEntity ('rest' < 'resu'), which is not where it reads like it

@@ -513,3 +513,65 @@
   display: flex;
   gap: 6px;
 }
+
+/* ── membership block (collections `contains`, both directions) ──────────── */
+.cv2-root .pn-membership {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cv2-root .pn-membership__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.cv2-root .pn-membership__remove {
+  border: none;
+  background: none;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+  line-height: 1;
+}
+.cv2-root .pn-membership__remove:hover {
+  color: var(--pn-ink-1);
+}
+.cv2-root .pn-membership__remove[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.cv2-root .pn-membership__picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  max-width: 340px;
+}
+.cv2-root .pn-membership__input {
+  font: inherit;
+  color: var(--pn-ink-1);
+  background: transparent;
+  border: 1px solid var(--pn-line);
+  border-radius: 5px;
+  padding: 4px 7px;
+}
+.cv2-root .pn-membership__option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  color: var(--pn-ink-1);
+  cursor: pointer;
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.cv2-root .pn-membership__option:hover {
+  background: var(--pn-hover, rgba(127, 127, 127, 0.12));
+}

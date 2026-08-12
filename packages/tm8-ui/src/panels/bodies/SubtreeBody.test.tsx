@@ -519,7 +519,7 @@ describe('the registry seam this body reads through', () => {
    * make a red go away would retire the guard while leaving it looking green —
    * the one edit this test must never receive.
    */
-  const RENDERED_BLOCKS = new Set(['notice', 'memory-set', 'peer-rows']);
+  const RENDERED_BLOCKS = new Set(['notice', 'memory-set', 'peer-rows', 'membership']);
 
   it('every subtree-archetype registry row declares only blocks this body renders', () => {
     const rows = allSubtreeRows();

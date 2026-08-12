@@ -1275,6 +1275,17 @@ export interface CreateEdgeInput extends CommandContext {
 }
 export interface PatchEdgeInput extends CommandContext { props: Record<string, unknown> }
 
+/**
+ * Membership sugar over the `contains` edge (collection → entity). The
+ * collection id travels in the path; omitting `position` appends after the
+ * current maximum. Re-adding an existing member updates its position rather
+ * than duplicating it.
+ */
+export interface CollectionAddItemInput extends CommandContext {
+  entityId: EntityId;
+  position?: number;
+}
+
 export type PlacementIntent = 'attach'|'assign'|'depend'|'subtask'|'embed'|'reparent';
 export interface PlacementInput extends CommandContext {
   sourceId: EntityId;

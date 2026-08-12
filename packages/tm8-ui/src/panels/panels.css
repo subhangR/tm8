@@ -1971,6 +1971,30 @@
 }
 .cv2-root .lp__filtercheck { margin-left: auto; color: var(--pn-brand-2); }
 
+/* The collection-lens honesty line: what the lens hides, in numbers from the
+   lens query itself and the set's own summary (see LensNote). */
+.cv2-root .lp__lensnote {
+  flex: none;
+  margin: 0 8px 5px;
+  padding: 4px 8px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+/* The sets menu's designed empty — a sentence, not a bare popover. */
+.cv2-root .lp__filterempty {
+  margin: 0;
+  padding: 4px 8px 7px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-3);
+  max-width: 230px;
+}
+
 /* --- in-panel search — T0-1's own bordered row (D36: focused by `f`) ------ */
 /* T0-1 draws this as a 28px bordered row of its own between the create row
    and the tabs: `⌕ {placeholder}` … kbd hint. My first attempt put it in the

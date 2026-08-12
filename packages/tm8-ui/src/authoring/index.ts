@@ -67,6 +67,12 @@ export {
   type MemoryWorkingSetHandle,
   type MemoryWorkingSetPort,
 } from './useMemoryWorkingSet';
+export {
+  useCollectionMembership,
+  type CollectionMembershipCommands,
+  type CollectionMembershipHandle,
+  type CollectionMembershipPort,
+} from './useCollectionMembership';
 export { NewTaskControl } from './NewTaskControl';
 export { EntityCreateControl } from './EntityCreateControl';
 export { RefusalCard, type RefusalMove } from './RefusalCard';

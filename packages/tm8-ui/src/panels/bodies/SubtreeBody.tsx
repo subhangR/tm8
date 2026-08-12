@@ -7,6 +7,7 @@ import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 import { MemorySetBlock, type MemoryAuthoring } from './MemorySetBlock';
+import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import './subtree-body.css';
 
@@ -67,6 +68,11 @@ export interface SubtreeBodyProps {
    */
   memoryAuthoring?: MemoryAuthoring | null;
   /**
+   * Collection-membership authoring for the `membership` section — the same
+   * intent-only split as `memoryAuthoring`. Absent ⇒ the section is read-only.
+   */
+  membershipAuthoring?: MembershipAuthoring | null;
+  /**
    * THE VERDICT, per run row — `seam.liveness.statusOf`, handed down.
    *
    * Never derived here and never read off the record beside it: a run row's
@@ -122,6 +128,7 @@ export function SubtreeBody({
   onCriteriaChange,
   criteriaUnavailableReason,
   memoryAuthoring,
+  membershipAuthoring,
 }: SubtreeBodyProps) {
   const children = [...detail.hierarchy.children.items];
   const childWork = children.filter((c) => !isRunKind(c));
@@ -146,6 +153,14 @@ export function SubtreeBody({
    * lists together.
    */
   const peerRows = (blocks ?? []).filter((b) => b.block === 'peer-rows');
+  /*
+   * Collection membership — a THIRD named case, same rule as the two above:
+   * the body knows every block it draws by name. Incoming `contains` edges
+   * used to fall through `peersOf` into LINKED as anonymous chips (the exact
+   * defect class the memory-set comment records); the section names them and
+   * carries the add/remove intent.
+   */
+  const membership = (blocks ?? []).find((b) => b.block === 'membership');
 
   return (
     <div
@@ -192,6 +207,17 @@ export function SubtreeBody({
           <PeerRowsBlock detail={detail} params={block.params ?? {}} onOpenEntity={onOpenEntity} />
         </section>
       ))}
+      {membership ? (
+        <section className="sb-section" data-testid="membership-section">
+          <Eyebrow faint>{membership.label ?? 'COLLECTIONS'}</Eyebrow>
+          <MembershipBlock
+            detail={detail}
+            params={membership.params ?? {}}
+            onOpenEntity={onOpenEntity}
+            authoring={membershipAuthoring}
+          />
+        </section>
+      ) : null}
       <LinkedSection linked={linked} onOpenEntity={onOpenEntity} />
       {notices.length > 0 ? (
         <div className="sb-notices" data-testid="subtree-notices">
@@ -883,8 +909,12 @@ function isRunKind(summary: EntitySummary): boolean {
  * it because nothing is declared. So each type that carries meaning gets a
  * NAMED SECTION and joins this set. Exactly these groups and nothing broader:
  * every other edge type still belongs in LINKED, which is what the test holds.
+ *
+ *   · `contains` (2026-08-12) — curated collection membership, the third
+ *     recurrence of the class. It gets the COLLECTIONS section (the
+ *     `membership` block) with add/remove, instead of an anonymous chip.
  */
-const OWN_SECTION_EDGES: ReadonlySet<string> = new Set(['remembers', 'triggered_by']);
+const OWN_SECTION_EDGES: ReadonlySet<string> = new Set(['remembers', 'triggered_by', 'contains']);
 
 function peersOf(detail: EntityDetail): EntitySummary[] {
   const out: EntitySummary[] = [];
