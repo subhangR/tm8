@@ -68,8 +68,11 @@ describe('W1 adopted catalog target', () => {
     // 135 -> 137: projects.files.list/attach.
     // 137 -> 138 (2026-08-09, merge): execution.dispatch (POST command) — the
     // dispatcher's one new catalog row, joining from feat/dispatcher-loops.
-    expect(OPERATIONS).toHaveLength(142);
-    expect(V1_OPERATIONS).toHaveLength(140);
+    // 142 -> 144 (2026-08-12): collections.addItem (POST command) +
+    // collections.removeItem (DELETE command) — membership sugar over the
+    // `contains` edge; the collection family's first write verbs.
+    expect(OPERATIONS).toHaveLength(144);
+    expect(V1_OPERATIONS).toHaveLength(142);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -85,12 +88,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 53, POST: 62, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 53, POST: 63, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 56, command: 85, stream: 1 });
+    }).toEqual({ read: 56, command: 87, stream: 1 });
   });
 });
 

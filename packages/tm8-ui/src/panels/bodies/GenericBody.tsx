@@ -16,6 +16,7 @@ import type { AuthoringCommands } from '../../authoring';
 import { LoopControls } from '../../loops/LoopControls';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { edgesOf } from './MemorySetBlock';
+import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
 
 /**
  * The one command this body can execute (threaded from the host's seam
@@ -55,12 +56,19 @@ export function GenericBody({
   commands,
   onSaved,
   downloadHref,
+  membership,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
   onOpenEntity?: (id: string) => void;
   commands?: GenericBodyCommands | null;
   onSaved?: (result: CommandResult) => void;
+  /**
+   * Authoring for the `membership` block — the same intent-only split the
+   * subtree body uses for its sections. Absent ⇒ read-only, never dead
+   * controls.
+   */
+  membership?: MembershipAuthoring | null;
   /**
    * Resolves a file entity's bytes URL, from the host's attachment port — the
    * SAME resolver the attachment strip uses, so a file previews here exactly
@@ -90,6 +98,7 @@ export function GenericBody({
           commands={commands}
           onSaved={onSaved}
           downloadHref={downloadHref}
+          membership={membership}
         />
       ))}
     </div>
@@ -103,6 +112,7 @@ function ContentBlock({
   commands,
   onSaved,
   downloadHref,
+  membership,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
@@ -110,6 +120,7 @@ function ContentBlock({
   commands?: GenericBodyCommands | null;
   onSaved?: (result: CommandResult) => void;
   downloadHref?: DownloadHref;
+  membership?: MembershipAuthoring | null;
 }) {
   const body = (() => {
     switch (block.block) {
@@ -140,6 +151,20 @@ function ContentBlock({
         );
       case 'items':
         return <ItemsBlock detail={detail} block={block} onOpenEntity={onOpenEntity} />;
+      /* Collection membership over `contains`, writeable (add/remove) when the
+         host wires authoring — the collection row's ITEMS is this block with
+         `direction: 'outgoing'`. The inert `items` chip list above remains for
+         content members that are genuinely read-only (equipped spells, a
+         member's work). */
+      case 'membership':
+        return (
+          <MembershipBlock
+            detail={detail}
+            params={block.params ?? {}}
+            onOpenEntity={onOpenEntity}
+            authoring={membership}
+          />
+        );
       case 'lifecycle':
         return <LifecycleBlock detail={detail} />;
       case 'notice':

@@ -79,6 +79,7 @@ import type {
   AttentionRequestListQuery,
   AttentionRequestMutationResult,
   AttentionRequestPage,
+  CollectionAddItemInput,
   CollectionQuery,
   CollectionResult,
   CommandContext,
@@ -550,6 +551,24 @@ export interface Seam {
      */
     createEdge(input: CreateEdgeInput): Promise<CommandResult>;
     deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult>;
+    /**
+     * Collection membership (2026-08-12) — sugar over the `contains` edge,
+     * NOT a parallel store. These exist beside `createEdge`/`deleteEdge`
+     * because the generic doors cannot say two things this pair must say:
+     * `addToCollection` auto-appends `props.position` after the current
+     * maximum when the caller names none (write_edge would sort every member
+     * identically), and `removeFromCollection` is addressed by the
+     * (collection, entity) PAIR — a caller that never read the edge row can
+     * still take an item out of a list. Re-adding an existing member
+     * re-positions it rather than duplicating (the store upserts on
+     * src/dst/type).
+     */
+    addToCollection(collectionId: EntityId, input: CollectionAddItemInput): Promise<CommandResult>;
+    removeFromCollection(
+      collectionId: EntityId,
+      entityId: EntityId,
+      ctx?: CommandContext,
+    ): Promise<CommandResult>;
     postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;

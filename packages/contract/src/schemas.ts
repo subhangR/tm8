@@ -33,7 +33,7 @@ import type {
   AuthAccountView, AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthSessionGetResult, AuthSessionView, AuthSignupInput,
   AuthSignupResult, ChannelTab,
-  ClosedPromptPolicy, CollectionGroup, CollectionQuery, CollectionResult,
+  ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
   CreateEdgeInput, CreateEntityInput, CreateSpaceInput, CreateTaskInput, CreateVoiceTokenInput,
@@ -1473,6 +1473,12 @@ export const CreateEdgeInputSchema: z.ZodType<CreateEdgeInput> = z.object({
 export const PatchEdgeInputSchema: z.ZodType<PatchEdgeInput> = z.object({
   ...commandContextShape,
   props: z.record(z.unknown()),
+}).strict();
+
+export const CollectionAddItemInputSchema: z.ZodType<CollectionAddItemInput> = z.object({
+  ...commandContextShape,
+  entityId: EntityIdSchema,
+  position: z.number().finite().optional(),
 }).strict();
 
 export const PlacementInputSchema: z.ZodType<PlacementInput> = z.object({

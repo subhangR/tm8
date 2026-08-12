@@ -725,6 +725,10 @@ export type ContentBlockKind =
   // Scheduled-work management. The block owns enable/disable and queue-now;
   // its presence is registry data, so GenericBody never asks for a kind.
   | 'loop-controls'
+  // Collection membership over the `contains` edge, both directions: a
+  // collection's ITEMS (outgoing) and an entity's COLLECTIONS (incoming).
+  // Edge-typed like `memory-set`; which side it is on is registry params.
+  | 'membership'
   // Profile wave: the six blocks ProfileBody draws (T0-4 MEMBER lines 400–448,
   // AGENT lines 452–496). `items` above is reused deliberately — one block
   // name, one meaning, two renderers (GenericBody and ProfileBody).

@@ -167,7 +167,8 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 127 -> 132 (2026-08-09): five Tier 2 git-verb ALIASES (catalog rows unmoved).
     // 132 -> 134 (2026-08-09): project contention + task gate.
     // 134 -> 135: `session dispatch`.
-    expect(COMMAND_PATHS).toHaveLength(135);
+    // 135 -> 137 (2026-08-12): collection add + collection remove.
+    expect(COMMAND_PATHS).toHaveLength(137);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {

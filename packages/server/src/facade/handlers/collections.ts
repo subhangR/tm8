@@ -25,6 +25,7 @@ import {
   decodeCursor,
   encodeCursor,
   type CollectionGroup,
+  type CollectionAddItemInput,
   type CollectionQuery,
   type CollectionResult,
   type EntitySummary,
@@ -33,10 +34,11 @@ import {
 import type { Querier } from '../../db/types.js';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
-import { claimsFor, limitOf, MAX_LIMIT } from '../context.js';
+import { claimsFor, commandEnvelope, limitOf, MAX_LIMIT, requireUuidParam } from '../context.js';
 import {
   assembleSummaries, ENTITY_COLUMNS, ENTITY_FROM, MICROS, type EntityRow,
 } from '../entity-read.js';
+import { toCommandResult, type RpcCommandResult } from './entities.js';
 
 // ---------------------------------------------------------------------------
 // Sorting
@@ -615,5 +617,49 @@ export function collectionsQuery(deps: FacadeDeps): OperationHandler {
     const owner = await deps.owner();
     const query = ctx.body as CollectionQuery;
     return deps.db.tx(claimsFor(owner, ctx), (q) => queryCollection(q, query, owner.identityId));
+  };
+}
+
+/**
+ * Membership writes are sugar over the `contains` edge, not a parallel store:
+ * both RPCs ledger under the `edges.*` family, and the 003 edge trigger emits
+ * `edge.upsert`/`edge.deleted` so live collection views refresh with no new
+ * event plumbing. Add without a `position` appends after the current maximum;
+ * re-adding an existing member re-positions it instead of duplicating.
+ */
+export function collectionsAddItem(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const owner = await deps.owner();
+    const collectionId = requireUuidParam(ctx, 'id');
+    const input = ctx.body as CollectionAddItemInput;
+    const envelope = commandEnvelope(ctx);
+    return deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await q.rpc<RpcCommandResult>('set_collection_item', [
+        collectionId,
+        input.entityId,
+        input.position ?? null,
+        envelope.actorId ?? null,
+        envelope.clientMutationId ?? null,
+      ]);
+      return toCommandResult(q, raw, owner.identityId);
+    });
+  };
+}
+
+export function collectionsRemoveItem(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const owner = await deps.owner();
+    const collectionId = requireUuidParam(ctx, 'id');
+    const entityId = requireUuidParam(ctx, 'entityId');
+    const envelope = commandEnvelope(ctx);
+    return deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await q.rpc<RpcCommandResult>('remove_collection_item', [
+        collectionId,
+        entityId,
+        envelope.actorId ?? null,
+        envelope.clientMutationId ?? null,
+      ]);
+      return toCommandResult(q, raw, owner.identityId);
+    });
   };
 }

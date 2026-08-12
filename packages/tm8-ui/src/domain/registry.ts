@@ -545,6 +545,23 @@ const ROWS: readonly KindConfig[] = [
             empty: 'Not triggered by a loop — this task was created directly.',
           },
         },
+        /* The entity side of collection membership (2026-08-12): which
+           collections hold this task, and the affordance to add it to one.
+           INCOMING because `contains` runs collection → entity. Same defect
+           class as `remembers`/`triggered_by` before their own rows: without
+           this the edge fell through `peersOf` into LINKED as an anonymous
+           chip, and nothing could write one. */
+        {
+          block: 'membership',
+          label: 'COLLECTIONS',
+          params: {
+            edgeType: 'contains',
+            direction: 'incoming',
+            pickerKind: 'collection',
+            addLabel: '+ add to collection',
+            empty: 'In no collection yet.',
+          },
+        },
       ],
       // The detail header keeps one task action: Run. Coordinate and Complete
       // remain available from their task-specific surfaces, not this compact
@@ -1128,7 +1145,16 @@ const ROWS: readonly KindConfig[] = [
     panel: {
       archetype: 'generic',
       blocks: [
-        { block: 'items', label: 'ITEMS' },
+        /* ITEMS stopped being the inert `content.items` chip list on
+           2026-08-12: membership is a `contains` edge and this block writes
+           it (add via picker, remove per row). `count: true` puts the edge
+           count in the eyebrow, so the tile's itemCount badge and this label
+           read the same fact. */
+        {
+          block: 'membership',
+          label: 'ITEMS',
+          params: { edgeType: 'contains', direction: 'outgoing', count: true, addLabel: '+ add entity' },
+        },
         { block: 'fields', label: 'DETAILS' },
       ],
     },

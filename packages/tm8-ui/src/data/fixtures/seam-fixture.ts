@@ -31,6 +31,7 @@ import {
   type ActorSummary,
   type AttentionRequest,
   type AttentionRequestPage,
+  type CollectionAddItemInput,
   type CollectionGroup,
   type CollectionQuery,
   type CollectionResult,
@@ -1704,6 +1705,99 @@ export function createFixtureSeam(): FixtureSeam {
         touch(src);
         emit(src.spaceId, { type: 'entity.upsert', entity: clone(src) }, input);
         return commandResult(src);
+      },
+      /**
+       * Mirrors `set_collection_item`: an UPSERT on the `contains` triple with
+       * `props.position` appended after the current maximum when the caller
+       * names none. Unlike `createEdge` above, BOTH endpoint copies are
+       * written (outgoing on the collection, incoming on the member) — the
+       * member's panel lists its collections from its own incoming edges, and
+       * a fixture that wrote one side would render the split-brain a real node
+       * cannot produce. The two read projections move with the write:
+       * `state.itemCount` and `content.items`, exactly as the node's read
+       * path computes them.
+       */
+      async addToCollection(collectionId: EntityId, input: CollectionAddItemInput) {
+        const collection = requireSummary(collectionId);
+        if (collection.state.kind !== 'collection') {
+          throw new CollabError('invariant_violation', `${collectionId} is not a collection`);
+        }
+        const member = requireSummary(input.entityId);
+        const c = extrasOf(collection.id).connections;
+        let group = c.outgoing.find((g) => g.type === 'contains');
+        if (!group) {
+          group = { type: 'contains', direction: 'outgoing', label: 'contains', edges: [] };
+          c.outgoing.push(group);
+        }
+        const position = input.position
+          ?? Math.max(0, ...group.edges.map((e) => Number(e.props.position ?? 0))) + 1;
+        const existing = group.edges.find((e) => e.target.id === member.id);
+        let edge: EdgeView;
+        if (existing) {
+          existing.props = { ...existing.props, position };
+          existing.updatedAt = tick();
+          edge = existing;
+        } else {
+          const at = tick();
+          edge = {
+            id: nextId('edge'), type: 'contains', source: clone(collection), target: clone(member),
+            props: { position }, createdBy: viewerActor, createdAt: at, updatedAt: at,
+          };
+          group.edges.push(edge);
+        }
+        const mc = extrasOf(member.id).connections;
+        let inGroup = mc.incoming.find((g) => g.type === 'contains');
+        if (!inGroup) {
+          inGroup = { type: 'contains', direction: 'incoming', label: 'contains (incoming)', edges: [] };
+          mc.incoming.push(inGroup);
+        }
+        if (!inGroup.edges.some((e) => e.id === edge.id)) inGroup.edges.push(clone(edge));
+
+        collection.state = { ...collection.state, itemCount: group.edges.length };
+        const content = extrasOf(collection.id).content;
+        if (content.kind === 'collection') {
+          content.items = group.edges
+            .slice()
+            .sort((a, b) => Number(a.props.position ?? 0) - Number(b.props.position ?? 0))
+            .map((e) => clone(e.target));
+        }
+        touch(collection);
+        touch(member);
+        emit(collection.spaceId, { type: 'entity.upsert', entity: clone(collection) }, input);
+        emit(member.spaceId, { type: 'entity.upsert', entity: clone(member) }, input);
+        return commandResult(collection, { patches: [clone(collection), clone(member)] });
+      },
+      /** Mirrors `remove_collection_item`: addressed by the pair, not the edge id. */
+      async removeFromCollection(collectionId: EntityId, entityId: EntityId, ctx?: CommandContext) {
+        const collection = requireSummary(collectionId);
+        if (collection.state.kind !== 'collection') {
+          throw new CollabError('invariant_violation', `${collectionId} is not a collection`);
+        }
+        const member = requireSummary(entityId);
+        const c = extrasOf(collection.id).connections;
+        const group = c.outgoing.find((g) => g.type === 'contains');
+        const edge = group?.edges.find((e) => e.target.id === entityId);
+        if (!group || !edge) {
+          throw new CollabError('not_found', `${entityId} is not in collection ${collectionId}`);
+        }
+        group.edges = group.edges.filter((e) => e.id !== edge.id);
+        c.outgoing = c.outgoing.filter((g) => g.edges.length > 0);
+        const mc = extrasOf(member.id).connections;
+        for (const inGroup of mc.incoming) {
+          inGroup.edges = inGroup.edges.filter((e) => e.id !== edge.id);
+        }
+        mc.incoming = mc.incoming.filter((g) => g.edges.length > 0);
+
+        collection.state = { ...collection.state, itemCount: group.edges.length };
+        const content = extrasOf(collection.id).content;
+        if (content.kind === 'collection') {
+          content.items = content.items.filter((item) => item.id !== entityId);
+        }
+        touch(collection);
+        touch(member);
+        emit(collection.spaceId, { type: 'entity.upsert', entity: clone(collection) }, ctx);
+        emit(member.spaceId, { type: 'entity.upsert', entity: clone(member) }, ctx);
+        return commandResult(collection, { patches: [clone(collection), clone(member)] });
       },
       async postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult> {
         if (input.anchorIds.length === 0) throw new CollabError('invalid_input', 'anchorIds must not be empty');

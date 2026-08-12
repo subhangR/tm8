@@ -128,7 +128,8 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // tree per the merge-train pin rule, not computed.
     // 132 -> 134 (2026-08-09): project contention + task gate (Tier 4 git x graph).
     // 134 -> 135 (2026-08-09): execution.dispatch (`session dispatch`).
-    expect(COMMAND_PATHS).toHaveLength(135);
+    // 135 -> 137 (2026-08-12): collection add + collection remove.
+    expect(COMMAND_PATHS).toHaveLength(137);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

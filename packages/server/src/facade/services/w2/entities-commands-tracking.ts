@@ -652,6 +652,32 @@ async function hierarchyFor(
   };
 }
 
+/**
+ * A collection's `content.items` is a bounded, position-ordered preview of its
+ * `contains` members — enough for the detail panel to render the list without
+ * a second round trip. The full, paginated membership read stays
+ * `collections.query` with an edge filter; this cap is a preview bound, not
+ * the membership bound, which is why `state.itemCount` (the true edge count)
+ * may exceed `items.length`.
+ */
+const COLLECTION_ITEMS_PREVIEW_LIMIT = 50;
+
+async function collectionItems(
+  q: Querier,
+  collectionId: string,
+  viewerIdentityId: string,
+): Promise<EntitySummary[]> {
+  const rows = await q.query<EntityRow>(
+    `select ${ENTITY_COLUMNS} ${ENTITY_FROM}
+       join public.edges ce on ce.dst_id = e.id and ce.src_id = $1 and ce.type = 'contains'
+      where e.deleted_at is null
+      order by (ce.props ->> 'position')::float8 nulls last, ce.created_at, e.id
+      limit ${COLLECTION_ITEMS_PREVIEW_LIMIT}`,
+    [collectionId],
+  );
+  return loadUniversalSummaries(q, rows, viewerIdentityId);
+}
+
 async function buildUniversalDetail(
   q: Querier,
   id: string,
@@ -694,9 +720,12 @@ async function buildUniversalDetail(
   const unresolvedHardDependencyCount = connectionItems.filter((edge) =>
     edge.source.id === id && edge.type === 'depends_on' && edge.hard !== false && edge.resolved === false,
   ).length;
+  const content = detailContent(row, enrichment);
   return {
     ...summary,
-    content: detailContent(row, enrichment),
+    content: content.kind === 'collection'
+      ? { ...content, items: await collectionItems(q, id, viewerIdentityId) }
+      : content,
     hierarchy,
     connections: {
       outgoing: byType('outgoing'),
