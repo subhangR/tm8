@@ -2361,7 +2361,16 @@ function registerHandlers(
       subjectId: input.subjectId,
       dispatcherSessionId,
       note: input.note ?? null,
-      requesterActorId: envelope.actorId ?? owner.identityId,
+      // NULL, never the owner's `identityId`. This reaches SQL as
+      // `w2_post_message_batch(p_actor_id uuid)`, and an identity id is
+      // deliberately NOT a uuid (`identity/ids.ts`: `id_` + random) — the
+      // fallback raised 22P02 `invalid input syntax for type uuid` on every
+      // dispatch whose caller did not name an actor, which is every dispatch
+      // from the UI. Null is also the RIGHT value, not merely a safe one:
+      // `internal.resolve_actor(null, space)` (002:277) falls back to the
+      // caller's own actor claim and then to their member row in this space,
+      // so the request message is authored by the requester either way.
+      requesterActorId: envelope.actorId ?? null,
       requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
       requestId: ctx.requestId,
       clientMutationId: `${envelope.clientMutationId ?? input.clientMutationId}:dispatch-request`,
