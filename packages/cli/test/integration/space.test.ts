@@ -142,7 +142,11 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(137); // +1: projects.files.read, the viewer half. MEASURED off /health (routes, not catalog rows).
+    expect(health.operations).toBe(145); // MEASURED off /health (ROUTES, not catalog rows).
+    // Was pinned at 137 and ALREADY red before the control plane: the tree had
+    // drifted to 141 (projects.files.* + execution.dispatch) without this
+    // moving. 145 is 146 catalog rows minus the one WS row, re-measured rather
+    // than incremented from a stale number.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

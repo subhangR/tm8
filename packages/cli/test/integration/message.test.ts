@@ -251,7 +251,11 @@ describe('the node this suite measured', () => {
         `bind ${server.bindStart.files}/${server.bindStart.digest}`,
     );
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(137); // +1: projects.files.read, the viewer half. MEASURED off /health (routes, not catalog rows).
+    expect(health.operations).toBe(145); // MEASURED off /health (ROUTES, not catalog rows).
+    // Was pinned at 137 and ALREADY red before the control plane: the tree had
+    // drifted to 141 (projects.files.* + execution.dispatch) without this
+    // moving. 145 is 146 catalog rows minus the one WS row, re-measured rather
+    // than incremented from a stale number.
     // `implemented` is `registry.size` — REGISTERED, never "behaviourally
     // implemented". It is reported, never re-labelled.
     expect(health.implemented).toBeGreaterThan(0);
@@ -953,9 +957,19 @@ describe('coverage closure for the rows that were otherwise unit-only', () => {
    */
   it('SWEEP: does an edit that cannot express mentions destroy stored mentions?', async () => {
     const database = await scratchDatabase();
+    // Scoped to the ANCHOR'S Space, deliberately. This was an unordered
+    // `limit 1` over every member row on the node, which was incidentally
+    // deterministic only while the fixture had exactly one — the moment a
+    // second Space exists (the node owner's personal Space, migration 102) it
+    // can return a member of a DIFFERENT Space, `message send --mention`
+    // correctly refuses a mention target outside the anchor's Space, and the
+    // suite fails as a stored-mentions regression that never happened.
     const member = await psql(
       database,
-      `select entity_id from public.members where identity_id is not null limit 1`,
+      `select m.entity_id from public.members m
+         join public.entities anchor on anchor.space_id = m.space_id
+        where anchor.id = '${anchorId}' and m.identity_id is not null
+        order by m.joined_at limit 1`,
     );
     const mentionId = member.stdout.trim();
     expect(mentionId).toMatch(/[0-9a-f-]{36}/);
