@@ -138,6 +138,11 @@ describe('W5.C generator proof', () => {
       'credentials.delete',
       'credentials.loginSessions.finish',
       'entityKinds.update',
+      // 2026-08-12 (Git UI landing): the two git verbs whose bodies are
+      // all-optional — a bare {} checkpoint takes the default label; a bare {}
+      // merge pulls the session base forward.
+      'execution.gitCheckpoint',
+      'execution.gitMerge',
       'execution.terminate',
       'files.uploadAbort',
       'projects.update',
@@ -179,6 +184,8 @@ describe('W5.C generator proof', () => {
     // 69 -> 70: entities.commands.gate; 70 -> 73: credentials.* command bodies.
     // 73 -> 74: projects.files.attach.
     // 74 -> 75 (2026-08-09, merge): execution.dispatch.
-    expect(ENTRIES).toHaveLength(78);
+    // 80 -> 84 (2026-08-12, Git UI landing): the four execution.git* command
+    // bodies bind.
+    expect(ENTRIES).toHaveLength(84);
   });
 });

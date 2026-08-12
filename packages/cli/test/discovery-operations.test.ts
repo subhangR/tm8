@@ -54,7 +54,10 @@ import { createOutput } from '../src/output.js';
 // 135 -> 137: projects.files.list/attach (public, UI-only, commandless).
 // 137 -> 138: execution.dispatch.
 // 142 -> 144 (2026-08-12): collections.addItem/removeItem (public, with commands).
-const EXPECTED_ROWS = 144;
+// 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows —
+// public, deliberately commandless: the CLI already runs these verbs locally
+// (session-git.ts), and one action must not have two names.
+const EXPECTED_ROWS = 150;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -120,7 +123,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 131 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 150 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -159,14 +162,14 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('134 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('146 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 140, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 146, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -184,6 +187,15 @@ describe('the CLI command projection', () => {
       'credentials.loginSessions.finish',
       'credentials.loginSessions.start',
       'credentials.status',
+      // The six execution.git* rows are deliberately commandless (see the
+      // EXPECTED_ROWS note): the CLI runs the same verbs locally as
+      // `tm8 session git-*`, and one action must not have two names.
+      'execution.gitCheckpoint',
+      'execution.gitCommit',
+      'execution.gitDiff',
+      'execution.gitMerge',
+      'execution.gitRollback',
+      'execution.gitStatus',
       'execution.prompt',
       'projects.directories.list',
       'projects.files.attach',
@@ -211,8 +223,8 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the THIRTEEN commandless rows named exactly in the test above.
-    expect(counted).toBe(EXPECTED_ROWS - 13);
+    // Minus the NINETEEN commandless rows named exactly in the test above.
+    expect(counted).toBe(EXPECTED_ROWS - 19);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {

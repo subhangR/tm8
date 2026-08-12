@@ -46,23 +46,26 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // feat/dispatcher-loops.
       // 142 -> 144 (2026-08-12): collections.addItem (POST/command) +
       // collections.removeItem (DELETE/command) — membership writes.
-      total: 144,
-      v1: 142,
+      // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows —
+      // gitStatus/gitDiff (GET/read), gitCheckpoint/gitRollback/gitCommit/
+      // gitMerge (POST/command).
+      total: 150,
+      v1: 148,
       reserved: 2,
-      http: 143,
+      http: 149,
       ws: 1,
-      registerableV1Http: 141,
-      methods: { GET: 53, POST: 63, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 },
-      kinds: { read: 56, command: 87, stream: 1 },
-      uniqueNames: 144,
-      uniqueBindings: 144,
+      registerableV1Http: 147,
+      methods: { GET: 55, POST: 67, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 },
+      kinds: { read: 58, command: 91, stream: 1 },
+      uniqueNames: 150,
+      uniqueBindings: 150,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(143);
+    expect(manifest.routes.http).toHaveLength(149);
     expect(manifest.routes.ws).toEqual([{
       operation: 'events.subscribe',
       method: 'WS',
@@ -88,8 +91,8 @@ describe('W1.C generated catalog and reachability foundations', () => {
     });
     expect(manifest.serverRegistries.inputSchemas.bound).toHaveLength(36);
     expect(manifest.serverRegistries.inputSchemas.unboundCommands).toHaveLength(13);
-    // 141 current registerable v1 HTTP ops minus the 28 W1-implemented.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(113);
+    // 147 current registerable v1 HTTP ops minus the 28 W1-implemented.
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(119);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -115,7 +118,8 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // raise this even when they ARE implemented — this axis measures
       // distance from the FROZEN W1 boundary, not from what is mounted today.
       // 111 -> 113 (2026-08-12): collections.addItem/removeItem.
-      unimplementedV1Http: 113,
+      // 113 -> 119 (2026-08-12, Git UI landing): the six execution.git* rows.
+      unimplementedV1Http: 119,
     });
   });
 
@@ -167,7 +171,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(144);
+    expect(manifest.help.operations).toHaveLength(150);
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -332,7 +336,7 @@ describe('W2.C01 current mounted registry inventory', () => {
       readInputSchemaSourceInventory(),
     ]);
 
-    expect(handlers.facade).toHaveLength(129);
+    expect(handlers.facade).toHaveLength(135);
     // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
     // concurrent feature lane (not the W1 amendment set):
     //  - voice.token.create (voice-channels lane);
@@ -350,14 +354,18 @@ describe('W2.C01 current mounted registry inventory', () => {
     // credentials.* add four facade handlers.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem join the G05
     // seam as two facade handlers.
-    expect(handlers.all).toHaveLength(141);
+    // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* facade
+    // handlers (facade/services/execution-git.ts).
+    expect(handlers.all).toHaveLength(147);
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
-      .toBe('01fa6383209602fe0f9e7064d0c39294922074ce33911be0998626ab3cb0be2b');
+      .toBe('3dda47e5cb16b1c0932e021abafc5e3cd3307eb62892b195576f507a0e5ee798');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
-    expect(inputSchemas.bound).toHaveLength(80);
+    // 80 -> 84 (2026-08-12, Git UI landing): the four execution.git* command
+    // bodies bind.
+    expect(inputSchemas.bound).toHaveLength(84);
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -374,7 +382,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     const registerableV1Http = OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
     );
-    expect(registerableV1Http).toHaveLength(141);
+    expect(registerableV1Http).toHaveLength(147);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);
