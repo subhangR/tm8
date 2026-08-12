@@ -230,13 +230,17 @@ describe('THE GATE — composed T0-1 master screen', () => {
       // opens nothing — rather than against the row that happened to contain
       // one. `Launch session ▸` is still in there and still refuses, with its
       // reason on screen, which is the honest state of this build.
+      // ASSERTED, NOT GUARDED. An `if (header)` here would go green the day
+      // the header stops rendering — which is precisely the defect this PR
+      // closed (no mount passed `onAction`, so the row drew nothing). A
+      // conditional assertion about a control that must exist cannot notice
+      // the control disappearing.
       const header = container.querySelector('[data-kind="work_session"] .lp__actions');
-      if (header) {
-        const enabled = [...header.querySelectorAll('button')].map((b) => b.textContent ?? '');
-        expect(enabled.some((label) => /launch/i.test(label))).toBe(false);
-        expect(within(header as HTMLElement).getByTestId('disabled-with-reason').textContent)
-          .toMatch(/launch session/i);
-      }
+      expect(header).toBeTruthy();
+      const enabled = [...(header as HTMLElement).querySelectorAll('button')].map((b) => b.textContent ?? '');
+      expect(enabled.some((label) => /launch/i.test(label))).toBe(false);
+      expect(within(header as HTMLElement).getByTestId('disabled-with-reason').textContent)
+        .toMatch(/launch session/i);
     }
   });
 

@@ -26,16 +26,44 @@
 // THE ABSENCES, none of them accidental:
 //
 //   * `TM8_AGENT_TOKEN`, `TM8_SESSION_ID`, `TM8_MANIFEST_PATH`, `TM8_BASE_URL`
-//     — see above. A vanilla terminal has no manifest and no agent identity, so
-//     `tm8` run inside one falls back to the operator's own CLI credentials,
-//     which is exactly right: the person typing is the principal.
-//   * `GH_TOKEN` / `GITHUB_TOKEN` — the node's machine credential. An agent
-//     gets a member-scoped one through `isolateGitHubCredential`; a shell gets
-//     none rather than the node's, so a `git push` from a vanilla terminal
-//     fails with an authentication error instead of silently succeeding as the
-//     server's service account.
-//   * `ANTHROPIC_API_KEY` and every other `AUTH_ENV_KEYS` name — a terminal is
-//     not an agent and has no vendor call to make.
+//     — see above. A vanilla terminal has no manifest and no agent identity.
+//   * `GH_TOKEN` / `GITHUB_TOKEN` — the node's machine credential, which an
+//     agent gets a member-scoped replacement for through
+//     `isolateGitHubCredential`.
+//   * `ANTHROPIC_API_KEY` and every other `AUTH_ENV_KEYS` name.
+//
+// ---------------------------------------------------------------------------
+// WHAT THOSE ABSENCES DO **NOT** BUY, MEASURED — READ THIS BEFORE TRUSTING THEM
+// ---------------------------------------------------------------------------
+//
+// THEY ARE NOT ISOLATION. `HOME` is the server's own (see below), and every
+// credential lookup that matters is FILESYSTEM-based, so withholding the
+// environment names withholds almost nothing. Measured on a deployed node
+// 2026-08-12, by review rather than by argument:
+//
+//   * `~/.gitconfig` carries `credential.helper = store` and
+//     `~/.git-credentials` exists — so `git push` from a vanilla terminal
+//     SUCCEEDS as the node's GitHub account. An earlier version of this comment
+//     claimed the opposite. It was wrong.
+//   * `~/.config/gh/hosts.yml` carries an `oauth_token`, and `gh` is on the
+//     PATH this function composes.
+//   * `~/.claude/.credentials.json` exists, and `withAgentBinDirs` below puts
+//     the agent bin dirs on PATH deliberately, so `claude` is runnable too.
+//   * `~/.ssh` exists.
+//
+// So the honest posture is: A VANILLA TERMINAL IS A SHELL AS THE tm8 OS USER,
+// WITH THAT USER'S HOME AND EVERYTHING REACHABLE FROM IT. The env allow-list
+// keeps the process from carrying tm8's OWN secrets (the agent token, the
+// database URL) into a shell whose scrollback a member can read — which is
+// worth doing and is all it does. It is not a sandbox and must not be cited as
+// one.
+//
+// `start_shell_session` authorizes on space membership alone, so that reach is
+// available to any member of any space on the node. On a single-operator node
+// that is very likely the intended product — a member opening a terminal is the
+// operator opening a terminal — but it is a DECISION, recorded here as one. If
+// this node ever hosts mutually-untrusting members, this function is not what
+// separates them and gating the operation is the change to make.
 //
 // `HOME` IS THE SERVER'S OWN, and that is the deliberate difference from
 // `composeCredentialEnv`, which redirects it at a per-identity directory. A
@@ -43,8 +71,9 @@
 // write it. A vanilla terminal exists to be a shell: a member expects their
 // dotfiles, their shell history and their `~/.gitconfig`. Redirecting HOME
 // would produce a terminal with no prompt customisation and no history, which
-// reads as broken. This is the same posture the node already takes for an agent
-// session, whose `HOME` is likewise the server's.
+// reads as broken. That is a TRADE — usability bought with the reach described
+// above — not an oversight, and not isolation. It is the same posture the node
+// already takes for an agent session, whose `HOME` is likewise the server's.
 
 import { withAgentBinDirs } from '../spawn/manifest.js';
 

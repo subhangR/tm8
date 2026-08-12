@@ -146,9 +146,13 @@ export type CoreEntityState =
        * 100 IS THE CASE THAT COMMENT WAS WRITTEN FOR. `shell` — a vanilla
        * terminal with no agent attached — is a third value, and every
        * allow-list filter anywhere in the tree drops it while continuing to
-       * pass every test. The audit that shipped with 100 is in the migration
-       * header; if you add a FOURTH value, redo it rather than trusting that
-       * the second widening left nothing behind.
+       * pass every test.
+       *
+       * 100's header carries an audit of every SQL surface that branches on
+       * this column, including the one that had to change. It does NOT
+       * enumerate the TypeScript ones — those were checked and are deny-lists,
+       * but "checked once" is not a list you can rely on. If you add a FOURTH
+       * value, re-derive BOTH sides yourself; do not read either as covered.
        */
       sessionKind?: WorkSessionKind }
   | { kind: 'collection'; collectionType: string; itemCount: number }

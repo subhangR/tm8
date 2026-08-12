@@ -19,7 +19,7 @@
 // stays; the member then types whatever they like into it. That is the whole
 // feature, and it is why the argv is closed while the SESSION is open-ended.
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 
 import type { PtyHostService } from '../pty/PtyHostService.js';
@@ -46,18 +46,55 @@ export const FALLBACK_LOGIN_SHELL = '/bin/bash';
  * be `/bin/bash` regardless of what the operator's account actually uses —
  * technically a working shell, and the wrong one for anybody on zsh or fish.
  *
- * Each candidate is checked for existence, because an inherited `SHELL` naming
- * a binary this machine does not have is worse than the fallback: the PTY would
- * spawn, fail with ENOENT, and surface as a terminal that opened and instantly
- * died with no stated cause.
+ * EXISTENCE IS NOT ENOUGH, and that is what the `/etc/shells` check is for. An
+ * inherited `SHELL` naming a binary this machine does not have would spawn,
+ * fail ENOENT, and surface as a terminal that opened and instantly died with no
+ * stated cause — so existence is checked. But the passwd rung introduces a
+ * worse case that existence cannot catch: a SERVICE ACCOUNT'S passwd shell is
+ * very often `/usr/sbin/nologin` or `/bin/false`, both of which exist on a
+ * normal Linux node and both of which pass every check a file test can make.
+ * Measured: `nologin -c 'exec nologin -l -i'` prints "This account is currently
+ * not available." and exits 0, so EVERY terminal on such a node would open and
+ * instantly die — the precise symptom the existence check was added to prevent,
+ * reintroduced one rung higher.
+ *
+ * That is not hypothetical for this rung specifically: it exists BECAUSE a
+ * tm8-server under systemd usually inherits no `SHELL`, and a systemd service
+ * account is exactly the kind of account whose passwd shell is `nologin`.
+ *
+ * `/etc/shells` is the system's own answer to "is this a login shell" — it is
+ * what `chsh` validates against — so a candidate is accepted only if it is
+ * listed there. A node with no `/etc/shells` at all falls back to accepting any
+ * existing absolute path, because refusing everything would be worse than the
+ * pre-check behaviour.
  */
 export function resolveLoginShell(parentEnv: NodeJS.ProcessEnv): string {
-  const candidates = [parentEnv['SHELL'], safePasswdShell(), FALLBACK_LOGIN_SHELL];
-  for (const candidate of candidates) {
+  const permitted = loginShells();
+  const usable = (candidate: string | undefined): candidate is string => {
     const trimmed = candidate?.trim();
-    if (trimmed && trimmed.startsWith('/') && existsSync(trimmed)) return trimmed;
+    if (!trimmed || !trimmed.startsWith('/') || !existsSync(trimmed)) return false;
+    // An empty list means the node has no /etc/shells to consult; do not let
+    // that refuse every candidate down to a fallback that is equally unchecked.
+    return permitted.size === 0 || permitted.has(trimmed);
+  };
+  for (const candidate of [parentEnv['SHELL'], safePasswdShell(), FALLBACK_LOGIN_SHELL]) {
+    if (usable(candidate)) return candidate.trim();
   }
   return FALLBACK_LOGIN_SHELL;
+}
+
+/** The system's own list of login shells — what `chsh` validates against. */
+function loginShells(): Set<string> {
+  try {
+    return new Set(
+      readFileSync('/etc/shells', 'utf8')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('/')),
+    );
+  } catch {
+    return new Set();
+  }
 }
 
 /** `userInfo()` throws when the uid has no passwd entry (some containers). */
@@ -85,7 +122,14 @@ function safePasswdShell(): string | undefined {
  * where PATH and prompt customisation live on most setups) and `-i` states
  * interactivity outright rather than relying on each shell's own heuristic for
  * inferring it from an attached tty. Both flags are accepted by bash, zsh,
- * fish, ksh and dash — the set this resolver can produce.
+ * fish, ksh and dash.
+ *
+ * The claim is about THOSE shells, not about everything `resolveLoginShell` can
+ * return — it returns whatever `/etc/shells` admits, which is the system's list
+ * and not this file's. csh and tcsh are the known exception: they take `-l`
+ * only as the sole flag, so `-l -i` would silently lose login-ness rather than
+ * fail. Neither is in a default `/etc/shells`; if one ever is, this is the
+ * function to revisit.
  *
  * This function exists as its own exported unit so a test can assert the exact
  * string. It is the only place a vanilla terminal's argv is decided.

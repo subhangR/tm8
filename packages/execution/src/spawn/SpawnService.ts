@@ -1084,6 +1084,7 @@ export class SpawnService {
     }
 
     this.sessionAuth.set(sessionId, auth);
+    let launchedPty = false;
     try {
       if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
 
@@ -1093,6 +1094,8 @@ export class SpawnService {
         ...(request.cols ? { cols: request.cols } : {}),
         ...(request.rows ? { rows: request.rows } : {}),
       });
+
+      launchedPty = true;
 
       await this.graph.transition(auth, { sessionId, status: 'running' });
 
@@ -1106,6 +1109,17 @@ export class SpawnService {
         commandResult,
       };
     } catch (error) {
+      // KILL THE PTY IF IT IS ALREADY UP, and this is not the same call `spawn`
+      // makes. If the launch succeeded and the `running` transition then threw,
+      // the row is about to be marked `failed` and the claims dropped — but the
+      // shell would stay alive with nothing claiming it. It cannot be reaped:
+      // `reconcileNodeGhosts` skips any session that still has a live PTY, so a
+      // boot-time sweep passes over it too. `spawn()` has the identical hole
+      // and it matters less there, because an agent process eventually exits on
+      // its own; A LOGIN SHELL RUNS FOREVER BY DESIGN. An orphaned interactive
+      // shell as the tm8 OS user, unreachable and unreapable short of
+      // restarting the node, is the one outcome this path must not produce.
+      if (launchedPty) this.pty.kill(sessionId);
       // The row exists and the graph believes a session is spawning. Leaving it
       // there would burn a slot against the terminal cap forever.
       await this.failSession(auth, sessionId, error);

@@ -12,6 +12,13 @@
 --
 -- ---------------------------------------------------------------------------
 -- THE AUDIT — every SQL surface that branches on `session_kind`
+--
+-- SQL ONLY, AND THE SCOPE IS THE POINT. The TypeScript filters were checked
+-- too (they are deny-lists, as `contract.ts` requires, and a shell session
+-- survives all of them), but they are NOT enumerated here — a list is a
+-- promise to be complete, and this one is complete about SQL. Item 4b below is
+-- the exception that proves the boundary: SQL living inside a .ts file, which
+-- a grep of this directory cannot see.
 -- ---------------------------------------------------------------------------
 --
 --  1. `internal.live_work_session_count` (083 §3) — `= 'agent'`.
@@ -48,6 +55,15 @@
 --     a shell session is a thing a member deliberately started and expects to
 --     find, so it COUNTS. Only the private login terminal is hidden, and now
 --     the predicate says exactly that and nothing more.
+--
+--  4b. `credential-catalog.ts:521` — `where ws.session_kind = 'agent'`, inside
+--     `terminateAgentSessions`. SQL, but embedded in TypeScript, which is why
+--     a `db/migrations` grep does not find it and why it is called out
+--     separately. UNCHANGED AND CORRECT for shell: disconnecting a vendor
+--     credential must not kill a member's vanilla terminals, which hold no
+--     vendor credential to be invalidated. Named here because an allow-list
+--     that happens to be right is still an allow-list, and the next person
+--     widening this column needs to re-decide it rather than not see it.
 --
 --  5. `public.execution_spawn` (048) — no `session_kind` predicate; it inserts
 --     rows that default to 'agent'. UNTOUCHED ON PURPOSE. It is a shared body
@@ -122,10 +138,19 @@ comment on function internal.shell_session_count(uuid) is
 --   * no `p_agent_tool`, `p_model` or `p_mode` parameter AT ALL, so the row's
 --     `agent_tool` is NULL by construction and not by a caller remembering to
 --     pass null;
---   * no `workdir_mode`/`base_ref` parameters: a shell opens at the project
---     root, so 'project' is the only legal value and it is written here rather
---     than accepted. A worktree exists so concurrent agents do not collide on
---     one checkout; a human who names a project means that directory.
+--   * no `workdir_mode`/`base_ref` parameters: the mode is DERIVED from whether
+--     a project was named, not accepted from the caller. 'project' when there
+--     is one, 'scratch' when there is not — the same two values
+--     `resolveWorkdir` (manifest.ts) derives for a spawn, so the two paths
+--     describe a projectless session identically. An earlier version of this
+--     wrote 'project' unconditionally and called it "the only legal value";
+--     that was wrong on both counts — the column's CHECK admits
+--     ('project','worktree','scratch'), and
+--     `bootstrap-manifest.ts` REFUSES the row it produced
+--     ("launchProjectId may be null only when workdirMode is scratch").
+--     'worktree' is the one this function will never write: a worktree exists
+--     so concurrent agents do not collide on one checkout; a human who names a
+--     project means that directory.
 --     `p_workdir_path` IS accepted, because the caller has already resolved and
 --     re-validated the project's recorded `working_dir`; the column's own CHECK
 --     (absolute, no `..`) is the backstop.
@@ -201,7 +226,14 @@ begin
   insert into public.work_sessions(entity_id, title, node_id, project_id, workdir_mode,
                                    workdir_path, status, session_kind)
   values (session_id, coalesce(nullif(btrim(p_title), ''), 'Terminal'), p_node_id,
-          p_project_id, 'project', p_workdir_path, 'spawning', 'shell');
+          p_project_id,
+          -- DERIVED, never 'project' unconditionally. A projectless terminal
+          -- that claimed `workdir_mode = 'project'` with a NULL project_id and
+          -- a NULL workdir_path renders in the UI as a project working
+          -- directory with no directory, and is the exact combination
+          -- `bootstrap-manifest.ts` rejects.
+          case when p_project_id is null then 'scratch' else 'project' end,
+          p_workdir_path, 'spawning', 'shell');
 
   return internal.ledger_record(p_client_mutation_id, 'execution.terminal.start',
            internal.command_result(session_id, null,

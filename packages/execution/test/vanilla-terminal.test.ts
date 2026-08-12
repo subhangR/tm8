@@ -12,6 +12,7 @@
 // resize in a real interactive program) stays MANUAL and is stated as such
 // rather than approximated by an assertion that would pass without them.
 
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 import { SpawnService } from '../src/spawn/SpawnService.js';
 import {
+  FALLBACK_LOGIN_SHELL,
   SHELL_ENV_KEYS,
   ShellSessionLauncher,
   composeShellEnv,
@@ -65,6 +67,26 @@ describe('the vanilla-terminal argv is closed', () => {
 
   it('single-quotes a shell path with spaces rather than word-splitting it', () => {
     expect(loginShellCommand('/opt/my shell/bash')).toBe("exec '/opt/my shell/bash' -l -i");
+  });
+
+  it('REFUSES nologin and false, even though both exist and passwd may name them', () => {
+    // The finding this guards: the passwd rung is tried BEFORE the fallback,
+    // and a systemd service account's passwd shell is very often
+    // `/usr/sbin/nologin` — which exists, passes every file test, and prints
+    // "This account is currently not available." before exiting 0. Every
+    // terminal on such a node would open and instantly die.
+    for (const notAShell of ['/usr/sbin/nologin', '/bin/false']) {
+      if (!existsSync(notAShell)) continue;
+      const resolved = resolveLoginShell({ SHELL: notAShell });
+      expect(resolved, `${notAShell} must not be accepted as a login shell`).not.toBe(notAShell);
+      // …and what it falls through to is a REAL login shell, by the system's
+      // own definition, not merely a different existing file.
+      const shells = existsSync('/etc/shells')
+        ? readFileSync('/etc/shells', 'utf8').split('\n').map((l) => l.trim()).filter((l) => l.startsWith('/'))
+        : [];
+      if (shells.length > 0) expect(shells).toContain(resolved);
+      else expect(resolved).toBe(FALLBACK_LOGIN_SHELL);
+    }
   });
 
   it('resolves an inherited SHELL, and refuses one that is not on this machine', () => {
