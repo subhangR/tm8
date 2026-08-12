@@ -169,7 +169,8 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 134 -> 135: `session dispatch`.
     // 135 -> 137 (2026-08-12): collection add + collection remove.
     // 137 -> 139 (2026-08-12): project file-history + project blame.
-    expect(COMMAND_PATHS).toHaveLength(139);
+    // 139 -> 142 (2026-08-12): worktree cherry-pick|branch|stash aliases.
+    expect(COMMAND_PATHS).toHaveLength(142);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {

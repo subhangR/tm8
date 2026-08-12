@@ -420,6 +420,14 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
         )}
       </div>
 
+      {/* -- tier-2 disclosure ------------------------------------------------
+        The map's §4.1 AGREE± verdict, honored literally: cherry-pick, branch
+        ops and stash are the RIGHT surface but must sit behind a disclosure so
+        the rail stays scannable — an overflow "More" section, not four more
+        top-level button rows. A native <details> keeps it stateless. */}
+      <details className="pn-git__more" data-testid="session-git-more">
+        <summary className="pn-git__more-summary">More… (cherry-pick · branches · stash)</summary>
+
       {/* -- cherry-pick ------------------------------------------------------ */}
       <div className="pn-git__actions" data-testid="session-git-cherry-group">
         <input
@@ -717,6 +725,7 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
           <span className="pn-git__note" data-testid="session-git-stash-empty">no stash entries</span>
         )}
       </div>
+      </details>
 
       {/* -- diff ------------------------------------------------------------- */}
       <div className="pn-git__diff-section">

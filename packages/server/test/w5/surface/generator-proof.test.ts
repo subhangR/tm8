@@ -186,6 +186,7 @@ describe('W5.C generator proof', () => {
     // 74 -> 75 (2026-08-09, merge): execution.dispatch.
     // 80 -> 84 (2026-08-12, Git UI landing): the four execution.git* command
     // bodies bind.
-    expect(ENTRIES).toHaveLength(84);
+    // 84 -> 87 (2026-08-12): the three Tier 2 command bodies bind.
+    expect(ENTRIES).toHaveLength(87);
   });
 });

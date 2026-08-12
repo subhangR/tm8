@@ -271,6 +271,14 @@ const GIT_NET_NEW_OPERATIONS = [
   'execution.gitRollback',
   'execution.gitCommit',
   'execution.gitMerge',
+  // 2026-08-12 (Tier 2 completion): cherry-pick, branch ops, stash.
+  'execution.gitCherryPick',
+  'execution.gitBranch',
+  'execution.gitStash',
+  // 2026-08-12 (FileInspector): the two survey reads joined the projects
+  // registration seam alongside the Tier 2 server handlers.
+  'projects.file.history',
+  'projects.file.blame',
 ] as const;
 
 /**
@@ -425,7 +433,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 122 -> 123: projects.files.read (the viewer half).
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registry.size).toBe(133);
+    expect(registry.size).toBe(136);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -587,7 +595,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
     // 80 -> 84 (2026-08-12, Git UI landing): the four execution.git* command
     // bodies bind (gitStatus/gitDiff are GETs and bind nothing).
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(84);
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(87);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -738,8 +746,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 141/139 -> 143/141 (2026-08-12): collections.addItem/removeItem, mounted.
     // 143/141 -> 149/147 (2026-08-12, Git UI landing): the six execution.git*
     // rows, all mounted.
-    expect(health).toMatchObject({ ok: true, operations: 151, implemented: 149 });
-    expect(harness.production.server.registry.size).toBe(149);
+    expect(health).toMatchObject({ ok: true, operations: 154, implemented: 152 });
+    expect(harness.production.server.registry.size).toBe(152);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -759,7 +767,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(149);
+    expect(registered.size + residual.length).toBe(152);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

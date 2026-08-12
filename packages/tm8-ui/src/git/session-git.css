@@ -266,3 +266,16 @@
 .cv2-root .pn-git__stash-subject {
   color: var(--pn-ink-2);
 }
+
+/* Tier-2 disclosure — the map's AGREE±: the rail stays scannable, the
+   completion verbs live one twist away. */
+.pn-git__more { margin-top: 6px; }
+.pn-git__more-summary {
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+  user-select: none;
+}
+.pn-git__more[open] .pn-git__more-summary { opacity: 1; }
