@@ -1051,6 +1051,16 @@ export interface ExecutionRuntime {
   promptSettlement: PromptSettlementWaiter;
   spawnService: SpawnService;
   graph: DbGraphPort;
+  /**
+   * The id this node stamps onto `work_sessions.node_id`.
+   *
+   * Exposed so the composition root does not have to recompute it. Anything
+   * that revokes or reconciles "this node's" rows must key on the SAME value
+   * the SpawnService wrote, and a second `${host}:${port}` expression in
+   * main.ts is exactly how those two drift apart — silently, into a sweep that
+   * matches nothing.
+   */
+  nodeId: string;
   register(registry: HandlerRegistry, options?: RegisterHandlersOptions): void;
   /**
    * Retire sessions this node left behind when it last died. Call ONCE at
@@ -1092,6 +1102,11 @@ export interface ExecutionRuntime {
 export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRuntime {
   const sessionCap = deps.sessionCap ?? resolveSessionCap(process.env);
   const graph = new DbGraphPort(deps.db, sessionCap);
+  // Hoisted because THREE things need to agree on it: the SpawnService that
+  // stamps `work_sessions.node_id`, the exit sink's credential revocation, and
+  // the sweep job. A node that revoked against a different id than it stamped
+  // would silently revoke nothing.
+  const nodeId = deps.nodeId ?? `${deps.config.host}:${deps.config.port}`;
 
   let spawnService!: SpawnService;
   // See PromptSettlementWaiter's own docs (@tm8/execution) for why this exists:
@@ -1103,8 +1118,22 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
   const promptSettlement = new PromptSettlementWaiter();
   const pty = new PtyHostService({
     ...(deps.logger ? { logger: deps.logger } : {}),
-    onSessionStatus: (sessionId: string, status: PtySessionStatus, exitInfo: PtyExitInfo) =>
-      spawnService.handlePtyExit(sessionId, status, exitInfo),
+    onSessionStatus: (sessionId: string, status: PtySessionStatus, exitInfo: PtyExitInfo) => {
+      const settled = spawnService.handlePtyExit(sessionId, status, exitInfo);
+      // An exited agent must not keep a usable bearer. 074 shipped
+      // `revoke_agent_auth_session` and nothing ever called it, so until now a
+      // token outlived its agent for its whole TTL: measured on this node, 124
+      // of 152 live agent credentials belonged to sessions that had stopped.
+      //
+      // Deliberately NOT awaited and deliberately never allowed to throw. The
+      // exit transition is the load-bearing write here — a session left at
+      // 'running' is a ghost the UI paints as live and the concurrency cap
+      // counts forever (see this function's header) — and a failed revocation
+      // must not be able to cost us that. What it costs instead is bounded:
+      // the sweep job re-offers this session within one tick.
+      void revokeOrphanedAgentCredentials('agent-exit-revoke');
+      return settled;
+    },
     onPromptSettled: promptSettlement.resolve,
     // Same lazy-closure reason as onSessionStatus above: the activity sink also
     // needs the SpawnService that holds the spawner's claims, and for the same
@@ -1126,7 +1155,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     pty,
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
-    nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,
+    nodeId,
     ...(deps.logger ? { logger: deps.logger } : {}),
     // Per-member credential delivery. Wired ONLY when this node has a data
     // root, because the credential home is a path underneath it: with no data
@@ -1148,11 +1177,43 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
 
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
 
+  /**
+   * Revoke every agent bearer on this node whose PTY is gone.
+   *
+   * A function declaration, so the exit sink constructed above can call it —
+   * the same lazy-closure shape this function already uses for `spawnService`,
+   * and safe for the same reason: nothing invokes it until a PTY exits.
+   *
+   * Keyed on the PTY table rather than on `work_sessions.status`, because
+   * status is writable by any space member through `work_session_transition`
+   * (043:92) — a status-keyed revocation would let any member kill any other
+   * member's live agent credential. See the door's own comment in migration 100.
+   *
+   * Runs as the loopback owner because the door is node-admin gated. Note this
+   * is a DIFFERENT reason from `reconcileGhosts` below, which needs an owner
+   * identity because its RPC has no node-admin bypass at all.
+   */
+  async function revokeOrphanedAgentCredentials(requestId: string): Promise<void> {
+    try {
+      const o = await owner();
+      await deps.db.rpc(
+        { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId },
+        'public.revoke_orphaned_agent_sessions',
+        [nodeId, pty.liveSessionIds()],
+      );
+    } catch (error) {
+      deps.logger?.warn?.('execution: agent credential revocation failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   return {
     pty,
     promptSettlement,
     spawnService,
     graph,
+    nodeId,
     register: (registry, options) =>
       registerHandlers(registry, spawnService, graph, deps.db, owner, pty, sessionCap, deps.dataDir, options),
     reconcileGhosts: async () => {
@@ -1256,12 +1317,13 @@ export function registerExecutionHandlers(
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
   const worktrees = resolveWorktreeManager(deps.dataDir);
+  const nodeId = `${deps.config.host}:${deps.config.port}`;
   const spawnService = new SpawnService({
     graph,
     pty: deps.pty,
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
-    nodeId: `${deps.config.host}:${deps.config.port}`,
+    nodeId,
     ...(deps.logger ? { logger: deps.logger } : {}),
     // Same wiring as `createExecutionRuntime` above, deliberately duplicated
     // rather than shared: a node on the legacy shape must not silently lose
@@ -1287,6 +1349,7 @@ export function registerExecutionHandlers(
     promptSettlement: new PromptSettlementWaiter(),
     spawnService,
     graph,
+    nodeId,
     register: () => {},
     // Same reconciliation as createExecutionRuntime — a node wired through the
     // legacy shape leaves the same ghosts behind and deserves the same cleanup.

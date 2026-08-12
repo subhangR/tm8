@@ -469,7 +469,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // This is that re-measurement: `ls db/migrations/*.sql | wc -l` = 94.
     // Keeping either branch's 93 would have been the previous-plus-one error
     // the comment above warns against, arrived at by two correct measurements.
-    expect(server.appliedMigrations.length).toBe(94);
+    // 94 -> 95 on 2026-08-11: 100 (Phase 0 containment — node admin resolved
+    // from `accounts` rather than the claim, plus the orphaned-agent-credential
+    // sweep doors). Re-measured with `ls db/migrations/*.sql | wc -l` = 95, not
+    // incremented.
+    expect(server.appliedMigrations.length).toBe(95);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

@@ -115,7 +115,12 @@ describe('token lifecycle (S8/R6)', () => {
     const ttl = (expiresAt: string) => Date.parse(expiresAt) - h.clock.nowMs();
     expect(ttl(browser.session.expiresAt)).toBe(30 * DAY);
     expect(ttl(cli.session.expiresAt)).toBe(90 * DAY);
-    expect(ttl(agent.session.expiresAt)).toBe(7 * DAY);
+    // 7d -> 48h. An agent bearer is now revoked when its agent exits and swept
+    // when its PTY is gone, so this figure is only the backstop for the case
+    // where both of those fail; it is sized to clear the longest work session
+    // measured on a real node (~1d22h) rather than to a round number. See
+    // `SESSION_TTL_MS` in src/identity/pg-auth.ts for the full reasoning.
+    expect(ttl(agent.session.expiresAt)).toBe(2 * DAY);
   });
 
   it('revocation takes effect immediately and is idempotent', async () => {

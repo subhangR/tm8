@@ -39,8 +39,29 @@ const hasher = new ScryptPasswordHasher();
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-/** R6 expiry (mirrors identity/service.ts): browser 30d, cli 90d, agent 7d. */
-export const SESSION_TTL_MS = { browser: 30 * DAY, cli: 90 * DAY, agent: 7 * DAY } as const;
+/**
+ * R6 expiry: browser 30d, cli 90d, agent 48h.
+ *
+ * The agent value is a BACKSTOP, not the mechanism. An agent bearer should die
+ * when its agent does, and two things now make that happen: the exit sink
+ * revokes it (facade/execution-handlers.ts), and a sweep keyed on PTY liveness
+ * catches the deaths the sink misses — a signal kill, a crashed node, a
+ * process that never reached its exit handler (scheduler/jobs/agent-sessions.ts).
+ * This constant only bounds the case where BOTH fail.
+ *
+ * Why 48h and not something aggressive: measured on this node, work sessions
+ * run to a p95 of ~1d8h and a maximum of ~1d22h. A 24h ceiling would cut live
+ * agents off from their own credential mid-run, which is a worse failure than
+ * the one being fixed. 48h clears the longest observed session with margin and
+ * still cuts the orphan window by 3.5x.
+ *
+ * The narrower fix — restoring the liveness clause 072:36-59 had, which
+ * 074:26-41 dropped when it redefined `resolve_auth_session` — is deliberately
+ * NOT taken here: `work_session_transition` is `require_space_member` only, so
+ * until session lifecycle is gated it would let any space member revoke any
+ * other member's live agent credential with one call.
+ */
+export const SESSION_TTL_MS = { browser: 30 * DAY, cli: 90 * DAY, agent: 48 * HOUR } as const;
 
 export type LoginKind = keyof typeof SESSION_TTL_MS;
 

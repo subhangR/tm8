@@ -14,6 +14,7 @@ import { resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import { CredentialSessionLauncher } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
+import { AutoOwnerInvariantError, assertAutoOwnerInvariant } from './bootstrap/auto-owner-invariant.js';
 
 import { createDb } from './db/index.js';
 import type { Db, DbClaims } from './db/types.js';
@@ -37,6 +38,7 @@ import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/ser
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
+import { createAgentSessionSweepJob } from './scheduler/jobs/agent-sessions.js';
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
@@ -193,6 +195,23 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * `registerExecutionHandlers` here.
    */
   const execution = db ? createExecutionRuntime({ db, config, dataDir, owner }) : undefined;
+
+  // BEFORE anything is served, and before the launch bootstrap below can mint
+  // rows under the owner's identity: a multi-account node must not be reachable
+  // as its owner without authenticating. Throws to refuse the boot; see the
+  // module header for why this is a refusal rather than a warning.
+  if (db) {
+    try {
+      await assertAutoOwnerInvariant({ db, disableAutoOwner: config.disableAutoOwner === true });
+    } catch (error) {
+      if (error instanceof AutoOwnerInvariantError) throw error;
+      // Anything else is the database being unreachable at boot, which is an
+      // outage and not a security decision. Say so and carry on.
+      console.warn(
+        `  auto-owner invariant not checked: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
 
   if (db && config.launchBootstrap) {
     const seeded = await ensureLaunchResources({
@@ -691,6 +710,27 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       );
       scheduler.register(
         createDeletedFileBlobPurgeJob({ db, blobStore, claims: sweepClaims('file-blob-purge') }),
+      );
+    }
+    // Orphaned agent credentials. Only where this node runs agents at all — a
+    // node with no execution block never minted one. `runOnStart` is the point
+    // as much as the interval is: a restarted node holds no PTYs, so its first
+    // tick revokes every credential left behind by whatever killed it.
+    if (execution) {
+      scheduler.register(
+        createAgentSessionSweepJob({
+          db,
+          nodeId: execution.nodeId,
+          pty: execution.pty,
+          claims: async () => {
+            const o = await owner();
+            return {
+              identityId: o.identityId,
+              nodeAdmin: o.isNodeAdmin,
+              requestId: 'agent-session-sweep',
+            };
+          },
+        }),
       );
     }
     scheduler.start();

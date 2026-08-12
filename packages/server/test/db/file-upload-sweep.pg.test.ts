@@ -25,6 +25,13 @@ const SWEEP_MIGRATION_SUFFIX = '_file_upload_slot_sweep.sql';
 
 interface Fixture {
   identityId: string;
+  /**
+   * A second, ORDINARY account. Since migration 100 the sweep doors resolve
+   * node admin from `public.accounts` instead of the `tm8.node_admin` claim, so
+   * "not the node admin" can no longer be expressed by flipping a claim — it
+   * needs a caller who genuinely is not one.
+   */
+  plainIdentityId: string;
   spaceId: string;
   memberId: string;
 }
@@ -49,12 +56,24 @@ async function seed(db: W1ScratchDatabase): Promise<{ fixture: Fixture; slots: S
     await client.query('set local role tm8_graph_owner');
     const f = (await client.query<Fixture>(
       `select 'sweep-owner'::text "identityId",
+              'sweep-plain'::text "plainIdentityId",
               internal.new_id()::text "spaceId",
               internal.new_id()::text "memberId"`,
     )).rows[0]!;
     await client.query(
-      `insert into public.user_profiles(identity_id,display_name) values($1,'Sweep owner')`,
-      [f.identityId],
+      `insert into public.user_profiles(identity_id,display_name)
+       values($1,'Sweep owner'),($2,'Sweep plain')`,
+      [f.identityId, f.plainIdentityId],
+    );
+    // The sweep doors are node-admin gated, and since migration 100 that is
+    // resolved from `public.accounts` rather than from the `tm8.node_admin`
+    // claim `asApp` binds. Before 100 this fixture had NO account rows at all —
+    // the claim alone was enough, which is exactly the defect 100 closes. So
+    // both roles now need real accounts, differing in `is_node_admin`.
+    await client.query(
+      `insert into public.accounts(identity_id,username,is_node_admin)
+       values($1,'sweep-owner',true),($2,'sweep-plain',false)`,
+      [f.identityId, f.plainIdentityId],
     );
     await client.query(
       `insert into public.spaces(id,name,created_by_identity) values($1,'Sweep',$2)`,
@@ -115,10 +134,15 @@ async function asApp<T>(
 ): Promise<T> {
   return database.transaction(async (client) => {
     await client.query('set local role tm8_app');
+    // The IDENTITY carries the authority now; the claim is pinned to 'true' for
+    // BOTH callers on purpose. That makes the negative case load-bearing: the
+    // non-admin arrives asserting `tm8.node_admin = true` and is refused anyway,
+    // which is the property migration 100 added and the one a claim-toggling
+    // fixture could never have tested.
     await client.query(
       `select set_config('tm8.identity_id',$1,true),set_config('tm8.actor_id','',true),
-              set_config('tm8.node_admin',$2,true),set_config('tm8.request_id','req-sweep-pg',true)`,
-      [fixture.identityId, nodeAdmin ? 'true' : 'false'],
+              set_config('tm8.node_admin','true',true),set_config('tm8.request_id','req-sweep-pg',true)`,
+      [nodeAdmin ? fixture.identityId : fixture.plainIdentityId],
     );
     return fn(async (sql, params = []) => (await client.query(sql, params)).rows as Record<string, unknown>[]);
   });

@@ -141,11 +141,18 @@ export interface IdentityServiceOptions {
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-/** R6 expiry: browser sessions outlive a workday, agent tokens outlive a long run. */
+/**
+ * R6 expiry. Kept in step with `pg-auth.ts`'s `SESSION_TTL_MS`, which is the
+ * table the LIVE auth path actually reads (this class is the shape that did not
+ * land — see this file's own header and `loopback.ts:4-12`). Two tables that
+ * disagree would invite a future reader to "repair" the live one back to the
+ * dead one's value, so they are corrected together. `pg-auth.ts` carries the
+ * reasoning for the agent figure.
+ */
 export const DEFAULT_SESSION_TTL_MS: Record<AuthSessionKind, number> = {
   browser: 30 * DAY,
   cli: 90 * DAY,
-  agent: 7 * DAY,
+  agent: 48 * HOUR,
 };
 
 export const DEFAULT_OWNER_USERNAME = 'owner';
