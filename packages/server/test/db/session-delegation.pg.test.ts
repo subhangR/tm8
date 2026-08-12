@@ -283,12 +283,22 @@ describe('105–107 — exactly these operations enforce the ladder', () => {
             and pg_get_functiondef(p.oid) like '%require_session_capability%'
           order by p.proname`)).rows.map((r) => r.proname));
     expect(callers).toEqual([
+      // 108: resume is a manage-level act
+      'execution_resume',
+      // the trigger that gates caller-initiated message delivery (108)
+      'gate_session_message_route',
       // you may only delegate a session you can already manage
       'grant_session_delegation',
-      // the two byte paths into a live PTY
+      // the WebSocket byte path into a live PTY (107)
       'grant_stream_attach',
+      // 108: terminate needs manage, prompt needs converse
+      'record_execution_command',
+      // 108: renaming somebody's session is a manage-level act
+      'rename_work_session',
       // killing an agent's credential is a manage-level act
       'revoke_agent_auth_session',
+      // 108 carve-out two: only the exited/failed arm
+      'work_session_transition',
     ]);
   });
 });

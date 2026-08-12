@@ -282,7 +282,12 @@ describe('100 part B — orphaned agent credentials', () => {
     // is `require_space_member` only (043:92). `plain` is an ordinary member who
     // neither owns nor spawned this session, and the call succeeds — that IS the
     // vector. What must not follow is the credential dying.
-    await asApp(fixture.plainIdentity, async (client) => {
+    // Flipped by the OWNER now: migration 108 made `exited` a `manage`-level
+    // act, so an ordinary member can no longer do it. That change does not
+    // weaken this test — the property under test is that the SWEEP does not key
+    // on `status`, and who wrote the status is incidental to it. (The DoS this
+    // guarded against is now closed at the source as well, by 108.)
+    await asApp(fixture.adminIdentity, async (client) => {
       await client.query(
         `select public.work_session_transition($1,'exited',0,null,null,$2)`,
         [fixture.sessionLive, `p0-dos-${randomUUID()}`],
