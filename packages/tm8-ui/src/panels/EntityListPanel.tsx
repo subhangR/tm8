@@ -43,7 +43,7 @@ import {
   needsViewer,
   resolveAction,
 } from '../domain';
-import { Avatar, type PillTone } from '../kit';
+import { Avatar, Timestamp, type PillTone } from '../kit';
 import {
   CheckingPermission,
   DisabledAction,
@@ -2336,7 +2336,10 @@ function Tile({
               {fact}
             </span>
           ))}
-          <span className="pn-tt__time">{relativeTileTime(row.updatedAt)}</span>
+          {/* activityAt, not updatedAt: the list's default order IS
+              activityAt_desc, and a row whose time disagreed with its own
+              position would be worse than no time at all. */}
+          <Timestamp className="pn-tt__time" at={row.activityAt} prefix="active" title="last activity" />
         </div>
       </MaestroTaskTile>
     );
@@ -2561,16 +2564,6 @@ function factsForControlCard(row: EntitySummary): ControlCardFacts {
   return { assignees, creator: row.createdBy ?? null, meta };
 }
 
-function relativeTileTime(iso: string): string {
-  const at = Date.parse(iso);
-  if (Number.isNaN(at)) return 'updated recently';
-  const minutes = Math.max(0, Math.round((Date.now() - at) / 60_000));
-  if (minutes < 1) return 'updated now';
-  if (minutes < 60) return `updated ${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `updated ${hours}h ago`;
-  return `updated ${Math.round(hours / 24)}d ago`;
-}
 
 
 /**

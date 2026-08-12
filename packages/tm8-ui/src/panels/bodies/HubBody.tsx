@@ -1,7 +1,7 @@
 import type { EntityDetail, EntitySummary, MessageView } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
-import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
+import { Avatar, Chip, Eyebrow, Markdown, Timestamp } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 import './hub-body.css';
@@ -224,7 +224,7 @@ function LatestMessage({ messages, now }: { messages?: readonly MessageView[]; n
         <div className="hub-latest__line">
           <span className="hub-latest__who">{author.displayName}</span> {latest.content.body}
         </div>
-        <div className="hub-latest__meta">{`latest · ${timeAgo(latest.createdAt, now)}`}</div>
+        <Timestamp className="hub-latest__meta" at={latest.createdAt} prefix="latest ·" now={now} />
       </div>
     </div>
   );
@@ -255,20 +255,3 @@ function tabArray(raw: unknown): { key: string; label: string; count: number }[]
   );
 }
 
-/**
- * The oracle's "12m ago" (line 268). `now` is a parameter rather than a call
- * to the clock so the value is testable; the render instant is the default.
- *
- * A twin of this function lives in `graph/GraphView.tsx` (private there, so it
- * cannot be imported). Not measured whether the two should be one helper —
- * that is a shared-utility question for whoever owns the third copy.
- */
-function timeAgo(iso: string, now?: string): string {
-  const end = now ? Date.parse(now) : Date.now();
-  const mins = Math.max(0, Math.round((end - Date.parse(iso)) / 60_000));
-  if (mins < 1) return 'now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}

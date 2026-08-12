@@ -4,8 +4,7 @@
  * the kit Avatar, and its kind as a Pill driven by the kind table.
  */
 import { EntityChip } from '../../entity';
-import { Avatar, Pill } from '../../kit';
-import { relTime } from '../../registry';
+import { Avatar, Pill, Timestamp } from '../../kit';
 import type { EntityId, NotificationItem } from '../../types/contract';
 import { specForNotification } from './kinds';
 
@@ -40,7 +39,7 @@ export function NotificationRow({
         <Pill tone={spec.tone} dot={false}>{spec.label}</Pill>
         {item.actor && <Avatar actor={item.actor} size={20} />}
         <span className="cv2-inbox__msg">{item.message}</span>
-        <time className="cv2-inbox__time" dateTime={item.createdAt}>{relTime(item.createdAt)}</time>
+        <Timestamp className="cv2-inbox__time" at={item.createdAt} />
       </button>
       <div className="cv2-inbox__meta">
         {spaceName && <span className="cv2-inbox__space">{spaceName}</span>}

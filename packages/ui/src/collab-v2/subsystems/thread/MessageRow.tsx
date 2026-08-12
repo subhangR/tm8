@@ -8,9 +8,9 @@
  * the replies underneath it still make sense.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Avatar, IconBtn } from '../../kit';
+import { Avatar, IconBtn, Timestamp, absTime } from '../../kit';
 import { Tombstone } from '../../entity';
-import { isTombstoned, relTime } from '../../registry';
+import { isTombstoned } from '../../registry';
 import type { ActorSummary, EntityId, FileAttachment, Mention, MessageView } from '../../types/contract';
 import { AttachmentGallery } from './AttachmentPreview';
 import { MessageBody } from './MessageBody';
@@ -105,8 +105,12 @@ export function MessageRow({
         <header className="cv2-thread__head">
           <span className="cv2-thread__author">{author.displayName}</span>
           {author.isAgent && <span className="cv2-thread__agent">AGENT</span>}
-          <span className="cv2-thread__time" title={message.createdAt}>{relTime(message.createdAt)}</span>
-          {message.state.editedAt && <span className="cv2-thread__edited">edited</span>}
+          {/* A message is about when it was said, so this is createdAt — an
+              edit does not move it up the thread and must not move its time. */}
+          <Timestamp className="cv2-thread__time" at={message.createdAt} />
+          {message.state.editedAt && (
+            <span className="cv2-thread__edited" title={`edited ${absTime(message.state.editedAt)}`}>edited</span>
+          )}
         </header>
 
         {editing ? (

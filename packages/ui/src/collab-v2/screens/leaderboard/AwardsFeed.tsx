@@ -6,8 +6,7 @@
  * they hover to Z2 and click into a panel like every other chip in the app.
  */
 import { ChipById } from '../../entity';
-import { Avatar } from '../../kit';
-import { relTime } from '../../registry';
+import { Avatar, Timestamp } from '../../kit';
 import type { PointEventView } from '../../types/contract';
 import type { AwardBreakdown } from './useLeaderboard';
 
@@ -40,7 +39,7 @@ export function AwardsFeed({ awards, celebratingId }: AwardsFeedProps) {
             </>
           )}
           <span className="cv2-ld__awardspace" />
-          <span className="t-mono cv2-ld__when">{relTime(award.createdAt)}</span>
+          <Timestamp className="t-mono cv2-ld__when" at={award.createdAt} />
         </li>
       ))}
     </ol>

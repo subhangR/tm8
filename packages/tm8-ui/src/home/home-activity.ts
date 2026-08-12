@@ -23,6 +23,7 @@
  * restraint is the difference between a feed and a fabrication.
  */
 import type { DurableWorkspaceEvent } from '@tm8/contract';
+import { elapsed, weekdayDate } from '../kit/time';
 
 export interface ActivityRow {
   /** Stable within a space: the envelope's monotonic seq (LLD §6 guarantee). */
@@ -168,9 +169,7 @@ export function dayBucketOf(iso: string, now: Date): string {
   const days = Math.round((startOf(now) - startOf(then)) / 86_400_000);
   if (days <= 0) return 'TODAY';
   if (days === 1) return 'YESTERDAY';
-  return then
-    .toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
-    .toUpperCase();
+  return weekdayDate(then).toUpperCase();
 }
 
 /** Group into the oracle's day-marked runs, order preserved. */
@@ -190,14 +189,7 @@ export function bucketActivity(
 
 /** Relative recency in the canvas's mono voice: 12m · 1h · 3h · 1d. */
 export function recencyOf(iso: string, now: Date): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '—';
-  const mins = Math.max(0, Math.round((now.getTime() - then) / 60_000));
-  if (mins < 1) return 'now';
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
+  return elapsed(iso, now.getTime()) || '—';
 }
 
 function titleFromSummary(summary: Record<string, unknown>): string | null {

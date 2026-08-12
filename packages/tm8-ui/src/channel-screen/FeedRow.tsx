@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ActorSummary, EntityId, FeedItem, Mention, MessageView } from '@tm8/contract';
-import { Avatar, Markdown, Pill, type MarkdownComponents } from '../kit';
+import { Avatar, Markdown, Pill, Timestamp, type MarkdownComponents } from '../kit';
 import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
 import {
   accessibleDateTime,
@@ -13,7 +13,6 @@ import {
   mentionIdInHref,
   mentionKey,
   participantNames,
-  replyTimeAgo,
   safeDeliveryReason,
   type FeedGroup,
 } from './feed-model';
@@ -360,7 +359,7 @@ function ThreadFooter({
       ) : null}
       {names ? <span className="chs-thread-footer__names">{names}</span> : null}
       {message.lastReplyAt ? (
-        <span className="chs-thread-footer__when">{replyTimeAgo(message.lastReplyAt)}</span>
+        <Timestamp className="chs-thread-footer__when" at={message.lastReplyAt} />
       ) : null}
     </>
   );

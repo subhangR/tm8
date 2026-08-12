@@ -4,7 +4,7 @@
  * since {t}". Agents are the common case, but a human pulling work pulses the
  * same way; the shape of the avatar carries the provenance, not the color.
  */
-import { Avatar, usePopover } from '../../kit';
+import { Avatar, Timestamp, usePopover } from '../../kit';
 import { EntityChip } from '../../entity/EntityChip';
 import { relTime } from '../../registry';
 import type { LiveWork } from '../../types/contract';
@@ -22,7 +22,7 @@ export function WorkingDetail({ work }: { work: LiveWork }) {
       <div className="cv2-workdetail__head">
         <Avatar actor={work.actor} size={22} />
         <span className="cv2-workdetail__name">{work.actor.displayName}</span>
-        <span className="cv2-workdetail__since">since {relTime(work.startedAt)}</span>
+        <Timestamp className="cv2-workdetail__since" at={work.startedAt} prefix="since" />
       </div>
       <div className="cv2-workdetail__body">
         <span className="cv2-workdetail__verb">working on</span>

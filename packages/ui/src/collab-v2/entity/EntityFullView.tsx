@@ -9,8 +9,8 @@
  * Expand ⤢ (panel) / collapse ⤡ (here) round-trip through the nav store.
  */
 import { useEffect, type ReactNode } from 'react';
-import { Avatar, Pill } from '../kit';
-import { isTombstoned, registryFor, relTime } from '../registry';
+import { Avatar, Pill, Timestamp } from '../kit';
+import { isTombstoned, registryFor } from '../registry';
 import type { FullLayoutVariant } from '../registry';
 import { useGraphStore, useNavStore } from '../stores';
 import type { EntityDetail, EntityId, EntitySummary } from '../types/contract';
@@ -184,7 +184,7 @@ export function EntityFullView({ entityId, detail: detailProp, onCollapse, slots
           </button>
         </div>
         <div className="cv2-panel__meta">
-          created by {detail.createdBy.displayName} · v{detail.version} · active {relTime(detail.activityAt)}
+          created by {detail.createdBy.displayName} · v{detail.version} · <Timestamp at={detail.activityAt} prefix="active" title="last activity" />
         </div>
       </header>
       {bodies[entry.fullLayout]}

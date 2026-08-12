@@ -4,7 +4,7 @@
  * entity system (`ChipById`), so this component knows nothing about kinds.
  */
 import { ChipById } from '../../entity';
-import { relTime } from '../../registry';
+import { Timestamp } from '../../kit';
 import type { DocVersionRow } from './useDocs';
 
 export interface VersionHistoryProps {
@@ -33,7 +33,7 @@ export function VersionHistory({ rows, loading, error, current }: VersionHistory
           >
             <span className="t-mono cv2-docs__versionno">v{row.version}</span>
             <ChipById entityId={row.changedBy} />
-            <span className="t-mono cv2-docs__versionwhen">{relTime(row.changedAt)}</span>
+            <Timestamp className="t-mono cv2-docs__versionwhen" at={row.changedAt} />
             {row.version === current && <span className="t-mono cv2-docs__versionnow">reading</span>}
           </li>
         ))}

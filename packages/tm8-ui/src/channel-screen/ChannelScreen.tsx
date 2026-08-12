@@ -8,6 +8,7 @@ import type { ComposerMentionOption } from './Composer';
 import type { ChatAttachmentUploadTask } from './chat-attachments';
 import { FeedRowGroup } from './FeedRow';
 import { ThreadPane } from './ThreadPane';
+import { dayLabel as formatDay, dayStart } from '../kit/time';
 import { groupByOperation, type ChannelPostInput, type ChannelRefusal } from './feed-model';
 import './channel-screen.css';
 
@@ -497,10 +498,10 @@ function planRows(
 ): RowPlan[] {
   const out: RowPlan[] = [];
   let previous: FeedItem | null = null;
-  let previousDay: string | null = null;
+  let previousDay: number | null = null;
   for (const group of groups) {
     const first = group.kind === 'operation' ? group.items[0] : group.item;
-    const day = dayKey(first.createdAt);
+    const day = dayStart(first.createdAt);
     const dayLabel = day !== null && day !== previousDay ? formatDay(first.createdAt) : null;
     const clustered = !dayLabel
       && newSinceItemId !== first.itemId
@@ -535,26 +536,6 @@ function continuesRun(previous: FeedItem | null, current: FeedItem, threads: boo
   if (!authorA || authorA !== authorB) return false;
   const delta = new Date(current.createdAt).getTime() - new Date(previous.createdAt).getTime();
   return Number.isFinite(delta) && delta >= 0 && delta <= CLUSTER_WINDOW_MS;
-}
-
-function dayKey(iso: string): string | null {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d.toDateString();
-}
-
-function formatDay(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const now = new Date();
-  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (d.toDateString() === now.toDateString()) return 'Today';
-  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  return d.toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
-  });
 }
 
 function FeedRowGroupWithMark({

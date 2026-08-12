@@ -6,14 +6,14 @@
  */
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Avatar, Pill, labelForWorkStatus, toneForWorkStatus } from '../kit';
+import { Avatar, Pill, Timestamp, labelForWorkStatus, toneForWorkStatus } from '../kit';
 import type { PillTone } from '../kit';
 import type {
   EntityContent, EntityDetail, EntityKind, EntityState, EntitySummary,
   WorkStatus,
 } from '../types/contract';
 import type { CollabFacade } from '../facade';
-import { formatBytes, relTime, shortSha, truncate } from './format';
+import { formatBytes, shortSha, truncate } from './format';
 import type {
   BooleanCapability, CreationSchema, KindCreateInput, KindEntry, PrimaryAction,
   RegistryCtx, TombstoneSpec,
@@ -520,7 +520,7 @@ const teamMember: KindEntry = {
           <div className="cv2-field">
             <span className="cv2-field__value">on</span>
             <ctx.Chip entity={st.liveWork.task} variant="ref" />
-            <span className="cv2-field__value t-mono">since {relTime(st.liveWork.startedAt)}</span>
+            <Timestamp className="cv2-field__value t-mono" at={st.liveWork.startedAt} prefix="since" />
           </div>
         )}
         <div className="cv2-field">
@@ -781,7 +781,7 @@ const pullRequest: KindEntry = {
         </div>
         {st.fetchedAt && (
           <div className="cv2-field">
-            <span className="cv2-field__value t-mono">fetched {relTime(st.fetchedAt)}</span>
+            <Timestamp className="cv2-field__value t-mono" at={st.fetchedAt} prefix="fetched" />
           </div>
         )}
       </>
@@ -801,7 +801,7 @@ const pullRequest: KindEntry = {
                 <a className="t-code" href={st.url} target="_blank" rel="noreferrer">{st.url}</a>
               </Field>
             )}
-            {st.fetchedAt && <Field label="fetched"><span className="t-mono">{relTime(st.fetchedAt)}</span></Field>}
+            {st.fetchedAt && <Field label="fetched"><Timestamp className="t-mono" at={st.fetchedAt} /></Field>}
           </div>
         )}
         <ContentRecord detail={detail} omit={['repository', 'number', 'state', 'url', 'fetchedAt']} />
@@ -860,7 +860,7 @@ const commit: KindEntry = {
         <div className="cv2-field">
           <span className="cv2-field__value t-mono">{st.repository}</span>
           <span className="cv2-field__value t-mono">{shortSha(st.sha)}</span>
-          {st.committedAt && <span className="cv2-field__value t-mono">{relTime(st.committedAt)}</span>}
+          {st.committedAt && <Timestamp className="cv2-field__value t-mono" at={st.committedAt} />}
         </div>
       </>
     );
@@ -874,7 +874,7 @@ const commit: KindEntry = {
             <Field label="repo"><span className="t-mono">{st.repository}</span></Field>
             <Field label="sha"><span className="t-mono">{st.sha}</span></Field>
             <Field label="message"><span className="cv2-prewrap">{st.message}</span></Field>
-            {st.committedAt && <Field label="committed"><span className="t-mono">{relTime(st.committedAt)}</span></Field>}
+            {st.committedAt && <Field label="committed"><Timestamp className="t-mono" at={st.committedAt} /></Field>}
           </div>
         )}
         <ContentRecord detail={detail} omit={['repository', 'sha', 'message', 'committedAt']} />

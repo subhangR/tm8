@@ -8,8 +8,7 @@
 import { useEffect, useState } from 'react';
 import { ChipById } from '../../entity';
 import type { CollabFacade } from '../../facade/CollabFacade';
-import { Avatar, Eyebrow } from '../../kit';
-import { relTime } from '../../registry';
+import { Avatar, Eyebrow, Timestamp } from '../../kit';
 import { useAsyncValue } from '../../shell';
 import type { ActivityItem, SpaceId } from '../../types/contract';
 
@@ -31,7 +30,8 @@ function ActivityRow({ item }: { item: ActivityItem }) {
         <span className="cv2-home__actverb">{item.verb.replace(/_/g, ' ')}</span>
         {item.entityId && <> <ChipById entityId={item.entityId} /></>}
       </span>
-      <time className="cv2-home__acttime" dateTime={item.createdAt}>{relTime(item.createdAt)}</time>
+      {/* An activity row is the event itself, so createdAt IS the event time. */}
+      <Timestamp className="cv2-home__acttime" at={item.createdAt} />
     </li>
   );
 }

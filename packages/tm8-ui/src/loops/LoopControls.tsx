@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CommandResult, EntityDetail } from '@tm8/contract';
 import { entityPatchInput, type AuthoringCommands } from '../authoring/commands';
+import { absTime } from '../kit/time';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import { loopScheduleProblem, nextLoopRunAt } from './schedule';
 
@@ -173,7 +174,7 @@ export function LoopControls({
   );
 }
 
+/** Unparseable reads as an em dash rather than leaking the raw ISO string. */
 function formatInstant(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  return absTime(value) || '—';
 }

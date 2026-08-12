@@ -38,6 +38,7 @@
  *   undelivered          → nothing happened anywhere. Said loudly.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Timestamp } from '../../collab-v2/kit';
 import type { RealFacade } from '../RealFacade';
 import { disabledBecause } from './Unavailable';
 import './styles/composer.css';
@@ -51,6 +52,7 @@ export interface SentPrompt {
   id: string;
   text: string;
   /** Wall-clock `HH:MM:SS` of the attempt. */
+  /** ISO instant the attempt was made; rendered by the shared Timestamp. */
   at: string;
   outcome: SendOutcome;
   /** The failure, verbatim from the server. Never paraphrased. */
@@ -143,7 +145,7 @@ export function Composer({ facade, sessionId, live, status, onTerminated }: Comp
     const { outcome, error: failure } = await deliverPrompt(facade, sessionId, text);
 
     setHistory((prev) => [
-      { id: cmid(), text, at: new Date().toISOString().slice(11, 19), outcome, error: failure },
+      { id: cmid(), text, at: new Date().toISOString(), outcome, error: failure },
       ...prev,
     ].slice(0, HISTORY_LIMIT));
 
@@ -221,7 +223,7 @@ export function Composer({ facade, sessionId, live, status, onTerminated }: Comp
         <ol className="ws-composer__history" data-testid="composer-history" aria-label="Prompts sent">
           {history.map((h) => (
             <li key={h.id} className="ws-composer__sent" data-outcome={h.outcome}>
-              <span className="ws-composer__at t-mono">{h.at}</span>
+              <Timestamp className="ws-composer__at t-mono" at={h.at} />
               <span className="ws-composer__text">{h.text}</span>
               {h.outcome === 'undelivered' && (
                 <strong className="ws-composer__failed">

@@ -3,7 +3,8 @@
  * and rails become tombstone chips; cards keep their footprint (title struck,
  * counters intact) so lists don't reflow when history is kept honest.
  */
-import { TOMBSTONE, registryFor, relTime } from '../registry';
+import { Timestamp } from '../kit';
+import { TOMBSTONE, registryFor } from '../registry';
 import type { EntitySummary } from '../types/contract';
 
 export interface TombstoneProps {
@@ -38,7 +39,7 @@ export function Tombstone({ entity, variant = 'chip' }: TombstoneProps) {
         <span className="cv2-count">⭐ {entity.counters.stars}</span>
         <span className="cv2-count">◈ {entity.counters.points}</span>
         <span className="cv2-count">💬 {entity.counters.messages}</span>
-        {entity.deletedAt && <span className="cv2-count cv2-count--right">deleted {relTime(entity.deletedAt)}</span>}
+        {entity.deletedAt && <Timestamp className="cv2-count cv2-count--right" at={entity.deletedAt} prefix="deleted" />}
       </div>
     </div>
   );

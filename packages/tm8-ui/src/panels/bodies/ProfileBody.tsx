@@ -10,7 +10,7 @@ import {
 } from '../../domain/memory';
 import { MemorySetBlock, edgesOf, type MemoryAuthoring } from './MemorySetBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
-import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
+import { Avatar, Chip, Eyebrow, Markdown, Timestamp } from '../../kit';
 /*
  * MODULE-DEEP, not through `terminal/index.ts`, deliberately: the barrel also
  * exports `LiveTerminal`, which pulls xterm into the graph of whatever imports
@@ -554,7 +554,7 @@ function LiveWorkBlock({
         {task.title}
       </button>
       {startedAt ? (
-        <span className="pn-profile__since">{`since ${elapsed(startedAt, now)} ago`}</span>
+        <Timestamp className="pn-profile__since" at={startedAt} prefix="since" now={now} />
       ) : null}
       <span className="pn-profile__spacer" />
       <HollowInline caption="Unverified: this record names a task but no session, so there is nothing to ask the node about. A liveness verdict is never inferred from a stored record.">
@@ -747,7 +747,7 @@ function SessionRowsBlock({
             <span aria-hidden className="pn-profile__sep">
               ·
             </span>
-            <span className="pn-profile__ago">{elapsed(peer.activityAt, now)}</span>
+            <Timestamp className="pn-profile__ago" at={peer.activityAt} now={now} title="last activity" />
           </button>
         );
       })}
@@ -929,18 +929,3 @@ function summariesOf(detail: EntityDetail, params: Params): readonly EntitySumma
 }
 
 
-/**
- * Elapsed time as the oracle writes it: `2m`, `3h`, `2d` (line 479 composes
- * "since 2m ago"; line 490 uses the bare form). A near twin of `GraphView`'s
- * private `timeAgo`, which returns the "…ago" form instead — they differ in
- * output, so this is not a copy of it. A shared home in `domain/` is the right
- * fix and belongs to that lane; flagged rather than assumed.
- */
-function elapsed(iso: string, now: string): string {
-  const mins = Math.max(0, Math.round((Date.parse(now) - Date.parse(iso)) / 60_000));
-  if (mins < 1) return '<1m';
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
-}

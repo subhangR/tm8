@@ -14,10 +14,8 @@
  * All kind variation comes from the KindRegistry entry — no kind branches.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Avatar, IconBtn, Pill } from '../kit';
-import {
-  isTombstoned, registryFor, relTime,
-} from '../registry';
+import { Avatar, IconBtn, Pill, Timestamp } from '../kit';
+import { isTombstoned, registryFor } from '../registry';
 import { useGraphStore, useNavStore, usePresenceStore } from '../stores';
 import {
   isCollabError,
@@ -149,7 +147,7 @@ function ActivityTab({ entityId }: { entityId: EntityId }) {
         <div key={a.id} className="cv2-activity__row">
           {a.actor ? <Avatar actor={a.actor} size={18} /> : <span className="cv2-activity__sys">⚙</span>}
           <span className="t-code">{a.verb}</span>
-          <span className="cv2-activity__time">{relTime(a.createdAt)}</span>
+          <Timestamp className="cv2-activity__time" at={a.createdAt} />
         </div>
       ))}
     </div>
@@ -420,7 +418,9 @@ export function EntityPanel({
         <span className="cv2-panel__createdby">
           <Avatar actor={live.createdBy} size={16} /> {live.createdBy.displayName}
         </span>
-        <span className="cv2-panel__meta">v{live.version} · active {relTime(live.activityAt)}</span>
+        <span className="cv2-panel__meta">
+          v{live.version} · <Timestamp at={live.activityAt} prefix="active" title="last activity" />
+        </span>
       </footer>
     </section>
   );

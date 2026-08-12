@@ -493,6 +493,13 @@
   font-size: 13.5px;
 }
 .ws-task-panel .pn-tt__inline { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
+.ws-task-panel .pn-tt__when {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
 .ws-task-panel .pn-tt__actions { display: none; align-items: center; gap: 3px; flex: 0 0 auto; }
 .ws-task-panel .pn-tt:hover .pn-tt__inline,
 .ws-task-panel .pn-tt:focus-within .pn-tt__inline { display: none; }

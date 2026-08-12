@@ -14,8 +14,7 @@
  * so a 10k-message room mounts a few dozen rows.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Avatar } from '../../kit';
-import { relTime } from '../../registry';
+import { Avatar, Timestamp } from '../../kit';
 import { useGraphStore } from '../../stores';
 import type {
   ActivityItem, ActorSummary, EntityId, EntityKind, MessageView,
@@ -118,7 +117,7 @@ function ActivityRow({ items }: { items: ActivityItem[] }) {
             <li key={a.id}>
               {a.actor && <Avatar actor={a.actor} size={16} />}
               <span className="t-code">{a.verb}</span>
-              <span className="cv2-thread__time">{relTime(a.createdAt)}</span>
+              <Timestamp className="cv2-thread__time" at={a.createdAt} />
             </li>
           ))}
         </ul>

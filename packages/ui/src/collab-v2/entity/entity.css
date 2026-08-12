@@ -91,6 +91,12 @@
   color: var(--pn-ink-3);
 }
 .cv2-card__headspace { flex: 1; }
+.cv2-card__when {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
 .cv2-card__title {
   font-weight: 600;
   font-size: 13px;
