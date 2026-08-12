@@ -146,6 +146,27 @@ describe('tasksQuery', () => {
       .toEqual({ workStatus: ['working', 'open'] });
   });
 
+  it('sends the assignee filter to the server too, and composes with status', () => {
+    // `assigneeIds` is an `assigned_to` edge with `dst_id = any(...)` — OR across
+    // the selection, resolved over the whole space rather than the fetched page.
+    expect(tasksQuery('spc_1', 'priority', [], ['act_a', 'act_b']).filters)
+      .toEqual({ assigneeIds: ['act_a', 'act_b'] });
+    expect(tasksQuery('spc_1', 'priority', ['open'], ['act_a']).filters)
+      .toEqual({ workStatus: ['open'], assigneeIds: ['act_a'] });
+  });
+
+  it('omits `assigneeIds` when nobody is selected rather than sending []', () => {
+    // Same trap as `workStatus: []`: an empty array is a filter that matches
+    // nothing, so it would empty the list instead of leaving it alone.
+    expect('filters' in tasksQuery('spc_1', 'priority', [], [])).toBe(false);
+    expect(tasksQuery('spc_1', 'priority', ['open'], []).filters).toEqual({ workStatus: ['open'] });
+  });
+
+  it('is stable for the same selection, so the poll is still shared', () => {
+    expect(JSON.stringify(tasksQuery('spc_1', 'priority', ['open'], ['act_a'])))
+      .toBe(JSON.stringify(tasksQuery('spc_1', 'priority', ['open'], ['act_a'])));
+  });
+
   it('produces a stable object for the same question, so the poll is shared', () => {
     // `usePolledCollection` keys its subscription on the SERIALIZED query. Two
     // call sites that differ only in key order would open two intervals against

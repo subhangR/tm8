@@ -16,8 +16,8 @@ import { runTask } from './runTask';
 import { disabledBecause } from './Unavailable';
 import { usePolledCollection } from './usePolledCollection';
 import {
-  TASK_LIMIT, TASK_POLL_MS, TASK_SORTS, WORK_STATUSES,
-  descendantIds, flattenTree, isFinished, taskState, tasksQuery,
+  ACTOR_POLL_MS, TASK_LIMIT, TASK_POLL_MS, TASK_SORTS, WORK_STATUSES,
+  descendantIds, flattenTree, isFinished, spaceActorsQuery, taskState, tasksQuery,
   useTaskWrites, useTasks, useViewerId,
   type TaskNode, type TaskSort,
 } from './useTasks';
@@ -294,6 +294,9 @@ function TaskRowView({
         {selected && <span className="pn-tt__activedot" title="Selected task" />}
 
         <div className="pn-tt__inline">
+          {/* activityAt, because this list sorts by activityAt_desc by default:
+              the row's time is the reason it sits where it sits. */}
+          <span/>
           {state.acceptance.total > 0 && (
             <span className="pn-mini" title="Acceptance criteria completed">
               {state.acceptance.completed}/{state.acceptance.total}
@@ -358,6 +361,61 @@ function Section({ label, rows, renderRow }: {
   );
 }
 
+/**
+ * The assignee menu, and it MOUNTS ONLY WHILE OPEN.
+ *
+ * That is what makes the roster read affordable: `usePolledCollection` starts
+ * its interval with the first subscriber and clears it with the last, and keeps
+ * the entry warm briefly after, so opening the menu costs one request and
+ * re-opening it costs none. A permanently-mounted roster poll would be a second
+ * standing request per workspace for a list almost nobody opens.
+ */
+function AssigneeMenu({ facade, spaceId, selected, onToggle, onClear }: {
+  facade: RealFacade;
+  spaceId: string;
+  selected: readonly EntityId[];
+  onToggle: (actorId: EntityId) => void;
+  onClear: () => void;
+}) {
+  const { items, error } = usePolledCollection(facade, spaceActorsQuery(spaceId), ACTOR_POLL_MS);
+  const actors = useMemo(
+    () => [...(items ?? [])].sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id)),
+    [items],
+  );
+
+  return (
+    <>
+      {/* A failed roster read must not look like an empty space. */}
+      {error && <span className="pn-opt" role="alert">Could not load people — {error}</span>}
+      {!error && items === null && <span className="pn-opt">Loading people…</span>}
+      {!error && items !== null && actors.length === 0 && <span className="pn-opt">Nobody in this space yet</span>}
+      {actors.map((actor) => (
+        <button
+          key={actor.id}
+          type="button"
+          role="option"
+          aria-selected={selected.includes(actor.id)}
+          className={`pn-opt ${selected.includes(actor.id) ? 'pn-opt--cur' : ''}`}
+          data-testid={`task-filter-assignee-${actor.id}`}
+          onClick={() => onToggle(actor.id)}
+        >
+          <span>{actor.title || actor.id}</span>
+          {actor.kind === 'team_member' && <span className="pn-mini">agent</span>}
+          {selected.includes(actor.id) && <Icon name="check" className="pn-opt__chk" />}
+        </button>
+      ))}
+      {/* The escape hatch. A selected person who has left the space is no longer
+          in the roster, so their own row can no longer clear them — without this
+          the filter would stay on, hiding rows, with nothing to switch it off. */}
+      {selected.length > 0 && (
+        <button type="button" className="pn-opt" data-testid="task-filter-assignee-clear" onClick={onClear}>
+          Clear {selected.length} selected
+        </button>
+      )}
+    </>
+  );
+}
+
 export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: TaskPanelProps) {
   const [spaceName, setSpaceName] = useState('Workspace');
   const [tab, setTab] = useState<PanelTab>('current');
@@ -367,14 +425,22 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
   const [search, setSearch] = useState('');
   const [highOnly, setHighOnly] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
+  // Ids, not `ActorSummary` snapshots: a name held in filter state goes stale
+  // the moment someone is renamed, and the menu would keep showing the old one.
+  // The id is the only part of an actor this filter actually means.
+  const [assignees, setAssignees] = useState<readonly EntityId[]>([]);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+  const filtersRef = useRef<HTMLDivElement>(null);
 
   const queryStatuses = tab === 'completed' ? DONE_STATUSES : statuses;
-  const { tree, rows, error, truncated, reload } = useTasks(facade, spaceId, sort, queryStatuses);
+  const { tree, rows, error, truncated, reload } = useTasks(
+    facade, spaceId, sort, queryStatuses, assignees,
+  );
   const viewerId = useViewerId(facade, spaceId);
   const writes = useTaskWrites(facade, spaceId, viewerId, reload);
 
@@ -426,6 +492,39 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
     );
     return () => { alive = false; };
   }, [facade, spaceId]);
+
+  /**
+   * One popover at a time, set rather than toggled.
+   *
+   * A `close-all then toggle` pair looks equivalent and is not: React applies
+   * the queued updates in order, so the functional toggle would read the `false`
+   * the close just wrote and flip it back to `true` — the chip that was open
+   * would re-open instead of closing.
+   */
+  const openOnly = useCallback((which: 'status' | 'assignee' | 'filters' | null) => {
+    setStatusOpen(which === 'status');
+    setAssigneeOpen(which === 'assignee');
+    setFiltersOpen(which === 'filters');
+  }, []);
+
+  /**
+   * Escape and a click elsewhere close the menus. Without this the only way out
+   * is the chip you came in by: tab past the last option and you are in the task
+   * list with a menu still floating over it.
+   */
+  useEffect(() => {
+    if (!statusOpen && !assigneeOpen && !filtersOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') openOnly(null); };
+    const onDown = (event: MouseEvent) => {
+      if (!filtersRef.current?.contains(event.target as Node)) openOnly(null);
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [assigneeOpen, filtersOpen, openOnly, statusOpen]);
 
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
@@ -499,6 +598,12 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
     ));
   };
 
+  const toggleAssignee = (actorId: EntityId) => {
+    setAssignees((previous) => (
+      previous.includes(actorId) ? previous.filter((id) => id !== actorId) : [...previous, actorId]
+    ));
+  };
+
   const showCurrent = () => {
     setTab('current');
     setStatuses([]);
@@ -517,7 +622,10 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
     void writes.create(title);
   };
 
-  const activeFilterCount = statuses.length + Number(highOnly) + Number(overdueOnly) + Number(sort !== 'activityAt_desc');
+  // Assignees count like statuses do — one per selected value, so the badge says
+  // how many things are narrowing the list rather than how many kinds of thing.
+  const activeFilterCount = statuses.length + assignees.length
+    + Number(highOnly) + Number(overdueOnly) + Number(sort !== 'activityAt_desc');
 
   const renderRow = ({ task, depth, hasChildren, expanded: open }: ReturnType<typeof flattenTree>[number]) => (
     <TaskRowView
@@ -605,20 +713,36 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
         ) : <span className="pn-kbd">⌘K</span>}
       </div>
 
-      <div className="pn-filters" role="group" aria-label="Task filters">
+      <div className="pn-filters" role="group" aria-label="Task filters" ref={filtersRef}>
         <button type="button" className={`pn-filter ${activeFilterCount === 0 ? 'pn-filter--active' : ''}`}
-          onClick={() => { showCurrent(); setHighOnly(false); setOverdueOnly(false); setSort('activityAt_desc'); }}>
+          onClick={() => {
+            showCurrent(); setHighOnly(false); setOverdueOnly(false); setSort('activityAt_desc');
+            setAssignees([]);
+          }}>
           All
         </button>
         <button type="button" className={`pn-filter ${highOnly ? 'pn-filter--active' : ''}`}
           onClick={() => setHighOnly((value) => !value)}>High</button>
         <button type="button" className={`pn-filter ${overdueOnly ? 'pn-filter--active' : ''}`}
           onClick={() => setOverdueOnly((value) => !value)}>Overdue</button>
+        {/* Every popover on this row is `position: absolute; left: 0`, so opening
+            one CLOSES the others — otherwise they stack invisibly on top of each
+            other. Status and Priority share a single div keyed on
+            `statusOpen || filtersOpen`, which is why each must clear the other:
+            toggling Status while Priority was open would otherwise leave the div
+            open with the Status chip reporting `aria-expanded="false"`. */}
         <button type="button" className={`pn-filter ${statuses.length ? 'pn-filter--active' : ''}`}
-          onClick={() => setStatusOpen((open) => !open)} aria-expanded={statusOpen}>
+          onClick={() => openOnly(statusOpen ? null : 'status')} aria-expanded={statusOpen}>
           Status{statuses.length ? ` · ${statuses.length}` : ''}<Icon name="chevronD" size={12} />
         </button>
-        <button type="button" className="pn-filter" onClick={() => setFiltersOpen((open) => !open)}
+        <button type="button" className={`pn-filter ${assignees.length ? 'pn-filter--active' : ''}`}
+          data-testid="task-filter-assignee"
+          onClick={() => openOnly(assigneeOpen ? null : 'assignee')}
+          aria-expanded={assigneeOpen}>
+          Assignee{assignees.length ? ` · ${assignees.length}` : ''}<Icon name="chevronD" size={12} />
+        </button>
+        <button type="button" className="pn-filter"
+          onClick={() => openOnly(filtersOpen ? null : 'filters')}
           aria-expanded={filtersOpen}>Priority <Icon name="chevronD" size={12} /></button>
         <label className={`pn-filter pn-sort ${sort !== 'activityAt_desc' ? 'pn-filter--active' : ''}`}>
           <Icon name="sliders" size={13} /> Sort
@@ -628,10 +752,10 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
           </select>
         </label>
         <button type="button" className={`pn-filter ${filtersOpen ? 'pn-filter--active' : ''}`}
-          onClick={() => setFiltersOpen((open) => !open)} title="Expand filters"
+          onClick={() => openOnly(filtersOpen ? null : 'filters')} title="Expand filters"
           aria-label="Expand filters" aria-expanded={filtersOpen}>
           <Icon name="filter" size={13} />
-          {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
+          {activeFilterCount > 0 && <span data-testid="task-filter-count">{activeFilterCount}</span>}
         </button>
 
         <div className={`pn-filter-controls ${statusOpen || filtersOpen ? 'pn-filter-controls--open' : ''}`}>
@@ -649,6 +773,24 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
             </button>
           ))}
         </div>
+
+        {assigneeOpen && (
+          <div
+            className="pn-filter-controls pn-filter-controls--open"
+            role="listbox"
+            aria-multiselectable="true"
+            aria-label="Filter by assignee"
+            data-testid="task-assignee-options"
+          >
+            <AssigneeMenu
+              facade={facade}
+              spaceId={spaceId}
+              selected={assignees}
+              onToggle={toggleAssignee}
+              onClear={() => setAssignees([])}
+            />
+          </div>
+        )}
       </div>
 
       {(runError || error || activeCounter.error || doneCounter.error || writes.error) && (
@@ -676,9 +818,17 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
         {rows === null && !error && <p className="pn-empty">Loading tasks…</p>}
         {rows !== null && filtered.length === 0 && (
           <p className="pn-empty" data-testid="task-empty">
-            {tab === 'completed' || statuses.length > 0 || search || highOnly || overdueOnly
-              ? 'No tasks with those filters — the server filtered these, so this is a real answer.'
-              : 'No tasks in this space yet. Create one above.'}
+            {/* The CLIENT-SIDE branch has to win when both kinds are active.
+                Tab, status and assignee are query filters, so a zero from them
+                alone is the server's answer. Search, High and Overdue narrow the
+                fetched page in the browser — and with `truncated` showing, the
+                page is not the space. Testing the server filters first would
+                credit the server for a zero it never computed. */}
+            {search || highOnly || overdueOnly
+              ? 'No tasks match these filters on the tasks loaded.'
+              : tab === 'completed' || statuses.length > 0 || assignees.length > 0
+                ? 'No tasks with those filters — the server filtered these, so this is a real answer.'
+                : 'No tasks in this space yet. Create one above.'}
           </p>
         )}
         <Section label="In progress" rows={inProgress} renderRow={renderRow} />
