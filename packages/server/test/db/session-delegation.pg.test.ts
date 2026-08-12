@@ -268,15 +268,22 @@ describe('105 — the capability ladder', () => {
   });
 });
 
-describe('105 — nothing is enforcing yet', () => {
-  it('has no production function calling the new predicate', async () => {
+describe('105/106 — no EXISTING operation enforces the ladder yet', () => {
+  it('is called only by the grant door, which checks you may delegate what you hold', async () => {
+    // Kept rather than deleted when 106 landed. The valuable property is that
+    // no pre-existing operation — attach, terminate, message delivery — has
+    // started refusing on the ladder; enforcement is a later, deliberate step.
+    // `grant_session_delegation` is the one legitimate caller: it requires
+    // `manage` on a session before letting you delegate it, so a member cannot
+    // grant a third party rights they do not themselves hold.
     const callers = await asOwner(async (c) =>
-      (await c.query<{ names: string | null }>(
-        `select string_agg(p.proname, ', ') names
+      (await c.query<{ proname: string }>(
+        `select p.proname
            from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
           where ns.nspname in ('public','internal') and p.prokind = 'f'
             and p.proname <> 'require_session_capability'
-            and pg_get_functiondef(p.oid) like '%require_session_capability%'`)).rows[0]!.names);
-    expect(callers).toBeNull();
+            and pg_get_functiondef(p.oid) like '%require_session_capability%'
+          order by p.proname`)).rows.map((r) => r.proname));
+    expect(callers).toEqual(['grant_session_delegation']);
   });
 });
