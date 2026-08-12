@@ -657,8 +657,8 @@ async function hierarchyFor(
  * `contains` members — enough for the detail panel to render the list without
  * a second round trip. The full, paginated membership read stays
  * `collections.query` with an edge filter; this cap is a preview bound, not
- * the membership bound, which is why `state.itemCount` (the true edge count)
- * may exceed `items.length`.
+ * the membership bound, which is why `state.itemCount` (the live-member edge
+ * count) may exceed `items.length`.
  */
 const COLLECTION_ITEMS_PREVIEW_LIMIT = 50;
 
@@ -667,11 +667,17 @@ async function collectionItems(
   collectionId: string,
   viewerIdentityId: string,
 ): Promise<EntitySummary[]> {
+  // The position cast is TYPE-GUARDED, exactly as in `set_collection_item`
+  // (migration 100): edge `props` are client-controlled, and one membership
+  // written with `props: {position: "top"}` would otherwise 22P02 this read —
+  // which maps to not_found, turning a live collection's detail into a 404.
   const rows = await q.query<EntityRow>(
     `select ${ENTITY_COLUMNS} ${ENTITY_FROM}
        join public.edges ce on ce.dst_id = e.id and ce.src_id = $1 and ce.type = 'contains'
       where e.deleted_at is null
-      order by (ce.props ->> 'position')::float8 nulls last, ce.created_at, e.id
+      order by (case when jsonb_typeof(ce.props -> 'position') = 'number'
+                     then (ce.props ->> 'position')::float8 end) nulls last,
+               ce.created_at, e.id
       limit ${COLLECTION_ITEMS_PREVIEW_LIMIT}`,
     [collectionId],
   );

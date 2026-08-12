@@ -58,7 +58,9 @@ async function collectionAdd(cmd: CommandContext): Promise<ExitCode> {
   const position = cmd.options.value('position');
   if (position !== undefined) {
     const parsed = Number(position);
-    if (!Number.isFinite(parsed)) {
+    // `Number('') === 0` and `Number('0x10') === 16`: both would silently
+    // send a position the user never typed. Only a plain decimal passes.
+    if (position.trim() === '' || !/^-?\d+(\.\d+)?$/.test(position.trim()) || !Number.isFinite(parsed)) {
       throw new CliError(`--position <number> expects a finite number, got ${JSON.stringify(position)}`, EXIT_USAGE);
     }
     body.position = parsed;

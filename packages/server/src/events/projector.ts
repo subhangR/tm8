@@ -531,15 +531,19 @@ export class PgEntityProjector implements EntityProjector {
 
     // The same aggregate the facade assembler computes, so a collection's item
     // count is identical over the event feed and over a read. Skipped entirely
-    // when no collection is in the batch.
+    // when no collection is in the batch. LIVE members only: soft delete
+    // leaves the `contains` edge in place, and a count of raw edges would
+    // exceed every list the UI can draw (content.items, connections and
+    // collections.query all exclude tombstones) with no cap in sight.
     const containsCounts = new Map<string, number>();
     const collectionIds = rows.filter((r) => r.kind === 'collection').map((r) => r.id);
     if (collectionIds.length > 0) {
       const counted = await q.query<{ src_id: string; n: number }>(
-        `select src_id, count(*)::int as n
-           from public.edges
-          where type = 'contains' and src_id = any($1::uuid[])
-          group by src_id`,
+        `select g.src_id, count(*)::int as n
+           from public.edges g
+           join public.entities m on m.id = g.dst_id and m.deleted_at is null
+          where g.type = 'contains' and g.src_id = any($1::uuid[])
+          group by g.src_id`,
         [collectionIds],
       );
       for (const row of counted) containsCounts.set(row.src_id, Number(row.n));

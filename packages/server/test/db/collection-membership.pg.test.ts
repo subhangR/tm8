@@ -217,4 +217,52 @@ describe.sequential('migration 100 — collection membership RPCs', () => {
       ),
     ).rejects.toThrow();
   });
+
+  it('refuses self-containment — a collection never lists itself', async () => {
+    // `contains` is registered non-acyclic (nested collections are legal), so
+    // `prevent_edge_cycle` never runs for it; without the RPC's own guard,
+    // add(C, C) succeeded and C counted itself in its own itemCount.
+    await expect(
+      appValue(
+        `select public.set_collection_item($1, $2, p_client_mutation_id => $3) value`,
+        [collectionA, collectionA, 'cm-self-add'],
+      ),
+    ).rejects.toThrow(/cannot contain itself/);
+  });
+
+  it('the store refuses a non-numeric props.position — the position casts cannot be poisoned', async () => {
+    // The exposure under review: `(props->>'position')::float8` runs bare in
+    // both the auto-position max and the facade's items preview, and a
+    // membership carrying `position: "top"` would 22P02 them (→ not_found —
+    // a live collection answering 404). The 018 props-schema trigger is what
+    // actually closes it: `contains` registers `position: number`, so the
+    // poison cannot be WRITTEN — not even as the graph owner, not even by a
+    // raw UPDATE that bypasses every RPC. This pin is what lets those casts
+    // stay bare-ish; if the schema registration is ever dropped, this test
+    // is the alarm (and the casts are additionally jsonb_typeof-guarded).
+    await expect(
+      ownerRows(
+        `update public.edges set props = jsonb_build_object('position', 'top')
+          where src_id = $1 and dst_id = $2 and type = 'contains'`,
+        [collectionB, task],
+      ),
+    ).rejects.toThrow(/property position has the wrong type/);
+  });
+
+  it('revokes PUBLIC execute on both membership functions (definer hygiene)', async () => {
+    // SECURITY DEFINER functions whose claims ride settable GUCs must not be
+    // callable by arbitrary connectable roles. Postgres grants EXECUTE to
+    // PUBLIC on new functions by default; migration 100 revokes it and grants
+    // tm8_app alone, following the 007/018/020 convention.
+    const rows = await ownerRows<{ proname: string; open_to_public: boolean }>(
+      `select p.proname,
+              coalesce(bool_or(a.grantee = 0), false) as open_to_public
+         from pg_proc p
+         left join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a on true
+        where p.proname in ('set_collection_item', 'remove_collection_item')
+        group by p.proname`,
+    );
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row.open_to_public).toBe(false);
+  });
 });
