@@ -10,4 +10,4 @@ export type {
   KindEntry, PrimaryAction, RegistryCtx, RegistryStatus,
   RegistryStatusOption, TombstoneSpec,
 } from './types';
-export { formatBytes, relTime, shortSha, truncate } from './format';
+export { absTime, formatBytes, relTime, shortDate, shortSha, truncate } from './format';

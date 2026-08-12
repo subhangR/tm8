@@ -29,3 +29,8 @@ export {
   type MarkdownProps,
 } from './Markdown';
 export { Mermaid, type MermaidProps } from './Mermaid';
+export { Timestamp, type TimestampProps } from './Timestamp';
+export {
+  CLOCK_TICK_MS, RELATIVE_WINDOW_MS,
+  absTime, clockTime, dayLabel, dayStart, elapsed, parseInstant, relTime, shortDate, useNow, weekdayDate,
+} from './time';

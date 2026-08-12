@@ -5,7 +5,8 @@ import type { ActorSummary, EntityFeedPage, FeedItem, MessageView, Page } from '
 import { ChannelScreen } from './ChannelScreen';
 import { ChannelChatSurface } from './ChannelChatSurface';
 import type { ChannelFeedPort } from './useChannelFeed';
-import { participantNames, replyTimeAgo } from './feed-model';
+import { participantNames } from './feed-model';
+import { relTime } from '../kit/time';
 
 /**
  * SLICE 2 — the thread pane and the thread footer.
@@ -124,7 +125,13 @@ describe('the thread footer', () => {
     const open = within(footer).getByRole('button', { name: /open thread · 3 replies/i });
     expect(open.textContent).toMatch(/3 replies/);
     expect(open.textContent).toMatch(/Noor, Forge/);
-    expect(open.textContent).toMatch(/ago|now/);
+    // The footer's "when" is the shared Timestamp: relative inside the 7-day
+    // window, an absolute date past it. The fixture's reply is older than the
+    // window, so assert the ELEMENT and its machine-readable instant rather
+    // than a wording that changes with the calendar.
+    const when = within(footer).getByText((_, el) => el?.tagName === 'TIME');
+    expect(when.getAttribute('datetime')).toBe(rootWithReplies().lastReplyAt);
+    expect(when.textContent?.trim()).not.toBe('');
     fireEvent.click(open);
     expect(onOpenThread).toHaveBeenCalledTimes(1);
     expect(onOpenThread.mock.calls[0][0].id).toBe('msg-1');
@@ -479,12 +486,14 @@ describe('author-run clustering in threads mode', () => {
 });
 
 describe('footer helpers', () => {
-  it('replyTimeAgo grades now/minutes/hours/days against an explicit clock', () => {
-    const now = '2026-07-29T12:00:00.000Z';
-    expect(replyTimeAgo('2026-07-29T11:59:40.000Z', now)).toBe('now');
-    expect(replyTimeAgo('2026-07-29T11:45:00.000Z', now)).toBe('15m ago');
-    expect(replyTimeAgo('2026-07-29T09:00:00.000Z', now)).toBe('3h ago');
-    expect(replyTimeAgo('2026-07-25T12:00:00.000Z', now)).toBe('4d ago');
+  // The footer's private `replyTimeAgo` is gone; the shared `relTime` grades
+  // the same buckets, with 'just now' where the private copy said 'now'.
+  it('relTime grades now/minutes/hours/days against an explicit clock', () => {
+    const now = Date.parse('2026-07-29T12:00:00.000Z');
+    expect(relTime('2026-07-29T11:59:40.000Z', now)).toBe('just now');
+    expect(relTime('2026-07-29T11:45:00.000Z', now)).toBe('15m ago');
+    expect(relTime('2026-07-29T09:00:00.000Z', now)).toBe('3h ago');
+    expect(relTime('2026-07-25T12:00:00.000Z', now)).toBe('4d ago');
   });
 
   it('participantNames caps at two names plus a count', () => {

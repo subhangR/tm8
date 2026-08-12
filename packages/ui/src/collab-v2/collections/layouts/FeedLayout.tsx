@@ -4,6 +4,7 @@
  */
 import { useMemo } from 'react';
 import { EntityCard } from '../../entity';
+import { Timestamp } from '../../kit';
 import type { EntityId, EntitySummary } from '../../types/contract';
 import { setDragPayload } from '../dnd';
 import { useListNav } from '../useListNav';
@@ -11,16 +12,6 @@ import { useListNav } from '../useListNav';
 export interface FeedLayoutProps {
   items: EntitySummary[];
   onOpen: (id: EntityId) => void;
-}
-
-function timeAgo(iso: string): string {
-  const delta = Date.now() - Date.parse(iso);
-  const min = Math.max(0, Math.floor(delta / 60_000));
-  if (min < 1) return 'just now';
-  if (min < 60) return `${min}m ago`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
 
 export function FeedLayout({ items, onOpen }: FeedLayoutProps) {
@@ -35,7 +26,7 @@ export function FeedLayout({ items, onOpen }: FeedLayoutProps) {
       {ordered.map((entity, i) => (
         <div key={entity.id} role="listitem" className="cv2-collection__feeditem">
           <div className="cv2-collection__feedrule">
-            <span className="cv2-collection__feedtime">active {timeAgo(entity.activityAt)}</span>
+            <Timestamp className="cv2-collection__feedtime" at={entity.activityAt} prefix="active" />
           </div>
           <div
             className="cv2-collection__cell"

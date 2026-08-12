@@ -7,6 +7,7 @@ import {
   useCallback, useEffect, useMemo, useRef, useState,
   type CSSProperties, type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
+import { Timestamp } from '../../collab-v2/kit';
 import type {
   EntityId, EntitySummary, WorkStatus,
 } from '../../collab-v2/types/contract';
@@ -294,6 +295,9 @@ function TaskRowView({
         {selected && <span className="pn-tt__activedot" title="Selected task" />}
 
         <div className="pn-tt__inline">
+          {/* activityAt, because this list sorts by activityAt_desc by default:
+              the row's time is the reason it sits where it sits. */}
+          <Timestamp className="pn-tt__when" at={task.activityAt} title="last activity" />
           {state.acceptance.total > 0 && (
             <span className="pn-mini" title="Acceptance criteria completed">
               {state.acceptance.completed}/{state.acceptance.total}

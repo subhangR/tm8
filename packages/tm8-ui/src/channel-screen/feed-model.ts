@@ -438,26 +438,6 @@ function escapeInlineMarkdown(text: string): string {
 }
 
 /**
- * The thread footer's relative time — "now", "5m ago", "2h ago", "3d ago".
- *
- * `now` is a parameter so the value is testable; the render instant is the
- * default. A private twin of this lives in `panels/bodies/HubBody.tsx` (and a
- * third in `graph/GraphView.tsx`) — that file's own comment defers the
- * shared-utility question to whoever owns the next copy, which is this one:
- * flagged, not solved, because unifying three private helpers means touching
- * two other lanes' files for a cosmetic dedup.
- */
-export function replyTimeAgo(iso: string, now?: string): string {
-  const end = now ? Date.parse(now) : Date.now();
-  const mins = Math.max(0, Math.round((end - Date.parse(iso)) / 60_000));
-  if (mins < 1) return 'now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
-
-/**
  * The facepile's caption: first two participants by name, the rest counted.
  * Participants arrive ordered by FIRST reply (the server promises the order),
  * so the caption is as stable as the branch it describes.
@@ -469,16 +449,10 @@ export function participantNames(actors: readonly ActorSummary[]): string {
   return `${names[0]}, ${names[1]} +${names.length - 2}`;
 }
 
-/** `HH:MM` in the viewer's locale — the oracle's rail time (hero line 91). */
-export function clockTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-/** Full timestamp for assistive text; the compact rail still shows HH:MM. */
-export function accessibleDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'long' });
-}
+/**
+ * The rail clock and the assistive full stamp both come from `kit/time` — this
+ * file used to own three private date formatters and said so in its own
+ * comment ("flagged, not solved"). They are solved: `clockTime` is re-exported
+ * unchanged for the callers that mount it, and the relative form is `relTime`.
+ */
+export { absTime as accessibleDateTime, clockTime } from '../kit/time';

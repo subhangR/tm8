@@ -8,6 +8,7 @@ import type {
 } from '@tm8/contract';
 import type { Seam } from '../../data/seam';
 import { describeLaunchManifest } from '../../domain';
+import { absTime, clockTime } from '../../kit/time';
 import { DisabledAction } from '../honesty/DisabledWithReason';
 import './session-debug.css';
 
@@ -412,10 +413,13 @@ function launchUnavailableReason(record: SessionLaunchRecord) {
   };
 }
 
+/**
+ * Both of these used to fall back to the RAW ISO string when the value would
+ * not parse, which is the one thing a timestamp must never render. Unparseable
+ * now reads as an em dash — an absence the reader can see.
+ */
 function formatStamp(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString();
+  return absTime(iso) || '—';
 }
 
 /**
@@ -862,7 +866,5 @@ function abbrev(n: number): string {
 }
 
 function formatTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return clockTime(iso, { seconds: true }) || '—';
 }

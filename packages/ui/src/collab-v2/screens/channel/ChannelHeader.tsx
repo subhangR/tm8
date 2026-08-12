@@ -4,7 +4,7 @@
  * Pure composition: the glyph/tint come from the kind registry, presence and
  * the working rollup are the live subsystem components, unread is a kit Pill.
  */
-import { Pill } from '../../kit';
+import { Pill, Timestamp } from '../../kit';
 import { registryFor } from '../../registry';
 import { PresenceAvatars, WorkingAggregate, useLiveEntity } from '../../subsystems/live';
 import type { CollabFacade } from '../../facade/CollabFacade';
@@ -34,6 +34,9 @@ export function ChannelHeader({ detail, facade }: ChannelHeaderProps) {
       {topic && <p className="cv2-hub__topic" title={topic}>{topic}</p>}
       <span className="cv2-hub__headspace" />
       {unread > 0 && <Pill tone="brand" dot={false}>{unread} unread</Pill>}
+      {/* A channel's recency is its most useful fact after its name, and the
+          hub said nothing about it until now. */}
+      <Timestamp className="cv2-hub__when" at={live.activityAt} prefix="active" title="last activity" />
       <PresenceAvatars entityId={detail.id} facade={facade} compact />
       <WorkingAggregate entity={live} count={working > 0 ? working : undefined} />
     </div>

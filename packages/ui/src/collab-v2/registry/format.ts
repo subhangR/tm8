@@ -1,20 +1,16 @@
 /** Tiny shared formatters for L1 (registry renderers + entity components). */
 
-/** '2m ago' / 'just now' style relative time from an ISO stamp. */
-export function relTime(iso: string, now: number = Date.now()): string {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return '';
-  const s = Math.max(0, Math.round((now - t) / 1000));
-  if (s < 45) return 'just now';
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.round(h / 24);
-  if (d < 30) return `${d}d ago`;
-  const mo = Math.round(d / 30);
-  return mo < 12 ? `${mo}mo ago` : `${Math.round(mo / 12)}y ago`;
-}
+/**
+ * Time formatting is NOT defined here. It lives in `kit/time` (L0) so the
+ * ticking `<Timestamp>` component and every plain-string caller share one
+ * implementation; this is a compat re-export of that exact function, the same
+ * arrangement `shell/keyboard` has with `createListKeyNav`.
+ *
+ * Prefer `<Timestamp at={…} />` in markup — it ticks and carries the absolute
+ * time on inspect. Reach for `relTime` only where a string is required (an
+ * aria-label, a title, a toast).
+ */
+export { absTime, relTime, shortDate } from '../kit/time';
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '';

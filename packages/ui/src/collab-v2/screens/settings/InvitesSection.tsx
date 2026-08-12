@@ -7,8 +7,7 @@
  * commands land, the affordances drop in here — nothing is faked in the
  * meantime.
  */
-import { Pill } from '../../kit';
-import { relTime } from '../../registry';
+import { Pill, Timestamp } from '../../kit';
 import type { SpaceSettings } from '../../types/contract';
 
 export interface InvitesSectionProps {
@@ -45,7 +44,7 @@ export function InvitesSection({ invites, unavailable = false }: InvitesSectionP
               {invite.uses}/{invite.maxUses} used
             </span>
             <span className="cv2-set__rowvalues t-mono">
-              {invite.expiresAt ? `expires ${relTime(invite.expiresAt)}` : 'no expiry'}
+              {invite.expiresAt ? <Timestamp at={invite.expiresAt} prefix="expires" /> : 'no expiry'}
             </span>
             <span className="cv2-set__rowspace" />
             {invite.revoked

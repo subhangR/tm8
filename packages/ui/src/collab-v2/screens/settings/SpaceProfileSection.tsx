@@ -5,8 +5,7 @@
  * fields render as facts, not inputs. (Entity titles/content are editable
  * through `patchEntity`; the space itself is not an entity.)
  */
-import { Eyebrow, Pill } from '../../kit';
-import { relTime } from '../../registry';
+import { Eyebrow, Pill, Timestamp } from '../../kit';
 import type { SpaceSummary } from '../../types/contract';
 
 export interface SpaceProfileSectionProps {
@@ -24,7 +23,7 @@ export function SpaceProfileSection({ space }: SpaceProfileSectionProps) {
       <div className="cv2-set__facts">
         <Pill tone="neutral" dot={false}>{space.memberCount} members</Pill>
         {space.githubRepo && <span className="t-code">{space.githubRepo}</span>}
-        <span className="t-mono cv2-set__rowvalues">created {relTime(space.createdAt)}</span>
+        <Timestamp className="t-mono cv2-set__rowvalues" at={space.createdAt} prefix="created" />
         {space.unreadTotal > 0 && <Pill tone="brand" dot={false}>{space.unreadTotal} unread</Pill>}
       </div>
     </section>

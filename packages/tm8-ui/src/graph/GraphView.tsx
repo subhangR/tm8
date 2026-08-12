@@ -25,7 +25,7 @@ import type { EdgeView, EntityId, EntitySummary } from '@tm8/contract';
 import { KindIcon, getKind, type StatusSource } from '../domain';
 import type { SessionLiveness } from '../data/seam';
 import { useDismissable } from '../panels/useDismissable';
-import { Avatar, Chip, Eyebrow, IconBtn, Pill, type PillTone } from '../kit';
+import { Avatar, Chip, Eyebrow, IconBtn, Pill, Timestamp, type PillTone } from '../kit';
 import {
   NODE_H,
   NODE_W,
@@ -98,15 +98,6 @@ function foldSummary(byKind: Readonly<Record<string, number>>): string {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([kind, n]) => `${n} ${n === 1 ? getKind(kind).label : getKind(kind).labelPlural}`)
     .join(', ');
-}
-
-function timeAgo(iso: string, now: string): string {
-  const mins = Math.max(0, Math.round((Date.parse(now) - Date.parse(iso)) / 60_000));
-  if (mins < 1) return 'now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
 }
 
 interface Transform {
@@ -969,7 +960,7 @@ export function GraphView(props: GraphViewProps) {
                       label={p.entity.createdBy.displayName}
                       size={15}
                     />
-                    <span className="gv-node__meta">{timeAgo(p.entity.activityAt, now)}</span>
+                    <Timestamp className="gv-node__meta" at={p.entity.activityAt} now={now} title="last activity" />
                     {p.entity.counters.messages > 0 && (
                       <span className="gv-node__meta">✉ {p.entity.counters.messages}</span>
                     )}

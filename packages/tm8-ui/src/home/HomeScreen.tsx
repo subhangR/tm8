@@ -38,6 +38,7 @@ import { KindIcon } from '../domain';
 import { useMeasuredWidth } from '../shell';
 import { homeActivityLoadEarlierReason } from '../fixtures';
 import { assignableKinds, composeMyWork, type HomeRow, type HomeSection } from './home-model';
+import { weekdayDate } from '../kit/time';
 import { bucketActivity, recencyOf, ACTIVITY_WINDOW } from './home-activity';
 import { useHomeData, type HomeScreenData } from './useHomeData';
 import './home.css';
@@ -154,7 +155,7 @@ export function HomeScreen(props: HomeScreenProps) {
       : null;
 
   const dateline = [
-    now.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).toLowerCase(),
+    weekdayDate(now).toLowerCase(),
     props.spaceLabel ?? null,
     home.viewer ? `you are @${home.viewer.username}` : home.viewerError ? 'identity unavailable' : 'identifying you…',
   ]

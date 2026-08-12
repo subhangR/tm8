@@ -5,7 +5,7 @@
  * THE cell for every collection view, embed, hover preview, and graph node —
  * strictly pure props-in, no store reads, no fetching.
  */
-import { Avatar, Pill } from '../kit';
+import { Avatar, Pill, Timestamp } from '../kit';
 import { isTombstoned, registryFor } from '../registry';
 import type { EntitySummary } from '../types/contract';
 import { REGISTRY_CTX } from './ctx';
@@ -38,6 +38,10 @@ export function EntityCard({ entity, keyEdges, inPopover = false }: EntityCardPr
         </span>
         <span className="cv2-card__kind">{entry.label}</span>
         <span className="cv2-card__headspace" />
+        {/* activityAt, not createdAt: collections sort by recency of activity
+            (contract default `activityAt_desc`), and a card whose time
+            disagreed with its own list order would be worse than no time. */}
+        <Timestamp className="cv2-card__when" at={entity.activityAt} title="last activity" />
         <Avatar actor={entity.createdBy} size={20} />
       </div>
 
