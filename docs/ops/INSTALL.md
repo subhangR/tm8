@@ -6,12 +6,13 @@ cd tm8
 ./install.sh
 ```
 
-That is the whole thing. It is idempotent — run it again any time.
+That is the whole thing. It ends with tm8 **running** — server and UI — having
+first verified that `/health` reports `db:ok`. Open **http://127.0.0.1:4611**.
 
-To install and immediately run it:
+Idempotent: run it again any time.
 
 ```bash
-./install.sh --start          # then open http://127.0.0.1:4611
+./install.sh --no-start       # set everything up, start nothing
 ```
 
 ---
@@ -32,7 +33,7 @@ Eleven phases, in this order, because each one depends on the last:
 | 8 | Data directories | `TM8_DATA_DIR`, `TM8_PROJECT_DIR` |
 | 9 | Migrations | ~94 files. **The server does not migrate at boot** |
 | 10 | Service | A systemd unit, with `--systemd` |
-| 11 | Verify | `/health` reports `db:ok`, plus one real catalog read |
+| 11 | Start + verify | Runs it, then confirms `/health` says `db:ok` and one real catalog read succeeds |
 
 **Seeding needs no phase.** Once the schema is current and the server boots, the
 loopback auto-owner creates the first account and `bootstrap/launch-resources`
@@ -42,8 +43,8 @@ already worked.
 ## The commands
 
 ```bash
-./install.sh                          # dev slot, into this clone
-./install.sh --start                  # …and run it in the foreground
+./install.sh                          # dev slot into this clone, then run it
+./install.sh --no-start               # …but leave nothing running
 ./install.sh --env prod --systemd     # server install: unit file, enabled, started
 ./install.sh --status                 # what is installed, migrated and running
 ./install.sh --dry-run                # print every step, change nothing
@@ -54,8 +55,17 @@ already worked.
 
 Also `bun run setup`, `bun run setup:status`, `bun run setup:dry-run`.
 
-Useful flags: `--no-build`, `--no-migrate`, `--configure-pg-hba`, `--yes`,
-`--layout system|user`.
+Useful flags: `--no-start`, `--no-build`, `--no-migrate`, `--configure-pg-hba`,
+`--yes`, `--layout system|user`.
+
+## What "running" means per slot
+
+`dev` and `staging` build **no UI bundle** — they serve source through Vite. So
+starting only the node server there would give you a working API and no app to
+open. For those slots the installer hands off to `scripts/dev.mjs`, which runs the
+server *and* the Vite UI together and reloads both. `prod` and `private` serve a
+built `dist/`, so their server is the whole thing, and `--systemd` runs it as a
+service rather than in your terminal.
 
 ## The environments
 

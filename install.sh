@@ -2,8 +2,8 @@
 # =============================================================================
 # tm8 INSTALL — one command from a fresh clone to a working tm8.
 #
-#   ./install.sh                        dev install, then tell you how to run it
-#   ./install.sh --start                dev install and run it in the foreground
+#   ./install.sh                        dev install, then RUN it (server + UI)
+#   ./install.sh --no-start             install only, leave nothing running
 #   ./install.sh --env prod --systemd   server install: unit file, enabled, started
 #   ./install.sh --status               what is installed and what is running
 #   ./install.sh --reset                DROP the database and re-migrate (asks first)
@@ -80,7 +80,11 @@ SLOT=dev
 LAYOUT=""
 DO_BUILD=1
 DO_MIGRATE=1
-DO_START=0
+# Start by default. An installer asked to "set tm8 up and make it running" that
+# leaves you at a prompt has done most of a job: the last step is the one that
+# tells you the other ten worked. --no-start opts out (CI, provisioning, or a
+# build you intend to hand to systemd later).
+DO_START=1
 USE_SYSTEMD=0
 DRY_RUN=0
 ASSUME_YES=0
@@ -93,7 +97,8 @@ while [[ $# -gt 0 ]]; do
     --env=*)        SLOT="${1#*=}" ;;
     --systemd)      USE_SYSTEMD=1 ;;
     --layout)       shift; [[ $# -gt 0 ]] || die "--layout needs a value"; LAYOUT="$1" ;;
-    --start)        DO_START=1 ;;
+    --start)        DO_START=1 ;;   # the default; accepted for explicitness
+    --no-start)     DO_START=0 ;;
     --no-build)     DO_BUILD=0 ;;
     --no-migrate)   DO_MIGRATE=0 ;;
     --configure-pg-hba)    CONFIGURE_HBA=1 ;;
@@ -1007,24 +1012,42 @@ elif (( USE_SYSTEMD )); then
   [[ "$active" == active ]] || die "$UNIT_NAME is $active"
   ok "$UNIT_NAME active"
 elif (( DO_START )); then
-  info "starting in the foreground — Ctrl-C to stop"
-  # Verify from a subshell while the server holds the terminal, so --start still
-  # proves the install rather than just launching something.
-  ( sleep 3; verify_running >/dev/null 2>&1 && printf '      %s✓%s verified healthy on %s\n' "$GRN" "$OFF" "$TM8_ENV_SERVER_PORT" ) &
-  set -a; # shellcheck disable=SC1090
-  . "$TM8_ENV_ENVFILE"; set +a
-  # Strip the spawning session's identity before exec. `set -a; . envfile` adds
+  # Verify from a subshell while the foreground process holds the terminal, so
+  # starting still PROVES the install rather than merely launching something.
+  ( sleep 4
+    if verify_running >/dev/null 2>&1; then
+      printf '\n      %s✓%s tm8 is up and healthy on %s\n' "$GRN" "$OFF" "$TM8_ENV_SERVER_PORT"
+      [[ -n "$TM8_ENV_VITE_PORT" ]] && printf '      %s✓%s open http://127.0.0.1:%s\n' "$GRN" "$OFF" "$TM8_ENV_VITE_PORT"
+    fi ) &
+
+  # Strip the spawning session's identity before exec. `set -a; . envfile` ADDS
   # variables; it never removes one, so an ambient TM8_AGENT_TOKEN would reach
-  # this server and hand it a stranger's identity. (systemd does not need this —
+  # this server and hand it a stranger's identity. (systemd needs none of this —
   # a unit starts from a clean environment plus EnvironmentFile.)
   declare -a clean; while IFS= read -r w; do clean+=("$w"); done < <(clean_env_prefix)
+
+  # For a slot with a Vite dev port, "running" means the SERVER AND THE UI.
+  # Starting only the server would leave a browser with nothing to open: the dev
+  # and staging slots deliberately build no UI bundle (they serve source through
+  # Vite), so a server started alone here answers the API and serves no app at
+  # all. scripts/dev.mjs runs both and reloads them; it reads .env.<slot>.local
+  # itself, so the env file does not need sourcing first.
+  if [[ -n "$TM8_ENV_VITE_PORT" && -f "$TM8_ENV_CHECKOUT/scripts/dev.mjs" && "$LAYOUT" == user ]]; then
+    info "starting tm8 — server on $TM8_ENV_SERVER_PORT, UI on $TM8_ENV_VITE_PORT (Ctrl-C stops both)"
+    cd "$TM8_ENV_CHECKOUT"
+    exec "${clean[@]}" TM8_ENV="$SLOT" "$NODE_BIN" scripts/dev.mjs
+  fi
+
+  info "starting the server on $TM8_ENV_SERVER_PORT in the foreground — Ctrl-C to stop"
+  set -a; # shellcheck disable=SC1090
+  . "$TM8_ENV_ENVFILE"; set +a
   exec "${clean[@]}" "$NODE_BIN" --enable-source-maps \
     "$TM8_ENV_CHECKOUT/packages/server/dist/index.js"
 else
   if verify_running 2>/dev/null; then
     dim "(something was already serving $TM8_ENV_SERVER_PORT and it is healthy)"
   else
-    ok "install complete — nothing is running yet, by design"
+    ok "install complete — nothing started (--no-start)"
     start_foreground_hint
   fi
 fi

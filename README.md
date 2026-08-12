@@ -9,12 +9,14 @@ Unified entity-graph rebuild of Maestro. Phase 1 (v1: the node) — one from-con
 ## Getting started
 
 ```bash
-./install.sh          # cluster, database, roles, migrations, build, env file
-./install.sh --start  # …and run it — then open http://127.0.0.1:4611
+./install.sh          # cluster, database, roles, migrations, build — then RUNS it
 ```
 
-Idempotent; re-run it any time. `./install.sh --status` reports what is installed,
-migrated and running. Full guide: [`docs/ops/INSTALL.md`](docs/ops/INSTALL.md).
+Then open **http://127.0.0.1:4611**. That is the whole thing: it ends with the
+server and the UI running in your terminal, having verified `/health` says
+`db:ok`. `--no-start` installs without starting; `--env prod --systemd` installs
+as a service instead. Idempotent — re-run it any time. `./install.sh --status`
+reports what is installed, migrated and running. Full guide: [`docs/ops/INSTALL.md`](docs/ops/INSTALL.md).
 
 **Nothing in this repo starts Postgres.** `packages/server/src/sidecar/` looks
 like it does and is dead code (only `import type` reaches it), so `bun install &&
