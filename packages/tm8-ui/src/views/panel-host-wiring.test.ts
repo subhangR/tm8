@@ -89,6 +89,16 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
+  it.each(hosts)('%s passes gitSurface at every mount', (_label, file) => {
+    for (const { block } of mounts.filter((m) => m.file === file)) {
+      expect(
+        block.includes('gitSurface'),
+        `an <EntityDetailPanel> in ${file} does not pass gitSurface, so its Git chip ` +
+          'would render the "unavailable in this view" fallback',
+      ).toBe(true);
+    }
+  });
+
   it.each(hosts)('%s passes graphSurface at every mount', (_label, file) => {
     for (const { block } of mounts.filter((m) => m.file === file)) {
       expect(
@@ -116,6 +126,12 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
         expect(
           block.includes('debugSurfaceFor'),
           `${file} builds debugSurface inline; use debugSurfaceFor() so every host stays identical`,
+        ).toBe(true);
+      }
+      if (block.includes('gitSurface')) {
+        expect(
+          block.includes('gitSurfaceFor'),
+          `${file} builds gitSurface inline; use gitSurfaceFor() so every host stays identical`,
         ).toBe(true);
       }
       if (block.includes('graphSurface')) {
