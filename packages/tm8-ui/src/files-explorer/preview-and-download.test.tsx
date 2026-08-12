@@ -18,7 +18,7 @@
  * passed against the broken build.
  */
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FilesExplorerScreen, importCaption, filterEntries, sortEntries } from './FilesExplorerScreen';
 import {
   EXPLORER_REASONS,
@@ -27,15 +27,24 @@ import {
   type ExplorerRoot,
   type FilesExplorerPort,
 } from './port';
-import { rendererFor, rendersAsSource } from './preview';
+import { rendererFor } from './preview';
 
 afterEach(cleanup);
 
 beforeAll(() => {
-  // jsdom implements neither; the component's contract is that it creates one
-  // URL per preview and revokes it, which is exactly what these record.
+  // jsdom implements neither.
   Object.defineProperty(URL, 'createObjectURL', { writable: true, value: vi.fn(() => 'blob:stub') });
   Object.defineProperty(URL, 'revokeObjectURL', { writable: true, value: vi.fn() });
+});
+
+beforeEach(() => {
+  // CLEARED PER TEST, not merely installed once. `clearMocks` is false in this
+  // package's vite config, so a `not.toHaveBeenCalled()` assertion over a
+  // module-level mock is otherwise order-dependent: it passes only while no
+  // earlier test in the file happens to create an object URL, and turns into a
+  // false failure the moment one is added above it.
+  vi.mocked(URL.createObjectURL).mockClear();
+  vi.mocked(URL.revokeObjectURL).mockClear();
 });
 
 const libraryRoot: ExplorerRoot = { id: 'library', kind: 'library', label: 'Library', writable: true };
@@ -85,15 +94,49 @@ describe('the preview says which fact is true', () => {
       name: 'Maestro_Feature_Tasks.xlsx',
       mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
+    // The unrenderable branch PROBES the byte route before claiming anything
+    // about the bytes; this stub is what makes the probe succeed.
+    const fetchStub = vi.fn(async () => ({ ok: true, status: 206, blob: async () => new Blob() }));
+    vi.stubGlobal('fetch', fetchStub);
     render(<FilesExplorerScreen port={portWith([xlsx])} />);
     await openPreview(xlsx.name);
 
     expect(await screen.findByTestId('fx-preview-no-renderer')).toBeTruthy();
+    // One byte, not the whole spreadsheet.
+    expect(fetchStub).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      headers: { range: 'bytes=0-0' },
+    }));
     expect(screen.queryByText(EXPLORER_REASONS.NO_BYTE_ROUTE)).toBeNull();
     expect(screen.getByText(EXPLORER_REASONS.NO_RENDERER)).toBeTruthy();
     // And the download is still offered, which is what made the old copy absurd.
     const link = screen.getByText(`Download ${xlsx.name}`) as HTMLAnchorElement;
     expect(link.getAttribute('href')).toBe(`/v2/files/${xlsx.entityId}/download`);
+    vi.unstubAllGlobals();
+  });
+
+  it('REGRESSION: an entity with an id but no stored bytes offers no download at all', async () => {
+    // The phantom the old "Upload file" button made: a `file` entity that was
+    // committed without ever uploading. It has an id, so `downloadHref` builds
+    // a URL, and `files.download` answers 404 because the row it joins onto
+    // does not exist. Three of these are in the production space.
+    //
+    // This case CANNOT be told from a real upload by looking at the entity:
+    // the server returns `content: null` on the summary for file entities, so
+    // mime and sizeBytes are null for genuine uploads too (measured against the
+    // live node, 2026-08-12). Guessing from those fields would have hidden the
+    // download link for the entire library. So the route is asked.
+    const phantom = entry({ name: 'Untitled file', mime: null });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, blob: async () => new Blob() })));
+
+    render(<FilesExplorerScreen port={portWith([phantom])} />);
+    await openPreview(phantom.name);
+
+    expect(await screen.findByTestId('fx-preview-no-bytes')).toBeTruthy();
+    expect(screen.getByText(EXPLORER_REASONS.NO_STORED_BYTES)).toBeTruthy();
+    // The whole point: no link that 404s, and no claim that the bytes are fine.
+    expect(screen.queryByText(`Download ${phantom.name}`)).toBeNull();
+    expect(screen.queryByText(EXPLORER_REASONS.NO_RENDERER)).toBeNull();
+    vi.unstubAllGlobals();
   });
 
   it('says NO BYTE ROUTE only when there is genuinely no route', async () => {
@@ -138,6 +181,58 @@ describe('the preview says which fact is true', () => {
   });
 });
 
+describe('the blob preview path', () => {
+  const png = entry({ name: 'shot.png', mime: 'image/png' });
+  const pdf = entry({ name: 'spec.pdf', mime: 'application/pdf' });
+
+  it('renders media straight from the href and never buffers it', async () => {
+    // An earlier draft fetched EVERY preview into a Blob, justified by the
+    // download route's `attachment` disposition. That route serves image,
+    // audio and video INLINE (services/w2/files.ts), so buffering them bought
+    // nothing and cost a full copy of, say, a 500 MB video before first frame.
+    const fetchStub = vi.fn();
+    vi.stubGlobal('fetch', fetchStub);
+    render(<FilesExplorerScreen port={portWith([png])} />);
+    await openPreview(png.name);
+
+    const img = (await screen.findByAltText(png.name)) as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe(`/v2/files/${png.entityId}/download`);
+    expect(fetchStub).not.toHaveBeenCalled();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('buffers a PDF, because attachment really does stop an iframe rendering', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, blob: async () => new Blob(['%PDF-1.4'], { type: 'application/pdf' }),
+    })));
+    render(<FilesExplorerScreen port={portWith([pdf])} />);
+    await openPreview(pdf.name);
+
+    const frame = (await screen.findByTitle(`Preview of ${pdf.name}`)) as HTMLIFrameElement;
+    expect(frame.getAttribute('src')).toBe('blob:stub');
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('REVOKES the object URL when the preview closes', async () => {
+    // The header docblock claims one URL per preview, revoked. Asserted here
+    // rather than merely asserted in prose: a leaked object URL pins the whole
+    // blob for the life of the document.
+    const { fireEvent } = await import('@testing-library/react');
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, blob: async () => new Blob(['%PDF-1.4'], { type: 'application/pdf' }),
+    })));
+    render(<FilesExplorerScreen port={portWith([pdf])} />);
+    await openPreview(pdf.name);
+    await screen.findByTitle(`Preview of ${pdf.name}`);
+
+    fireEvent.click(screen.getByLabelText('Close preview'));
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:stub'));
+    vi.unstubAllGlobals();
+  });
+});
+
 describe('project files reach their bytes without an href', () => {
   const projectFile = entry({
     name: 'index.ts',
@@ -178,7 +273,7 @@ describe('project files reach their bytes without an href', () => {
     render(<FilesExplorerScreen port={port} onNotice={(t) => notices.push(t)} />);
     fireEvent.click(await screen.findByLabelText(`Download ${projectFile.name}`));
 
-    await waitFor(() => expect(notices).toContain(EXPLORER_REASONS.PREVIEW_TOO_LARGE));
+    await waitFor(() => expect(notices).toContain(EXPLORER_REASONS.DOWNLOAD_TOO_LARGE));
     // The whole point: nothing was saved.
     expect(URL.createObjectURL).not.toHaveBeenCalled();
   });
@@ -223,11 +318,12 @@ describe('renderer selection is closed and type-driven', () => {
     expect(rendererFor('text/plain; charset=utf-8')).toBe('text');
   });
 
-  it('never renders an SVG, which is a document and not a picture', () => {
+  it('never renders an SVG, and shows HTML as source rather than as a document', () => {
     expect(rendererFor('image/svg+xml')).toBeNull();
-    expect(rendersAsSource('image/svg+xml')).toBe(true);
-    // HTML previews as its own source, never in a document context.
-    expect(rendersAsSource('text/html')).toBe(true);
+    // `text/html` maps to the <pre> renderer, so markup off a disk can never
+    // reach an iframe. This is the assertion that keeps §4.4 honest here; an
+    // earlier draft tested a separate predicate that no input could reach.
+    expect(rendererFor('text/html')).toBe('text');
   });
 
   it('answers null for anything it cannot show, rather than guessing', () => {

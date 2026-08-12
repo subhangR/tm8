@@ -28,6 +28,7 @@ import {
   ARCHIVE_EXCLUSION_MANIFEST,
   MAX_ARCHIVE_FILES,
   planProjectArchive,
+  projectArchiveEntries,
 } from '../../src/facade/services/w2/project-files.js';
 import { W2BlobStore } from '../../src/files/w2-blob-store.js';
 import type { OperationHandler, RawStreamResult, RequestContext } from '../../src/http/types.js';
@@ -168,10 +169,14 @@ describe('projects.files.archive', () => {
 
     expect([...tree.keys()].sort()).toEqual([
       'project/README.md',
+      // The manifest is ALWAYS present, even with nothing withheld: a receipt
+      // that appears only sometimes lets a planted file impersonate it.
+      'project/_tm8-excluded.txt',
       'project/src/deep/nested.txt',
       'project/src/index.ts',
       'project/ünïcode file.txt',
     ]);
+    expect(tree.get(`project/${ARCHIVE_EXCLUSION_MANIFEST}`)).toContain('Nothing was withheld');
     expect(tree.get('project/README.md')).toBe('# hello\n');
     expect(tree.get('project/src/deep/nested.txt')).toBe('down here\n');
     expect(tree.get('project/ünïcode file.txt')).toBe('accented\n');
@@ -224,7 +229,7 @@ describe('projects.files.archive', () => {
     const result = await archiveHandler()(request(`path=${encodeURIComponent(join(workingDir, 'docs'))}`));
     const tree = await treeOf(await extract(await collect(result)));
 
-    expect([...tree.keys()]).toEqual(['docs/guide.md']);
+    expect([...tree.keys()].sort()).toEqual(['docs/_tm8-excluded.txt', 'docs/guide.md']);
     expect((result as RawStreamResult).headers['content-disposition']).toContain('docs.zip');
   });
 
@@ -262,16 +267,10 @@ describe('projects.files.archive', () => {
     ).rejects.toMatchObject({ code: 'forbidden' });
   });
 
-  it('produces a structurally valid empty archive for an empty folder', async () => {
-    const zip = await collect(await archiveHandler()(request()));
-    // Asserted structurally rather than through `unzip`, which exits 1 with
-    // "zipfile is empty" on a zero-entry archive. That is the tool declining
-    // to extract nothing, not a malformed file: an EOCD record alone IS a
-    // valid empty zip, and every GUI unzipper opens it. Shelling out here
-    // would encode `unzip`'s opinion as our contract.
-    expect(zip.length).toBe(22);                        // EOCD only
-    expect(zip.readUInt32LE(0)).toBe(0x06054b50);       // EOCD signature
-    expect(zip.readUInt16LE(10)).toBe(0);               // total entries: none
+  it('gives an empty folder an archive carrying only the receipt', async () => {
+    const tree = await treeOf(await extract(await collect(await archiveHandler()(request()))));
+    expect([...tree.keys()]).toEqual(['project/_tm8-excluded.txt']);
+    expect(tree.get('project/_tm8-excluded.txt')).toContain('Nothing was withheld');
   });
 
   it('names the ceiling in the refusal so the limit is actionable', async () => {
@@ -283,5 +282,120 @@ describe('projects.files.archive', () => {
       message: expect.stringContaining('archive limit'),
     });
     expect(MAX_ARCHIVE_FILES).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * THE TWO ESCAPES AN ADVERSARIAL REVIEW DEMONSTRATED, 2026-08-12.
+ *
+ * Both were real: the archive followed a symlink out of the project root and
+ * laundered a `.env` whose exclusion its own manifest simultaneously reported.
+ * Both are races, so both tests drive the swap deterministically — by doing it
+ * between the plan and the read, which is exactly the window that was open —
+ * rather than with a timer that would make the suite flaky.
+ */
+describe('the archive re-verifies what the walk approved', () => {
+  it('refuses a file swapped to a symlink between plan and read, and says so', async () => {
+    await mkdir(join(scratch, 'outside'));
+    await writeFile(join(scratch, 'outside', 'secret.txt'), 'TOP SECRET OUTSIDE THE PROJECT\n');
+    await writeFile(join(workingDir, 'innocent.txt'), 'harmless\n');
+
+    const plan = await planProjectArchive(workingDir, undefined, [scratch]);
+    expect(plan.entries.map((e) => e.archivePath)).toContain('project/innocent.txt');
+
+    // The window: the walk has approved a regular file; now it becomes a
+    // symlink pointing out of the project.
+    await rm(join(workingDir, 'innocent.txt'));
+    await symlink(join(scratch, 'outside', 'secret.txt'), join(workingDir, 'innocent.txt'));
+
+    const written = new Map<string, string>();
+    for await (const entry of projectArchiveEntries(plan, plan.rootPath)) {
+      written.set(entry.path, entry.bytes.toString('utf8'));
+    }
+
+    expect(written.has('project/innocent.txt')).toBe(false);
+    expect([...written.values()].join('')).not.toContain('TOP SECRET');
+    const manifest = written.get(`project/${ARCHIVE_EXCLUSION_MANIFEST}`) ?? '';
+    expect(manifest).toContain('innocent.txt');
+  });
+
+  it('will not launder a withheld secret through a swapped-in symlink', async () => {
+    await writeFile(join(workingDir, '.env'), 'API_KEY=hunter2\n');
+    await writeFile(join(workingDir, 'readme.md'), 'docs\n');
+
+    const plan = await planProjectArchive(workingDir, undefined, [scratch]);
+    // The plan correctly withholds the secret...
+    expect(plan.excluded.map((e) => e.path)).toContain('.env');
+
+    // ...so the attack is to make an ALLOWED path point at it after the fact.
+    await rm(join(workingDir, 'readme.md'));
+    await symlink(join(workingDir, '.env'), join(workingDir, 'readme.md'));
+
+    const written = new Map<string, string>();
+    for await (const entry of projectArchiveEntries(plan, plan.rootPath)) {
+      written.set(entry.path, entry.bytes.toString('utf8'));
+    }
+
+    // The whole point: an archive whose manifest says `.env` was withheld must
+    // not contain `.env`'s bytes under another name.
+    expect([...written.values()].join('')).not.toContain('hunter2');
+    expect(written.has('project/readme.md')).toBe(false);
+  });
+
+  /**
+   * NOTE ON WHAT THIS ONE DOES AND DOES NOT PROVE. It covers the STATIC case —
+   * a directory that is already a symlink when the walk reaches it — and
+   * asserts the exclusion is RECORDED, not merely that the loot is absent.
+   * The mid-walk variant (a real directory renamed away and replaced with a
+   * symlink while the walk is busy elsewhere) was demonstrated by review with
+   * a 5 ms timer; it is closed by the realpath containment check now run
+   * before EVERY descend, and is deliberately not reproduced here, because a
+   * timing-dependent test that passes on a fast machine and fails on a loaded
+   * one teaches the next reader to retry rather than to look.
+   */
+  it('declines a directory symlink out of the root, and records that it declined', async () => {
+    await mkdir(join(scratch, 'elsewhere'));
+    await writeFile(join(scratch, 'elsewhere', 'LOOT.txt'), 'not yours\n');
+    await mkdir(join(workingDir, 'z'));
+    await writeFile(join(workingDir, 'z', 'real.txt'), 'mine\n');
+    await rm(join(workingDir, 'z'), { recursive: true });
+    await symlink(join(scratch, 'elsewhere'), join(workingDir, 'z'));
+
+    const plan = await planProjectArchive(workingDir, undefined, [scratch]);
+    expect(plan.entries.map((e) => e.archivePath)).not.toContain('project/z/LOOT.txt');
+    // Not merely absent — the walk RECORDS that it declined to descend.
+    expect(plan.excluded.map((e) => e.path)).toContain('z');
+  });
+
+  it('quotes manifest fields so a filename cannot forge a row', async () => {
+    await writeFile(join(workingDir, 'ok.txt'), 'fine\n');
+    const forged = 'boring.txt\tsymbolic link\nsanitised.txt\treviewed and safe';
+    await symlink(join(workingDir, 'ok.txt'), join(workingDir, forged));
+
+    const plan = await planProjectArchive(workingDir, undefined, [scratch]);
+    const written = new Map<string, string>();
+    for await (const entry of projectArchiveEntries(plan, plan.rootPath)) {
+      written.set(entry.path, entry.bytes.toString('utf8'));
+    }
+    const manifest = written.get(`project/${ARCHIVE_EXCLUSION_MANIFEST}`) ?? '';
+    // The tab and newline survive as ESCAPES, so the forged text cannot become
+    // its own line and cannot claim a reason of its own.
+    expect(manifest).not.toContain('sanitised.txt\treviewed and safe\t');
+    expect(manifest).toContain('\\t');
+  });
+
+  it('does not let a real file collide with the receipt and overwrite it', async () => {
+    await writeFile(join(workingDir, ARCHIVE_EXCLUSION_MANIFEST), 'nothing was withheld, honest\n');
+    await writeFile(join(workingDir, 'app.ts'), 'ok\n');
+
+    const zip = await collect(await archiveHandler()(request()));
+    const tree = await treeOf(await extract(zip));
+
+    // The project's own file keeps its name and its content...
+    expect(tree.get(`project/${ARCHIVE_EXCLUSION_MANIFEST}`)).toBe('nothing was withheld, honest\n');
+    // ...and the real receipt is still present, under a name that did not collide.
+    const receipt = [...tree.keys()].find((p) => /_tm8-excluded \(\d+\)\.txt$/.test(p));
+    expect(receipt).toBeTruthy();
+    expect(tree.get(receipt!)).toContain('JSON-quoted');
   });
 });

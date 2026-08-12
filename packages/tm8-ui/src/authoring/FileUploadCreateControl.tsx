@@ -26,8 +26,13 @@ import { createFileUploadTask, safeUploadReason } from '../files/upload';
 export interface FileUploadCreateControlProps {
   label: string;
   spaceId: SpaceId;
-  /** Absent on a seam with no blob store; the control then says so. */
-  files?: Seam['files'];
+  /**
+   * REQUIRED, because `files` is required on `Seam` and all three call sites
+   * pass it. An optional prop here bought a disabled "this node does not serve
+   * uploads" branch that no wiring could ever reach — an unreachable honest
+   * state is not honesty, it is dead code that reads as coverage.
+   */
+  files: Seam['files'];
   onCreated?: (id: EntityId, result: CommandResult) => void;
   onNotice?: (text: string) => void;
 }
@@ -40,19 +45,6 @@ export function FileUploadCreateControl({
   onNotice,
 }: FileUploadCreateControlProps) {
   const [busy, setBusy] = useState(0);
-
-  if (!files) {
-    return (
-      <button
-        type="button"
-        className="tm8-btn"
-        disabled
-        title="This node does not serve file uploads, so there is nothing this button could store."
-      >
-        {label}
-      </button>
-    );
-  }
 
   const start = async (): Promise<void> => {
     const picked = await pickFiles({ multiple: true });

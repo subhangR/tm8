@@ -147,6 +147,102 @@ type Listing =
 // The screen
 // ---------------------------------------------------------------------------
 
+
+/**
+ * One tree row, and its children once expanded.
+ *
+ * MODULE SCOPE, not nested in the screen. Declared inside `FilesExplorerScreen`
+ * this was a NEW function identity on every render, so React saw a new element
+ * type and unmounted/remounted the entire subtree on any state change — typing
+ * one character in the filter box rebuilt every node. The visible cost was
+ * keyboard focus: pressing a twisty destroyed the button being pressed and
+ * dropped focus to `document.body`, ejecting a keyboard or screen-reader user
+ * to the top of the document on every expand. In the one component whose whole
+ * purpose is announcing structure correctly.
+ *
+ * Children are fetched ON EXPAND and cached by path, so opening a tree does not
+ * fan out a request per directory before the user has asked for any of them — a
+ * project root with 200 folders would otherwise storm the node on a mode
+ * switch. A failed load renders as a retryable row rather than a silently empty
+ * branch, because "this folder is empty" and "we could not read this folder"
+ * are different facts.
+ */
+function TreeNode({
+  entry,
+  depth,
+  expanded,
+  branches,
+  renderRow,
+  onToggle,
+  onRetry,
+}: {
+  entry: ExplorerEntry;
+  depth: number;
+  expanded: ReadonlySet<string>;
+  branches: Record<string, ExplorerEntry[] | 'loading' | 'error'>;
+  renderRow: (entry: ExplorerEntry) => React.ReactNode;
+  onToggle: (entry: ExplorerEntry) => void;
+  onRetry: (entry: ExplorerEntry) => void;
+}) {
+  const open = expanded.has(entry.path);
+  const children = branches[entry.path];
+  if (entry.type !== 'dir') {
+    return (
+      <li role="treeitem" aria-selected={false} className="fx-tree-item" style={{ '--fx-depth': depth } as never}>
+        {renderRow(entry)}
+      </li>
+    );
+  }
+  return (
+    <li
+      role="treeitem"
+      aria-selected={false}
+      aria-expanded={open}
+      className="fx-tree-item"
+      style={{ '--fx-depth': depth } as never}
+    >
+      <span className="fx-tree-row">
+        <button
+          type="button"
+          className="fx-twisty"
+          aria-label={`${open ? 'Collapse' : 'Expand'} ${entry.name}`}
+          onClick={() => onToggle(entry)}
+        >
+          {open ? '▾' : '▸'}
+        </button>
+        {renderRow(entry)}
+      </span>
+      {open ? (
+        <ul role="group" className="fx-list">
+          {children === 'loading' ? (
+            <li className="fx-empty">Loading…</li>
+          ) : children === 'error' ? (
+            <li className="fx-empty">
+              Could not read {entry.name}.{' '}
+              <button type="button" onClick={() => onRetry(entry)}>Retry</button>
+            </li>
+          ) : children && children.length === 0 ? (
+            <li className="fx-empty">Empty.</li>
+          ) : (
+            (children ?? []).map((child) => (
+              <TreeNode
+                key={`${child.type}:${child.path}`}
+                entry={child}
+                depth={depth + 1}
+                expanded={expanded}
+                branches={branches}
+                renderRow={renderRow}
+                onToggle={onToggle}
+                onRetry={onRetry}
+              />
+            ))
+          )}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
 export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps) {
   const [roots, setRoots] = useState<ExplorerRoot[] | null>(null);
   const [rootsError, setRootsError] = useState<string | null>(null);
@@ -362,7 +458,7 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
       try {
         const bytes = await port.readBytes(entry);
         if (bytes.truncated) {
-          onNotice?.(EXPLORER_REASONS.PREVIEW_TOO_LARGE);
+          onNotice?.(EXPLORER_REASONS.DOWNLOAD_TOO_LARGE);
           return;
         }
         const url = URL.createObjectURL(bytes.blob);
@@ -592,7 +688,16 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
       return (
         <ul role="tree" aria-label="Folder tree" className="fx-list">
           {entries.map((entry) => (
-            <TreeNode key={`${entry.type}:${entry.path}`} entry={entry} depth={0} />
+            <TreeNode
+              key={`${entry.type}:${entry.path}`}
+              entry={entry}
+              depth={0}
+              expanded={expanded}
+              branches={branches}
+              renderRow={entryRowInner}
+              onToggle={toggleBranch}
+              onRetry={(e) => void loadBranch(e)}
+            />
           ))}
         </ul>
       );
@@ -607,67 +712,6 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
   // Tree rows reuse the list row's content without the <li> wrapper.
   function entryRowInner(entry: ExplorerEntry) {
     return entryRow(entry).props.children;
-  }
-
-  /**
-   * One tree row, and its children once expanded.
-   *
-   * Children are fetched ON EXPAND and cached by path, so opening a tree does
-   * not fan out a request per directory before the user has asked for any of
-   * them — a project root with 200 folders would otherwise storm the node on
-   * a mode switch. A failed load renders as a retryable row rather than a
-   * silently empty branch, because "this folder is empty" and "we could not
-   * read this folder" are different facts.
-   */
-  function TreeNode({ entry, depth }: { entry: ExplorerEntry; depth: number }) {
-    const open = expanded.has(entry.path);
-    const children = branches[entry.path];
-    if (entry.type !== 'dir') {
-      return (
-        <li role="treeitem" aria-selected={false} className="fx-tree-item" style={{ '--fx-depth': depth } as never}>
-          {entryRowInner(entry)}
-        </li>
-      );
-    }
-    return (
-      <li
-        role="treeitem"
-        aria-selected={false}
-        aria-expanded={open}
-        className="fx-tree-item"
-        style={{ '--fx-depth': depth } as never}
-      >
-        <span className="fx-tree-row">
-          <button
-            type="button"
-            className="fx-twisty"
-            aria-label={`${open ? 'Collapse' : 'Expand'} ${entry.name}`}
-            onClick={() => toggleBranch(entry)}
-          >
-            {open ? '▾' : '▸'}
-          </button>
-          {entryRowInner(entry)}
-        </span>
-        {open ? (
-          <ul role="group" className="fx-list">
-            {children === 'loading' ? (
-              <li className="fx-empty">Loading…</li>
-            ) : children === 'error' ? (
-              <li className="fx-empty">
-                Could not read {entry.name}.{' '}
-                <button type="button" onClick={() => void loadBranch(entry)}>Retry</button>
-              </li>
-            ) : children && children.length === 0 ? (
-              <li className="fx-empty">Empty.</li>
-            ) : (
-              (children ?? []).map((child) => (
-                <TreeNode key={`${child.type}:${child.path}`} entry={child} depth={depth + 1} />
-              ))
-            )}
-          </ul>
-        ) : null}
-      </li>
-    );
   }
 
   const crumbs = breadcrumbSegments(path);

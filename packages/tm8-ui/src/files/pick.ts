@@ -20,9 +20,20 @@
  * the user cancels.
  *
  * The input is attached to the document because Safari will not open a picker
- * for a detached element, and removed in a `finally` so a cancelled pick
- * leaves nothing behind. `cancel` is not universally supported, so the
- * element is also cleaned up on `change`; both paths are idempotent.
+ * for a detached element.
+ *
+ * CANCELLATION IS THE HARD PART. `change` does not fire when a user dismisses
+ * the dialog, and the `cancel` event is not universally supported. An earlier
+ * version relied on `cancel` alone and claimed the element would otherwise be
+ * "cleaned up by the next successful pick" — which was simply false: `finish`
+ * closes over its OWN input, so every dismissed pick on a browser without
+ * `cancel` left an `<input>` in the document forever and left this promise
+ * pending, so the caller's `await` never returned.
+ *
+ * The fallback is the window regaining focus: the file dialog is modal, so
+ * focus returning without a `change` having fired means the user dismissed it.
+ * One frame of slack is allowed for `change`, which in some browsers lands
+ * just after focus. Every path resolves exactly once and removes the element.
  */
 export function pickFiles(options?: { multiple?: boolean; accept?: string }): Promise<File[]> {
   return new Promise((resolve) => {
@@ -33,18 +44,27 @@ export function pickFiles(options?: { multiple?: boolean; accept?: string }): Pr
     input.hidden = true;
 
     let settled = false;
+    let onFocus: () => void = () => undefined;
     const finish = (files: File[]): void => {
       if (settled) return;
       settled = true;
+      window.removeEventListener('focus', onFocus);
       input.remove();
       resolve(files);
     };
 
+    const finishEmpty = (): void => finish([]);
+
     input.addEventListener('change', () => finish(Array.from(input.files ?? [])));
-    // Fired when the picker is dismissed without a choice. Browsers that do
-    // not implement it simply never resolve this way, and the element is
-    // cleaned up by the next successful pick or by page teardown.
-    input.addEventListener('cancel', () => finish([]));
+    input.addEventListener('cancel', finishEmpty);
+    // The universal fallback. Deferred a turn so a `change` that arrives just
+    // after focus wins the race and reports the real selection.
+    onFocus = (): void => {
+      setTimeout(() => {
+        if (!settled) finishEmpty();
+      }, 0);
+    };
+    window.addEventListener('focus', onFocus, { once: true });
 
     document.body.append(input);
     input.click();

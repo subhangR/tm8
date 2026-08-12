@@ -203,10 +203,25 @@ export const EXPLORER_REASONS = {
   // render — is a lie the user can see through in one glance.
   NO_BYTE_ROUTE:
     'No byte route exists for this entry in this build, so there is nothing honest to preview.',
+  // Says nothing about whether the bytes are good. An earlier draft read
+  // "The bytes are fine — download it to open it", which ASSERTED a fact this
+  // component never checked, and was false for exactly the entities that
+  // produced the original bug report.
   NO_RENDERER:
-    'This file type has no in-browser preview. The bytes are fine — download it to open it.',
+    'This file type has no in-browser preview. Download it to open it.',
+  /**
+   * A `file` entity with no stored blob — the wreckage of the old create-door
+   * defect. It cannot be previewed and it cannot be downloaded, and saying so
+   * is the whole point: `files.download` answers 404 for these, so offering a
+   * link would repeat the original lie in a new place.
+   */
+  NO_STORED_BYTES:
+    'This entry was created without ever storing a file, so there are no bytes to preview or download.',
   PREVIEW_TOO_LARGE:
-    'This file is larger than the node will inline, so a preview would only show part of it. Download the folder as a zip to get the whole file.',
+    'This file is larger than the node will inline, so this preview shows only part of it. Download the folder as a zip to get the whole file.',
+  /** The same ceiling, answering the DOWNLOAD press rather than the preview. */
+  DOWNLOAD_TOO_LARGE:
+    'This file is larger than the node will send in one piece, so downloading it here would save an incomplete file. Download the folder as a zip to get the whole file.',
   PATHS_NOT_PRESERVED:
     'This node has no folder namespace yet: every file uploads, but the folder structure will not be preserved.',
 } as const;
@@ -217,6 +232,18 @@ export const EXPLORER_REASONS = {
 
 export const LIBRARY_ROOT_ID = 'library';
 
+/**
+ * A `file` entity as the space's entity query answers it.
+ *
+ * MEASURED CAVEAT, 2026-08-12: the server returns `content: null` on the
+ * SUMMARY for file entities, so `mime` and `sizeBytes` are null here for real
+ * uploads as well as for the blob-less phantoms the old create door made. That
+ * is why the size column reads `—` and why gallery thumbnails never appear for
+ * library images. It also rules out deciding "does this have bytes?" from
+ * these two fields — an earlier attempt at exactly that would have suppressed
+ * the download link for EVERY library file. Whether an entry has bytes is
+ * therefore established by asking the byte route, in `PreviewBody`.
+ */
 function libraryEntry(entity: EntitySummary): ExplorerEntry {
   const content = (entity as { content?: Record<string, unknown> }).content ?? {};
   const mime = typeof content['mime'] === 'string' ? (content['mime'] as string) : null;

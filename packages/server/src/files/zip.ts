@@ -24,7 +24,8 @@
  *   - `createZipStream(entries)` — an async source in, a `Readable` out. A
  *     project subtree is not small and is not bounded by anything the caller
  *     controls, so buffering one would make folder download a memory attack on
- *     the node. Peak memory here is ONE ENTRY, not one archive.
+ *     the node. Peak memory here is ONE ENTRY, held ONCE — the payload is
+ *     yielded as its own chunk rather than concatenated into the header.
  *
  * WHY STREAMING STILL BUFFERS EACH ENTRY: a STORED local file header carries
  * the CRC-32 and the size BEFORE the bytes, so a producer must know both
@@ -57,10 +58,13 @@ const UTF8_NAME_FLAG = 0x0800; // general-purpose bit 11: filename is UTF-8
 const EXTERNAL_ATTRS_0644 = (0o644 << 16) >>> 0;
 
 /**
- * ZIP32 ceilings. Past these the central directory silently wraps and produces
- * an archive that extracts to garbage, so they are REFUSALS, not warnings.
- * ZIP64 is the fix if a real tree ever needs it; until then a caller that
- * would overflow gets told which limit it hit.
+ * ZIP32 ceilings, enforced on BOTH shapes.
+ *
+ * Past these the fields do not fit. `Buffer.writeUInt16LE` validates, so the
+ * untended failure mode is an untyped RangeError rather than the silent
+ * corruption an earlier draft of this comment claimed — which is better, but
+ * still not an answer a caller can read. These are REFUSALS naming the limit.
+ * ZIP64 is the fix if a real tree ever needs one.
  */
 export const ZIP32_MAX_ENTRIES = 0xffff;
 export const ZIP32_MAX_BYTES = 0xffffffff;
@@ -73,7 +77,7 @@ export class ZipLimitError extends Error {
 }
 
 interface EntryRecords {
-  local: Buffer;
+  localHeader: Buffer;
   central: Buffer;
   /** Bytes this entry contributes to the local section: header + name + data. */
   advance: number;
@@ -118,7 +122,12 @@ function entryRecords(path: string, bytes: Buffer, offset: number): EntryRecords
   cdh.writeUInt32LE(offset, 42);          // relative offset of local header
 
   return {
-    local: Buffer.concat([lfh, name, bytes]),
+    // Header and NAME only. The payload is yielded separately by the caller so
+    // the file's bytes are never copied a second time — an earlier draft did
+    // `Buffer.concat([lfh, name, bytes])` while the source buffer was still
+    // live, which made peak memory TWO copies of the largest file (measured:
+    // 407 MB external for a 200 MB entry), not the one this module claims.
+    localHeader: Buffer.concat([lfh, name]),
     central: Buffer.concat([cdh, name]),
     advance: lfh.length + name.length + size,
   };
@@ -144,14 +153,20 @@ function endOfCentralDirectory(count: number, centralSize: number, centralOffset
 export function buildDeterministicZip(
   files: ReadonlyArray<{ path: string; bytes: Buffer }>,
 ): Buffer {
+  if (files.length > ZIP32_MAX_ENTRIES) {
+    throw new ZipLimitError(`archive exceeds the ${ZIP32_MAX_ENTRIES}-entry zip32 limit`);
+  }
   const local: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;
   for (const file of files) {
     const records = entryRecords(file.path, file.bytes, offset);
-    local.push(records.local);
+    local.push(records.localHeader, file.bytes);
     central.push(records.central);
     offset += records.advance;
+    if (offset > ZIP32_MAX_BYTES) {
+      throw new ZipLimitError(`archive exceeds the ${ZIP32_MAX_BYTES}-byte zip32 limit`);
+    }
   }
   const localBuf = Buffer.concat(local);
   const centralBuf = Buffer.concat(central);
@@ -196,7 +211,8 @@ export function createZipStream(entries: AsyncIterable<ZipStreamEntry>): Readabl
         throw new ZipLimitError(`archive exceeds the ${ZIP32_MAX_BYTES}-byte zip32 limit`);
       }
       central.push(records.central);
-      yield records.local;
+      yield records.localHeader;
+      yield entry.bytes;
     }
     const centralBuf = Buffer.concat(central);
     yield centralBuf;

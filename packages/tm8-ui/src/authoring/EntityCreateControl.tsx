@@ -27,8 +27,12 @@ export function EntityCreateControl({
   immediate: NewTaskHandle;
   spaceId: SpaceId;
   commands: AuthoringCommands | null;
-  /** Only the `file-upload` form needs it; every other kind ignores it. */
-  files?: Seam['files'];
+  /**
+   * Only the `file-upload` form needs it; every other kind ignores it. Not
+   * optional: `files` is required on `Seam`, and letting it be undefined here
+   * only manufactures an unreachable disabled state downstream.
+   */
+  files: Seam['files'];
   onCreated?: (id: EntityId, result: CommandResult) => void;
   onNotice?: (text: string) => void;
 }) {

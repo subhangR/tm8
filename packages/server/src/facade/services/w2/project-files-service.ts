@@ -219,7 +219,7 @@ export class W2ProjectFilesService {
     return this.audited(ctx, 'projects.files.archive', projectId, path, async () => {
       const { workingDir } = await this.project(ctx, projectId, false);
       const plan = await planProjectArchive(workingDir, path ?? undefined);
-      const stream = createZipStream(projectArchiveEntries(plan));
+      const stream = createZipStream(projectArchiveEntries(plan, plan.rootPath));
       return rawStream(200, {
         'content-type': 'application/zip',
         // Unconditional attachment: see the posture note above.

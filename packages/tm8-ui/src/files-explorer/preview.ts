@@ -64,15 +64,16 @@ export function rendererFor(mime: string | null): PreviewRenderer | null {
 }
 
 /**
- * Text is decoded and rendered into a `<pre>`, never handed to an iframe:
- * `text/html` off a project disk in an iframe is precisely the document
- * context §4.4 forbids. A file that declares itself HTML previews as its own
- * source, which is both safe and what a file browser should show anyway.
+ * NOTE ON `text/html` AND SVG, since both look like gaps here.
+ *
+ * There is no separate "render as source" predicate, because there is nothing
+ * for it to decide. `rendererFor` maps every `text/*` — INCLUDING `text/html` —
+ * to `'text'`, which renders into a `<pre>`; the iframe is reachable only for
+ * `application/pdf`. SVG returns null and is never fetched at all. An earlier
+ * draft carried a `rendersAsSource()` helper for this and it was unreachable on
+ * every input, which is a safety control that cannot fire — the honest version
+ * is that the mapping above already holds the line.
  */
-export function rendersAsSource(mime: string | null): boolean {
-  const type = (mime ?? '').split(';')[0]!.trim().toLowerCase();
-  return type === 'text/html' || type === 'image/svg+xml';
-}
 
 /** Cap on how much text is decoded into the DOM at once. */
 export const MAX_PREVIEW_TEXT_BYTES = 512 * 1024;
