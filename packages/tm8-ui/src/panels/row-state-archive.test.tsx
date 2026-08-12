@@ -294,6 +294,97 @@ describe('D67 — archive is a layer ON TOP of state, not a value inside it', ()
   });
 });
 
+/**
+ * THE CHECKING STATE HAS TO END — the field defect behind "deletion of tasks
+ * is not working" (2026-08-12, measured against the prod node in Firefox).
+ *
+ * `EntityCapabilities` rides on `EntityDetail`; a `collections.query` returns
+ * `EntitySummary`. So every control in this strip renders `CheckingPermission`
+ * until the host has read that row's DETAIL — the loading vocabulary, whose
+ * copy promises "it resolves on its own".
+ *
+ * On a list row it never did. The only caller of the host's detail read was an
+ * OPEN DETAIL PANEL, so a row expanded from the list sat checking forever:
+ * state, priority, assignment and Archive were inert `<span>`s that swallowed
+ * the click and issued NO request. Measured on prod: five controls still
+ * reading "checking permissions" 13s after the expand, and a click on Archive
+ * produced not one `/v2` call.
+ *
+ * The tests above are all about which REFUSAL is right. These are about the
+ * one state that is not a refusal at all, and they are what the suite was
+ * missing: every one of them passed while the control did nothing.
+ */
+describe('the expanded row loads the permissions it is waiting on', () => {
+  const live = () => rowsOfKind('task').find((r) => r.deletedAt == null)!;
+
+  it('asks the host to load the row detail when capabilities are unknown', () => {
+    const onNeedDetail = vi.fn();
+    const row = live();
+    mount('task', { onArchive: vi.fn(), capabilitiesOf: () => undefined, onNeedDetail }, [row]);
+    expandFirstRow();
+    expect(onNeedDetail).toHaveBeenCalledWith(row.id);
+  });
+
+  /**
+   * ONE DELIBERATE EXPAND, ONE ROW. The request rides the MOUNTED strip and
+   * not the rendered row, because a detail read per row is a hundred reads on
+   * a hundred-row list — the request storm `useGateData`'s claim register
+   * exists to prevent. Nothing is expanded here, so nothing is asked.
+   */
+  it('asks for nothing while every row is collapsed', () => {
+    const onNeedDetail = vi.fn();
+    mount('task', { onArchive: vi.fn(), capabilitiesOf: () => undefined, onNeedDetail });
+    expect(onNeedDetail).not.toHaveBeenCalled();
+  });
+
+  it('does not re-ask for a row whose capabilities are already known', () => {
+    const onNeedDetail = vi.fn();
+    mount('task', { onArchive: vi.fn(), capabilitiesOf: () => CAPS_FULL, onNeedDetail }, [live()]);
+    expandFirstRow();
+    expect(onNeedDetail).not.toHaveBeenCalled();
+  });
+
+  /**
+   * THE WHOLE PATH, END TO END: unknown → checking → the answer arrives →
+   * Archive is a real button → the click reaches the host. Asserting the
+   * request alone would still pass if the strip never redrew on the answer,
+   * which is the half-fix this holds the line against.
+   */
+  it('turns the checking Archive into a live one when the answer lands', () => {
+    const onArchive = vi.fn();
+    const row = live();
+    let caps: typeof CAPS_FULL | undefined;
+    const view = mount(
+      'task',
+      { onArchive, capabilitiesOf: () => caps, onNeedDetail: () => { caps = CAPS_FULL; } },
+      [row],
+    );
+
+    const checking = expandFirstRow();
+    expect(within(checking).getAllByTestId('checking-permission').length).toBeGreaterThan(0);
+    expect(within(checking).queryByRole('button', { name: 'Archive' })).toBeNull();
+
+    // The host answered; re-render on the next paint, as a real store update does.
+    view.rerender(
+      <div className="cv2-root">
+        <EntityListPanel
+          kind="task"
+          rowsFor={() => [row]}
+          ctx={ctx}
+          onArchive={onArchive}
+          capabilitiesOf={() => caps}
+          onNeedDetail={() => { caps = CAPS_FULL; }}
+        />
+      </div>,
+    );
+
+    const strip = document.querySelectorAll('.lp__rowdetail')[0] as HTMLElement;
+    expect(within(strip).queryAllByTestId('checking-permission')).toHaveLength(0);
+    fireEvent.click(within(strip).getByRole('button', { name: 'Archive' }));
+    expect(onArchive).toHaveBeenCalledWith('archive', row.id);
+  });
+});
+
 describe('D67 — the picker and the badge cannot disagree', () => {
   /**
    * The control reads `panel.statusPill` for its words and tones rather than
