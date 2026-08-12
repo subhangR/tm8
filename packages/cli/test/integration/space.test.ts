@@ -148,7 +148,7 @@ describe('the node itself', () => {
     // landed without it moving. `execution.terminal.start` (101) is the fifth.
     // Re-pinned to the MEASURED value rather than 137+1, which would have been
     // a number no tree ever produced.
-    expect(health.operations).toBe(142); // MEASURED off /health (routes, not catalog rows).
+    expect(health.operations).toBe(144); // MEASURED off /health (routes, not catalog rows).
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });
