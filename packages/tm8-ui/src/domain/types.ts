@@ -338,6 +338,12 @@ export type ActionRef =
   | 'run'
   | 'coordinate'
   | 'launch-session'
+  // A VANILLA TERMINAL (101) — a shell session with no agent attached. Its own
+  // verb rather than `launch-session` with a null tool, because it opens no
+  // launch config: there is no teammate, model or profile to choose, so the
+  // two-clicks-to-launch rule that governs a spawn has nothing to show in
+  // between and the verb commits directly.
+  | 'start-terminal'
   | 'terminate'
   | 'prompt-session'
   // §8 share-into-session (seam-deferred, §10.7)
@@ -523,6 +529,17 @@ export interface ListConfig {
   liveCount?: { filter: QueryFilter; label: (n: number) => string };
   quickCreate: boolean;
   quickLaunch?: ActionRef;
+  /**
+   * A second header verb, rendered BESIDE `quickLaunch` (user ruling
+   * 2026-08-12: "these options should be on the top of sessions entity list
+   * panel", "beside launch session").
+   *
+   * Separate from `quickLaunch` rather than a list, because the two are not
+   * interchangeable: `quickLaunch` carries `flow: 'launch'` and EXPANDS a
+   * config, while this one commits on click. Collapsing them into one array
+   * would put that difference in the reader's head instead of in the type.
+   */
+  quickStart?: ActionRef;
   primaryActions?: readonly ActionRef[];
   filters: readonly FilterSpec[];
   sort: readonly SortSpec[];
@@ -583,7 +600,7 @@ export interface ListConfig {
   board?: { groupBy: GroupByKey };
   /**
    * Curated-set membership on the LIST surface (the `contains` pair,
-   * migration 100): the expanded row's "Collections" picker, and the list's
+   * migration 101): the expanded row's "Collections" picker, and the list's
    * collection LENS — pick a set and the list narrows to its members via the
    * contract's `filters.edge` clause, which the server already executes.
    *

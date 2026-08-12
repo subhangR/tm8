@@ -85,7 +85,7 @@ describe('loop management is registry-declared and fully wired', () => {
     // RUNS is the third block on purpose: a loop's firing history IS its
     // inbound `triggered_by` edges, so a panel without it hides the only
     // record of what the loop has done. `membership` follows (2026-08-12) —
-    // the COLLECTIONS section every generic body gained with migration 100.
+    // the COLLECTIONS section every generic body gained with migration 101.
     expect(loop.panel.blocks?.map((block) => block.block)).toEqual([
       'loop-controls', 'fields', 'peer-rows', 'membership',
     ]);
@@ -366,6 +366,11 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       'liveCount',
       'quickCreate',
       'quickLaunch',
+      /* Opened 2026-08-12 (101). A SECOND header verb, beside `quickLaunch`
+         rather than replacing it, because the two are not interchangeable:
+         `quickLaunch` carries `flow: 'launch'` and expands a config, while
+         this one commits on click. */
+      'quickStart',
       'primaryActions',
       'filters',
       'sort',
@@ -384,7 +389,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
          only the grouping axis, because vocabulary/order/tone stay owned by
          stateControl and statusPill (doc 06 §1.2). */
       'board',
-      /* Opened 2026-08-12 with collection membership (migration 100): the
+      /* Opened 2026-08-12 with collection membership (migration 101): the
          expanded row's Collections picker and the list's collection lens.
          Not `assignControl` because the write is the addItem/removeItem pair
          (set → member), not a generic edge from the row. */
@@ -871,6 +876,7 @@ describe('the ActionRef registry (§2.5)', () => {
         ...(row.list.rowActions ?? []),
         ...(row.panel.primaries ?? []),
         ...(row.list.quickLaunch ? [row.list.quickLaunch] : []),
+        ...(row.list.quickStart ? [row.list.quickStart] : []),
         ...(row.palette?.primaryAction ? [row.palette.primaryAction] : []),
       ];
       for (const ref of refs) expect(resolveAction(ref)).toBeTruthy();

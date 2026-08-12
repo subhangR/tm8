@@ -300,10 +300,10 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // 131 -> 135: credentials.* Tier B.
     // 137 -> 138 (2026-08-09): execution.dispatch (public, `session dispatch`).
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
-    expect(rows.length).toBe(144);
+    expect(rows.length).toBe(145);
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
-    expect(result.valueProbes).toBeGreaterThan(100);
+    expect(result.valueProbes).toBeGreaterThan(101);
     expect(result.bareProbes).toBeGreaterThan(5);
     // Named witnesses: the sweep demonstrably REACHED the rows that matter,
     // rather than iterating a set that happens to exclude them.

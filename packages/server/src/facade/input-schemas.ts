@@ -47,6 +47,7 @@ import {
   ExecutionResumeInputSchema,
   ExecutionDispatchInputSchema,
   ExecutionSpawnInputSchema,
+  ExecutionTerminalStartInputSchema,
   ExecutionStreamsAttachInputSchema,
   ExecutionTerminateInputSchema,
   FileUploadAbortInputSchema,
@@ -240,6 +241,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
 
   // execution (R16)
   'execution.spawn': ExecutionSpawnInputSchema,
+  'execution.terminal.start': ExecutionTerminalStartInputSchema,
   'execution.dispatch': ExecutionDispatchInputSchema,
   'execution.prompt': ExecutionPromptInputSchema,
   'execution.terminate': ExecutionTerminateInputSchema,

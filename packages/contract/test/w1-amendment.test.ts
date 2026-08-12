@@ -71,8 +71,8 @@ describe('W1 adopted catalog target', () => {
     // 142 -> 144 (2026-08-12): collections.addItem (POST command) +
     // collections.removeItem (DELETE command) — membership sugar over the
     // `contains` edge; the collection family's first write verbs.
-    expect(OPERATIONS).toHaveLength(144);
-    expect(V1_OPERATIONS).toHaveLength(142);
+    expect(OPERATIONS).toHaveLength(145);
+    expect(V1_OPERATIONS).toHaveLength(143);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -88,12 +88,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 53, POST: 63, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 53, POST: 64, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 56, command: 87, stream: 1 });
+    }).toEqual({ read: 56, command: 88, stream: 1 });
   });
 });
 

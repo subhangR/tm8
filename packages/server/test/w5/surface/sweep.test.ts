@@ -287,7 +287,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 136 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 142 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
@@ -302,9 +302,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
-    expect(SURFACE).toHaveLength(141);
-    expect(rows).toHaveLength(141);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(141);
+    expect(SURFACE).toHaveLength(142);
+    expect(rows).toHaveLength(142);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(142);
   });
 
   /**
@@ -470,7 +470,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // This is that re-measurement: `ls db/migrations/*.sql | wc -l` = 94.
     // Keeping either branch's 93 would have been the previous-plus-one error
     // the comment above warns against, arrived at by two correct measurements.
-    expect(server.appliedMigrations.length).toBe(94);
+    // 94 -> 95 on 2026-08-12: 101 (shell sessions — vanilla terminals).
+    // Measured with the same command on this tree, not incremented.
+    expect(server.appliedMigrations.length).toBe(96);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

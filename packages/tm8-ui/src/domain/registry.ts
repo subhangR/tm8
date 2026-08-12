@@ -298,7 +298,7 @@ const also = (spec: SortSpec): SortSpec => ({ ...spec, default: false });
 const DEFAULT_SORT: readonly SortSpec[] = [BY_ACTIVITY, also(BY_UPDATED), BY_CREATED, BY_POSITION];
 
 /**
- * COLLECTION MEMBERSHIP ON EVERY LIST (migration 100). `contains` is
+ * COLLECTION MEMBERSHIP ON EVERY LIST (migration 101). `contains` is
  * registered collection → `*` (001:921), so any kind's rows can be curated —
  * which is why this rides `baseList` rather than being declared kind by kind.
  * One declaration powers two affordances: the expanded row's Collections
@@ -658,6 +658,12 @@ const ROWS: readonly KindConfig[] = [
       // row" — ruled once already; a refused control is not a control.
       quickCreate: false,
       quickLaunch: 'launch-session',
+      // Beside it, not beneath it (user ruling 2026-08-12). A vanilla terminal
+      // is the OTHER way to get a session, so it belongs in the same header
+      // slot as the way you get an agent one — not buried in a row action,
+      // where you would have to already have a session to find out how to
+      // start one.
+      quickStart: 'start-terminal',
       filters: [assigneeFilter, attentionFilter],
       sort: DEFAULT_SORT,
       needsAttentionGroup: sessionNeedsAttention,
