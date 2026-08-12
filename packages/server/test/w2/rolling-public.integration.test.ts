@@ -247,6 +247,9 @@ const PROJECT_FOLDER_NET_NEW_OPERATIONS = [
   'projects.files.list',
   'projects.files.attach',
   'projects.files.read',
+  // 2026-08-12: a whole subtree as one zip. Mounts with the rest of the
+  // project-files group, which is why it is net-new here and not conditional.
+  'projects.files.archive',
   // 2026-08-10: browser-originated folder import (R7). Net-new; mounts only
   // where the node passes the folderUploads seam (file storage + state dir).
   'projects.folderUploads.init',
