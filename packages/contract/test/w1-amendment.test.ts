@@ -48,7 +48,7 @@ describe('W1 adopted catalog target', () => {
     expect(OPERATIONS.slice(start, start + ADDITIVE_OPERATIONS.length)).toEqual(ADDITIVE_OPERATIONS);
   });
 
-  it('reconciles the additive 150-row target without changing reserved honesty', () => {
+  it('reconciles the additive 152-row target without changing reserved honesty', () => {
     // 119 -> 120 (2026-08-01): `execution.journal` joined the catalog without
     // this pin moving — the tree carried a red literal until the next
     // amendment (identity.profile.update, also 2026-08-01) reconciled both.
@@ -75,8 +75,9 @@ describe('W1 adopted catalog target', () => {
     // (GET reads) and gitCheckpoint/gitRollback/gitCommit/gitMerge (POST
     // commands) — the session git rail behind the facade. MEASURED per PIN
     // RULE v3, never carried.
-    expect(OPERATIONS).toHaveLength(150);
-    expect(V1_OPERATIONS).toHaveLength(148);
+    // 150 -> 152 (2026-08-12, Git UI landing): projects.file.history + projects.file.blame (GET reads) — FileInspector's two survey reads.
+    expect(OPERATIONS).toHaveLength(152);
+    expect(V1_OPERATIONS).toHaveLength(150);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -92,12 +93,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 55, POST: 67, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 57, POST: 67, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 58, command: 91, stream: 1 });
+    }).toEqual({ read: 60, command: 91, stream: 1 });
   });
 });
 

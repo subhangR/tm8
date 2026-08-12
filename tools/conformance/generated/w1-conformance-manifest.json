@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:76955af043d1275894c459ec3734f0cc7a2ebba60efd8334e2ff54354a565ce7",
+  "catalogDigest": "sha256:f6b3c8bd05758081fdc80e198a24b7f74c0f1433ab83b3c3891b58f011166551",
   "catalog": {
-    "total": 150,
-    "v1": 148,
+    "total": 152,
+    "v1": 150,
     "reserved": 2,
-    "http": 149,
+    "http": 151,
     "ws": 1,
-    "registerableV1Http": 147,
+    "registerableV1Http": 149,
     "methods": {
-      "GET": 55,
+      "GET": 57,
       "POST": 67,
       "PATCH": 10,
       "DELETE": 10,
@@ -17,12 +17,12 @@
       "WS": 1
     },
     "kinds": {
-      "read": 58,
+      "read": 60,
       "command": 91,
       "stream": 1
     },
-    "uniqueNames": 150,
-    "uniqueBindings": 150
+    "uniqueNames": 152,
+    "uniqueBindings": 152
   },
   "reservedOperations": [
     "search.query",
@@ -687,6 +687,20 @@
         "operation": "projects.branches.list",
         "method": "GET",
         "path": "/v2/projects/:projectId/branches",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.file.history",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/file-history",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.file.blame",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/blame",
         "status": "registered",
         "source": "server-router"
       },
@@ -1454,7 +1468,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 119
+    "unimplementedV1Http": 121
   },
   "schemas": {
     "additive": {
@@ -2768,6 +2782,40 @@
           "projects",
           "branches",
           "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.file.history",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.file.history",
+        "intentTags": [
+          "projects",
+          "file",
+          "history"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.file.blame",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.file.blame",
+        "intentTags": [
+          "projects",
+          "file",
+          "blame"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
