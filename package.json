@@ -35,6 +35,8 @@
     "test:conformance": "cd tools/conformance && bun run test",
     "check": "bash tools/ci/check.sh",
     "check:migrations": "bash tools/ci/migrations-check.sh",
+    "audit": "node tools/ci/audit.mjs --level=low",
+    "audit:accept": "node tools/ci/audit.mjs --update-baseline",
     "hooks:install": "git config core.hooksPath tools/ci/hooks && echo 'tm8 git hooks enabled (pre-push runs tools/ci/check.sh --fast)'",
     "hooks:uninstall": "git config --unset core.hooksPath && echo 'tm8 git hooks disabled'"
   },
