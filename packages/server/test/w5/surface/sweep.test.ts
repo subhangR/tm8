@@ -481,7 +481,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 97 -> 99: 103 (capability split — 17 node-admin gates re-pointed) and
     // 104 (de-escalation — lifecycle capabilities removed from five accounts).
     // Re-measured with `ls db/migrations/*.sql | wc -l` = 99.
-    expect(server.appliedMigrations.length).toBe(99);
+    expect(server.appliedMigrations.length).toBe(100);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
