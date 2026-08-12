@@ -289,7 +289,7 @@ const CONTROL_SPECS: readonly ControlSpec[] = [
     id: 'control.coordinator-bootstrap',
     title: '§14.2 Coordinator bootstrap',
     summary:
-      'The same facts plus the orchestration rule: use the graph, and do not expect a private child-result channel.',
+      'The same facts plus the orchestration rule, the delegate-don’t-do strategy, the baked-in reply address workers must report to, and the track-and-collect rule.',
     text: coordinatorBootstrapControl(FACTS),
   },
   {
