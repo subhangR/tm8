@@ -1944,7 +1944,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:14c02f18b6d6e89238e1a73abea8b90a7e615d9f98dbdd50459c2968412af0b0';
+  'sha256:aefbae3bc972822d6f082bfe5a9d4046c2f4913d1a558de7bbb3b75644e307b3';
 
 export const GRAMMAR_VERSION = '2';
 

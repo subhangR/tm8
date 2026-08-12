@@ -436,7 +436,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 122 -> 123: projects.files.read (the viewer half).
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registry.size).toBe(136);
+    expect(registry.size).toBe(137);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -750,8 +750,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 141/139 -> 143/141 (2026-08-12): collections.addItem/removeItem, mounted.
     // 143/141 -> 149/147 (2026-08-12, Git UI landing): the six execution.git*
     // rows, all mounted.
-    expect(health).toMatchObject({ ok: true, operations: 155, implemented: 153 });
-    expect(harness.production.server.registry.size).toBe(153);
+    expect(health).toMatchObject({ ok: true, operations: 156, implemented: 154 });
+    expect(harness.production.server.registry.size).toBe(154);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -771,7 +771,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(153);
+    expect(registered.size + residual.length).toBe(154);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

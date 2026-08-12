@@ -129,13 +129,13 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows —
     // gitStatus/gitDiff (GET reads), gitCheckpoint/gitRollback/gitCommit/
     // gitMerge (POST commands).
-    expect(OPERATIONS).toHaveLength(156);
-    expect(V1_OPERATIONS).toHaveLength(154);
+    expect(OPERATIONS).toHaveLength(157);
+    expect(V1_OPERATIONS).toHaveLength(155);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(155);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(156);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
@@ -147,7 +147,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // execution.transcript moved it to 125; projects.branches.list moves it to 126.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(153);
+    )).toHaveLength(154);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {
