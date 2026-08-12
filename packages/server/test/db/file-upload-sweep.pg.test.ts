@@ -75,6 +75,15 @@ async function seed(db: W1ScratchDatabase): Promise<{ fixture: Fixture; slots: S
        values($1,'sweep-owner',true),($2,'sweep-plain',false)`,
       [f.identityId, f.plainIdentityId],
     );
+    // Since migration 103 the sweep doors gate on the named `node.maintain`
+    // capability, and `is_node_admin` implies NOTHING. The flag is left set on
+    // the admin fixture deliberately: it makes the negative cases below prove
+    // that the flag buys nothing, which is the property 103 added.
+    await client.query(
+      `insert into public.account_capabilities(account_id, capability)
+       select id, 'node.maintain' from public.accounts where identity_id = $1`,
+      [f.identityId],
+    );
     await client.query(
       `insert into public.spaces(id,name,created_by_identity) values($1,'Sweep',$2)`,
       [f.spaceId, f.identityId],

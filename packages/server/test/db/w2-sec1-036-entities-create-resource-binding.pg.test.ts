@@ -173,6 +173,15 @@ describe.sequential('W2.SEC-1 036 entities.create resource binding', () => {
          values ($1, $1, $1, false, true)`,
         [OWNER],
       );
+      // This suite is about REPLAY BINDING, not authorization, and it reaches
+      // the project doors to get there. Migration 103 moved those doors off
+      // `is_node_admin` onto `projects.register.any`, so the fixture needs the
+      // capability to still arrive at the binding it is actually testing.
+      await client.query(
+        `insert into public.account_capabilities(account_id, capability)
+         select id, 'projects.register.any' from public.accounts where identity_id = $1`,
+        [OWNER],
+      );
     });
 
     const a = await appValue<{ space: { id: string } }>(

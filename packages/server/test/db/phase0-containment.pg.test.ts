@@ -141,6 +141,19 @@ async function seed(): Promise<Fixture> {
        values ($1,$2,'P0 Agent','worker','persona')`,
       [ids.personaId, ids.adminMember],
     );
+    // Migration 103 re-pointed these doors from `require_node_admin()` onto the
+    // named `node.maintain` capability, and stopped `is_node_admin` implying
+    // anything. The flag stays TRUE on this fixture on purpose: 100's property
+    // was "the TABLE decides, not the claim", and 103's is "the CAPABILITY
+    // decides, not the flag". Keeping the flag set is what lets the negative
+    // cases below still prove both.
+    await client.query(
+      `insert into public.account_capabilities(account_id, capability)
+       select id, c from public.accounts,
+              unnest(array['node.maintain','projects.register.any']) c
+        where identity_id = $1`,
+      [ids.adminIdentity],
+    );
     // All three are 'running' in the DB. The node id is what separates them.
     await client.query(
       `insert into public.work_sessions(entity_id, title, status, node_id, started_at)
@@ -170,8 +183,8 @@ afterAll(async () => {
   await database?.destroy();
 }, 180_000);
 
-describe('100 part A — node admin resolves from the table, not the claim', () => {
-  it('refuses a forged tm8.node_admin claim on the write gates', async () => {
+describe('100/103 — authority is a table-resolved CAPABILITY, never a claim or a flag', () => {
+  it('refuses a forged tm8.node_admin claim, and the legacy flag, on the write gates', async () => {
     const forged = { 'tm8.node_admin': 'true' };
 
     // The claim accessor still reports what the claim says: it is a claim
@@ -199,7 +212,7 @@ describe('100 part A — node admin resolves from the table, not the claim', () 
     }
   });
 
-  it('admits a real node admin even when the claim says false', async () => {
+  it('admits a capability holder even when the claim says false', async () => {
     const denied = { 'tm8.node_admin': 'false' };
     const ok = await asApp(fixture.adminIdentity, async (client) => {
       const r = await client.query<{ tbl: boolean }>(
@@ -211,7 +224,7 @@ describe('100 part A — node admin resolves from the table, not the claim', () 
     expect(ok).toBe(true);
   });
 
-  it('hides other spaces’ projects from a forged claim but shows them to a real admin', async () => {
+  it('hides other spaces’ projects from a forged claim but shows them to a capability holder', async () => {
     const projectId = randomUUID();
     await asOwner(async (client) => {
       await client.query(
