@@ -1503,6 +1503,25 @@ export function createFixtureSeam(): FixtureSeam {
         if (input.content !== undefined) {
           const e = extrasOf(id);
           e.content = { ...e.content, ...input.content } as EntityContent;
+          /**
+           * `dueDate` IS PATCHED INTO CONTENT AND READ OUT OF STATE, so the
+           * double has to make the same crossing the node does. Server-side
+           * `update_task_content` writes `tasks.due_date` and `stateOf`
+           * projects it (`entity-read.ts:1112`) while `contentOf` never
+           * carries it — so a fixture that merged this into content alone
+           * would leave the list tile, the `dueDate` sort and the next open
+           * of the dialog all reading the OLD date while the write reported
+           * success. That is the fixture lying about a real write, which is
+           * worse than not supporting it.
+           *
+           * An explicit `null` clears, exactly as it does at the node; an
+           * ABSENT key changes nothing, which is `coalesce`'s behaviour there.
+           */
+          const patched = input.content as Record<string, unknown>;
+          if (s.state.kind === 'task' && 'dueDate' in patched) {
+            const due = patched.dueDate;
+            s.state.dueDate = typeof due === 'string' ? due : null;
+          }
         }
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);

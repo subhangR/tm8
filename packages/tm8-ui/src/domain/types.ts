@@ -824,6 +824,26 @@ export interface EditFieldSpec {
   target: 'title' | 'content';
   /** The member name inside `content`. Required when `target` is `'content'`. */
   source?: string;
+  /**
+   * WHERE THE CURRENT VALUE IS READ FROM, when that is not where it is WRITTEN.
+   *
+   * Defaults to `'content'`, because for almost every field the two are the
+   * same place: a channel's topic is patched as `content.topic` and read back
+   * from `EntityDetail.content.topic`.
+   *
+   * `dueDate` is the exception, and it is the server's asymmetry rather than
+   * one invented here. `contentOf` builds a task's content from description,
+   * acceptanceCriteria and pointsEstimate ONLY (`entity-read.ts:1502-1508`),
+   * while `stateOf` is what projects `due_date` (`:1112`) — so the field is
+   * patched through `content.dueDate` and readable only from `state.dueDate`.
+   *
+   * THIS IS NOT COSMETIC. Seeding the dialog from `content` for a field that
+   * lives in `state` yields a BLANK box on a task that has a due date, and an
+   * emptied date field is an explicit `null` — so merely opening the dialog and
+   * pressing Save would silently clear it. Naming the read side is what makes
+   * that unrepresentable rather than a comment someone has to remember.
+   */
+  readFrom?: 'content' | 'state';
   label: string;
   /** Empty is refused in the dialog rather than at the server. */
   required?: boolean;
@@ -839,8 +859,17 @@ export interface EditFieldSpec {
    * door's clear flag); `json-object` parses before Save and refuses arrays or
    * invalid JSON visibly; `schedule` validates against the executor grammar
    * and recomputes `nextRunAt` only when this field changed.
+   *
+   * `date` IS A CALENDAR DAY, NOT A TIMESTAMP, and that is the server's shape
+   * rather than a simplification made here: `tasks.due_date` is a `date`
+   * column, `entity-read.ts` projects it through `dateOnly()`, and
+   * `handlers/collections.ts` sorts it as `::date`. A control offering a time
+   * would invent precision the column cannot hold. Like `nullable-text` an
+   * empty draft is an explicit `null` — which is the ONLY way to clear one,
+   * since `update_task_content` COALESCEs an absent `dueDate` to the stored
+   * value (`handlers/entities.ts:682-685`).
    */
-  valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule';
+  valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule' | 'date';
 }
 
 export interface KindConfig {
