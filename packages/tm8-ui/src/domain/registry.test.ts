@@ -262,8 +262,19 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(getKind('task').list.rowActions).toEqual(['run', 'complete']);
   });
 
-  it('the task DETAIL toolbar keeps Run only', () => {
-    expect(getKind('task').panel.primaries).toEqual(['run']);
+  /**
+   * The toolbar admits Run and Edit, and STILL not Coordinate or Complete.
+   *
+   * The original pin read `['run']` and its point was scarcity — the compact
+   * panel row has no space for a verb whose own surface already offers it, and
+   * Coordinate and Complete are both that. `edit` is not: it is the ONLY door
+   * to `editFields`, which §15.1 below pins to the verb in both directions, so
+   * the task's due-date dialog is reachable from here or from nowhere. Keeping
+   * the assertion exact (rather than `toContain`) is what stops the toolbar
+   * silently re-growing the two verbs the original ruling turned away.
+   */
+  it('the task DETAIL toolbar keeps Run and Edit, and nothing else', () => {
+    expect(getKind('task').panel.primaries).toEqual(['run', 'edit']);
   });
 
   it('5. sessions lifecycle → list.lifecycle, D20 partition RETIRED (D56)', () => {
@@ -1070,6 +1081,42 @@ describe('§15.1 — edit declares its fields, and fields declare their verb', (
       }
     }
     expect(offenders, offenders.join('\n')).toEqual([]);
+  });
+
+  /**
+   * THE TASK'S DUE DATE — the write surface the field never had.
+   *
+   * `dueDate` was modelled end to end and fillable only from the CLI: the
+   * column, the `PatchTaskInput` member, the `::date` sort (`BY_DUE`, offered
+   * on this very row) and the read projection all existed with no control
+   * behind them. The three things pinned here are the three that make it work
+   * rather than merely appear:
+   *
+   *   · `valueType: 'date'` — a calendar day, matching a `date` column. A
+   *     plain text field would let a locale string reach a column that refuses
+   *     it, and a datetime control would invent precision the column cannot
+   *     hold.
+   *   · `readFrom: 'state'` — the server projects `due_date` onto
+   *     `EntityState` and leaves it out of `contentOf`, so a field seeded from
+   *     content opens BLANK on a task that has a due date. Since an empty date
+   *     is an explicit `null`, that blank is a pending deletion: open the
+   *     dialog, press Save, lose the date. This is the assertion that would
+   *     have caught it.
+   *   · NOT `required` — `tasks.due_date` is nullable, so "no due date" is a
+   *     value the database holds rather than a hole in the record.
+   */
+  it('the task offers a Title and a due date read from state, written to content', () => {
+    const fields = getKind('task').editFields ?? [];
+    expect(fields.map((f) => f.label)).toEqual(['Title', 'Due date']);
+
+    const dueDate = fields.find((f) => f.source === 'dueDate');
+    expect(dueDate?.target).toBe('content');
+    expect(dueDate?.readFrom).toBe('state');
+    expect(dueDate?.valueType).toBe('date');
+    expect(dueDate?.required ?? false).toBe(false);
+
+    // The sort this row already offered now has something a human can fill.
+    expect(getKind('task').list.sort.map((s) => s.key)).toContain('dueDate');
   });
 
   it('the channel offers exactly Name and an OPTIONAL Topic (user ruling 2026-08-07)', () => {
