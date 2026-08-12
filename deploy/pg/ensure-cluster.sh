@@ -71,7 +71,7 @@ while [[ $# -gt 0 ]]; do
     --status) MODE=status ;;
     --stop)   MODE=stop ;;
     --db)     shift; [[ $# -gt 0 ]] || { echo "--db needs a name" >&2; exit 2; }; DATABASES+=("$1") ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "ensure-cluster.sh: unknown flag $1 (try --help)" >&2; exit 2 ;;
   esac
   shift
@@ -89,12 +89,22 @@ die()  { printf '\n%serror:%s %s\n' "$RED" "$OFF" "$*" >&2; exit 1; }
 # PATH is frequently the PG17 install's, which speaks to a different cluster and
 # can be an older major than the data dir — refusing to start over PG18 data.
 find_pgbin() {
-  local c
-  for c in "${TM8_PG_BIN:-}" \
-           /opt/homebrew/opt/postgresql@18/bin \
-           /opt/homebrew/opt/postgresql@17/bin \
-           /usr/local/opt/postgresql@18/bin; do
+  local c m
+  # The standard major first (16, ruled 2026-08-12), then others, on BOTH
+  # platforms. This list used to be three Homebrew paths and nothing else, so on
+  # any Linux the script died at line 1 with "no PostgreSQL 18 binaries found —
+  # brew install postgresql@18" — advice that cannot be followed on Ubuntu, about
+  # a major no machine in this project runs.
+  for c in "${TM8_PG_BIN:-}"; do
     [[ -n "$c" && -x "$c/pg_ctl" && -x "$c/psql" ]] && { echo "$c"; return 0; }
+  done
+  for m in "${TM8_PG_MAJOR:-16}" 18 17 16; do
+    for c in "/usr/lib/postgresql/$m/bin" \
+             "/opt/homebrew/opt/postgresql@$m/bin" \
+             "/usr/local/opt/postgresql@$m/bin" \
+             "/usr/pgsql-$m/bin"; do
+      [[ -x "$c/pg_ctl" && -x "$c/psql" ]] && { echo "$c"; return 0; }
+    done
   done
   # A running postmaster is authoritative about its own binaries even when no
   # keg matches — derive the bindir from its argv rather than giving up.
@@ -112,9 +122,11 @@ postmaster_pid() {
 }
 
 PGBIN="$(find_pgbin || true)"
-[[ -n "$PGBIN" ]] || die "no PostgreSQL 18 binaries found.
-      Install them:  brew install postgresql@18
-      Or point at an existing install:  TM8_PG_BIN=/path/to/pg/bin $0"
+[[ -n "$PGBIN" ]] || die "no PostgreSQL binaries found (looked for major ${TM8_PG_MAJOR:-16}, then 18/17/16).
+      Debian/Ubuntu:  sudo apt-get install postgresql-${TM8_PG_MAJOR:-16}
+      macOS:          brew install postgresql@${TM8_PG_MAJOR:-16}
+      Existing install: TM8_PG_BIN=/path/to/pg/bin $0
+      Or just run ./install.sh, which does all of this."
 PSQL="$PGBIN/psql"
 PG_CTL="$PGBIN/pg_ctl"
 

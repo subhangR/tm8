@@ -47,7 +47,7 @@ for arg in "$@"; do
     --no-pg)   DO_PG=0 ;;
     --status)  MODE=status;  PASSTHRU+=("$arg") ;;
     --stop)    MODE=stop;    PASSTHRU+=("$arg") ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) PASSTHRU+=("$arg") ;;
   esac
 done

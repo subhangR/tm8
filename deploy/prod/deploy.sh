@@ -77,7 +77,7 @@ for arg in "$@"; do
     --restart)    MODE=restart ;;
     --status)     MODE=status ;;
     --stop)       MODE=stop ;;
-    -h|--help)    sed -n '2,40p' "$0"; exit 0 ;;
+    -h|--help)    sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "deploy.sh: unknown flag $arg (try --help)" >&2; exit 2 ;;
   esac
 done

@@ -1,21 +1,56 @@
+# tm8 systemd unit — REFERENCE TEMPLATE.
+#
+# You normally do not install this by hand. `./install.sh --env <slot> --systemd`
+# renders this same unit with the slot's real values and installs it as
+# /etc/systemd/system/tm8-<slot>.service. Keep this file only as the thing to
+# read when you want to know what that will write.
+#
+# Replace @SLOT@ (prod|staging|private), @PORT@, @PG_MAJOR@, @PG_CLUSTER@ and
+# @USER@ if you are doing it manually. Current slots and their ports are in
+# deploy/environments.sh — run `bash deploy/environments.sh` to print the table.
+#
+# WHAT WAS WRONG WITH THE PREVIOUS VERSION OF THIS FILE
+#
+# It was checked in describing a machine that has never existed, and it was
+# wrong in four independent ways at once:
+#
+#   User=ubuntu                            the services run as tm8
+#   WorkingDirectory=/home/ubuntu/tm8-workspace   no such path, ever
+#   ExecStart=… /opt/tm8/current/…         no such path; checkouts are /opt/tm8/<slot>
+#   Requires=postgresql.service            no such unit on a box with per-cluster
+#                                          units; the real dependency is
+#                                          postgresql@<major>-<cluster>.service
+#
+# Anyone who trusted it got a unit that could not start, and the four errors
+# surfaced one at a time.
+#
+# TWO THINGS THAT ARE LOAD-BEARING HERE
+#
+# 1. After=, not Requires=, on Postgres. Requires= couples the units so hard that
+#    a Postgres restart takes tm8 down with it and leaves it down. After= gives
+#    the ordering, which is what is actually wanted; Restart=on-failure handles
+#    the reconnect.
+#
+# 2. NEVER stop this with a signal. A clean Node shutdown exits 0, so under
+#    Restart=on-failure a `kill -TERM` "restart" leaves the unit INACTIVE and the
+#    instance silently DOWN. Use systemctl stop/start/restart, only.
+
 [Unit]
-Description=tm8 server
-After=network-online.target postgresql.service
+Description=tm8 @SLOT@ server (@PORT@)
+After=network-online.target postgresql@@PG_MAJOR@-@PG_CLUSTER@.service
 Wants=network-online.target
-Requires=postgresql.service
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/tm8-workspace
-EnvironmentFile=/etc/tm8/tm8.env
-ExecStart=/usr/bin/node /opt/tm8/current/packages/server/dist/index.js
+User=@USER@
+Group=@USER@
+WorkingDirectory=/opt/tm8/@SLOT@
+EnvironmentFile=/etc/tm8/@SLOT@.env
+ExecStart=/usr/bin/node --enable-source-maps /opt/tm8/@SLOT@/packages/server/dist/index.js
 Restart=on-failure
 RestartSec=3
 KillSignal=SIGTERM
 TimeoutStopSec=20
-UMask=0077
 
 [Install]
 WantedBy=multi-user.target

@@ -4,8 +4,12 @@
 //   bun run start          → build everything, then run tm8-server under NODE
 //
 // There is no installed desktop app (AM-1). This is the whole product entry point:
-// tm8-server owns the sidecar Postgres (R15), serves the built web UI, and the user
-// opens http://localhost:<TM8_PORT>.
+// tm8-server serves the built web UI and the user opens http://localhost:<TM8_PORT>.
+//
+// It does NOT own a Postgres. The sidecar subsystem that would have (fourteen
+// files under packages/server/src/sidecar/) is imported by nothing but
+// `import type`, so it has never run. Postgres must already exist — run
+// ./install.sh once and it will.
 //
 // Usage: node scripts/start.mjs [--no-build] [--no-open] [--help]
 

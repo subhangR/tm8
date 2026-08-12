@@ -15,4 +15,13 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
 cd "$TM8_STAGING_ROOT"
-exec /opt/homebrew/bin/node scripts/dev.mjs --server-only
+
+# Resolve node; do not hardcode it. This line read `/opt/homebrew/bin/node`,
+# which is a macOS-only path — so this script could not run on Linux at all,
+# which is the platform staging actually runs on. An absolute path also fails as
+# "no such file" rather than "wrong node" the day a package manager moves it.
+TM8_NODE_BIN="${TM8_NODE_BIN:-$(command -v node || true)}"
+[[ -n "$TM8_NODE_BIN" && -x "$TM8_NODE_BIN" ]] \
+  || { echo "run-server.sh: no node on PATH (set TM8_NODE_BIN)" >&2; exit 1; }
+
+exec "$TM8_NODE_BIN" scripts/dev.mjs --server-only
