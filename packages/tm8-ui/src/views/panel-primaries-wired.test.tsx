@@ -209,11 +209,27 @@ describe('the dispatcher and the registry agree', () => {
    * gets an executor nobody has to rediscover the set by clicking.
    */
   it('records which primaries survive only on the wiredActions refusal', () => {
+    // A DEFERRED primary (merge-pr, the B10 forge-write gap) is not relying
+    // on the narrowing: its own availability() refuses with a named reason in
+    // every context, which is the §10.7 disabled-with-reason home — probed
+    // here the same way deferredActions() probes it.
+    const alwaysRefused = (ref: (typeof PANEL_PRIMARY_ACTIONS)[number]) =>
+      resolveAction(ref).availability({ spaceId: 'probe' }).kind === 'disabled'
+      && resolveAction(ref).availability({
+        spaceId: 'probe',
+        entityId: 'probe-entity',
+        liveness: 'live',
+        capabilities: {
+          canEdit: true, canDelete: true, canAddChild: true, canLink: true,
+          canPull: true, canReact: true, canGrantPoints: true, canComplete: true,
+        },
+      }).kind === 'disabled';
     const refusedByNarrowing = [...declaredPrimaries].filter(
       (ref) =>
         !PANEL_PRIMARY_ACTIONS.includes(ref)
         && !ENTITY_VERB_ACTIONS.includes(ref)
-        && resolveAction(ref).flow !== 'launch',
+        && resolveAction(ref).flow !== 'launch'
+        && !alwaysRefused(ref),
     );
     // EMPTY TODAY, and it took two dispatchers to get here: `terminate` from
     // `usePanelPrimaries`, `edit` and `add-child` from `useEntityVerbs`, the

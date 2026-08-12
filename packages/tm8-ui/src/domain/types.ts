@@ -345,6 +345,9 @@ export type ActionRef =
   | 'withdraw-handoff'
   // chrome
   | 'toggle-theme'
+  // B10 (git placement map §4.3): merge the PR — the sanctioned landing
+  // path for a lane, deferred until a forge WRITE client exists.
+  | 'merge-pr'
   // R7 deferred discovery rows (§4.2 disposition table)
   | 'graph-view'
   | 'undo'
