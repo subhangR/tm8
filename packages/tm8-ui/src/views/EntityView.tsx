@@ -65,6 +65,7 @@ import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { useSessionStart } from './useSessionStart';
 import { useRowLifecycle } from './useRowLifecycle';
 import type { ContentSurface } from '../routes';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
@@ -378,6 +379,31 @@ export function EntityView(props: EntityViewProps) {
     setDetailTab('content');
     openEntity(id as EntityId, setSelectedId);
   }, [openEntity, boardMode, setSelectedId]);
+
+  /**
+   * The session list's HEADER verbs (100) — the SAME hook the workspace calls,
+   * for the reason `useLaunchPort`'s docblock gives: this screen mounts the
+   * same `EntityListPanel`, and wiring only the workspace would leave
+   * `▮ Terminal` dead here and working there, which reads from outside like
+   * flaky state rather than like a missing call.
+   *
+   * `selectFromList` as `onOpen`, not `setSelectedId`: a terminal the member
+   * just started should land the same way a row they clicked does, including
+   * the board-mode branch.
+   */
+  const sessionStart = useSessionStart({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    onOpen: selectFromList,
+    onError: (_verb, error) => props.onNotice({
+      id: 'terminal-start-failed',
+      tone: 'error',
+      title: 'Terminal could not be started',
+      body: String((error as { message?: string })?.message ?? error),
+      ttlMs: 8_000,
+    }),
+  });
 
   /**
    * Titles for the attention list. Attention spans every kind, so the left
@@ -704,6 +730,9 @@ export function EntityView(props: EntityViewProps) {
              sheet itself now — and stays absent otherwise, keeping the
              honest disabled-with-reason state on hosts without one. */
           launch={launchPort}
+          /* The header verbs (100) — see the same pair in `WorkspaceView`. */
+          onAction={sessionStart.onAction}
+          wiredActions={sessionStart.wiredActions}
         />
       </section>
 

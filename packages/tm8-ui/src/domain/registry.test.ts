@@ -365,6 +365,11 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       'liveCount',
       'quickCreate',
       'quickLaunch',
+      /* Opened 2026-08-12 (100). A SECOND header verb, beside `quickLaunch`
+         rather than replacing it, because the two are not interchangeable:
+         `quickLaunch` carries `flow: 'launch'` and expands a config, while
+         this one commits on click. */
+      'quickStart',
       'primaryActions',
       'filters',
       'sort',
@@ -865,6 +870,7 @@ describe('the ActionRef registry (§2.5)', () => {
         ...(row.list.rowActions ?? []),
         ...(row.panel.primaries ?? []),
         ...(row.list.quickLaunch ? [row.list.quickLaunch] : []),
+        ...(row.list.quickStart ? [row.list.quickStart] : []),
         ...(row.palette?.primaryAction ? [row.palette.primaryAction] : []),
       ];
       for (const ref of refs) expect(resolveAction(ref)).toBeTruthy();

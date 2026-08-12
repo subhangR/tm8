@@ -126,7 +126,8 @@ export type CoreEntityState =
       startedAt: string | null; exitedAt: string | null;
       /**
        * WHAT KIND OF SESSION THIS IS — the discriminator that lets a client
-       * tell a private credential login terminal from ordinary work (083).
+       * tell a private credential login terminal from ordinary work (083), and
+       * a vanilla shell from an agent (100).
        *
        * OPTIONAL, AND ITS ABSENCE IS LOAD-BEARING. A node that predates 083,
        * or a row hydrated from a payload cached before the column shipped,
@@ -141,6 +142,13 @@ export type CoreEntityState =
        * field can be missing. `=== 'agent'` passes every test written against
        * fresh data and silently blanks the session list for anyone holding an
        * older payload.
+       *
+       * 100 IS THE CASE THAT COMMENT WAS WRITTEN FOR. `shell` — a vanilla
+       * terminal with no agent attached — is a third value, and every
+       * allow-list filter anywhere in the tree drops it while continuing to
+       * pass every test. The audit that shipped with 100 is in the migration
+       * header; if you add a FOURTH value, redo it rather than trusting that
+       * the second widening left nothing behind.
        */
       sessionKind?: WorkSessionKind }
   | { kind: 'collection'; collectionType: string; itemCount: number }
@@ -1700,15 +1708,24 @@ export type WorktreeStatus = 'active' | 'merged' | 'abandoned' | 'deleted';
 export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
 
 /**
- * What a work_session IS, mirroring 083's `work_sessions.session_kind`.
+ * What a work_session IS, mirroring 083's `work_sessions.session_kind` as
+ * widened by 100.
  *
  * `agent` is ordinary work. `credential` is a private login terminal minted by
  * `credentials.loginSessions.start` so a member can authenticate an agent tool
  * against their own account — it is not work, and it must not sit in session
  * lists pretending to be. See the note on `EntityState`'s work_session arm for
  * why every client filter must be written as the INVERSE of the SQL one.
+ *
+ * `shell` is a VANILLA TERMINAL (100): a real PTY running the node's login
+ * shell and nothing else. It has no persona, no manifest, no agent token and
+ * `agentTool === null` — which is why `agentTool` being null must never be
+ * read as "a broken agent session". Unlike `credential` it IS ordinary work
+ * from a listing's point of view: a member started it deliberately and expects
+ * to find it in the session list, so the deny-list filters that hide
+ * `credential` must continue to SHOW this.
  */
-export type WorkSessionKind = 'agent' | 'credential';
+export type WorkSessionKind = 'agent' | 'credential' | 'shell';
 
 // --- projects — linked resources, NOT an entity kind (AM-2 §1, T-D17) -------
 
@@ -2134,6 +2151,54 @@ export interface ExecutionSpawnInput extends CommandContext {
    * `remembers` set; nothing is written to the graph.
    */
   memoryIds?: EntityId[];
+}
+
+/**
+ * execution.terminal.start — POST /v2/execution/terminal (100).
+ *
+ * A VANILLA TERMINAL: the shell you get without `claude-code` or `codex` in
+ * front of it. It mints a `work_session` with `sessionKind: 'shell'` and
+ * `agentTool: null`, and starts a PTY on the node's login shell.
+ *
+ * WHY THIS IS NOT `execution.spawn` WITH A NULL `agentTool`. Spawn's whole body
+ * is agent setup: it REQUIRES a `teamMemberId` and authorizes through the
+ * persona, composes a manifest and two prompts, mints a `TM8_AGENT_TOKEN`,
+ * resolves and pins an interaction profile, runs the workspace-trust probes and
+ * charges the node's agent concurrency cap. A vanilla terminal wants none of
+ * it, and there is no persona to authorize through. Threading a
+ * `skipEverything` flag through that path would leave every one of those steps
+ * one wrong branch away from running for a session that has no agent — which is
+ * at best wasted work and at worst a spurious trust prompt. So this is its own
+ * small door, exactly as `credentials.loginSessions.start` is.
+ *
+ * WHAT IT DELIBERATELY DOES NOT ACCEPT: a command, an argv, or any flags. The
+ * PTY runs as the tm8 OS user; a client-supplied command there is remote code
+ * execution with a pleasant user interface. The shell is resolved server-side
+ * and the caller cannot influence it — the absence of the field is the control,
+ * because a field that does not exist cannot be forwarded by a later refactor.
+ * This mirrors `CredentialLaunchRequest`, and for the same reason.
+ */
+export interface ExecutionTerminalStartInput extends CommandContext {
+  clientMutationId: string;
+  spaceId: SpaceId;
+  /**
+   * The project whose root the shell opens in. Omitted/null = a projectless
+   * scratch directory the server owns, the same fallback `execution.spawn`
+   * takes.
+   *
+   * ALWAYS THE PROJECT ROOT, NEVER A PROVISIONED WORKTREE. A worktree exists so
+   * concurrent AGENTS do not collide on one checkout; a human opening a
+   * terminal means the directory they named, and silently landing them in
+   * `…/worktrees/<uuid>` would be answering a question they did not ask.
+   */
+  projectId?: ProjectId | null;
+  /** Explicit consent carrier for untrusted Projects, as spawn's is. */
+  confirmUntrusted?: true;
+  /** Defaults to a server-composed title; never the shell's path. */
+  title?: string;
+  /** Initial terminal geometry. Advisory — the client resizes on attach. */
+  cols?: number;
+  rows?: number;
 }
 
 /**

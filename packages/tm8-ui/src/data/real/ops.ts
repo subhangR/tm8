@@ -61,6 +61,7 @@ import {
   type ExecutionDispatchInput,
   type ExecutionDispatchResult,
   type ExecutionSpawnInput,
+  type ExecutionTerminalStartInput,
   type ExecutionResumeInput,
   type ExecutionTerminateInput,
   type FileUploadAbortInput,
@@ -646,6 +647,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     spawn(input: ExecutionSpawnInput): Promise<CommandResult> {
       return http.call<CommandResult>('execution.spawn', { body: input });
+    },
+
+    /** A vanilla terminal (100). Its own op, not `spawn` with nulls. */
+    startTerminal(input: ExecutionTerminalStartInput): Promise<CommandResult> {
+      return http.call<CommandResult>('execution.terminal.start', { body: input });
     },
 
     /**

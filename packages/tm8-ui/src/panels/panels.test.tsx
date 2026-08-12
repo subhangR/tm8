@@ -301,6 +301,53 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(getByTestId('list-search')).toBeTruthy();
   });
 
+  /**
+   * VANILLA TERMINALS (100), and the ruling behind the placement: the start
+   * controls belong at the TOP of the sessions list, beside Launch session.
+   */
+  it('draws ▮ Terminal in the sessions header, beside Launch session', () => {
+    const onAction = vi.fn();
+    const { container, getByTestId } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor(sessions)}
+        ctx={ctx}
+        onAction={onAction}
+        wiredActions={['start-terminal']}
+      />,
+    );
+
+    const actions = container.querySelector('.lp__actions');
+    expect(actions).toBeTruthy();
+    // BESIDE, not instead of: both verbs are in the one header slot.
+    expect(actions?.textContent).toContain('Terminal');
+    expect(actions?.textContent).toContain('Launch session');
+
+    fireEvent.click(getByTestId('list-quick-start'));
+    expect(onAction).toHaveBeenCalledWith('start-terminal', '');
+  });
+
+  it('R5 #9: the unwired half of the pair refuses with a reason, it is not drawn live', () => {
+    // `Terminal` commits and `Launch session ▸` does not, because the sheet
+    // needs a launch SUBJECT the header has no way to name. That asymmetry has
+    // to be VISIBLE — a live button whose click the host's switch drops is the
+    // enabled-inert failure this panel refuses everywhere else.
+    const { container, getByTestId } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor(sessions)}
+        ctx={ctx}
+        onAction={() => {}}
+        wiredActions={['start-terminal']}
+      />,
+    );
+
+    const actions = container.querySelector('.lp__actions');
+    expect(within(actions as HTMLElement).getAllByTestId('disabled-with-reason')).toHaveLength(1);
+    // …and the live one is a real button, not a second refusal.
+    expect(getByTestId('list-quick-start').tagName).toBe('BUTTON');
+  });
+
   it('D41: lifecycle tabs are UNIVERSAL, and coexist with sections rather than replacing them', () => {
     // Pre-ratification this asserted the opposite — that task had NO tabs.
     // The user ratified the three-tier model as drawn on every collection

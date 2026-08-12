@@ -89,6 +89,7 @@ import type {
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
+  ExecutionTerminalStartInput,
   WorkInput, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
@@ -138,9 +139,9 @@ export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
   z.enum(['none', 'space', 'explicit']);
-/** Mirrors 083's `work_sessions.session_kind` CHECK exactly. */
+/** Mirrors `work_sessions.session_kind`'s CHECK exactly — 083, widened by 100. */
 export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
-  z.enum(['agent', 'credential']);
+  z.enum(['agent', 'credential', 'shell']);
 export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
   z.enum(['active', 'merged', 'abandoned', 'deleted']);
 
@@ -2029,6 +2030,27 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
+}).strict();
+
+/**
+ * execution.terminal.start — a vanilla shell session (100).
+ *
+ * `.strict()` is the security boundary here, not a tidiness preference. The
+ * interface carries no command/argv/flags field, and strict parsing is what
+ * makes that absence enforceable at the wire rather than merely true of the
+ * type: a body carrying `command` is REFUSED, not silently ignored, so a later
+ * handler edit that starts reading `input.command` cannot quietly become a
+ * remote-code-execution door.
+ */
+export const ExecutionTerminalStartInputSchema: z.ZodType<ExecutionTerminalStartInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  spaceId: SpawnUuidSchema,
+  projectId: SpawnUuidSchema.nullable().optional(),
+  confirmUntrusted: z.literal(true).optional(),
+  title: z.string().max(200).optional(),
+  cols: z.number().int().positive().max(1000).optional(),
+  rows: z.number().int().positive().max(1000).optional(),
 }).strict();
 
 /**

@@ -613,6 +613,12 @@ const ROWS: readonly KindConfig[] = [
       // row" — ruled once already; a refused control is not a control.
       quickCreate: false,
       quickLaunch: 'launch-session',
+      // Beside it, not beneath it (user ruling 2026-08-12). A vanilla terminal
+      // is the OTHER way to get a session, so it belongs in the same header
+      // slot as the way you get an agent one — not buried in a row action,
+      // where you would have to already have a session to find out how to
+      // start one.
+      quickStart: 'start-terminal',
       filters: [assigneeFilter, attentionFilter],
       sort: DEFAULT_SORT,
       needsAttentionGroup: sessionNeedsAttention,

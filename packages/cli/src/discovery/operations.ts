@@ -1215,6 +1215,22 @@ const ROWS: Record<OperationName, Row> = {
       'worktree is not advertised until the node can create and clean one up safely',
     ],
   },
+  'execution.terminal.start': {
+    cmd: ['session', 'terminal'],
+    syn: 'tm8 session terminal [--space <space-id>] [--launch-project <project-resource-id>] [--title <text>] [--confirm-untrusted] [--mutation-id <id>]',
+    sum: 'Open a vanilla terminal — a shell session with no agent attached',
+    authz: 'space',
+    input: 'bound',
+    side: 'execution',
+    tags: ['terminal', 'shell', 'pty', 'vanilla', 'console'],
+    notes: [
+      'no Teammate, no model, no persona: this is the shell you get without `claude-code` or `codex` in front of it',
+      'the shell is resolved Server-side and CANNOT be named by the caller — there is no command, args or flags input',
+      'the cwd is the project ROOT, never a provisioned worktree; omit `--launch-project` for a Server-owned scratch directory',
+      'its own concurrency ceiling (`TM8_TERMINAL_CAP`, default 4), disjoint from the agent and credential caps',
+      'attach to it exactly like any other session — `execution.streams.attach` asks no questions about session kind',
+    ],
+  },
   'execution.dispatch': {
     cmd: ['session', 'dispatch'],
     syn: 'tm8 session dispatch <subject-entity-id> [--space <space-id>] [--note <text>] [--force-new-task] [--mutation-id <id>]',
@@ -1765,7 +1781,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:e169fda4c4b4fd7cfdee7a854c3a0fb5068165c695bca188fd797728717d50bf';
+  'sha256:e5d6daf264df74f231e5a963375506e93c51e1f712477309cdfcb53be57b7992';
 
 export const GRAMMAR_VERSION = '2';
 
