@@ -113,17 +113,17 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
     // credentials.* are reachable-by-name though not CLI-invocable.
     // 134 -> 135: execution.dispatch is public and reachable under session.
-    expect(wanted).toHaveLength(139);
+    expect(wanted).toHaveLength(140);
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 
-  it('D3: every one of the 138 operations has intent tags', () => {
+  it('D3: every one of the 143 operations has intent tags', () => {
     let swept = 0;
     for (const op of OPERATIONS) {
       expect(discoveryFor(op.name).intentTags.length, op.name).toBeGreaterThan(0);
       swept++;
     }
-    expect(swept).toBe(142);
+    expect(swept).toBe(143);
   });
 
   it('a family noun whose command lives elsewhere still resolves', () => {
@@ -198,7 +198,7 @@ describe('command shards — tm8.help.command.v1, 16 KiB HARD', () => {
   });
 });
 
-describe('exact operation lookup — TOTAL over all 138 (conformance D2)', () => {
+describe('exact operation lookup — TOTAL over all 143 (conformance D2)', () => {
   it('succeeds for every catalog operation and returns ONE digest', () => {
     const digests = new Set<string>();
     const seen = new Set<string>();
@@ -210,7 +210,7 @@ describe('exact operation lookup — TOTAL over all 138 (conformance D2)', () =>
       digests.add(shard?.catalogDigest as string);
       seen.add(op.name);
     }
-    expect(seen.size).toBe(142);
+    expect(seen.size).toBe(143);
     expect([...digests]).toEqual([CATALOG_DIGEST]);
   });
 
