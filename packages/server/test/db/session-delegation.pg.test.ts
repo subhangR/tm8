@@ -268,14 +268,12 @@ describe('105 — the capability ladder', () => {
   });
 });
 
-describe('105/106 — no EXISTING operation enforces the ladder yet', () => {
-  it('is called only by the grant door, which checks you may delegate what you hold', async () => {
-    // Kept rather than deleted when 106 landed. The valuable property is that
-    // no pre-existing operation — attach, terminate, message delivery — has
-    // started refusing on the ladder; enforcement is a later, deliberate step.
-    // `grant_session_delegation` is the one legitimate caller: it requires
-    // `manage` on a session before letting you delegate it, so a member cannot
-    // grant a third party rights they do not themselves hold.
+describe('105–107 — exactly these operations enforce the ladder', () => {
+  it('has the expected enforcer set, and no accidental additions', async () => {
+    // This started life as "nothing enforces yet" and was inverted when 107
+    // landed, because that assertion had done its job. As an inventory it is
+    // more useful: a new enforcer appearing without a deliberate edit here is
+    // exactly the change that should not slip in unnoticed.
     const callers = await asOwner(async (c) =>
       (await c.query<{ proname: string }>(
         `select p.proname
@@ -284,6 +282,13 @@ describe('105/106 — no EXISTING operation enforces the ladder yet', () => {
             and p.proname <> 'require_session_capability'
             and pg_get_functiondef(p.oid) like '%require_session_capability%'
           order by p.proname`)).rows.map((r) => r.proname));
-    expect(callers).toEqual(['grant_session_delegation']);
+    expect(callers).toEqual([
+      // you may only delegate a session you can already manage
+      'grant_session_delegation',
+      // the two byte paths into a live PTY
+      'grant_stream_attach',
+      // killing an agent's credential is a manage-level act
+      'revoke_agent_auth_session',
+    ]);
   });
 });

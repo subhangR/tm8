@@ -1,0 +1,30 @@
+Captured 2026-08-12 against the migration chain THROUGH 106 (i.e. without 107),
+on a scratch database seeded with:
+
+  space S
+    member A (owner)          — owns teammate "Ag"
+    member B (plain member)   — owns nothing, granted nothing
+    work_session              — created_by = the TEAMMATE row (the agent-launch
+                                case, 49 of 311 sessions on the production node)
+    share_mode = 'none'
+
+Probe: B requests a DRIVE stream grant on that session.
+
+    === PRE-FIX (chain through 106, WITHOUT 107) ===
+    B is an ordinary member. He neither owns nor was granted anything.
+    The session was launched by a TEAMMATE, so created_by is a team_member row.
+     set_config
+    ------------
+     id_b
+    (1 row)
+
+    WARNING:  RED: B WAS GRANTED DRIVE on another member's agent PTY
+
+WHY. 087:69 gated drive on `can_act_as(e.created_by, e.space_id)`. Because
+`created_by` is a team_member row and 075 widened `can_act_as` so any member of
+a space may act as any teammate in it, that predicate is TRUE FOR EVERY MEMBER.
+Whether a session lands in this state depends only on whether the spawner passed
+an actorId — a distinction no surface exposes or sets deliberately.
+
+107 replaces both arms with `require_session_capability`, and the same probe is
+refused with 42501. `session-attach-authority.pg.test.ts` is the standing gate.
