@@ -2304,6 +2304,9 @@ function Tile({
     const state = row.state as unknown as Record<string, unknown>;
     const recordedStatus = typeof state.status === 'string' ? state.status : 'idle';
     const agentTool = typeof state.agentTool === 'string' ? state.agentTool : null;
+    // Passed through so the tile can tell a vanilla terminal from an agent
+    // whose tool was never recorded (100). Absent stays absent — see the prop.
+    const sessionKind = typeof state.sessionKind === 'string' ? state.sessionKind : null;
     const model = typeof state.model === 'string' ? state.model : null;
     const live = verdict === 'live';
     return (
@@ -2311,6 +2314,7 @@ function Tile({
         id={row.id}
         title={row.title || 'Session'}
         agentTool={agentTool}
+        sessionKind={sessionKind}
         model={model}
         status={recordedStatus}
         attention={attention}

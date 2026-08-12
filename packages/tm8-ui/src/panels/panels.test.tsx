@@ -327,6 +327,45 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(onAction).toHaveBeenCalledWith('start-terminal', '');
   });
 
+  it('draws a vanilla terminal as a TERMINAL, not as an agent with an unknown tool', () => {
+    const shell = {
+      ...sessions[0]!,
+      id: 'ws_shell_tile',
+      title: 'Terminal',
+      state: {
+        kind: 'work_session', status: 'running', agentTool: null, model: null,
+        shareMode: 'none', startedAt: null, exitedAt: null, sessionKind: 'shell',
+      },
+    } as EntitySummary;
+    const { container } = render(
+      <EntityListPanel kind="work_session" rowsFor={rowsFor([shell])} ctx={ctx} />,
+    );
+    const mark = container.querySelector('[data-agent-kind]');
+    // `(tool || 'agent')` used to make this read `agent` — a shell wearing an
+    // agent's glyph and an agent's aria-label.
+    expect(mark?.getAttribute('data-agent-kind')).toBe('shell');
+    expect(mark?.getAttribute('aria-label')).toBe('terminal');
+  });
+
+  it('still calls a tool-less AGENT row an agent — absence is not shell-ness', () => {
+    // The other side of the same branch. A row with no `sessionKind` is a
+    // pre-083 payload, and a session that never recorded its tool is an agent
+    // whose tool is unknown — drawing it as a terminal would swap one wrong
+    // label for another.
+    const unknownTool = {
+      ...sessions[0]!,
+      id: 'ws_unknown_tool',
+      state: {
+        kind: 'work_session', status: 'running', agentTool: null, model: null,
+        shareMode: 'none', startedAt: null, exitedAt: null,
+      },
+    } as EntitySummary;
+    const { container } = render(
+      <EntityListPanel kind="work_session" rowsFor={rowsFor([unknownTool])} ctx={ctx} />,
+    );
+    expect(container.querySelector('[data-agent-kind]')?.getAttribute('data-agent-kind')).toBe('agent');
+  });
+
   it('R5 #9: the unwired half of the pair refuses with a reason, it is not drawn live', () => {
     // `Terminal` commits and `Launch session ▸` does not, because the sheet
     // needs a launch SUBJECT the header has no way to name. That asymmetry has
