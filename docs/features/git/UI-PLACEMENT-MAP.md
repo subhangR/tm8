@@ -172,7 +172,8 @@ A14 tags · A15 reset/revert · A16 bisect · A17 reflog · A18 submodules · A1
 B1 PR lifecycle state (open/draft/merged/closed) · B2 PR review (approve/request-changes,
 inline comments) · B3 CI/checks status · B4 merge-state (mergeable/conflicting/blocked) ·
 B5 issues import/linkage · B6 PR comments/threads · B7 releases · B8 PR creation from a lane ·
-B9 review-assignment / requested-reviewers
+B9 review-assignment / requested-reviewers · B10 merge the PR (land a lane on base via
+the forge — the sanctioned landing path; see §4.3)
 
 ### Band C — git × tm8 (the interesting band)
 
@@ -250,6 +251,13 @@ generic panels on main. Placement:
 | C9 review-before-merge | the human gate = PR entity panel (diff + approve) + C8 gate on the task; NOT a new "review queue" screen for v1 | net-new |
 | C5 worktree lane detail | worktree entity panel (generic panel already shows CHECKOUT fields): add owning session link, dirty/ahead, status timeline from `git.worktree_status_changed` events | net-new; small |
 | A3 commit detail | commit entity panel: message, stats, per-file patch (DiffView), `created_in` session chip (C1) | net-new |
+| **B10 merge the PR** (land lane on base via the forge) | PR entity panel **ActionBar primary** ("Merge…", disabled-with-reason until: checks green or overridden, mergeable, review present when the tracked task gates on it). This is the missing counterpart to the rail's deliberate exclusion of landing-on-base — the wave said "goes via PR" but never placed the forge-side merge action. **Precondition: no forge WRITE client exists on main** — `tracking/github.ts` is read-only (PR/commit facts); a GitHub write capability (merge, and later review submit) must be built before this button can be real. Until then it renders disabled with that named reason. | net-new — omission in the wave AND in v1 of this map |
+| B10 fallout: A19 push inside merge flow | not a separate button — pushing is an internal step of merge/PR flows, per §4.6 | — |
+
+Not placed anywhere (deliberate): an arbitrary ref-to-ref diff picker. Range diffs surface
+only where a question exists — session-vs-base (rail), PR (panel), commit (panel), file
+revision (FileInspector). A free-form ref picker is a terminal task; the Terminal chip is
+its surface.
 
 ### 4.4 Project Git screen — dedicated view, route `#/s/{s}/git`
 
@@ -303,6 +311,10 @@ is the operational context. Same component, two mounts, no duplication of logic.
 2. **PR review surface** — the generic PR panel has no diff/review blocks; needed for C9 (§4.3). Smallest version: DiffView + review-state collections in the existing generic panel; no new screen.
 3. **Server git operation family** — not a UI surface, but a precondition: without landing (or rebuilding) `execution-git.ts`'s six ops, every mutating placement above is display-only.
 4. **Checkpoint timeline** (C15) — needs per-checkpoint records correlated to transcript turns; no backing data yet beyond commit records. Future.
+5. **Forge write client** — `tracking/github.ts` on main is read-only. B10 (merge the PR from
+   the PR panel) and any future review-submit (B2 write-side) need a GitHub write capability
+   with the same typed-error honesty (rate-limit / unauthorized / not-found) as the reader.
+   Until it exists, forge-write buttons render disabled with that named reason.
 
 ### 4.8 Where git would be noise
 
