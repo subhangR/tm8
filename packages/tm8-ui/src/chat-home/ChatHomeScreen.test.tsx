@@ -115,4 +115,59 @@ describe('Chat Home', () => {
     expect(view.getByText(/does not expose chat thread configuration/i)).toBeTruthy();
     expect(view.getByRole('button', { name: /send/i }).getAttribute('aria-disabled')).toBe('true');
   });
+
+  it('keeps an interrupted thread continuable with its persisted partial turn and usage', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const view = render(
+      <ChatHomeScreen
+        port={port}
+        spaceId={SPACE_ID}
+        models={MODELS}
+        newMutationId={(prefix) => `${prefix}:interrupt-test`}
+      />,
+    );
+    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Read the current context.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(view.getByText('Agent is working')).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /stop/i }));
+
+    await waitFor(() => expect(view.getByText('Stopped · continuable')).toBeTruthy());
+    expect(view.getByText(/this thread is continuable/i)).toBeTruthy();
+    expect((view.getByLabelText('Message the chat agent') as HTMLTextAreaElement).disabled).toBe(false);
+    expect(controls.interrupts).toEqual(['019f0000-0000-7000-8000-000000000010']);
+    expect(view.getByText('I found the current context before the turn was stopped.')).toBeTruthy();
+    expect(view.getAllByTestId('chat-usage-card')).toHaveLength(2);
+    expect(view.getAllByTestId('chat-usage-card')[1]?.textContent).toContain('$0.0012');
+
+    const stopped = await port.readThread(controls.interrupts[0]!);
+    const interruptedTurn = stopped.turns.at(-1)!;
+    expect(stopped.summary.state).toBe('stopped-continuable');
+    expect(interruptedTurn.parts.at(-2)).toMatchObject({ kind: 'tool_result', isError: true });
+    expect(interruptedTurn.parts.at(-1)).toMatchObject({ kind: 'done' });
+
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.done',
+        threadRootId: stopped.summary.rootId,
+        messageId: interruptedTurn.messageId,
+        usage: {},
+      });
+    });
+    expect(view.getByText('Stopped · continuable')).toBeTruthy();
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Continue from the persisted result.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(controls.posts).toHaveLength(2));
+    expect(controls.posts[1]).toMatchObject({
+      threadRootId: stopped.summary.rootId,
+      body: 'Continue from the persisted result.',
+    });
+    expect(view.getByText('Agent is working')).toBeTruthy();
+  });
 });

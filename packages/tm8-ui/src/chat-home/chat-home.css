@@ -354,6 +354,16 @@
   font-size: 10px;
 }
 
+.tch-continuable {
+  margin: 0 0 7px;
+  color: var(--pn-wait);
+  font: 10px var(--pn-mono);
+}
+
+.tch-composer-wrap[data-phase='stopped-continuable'] .tch-composer {
+  border-color: color-mix(in srgb, var(--pn-wait) 45%, var(--pn-border));
+}
+
 .tch-composer {
   overflow: hidden;
   border: 1px solid var(--pn-line-2);

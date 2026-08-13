@@ -22,7 +22,13 @@ export interface ChatHomeScreenProps {
   newMutationId?: (prefix: string) => string;
 }
 
-type ComposerPhase = 'idle' | 'posting-root' | 'configuring' | 'posting-turn' | 'streaming';
+type ComposerPhase =
+  | 'idle'
+  | 'posting-root'
+  | 'configuring'
+  | 'posting-turn'
+  | 'streaming'
+  | 'stopped-continuable';
 
 export function ChatHomeScreen({
   port,
@@ -44,6 +50,7 @@ export function ChatHomeScreen({
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
   const [modelId, setModelId] = useState(models[0]?.model ?? '');
   const activeRootRef = useRef<EntityId | null>(null);
+  const stoppedRootRef = useRef<EntityId | null>(null);
 
   const refreshThreads = useCallback(async (preferRoot?: EntityId) => {
     const next = await port.listThreads(spaceId);
@@ -85,7 +92,11 @@ export function ChatHomeScreen({
     void port
       .readThread(selectedRootId)
       .then((next) => {
-        if (alive) setDetail(next);
+        if (!alive) return;
+        setDetail(next);
+        stoppedRootRef.current =
+          next.summary.state === 'stopped-continuable' ? selectedRootId : null;
+        setPhase(phaseForThreadState(next.summary.state));
       })
       .catch((error: unknown) => {
         if (alive) setLoadError(describeError(error));
@@ -99,8 +110,16 @@ export function ChatHomeScreen({
     () =>
       port.subscribe((frame) => {
         if (frame.threadRootId !== activeRootRef.current) return;
-        setDetail((current) => (current ? mergeChatTurnFrame(current, frame) : current));
-        if (frame.type === 'chat.turn.done') setPhase('idle');
+        const stopped = frame.threadRootId === stoppedRootRef.current;
+        setDetail((current) => {
+          if (!current) return current;
+          const merged = mergeChatTurnFrame(current, frame);
+          return stopped
+            ? { ...merged, summary: { ...merged.summary, state: 'stopped-continuable' } }
+            : merged;
+        });
+        if (stopped) setPhase('stopped-continuable');
+        else if (frame.type === 'chat.turn.done') setPhase('idle');
         else setPhase('streaming');
       }),
     [port],
@@ -111,7 +130,7 @@ export function ChatHomeScreen({
     () => models.find((model) => model.model === modelId) ?? null,
     [modelId, models],
   );
-  const busy = phase !== 'idle';
+  const busy = isBusyPhase(phase);
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
   const selectionUnavailable =
@@ -126,9 +145,12 @@ export function ChatHomeScreen({
   const send = useCallback(async () => {
     const body = draft.trim();
     if (body === '' || busy || refusal || teammateId === '' || !selectedModel) return;
+    const continuingStoppedRoot =
+      selectedRootId && phase === 'stopped-continuable' ? selectedRootId : null;
     setSubmitError(null);
     try {
       if (selectedRootId) {
+        stoppedRootRef.current = null;
         setPhase('posting-turn');
         await port.postTurn({
           threadRootId: selectedRootId,
@@ -169,7 +191,12 @@ export function ChatHomeScreen({
       setPhase('streaming');
       await refreshThreads(root.threadRootId);
     } catch (error) {
-      setPhase('idle');
+      if (continuingStoppedRoot) {
+        stoppedRootRef.current = continuingStoppedRoot;
+        setPhase('stopped-continuable');
+      } else {
+        setPhase('idle');
+      }
       setSubmitError(describeError(error));
     }
   }, [
@@ -178,6 +205,7 @@ export function ChatHomeScreen({
     draft,
     newMutationId,
     port,
+    phase,
     refreshThreads,
     refusal,
     selectedModel,
@@ -188,10 +216,25 @@ export function ChatHomeScreen({
 
   const interrupt = useCallback(async () => {
     if (!selectedRootId || !port.interrupt) return;
+    stoppedRootRef.current = selectedRootId;
     try {
       await port.interrupt(selectedRootId);
-      setPhase('idle');
+      const stoppedDetail = await port.readThread(selectedRootId);
+      setDetail({
+        ...stoppedDetail,
+        summary: { ...stoppedDetail.summary, state: 'stopped-continuable' },
+      });
+      setThreads((current) =>
+        current.map((thread) =>
+          thread.rootId === selectedRootId
+            ? { ...thread, ...stoppedDetail.summary, state: 'stopped-continuable' }
+            : thread,
+        ),
+      );
+      setPhase('stopped-continuable');
     } catch (error) {
+      stoppedRootRef.current = null;
+      setPhase('streaming');
       setSubmitError(describeError(error));
     }
   }, [port, selectedRootId]);
@@ -210,6 +253,7 @@ export function ChatHomeScreen({
             onClick={() => {
               setSelectedRootId(null);
               setDetail(null);
+              stoppedRootRef.current = null;
               setPhase('idle');
               setSubmitError(null);
             }}
@@ -286,6 +330,11 @@ export function ChatHomeScreen({
         <div className="tch-composer-wrap" data-phase={phase}>
           {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
           {refusal ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
+          {phase === 'stopped-continuable' ? (
+            <p className="tch-continuable" role="status">
+              Turn stopped · this thread is continuable. Send another message to resume.
+            </p>
+          ) : null}
           <div className="tch-composer">
             <textarea
               value={draft}
@@ -412,8 +461,19 @@ function phaseLabel(phase: ComposerPhase): string {
     case 'configuring': return 'Starting the agent…';
     case 'posting-turn': return 'Saving your message…';
     case 'streaming': return 'Agent is working';
+    case 'stopped-continuable': return 'Stopped · continuable';
     default: return '';
   }
+}
+
+function phaseForThreadState(state: ChatThreadSummary['state']): ComposerPhase {
+  if (state === 'streaming') return 'streaming';
+  if (state === 'stopped-continuable') return 'stopped-continuable';
+  return 'idle';
+}
+
+function isBusyPhase(phase: ComposerPhase): boolean {
+  return phase !== 'idle' && phase !== 'stopped-continuable';
 }
 
 function describeError(error: unknown): string {

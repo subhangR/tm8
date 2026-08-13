@@ -107,6 +107,7 @@ export interface ChatHomeFixtureControls {
   roots: ChatRootInput[];
   configs: ChatConfigureInput[];
   posts: ChatPostInput[];
+  interrupts: EntityId[];
   emit(frame: ChatTurnFrame): void;
 }
 
@@ -118,6 +119,7 @@ export function createChatHomeFixturePort(
   const roots: ChatRootInput[] = [];
   const configs: ChatConfigureInput[] = [];
   const posts: ChatPostInput[] = [];
+  const interrupts: EntityId[] = [];
   let serial = 100;
 
   const summaries = (): ChatThreadSummary[] =>
@@ -223,7 +225,63 @@ export function createChatHomeFixturePort(
       };
       return { messageId };
     },
-    async interrupt() {},
+    async interrupt(threadRootId) {
+      interrupts.push(threadRootId);
+      const detail = details.get(threadRootId);
+      if (!detail) throw new Error(`Fixture thread ${threadRootId} does not exist.`);
+      serial += 1;
+      const messageId = `019f0000-0000-7000-8002-${String(serial).padStart(12, '0')}` as EntityId;
+      detail.turns.push({
+        messageId,
+        role: 'assistant',
+        author: AGENT,
+        createdAt: new Date().toISOString(),
+        body: '',
+        parts: [
+          {
+            seq: 0,
+            kind: 'tool_call',
+            toolCallId: 'tool-interrupted',
+            name: 'tm8_read',
+            args: { view: 'current_context' },
+            state: 'running',
+          },
+          { seq: 1, kind: 'text', text: 'I found the current context before the turn was stopped.' },
+          {
+            seq: 2,
+            kind: 'tool_call',
+            toolCallId: 'tool-interrupted',
+            name: 'tm8_read',
+            args: { view: 'current_context' },
+            state: 'error',
+          },
+          {
+            seq: 3,
+            kind: 'usage',
+            usage: {
+              input_tokens: 214,
+              output_tokens: 31,
+              total_cost_usd: 0.0012,
+              model: detail.summary.config.model,
+            },
+          },
+          {
+            seq: 4,
+            kind: 'tool_result',
+            toolCallId: 'tool-interrupted',
+            content: { error: 'Interrupted by user' },
+            isError: true,
+          },
+          { seq: 5, kind: 'done' },
+        ],
+      });
+      detail.summary = {
+        ...detail.summary,
+        preview: 'Turn stopped. This thread can continue.',
+        updatedAt: new Date().toISOString(),
+        state: 'stopped-continuable',
+      };
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -236,6 +294,7 @@ export function createChatHomeFixturePort(
       roots,
       configs,
       posts,
+      interrupts,
       emit(frame) {
         for (const listener of listeners) listener(frame);
       },

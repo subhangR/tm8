@@ -73,7 +73,7 @@ export interface ChatThreadSummary {
   updatedAt: string;
   replyCount: number;
   config: ChatThreadConfig;
-  state: 'idle' | 'streaming' | 'error';
+  state: 'idle' | 'streaming' | 'stopped-continuable' | 'error';
 }
 
 export interface ChatTurn {
