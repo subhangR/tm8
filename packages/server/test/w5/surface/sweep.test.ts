@@ -485,7 +485,13 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 102 -> 103 on 2026-08-13, same lane, same day: 108 (entity_counters
     // docs/memories link counters). Re-measured on THIS tree, not
     // incremented: `ls db/migrations/*.sql | wc -l` = 103.
-    expect(server.appliedMigrations.length).toBe(103);
+    // 103 -> 104 on 2026-08-13: 111 (a spawn on a task assigns that task).
+    // Numbered 111 and not 109 because 109 (agent_bearer_liveness) and 110
+    // (node_claim) are claimed on branches that have not landed — so this
+    // count moves by one while the highest FILENAME jumps by three, and the
+    // two numbers are not each other. Re-measured on THIS tree, not
+    // incremented: `ls db/migrations/*.sql | wc -l` = 104.
+    expect(server.appliedMigrations.length).toBe(104);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
