@@ -25,12 +25,33 @@
 //
 // THE ABSENCES, none of them accidental:
 //
-//   * `TM8_AGENT_TOKEN`, `TM8_SESSION_ID`, `TM8_MANIFEST_PATH`, `TM8_BASE_URL`
-//     — see above. A vanilla terminal has no manifest and no agent identity.
+//   * `TM8_AGENT_TOKEN`, `TM8_SESSION_ID`, `TM8_MANIFEST_PATH` — see above. A
+//     vanilla terminal has no manifest and no agent identity.
 //   * `GH_TOKEN` / `GITHUB_TOKEN` — the node's machine credential, which an
 //     agent gets a member-scoped replacement for through
 //     `isolateGitHubCredential`.
 //   * `ANTHROPIC_API_KEY` and every other `AUTH_ENV_KEYS` name.
+//
+// `TM8_BASE_URL` USED TO BE ON THAT LIST AND IS NOT, because it was there by
+// association rather than by argument. It is a node ADDRESS, not a credential:
+// whoever is reading this terminal already has the node open in a browser tab,
+// so telling the shell where it is running discloses nothing to them. Nor does
+// withholding it withhold anything — `readEnv` falls back to `DEFAULT_BASE_URL`
+// (`http://127.0.0.1:4610`), so on a node listening anywhere else every `tm8`
+// command typed in a terminal silently addressed a DIFFERENT node, or nothing
+// at all. The CLI authenticates from its per-origin credential store, which it
+// refuses outright when any agent marker is set — none of which this function
+// emits — so the terminal acts as the human who logged the CLI in on this
+// origin, and as nobody at all if they never did. That is the intended posture:
+// the address is discovery, the identity stays the member's own.
+//
+// `PATH` CARRIES THE `tm8` CLI, which is the reason this feature is worth
+// having: a member opens a terminal on a tm8 node in order to run tm8 commands,
+// and got `tm8: command not found`. `@tm8/cli` is a workspace package nothing
+// installs globally, so it is reachable only when the server puts it on PATH —
+// `composeEnv` has always done this for agents, and this is the same directory
+// from the same `cliBinDir()`, PREPENDED for the same reason (a stale global
+// `tm8` must not shadow the build this server actually shipped with).
 //
 // ---------------------------------------------------------------------------
 // WHAT THOSE ABSENCES DO **NOT** BUY, MEASURED — READ THIS BEFORE TRUSTING THEM
@@ -75,7 +96,7 @@
 // above — not an oversight, and not isolation. It is the same posture the node
 // already takes for an agent session, whose `HOME` is likewise the server's.
 
-import { withAgentBinDirs } from '../spawn/manifest.js';
+import { cliBinDir, withAgentBinDirs } from '../spawn/manifest.js';
 
 /**
  * The MAXIMAL key set of a vanilla terminal's environment — everything it can
@@ -98,6 +119,7 @@ export const SHELL_ENV_KEYS = [
   'LANG',
   'TMPDIR',
   'TM8_TERMINAL',
+  'TM8_BASE_URL',
 ] as const;
 
 /**
@@ -123,6 +145,16 @@ export interface ComposeShellEnvInput {
   shell: string;
   /** The SERVER's environment. Read key by key; never copied wholesale. */
   parentEnv: NodeJS.ProcessEnv;
+  /**
+   * The origin of the node opening this terminal — `SpawnService`'s own
+   * `baseUrl`, the same value the agent manifest records.
+   *
+   * REQUIRED rather than optional on purpose. Optional would let a future
+   * caller omit it and land back on the CLI's `127.0.0.1:4610` default, which
+   * is a wrong answer that looks like a working one: commands succeed, against
+   * somebody else's node.
+   */
+  baseUrl: string;
 }
 
 /**
@@ -131,14 +163,15 @@ export interface ComposeShellEnvInput {
  * Everything in the returned record is written here, by name.
  */
 export function composeShellEnv(input: ComposeShellEnvInput): Record<string, string> {
-  const { shell, parentEnv } = input;
+  const { shell, parentEnv, baseUrl } = input;
 
   const env: Record<string, string> = {
     // Discovery only. The agent bin dirs are appended for the same reason the
     // login terminal appends them: `claude`, `codex` and `gh` are installed
     // under a package manager's prefix that a service PATH usually omits, and a
-    // member who opens a terminal to run `claude` by hand should find it.
-    PATH: withAgentBinDirs(parentEnv['PATH'] || FALLBACK_PATH, parentEnv),
+    // member who opens a terminal to run `claude` by hand should find it. The
+    // tm8 CLI is PREPENDED ahead of both — see the header.
+    PATH: withAgentBinDirs(withCli(parentEnv['PATH'] || FALLBACK_PATH), parentEnv),
 
     // A real terminal type, not inherited: the server's own TERM may be `dumb`
     // under a service manager, and this PTY is being rendered by xterm.js.
@@ -154,6 +187,10 @@ export function composeShellEnv(input: ComposeShellEnvInput): Record<string, str
     // nothing in tm8 reads it back, and nothing should start to: a value the
     // server both writes and trusts is a value a member can edit and forge.
     TM8_TERMINAL: '1',
+
+    // Which node the `tm8` on PATH above talks to. An address, not a
+    // credential — see the header.
+    TM8_BASE_URL: baseUrl,
   };
 
   for (const key of INHERITED_KEYS) {
@@ -162,4 +199,16 @@ export function composeShellEnv(input: ComposeShellEnvInput): Record<string, str
   }
 
   return env;
+}
+
+/**
+ * Prepend the `tm8` CLI's directory, when this checkout has a built one.
+ *
+ * Absent silently when it does not: a node running from an unbuilt or read-only
+ * checkout should still open a working shell, just one without the tm8 verbs.
+ * That is the same trade `composeEnv` makes for agents.
+ */
+function withCli(path: string): string {
+  const dir = cliBinDir();
+  return dir ? `${dir}:${path}` : path;
 }

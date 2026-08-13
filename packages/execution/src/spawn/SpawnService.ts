@@ -1061,6 +1061,7 @@ export class SpawnService {
 
     const launcher = new ShellSessionLauncher({
       pty: this.pty,
+      baseUrl: this.baseUrl,
       env: this.env,
       ...(this.logger ? { logger: this.logger } : {}),
     });
