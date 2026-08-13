@@ -59,7 +59,7 @@ import type {
   Hierarchy, HomeSnapshot, IdentityProfileUpdateInput, IdentityProfileView,
   InboxListQuery, InboxMarkReadInput, InboxRecipient,
   InteractionProfileDraft, InteractionProfilePinView, InteractionProfilePreview,
-  InteractionProfileView, LeaderboardRow, LinkCommitInput, LinkPrInput,
+  InteractionProfileView, LeaderboardRow, LinkCommitInput, LinkedPullRequestBadge, LinkPrInput,
   LiveWork, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
   Mention, MessageBatchResult, MessageDeliveryQuery, MessageDeliveryRecord,
   MessageDeliveryView, MessagePart, MessageView, MoveEntityInput, NavChannelNode,
@@ -375,6 +375,26 @@ export const LiveWorkSchema: z.ZodType<LiveWork> = z.lazy(() => z.object({
   note: z.string().nullable().optional(),
 }).strict());
 
+/**
+ * A tracked pull request, projected onto the tracking task's summary.
+ *
+ * Every optional-looking fact is `.nullable()` rather than `.optional()`: the
+ * server always states what it knows, and an explicit `null` is the difference
+ * between "nothing has observed this PR" and "this payload is too old to carry
+ * the field". Absence lives one level up, on `badges.pullRequests` itself.
+ */
+export const LinkedPullRequestBadgeSchema: z.ZodType<LinkedPullRequestBadge> = z.object({
+  entityId: EntityIdSchema,
+  repository: z.string(),
+  number: z.number().int().positive(),
+  title: z.string(),
+  state: z.string().min(1),
+  url: z.string().nullable(),
+  ciStatus: z.enum(['passing', 'failing', 'pending']).nullable(),
+  mergeState: z.enum(['clean', 'conflicted', 'unknown']).nullable(),
+  headRef: z.string().nullable(),
+}).strict();
+
 export const EntityBadgesSchema: z.ZodType<EntityBadges> = z.lazy(() => z.object({
   attention: z.object({
     pendingCount: z.number().int().positive(),
@@ -389,6 +409,8 @@ export const EntityBadgesSchema: z.ZodType<EntityBadges> = z.lazy(() => z.object
   }).strict().optional(),
   pulls: z.array(PullStateSchema).optional(),
   workingActors: z.array(LiveWorkSchema).optional(),
+  pullRequests: z.array(LinkedPullRequestBadgeSchema).optional(),
+  pullRequestsTruncated: z.boolean().optional(),
   completedBy: z.object({ actor: ActorSummarySchema, at: z.string() }).strict().optional(),
   restricted: z.boolean().optional(),
   staleness: EntityStalenessSchema.optional(),

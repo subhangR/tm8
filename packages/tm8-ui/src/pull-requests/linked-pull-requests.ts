@@ -94,6 +94,44 @@ export function pullRequestFactsOf(row: EntitySummary): LinkedPullRequestFacts |
 }
 
 /**
+ * The same facts, read off the row's OWN badge instead of out of the graph.
+ *
+ * `badges.pullRequests` is the server projecting each tracked PR onto the
+ * tracking task's summary, so these arrive with the tile rather than having to
+ * win a seat on the bounded graph page. The mapping is nearly an identity —
+ * the server shaped them for this consumer — with one real check: `state` is
+ * a free string on the wire and only the four lifecycle words render a chip.
+ *
+ * An ABSENT `badges.pullRequests` yields nothing rather than an empty claim: a
+ * node predating this field says nothing about links, and the edge passes below
+ * are what answers for it.
+ *
+ * `headRef` rides along because the FOURTH pass keys on it: a badge-carried PR
+ * can therefore reach a session by branch match, with no edge and no PR node on
+ * the page at all. `''` normalises to null exactly as `pullRequestFactsOf` does
+ * — an empty branch name is not a key, and must not bucket with other blanks.
+ */
+export function badgePullRequestFactsOf(row: EntitySummary): LinkedPullRequestFacts[] {
+  const facts: LinkedPullRequestFacts[] = [];
+  for (const badge of row.badges.pullRequests ?? []) {
+    const lifecycle = optionalEnum(badge.state, LIFECYCLE);
+    if (lifecycle === null) continue;
+    facts.push({
+      id: badge.entityId,
+      title: badge.title,
+      repository: badge.repository,
+      number: badge.number,
+      lifecycle,
+      url: badge.url,
+      ciStatus: badge.ciStatus,
+      mergeState: badge.mergeState,
+      headRef: badge.headRef !== null && badge.headRef !== '' ? badge.headRef : null,
+    });
+  }
+  return facts;
+}
+
+/**
  * One PR may carry up to three independent facts. Conflict and CI do not
  * replace lifecycle: an open PR with a merge conflict and failing checks is
  * truthfully all three at once.
@@ -128,6 +166,26 @@ export type LinkedPullRequestsByEntity = ReadonlyMap<string, readonly LinkedPull
  * normalized entity table but does not rewrite every stored edge, so endpoints
  * are resolved through `nodes` first. That is the detail that makes the chips
  * flip from a live `entity.upsert` instead of staying pinned to boot state.
+ *
+ * ## SOURCE ORDER, AND WHY IT IS THIS ORDER
+ *
+ * Every pass writes into one map keyed by PR id, so a PR reached twice is
+ * enriched, never duplicated. Which write WINS is the whole design:
+ *
+ *   1. `badges.pullRequests` — the deterministic floor. Computed server-side on
+ *      this very read and carried ON the task row, so it needs no edge and no
+ *      page seat. Any tile that renders at all can render its chips.
+ *   2. `tracks` edges resolved through `nodes` — a LIVE pull_request summary,
+ *      which an `entity.upsert` may have moved since the task row was read.
+ *      Allowed to overwrite (1) for exactly that reason.
+ *   3. `tracks` edges falling back to the stored ENDPOINT SNAPSHOT — frozen
+ *      when the edge was written, so it fills a gap but never overwrites a
+ *      fact computed at read time.
+ *
+ * Before (1) existed, a freshly linked PR rendered no chip after a hard reload
+ * until the task detail was opened: the graph page is bounded (limit 150) and
+ * the new edge plus its PR summary both had to win a seat. Measured
+ * 2026-08-13.
  */
 export function indexLinkedPullRequests(
   nodes: readonly EntitySummary[],
@@ -136,11 +194,20 @@ export function indexLinkedPullRequests(
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const mutable = new Map<string, Map<string, LinkedPullRequestFacts>>();
 
-  const add = (entityId: string, facts: LinkedPullRequestFacts): void => {
+  /**
+   * `weak` writes fill a gap without overwriting — the stale-snapshot rule
+   * above. Everything else is read-time fresh and takes the slot.
+   */
+  const add = (entityId: string, facts: LinkedPullRequestFacts, weak = false): void => {
     const linked = mutable.get(entityId) ?? new Map<string, LinkedPullRequestFacts>();
-    linked.set(facts.id, facts);
+    if (!weak || !linked.has(facts.id)) linked.set(facts.id, facts);
     mutable.set(entityId, linked);
   };
+
+  // (1) The badge-carried facts, FIRST and edge-free.
+  for (const node of nodes) {
+    for (const facts of badgePullRequestFactsOf(node)) add(node.id, facts);
+  }
 
   for (const edge of edges) {
     if (edge.type !== 'tracks') continue;
@@ -148,9 +215,12 @@ export function indexLinkedPullRequests(
     const target = nodeById.get(edge.target.id) ?? edge.target;
     const sourceFacts = pullRequestFactsOf(source);
     const targetFacts = pullRequestFactsOf(target);
+    // (2) vs (3): a resolved node is live, a bare endpoint is a snapshot.
+    const sourceIsSnapshot = !nodeById.has(edge.source.id);
+    const targetIsSnapshot = !nodeById.has(edge.target.id);
 
-    if (targetFacts !== null && sourceFacts === null) add(source.id, targetFacts);
-    if (sourceFacts !== null && targetFacts === null) add(target.id, sourceFacts);
+    if (targetFacts !== null && sourceFacts === null) add(source.id, targetFacts, targetIsSnapshot);
+    if (sourceFacts !== null && targetFacts === null) add(target.id, sourceFacts, sourceIsSnapshot);
   }
 
   // SESSIONS INHERIT THEIR TASKS' PRs (session → working_on → task → tracks):
@@ -192,13 +262,29 @@ export function indexLinkedPullRequests(
   // outrank the passes above: `add` de-duplicates by PR id, so an association
   // already made through tracks/working_on/badges is simply confirmed, and
   // the server-side nudge addressee (pr_owning_session, 103) is untouched.
+  //
+  // SEEDED FROM BOTH SOURCES, because otherwise this pass keeps the very
+  // lottery the badge exists to close: a PR that never won a page seat has no
+  // node here to read a `headRef` off, so a session sitting on its branch would
+  // match nothing after a reload. The badge carries `headRef` for exactly this.
   const byHeadRef = new Map<string, LinkedPullRequestFacts[]>();
-  for (const node of nodes) {
-    const facts = pullRequestFactsOf(node);
-    if (facts === null || facts.headRef === null) continue;
+  const bucketed = new Set<string>();
+  const bucketByHeadRef = (facts: LinkedPullRequestFacts): void => {
+    // `headRef === null` is an unobserved branch, and absence is not a key.
+    if (facts.headRef === null || bucketed.has(facts.id)) return;
+    bucketed.add(facts.id);
     const bucket = byHeadRef.get(facts.headRef) ?? [];
     bucket.push(facts);
     byHeadRef.set(facts.headRef, bucket);
+  };
+  for (const node of nodes) {
+    const facts = pullRequestFactsOf(node);
+    if (facts !== null) bucketByHeadRef(facts);
+  }
+  // Second, so a PR node that IS on the page keeps seeding from its own live
+  // summary; `bucketed` makes the badge fill that gap rather than double it.
+  for (const node of nodes) {
+    for (const facts of badgePullRequestFactsOf(node)) bucketByHeadRef(facts);
   }
   if (byHeadRef.size > 0) {
     for (const node of nodes) {

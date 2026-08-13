@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EdgeView, EntitySummary } from '@tm8/contract';
 import {
+  badgePullRequestFactsOf,
   chipsForPullRequest,
   indexLinkedPullRequests,
   pullRequestFactsOf,
@@ -245,6 +246,126 @@ describe('sessions resolve from task badges when the working_on edge missed the 
       },
     } as EntitySummary;
     const index = indexLinkedPullRequests([workingTask, pr], [tracks(workingTask, pr)]);
+    expect(index.get('ws-badge-1')?.[0]).toMatchObject({ id: 'pr-1', lifecycle: 'merged', ciStatus: 'failing' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// badges.pullRequests — the edge-free source
+// ---------------------------------------------------------------------------
+
+function badge(overrides: Record<string, unknown> = {}): NonNullable<EntitySummary['badges']['pullRequests']>[number] {
+  return {
+    entityId: 'pr-1',
+    repository: 'acme/tm8',
+    number: 42,
+    title: 'Ship linked PR chips',
+    state: 'open',
+    url: 'https://github.com/acme/tm8/pull/42',
+    ciStatus: null,
+    mergeState: null,
+    headRef: null,
+    ...overrides,
+  } as NonNullable<EntitySummary['badges']['pullRequests']>[number];
+}
+
+function withBadges(row: EntitySummary, badges: EntitySummary['badges']): EntitySummary {
+  return { ...row, badges: { ...row.badges, ...badges } };
+}
+
+describe('badges.pullRequests carries the facts without any edge', () => {
+  it('maps a badge onto the same facts the graph read produces', () => {
+    expect(badgePullRequestFactsOf(withBadges(task, {
+      pullRequests: [badge({
+        state: 'draft', ciStatus: 'failing', mergeState: 'conflicted', headRef: 'tm8/abc12345',
+      })],
+    }))).toEqual([{
+      id: 'pr-1',
+      title: 'Ship linked PR chips',
+      repository: 'acme/tm8',
+      number: 42,
+      lifecycle: 'draft',
+      url: 'https://github.com/acme/tm8/pull/42',
+      ciStatus: 'failing',
+      mergeState: 'conflicted',
+      headRef: 'tm8/abc12345',
+    }]);
+  });
+
+  it('normalises an empty headRef to null — a blank branch is not a key', () => {
+    // The fourth pass buckets by headRef; `''` carried through from either side
+    // would bucket every unobserved PR together.
+    expect(badgePullRequestFactsOf(withBadges(task, { pullRequests: [badge({ headRef: '' })] }))[0])
+      .toMatchObject({ headRef: null });
+  });
+
+  it('an ABSENT badge array is no claim, not an empty one', () => {
+    expect(badgePullRequestFactsOf(task)).toEqual([]);
+    expect(indexLinkedPullRequests([task], []).get('task-1')).toBeUndefined();
+  });
+
+  it('drops a lifecycle word outside the four rather than rendering an unknown chip', () => {
+    // `state` is a free string on the wire; a forge word we do not model must
+    // render nothing rather than a chip labelled with it.
+    expect(badgePullRequestFactsOf(withBadges(task, {
+      pullRequests: [badge({ state: 'locked' })],
+    }))).toEqual([]);
+  });
+
+  it('indexes chips from the badge alone — no tracks edge, no PR node on the page', () => {
+    // THE RELOAD CASE, in miniature: the bounded graph page seated the task and
+    // nothing else. Before badges this returned undefined.
+    const index = indexLinkedPullRequests(
+      [withBadges(task, { pullRequests: [badge({ state: 'merged', ciStatus: 'failing' })] })],
+      [],
+    );
+    expect(index.get('task-1')?.map((f) => f.id)).toEqual(['pr-1']);
+    expect(chipsForPullRequest(index.get('task-1')![0]).map((c) => c.state))
+      .toEqual(['merged', 'ci-red']);
+  });
+
+  it('a PR reached by BOTH badge and edge is enriched, never duplicated', () => {
+    const pr = pullRequest();
+    const index = indexLinkedPullRequests(
+      [withBadges(task, { pullRequests: [badge()] }), pr],
+      [tracks(task, pr)],
+    );
+    expect(index.get('task-1')).toHaveLength(1);
+  });
+
+  it('a LIVE node summary overwrites the badge — an entity.upsert since the row was read', () => {
+    // The badge was computed when the task row was read; the PR node may have
+    // moved since. Source (2) beats source (1) for exactly that reason.
+    const index = indexLinkedPullRequests(
+      [
+        withBadges(task, { pullRequests: [badge({ state: 'open' })] }),
+        pullRequest({ state: 'merged', ciStatus: 'passing', mergeState: 'clean' }),
+      ],
+      [tracks(task, pullRequest({ state: 'open' }))],
+    );
+    expect(index.get('task-1')?.[0]).toMatchObject({ lifecycle: 'merged', ciStatus: 'passing' });
+  });
+
+  it('a STALE endpoint snapshot does NOT overwrite the badge', () => {
+    // The edge endpoint was frozen when the edge was written; the badge was
+    // computed on this read. Source (3) fills gaps only.
+    const index = indexLinkedPullRequests(
+      [withBadges(task, { pullRequests: [badge({ state: 'merged', ciStatus: 'passing' })] })],
+      [tracks(task, pullRequest({ state: 'open', ciStatus: null }))],
+    );
+    expect(index.get('task-1')?.[0]).toMatchObject({ lifecycle: 'merged', ciStatus: 'passing' });
+  });
+
+  it('a session inherits badge-sourced facts through via.sessionId, with no edges at all', () => {
+    const workingTask = withBadges(task, {
+      pullRequests: [badge({ state: 'merged', ciStatus: 'failing' })],
+      workingActors: [{
+        actor: { ...ACTOR, via: { sessionId: 'ws-badge-1' } },
+        task,
+        startedAt: '2026-08-13T00:00:00.000Z',
+      }],
+    });
+    const index = indexLinkedPullRequests([workingTask], []);
     expect(index.get('ws-badge-1')?.[0]).toMatchObject({ id: 'pr-1', lifecycle: 'merged', ciStatus: 'failing' });
   });
 });

@@ -370,7 +370,16 @@ export const sessionFailed = summary({
 // reference cycle here sent zod into infinite recursion; caught by vitest).
 const taskGuideLinesRef: EntitySummary = { ...taskGuideLines, badges: {} };
 taskGuideLines.badges = {
-  workingActors: [{ actor: forge, task: taskGuideLinesRef, startedAt: T.morning, note: 'porting guide lines' }],
+  // `via.sessionId` names the session the work runs IN — the same claim the
+  // `ge-working-live` graph edge makes from the session's side. The task's
+  // side is the one that survives a bounded graph page, which is why a session
+  // tile reads its PR chips through here.
+  workingActors: [{
+    actor: { ...forge, via: { sessionId: sessionLive.id } },
+    task: taskGuideLinesRef,
+    startedAt: T.morning,
+    note: 'porting guide lines',
+  }],
 };
 
 // ---------------------------------------------------------------------------
@@ -736,6 +745,28 @@ export const prTransplant = summary({
     stale: true,
   },
 });
+
+// The SAME link the `ge-tracks-pr` graph edge states, restated on the tracking
+// task's own row — which is what the server's `badges.pullRequests` projection
+// does on every read. Assigned here rather than beside the other badges above
+// because `prTransplant` is declared further down the file, and a fixture that
+// duplicated its facts instead of referencing it would drift.
+//
+// This is the fact a tile renders after a hard reload, when the bounded graph
+// page has not seated the PR node or its edge.
+taskGuideLines.badges.pullRequests = [{
+  entityId: prTransplant.id,
+  repository: 'subhang/tm8',
+  number: 212,
+  title: prTransplant.title,
+  state: 'open',
+  // Nothing has observed this PR's checks or mergeability — `null`, never a
+  // green verdict. See `LinkedPullRequestBadge`.
+  ciStatus: null,
+  mergeState: null,
+  url: 'https://github.com/subhang/tm8/pull/212',
+  headRef: null,
+}];
 
 export const commitFoundation = summary({
   id: 'commit-a0',

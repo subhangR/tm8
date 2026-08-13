@@ -46,7 +46,11 @@ import type {
 import { plainExcerpt } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
-import { projectForgeFacts } from '../tracking/pr-projection.js';
+import {
+  loadLinkedPullRequestBadges,
+  projectForgeFacts,
+  type LinkedPullRequestBadges,
+} from '../tracking/pr-projection.js';
 
 // ---------------------------------------------------------------------------
 // Row shape
@@ -1118,6 +1122,14 @@ export interface AssemblyContext {
   viewerReactions: Map<string, EntityCounters['viewerReaction']>;
   /** Per-viewer unread message counts, per anchor. Absent key means zero. */
   unreadCounts?: Map<string, number>;
+  /**
+   * Tracked pull requests, per task — the material for `badges.pullRequests`.
+   *
+   * Optional for the same reason `unreadCounts` is: the first assembly pass
+   * builds the bare summaries the badges NEST (a `workingActors[].task`), and
+   * those must not recurse into a second round of badge material.
+   */
+  pullRequests?: Map<string, LinkedPullRequestBadges>;
   /** Summaries of related entities (dependency targets, working-on tasks). */
   related?: Map<string, EntitySummary>;
 }
@@ -1401,6 +1413,21 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
         }),
       );
     }
+  }
+
+  // The PRs this task tracks, carried ON THE ROW. Unlike every other badge
+  // here, this one does not summarize the entity's own state — it projects a
+  // NEIGHBOUR's facts inward, because the client's edge projection re-hydrates
+  // from a bounded graph page and a freshly linked PR loses that lottery
+  // routinely. See `LinkedPullRequestBadge` for the measurement.
+  //
+  // Emitted only when there is something to say: an absent field means NO
+  // CLAIM (a rolling node, or the bare first assembly pass), never "this task
+  // links no PRs" — so a reader can still fall back to the graph.
+  const linkedPullRequests = ctx.pullRequests?.get(row.id);
+  if (linkedPullRequests && linkedPullRequests.items.length > 0) {
+    badges.pullRequests = linkedPullRequests.items;
+    if (linkedPullRequests.truncated) badges.pullRequestsTruncated = true;
   }
 
   const completion = ctx.relations.completedBy.get(row.id);
@@ -1735,6 +1762,9 @@ export async function assembleSummaries(
   const relations = await loadRelations(q, ids);
   const viewerReactions = await loadViewerReactions(q, ids, viewerIdentityId);
   const unreadCounts = await loadUnreadCounts(q, rows);
+  // THE SAME loader the events projector calls — see its header for why this
+  // is one function and not two twins.
+  const pullRequests = await loadLinkedPullRequestBadges(q, rows);
 
   // Dependency targets are referenced by the blocked badge and are usually NOT
   // in the page being rendered, so they are fetched explicitly.
@@ -1774,7 +1804,9 @@ export async function assembleSummaries(
   );
 
   // Pass 2: the real thing, with relations and the summaries the badges need.
-  const ctx: AssemblyContext = { actors, relations, viewerReactions, unreadCounts, related };
+  const ctx: AssemblyContext = {
+    actors, relations, viewerReactions, unreadCounts, related, pullRequests,
+  };
   return rows.map((r) => toEntitySummary(r, ctx));
 }
 
