@@ -35,7 +35,7 @@
  * can prove what a component RENDERS in jsdom and cannot prove a width, a
  * scroll or a layout there, so it makes no layout claims to be wrong about.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   CredentialConnectionView,
   CredentialProviderName,
@@ -88,6 +88,10 @@ export function CredentialsSection({
   const [pending, setPending] = useState<PendingLogin | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [busy, setBusy] = useState<CredentialProviderName | null>(null);
+  // A terminal exit and a manual Verify click can land in the same render
+  // turn. React state does not become visible synchronously, so `busy` alone
+  // cannot stop two finish requests. The session id is the synchronous latch.
+  const finishingSessionRef = useRef<string | null>(null);
 
   const reload = useCallback(() => {
     return port.load().then(
@@ -124,6 +128,8 @@ export function CredentialsSection({
   }
 
   async function finish(login: PendingLogin) {
+    if (finishingSessionRef.current === login.workSessionId) return;
+    finishingSessionRef.current = login.workSessionId;
     setBusy(login.provider);
     try {
       const result = await port.finishLogin(login.workSessionId);
@@ -133,6 +139,9 @@ export function CredentialsSection({
     } catch (err) {
       setOutcome({ kind: 'error', provider: login.provider, message: String((err as Error)?.message ?? err) });
     } finally {
+      if (finishingSessionRef.current === login.workSessionId) {
+        finishingSessionRef.current = null;
+      }
       setBusy(null);
     }
   }
@@ -196,7 +205,10 @@ export function CredentialsSection({
                 key={entry.provider}
                 entry={entry}
                 gitCredentialStore={status.gitCredentialStore}
-                busy={busy === entry.provider}
+                // This screen hosts one terminal at a time. Letting another
+                // Connect replace `pending` makes the first successful login
+                // impossible to harvest from the UI.
+                busy={busy !== null || pending !== null}
                 onConnect={() => void connect(entry.provider)}
                 onDisconnect={() => void disconnect(entry.provider)}
               />
@@ -402,7 +414,7 @@ function LoginTerminalPanel({
   return (
     <div className="set-stack" data-testid="credential-login-terminal">
       <span className="set-prose">
-        {`Signing in to ${PROVIDER_LABEL[login.provider]}. Follow the prompts in the terminal below, then press “I’ve finished signing in”.`}
+        {`Signing in to ${PROVIDER_LABEL[login.provider]}. Follow the prompts in the terminal below. When the command exits, this screen verifies and saves the connection automatically.`}
       </span>
       <span className="set-absent__why" data-testid="credential-login-expiry">
         {`This terminal runs \`${login.command}\` and expires at ${login.expiresAt}.`}
@@ -414,6 +426,7 @@ function LoginTerminalPanel({
           serverBaseUrl={serverBaseUrl}
           live
           autoFocus
+          onExit={() => onFinish()}
         />
       ) : (
         /* `placeholder` is a STRING, not children — TerminalHost renders no
@@ -426,7 +439,7 @@ function LoginTerminalPanel({
       )}
 
       <button type="button" onClick={onFinish} disabled={busy} data-testid="credential-finish-login">
-        I’ve finished signing in
+        Verify and save now
       </button>
     </div>
   );
