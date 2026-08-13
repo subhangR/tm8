@@ -101,7 +101,8 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 137 -> 138 (2026-08-09): execution.dispatch (public, `session dispatch`).
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(rows).toHaveLength(159);
+    // 159 -> 161 (2026-08-13, first-run claim): auth.claim + auth.claim.status.
+    expect(rows).toHaveLength(161);
 
     const earned = rows.filter((r) => r.availabilitySource === 'contract');
     const unknownRows = rows.filter((r) => r.availability === 'unknown');

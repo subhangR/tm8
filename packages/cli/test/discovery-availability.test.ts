@@ -43,9 +43,10 @@ describe('the default is unknown, and unknown is never upgraded', () => {
     // 137 -> 138: execution.dispatch (public, `session dispatch`).
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(rows).toHaveLength(159);
+    // 159 -> 161 (2026-08-13, first-run claim): auth.claim + auth.claim.status.
+    expect(rows).toHaveLength(161);
     expect(unavailable.map((r) => r.operation).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
-    expect(unknown).toHaveLength(157);
+    expect(unknown).toHaveLength(159);
     // The point of the field: NOTHING is optimistically available.
     expect(rows.filter((r) => r.availability === 'available')).toHaveLength(0);
   });

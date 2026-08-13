@@ -1,5 +1,5 @@
 -- =============================================================================
--- 100 — the first-run node claim: how account #1 gets a credential on a node
+-- 110 — the first-run node claim: how account #1 gets a credential on a node
 -- the operator cannot reach over loopback.
 --
 -- READ `docs/identity/FIRST-RUN-CLAIM-DESIGN.md` FIRST. This file implements

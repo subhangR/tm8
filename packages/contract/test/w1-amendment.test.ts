@@ -82,8 +82,12 @@ describe('W1 adopted catalog target', () => {
     // guarded write door to the forge.
     // 158 -> 159 (2026-08-13, merge union): chat.threads.start — MEASURED on
     // the merged tree; both sides moved this pin independently.
-    expect(OPERATIONS).toHaveLength(159);
-    expect(V1_OPERATIONS).toHaveLength(157);
+    // 159 -> 161 (2026-08-13, first-run claim): auth.claim (POST command) +
+    // auth.claim.status (GET read). MEASURED on this branch. A sibling lane is
+    // landing spaces.members.updateRole + auth.invite.resolve concurrently;
+    // whoever merges second re-measures rather than guessing 163.
+    expect(OPERATIONS).toHaveLength(161);
+    expect(V1_OPERATIONS).toHaveLength(159);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',

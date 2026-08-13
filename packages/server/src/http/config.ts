@@ -87,6 +87,26 @@ export interface ServerConfig {
    */
   readonly disableAutoOwner?: boolean;
   /**
+   * How this node admits people (`TM8_NODE_MODE`, design D4). Default `single`.
+   *
+   * `single` — a loopback caller with no credential resolves as the owner, so
+   * the operator never sees a gate on the server's own machine. `multi` — the
+   * auto-owner arm is off and everyone signs in, everywhere.
+   *
+   * IT IS CONFIG, AND DELIBERATELY NOT A GRAPH ROW. The mode gates a security
+   * arm, and before a node is claimed "node admin" means anyone who can reach
+   * loopback — precisely the population the mode exists to constrain. A row
+   * would make the switch writable over the network by exactly the party it is
+   * meant to bound. Converting a node is an env edit and a restart; no
+   * operation writes this, and `tm8 node mode` only reads it.
+   *
+   * `multi` IMPLIES `disableAutoOwner`. The combination "multi + auto-owner
+   * live" is refused in `loadConfig` rather than left to convention, because a
+   * multiplayer node that still auto-authenticates its loopback caller is the
+   * silent version of the bug this whole design closes.
+   */
+  readonly nodeMode?: 'single' | 'multi';
+  /**
    * Upper bound on the Postgres pool (`TM8_DB_POOL_MAX`). Default 8.
    *
    * This number IS the node's read concurrency: the pool queues past it and
@@ -274,6 +294,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     throw new ConfigError(`TM8_DB_POOL_MAX must be an integer between 1 and 1000, got ${JSON.stringify(dbPoolMaxRaw)}`);
   }
 
+  // An unrecognised value REFUSES rather than falling back to `single`. A typo
+  // (`TM8_NODE_MODE=multiplayer`) silently defaulting to the permissive mode is
+  // exactly how a node ends up auto-authenticating everyone who reaches
+  // loopback while its operator believes it is locked down.
+  const nodeModeRaw = env.TM8_NODE_MODE?.trim().toLowerCase();
+  if (nodeModeRaw !== undefined && nodeModeRaw !== '' && nodeModeRaw !== 'single' && nodeModeRaw !== 'multi') {
+    throw new ConfigError(
+      `TM8_NODE_MODE must be "single" or "multi", got ${JSON.stringify(env.TM8_NODE_MODE)}`,
+    );
+  }
+  const nodeMode: 'single' | 'multi' = nodeModeRaw === 'multi' ? 'multi' : 'single';
+
   const livekit = resolveLiveKit(env);
 
   const extraAllowedHostnames = (env.TM8_ALLOWED_HOSTNAMES ?? '')
@@ -344,7 +376,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     launchBootstrap: env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
-    disableAutoOwner: envBoolean(env.TM8_DISABLE_AUTO_OWNER, 'TM8_DISABLE_AUTO_OWNER', false),
+    nodeMode,
+    // `multi` implies the kill switch. The explicit env var still wins when it
+    // asks for MORE restriction (a hardened single-player node), and can never
+    // ask for less: `||` here means no combination of the two can produce a
+    // multiplayer node with a live auto-owner arm.
+    disableAutoOwner:
+      nodeMode === 'multi'
+      || envBoolean(env.TM8_DISABLE_AUTO_OWNER, 'TM8_DISABLE_AUTO_OWNER', false),
     dbPoolMax,
     ...(livekit ? { livekit } : {}),
   };

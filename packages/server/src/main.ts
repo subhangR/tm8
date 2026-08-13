@@ -58,6 +58,7 @@ import { createArtifactPreviewServer } from './http/artifact-preview.js';
 import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
 import type { IdentityResolver, RequestIdentity } from './http/types.js';
 import { autoOwnerResolver } from './http/security.js';
+import { announceNodeClaim } from './identity/node-claim-boot.js';
 import { createStaticHandler } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
@@ -828,6 +829,19 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     for (const problem of worktrees.errors) {
       console.log(`  worktree reconciliation could not finish: ${problem.message}`);
     }
+  }
+
+  // LAST, and after the listener is up, so the printed URL is one the reader
+  // can actually click. A node with no credential on it cannot be signed into
+  // at all, and its own output is the only channel to the person who just
+  // installed it — see identity/node-claim-boot.ts.
+  if (db) {
+    await announceNodeClaim({
+      db,
+      dataDir,
+      url,
+      nodeMode: config.nodeMode ?? 'single',
+    });
   }
 
   return { server, subscriptions, events, url, db, delivery, preview, scheduler };

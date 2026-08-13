@@ -24,6 +24,7 @@ import {
   ArtifactsPreviewStartInputSchema,
   ArtifactsPublishInputSchema,
   ArtifactsRestoreInputSchema,
+  AuthClaimInputSchema,
   AuthLoginInputSchema,
   AuthLogoutInputSchema,
   AuthSignupInputSchema,
@@ -136,6 +137,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'auth.signup': AuthSignupInputSchema,
   'auth.login': AuthLoginInputSchema,
   'auth.logout': AuthLogoutInputSchema,
+  // auth.claim.status takes no input; the catalog marks it a read.
+  'auth.claim': AuthClaimInputSchema,
 
   // credentials (Tier B). All three command bodies are BOUND rather than
   // enumerated as unbound gaps, because strictness here is a security control

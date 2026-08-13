@@ -106,7 +106,8 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // onboarding read landed without moving it); 128 adds execution.transcript.
     // 129 adds projects.branches.list.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(root.catalog.total).toBe(159);
+    // 159 -> 161 (2026-08-13, first-run claim): auth.claim + auth.claim.status.
+    expect(root.catalog.total).toBe(161);
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 
