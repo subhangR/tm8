@@ -644,6 +644,10 @@ describe('AC4 / AC8 — start, the cap, the TTL and the one-per-pair rule', () =
     expect(env).not.toHaveProperty('GH_TOKEN');
     expect(Object.keys(env).sort()).toEqual([
       'GH_CONFIG_DIR',
+      // 0d265f81 (2026-08-10): deliberately on the GitHub allowlist —
+      // credential-env.ts sets GH_PROMPT_DISABLED=1 so gh 2.62.0 emits the
+      // device code instead of blocking on a redundant Y/n in the PTY.
+      'GH_PROMPT_DISABLED',
       'HOME',
       'LANG',
       'PATH',

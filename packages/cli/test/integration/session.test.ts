@@ -733,7 +733,11 @@ describe('O2 — tm8 exits 130 when interrupted', () => {
     // 7 -> 8: execution.launch — the journal says what a session DID, and this
     // says what it was TOLD. Two rows, because they have opposite lifetimes:
     // one is polled and paginated, one is written once at spawn.
-    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(8);
+    // 8 -> 20 (2026-08-13, MEASURED off the contract on main): the git wave's
+    // execution.git* family (status/diff/commit/checkpoint/rollback/merge/
+    // cherryPick/branch/stash), execution.dispatch, plus terminal/transcript
+    // rows that landed with their lanes.
+    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(20);
 
     // A REAL Space, so the spawn refusal below cannot be dismissed as "your
     // space id was fake".

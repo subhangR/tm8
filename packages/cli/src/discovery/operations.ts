@@ -1269,7 +1269,7 @@ const ROWS: Record<OperationName, Row> = {
       '`--memory` appends memory entities to the persona’s injected working set for THIS session only; nothing is written to the graph',
       'memories a `--task` task `remembers` are auto-injected after the persona’s working set (D9)',
       'omit `--access-mode` and a session spawned BY a session inherits its spawner’s posture',
-      'worktree is not advertised until the node can create and clean one up safely',
+      'worktree provisions an isolated checkout per session (base ref via --base-ref); merged/abandoned lanes are reconciled server-side',
     ],
   },
   'execution.terminal.start': {
