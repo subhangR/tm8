@@ -20,6 +20,7 @@
  * the kind of claim that should be ratified rather than assumed.
  */
 import { useId, type ReactNode } from 'react';
+import { BrandMark } from '../kit';
 import type { UnavailableReason } from '../panels/honesty/DisabledWithReason';
 
 /* ── stage ─────────────────────────────────────────────────────────────── */
@@ -43,9 +44,11 @@ export function AuthStage({
 }) {
   return (
     <div className="auth-stage" data-testid={testid}>
-      {/* oracle L36: height 46, padding 0 18px, "◈ tm8" mono 13/600 brass */}
+      {/* oracle L36: height 46, padding 0 18px, the mark + "tm8" mono 13/600 brass */}
       <div className="auth-stage__bar">
-        <span className="auth-stage__brand">◈ tm8</span>
+        <span className="auth-stage__brand">
+          <BrandMark /> tm8
+        </span>
         {meta ? <span className="auth-stage__meta">{meta}</span> : null}
       </div>
       <div className="auth-stage__body">{children}</div>

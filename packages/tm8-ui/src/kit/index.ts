@@ -3,6 +3,7 @@ export { Eyebrow } from './Eyebrow';
 export { Chip } from './Chip';
 export { IconBtn } from './IconBtn';
 export { VectorIcon } from './VectorIcon';
+export { BrandMark } from './BrandMark';
 export { Kbd } from './Kbd';
 export { Avatar, type AvatarProvenance, type AvatarSize } from './Avatar';
 export { DiffView, type DiffViewProps } from './DiffView';
