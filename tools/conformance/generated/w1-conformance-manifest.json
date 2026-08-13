@@ -1,6 +1,6 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:52f86f3711ca9d9ae92dcede746e0bfcfcdaee84a6f170d4713abb2ce1065894",
+  "catalogDigest": "sha256:4f48f15d8ac03dfcc5fce979ba12b627d2fe1af7ebd8028c397c0631eb7ed3ce",
   "catalog": {
     "total": 161,
     "v1": 159,
@@ -9,9 +9,9 @@
     "ws": 1,
     "registerableV1Http": 158,
     "methods": {
-      "GET": 59,
+      "GET": 58,
       "POST": 74,
-      "PATCH": 10,
+      "PATCH": 11,
       "DELETE": 10,
       "PUT": 7,
       "WS": 1
@@ -295,6 +295,13 @@
         "operation": "spaces.members.list",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/members",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.members.updateRole",
+        "method": "PATCH",
+        "path": "/v2/spaces/:spaceId/members/:memberId",
         "status": "registered",
         "source": "server-router"
       },
@@ -1265,16 +1272,9 @@
         "source": "server-router"
       },
       {
-        "operation": "auth.claim",
+        "operation": "auth.invite.resolve",
         "method": "POST",
-        "path": "/v2/auth/claim",
-        "status": "registered",
-        "source": "server-router"
-      },
-      {
-        "operation": "auth.claim.status",
-        "method": "GET",
-        "path": "/v2/auth/claim",
+        "path": "/v2/auth/invite/resolve",
         "status": "registered",
         "source": "server-router"
       },
@@ -1918,6 +1918,24 @@
           "spaces",
           "members",
           "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.members.updateRole",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.members.updateRole",
+        "intentTags": [
+          "spaces",
+          "members",
+          "update",
+          "role"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -4248,30 +4266,14 @@
         "publicComposite": null
       },
       {
-        "operation": "auth.claim",
+        "operation": "auth.invite.resolve",
         "noun": "auth",
         "exposure": "public",
-        "helpRef": "tm8://help/operation/auth.claim",
+        "helpRef": "tm8://help/operation/auth.invite.resolve",
         "intentTags": [
           "auth",
-          "claim"
-        ],
-        "inputSchemaRef": null,
-        "resultSchemaRef": null,
-        "invocationSyntax": null,
-        "actionDiscoverable": true,
-        "reason": null,
-        "publicComposite": null
-      },
-      {
-        "operation": "auth.claim.status",
-        "noun": "auth",
-        "exposure": "public",
-        "helpRef": "tm8://help/operation/auth.claim.status",
-        "intentTags": [
-          "auth",
-          "claim",
-          "status"
+          "invite",
+          "resolve"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

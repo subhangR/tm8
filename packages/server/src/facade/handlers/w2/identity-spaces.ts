@@ -58,6 +58,7 @@ export function registerW2IdentitySpacesHandlers(
     'spaces.counts': spacesCounts(deps),
     'spaces.settings': service.spacesSettings,
     'spaces.members.list': service.spacesMembersList,
+    'spaces.members.updateRole': service.spacesMembersUpdateRole,
     'spaces.invites.list': service.spacesInvitesList,
     'spaces.invites.create': service.spacesInvitesCreate,
     'spaces.invites.revoke': service.spacesInvitesRevoke,

@@ -28,15 +28,15 @@ describe('W2.G15 current reserved and residual honesty accounting', () => {
         + residual.map(({ name }) => name).join(','),
     );
 
-    expect(OPERATIONS).toHaveLength(158);
-    expect(V1_OPERATIONS).toHaveLength(156);
+    expect(OPERATIONS).toHaveLength(163);
+    expect(V1_OPERATIONS).toHaveLength(161);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(routes.http).toHaveLength(157);
+    expect(routes.http).toHaveLength(162);
     expect(routes.ws.map(({ name }) => name)).toEqual(['events.subscribe']);
-    expect(registerableV1Http).toHaveLength(155);
+    expect(registerableV1Http).toHaveLength(160);
 
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(

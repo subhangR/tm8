@@ -3,7 +3,7 @@
  * — no component in this module constructs a seam (see `port.ts` for why).
  */
 import type { ReactNode } from 'react';
-import type { EntitySummary, SpaceSummary } from '@tm8/contract';
+import type { EntitySummary, SpaceInviteView, SpaceSummary } from '@tm8/contract';
 import type { IdentityView } from '../data/seam';
 import type { ResolvedMenu } from '../shell/menu-resolve';
 import type { SettingsPort } from './port';
@@ -77,6 +77,13 @@ export interface SettingsData {
   members: EntitySummary[];
   identity: IdentityView | null;
   menu: ResolvedMenu | null;
+  /**
+   * `null` means NOT READ, and is the normal state for a plain member: the
+   * invite list is admin-only, so its rejection is the correct answer rather
+   * than a fault. Distinguished from `[]` — "read, and there are none" —
+   * because only one of those is worth acting on.
+   */
+  invites: readonly SpaceInviteView[] | null;
 }
 
 export interface SettingsShellProps {
@@ -101,10 +108,14 @@ export interface SettingsShellProps {
 }
 
 /**
- * The invite shapes the oracle draws. They are NOT contract types — the
- * contract defines no invite DTO at all — so they live here, named for what
- * they are, and only the dev review board ever supplies one. Product code
- * receives `null` and renders the honest absence.
+ * The invite shape the ORACLE draws — the canvas's own annotations, which are
+ * not the contract's DTO and never were. `SpaceInviteView` (contract, 109) is
+ * what product renders; this stays because the dev review board diffs the
+ * built list against the canvas, and the two carry different fields (the
+ * oracle draws a revoker and a human-written expiry phrase; the node returns a
+ * role, a use budget and an ISO timestamp).
+ *
+ * Only the dev board ever supplies one. Product passes `invites`.
  */
 export interface SpecimenInvite {
   code: string;

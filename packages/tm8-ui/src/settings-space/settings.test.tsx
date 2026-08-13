@@ -64,6 +64,24 @@ function fakePort(over: Partial<SettingsPort> = {}): SettingsPort {
     loadMembers: async () => specimenMembers(NOW),
     loadIdentity: async () => IDENTITY,
     loadMenu: async () => resolveMenu(null),
+    // Amendment 11 (114). The invite READ rejects by default, which is not
+    // laziness: it is what a plain member gets, because `spaces.invites.list`
+    // is admin-only. The shell must render that as "not read" without counting
+    // it as a failed settings read, and the default here is what proves it.
+    loadInvites: async () => Promise.reject(new Error('space admin required')),
+    setMemberRole: async () => ({ patches: [] }) as never,
+    createInvite: async () => ({
+      id: 'inv-fake', code: 'inv_fake', role: 'member', maxUses: 1, uses: 0,
+      expiresAt: null, revoked: false,
+    }),
+    revokeInvite: async () => ({
+      id: 'inv-fake', code: 'inv_fake', role: 'member', maxUses: 1, uses: 0,
+      expiresAt: null, revoked: true,
+    }),
+    updateProfile: async () => ({
+      identityId: IDENTITY.identityId, displayName: IDENTITY.displayName,
+      avatar: IDENTITY.avatar, email: IDENTITY.email, globalId: IDENTITY.globalId,
+    }),
     ...over,
   };
 }
@@ -132,6 +150,26 @@ const LIVE_VERBS = [
   /^Note for /,
   /^Save$/,
   /^Cancel$/,
+  // Invites (109 + seam Amendment 11): the nav row plus every control in the
+  // section. Live for the SAME reason as `Your profile` and not the `Models`
+  // one — `spaces.invites.create` / `.revoke` are real executors on the seam
+  // now, so each of these performs its act completely.
+  //
+  // Worth being precise about what changed, because this list is the record:
+  // the invite family was never a missing NODE capability. `create_invite` and
+  // `w2_revoke_invite` have been in `007_rpc_catalog.sql` since W1. It was a
+  // missing SEAM verb, and `reasons.ts` reported the stronger claim because a
+  // screen cannot tell the two apart from where it stands.
+  /^invite role$/,
+  /^invite use budget$/,
+  /^invite expiry$/,
+  /^Create invite link$/,
+  /^Creating…$/,
+  /^copy the join link for /,
+  /^revoke inv_/,
+  // Members & roles: the live role select, one per editable row. Named for the
+  // person it acts on, so an offender in this sweep says whose row it was.
+  /^role for /,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {
@@ -245,15 +283,75 @@ describe('T2-1b — members & roles', () => {
     expect(within(rows[1]).getByText(/admin/, { selector: '.set-role' })).toBeTruthy();
   });
 
-  it('the owner role is LOCKED and the others are refused — never a live select', () => {
-    renderMembers();
-    const owner = screen.getByRole('button', { name: /role: owner \(locked\)/ });
-    expect(owner.getAttribute('aria-disabled')).toBe('true');
-    const other = screen.getByRole('button', { name: 'change role from admin' });
-    expect(other.getAttribute('aria-disabled')).toBe('true');
-    // The reason is IN THE DOM, not only on hover — a reason a screen reader
-    // cannot reach is not a reason.
-    expect(document.body.textContent).toMatch(/PatchEntityInput/);
+  /**
+   * SUPERSEDED BY 114, and worth saying what it used to assert: "the owner role
+   * is LOCKED and the others are refused — never a live select", with the
+   * reason text pinned to `/PatchEntityInput/`. That was correct while no
+   * membership verb existed. `spaces.members.updateRole` exists now, so the
+   * question is no longer "is every control refused" but "is the RIGHT control
+   * refused for the RIGHT viewer" — which is a stronger property and is what
+   * the three tests below assert.
+   */
+  it('with no write handler every role renders locked, never a dead select', () => {
+    render(<MembersSection members={specimenMembers(NOW)} identity={IDENTITY} />);
+    expect(screen.queryAllByTestId('member-role-select')).toHaveLength(0);
+    for (const row of screen.getAllByTestId('member-row')) {
+      const control = within(row).getByRole('button', { name: /^role: / });
+      expect(control.getAttribute('aria-disabled')).toBe('true');
+    }
+    // The reason reaches the DOM, not only a hover title.
+    expect(document.body.textContent).toMatch(/needs admin or owner here/);
+  });
+
+  it('an owner gets a live select on every row, including their own', () => {
+    render(
+      <MembersSection
+        members={specimenMembers(NOW)}
+        identity={IDENTITY}
+        onRoleChange={async () => undefined}
+      />,
+    );
+    // Three rows, three selects: the viewer is the owner here, so nothing is
+    // locked — R2's lock is about who is asking, not about which row it is.
+    expect(screen.getAllByTestId('member-role-select')).toHaveLength(3);
+  });
+
+  it('the last owner cannot be demoted, and the option says which one it is', () => {
+    render(
+      <MembersSection
+        members={specimenMembers(NOW)}
+        identity={IDENTITY}
+        onRoleChange={async () => undefined}
+      />,
+    );
+    const ownerRow = screen.getAllByTestId('member-row')[0]!;
+    const select = within(ownerRow).getByTestId('member-role-select');
+    const disabled = [...select.querySelectorAll('option')].filter((o) => o.disabled);
+    // Both non-owner options are closed off, because demoting the sole owner
+    // would leave the space with none — R3, stated before the click rather
+    // than returned as a 42501 after it.
+    expect(disabled.map((o) => o.textContent)).toEqual([
+      'admin — the only owner',
+      'member — the only owner',
+    ]);
+  });
+
+  it('the write failure is shown in the server’s own words, beside the row', async () => {
+    render(
+      <MembersSection
+        members={specimenMembers(NOW)}
+        identity={IDENTITY}
+        onRoleChange={async () => {
+          throw new Error('a space must keep at least one owner: promote a successor first');
+        }}
+      />,
+    );
+    const row = screen.getAllByTestId('member-row')[1]!;
+    fireEvent.change(within(row).getByTestId('member-role-select'), { target: { value: 'member' } });
+    // Verbatim, not rewritten to "Failed": the sentence is the only part that
+    // tells the reader what to do next.
+    const alert = await screen.findByTestId('member-role-error');
+    expect(alert.textContent).toMatch(/promote a successor first/);
   });
 
   it('self-removal carries the oracle’s own reason, others carry the seam gap', () => {
@@ -263,6 +361,10 @@ describe('T2-1b — members & roles', () => {
     expect(screen.getByRole('button', { name: 'remove Noa Lindqvist' }).getAttribute('aria-disabled')).toBe(
       'true',
     );
+    // 114 upgraded this reason from a ruling to a measured fact: the member row
+    // is the attribution target of everything that person authored, so it
+    // cannot be deleted at all.
+    expect(document.body.textContent).toMatch(/attribution target of everything they authored/);
   });
 
   it('the handle is REAL for the viewer and hollow for everyone else', () => {
@@ -285,20 +387,98 @@ describe('T2-1b — members & roles', () => {
 });
 
 describe('T2-1c — invites', () => {
-  it('PRODUCT renders no invite rows at all, and says why', () => {
+  /**
+   * SUPERSEDED BY 114. This block used to assert "PRODUCT renders no invite
+   * rows at all, and says why", pinning the reason text to "missing
+   * capability, not a missing wire" — a claim that was half wrong when it was
+   * written: the node had `create_invite` and `w2_revoke_invite` in
+   * `007_rpc_catalog.sql` the whole time, and only the SEAM was missing. The
+   * tests below assert the wired behaviour, and the first one keeps the part
+   * that still matters: unread and empty are different answers.
+   */
+  it('an unread invite list says it is unread, not that there are none', () => {
     render(<InvitesPanel />);
     expect(screen.queryAllByTestId('invite-row')).toHaveLength(0);
     const absent = screen.getByTestId('invites-absent').textContent ?? '';
-    expect(absent).toMatch(/no invite/i);
-    expect(absent).toMatch(/missing capability, not a missing wire/);
+    expect(absent).toMatch(/has not been read/);
+    // The distinction, stated: a plain member's admin-only read rejects, and
+    // that is not the same fact as "this space has no invitations".
+    expect(absent).toMatch(/unread, not a measured empty/);
   });
 
-  it('every invite control exists and every one is refused', () => {
-    const { container } = render(<InvitesPanel />);
+  it('a measured-empty list says it was measured', () => {
+    render(<InvitesPanel invites={[]} />);
+    expect(screen.getByTestId('invites-none-active').textContent).toMatch(/read and carries none/);
+  });
+
+  it('with no write handlers every invite control renders refused', () => {
+    const { container } = render(<InvitesPanel invites={[]} />);
     expect(screen.getByRole('button', { name: 'create invite link' }).getAttribute('aria-disabled')).toBe(
       'true',
     );
     expect(sweepEnabledControls(container)).toEqual([]);
+  });
+
+  it('creating an invite sends the role, the budget and a resolved expiry', async () => {
+    const calls: unknown[] = [];
+    render(
+      <InvitesPanel
+        invites={[]}
+        onCreate={async (input) => {
+          calls.push(input);
+        }}
+      />,
+    );
+    fireEvent.change(screen.getByTestId('invite-uses'), { target: { value: '5' } });
+    fireEvent.change(screen.getByTestId('invite-expiry'), { target: { value: '7' } });
+    fireEvent.click(screen.getByTestId('invite-create'));
+    await screen.findByTestId('invite-create');
+
+    expect(calls).toHaveLength(1);
+    const sent = calls[0] as { role: string; maxUses: number; expiresAt: string | null };
+    // The default is the LEAST privileged role: an invitation grants the
+    // smallest thing that works, and widening it is one click away.
+    expect(sent.role).toBe('member');
+    expect(sent.maxUses).toBe(5);
+    // Resolved to an absolute instant HERE, at click time — not sent as "7
+    // days" for the server to resolve against a different clock.
+    expect(Number.isNaN(Date.parse(sent.expiresAt!))).toBe(false);
+  });
+
+  it('the role select offers every role except owner — 114 R4', () => {
+    render(<InvitesPanel invites={[]} onCreate={async () => undefined} />);
+    const options = [...screen.getByTestId('invite-role').querySelectorAll('option')];
+    expect(options.map((o) => o.getAttribute('value'))).toEqual(['admin', 'member']);
+    // A code travels out of band, so it is worth what the channel it was sent
+    // over is worth. Ownership is not something a forwarded link may confer.
+    expect(options.some((o) => o.getAttribute('value') === 'owner')).toBe(false);
+  });
+
+  it('a live row offers the join link and a real revoke; a revoked row keeps its code', () => {
+    const revoked: string[] = [];
+    render(
+      <InvitesPanel
+        origin="https://node.example"
+        invites={[
+          { id: 'inv-1', code: 'inv_live', role: 'admin', maxUses: 5, uses: 1, expiresAt: null, revoked: false },
+          { id: 'inv-2', code: 'inv_dead', role: 'member', maxUses: 1, uses: 0, expiresAt: null, revoked: true },
+        ]}
+        onRevoke={async (id) => {
+          revoked.push(id);
+        }}
+      />,
+    );
+    // The link is built from the CURRENT origin, so the sender copies a URL the
+    // recipient can actually reach.
+    expect(document.body.textContent).toMatch(/https:\/\/node\.example\/join\/inv_live/);
+    fireEvent.click(screen.getByTestId('invite-revoke'));
+    expect(revoked).toEqual(['inv-1']);
+
+    // The dead row keeps its code, struck through: `redeem_invite` refuses it
+    // with 42501, so showing it discloses nothing — and it is the only way
+    // somebody holding a link that stopped working can tell which link it was.
+    expect(document.body.textContent).toMatch(/inv_dead/);
+    expect(screen.queryByRole('button', { name: 'revoke inv_dead' })).toBeNull();
   });
 
   it('the specimen list renders active and revoked, with the audit row struck through', () => {

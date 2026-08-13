@@ -560,6 +560,23 @@ export const memberAda = summary({
   state: { kind: 'member', role: 'owner', score: 340, taskDoneCount: 27 },
 });
 
+/**
+ * A SECOND human, at the least-privileged role.
+ *
+ * Added with 114 (the membership verbs). Before it, the fixture dataset had
+ * exactly one member — the owner — so a members table drawn against it could
+ * only ever show a locked row, and the role control had nothing to act on that
+ * the rules would allow. One owner plus one member is the smallest population
+ * in which promote, demote, the owner lock and the last-owner floor are all
+ * observable.
+ */
+export const memberNoor = summary({
+  id: 'ent-member-noor',
+  kind: 'member',
+  title: 'Noor',
+  state: { kind: 'member', role: 'member', score: 90, taskDoneCount: 6 },
+});
+
 export const teamMemberForge = summary({
   id: 'ent-tm-forge',
   kind: 'team_member',
@@ -859,7 +876,7 @@ export const fixtureSummaries: EntitySummary[] = [
   docLayoutSpec, docChapterShell, docChapterCmin, docChapterFloors, docChapterResponsive,
   messageInThread, messageAgentNullProvenance,
   channelThreadRoot, channelThreadReply1, channelThreadReply2, channelThreadQuietRoot,
-  memberAda, teamMemberForge,
+  memberAda, memberNoor, teamMemberForge,
   teamMemberScout,
   memoryTokens, memoryDisputed, memorySuperseded,
   loopDreamer, loopFailing,
@@ -982,6 +999,10 @@ export const fixtureDetails: Record<string, EntityDetail> = {
 
   [memberAda.id]: detail(memberAda, {
     content: { kind: 'member', teamMembers: [teamMemberForge], work: [taskUuidTitle] },
+  }),
+
+  [memberNoor.id]: detail(memberNoor, {
+    content: { kind: 'member', teamMembers: [], work: [] },
   }),
 
   [teamMemberForge.id]: detail(teamMemberForge, {

@@ -310,6 +310,15 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // belongs. Locked here the same way, so the seam cannot gain a command
       // without this list saying so.
       'restoreEntity', 'resume', 'spawn',
+      // Amendment 11 (114): the membership verbs. `settings-space/reasons.ts`
+      // had said since 2026-07-29 that "the seam has no membership verb at
+      // all", and every role and invite control on the settings surface
+      // rendered disabled-with-reason because of it. These four close exactly
+      // that gap: `createInvite`, `redeemInvite`, `revokeInvite`,
+      // `setMemberRole`. The list is `.sort()`ed at the end rather than kept
+      // in hand-maintained alphabetical order, because four insertions at four
+      // different points is how a list like this acquires a silent duplicate.
+      'createInvite', 'redeemInvite', 'revokeInvite', 'setMemberRole',
       // Amendment 10 (2026-08-13, PR188 review F1): `chat.threads.start` — the
       // write half of the chat-home bridge. Sorts between spawn and
       // startTerminal.
@@ -329,7 +338,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // The viewer's OWN profile row; the op names no subject by design.
       'updateProfile',
       'upsertReadMark', 'work',
-    ]);
+    ].sort());
     expect(Object.keys(seam.liveness).sort()).toEqual(['onChange', 'refresh', 'statusOf']);
     // Amendment 3 (2026-08-01, attachments): `downloadHref` — the one seam
     // member that answers a URL rather than a DTO, because `files.download`
@@ -341,6 +350,10 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
     for (const m of ['openSpace', 'closeSpace', 'dispose', 'onEvent', 'onConnection', 'getConnection',
       'onResync', 'identity', 'spaces', 'menu', 'query', 'entityKinds', 'entity', 'children',
       'connections', 'activity', 'messages', 'home', 'handoffs', 'journal', 'launch', 'inbox', 'feed',
+      // Amendment 11 (114): `previewInvite` sits with the READS, not under
+      // `commands`, because it writes nothing — and it is the only read on
+      // this seam that answers before the caller is anybody on the node.
+      'previewInvite',
       'delivery', 'attentionRequests']) {
       expect(typeof (seam as unknown as Record<string, unknown>)[m]).toBe('function');
     }

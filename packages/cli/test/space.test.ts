@@ -163,6 +163,7 @@ async function drive(argv: readonly string[]): Promise<Ran> {
 
 const AXIS = '22222222-2222-7222-8222-222222222222';
 const INVITE = '33333333-3333-7333-8333-333333333333';
+const MEMBER = '44444444-4444-7444-8444-444444444444';
 const CHANNEL = '44444444-4444-7444-8444-444444444444';
 
 /**
@@ -186,6 +187,15 @@ const ROWS: ReadonlyArray<{
   { op: 'spaces.counts', argv: ['space', 'counts', 'get'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.settings', argv: ['space', 'settings', 'get'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.members.list', argv: ['space', 'member', 'list'], method: 'GET', params: { spaceId: SPACE } },
+  // 109. The member id is an ARGUMENT and the space comes from context, the
+  // same shape as `invite revoke` — both address a row INSIDE a space, and the
+  // route carries the pair because `set_member_role` authorizes against it.
+  {
+    op: 'spaces.members.updateRole',
+    argv: ['space', 'member', 'role', MEMBER, '--role', 'admin', '--yes'],
+    method: 'PATCH',
+    params: { spaceId: SPACE, memberId: MEMBER },
+  },
   { op: 'spaces.invites.list', argv: ['space', 'invite', 'list'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.invites.create', argv: ['space', 'invite', 'create'], method: 'POST', params: { spaceId: SPACE } },
   {
@@ -195,6 +205,10 @@ const ROWS: ReadonlyArray<{
     params: { spaceId: SPACE, inviteId: INVITE },
   },
   { op: 'spaces.invites.redeem', argv: ['space', 'invite', 'redeem', 'JOIN-ME'], method: 'POST' },
+  // 109. NO params: the code resolves to a space rather than naming one, and it
+  // rides in the BODY — a join code in a URL path is a bearer capability in an
+  // access log.
+  { op: 'auth.invite.resolve', argv: ['space', 'invite', 'resolve', 'JOIN-ME'], method: 'POST' },
   { op: 'spaces.taskAxes.list', argv: ['space', 'task-axis', 'list'], method: 'GET', params: { spaceId: SPACE } },
   {
     op: 'spaces.taskAxes.create',
@@ -240,6 +254,7 @@ const READS = [
   ['space', 'settings', 'get'],
   ['space', 'member', 'list'],
   ['space', 'invite', 'list'],
+  ['space', 'invite', 'resolve'],
   ['space', 'task-axis', 'list'],
   ['space', 'leaderboard', 'get'],
   ['space', 'award', 'list'],
@@ -247,9 +262,9 @@ const READS = [
 ] as const;
 
 describe('the registered command set', () => {
-  it('registers all 22 Space rows and nothing that is not in the projection', async () => {
+  it('registers all 24 Space rows and nothing that is not in the projection', async () => {
     const paths = (await spaceCommands()).map((c) => c.path.join(' '));
-    expect(paths).toHaveLength(22);
+    expect(paths).toHaveLength(24);
     expect(new Set(paths).size).toBe(paths.length);
     for (const p of paths) {
       expect(isCommandPath(p.split(' ')), `${p} is wired but absent from the projection`).toBe(true);
@@ -286,8 +301,8 @@ describe('every row binds its path from the catalog', () => {
       checked++;
     }
     // Vacuity guard: a loop that silently iterates zero rows passes everything.
-    expect(checked).toBe(22);
-    expect(ROWS).toHaveLength(22);
+    expect(checked).toBe(24);
+    expect(ROWS).toHaveLength(24);
   });
 });
 
@@ -302,7 +317,7 @@ describe('mutation identity (§7.4)', () => {
       expect(seen, path.join(' ')).toHaveLength(0);
       checked++;
     }
-    expect(checked).toBe(11);
+    expect(checked).toBe(12); // +1 (114): `space invite resolve`
   });
 
   it('a mutation generates a UUIDv7 when --mutation-id is omitted', async () => {

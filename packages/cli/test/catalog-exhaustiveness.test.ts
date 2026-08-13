@@ -46,7 +46,7 @@ import { isExitCode } from '../src/exit.js';
 // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows — the
 // session git rail behind the facade.
 // 150 -> 152 (2026-08-12): projects.file.history + projects.file.blame (GET reads, with CLI commands).
-const EXPECTED_ROWS = 161; // +1 2026-08-13 (merge union): chat.threads.start joins tracking.pr.merge — MEASURED on the merged tree
+const EXPECTED_ROWS = 163; // 159 -> 161 (114): spaces.members.updateRole + auth.invite.resolve — MEASURED on the rebased tree
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
@@ -54,7 +54,7 @@ const params = (name: OperationName): Record<string, string> =>
 describe('the catalog itself is the shape W4 was briefed on', () => {
   it('161 rows = 159 v1 + 2 reserved, 160 HTTP + 1 WS', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(159);
+    expect(V1_OPERATIONS.length).toBe(161);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
   });

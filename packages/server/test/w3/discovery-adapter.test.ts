@@ -22,20 +22,17 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {135/133/134/132}: the four credentials.* rows.
         // -> {137/135/136/134}: projects.files.list/attach.
         // -> {138/136/137/135} (2026-08-09, merge): execution.dispatch.
-        // -> {161/159/160/158} (2026-08-13, first-run claim): auth.claim (POST
-        // command) + auth.claim.status (GET read). Both v1, both HTTP, both
-        // mounted, so every axis except reserved and ws moves by two.
-        total: 161,
-        v1: 159,
+        total: 163,
+        v1: 161,
         reserved: 2,
-        http: 160,
+        http: 162,
         ws: 1,
-        registerableV1Http: 158,
+        registerableV1Http: 160,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
         { noun: 'project', operationCount: 19 },
-        { noun: 'space', operationCount: 23 },
+        { noun: 'space', operationCount: 24 }, // +1 (114): spaces.members.updateRole
       ]),
     });
     expect(JSON.stringify(response.result)).not.toContain('/v2/');

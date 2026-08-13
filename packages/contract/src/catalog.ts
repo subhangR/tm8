@@ -43,6 +43,7 @@ export const OPERATIONS = [
   { name: 'spaces.counts',           method: 'GET',    path: '/v2/spaces/:spaceId/counts',                  kind: 'read',    status: 'v1' },
   { name: 'spaces.settings',         method: 'GET',    path: '/v2/spaces/:spaceId/settings',                kind: 'read',    status: 'v1' },
   { name: 'spaces.members.list',     method: 'GET',    path: '/v2/spaces/:spaceId/members',                 kind: 'read',    status: 'v1' },
+  { name: 'spaces.members.updateRole', method: 'PATCH', path: '/v2/spaces/:spaceId/members/:memberId',       kind: 'command', status: 'v1' },
   { name: 'spaces.invites.list',     method: 'GET',    path: '/v2/spaces/:spaceId/invites',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.invites.create',   method: 'POST',   path: '/v2/spaces/:spaceId/invites',                 kind: 'command', status: 'v1' },
   { name: 'spaces.invites.revoke',   method: 'POST',   path: '/v2/spaces/:spaceId/invites/:inviteId/revoke', kind: 'command', status: 'v1' },
@@ -290,6 +291,14 @@ export const OPERATIONS = [
   { name: 'auth.login',                                  method: 'POST',   path: '/v2/auth/login',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
+  // POST-WITH-`kind: 'read'`, DELIBERATELY. It writes nothing — it answers what
+  // a join code lets you join, before the holder is anybody on this node — but
+  // the code must travel in the BODY. A bearer capability in a URL path lands
+  // in access logs, browser history and `Referer`, and a join link is exactly
+  // the kind of URL that gets pasted somewhere it will be logged. Precedent for
+  // the shape: `collections.query` and `graph.query`, both POST reads for the
+  // same reason (a payload that does not belong in a URL).
+  { name: 'auth.invite.resolve',                         method: 'POST',   path: '/v2/auth/invite/resolve',                                            kind: 'read',    status: 'v1' },
 
   // First-run node claim (docs/identity/FIRST-RUN-CLAIM-DESIGN.md, D1/D2).
   // Both are CLAIM-FREE, and both must stay that way: they are the only

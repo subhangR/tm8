@@ -30,6 +30,12 @@
  *   3. connection `onReconnect` → liveness `noteReconnect` — same.
  */
 import {
+  type CreateInviteInput,
+  type InvitePreview,
+  type InviteRedemption,
+  type RedeemInviteInput,
+  type SpaceInviteView,
+  type UpdateMemberRoleInput,
   CollabError,
   bindPath,
   type ActivityItem,
@@ -258,6 +264,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     identity: (): Promise<IdentityView> => ops.identity(),
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
+    previewInvite: (code: string): Promise<InvitePreview> => ops.previewInvite(code),
     counts: (spaceId: SpaceId): Promise<SpaceKindCounts> => ops.counts(spaceId),
 
     /**
@@ -360,6 +367,13 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       react: (id, input) => ops.react(id, input),
       resolveAttention: (id, input) => ops.resolveAttention(id, input),
       updateProfile: (input) => ops.updateProfile(input),
+      setMemberRole: (spaceId, memberId, input) => ops.setMemberRole(spaceId, memberId, input),
+      createInvite: (spaceId, input) => ops.createInvite(spaceId, input),
+      // `ctx` defaults to `{}` rather than being forwarded as `undefined`: the
+      // revoke body binds `RequiredCommandContextSchema`, so a missing body is
+      // a 400 and an absent object is not the same as an empty one on the wire.
+      revokeInvite: (spaceId, inviteId, ctx) => ops.revokeInvite(spaceId, inviteId, ctx ?? {}),
+      redeemInvite: (input) => ops.redeemInvite(input),
       markRead: (notificationId) => ops.markRead(notificationId),
       /**
        * `lastReadAt` is intentionally NOT sent. `readMarks.upsert` binds

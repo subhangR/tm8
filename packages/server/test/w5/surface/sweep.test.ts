@@ -303,7 +303,6 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // credentials.* add four mounted operations.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    // 156 -> 158 (2026-08-13, first-run claim): auth.claim + auth.claim.status.
     expect(SURFACE).toHaveLength(158);
     expect(rows).toHaveLength(158);
     expect(new Set(rows.map((r) => r.op)).size).toBe(158);
@@ -495,23 +494,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 104 -> 105 on 2026-08-13: 112 adds the human/agent message counters.
     // It follows landed 111 and avoids the already-claimed 109/110 slots.
     // Re-measured on this rebased tree: `ls db/migrations/*.sql | wc -l` = 105.
-    // 105 -> 106 on 2026-08-13, the same day again: 115 (chat turns queue for
-    // every human member of the Space). Authored as 111, renumbered as main
-    // landed 111 and 112 while it was in review, and 113/114 are claimed on
-    // branches that have not landed (node_claim, member roles). Re-measured on
-    // THIS tree, not incremented: `ls db/migrations/*.sql | wc -l` = 106.
-    // 106 -> 107 on 2026-08-13: 116, the first-run node claim. THIRD renumber
-    // for this lane (110 -> 112 -> 113 -> 116) as 111, 112 and then 115 landed
-    // ahead of it. The number is not decoration: the assertion below requires
-    // APPLIED order to equal SORTED order, so a file sorting below an
-    // already-applied one breaks the invariant on a live deployment while a
-    // fresh test database, which always applies in sorted order, never notices.
-    // Taking the next number ABOVE the highest applied file is the whole rule.
-    // MEASURED with `ls db/migrations/*.sql | wc -l` = 107. Note the trap: a
-    // bare `git ls-tree db/migrations/ | wc -l` returns 107 for main alone,
-    // because the directory holds a non-.sql entry — counting that and adding
-    // one gives 108 and a red suite. Count the .sql files.
-    expect(server.appliedMigrations.length).toBe(107);
+    // 105 -> 106: 114 (member roles and invite roles). Numbered 114 and not
+    // 109 for exactly the reason the note above gives — `plan/user-security`
+    // really does hold 109_agent_bearer_liveness.sql, verified by scanning
+    // every remote branch's tree rather than by trusting this comment. 110 is
+    // vacated (node_claim moved to 113) but left alone: a slot this comment
+    // still calls claimed is not one to quietly reuse.
+    // Re-measured, not incremented: `ls db/migrations/*.sql | wc -l` = 106.
+    expect(server.appliedMigrations.length).toBe(108);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -761,6 +751,10 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'spaces.create',
   'spaces.defaultChannel.set',
   'spaces.interactionProfile.setDefault',
+  // 114: the sweep supplies a SYNTHETIC `:memberId` path param, and the handler
+  // checks it is a uuid before it can reach SQL. Handler-reached, not a :166
+  // gate rejection — the body (`{role: …}`) satisfies its schema fine.
+  'spaces.members.updateRole',
   'spaces.menu.update',
   'spaces.taskAxes.create',
   'spaces.taskAxes.update',
