@@ -198,6 +198,33 @@ function block(text: string, pad: string): string {
 // durable communication is ALWAYS a message, and syntax is discovered rather
 // than remembered.
 
+/**
+ * GIT TRACKING, taught at spawn rather than discovered — the one place lazy
+ * discovery fails: an agent that does not know linking exists never asks
+ * `tm8 help` for it, opens its PR on the forge, and the whole mechanical
+ * pipeline (observer polling, chips, CI nudges, pr_merged gates) never
+ * engages. Measured on this node 2026-08-13: the kernel carried zero git
+ * teaching and only coordinator briefs that happened to mention `link-pr`
+ * produced linked PRs.
+ */
+export const GIT_TRACKING_WORKER_INSTRUCTION =
+  ' If you create a pull request or a meaningful commit for your task, link it ' +
+  'immediately: `tm8 task link-pr <task-id> <pr-url>` / ' +
+  '`tm8 task link-commit <task-id> <commit-url>`. An unlinked PR is invisible ' +
+  'to tm8 — no status chips, no CI-failure nudges, and a task gated on ' +
+  'pr_merged can never complete against it. After linking, tracking is ' +
+  'automatic: state, CI and mergeability are polled for you, and ' +
+  '`tm8 tracking refresh` forces a re-poll.';
+
+export const GIT_TRACKING_COORDINATOR_INSTRUCTION =
+  ' Every brief that involves code MUST tell the worker to `tm8 task link-pr` ' +
+  'its PR the moment it opens one — an unlinked PR is invisible to your ' +
+  'tracking. Spawn code workers with `--workdir worktree` when you want ' +
+  'checkpoint/rollback, per-session status and diff, and automatic commit ' +
+  'recording; a scratch worker\'s edits are only observable through its ' +
+  'transcript. Gate a task with `tm8 task gate <task-id> pr_merged` when ' +
+  'completion must wait for the merge.';
+
 const WORKER_IDENTITY_INSTRUCTION =
   'You are an autonomous agent working inside a tm8 workspace. Work your assigned ' +
   'tasks to completion. Orient with one `tm8 entity context <anchor-id>` on your ' +
@@ -219,7 +246,8 @@ const WORKER_IDENTITY_INSTRUCTION =
   'the question was asked. Completion needs a verified result and a durable receipt — ' +
   'your process exiting is not completion: close out with one `tm8 message send` ' +
   'on the anchor stating outcome, entity ids touched, decisions and why, open ' +
-  'questions, and next-session pointers.';
+  'questions, and next-session pointers.' +
+  GIT_TRACKING_WORKER_INSTRUCTION;
 
 // Rewritten 2026-08-12 against the six real `mode=coordinator` journals: three
 // never spawned anyone, two briefed workers to reply to the WORKER'S OWN
@@ -257,7 +285,8 @@ const COORDINATOR_IDENTITY_INSTRUCTION =
   'worker. Verify each unit against its success criteria, record state ' +
   'through the owning domain command rather than announcing it, and close out ' +
   'with one `tm8 message send` on your assignment anchor integrating every ' +
-  'worker result — or naming the ones you could not collect.';
+  'worker result — or naming the ones you could not collect.' +
+  GIT_TRACKING_COORDINATOR_INSTRUCTION;
 
 const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'You are a worker agent in a coordinated multi-agent team. A coordinator spawned ' +
@@ -273,7 +302,8 @@ const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'or block, send `tm8 message send --to <anchor-entity-id> "<body>"` on the ' +
   'assignment anchor carrying outcome, verification, blockers, the entities or ' +
   'artifacts you touched, decisions and why, open questions, and next-session ' +
-  'pointers. Do not go idle after finishing.';
+  'pointers. Do not go idle after finishing.' +
+  GIT_TRACKING_WORKER_INSTRUCTION;
 
 const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
   'You are a sub-coordinator in a hierarchical multi-agent team. A parent coordinator ' +
@@ -290,7 +320,8 @@ const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
   'your parent is waiting on a durable answer: when your slice completes or blocks, ' +
   'send `tm8 message send --to <anchor-entity-id> "<body>"` on the assignment anchor ' +
   'with outcome, verification and blockers, and do not go idle leaving the parent ' +
-  'waiting.';
+  'waiting.' +
+  GIT_TRACKING_COORDINATOR_INSTRUCTION;
 
 /**
  * The fifth mode (D4). A resident router, not a doer.
