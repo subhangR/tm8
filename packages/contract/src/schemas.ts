@@ -88,6 +88,7 @@ import type {
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
   SessionLaunchRecord,
+  SessionFileChange, SessionFileChanges, SessionFileHunk,
   SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
   SessionTranscriptStuck,
   SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
@@ -2383,6 +2384,31 @@ export const SessionTranscriptStuckSchema: z.ZodType<SessionTranscriptStuck> = z
   toolCallsSinceText: z.number().int().nonnegative(),
 }).strict();
 
+export const SessionFileHunkSchema: z.ZodType<SessionFileHunk> = z.object({
+  tool: z.enum(['edit', 'write', 'multiedit', 'notebook']),
+  linesAdded: z.number().int().nonnegative(),
+  linesRemoved: z.number().int().nonnegative(),
+  oldText: z.string().nullable(),
+  newText: z.string().nullable(),
+}).strict();
+
+export const SessionFileChangeSchema: z.ZodType<SessionFileChange> = z.object({
+  path: z.string().min(1),
+  edits: z.number().int().positive(),
+  linesAdded: z.number().int().nonnegative(),
+  linesRemoved: z.number().int().nonnegative(),
+  hunks: z.array(SessionFileHunkSchema),
+  hunksTruncated: z.boolean(),
+}).strict();
+
+export const SessionFileChangesSchema: z.ZodType<SessionFileChanges> = z.object({
+  files: z.array(SessionFileChangeSchema),
+  totalAdded: z.number().int().nonnegative(),
+  totalRemoved: z.number().int().nonnegative(),
+  filesTruncated: z.boolean(),
+  source: z.literal('transcript'),
+}).strict();
+
 export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.object({
   sessionId: EntityIdSchema,
   available: z.boolean(),
@@ -2401,6 +2427,7 @@ export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.o
   stuck: SessionTranscriptStuckSchema.nullable(),
   lastActivityAt: IsoTimestamp.nullable(),
   malformed: z.number().int().nonnegative(),
+  fileChanges: SessionFileChangesSchema.nullable().optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------

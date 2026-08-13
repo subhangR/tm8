@@ -450,7 +450,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       // a bare path and lets the server own the window size.
       return http.call<SessionTranscriptPage>('execution.transcript', {
         params: { workSessionId },
-        query: { last: opts?.last },
+        query: { last: opts?.last, files: opts?.files ? '1' : undefined },
       });
     },
     projectContention(projectId: string): Promise<ContentionReport> {
