@@ -75,6 +75,22 @@ describe('can_act_as resolution (shared teammates/S8)', () => {
     );
   });
 
+  it('refuses agent_runtime issuance through the legacy un-attributed session path', async () => {
+    const h = makeHarness();
+    const owner = await h.service.bootstrapOwner();
+    const member = h.join(owner.identityId, SPACE_A);
+    const persona = h.persona(member.id, SPACE_A);
+
+    await expectCode(
+      h.service.issueSession({
+        accountId: owner.id,
+        kind: 'agent_runtime',
+        actingAsTeamMemberId: persona.id,
+      }),
+      'invalid_input',
+    );
+  });
+
   it('allows an agent session scoped to another member\'s persona in the same space', async () => {
     const h = makeHarness();
     const owner = await h.service.bootstrapOwner();

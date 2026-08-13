@@ -40,7 +40,8 @@ export interface RequestIdentity {
   /** Exact work session bound to an agent bearer credential. */
   workSessionId?: string;
   /**
-   * The verified `auth_sessions.kind` — `browser` / `cli` / `agent` — for a
+   * The verified `auth_sessions.kind` — `browser` / `cli` / `agent` /
+   * `agent_runtime` — for a
    * `bearer` caller, and `browser` for `auto-owner` (the person sitting at the
    * node's own UI is a human; the auto-owner path's own exposure is gated by
    * `TM8_DISABLE_AUTO_OWNER`, and duplicating that control here would break
@@ -51,7 +52,11 @@ export interface RequestIdentity {
    * `SET LOCAL tm8.auth_kind` (083, R11), which `credentials.*` reads to refuse
    * an agent holding its owner's credential. Absent ⇒ refused.
    */
-  authKind?: 'browser' | 'cli' | 'agent';
+  authKind?: 'browser' | 'cli' | 'agent' | 'agent_runtime';
+  /** Requesting member recorded on an `agent_runtime` bearer row. */
+  runtimeMemberId?: string;
+  /** Thread root recorded on an `agent_runtime` bearer row. */
+  runtimeThreadRootId?: string;
 }
 
 /** Everything a handler is allowed to know about one request. */

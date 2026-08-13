@@ -116,7 +116,7 @@ describe('one identity path (R2 / claims contract)', () => {
   // Allowlisting would say "this file may also bind it"; naming it says
   // "exactly one file may bind it, and that file must be db/client.ts" — the
   // same rule every other caller-identity claim lives under. It carries the
-  // auth session's SERVER-RESOLVED kind (browser / cli / agent), which
+  // auth session's SERVER-RESOLVED kind (browser / cli / agent / agent_runtime), which
   // `internal.require_human_auth_kind()` reads to keep an agent holding its
   // owner's full identity out of `credentials.*`. A second file binding it
   // would be exactly the founding defect this guard exists to catch.

@@ -141,11 +141,12 @@ export interface IdentityServiceOptions {
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-/** R6 expiry: browser sessions outlive a workday, agent tokens outlive a long run. */
+/** R6 expiry: chat runtime tokens are short-lived and explicitly revoked with their thread. */
 export const DEFAULT_SESSION_TTL_MS: Record<AuthSessionKind, number> = {
   browser: 30 * DAY,
   cli: 90 * DAY,
   agent: 7 * DAY,
+  agent_runtime: DAY,
 };
 
 export const DEFAULT_OWNER_USERNAME = 'owner';
@@ -243,6 +244,12 @@ export class IdentityServiceImpl implements IdentityService {
     }
 
     const actingAs = input.actingAsTeamMemberId ?? null;
+    if (input.kind === 'agent_runtime') {
+      // This legacy repository path cannot attach a member + thread root.
+      // Runtime credentials must go through issueAgentRuntimeSession, whose
+      // database function derives and enforces both attribution fields.
+      throw invalidInput('agent runtime sessions must be issued for a chat thread');
+    }
     if (input.kind === 'agent' && !actingAs) {
       // S8: an agent token that is not scoped to a persona would act with the
       // launching human's authority rather than the teammate it is running.

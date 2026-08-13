@@ -152,6 +152,12 @@ function authSessionGet(deps: FacadeDeps): OperationHandler {
           sessionId: session.sessionId,
           kind: session.kind,
           actingAsTeamMemberId: session.actingAsTeamMemberId,
+          ...(session.runtimeMemberId
+            ? { runtimeMemberId: session.runtimeMemberId }
+            : {}),
+          ...(session.runtimeThreadRootId
+            ? { runtimeThreadRootId: session.runtimeThreadRootId }
+            : {}),
           label: session.label,
           expiresAt: session.expiresAt,
         },

@@ -1048,8 +1048,11 @@ export function commandAcceptsClientMutationId(opName: string): boolean {
   return !opName.startsWith('auth.');
 }
 
-/** How a session authenticates thereafter. `agent` sessions are minted at spawn, never by `auth.login`. */
-export type AuthSessionKindView = 'browser' | 'cli' | 'agent';
+/**
+ * How a session authenticates thereafter. `agent` and `agent_runtime` are
+ * internal mints, never accepted by `auth.login`.
+ */
+export type AuthSessionKindView = 'browser' | 'cli' | 'agent' | 'agent_runtime';
 
 /** The session half of every auth response. The token itself appears exactly once, at issuance. */
 export interface AuthSessionView {
@@ -1057,6 +1060,10 @@ export interface AuthSessionView {
   kind: AuthSessionKindView;
   /** Persona-scoped agent sessions only; null for human sessions. */
   actingAsTeamMemberId: string | null;
+  /** Present only for a chat runtime: the requesting human member. */
+  runtimeMemberId?: string | null;
+  /** Present only for a chat runtime: the root message whose process owns it. */
+  runtimeThreadRootId?: string | null;
   label: string | null;
   /** Present at issuance; `auth.session.get` verifies live rather than re-reading the row. */
   createdAt?: string;

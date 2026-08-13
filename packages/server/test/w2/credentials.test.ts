@@ -153,7 +153,7 @@ function deps(db: Db): FacadeDeps {
  */
 function context(
   opName: OperationName,
-  authKind: 'browser' | 'cli' | 'agent' | undefined,
+  authKind: 'browser' | 'cli' | 'agent' | 'agent_runtime' | undefined,
   options: { params?: Record<string, string>; body?: unknown } = {},
 ): RequestContext {
   return {
@@ -268,6 +268,23 @@ describe('the four credential operations exist in the contract', () => {
       expect((error as CollabError | null)?.details?.['reason'], `${name} is not guarded`)
         .toBe(CREDENTIALS_HUMAN_ONLY);
     }
+  });
+
+  it('and every mounted one explicitly REFUSES agent_runtime before touching the database', async () => {
+    const db = new FakeDb();
+    const registry = registryFor(db);
+    for (const name of CREDENTIAL_OPERATIONS) {
+      const error = await invoke(
+        registry,
+        name,
+        context(name, 'agent_runtime', { params: paramsFor(name), body: bodyFor(name) }),
+      ).then(() => null, (e: unknown) => e);
+      expect(error).toBeInstanceOf(CollabError);
+      expect((error as CollabError).code).toBe('forbidden');
+      expect((error as CollabError).details?.['reason'], `${name} admitted agent_runtime`)
+        .toBe(CREDENTIALS_HUMAN_ONLY);
+    }
+    expect(db.calls).toEqual([]);
   });
 });
 

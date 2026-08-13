@@ -90,8 +90,8 @@ function claimValue(value: string | undefined): string {
 /**
  * `tm8.auth_kind` — the FIFTH claim, added by 082 (architect ruling R11).
  *
- * It carries the SERVER-RESOLVED kind of the auth session — `browser`, `cli` or
- * `agent` — read out of `auth_sessions` by token hash in `resolveBearerIdentity`
+ * It carries the SERVER-RESOLVED kind of the auth session — `browser`, `cli`,
+ * `agent` or `agent_runtime` — read out of `auth_sessions` by token hash in `resolveBearerIdentity`
  * and never asserted by the client.
  *
  * WHY WIDENING THE TRUSTED SURFACE IS LEGITIMATE HERE, AND ONLY HERE. The

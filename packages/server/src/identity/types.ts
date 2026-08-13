@@ -105,12 +105,12 @@ export interface StoredCredential {
 }
 
 /**
- * S8: browser sessions back the cookie/CSRF posture (S6); `cli` and `agent`
- * sessions are bearer-token clients. An `agent` session is scoped to a
- * `team_member` identity — the token an agent receives in its manifest env can
- * only ever act as that persona.
+ * S8: browser sessions back the cookie/CSRF posture (S6); the other kinds are
+ * bearer-token clients. `agent` is a work-session worker. `agent_runtime` is a
+ * chat thread's headless runtime, carrying its requesting human's authority
+ * while authoring as the selected teammate.
  */
-export type AuthSessionKind = 'browser' | 'cli' | 'agent';
+export type AuthSessionKind = 'browser' | 'cli' | 'agent' | 'agent_runtime';
 
 export interface AuthSession {
   id: AuthSessionId;
