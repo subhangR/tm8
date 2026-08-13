@@ -17,7 +17,7 @@ import {
  * reached from anywhere other than its own machine showed a sign-in card for
  * an account that could not exist and could not be created. Every other test
  * for this feature runs in jsdom or against a fake; this one runs migration
- * `112_node_claim.sql` on real Postgres and drives the ceremony over the
+ * `113_node_claim.sql` on real Postgres and drives the ceremony over the
  * production HTTP boundary.
  *
  * The two properties worth the file are the ones no unit test can reach:
