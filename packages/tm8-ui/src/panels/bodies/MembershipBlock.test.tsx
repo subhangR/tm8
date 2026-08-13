@@ -326,6 +326,10 @@ describe('MembershipBlock — rows, remove, and the bounded picker', () => {
     expect(items.querySelector('.pn-tt')).toBeTruthy();
     expect(items.textContent).toContain(taskUuidTitle.title);
     expect(items.querySelector('.pn-chiprow')).toBeNull();
+    // A mixed list leads every row with its kind mark, named for hover.
+    expect(
+      within(items).getByTestId('membership-item-kind').getAttribute('title'),
+    ).toBe('Task');
     fireEvent.click(within(items).getByTestId('membership-remove'));
     expect(authoring.onRemove).toHaveBeenCalledWith(taskUuidTitle.id, taskUuidTitle.title);
   });

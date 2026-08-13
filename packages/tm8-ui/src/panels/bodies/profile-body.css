@@ -554,6 +554,15 @@
   align-items: flex-start;
   gap: 4px;
 }
+/* The leading kind mark: seated on the tile's first text line (the tiles pad
+   ~8px), quiet ink so the tile's own status colours keep the loud channel. */
+.cv2-root .pn-membership__kind {
+  flex: none;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--pn-ink-3);
+}
 .cv2-root .pn-membership__tile {
   flex: 1;
   min-width: 0;

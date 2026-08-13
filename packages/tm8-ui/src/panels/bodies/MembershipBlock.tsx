@@ -185,6 +185,19 @@ export function MembershipBlock({
             const inFlight = pending.has(peer.id);
             return (
               <div className="pn-membership__itemrow" data-testid="membership-row" key={edge.id}>
+                {/* A LEADING KIND MARK on every member (user, 2026-08-13: "we
+                    know what item each type is"). The tiles carry their own
+                    status vocabularies, but in a MIXED list the first question
+                    is "what is this row" — answered here once, uniformly,
+                    with the registry's label as the hover word. */}
+                <span
+                  className="pn-membership__kind"
+                  data-testid="membership-item-kind"
+                  title={getKind(peer.kind).label}
+                  aria-label={getKind(peer.kind).label}
+                >
+                  <KindIcon kind={peer.kind} />
+                </span>
                 {/* The member's OWN registry row decides the anatomy — a task
                     draws the control-card, a session the session tile — so
                     `kind` is re-pointed per row and nothing else changes. */}
