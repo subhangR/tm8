@@ -36,6 +36,7 @@ import {
   type WorkspaceControlAck,
   type WorkspaceControlFrame,
 } from '@tm8/contract';
+import { isChatTurnFrame, type ChatTurnFrame } from '../../chat-home/types';
 
 /** The one message field this client reads off an inbound event. */
 export interface WebSocketMessage {
@@ -67,6 +68,8 @@ export interface SocketHandlers {
   onOpen(): void;
   /** A durable event arrived. Presence/typing never reach here (R8). */
   onEvent(event: DurableWorkspaceEvent): void;
+  /** C3 rich-turn frame; not part of the durable workspace seq spine. */
+  onChatTurn?(frame: ChatTurnFrame): void;
   /** THE only ack. Never silent — a refused space must not look like a quiet one. */
   onRefused(ack: WorkspaceControlAck): void;
   /** Socket closed or errored. Fires at most once per socket. */
@@ -115,6 +118,7 @@ function isRecord(x: unknown): x is Record<string, unknown> {
  */
 export type ParsedFrame =
   | { kind: 'event'; event: DurableWorkspaceEvent }
+  | { kind: 'chat-turn'; frame: ChatTurnFrame }
   | { kind: 'refused'; ack: WorkspaceControlAck }
   | { kind: 'presence' }
   | { kind: 'malformed'; reason: string };
@@ -143,6 +147,8 @@ export function parseFrame(raw: unknown): ParsedFrame {
   // server does not put these on the durable stream today; this is the belt
   // beside that brace, and it is one line.
   if (type === 'presence.changed' || type === 'typing.changed') return { kind: 'presence' };
+
+  if (isChatTurnFrame(raw)) return { kind: 'chat-turn', frame: raw };
 
   if (typeof raw.spaceId !== 'string') return { kind: 'malformed', reason: 'event has no spaceId' };
   if (typeof raw.seq !== 'number' || !Number.isFinite(raw.seq)) {
@@ -182,6 +188,7 @@ export function openSocket(
     const frame = parseFrame(parsed);
     switch (frame.kind) {
       case 'event': handlers.onEvent(frame.event); return;
+      case 'chat-turn': handlers.onChatTurn?.(frame.frame); return;
       case 'refused': handlers.onRefused(frame.ack); return;
       case 'presence': return;
       case 'malformed': handlers.onMalformed?.(parsed, frame.reason); return;

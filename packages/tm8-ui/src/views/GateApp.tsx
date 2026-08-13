@@ -49,7 +49,7 @@ import { useTheme } from '../theme/useTheme';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
-import { HomeScreen } from '../home';
+import { ChatHomeSurface } from '../chat-home';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
@@ -781,13 +781,13 @@ export function GateApp(props: GateAppProps = {}) {
               }
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'dashboard' ? (
-            /* T5-1 Home — the first void route dispatching to a real screen
-               (surface wave, home lane). Above the unbuilt-view branch, whose
-               placeholder stopped being true the moment this landed. */
-            <HomeScreen
-              data={data}
+            /* D1-amended: Chat is the home screen. The existing dashboard
+               route stays stable while its centre is replaced wholesale. */
+            <ChatHomeSurface
+              seam={data.seam}
+              spaceId={data.spaceId}
+              nodeKey={nodeKey}
               spaceLabel={data.spaces.find((sp) => sp.id === data.spaceId)?.name}
-              onOpenEntity={(id) => nav.push?.(id as EntityId)}
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&

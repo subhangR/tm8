@@ -240,6 +240,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     // -- event stream & connection honesty -----------------------------------
 
     onEvent: (cb) => connection.onEvent(cb),
+    onChatTurn: (cb) => connection.onChatTurn(cb),
     onConnection: (cb) => connection.onConnection(cb),
     getConnection: () => connection.getConnection(),
     onResync: (cb) => connection.onResync(cb),

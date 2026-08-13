@@ -199,6 +199,7 @@ import type {
   WorkSessionStatus,
   WorkStatus,
 } from '@tm8/contract';
+import type { ChatTurnFrame } from '../chat-home/types';
 
 export type Unsubscribe = () => void;
 
@@ -360,6 +361,8 @@ export interface Seam {
    * frames never appear here (R8 dormant; W5: no publisher exists).
    */
   onEvent(cb: (e: DurableWorkspaceEvent) => void): Unsubscribe;
+  /** C3 transient turn frames. Durable parts are re-read after a reconnect. */
+  onChatTurn(cb: (frame: ChatTurnFrame) => void): Unsubscribe;
   onConnection(cb: (s: ConnectionState) => void): Unsubscribe;
   getConnection(): ConnectionState;
   /**

@@ -39,7 +39,6 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
       teammateLabel: 'Forge',
       model: 'claude-sonnet-4-5',
       modelLabel: 'Sonnet 4.5',
-      provider: 'Anthropic',
     },
     state: 'idle',
   },
@@ -163,7 +162,6 @@ export function createChatHomeFixturePort(
               teammateLabel: 'Pending configuration',
               model: '',
               modelLabel: 'Pending configuration',
-              provider: '',
             },
             state: 'idle',
           },
@@ -191,7 +189,6 @@ export function createChatHomeFixturePort(
             teammateLabel: input.teammateId === AGENT.id ? 'Forge' : 'Researcher',
             model: input.model,
             modelLabel: input.model,
-            provider: input.model.startsWith('claude') ? 'Anthropic' : 'OpenAI',
           },
           state: 'streaming',
         };

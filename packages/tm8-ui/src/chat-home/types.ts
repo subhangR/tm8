@@ -64,7 +64,6 @@ export interface ChatThreadConfig {
   teammateLabel: string;
   model: string;
   modelLabel: string;
-  provider: string;
 }
 
 export interface ChatThreadSummary {
@@ -123,6 +122,8 @@ export interface ChatPostResult {
 }
 
 export interface ChatHomePort {
+  /** Non-null means the space-wide L2 read does not exist on this node yet. */
+  threadListUnavailableReason?: string | null;
   listThreads(spaceId: SpaceId | string): Promise<readonly ChatThreadSummary[]>;
   readThread(threadRootId: EntityId): Promise<ChatThreadDetail>;
   listTeammates(spaceId: SpaceId | string): Promise<readonly ChatTeammateOption[]>;

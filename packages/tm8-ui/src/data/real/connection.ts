@@ -49,6 +49,7 @@
  */
 import { CollabError, type DurableWorkspaceEvent, type SpaceId } from '@tm8/contract';
 import type { ConnectionState, Unsubscribe } from '../seam';
+import type { ChatTurnFrame } from '../../chat-home/types';
 import type { DurableEventPage } from './ops';
 import { openSocket, type SocketHandle, type WebSocketFactory } from './socket';
 
@@ -124,6 +125,7 @@ export interface ConnectionManager {
   openSpace(spaceId: SpaceId): void;
   closeSpace(spaceId: SpaceId): void;
   onEvent(cb: (e: DurableWorkspaceEvent) => void): Unsubscribe;
+  onChatTurn(cb: (frame: ChatTurnFrame) => void): Unsubscribe;
   onConnection(cb: (s: ConnectionState) => void): Unsubscribe;
   getConnection(): ConnectionState;
   onResync(cb: (spaceId: SpaceId) => void): Unsubscribe;
@@ -180,6 +182,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
   const refusals = new Map<SpaceId, CollabError>();
 
   const eventSubs = new Set<(e: DurableWorkspaceEvent) => void>();
+  const chatTurnSubs = new Set<(frame: ChatTurnFrame) => void>();
   const connSubs = new Set<(s: ConnectionState) => void>();
   const resyncSubs = new Set<(spaceId: SpaceId) => void>();
   const refusedSubs = new Set<(spaceId: SpaceId, error: CollabError) => void>();
@@ -240,6 +243,12 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     if (event.seq <= last) return;
     cursors.set(event.spaceId, event.seq);
     fanout(eventSubs, event);
+  }
+
+  function dispatchChatTurn(frame: ChatTurnFrame): void {
+    if (disposed) return;
+    lastInboundAtMs = now();
+    fanout(chatTurnSubs, frame);
   }
 
   // -- half-open watchdog ----------------------------------------------------
@@ -436,6 +445,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       socket = openSocket(deps.wsUrl, deps.webSocketFactory, {
         onOpen: handleOpen,
         onEvent: dispatch,
+        onChatTurn: dispatchChatTurn,
         onRefused: handleRefused,
         onClose: handleClose,
         onMalformed: (raw, cause) => onError(cause ?? raw, 'malformed frame'),
@@ -585,6 +595,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     },
 
     onEvent(cb) { eventSubs.add(cb); return () => { eventSubs.delete(cb); }; },
+    onChatTurn(cb) { chatTurnSubs.add(cb); return () => { chatTurnSubs.delete(cb); }; },
     onConnection(cb) { connSubs.add(cb); return () => { connSubs.delete(cb); }; },
     onResync(cb) { resyncSubs.add(cb); return () => { resyncSubs.delete(cb); }; },
     onSpaceRefused(cb) { refusedSubs.add(cb); return () => { refusedSubs.delete(cb); }; },
@@ -606,6 +617,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       socket = null;
       open.clear();
       eventSubs.clear();
+      chatTurnSubs.clear();
       connSubs.clear();
       resyncSubs.clear();
       refusedSubs.clear();
