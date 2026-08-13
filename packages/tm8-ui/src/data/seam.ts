@@ -402,7 +402,7 @@ export interface Seam {
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
   /**
    * Amendment 11 — the one read on this seam that answers BEFORE the caller is
-   * anybody (migration 114, `spaces.invites.preview`).
+   * anybody (migration 117, `spaces.invites.preview`).
    *
    * A join link is opened by someone with no account, or with one and no
    * membership in the space the code names — so every other read here correctly
@@ -745,7 +745,7 @@ export interface Seam {
      */
     updateProfile(input: IdentityProfileUpdateInput): Promise<IdentityProfileView>;
     /**
-     * Amendment 11 — MEMBERSHIP GETS ITS VERBS (migration 114).
+     * Amendment 11 — MEMBERSHIP GETS ITS VERBS (migration 117).
      *
      * `settings-space/reasons.ts` has said since 2026-07-29 that "the seam has
      * no membership verb at all", and every role and invite control on the

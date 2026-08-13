@@ -116,7 +116,7 @@ export const ROLE_CHANGE_NEEDS_OWNER = reason(
  */
 export const MEMBER_REMOVE_UNAVAILABLE = reason(
   'Removing a member has no executor in this build',
-  'a member row is the attribution target of everything they authored, so it cannot be deleted — removal needs a soft-removal column and an audit of every membership predicate in the schema (migration 114 header). Demote them to member in the meantime.',
+  'a member row is the attribution target of everything they authored, so it cannot be deleted — removal needs a soft-removal column and an audit of every membership predicate in the schema (migration 117 header). Demote them to member in the meantime.',
 );
 
 /** The oracle's own locked control (T2-1 L54): "you can't remove yourself". */
@@ -154,7 +154,7 @@ export const OWNER_ROLE_LOCKED = reason(
  * text said the second when it could only observe the first.
  *
  * `InvitesSection` now reads, creates, copies and revokes for real (seam
- * Amendment 11, migration 114 for the role column). One refusal survives, and
+ * Amendment 11, migration 117 for the role column). One refusal survives, and
  * it is genuinely a refusal rather than a gap: see below.
  */
 

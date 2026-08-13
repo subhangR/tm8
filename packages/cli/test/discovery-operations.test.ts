@@ -170,7 +170,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 159 /* +2 (114): spaces.members.updateRole, auth.invite.resolve */, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 159 /* +2 (117): spaces.members.updateRole, auth.invite.resolve */, composite: 1, internal: 1, reserved: 2 });
   });
 });
 

@@ -1791,11 +1791,11 @@ export interface UpdateSpaceInput extends CommandContext {
 }
 
 /**
- * PATCH /v2/spaces/:spaceId/members/:memberId — the space-role writer (114).
+ * PATCH /v2/spaces/:spaceId/members/:memberId — the space-role writer (117).
  *
  * The subject is the PATH, never the body: a member id in a body is a field a
  * handler has to remember to check against the space it was reached through,
- * and 114's `set_member_role` names both in one predicate so a cross-space id
+ * and 117's `set_member_role` names both in one predicate so a cross-space id
  * is "not found here" rather than found-and-updated. The body carries only the
  * new role.
  *
@@ -1853,7 +1853,7 @@ export interface InviteRedemption {
 
 /**
  * GET /v2/invites/:code — what a join code lets you join, answered before the
- * holder is anybody on this node (114).
+ * holder is anybody on this node (117).
  *
  * A DISCRIMINATED UNION rather than one optional-heavy shape, because the whole
  * point of this read is that a dead code discloses less than a live one, and an
@@ -2115,7 +2115,7 @@ export interface PointEventView {
 export interface SpaceSettings {
   space: SpaceSummary;
   members: Array<{ actor: ActorSummary; role: SpaceMemberRole; joinedAt: string }>;
-  /** `role` (114) is the role redemption confers — 'admin' or 'member', never 'owner'. */
+  /** `role` (117) is the role redemption confers — 'admin' or 'member', never 'owner'. */
   invites: Array<{ id: string; code: string; role: Exclude<SpaceMemberRole, 'owner'>; maxUses: number; uses: number; expiresAt: string | null; revoked: boolean }>;
   taskAxes: TaskAxis[];
 }
