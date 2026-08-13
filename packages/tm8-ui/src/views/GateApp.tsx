@@ -496,6 +496,26 @@ export function GateApp(props: GateAppProps = {}) {
   // ChannelView, so a deep link and a bookmark keep working.
   const channelEntities = data.rowsFor('channel')(undefined);
 
+  /**
+   * PR188 review F1: the UI half of the chat composition. The server got its
+   * composition commit (compose.ts); without this bridge the shipped home
+   * rendered a disabled composer blaming the node for operations it serves.
+   * Amendment 10 seam calls: `home` (thread list) + `startChatThread`.
+   */
+  const chatBridge = useMemo(() => ({
+    listThreads: async (sid: string) => (await data.seam.home(sid)).chatThreads ?? [],
+    configureThread: async (input: {
+      rootMessageId: string; teammateId: string; model: string; clientMutationId: string;
+    }) => {
+      const result = await data.seam.commands.startChatThread(input);
+      return {
+        threadRootId: result.thread.rootMessageId,
+        teammateId: result.thread.teammateId,
+        model: result.thread.model,
+      };
+    },
+  }), [data.seam]);
+
   // The same grammar for VOICE: "Voice" is a label, the space's voice_channel
   // entities are the rows. The glyph comes from the REGISTRY row (as
   // `presentKind` does above) rather than being authored here — a second
@@ -824,6 +844,11 @@ export function GateApp(props: GateAppProps = {}) {
               spaceId={data.spaceId}
               nodeKey={nodeKey}
               spaceLabel={data.spaces.find((sp) => sp.id === data.spaceId)?.name}
+              bridge={chatBridge}
+              /* PR188 review F3: the space id is NOT an entity and
+                 messages.post 404s on it (measured). Bare-home chats anchor
+                 to the seeded default channel. */
+              anchorId={channelEntities[0]?.id}
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&

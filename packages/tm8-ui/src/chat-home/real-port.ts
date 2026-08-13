@@ -8,6 +8,7 @@ import type {
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { createChatHomeFixturePort } from './fixtures';
+import { turnPartFromMessagePart } from './wire';
 import type {
   ChatConfigureInput,
   ChatHomePort,
@@ -25,6 +26,9 @@ export interface ChatThreadListItem {
   model: string;
   createdAt: string;
   lastReplyAt: string | null;
+  /** PR188 review F4: root body excerpt so rows are distinguishable. */
+  title?: string | null;
+  replyCount?: number;
 }
 
 /** Injection points owned by L2. Every existing-seam operation is wired below. */
@@ -73,10 +77,13 @@ export function createChatHomePortFromSeam(
     const labels = new Map(teammates.map((teammate) => [teammate.id, teammate.label]));
     return items.map<ChatThreadSummary>((item) => ({
       rootId: item.rootMessageId,
-      title: 'Conversation',
-      preview: 'Open to read this thread',
+      // F4: the root body is the only honest title a chat has. The literal
+      // 'Conversation' made every real row identical while the fixture port
+      // showed real titles — exactly the class of demo-only truth.
+      title: item.title?.trim() || 'Conversation',
+      preview: item.title?.trim() || 'Open to read this thread',
       updatedAt: item.lastReplyAt ?? item.createdAt,
-      replyCount: 0,
+      replyCount: item.replyCount ?? 0,
       config: {
         teammateId: item.teammateId,
         teammateLabel: labels.get(item.teammateId) ?? 'Agent teammate',
@@ -109,7 +116,12 @@ export function createChatHomePortFromSeam(
           author: message.state.author ?? message.createdBy ?? null,
           createdAt: message.createdAt,
           body: message.content.body,
-          parts: bridge.readParts ? [...await bridge.readParts(message.id)] : [],
+          // F4/F1: the server already returns MessagePart[] on the message
+          // view (MessageView.parts, L2's additive field), normalized through
+          // wire.ts; a supplied readParts bridge stays as an override.
+          parts: message.parts
+            ? message.parts.map(turnPartFromMessagePart)
+            : bridge.readParts ? [...await bridge.readParts(message.id)] : [],
         })),
       );
       return {

@@ -44,6 +44,12 @@ export interface ChatOrchestratorOptions {
   readonly publisher: ChatTurnPublisher;
   readonly resolveLaunchConfig: ResolveChatLaunchConfig;
   readonly onError?: (error: unknown) => void;
+  /**
+   * Node-scoped claims for the boot liveness sweep (PR188 review F2). Only the
+   * production composition supplies this; test harnesses omit it and no sweep
+   * queries ever run against their fixtures.
+   */
+  readonly sweepClaims?: DbClaims;
 }
 
 function claims(identityId: string): DbClaims {
@@ -71,6 +77,59 @@ export class ChatOrchestrator {
   private readonly liveThreads = new Map<string, string>();
 
   constructor(private readonly options: ChatOrchestratorOptions) {}
+
+  /**
+   * F2 (PR188 review): reconcile durable state with process reality at boot.
+   *
+   * No hot child survives the node process, so every `runtime_state='live'`
+   * row after a restart is a stale claim. Left alone, ensureRuntime picks
+   * mode 'new' and re-spawns with the write-once `--session-id`, which the
+   * vendor refuses ("Session ID … is already in use") — bricking the thread
+   * (measured live by review A). Marking the row 'stopped' routes the next
+   * turn through the ruled lazy resume (R8), which the vendor accepts for
+   * these ids. Turns queued when the node died are then drained — without
+   * this, `wake` is only reachable from thread-start and message commit, so
+   * an orphaned queued turn would wait forever.
+   */
+  async reconcileOnBoot(): Promise<void> {
+    const sweep = this.options.sweepClaims;
+    if (!sweep) return;
+    try {
+      const stale = await this.options.db.query<{
+        root_message_id: string;
+        configured_by_identity_id: string;
+      }>(
+        sweep,
+        `select root_message_id, configured_by_identity_id
+           from public.chat_threads where runtime_state = 'live'`,
+        [],
+      );
+      for (const row of stale) {
+        await this.options.db.rpc(
+          claims(row.configured_by_identity_id),
+          'mark_chat_runtime_state',
+          [row.root_message_id, 'stopped'],
+        );
+      }
+      const queued = await this.options.db.query<{
+        root_message_id: string;
+        configured_by_identity_id: string;
+      }>(
+        sweep,
+        `select distinct t.root_message_id, t.configured_by_identity_id
+           from public.chat_turns q
+           join public.chat_threads t using (root_message_id)
+          where q.state = 'queued'
+             or (q.state = 'running' and q.lease_expires_at < now())`,
+        [],
+      );
+      for (const row of queued) {
+        void this.wake(row.root_message_id, row.configured_by_identity_id);
+      }
+    } catch (error) {
+      this.options.onError?.(error);
+    }
+  }
 
   wake(rootMessageId: string, requesterIdentityId: string): Promise<void> {
     const running = this.drains.get(rootMessageId);
@@ -147,6 +206,10 @@ export class ChatOrchestrator {
     try {
       const threadId = await this.ensureRuntime(turn);
       for await (const item of this.options.runtime.sendTurn(threadId, { text: turn.body })) {
+        // F6 (PR188 review): claude emits an empty thinking block on some
+        // turns; persisting it draws an empty "Thinking" disclosure. Skip it —
+        // absence of thought is not a part.
+        if (item.kind === 'thinking' && item.text.trim() === '') continue;
         await append(item);
       }
       if (terminal.reason === null) {
@@ -182,6 +245,22 @@ export class ChatOrchestrator {
         'mark_chat_runtime_state',
         [turn.rootMessageId, 'stopped'],
       );
+    } else if (terminal.reason === 'error') {
+      // F2 (PR188 review): a dead or wedged runtime must not stay claimed. If
+      // this thread ever went live in this process, evict it and mark the row
+      // 'stopped' so the NEXT turn takes the lazy resume path instead of
+      // throwing "not running" forever. A turn that failed before any spawn
+      // (e.g. a refused mint) deletes nothing and the state stays 'cold', so
+      // a plain retry keeps taking the fresh-start path.
+      const wasLive = this.liveThreads.delete(turn.rootMessageId);
+      if (wasLive) {
+        await this.options.runtime.close(turn.rootMessageId).catch(() => undefined);
+        await this.options.db.rpc(
+          claims(turn.requesterIdentityId),
+          'mark_chat_runtime_state',
+          [turn.rootMessageId, 'stopped'],
+        );
+      }
     }
 
     this.options.publisher.publish(turn.spaceId, turn.requesterIdentityId, {

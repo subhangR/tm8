@@ -69,6 +69,7 @@ import {
 } from '@tm8/contract';
 import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike } from './http';
+import { chatTurnFrameFromWire, type WireChatTurnFrame } from '../../chat-home/wire';
 import { createOps } from './ops';
 import {
   createConnectionManager,
@@ -240,7 +241,14 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     // -- event stream & connection honesty -----------------------------------
 
     onEvent: (cb) => connection.onEvent(cb),
-    onChatTurn: (cb) => connection.onChatTurn(cb),
+    // PR188 review F1: the node publishes payload-wrapped contract
+    // MessageParts in its C3 frames; the chat-home render types are
+    // flattened. Normalize at the seam boundary so every consumer sees ONE
+    // shape — reading the wire shape through the render type yields
+    // undefined in every field, silently.
+    onChatTurn: (cb) =>
+      connection.onChatTurn((frame) =>
+        cb(chatTurnFrameFromWire(frame as unknown as WireChatTurnFrame))),
     onConnection: (cb) => connection.onConnection(cb),
     getConnection: () => connection.getConnection(),
     onResync: (cb) => connection.onResync(cb),
@@ -299,6 +307,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     connections: (id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>> => ops.connections(id, opts),
     activity: (id: EntityId, opts?: PageOpts): Promise<Page<ActivityItem>> => ops.activity(id, opts),
     messages: (anchorId: EntityId, opts?: PageOpts): Promise<Page<MessageView>> => ops.messages(anchorId, opts),
+    home: (spaceId) => ops.home(spaceId),
     handoffs: (workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>> =>
       ops.handoffs(workSessionId, opts),
     journal: (workSessionId: EntityId, opts?: JournalOpts): Promise<SessionJournalPage> =>
@@ -346,6 +355,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       removeFromCollection: (collectionId, entityId, ctx) =>
         ops.removeFromCollection(collectionId, entityId, ctx),
       postMessage: (input) => ops.postMessage(input),
+      startChatThread: (input) => ops.startChatThread(input),
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),
       resolveAttention: (id, input) => ops.resolveAttention(id, input),

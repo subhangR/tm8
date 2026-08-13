@@ -124,6 +124,9 @@ import {
   type SessionLaunchRecord,
   type SessionTranscriptPage,
   type SpaceId,
+  type HomeSnapshot,
+  type StartChatThreadInput,
+  type StartChatThreadResult,
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
@@ -427,6 +430,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         params: { anchorId },
         query: { ...pageQuery(opts), rootMessageId: opts?.rootMessageId },
       });
+    },
+
+    /** Amendment 10: `spaces.home` — carries the chat-home `chatThreads` list. */
+    home(spaceId: SpaceId | string): Promise<HomeSnapshot> {
+      return http.call<HomeSnapshot>('spaces.home', { params: { spaceId } });
     },
 
     handoffs(workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>> {
@@ -737,6 +745,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     /** Answers `MessageBatchResult` — the seam's union member, passed through. */
     postMessage(input: PostMessageInput): Promise<MessageBatchResult> {
       return http.call<MessageBatchResult>('messages.post', { body: input });
+    },
+
+    /** Amendment 10: `chat.threads.start` — the chat-home bridge's write half. */
+    startChatThread(input: StartChatThreadInput): Promise<StartChatThreadResult> {
+      return http.call<StartChatThreadResult>('chat.threads.start', { body: input });
     },
 
     /** Note 2: bare `MessageView` lifted into the seam's `CommandResult`. */

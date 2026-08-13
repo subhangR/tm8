@@ -315,16 +315,21 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
         anchor_id: string;
         teammate_id: string;
         model: string;
+        title: string | null;
+        reply_count: number;
         created_at: string;
         last_reply_at: string | null;
       }>(
         `select ct.root_message_id, ct.anchor_id, ct.teammate_id, ct.model,
+                left(root_msg.body, 240) as title,
+                count(reply.entity_id)::int as reply_count,
                 to_char(ct.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
                 to_char(max(reply.created_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as last_reply_at
            from public.chat_threads ct
+           join public.messages root_msg on root_msg.entity_id = ct.root_message_id
            left join public.messages reply on reply.root_message_id = ct.root_message_id
           where ct.space_id = $1
-          group by ct.root_message_id, ct.anchor_id, ct.teammate_id, ct.model, ct.created_at
+          group by ct.root_message_id, ct.anchor_id, ct.teammate_id, ct.model, ct.created_at, root_msg.body
           order by coalesce(max(reply.created_at), ct.created_at) desc, ct.root_message_id desc`,
         [spaceId],
       );
@@ -335,6 +340,10 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
         model: thread.model,
         createdAt: thread.created_at,
         lastReplyAt: thread.last_reply_at,
+        // PR188 review F4: a list of rows all reading "Conversation" is not a
+        // thread list. The root body is the only honest title a chat has.
+        title: thread.title,
+        replyCount: thread.reply_count,
       }));
 
       const home: HomeSnapshot = {

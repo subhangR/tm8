@@ -260,8 +260,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         publisher: new ChatTurnPublisher(subscriptions, (await owner!()).identityId),
         resolveLaunchConfig: chatBlock.resolveLaunchConfig,
         ...(chatBlock.onError ? { onError: chatBlock.onError } : {}),
+        // F2: only the production (factory) composition gets the boot sweep —
+        // block-form test harnesses must never see sweep queries.
+        ...(typeof opts.chat === 'function'
+          ? { sweepClaims: { identityId: (await owner!()).identityId, nodeAdmin: true } }
+          : {}),
       })
     : undefined;
+  if (chat && typeof opts.chat === 'function') void chat.reconcileOnBoot();
 
   // Voice-channel roster (voice plan §2). Ephemeral for the same reason
   // presence is, but sourced from LiveKit webhooks rather than from client

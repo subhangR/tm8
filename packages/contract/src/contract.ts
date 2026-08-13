@@ -586,6 +586,14 @@ export interface ChatThreadSummary {
   model: string;
   createdAt: string;
   lastReplyAt: string | null;
+  /**
+   * Root message body excerpt (PR188 review F4): without it every list row
+   * reads "Conversation" and threads are indistinguishable. Optional so the
+   * write path's minted summary (start_chat_thread) stays valid.
+   */
+  title?: string | null;
+  /** Reply count for the thread footer; optional for the same reason. */
+  replyCount?: number;
 }
 
 export interface StartChatThreadInput {

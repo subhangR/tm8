@@ -270,7 +270,8 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
     ) as HomeSnapshot;
     const summary = home.chatThreads?.find((thread) => thread.rootMessageId === rootMessageId);
     expect(Object.keys(summary ?? {}).sort()).toEqual([
-      'anchorId', 'createdAt', 'lastReplyAt', 'model', 'rootMessageId', 'teammateId',
+      // + title/replyCount: PR188 review F4 — the list needs a readable row.
+      'anchorId', 'createdAt', 'lastReplyAt', 'model', 'replyCount', 'rootMessageId', 'teammateId', 'title',
     ]);
     expect(summary).toMatchObject({
       anchorId: fixture.anchorId,

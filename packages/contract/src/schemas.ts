@@ -833,6 +833,8 @@ export const ChatThreadSummarySchema: z.ZodType<ChatThreadSummary> = z.object({
   model: z.string().min(1),
   createdAt: IsoTimestamp,
   lastReplyAt: IsoTimestamp.nullable(),
+  title: z.string().nullable().optional(),
+  replyCount: z.number().int().nonnegative().optional(),
 }).strict();
 
 export const StartChatThreadInputSchema: z.ZodType<StartChatThreadInput> = z.object({
