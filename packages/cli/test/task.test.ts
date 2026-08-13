@@ -180,9 +180,9 @@ describe('the six rows this slot owns here', () => {
     expect(paths).toEqual(['task complete', 'task gate', 'task import-issue', 'task link-commit', 'task link-pr', 'task transition']);
   });
 
-  it('tracking.ts registers exactly `tracking refresh`', async () => {
+  it('tracking.ts registers exactly `tracking refresh` and `pr merge`', async () => {
     const paths = (await trackingCommands()).map((m) => m.path.join(' '));
-    expect(paths).toEqual(['tracking refresh']);
+    expect(paths).toEqual(['tracking refresh', 'pr merge']);
   });
 
   it('every registered path is in the frozen grammar projection', async () => {

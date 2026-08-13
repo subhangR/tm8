@@ -111,6 +111,7 @@ describe('W2.G02 universal entities, commands, and tracking', () => {
       'entities.react',
       'entities.restore',
       'entities.versions',
+      'tracking.pr.merge',
       'tracking.refresh',
     ]);
   });

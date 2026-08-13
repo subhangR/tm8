@@ -688,6 +688,15 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['sync', 'github', 'poll'],
   },
 
+  'tracking.pr.merge': {
+    cmd: ['pr', 'merge'],
+    syn: 'tm8 pr merge <pull-request-entity-id> [--head <sha>] [--title <text>] [--mutation-id <id>]',
+    sum: 'Merge the PR this entity mirrors, on the forge, as the acting member',
+    authz: 'space',
+    input: 'bound',
+    tags: ['github', 'merge', 'forge', 'write'],
+  },
+
   // ── edges ────────────────────────────────────────────────────────────────
   'edges.list': {
     cmd: ['edge', 'list'],
@@ -1944,7 +1953,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:aefbae3bc972822d6f082bfe5a9d4046c2f4913d1a558de7bbb3b75644e307b3';
+  'sha256:dceade5e3a670bbdb7356f1500685343f33bdbafc4a41e162e4810a889c25b28';
 
 export const GRAMMAR_VERSION = '2';
 

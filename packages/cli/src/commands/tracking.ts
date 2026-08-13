@@ -20,7 +20,7 @@
 import { EXIT_OK, type ExitCode } from '../exit.js';
 import { resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
-import { assertKnownOptions, withActor } from './entity.js';
+import { assertKnownOptions, requireArg, withActor } from './entity.js';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /**
@@ -54,6 +54,41 @@ async function trackingRefresh(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `tm8 pr merge <pull-request-entity-id>` — the forge write door. The server
+ * owns every guard (open + mergeable + CI not red per OBSERVED facts, the
+ * acting member's stored GitHub credential, `expectedHeadSha` pinned to the
+ * observed head unless --head overrides); this command binds the operation
+ * and renders the refusal or the merge sha, nothing more.
+ */
+function renderMerge(dto: unknown): string {
+  const r = dto as { repo?: unknown; number?: unknown; mergeSha?: unknown } | null;
+  if (r && typeof r.repo === 'string' && typeof r.number === 'number' && typeof r.mergeSha === 'string') {
+    return `merged ${r.repo}#${String(r.number)} — merge commit ${r.mergeSha}`;
+  }
+  return 'merge accepted';
+}
+
+async function prMerge(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['head', 'title', 'mutation-id']);
+  const id = requireArg(cmd, 0, '<pull-request-entity-id>');
+  const body: Record<string, unknown> = {
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+  };
+  const head = cmd.options.value('head');
+  if (head !== undefined) body.headSha = head;
+  const title = cmd.options.value('title');
+  if (title !== undefined) body.commitTitle = title;
+
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'tracking.pr.merge', {
+    params: { id },
+    body: withActor(cmd, body),
+  });
+  cmd.out.data(data, renderMerge);
+  return EXIT_OK;
+}
+
 export const TRACKING_COMMANDS: CommandModule[] = [
   { path: ['tracking', 'refresh'], run: trackingRefresh },
+  { path: ['pr', 'merge'], run: prMerge },
 ];

@@ -81,6 +81,9 @@ export const OPERATIONS = [
   { name: 'entities.commands.linkCommit', method: 'POST', path: '/v2/entities/:id/commands/link-commit',    kind: 'command', status: 'v1' },
   { name: 'entities.commands.gate',       method: 'POST', path: '/v2/entities/:id/commands/gate',           kind: 'command', status: 'v1' },
   { name: 'tracking.refresh',        method: 'POST',   path: '/v2/tracking/refresh',                        kind: 'command', status: 'v1' },
+  // The forge WRITE door — one verb, guarded server-side (open + mergeable per
+  // observed facts, CI not red, head unchanged), acting-member credential only.
+  { name: 'tracking.pr.merge',       method: 'POST',   path: '/v2/tracking/pr/:id/merge',                   kind: 'command', status: 'v1' },
 
   // edges
   { name: 'edges.list',              method: 'GET',    path: '/v2/edges',                                   kind: 'read',    status: 'v1' },

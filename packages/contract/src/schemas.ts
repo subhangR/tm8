@@ -92,7 +92,7 @@ import type {
   SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
   SessionTranscriptStuck,
   SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
-  TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
+  TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingPrMergeInput, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
@@ -1611,6 +1611,13 @@ export const WorkInputSchema: z.ZodType<WorkInput> = z.object({
 export const TrackingRefreshInputSchema: z.ZodType<TrackingRefreshInput> = z.object({
   ...commandContextShape,
   entityIds: z.array(EntityIdSchema).optional(),
+}).strict();
+
+export const TrackingPrMergeInputSchema: z.ZodType<TrackingPrMergeInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  headSha: z.string().min(1).optional(),
+  commitTitle: z.string().min(1).max(200).optional(),
 }).strict();
 
 export const LinkPrInputSchema: z.ZodType<LinkPrInput> = z.object({

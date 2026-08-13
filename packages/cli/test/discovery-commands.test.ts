@@ -108,7 +108,7 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('the projection holds 143 command paths; the registry is an honest subset of them', () => {
+  it('the projection holds 144 command paths; the registry is an honest subset of them', () => {
     // 123 catalog rows − 2 with no command (execution.prompt, bridge.fetchBlob)
     // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
@@ -135,7 +135,9 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // 142 -> 143 (2026-08-13): `task import-issue`, an ALIAS over
     // entities.create — the GitHub read is local network execution the
     // catalog does not model; ZERO new catalog rows.
-    expect(COMMAND_PATHS).toHaveLength(143);
+    // 143 -> 144 (2026-08-13, forge write): `pr merge` — the one catalog
+    // row this tranche adds carries its own command.
+    expect(COMMAND_PATHS).toHaveLength(144);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);
