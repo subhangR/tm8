@@ -19,6 +19,8 @@
 import type {
   ProjectFolderUploadEntry,
   ProjectFolderUploadGrant,
+  ProjectResource,
+  ProjectTrustLevel,
   SpaceId,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
@@ -26,6 +28,13 @@ import { sha256Hex, UploadCancelledError } from '../files/upload';
 
 export interface FolderImportOutcome {
   projectName: string;
+  /**
+   * The project `complete` created AND linked. Carried because a caller that
+   * wants to record what it just made (the Create Space dialog does) needs the
+   * id and the resolved absolute `workingDir`, and neither can be reconstructed
+   * from a name.
+   */
+  project: ProjectResource;
   fileCount: number;
   /** R8: files that already existed and were replaced in place. 0 on create. */
   replacedCount: number;
@@ -78,6 +87,20 @@ interface FolderImportDeps {
    */
   authorize?: () => Promise<void>;
   spaceId: SpaceId;
+  /**
+   * The project's name when it must differ from the folder's. Absent keeps the
+   * original behaviour — the imported root names the project.
+   */
+  projectName?: string;
+  /**
+   * The absolute parent the root is created under. Absent keeps the original
+   * behaviour: the destination browser's default path is the parent. A caller
+   * that already let the user choose passes it, so no second discovery read is
+   * made and the choice cannot silently change under it.
+   */
+  destinationParent?: string;
+  /** Importing bytes does not imply execution trust; the server defaults it off. */
+  trust?: ProjectTrustLevel;
   concurrency?: number;
   newMutationId?: () => string;
   checksum?: (blob: Blob) => Promise<string>;
@@ -106,6 +129,9 @@ export function startFolderImport(
     directories,
     authorize,
     spaceId,
+    projectName: projectNameOverride,
+    destinationParent: destinationParentOverride,
+    trust,
     concurrency = 3,
     newMutationId = () => crypto.randomUUID(),
     checksum = sha256Hex,
@@ -170,15 +196,19 @@ export function startFolderImport(
       await assertActive();
 
       advance({ phase: 'starting' });
-      const destinationParent = (await directories()).path;
+      // A caller that already let the user choose the destination passes it,
+      // so no second discovery read is made and the choice cannot change
+      // under them between picking and importing.
+      const destinationParent = destinationParentOverride ?? (await directories()).path;
       await assertActive();
 
       const initInput = {
         clientMutationId: newMutationId(),
-        projectName: rootName,
+        projectName: projectNameOverride ?? rootName,
         destinationParent,
         rootName,
         entries,
+        ...(trust ? { trust } : {}),
       };
       let merged = false;
       let grant: ProjectFolderUploadGrant;
@@ -239,6 +269,7 @@ export function startFolderImport(
       const done = await folderUploads.complete(sessionId, { clientMutationId: newMutationId() });
       completed = true;
       return {
+        project: done.project,
         projectName: done.project.name ?? rootName,
         fileCount: done.fileCount,
         replacedCount: done.replacedCount,
