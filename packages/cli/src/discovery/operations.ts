@@ -1447,6 +1447,33 @@ const ROWS: Record<OperationName, Row> = {
     reason: 'cli_runs_git_locally',
     notes: ['session branch → base is deliberately absent at every layer: landing on base goes through a PR'],
   },
+  'execution.gitCherryPick': {
+    cmd: null,
+    sum: "Apply commits onto a session's branch in its worktree; a conflict aborts (verified) and returns the conflicted paths with the worktree restored clean",
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'cherry-pick', 'commit', 'conflict', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitBranch': {
+    cmd: null,
+    sum: 'Create, rename or delete a branch in a session worktree; checked-out and protected branches refuse, an unmerged delete gates on force',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'branch', 'create', 'rename', 'delete', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitStash': {
+    cmd: null,
+    sum: 'Stash push/pop/drop per session worktree; a conflicted pop aborts (verified) retaining the entry, drop gates on force',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'stash', 'push', 'pop', 'drop', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
   'execution.transcript': {
     cmd: ['session', 'transcript'],
     syn: 'tm8 session transcript <work-session-id> [--last <count>]',
@@ -1904,7 +1931,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:f16859855fdb1279bd7e9fae8812bd4597ec6e4b647aabe43fdc41708890acc2';
+  'sha256:14c02f18b6d6e89238e1a73abea8b90a7e615d9f98dbdd50459c2968412af0b0';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -2138,6 +2165,37 @@ const COMMAND_ALIASES = new Map<string, {
     notes: ['an empty index is a refusal, never an empty commit'],
     examples: ["tm8 worktree commit <session-id> --message 'feat: …'"],
   }],
+  ['worktree cherry-pick', {
+    path: ['worktree', 'cherry-pick'],
+    syntax: 'tm8 worktree cherry-pick <session-id|worktree-id> <commit>... [--task <task-id>] [--mutation-id <id>]',
+    summary: "Apply commits onto the session's branch in its own worktree; a conflict aborts cleanly and is surfaced durably",
+    notes: [
+      'direction is fixed: FROM the named commits ONTO the session lane — no other checkout is ever touched',
+      'on conflict the WHOLE sequence aborts, the abort is verified from git state, and the conflicted paths land as a durable message + attention on the owning task anchor (fallback session, then worktree) before exit 6',
+    ],
+    examples: ['tm8 worktree cherry-pick <session-id> <oid>'],
+  }],
+  ['worktree branch', {
+    path: ['worktree', 'branch'],
+    syntax: 'tm8 worktree branch <create|rename|delete> <session-id|worktree-id> <name> [<new-name>] [--from <ref>] [--force] [--mutation-id <id>]',
+    summary: "Create, rename or delete a branch in the session's repo, behind the safety refusals",
+    notes: [
+      'a branch checked out in ANY worktree (the user’s primary tree included) refuses rename and delete',
+      'an unmerged delete refuses without --force and names what "unmerged" was measured against; the deleted tip oid stays in the receipt, reachable until gc',
+    ],
+    examples: ['tm8 worktree branch create <session-id> feat/spike', 'tm8 worktree branch delete <session-id> feat/spike --force'],
+  }],
+  ['worktree stash', {
+    path: ['worktree', 'stash'],
+    syntax: 'tm8 worktree stash <push|list|pop|drop> <session-id|worktree-id> [--message <text>] [--index <n>] [--force] [--task <task-id>] [--mutation-id <id>]',
+    summary: 'Stash WIP per worktree: push stores untracked too, a conflicted pop aborts cleanly and retains the entry, drop gates on --force',
+    notes: [
+      'push needs no force gate — storing untracked files is the SAFE direction of rollback’s asymmetry',
+      'a conflicted pop obeys the merge conflict rail: abort + verify clean, entry RETAINED, durable message + attention, exit 6',
+      'drop destroys the entry and refuses without --force; the receipt carries the oid that stays reachable until gc',
+    ],
+    examples: ['tm8 worktree stash push <session-id>', 'tm8 worktree stash pop <session-id>'],
+  }],
   ['worktree merge', {
     path: ['worktree', 'merge'],
     syntax: 'tm8 worktree merge <session-id|worktree-id> --from <ref> [--task <task-id>] [--mutation-id <id>]',
@@ -2162,7 +2220,10 @@ COMMAND_OPS.set('session rollback', ['entities.get', 'edges.list', 'messages.pos
 COMMAND_OPS.set('worktree stage', ['entities.get', 'edges.list']);
 COMMAND_OPS.set('worktree commit', ['entities.get', 'edges.list', 'messages.post']);
 COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
-COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge');
+COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_OPS.set('worktree branch', ['entities.get', 'edges.list', 'messages.post']);
+COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
 
 /**
  * A command is as available as its LEAST available stage. `file upload` that

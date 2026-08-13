@@ -89,12 +89,19 @@ import {
   type ExecutionGitCheckpointInput,
   type ExecutionGitCommitInput,
   type ExecutionGitMergeInput,
+  type ExecutionGitCherryPickInput,
+  type ExecutionGitBranchInput,
+  type ExecutionGitStashInput,
   type ExecutionGitRollbackInput,
   type SessionGitCheckpointResult,
   type SessionGitCommitResult,
   type SessionGitDiff,
   type SessionGitFile,
   type SessionGitMergeResult,
+  type SessionGitCherryPickResult,
+  type SessionGitBranchResult,
+  type SessionGitStashResult,
+  type SessionGitStashEntry,
   type SessionGitRollbackResult,
   type SessionGitStatus,
   type SessionJournalPage,
@@ -625,8 +632,15 @@ export function createFixtureSeam(): FixtureSeam {
       { status: '??', path: 'notes/scratch.md' },
     ] as SessionGitFile[],
     serial: 0xb2,
+    /** Stash entries (Tier 2 completion); index 0 is the newest, like git. */
+    stashes: [] as SessionGitStashEntry[],
+    /** Branches beside the lane's own; 'main' is base (protected), and the
+     *  lane branch itself is checked out — both refuse delete/rename. */
+    branches: ['main'] as string[],
   };
   const gitHead = (): string => gitLane.history[gitLane.history.length - 1] as string;
+  /** oid → the files a stash entry holds, so pop restores what push took. */
+  const stashedFiles = new Map<string, SessionGitFile[]>();
   const gitUnavailable = (
     sessionId: EntityId,
     kind: 'status' | 'diff',
@@ -1602,6 +1616,7 @@ export function createFixtureSeam(): FixtureSeam {
         dirty: { staged, unstaged, untracked, total: gitLane.dirty.length },
         files: [...gitLane.dirty],
         filesTruncated: false,
+        stashes: gitLane.stashes.map((e, index) => ({ ...e, index })),
         checkedAt: FIXTURE_NOW,
       });
     },
@@ -2639,6 +2654,146 @@ export function createFixtureSeam(): FixtureSeam {
           sessionId: id, worktreeId: 'fx-worktree-1' as EntityId,
           status: 'merged' as const, fromRef, fromOid: fxOid(0xcd), oid: gitHead(),
         });
+      },
+      /**
+       * Tier 2 completion verbs. Each HONOURS its arguments rather than
+       * echoing them, and mirrors the real refusal shapes: the scripted
+       * conflict triggers ('conflict/pick' commitish, a stash whose subject
+       * contains 'conflict') exist so the conflict UI is provable, the same
+       * idea as gitMerge's 'conflict/base'.
+       */
+      async gitCherryPick(id, input: ExecutionGitCherryPickInput): Promise<SessionGitCherryPickResult> {
+        requireGitLane(id);
+        if (input.commits.length === 0) {
+          throw new CollabError('invalid_input', 'cherry-pick needs at least one commit');
+        }
+        if (gitLane.dirty.length > 0) {
+          throw new CollabError('conflict', 'cherry-pick refused: the worktree has uncommitted changes', {
+            details: { hint: 'checkpoint or commit first, so a conflicted pick can abort to a clean state' },
+          });
+        }
+        if (input.commits.includes('conflict/pick')) {
+          return clone({
+            sessionId: id, worktreeId: 'fx-worktree-1' as EntityId,
+            status: 'conflict' as const, branch: gitLane.branch,
+            fromOids: input.commits.map((_, i) => fxOid(0xd0 + i)),
+            conflictedPaths: ['packages/server/src/facade/handlers/projects.ts'],
+          });
+        }
+        const newOids: string[] = [];
+        for (const _ of input.commits) {
+          gitLane.serial += 1;
+          const oid = fxOid(gitLane.serial);
+          gitLane.history.push(oid);
+          newOids.push(oid);
+        }
+        return clone({
+          sessionId: id, worktreeId: 'fx-worktree-1' as EntityId,
+          status: 'picked' as const, branch: gitLane.branch,
+          fromOids: input.commits.map((_, i) => fxOid(0xd0 + i)), newOids,
+        });
+      },
+      async gitBranch(id, input: ExecutionGitBranchInput): Promise<SessionGitBranchResult> {
+        requireGitLane(id);
+        const wtId = 'fx-worktree-1' as EntityId;
+        const refuseTouching = (name: string, verb: string): void => {
+          if (name === gitLane.branch) {
+            throw new CollabError('conflict', `${verb} refused: branch ${JSON.stringify(name)} is checked out in a worktree`, {
+              details: { reason: 'branch_checked_out' },
+            });
+          }
+          if (name === gitLane.baseRef) {
+            throw new CollabError('conflict', `${verb} refused: ${JSON.stringify(name)} is a protected branch (project default/base)`, {
+              details: { reason: 'branch_protected' },
+            });
+          }
+        };
+        if (input.action === 'create') {
+          if (gitLane.branches.includes(input.name) || input.name === gitLane.branch) {
+            throw new CollabError('conflict', `branch already exists: ${JSON.stringify(input.name)}`);
+          }
+          gitLane.branches.push(input.name);
+          return clone({ sessionId: id, worktreeId: wtId, action: 'create' as const, name: input.name, oid: gitHead() });
+        }
+        if (input.action === 'rename') {
+          refuseTouching(input.from, 'rename');
+          if (!gitLane.branches.includes(input.from)) {
+            throw new CollabError('not_found', `no such branch: ${JSON.stringify(input.from)}`);
+          }
+          gitLane.branches = gitLane.branches.map((b) => (b === input.from ? input.to : b));
+          return clone({ sessionId: id, worktreeId: wtId, action: 'rename' as const, from: input.from, to: input.to, oid: gitHead() });
+        }
+        refuseTouching(input.name, 'delete');
+        if (!gitLane.branches.includes(input.name)) {
+          throw new CollabError('not_found', `no such branch: ${JSON.stringify(input.name)}`);
+        }
+        // Any 'unmerged/…' name models an unmerged branch — the force gate.
+        const unmerged = input.name.startsWith('unmerged/');
+        if (unmerged && input.force !== true) {
+          throw new CollabError('conflict',
+            `branch ${JSON.stringify(input.name)} is not merged into ${JSON.stringify(gitLane.branch)} (the worktree's HEAD branch); refuse without force`, {
+              details: { reason: 'branch_unmerged', measuredAgainst: gitLane.branch },
+            });
+        }
+        gitLane.branches = gitLane.branches.filter((b) => b !== input.name);
+        return clone({
+          sessionId: id, worktreeId: wtId, action: 'delete' as const,
+          name: input.name, deletedOid: fxOid(0xde), measuredAgainst: gitLane.branch, forced: unmerged,
+        });
+      },
+      async gitStash(id, input: ExecutionGitStashInput): Promise<SessionGitStashResult> {
+        requireGitLane(id);
+        const wtId = 'fx-worktree-1' as EntityId;
+        if (input.action === 'push') {
+          if (gitLane.dirty.length === 0) {
+            return clone({ sessionId: id, worktreeId: wtId, action: 'push' as const, status: 'clean' as const, branch: gitLane.branch });
+          }
+          const files = [...gitLane.dirty];
+          gitLane.serial += 1;
+          const oid = fxOid(gitLane.serial);
+          gitLane.stashes.unshift({
+            index: 0, oid, date: FIXTURE_NOW,
+            subject: `On ${gitLane.branch}: ${input.message ?? 'WIP'}`,
+          });
+          gitLane.dirty = [];
+          // The stashed files ride in the subject-keyed side map so pop can
+          // honour them without a parallel git object store.
+          stashedFiles.set(oid, files);
+          return clone({ sessionId: id, worktreeId: wtId, action: 'push' as const, status: 'stashed' as const, oid, branch: gitLane.branch, files });
+        }
+        const index = input.action === 'pop' ? (input.index ?? 0) : input.index;
+        const entry = gitLane.stashes[index];
+        if (entry === undefined) {
+          throw new CollabError('not_found', `no stash entry at index ${index}`);
+        }
+        if (input.action === 'pop') {
+          if (gitLane.dirty.length > 0) {
+            throw new CollabError('conflict', 'stash pop refused: the worktree has uncommitted changes', {
+              details: { hint: 'checkpoint, commit, or stash first, so a conflicted pop can abort to a clean state' },
+            });
+          }
+          if (entry.subject.includes('conflict')) {
+            // Scripted conflict: aborted + verified server-side, entry RETAINED.
+            return clone({
+              sessionId: id, worktreeId: wtId, action: 'pop' as const, status: 'conflict' as const,
+              oid: entry.oid, branch: gitLane.branch,
+              conflictedPaths: ['packages/server/src/facade/handlers/projects.ts'],
+            });
+          }
+          gitLane.stashes.splice(index, 1);
+          const files = stashedFiles.get(entry.oid) ?? [];
+          stashedFiles.delete(entry.oid);
+          gitLane.dirty = [...gitLane.dirty, ...files];
+          return clone({ sessionId: id, worktreeId: wtId, action: 'pop' as const, status: 'popped' as const, oid: entry.oid, branch: gitLane.branch, files });
+        }
+        if (input.force !== true) {
+          throw new CollabError('conflict', `stash drop destroys stash@{${index}} (${entry.subject}); refuse without force`, {
+            details: { reason: 'stash_drop_needs_force', oid: entry.oid },
+          });
+        }
+        gitLane.stashes.splice(index, 1);
+        stashedFiles.delete(entry.oid);
+        return clone({ sessionId: id, worktreeId: wtId, action: 'drop' as const, droppedOid: entry.oid, subject: entry.subject });
       },
     },
 

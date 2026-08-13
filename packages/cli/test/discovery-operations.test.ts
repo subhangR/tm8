@@ -58,7 +58,7 @@ import { createOutput } from '../src/output.js';
 // public, deliberately commandless: the CLI already runs these verbs locally
 // (session-git.ts), and one action must not have two names.
 // 150 -> 152 (2026-08-12): projects.file.history + projects.file.blame (GET reads, with CLI commands).
-const EXPECTED_ROWS = 153;
+const EXPECTED_ROWS = 156;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -124,7 +124,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 153 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 156 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -163,14 +163,14 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('149 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('152 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 149, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 152, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -191,11 +191,14 @@ describe('the CLI command projection', () => {
       // The six execution.git* rows are deliberately commandless (see the
       // EXPECTED_ROWS note): the CLI runs the same verbs locally as
       // `tm8 session git-*`, and one action must not have two names.
+      'execution.gitBranch',
       'execution.gitCheckpoint',
+      'execution.gitCherryPick',
       'execution.gitCommit',
       'execution.gitDiff',
       'execution.gitMerge',
       'execution.gitRollback',
+      'execution.gitStash',
       'execution.gitStatus',
       'execution.prompt',
       // 2026-08-13 (merge): execution.terminal.start is UI-only on main.
@@ -226,8 +229,8 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the TWENTY commandless rows named exactly in the test above.
-    expect(counted).toBe(EXPECTED_ROWS - 20);
+    // Minus the TWENTY-THREE commandless rows named exactly in the test above.
+    expect(counted).toBe(EXPECTED_ROWS - 23);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {

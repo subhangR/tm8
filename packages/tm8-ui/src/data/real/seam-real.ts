@@ -370,6 +370,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       gitRollback: (id, input) => ops.gitRollback(id, input),
       gitCommit: (id, input) => ops.gitCommit(id, input),
       gitMerge: (id, input) => ops.gitMerge(id, input),
+      gitCherryPick: (id, input) => ops.gitCherryPick(id, input),
+      gitBranch: (id, input) => ops.gitBranch(id, input),
+      gitStash: (id, input) => ops.gitStash(id, input),
     },
 
     // -- credentials ---------------------------------------------------------

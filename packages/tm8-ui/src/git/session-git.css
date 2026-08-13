@@ -215,3 +215,67 @@
 .cv2-root .pn-git__empty {
   margin: var(--pn-space-4);
 }
+
+/* ── Tier 2 completion: cherry-pick / branch ops / stash ─────────────────── */
+
+.cv2-root .pn-git__branch-create,
+.cv2-root .pn-git__branch-rename,
+.cv2-root .pn-git__branch-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+}
+
+.cv2-root .pn-git__force {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__stash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-git__stash .pn-git__verb {
+  align-self: flex-start;
+}
+
+.cv2-root .pn-git__stash-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.cv2-root .pn-git__stash-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__stash-subject {
+  color: var(--pn-ink-2);
+}
+
+/* Tier-2 disclosure — the map's AGREE±: the rail stays scannable, the
+   completion verbs live one twist away. */
+.pn-git__more { margin-top: 6px; }
+.pn-git__more-summary {
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+  user-select: none;
+}
+.pn-git__more[open] .pn-git__more-summary { opacity: 1; }

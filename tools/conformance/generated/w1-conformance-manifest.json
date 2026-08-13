@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:f16859855fdb1279bd7e9fae8812bd4597ec6e4b647aabe43fdc41708890acc2",
+  "catalogDigest": "sha256:14c02f18b6d6e89238e1a73abea8b90a7e615d9f98dbdd50459c2968412af0b0",
   "catalog": {
-    "total": 153,
-    "v1": 151,
+    "total": 156,
+    "v1": 154,
     "reserved": 2,
-    "http": 152,
+    "http": 155,
     "ws": 1,
-    "registerableV1Http": 150,
+    "registerableV1Http": 153,
     "methods": {
       "GET": 57,
-      "POST": 68,
+      "POST": 71,
       "PATCH": 10,
       "DELETE": 10,
       "PUT": 7,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 60,
-      "command": 92,
+      "command": 95,
       "stream": 1
     },
-    "uniqueNames": 153,
-    "uniqueBindings": 153
+    "uniqueNames": 156,
+    "uniqueBindings": 156
   },
   "reservedOperations": [
     "search.query",
@@ -971,6 +971,27 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.gitCherryPick",
+        "method": "POST",
+        "path": "/v2/work-sessions/:workSessionId/git/cherry-pick",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.gitBranch",
+        "method": "POST",
+        "path": "/v2/work-sessions/:workSessionId/git/branch",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.gitStash",
+        "method": "POST",
+        "path": "/v2/work-sessions/:workSessionId/git/stash",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "entityKinds.list",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/entity-kinds",
@@ -1475,7 +1496,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 122
+    "unimplementedV1Http": 125
   },
   "schemas": {
     "additive": {
@@ -3474,6 +3495,58 @@
           "execution",
           "git",
           "merge"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitCherryPick",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitCherryPick",
+        "intentTags": [
+          "execution",
+          "git",
+          "cherry",
+          "pick"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitBranch",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitBranch",
+        "intentTags": [
+          "execution",
+          "git",
+          "branch"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitStash",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitStash",
+        "intentTags": [
+          "execution",
+          "git",
+          "stash"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

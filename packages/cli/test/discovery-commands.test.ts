@@ -108,7 +108,7 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('the projection holds 139 command paths; the registry is an honest subset of them', () => {
+  it('the projection holds 142 command paths; the registry is an honest subset of them', () => {
     // 123 catalog rows − 2 with no command (execution.prompt, bridge.fetchBlob)
     // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
@@ -130,7 +130,9 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // 134 -> 135 (2026-08-09): execution.dispatch (`session dispatch`).
     // 135 -> 137 (2026-08-12): collection add + collection remove.
     // 137 -> 139 (2026-08-12): project file-history + project blame.
-    expect(COMMAND_PATHS).toHaveLength(139);
+    // 139 -> 142 (2026-08-12): worktree cherry-pick|branch|stash aliases —
+    // three command paths over the Tier 2 catalog rows.
+    expect(COMMAND_PATHS).toHaveLength(142);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

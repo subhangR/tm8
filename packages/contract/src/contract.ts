@@ -2539,6 +2539,12 @@ export interface SessionGitStatus {
   /** Capped at the server's file cap; `filesTruncated` says when it cut. */
   files: SessionGitFile[];
   filesTruncated: boolean;
+  /**
+   * The worktree's stash entries (additive, Tier 2 completion) — the stash
+   * LIST rides on this read so `execution.gitStash` needs no read half.
+   * Absent (not empty) when the worktree is unavailable.
+   */
+  stashes?: SessionGitStashEntry[];
   checkedAt: string;
 }
 
@@ -2606,6 +2612,75 @@ export interface SessionGitCommitResult {
   oid: string;
   branch: string;
   files: SessionGitFile[];
+}
+
+/**
+ * execution.gitCherryPick — apply commits onto the session's branch, in the
+ * session's worktree. A conflict obeys merge's law exactly: the pick (the
+ * WHOLE sequence, for multi-commit picks) is aborted, the abort is verified
+ * server-side, and the conflicted paths come back as data.
+ */
+export interface ExecutionGitCherryPickInput extends CommandContext {
+  /** Commitishes to apply, oldest first. */
+  commits: string[];
+}
+
+export type SessionGitCherryPickResult =
+  | { sessionId: EntityId; worktreeId: EntityId; status: 'picked'; branch: string; fromOids: string[]; newOids: string[] }
+  | { sessionId: EntityId; worktreeId: EntityId; status: 'conflict'; branch: string; fromOids: string[]; conflictedPaths: string[] };
+
+/**
+ * execution.gitBranch — create/rename/delete a branch in the session's
+ * worktree. Refusals the server owns: a branch checked out in ANY worktree
+ * (the user's primary tree included), the project's default/base branch, and
+ * an unmerged delete without `force` — the refusal names what "unmerged" was
+ * measured against (the worktree's HEAD branch).
+ */
+export type ExecutionGitBranchInput = CommandContext & (
+  | { action: 'create'; name: string; from?: string }
+  | { action: 'rename'; from: string; to: string }
+  | { action: 'delete'; name: string; force?: boolean }
+);
+
+export type SessionGitBranchResult =
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'create'; name: string; oid: string }
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'rename'; from: string; to: string; oid: string }
+  | {
+      sessionId: EntityId; worktreeId: EntityId; action: 'delete'; name: string;
+      /** The deleted tip — reachable by this oid until gc; the receipt says so. */
+      deletedOid: string;
+      /** What "unmerged" was measured against. */
+      measuredAgainst: string;
+      forced: boolean;
+    };
+
+/**
+ * execution.gitStash — push/pop/drop per session worktree (the stash LIST
+ * rides on execution.gitStatus as `stashes`). Push stores untracked files
+ * (`-u`) with no force gate — storing is the safe direction of rollback's
+ * untracked asymmetry. A conflicted pop aborts (verified), RETAINS the entry
+ * and answers the conflicted paths as data. Drop destroys an entry and
+ * therefore gates on `force`, returning the oid that stays reachable until gc.
+ */
+export type ExecutionGitStashInput = CommandContext & (
+  | { action: 'push'; message?: string }
+  | { action: 'pop'; index?: number }
+  | { action: 'drop'; index: number; force?: boolean }
+);
+
+export type SessionGitStashResult =
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'push'; status: 'stashed'; oid: string; branch: string; files: SessionGitFile[] }
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'push'; status: 'clean'; branch: string }
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'pop'; status: 'popped'; oid: string; branch: string; files: SessionGitFile[] }
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'pop'; status: 'conflict'; oid: string; branch: string; conflictedPaths: string[] }
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'drop'; droppedOid: string; subject: string };
+
+/** One stash entry, as listed on execution.gitStatus. */
+export interface SessionGitStashEntry {
+  index: number;
+  oid: string;
+  subject: string;
+  date: string;
 }
 
 /** A conflict is data with the worktree restored clean — see the input's doc. */

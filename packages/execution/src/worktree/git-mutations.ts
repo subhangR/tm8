@@ -489,3 +489,471 @@ export async function mergeFromRef(params: {
   }
   return { status: 'conflict', fromOid, conflictedPaths };
 }
+
+// ═══ Tier 2 completion: cherry-pick / branch ops / stash ════════════════════
+//
+// The same laws as above, verbatim: argv-only git, no client paths, loud typed
+// refusals, and — for the two verbs that can conflict (cherry-pick, stash
+// pop) — the merge verb's contract copied exactly: abort, VERIFY the abort
+// took by reading git state, and return the conflicted paths as DATA.
+
+/**
+ * Branch names for the branch verbs, validated to GIT'S OWN rules
+ * (git-check-ref-format), not the stricter revision-ref subset above.
+ *
+ * The distinction is deliberate: `assertSafeRefName` guards CLIENT-SUPPLIED
+ * revision expressions and refuses shell metacharacters as defense in depth,
+ * but git's ref rules PERMIT `$ ( ) ; & > ' " | { }` — so a branch named
+ * `feat/x;echo>pwned` legitimately exists in the wild and the branch verbs
+ * must be able to create, rename and delete it. That is safe here because the
+ * invoker is execFile argv (no shell EVER sees the name) and the name rides
+ * behind a literal `--` in every branch invocation. What git itself bans is
+ * still refused: option shapes, control bytes and space, `~ ^ : ? * [ \`,
+ * `..`, `@{`, bad dot/slash/.lock placement, and the literal `HEAD`.
+ */
+export function assertGitLegalBranchName(name: string): void {
+  const refuse = (why: string): never => {
+    throw new WorktreeError(
+      `illegal branch name ${JSON.stringify(name)}: ${why}`,
+      'invalid_input', 'illegal_branch_name',
+    );
+  };
+  if (name.length === 0 || name.length > 255) refuse('empty or too long');
+  if (name.startsWith('-')) refuse('leading dash reads as an option');
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f ]/.test(name)) refuse('control characters or spaces');
+  if (/[~^:?*\[\\]/.test(name)) refuse('characters git-check-ref-format bans');
+  if (name.includes('..') || name.includes('@{')) refuse('revision-range syntax');
+  if (name.startsWith('/') || name.endsWith('/') || name.includes('//')) refuse('bad slash placement');
+  if (name.endsWith('.lock') || name.endsWith('.')) refuse('dot placement git refuses');
+  if (name.split('/').some((c) => c.startsWith('.') || c.endsWith('.lock'))) refuse('dot placement git refuses');
+  if (name === 'HEAD') refuse('HEAD is not a branch name');
+}
+
+/** Branches checked out in ANY worktree of this repo, primary tree included. */
+export async function checkedOutBranches(worktreePath: string): Promise<Map<string, string>> {
+  const res = await git(['worktree', 'list', '--porcelain'], worktreePath);
+  if (res.code !== 0) {
+    throw new WorktreeError('git worktree list failed', 'internal', 'worktree_list_failed', { stderr: res.stderr.trim() });
+  }
+  const out = new Map<string, string>();
+  let dir: string | null = null;
+  for (const line of res.stdout.split('\n')) {
+    if (line.startsWith('worktree ')) dir = line.slice('worktree '.length);
+    else if (line.startsWith('branch refs/heads/') && dir !== null) {
+      out.set(line.slice('branch refs/heads/'.length), dir);
+    }
+  }
+  return out;
+}
+
+async function branchExists(worktreePath: string, name: string): Promise<boolean> {
+  const res = await git(['rev-parse', '-q', '--verify', `refs/heads/${name}`], worktreePath);
+  return res.code === 0;
+}
+
+/**
+ * The two refusals every destructive branch verb shares: a branch that is
+ * checked out in ANY worktree (mutating it would re-point someone's checkout,
+ * the user's primary tree included), and the caller-declared protected set
+ * (the project's default/base branch — the graph knows it, this layer only
+ * enforces it).
+ */
+async function refuseProtectedBranch(
+  worktreePath: string,
+  name: string,
+  verb: string,
+  protectedBranches: readonly string[],
+): Promise<void> {
+  const checkedOut = await checkedOutBranches(worktreePath);
+  const where = checkedOut.get(name);
+  if (where !== undefined) {
+    throw new WorktreeError(
+      `${verb} refused: branch ${JSON.stringify(name)} is checked out in worktree ${where}`,
+      'conflict', 'branch_checked_out', { branch: name, worktree: where },
+    );
+  }
+  if (protectedBranches.includes(name)) {
+    throw new WorktreeError(
+      `${verb} refused: ${JSON.stringify(name)} is a protected branch (project default/base)`,
+      'conflict', 'branch_protected', { branch: name, protectedBranches: [...protectedBranches] },
+    );
+  }
+}
+
+export interface BranchCreateResult {
+  name: string;
+  /** The commit the new branch points at. */
+  oid: string;
+}
+
+/** Create a branch at `from` (default: the worktree's HEAD). Never checks it out. */
+export async function branchCreate(params: {
+  worktreePath: string;
+  name: string;
+  /** Commitish the branch starts at; defaults to HEAD. */
+  from?: string;
+}): Promise<BranchCreateResult> {
+  await assertWorktreeDir(params.worktreePath);
+  assertGitLegalBranchName(params.name);
+  const oid = params.from === undefined
+    ? await headOid(params.worktreePath)
+    : await resolveCommitish(params.worktreePath, params.from);
+  if (await branchExists(params.worktreePath, params.name)) {
+    throw new WorktreeError(
+      `branch already exists: ${JSON.stringify(params.name)}`,
+      'conflict', 'branch_exists', { branch: params.name },
+    );
+  }
+  const res = await git(['branch', '--', params.name, oid], params.worktreePath);
+  if (res.code !== 0) {
+    throw new WorktreeError('git branch failed', 'invalid_input', 'branch_create_failed', { stderr: res.stderr.trim() });
+  }
+  return { name: params.name, oid };
+}
+
+export interface BranchRenameResult {
+  from: string;
+  to: string;
+  oid: string;
+}
+
+/** Rename a branch that is checked out NOWHERE and is not protected. */
+export async function branchRename(params: {
+  worktreePath: string;
+  from: string;
+  to: string;
+  /** Branches the caller's graph marks untouchable (project default/base). */
+  protectedBranches?: readonly string[];
+}): Promise<BranchRenameResult> {
+  await assertWorktreeDir(params.worktreePath);
+  assertGitLegalBranchName(params.from);
+  assertGitLegalBranchName(params.to);
+  if (!(await branchExists(params.worktreePath, params.from))) {
+    throw new WorktreeError(`no such branch: ${JSON.stringify(params.from)}`, 'not_found', 'branch_not_found');
+  }
+  await refuseProtectedBranch(params.worktreePath, params.from, 'rename', params.protectedBranches ?? []);
+  if (await branchExists(params.worktreePath, params.to)) {
+    throw new WorktreeError(
+      `target branch already exists: ${JSON.stringify(params.to)}`,
+      'conflict', 'branch_exists', { branch: params.to },
+    );
+  }
+  const oidRes = await git(['rev-parse', '--verify', `refs/heads/${params.from}`], params.worktreePath);
+  const res = await git(['branch', '-m', '--', params.from, params.to], params.worktreePath);
+  if (res.code !== 0) {
+    throw new WorktreeError('git branch -m failed', 'invalid_input', 'branch_rename_failed', { stderr: res.stderr.trim() });
+  }
+  return { from: params.from, to: params.to, oid: oidRes.stdout.trim() };
+}
+
+export interface BranchDeleteResult {
+  name: string;
+  /** The deleted tip — still reachable by this oid until gc, and the receipt says so. */
+  deletedOid: string;
+  /** What "unmerged" was measured against when force was required. */
+  measuredAgainst: string;
+  forced: boolean;
+}
+
+/**
+ * Delete a branch that is checked out NOWHERE and is not protected.
+ *
+ * "Unmerged" is MEASURED, and the measurement is named in both the refusal
+ * and the result: the branch tip is unmerged iff it is not an ancestor of the
+ * worktree's current HEAD branch. An unmerged delete refuses without
+ * `force: true`; a forced delete still returns the tip oid, which keeps the
+ * commits reachable (`git branch <name> <oid>` resurrects it) until gc.
+ */
+export async function branchDelete(params: {
+  worktreePath: string;
+  name: string;
+  force?: boolean;
+  protectedBranches?: readonly string[];
+}): Promise<BranchDeleteResult> {
+  await assertWorktreeDir(params.worktreePath);
+  assertGitLegalBranchName(params.name);
+  if (!(await branchExists(params.worktreePath, params.name))) {
+    throw new WorktreeError(`no such branch: ${JSON.stringify(params.name)}`, 'not_found', 'branch_not_found');
+  }
+  await refuseProtectedBranch(params.worktreePath, params.name, 'delete', params.protectedBranches ?? []);
+
+  const measuredAgainst = (await currentBranch(params.worktreePath)) ?? 'HEAD';
+  const tip = await git(['rev-parse', '--verify', `refs/heads/${params.name}`], params.worktreePath);
+  const deletedOid = tip.stdout.trim();
+  const merged = await git(['merge-base', '--is-ancestor', deletedOid, 'HEAD'], params.worktreePath);
+  const isMerged = merged.code === 0;
+  if (!isMerged && params.force !== true) {
+    throw new WorktreeError(
+      `branch ${JSON.stringify(params.name)} is not merged into ${JSON.stringify(measuredAgainst)} (the worktree's HEAD branch); refuse without force`,
+      'conflict', 'branch_unmerged',
+      { branch: params.name, measuredAgainst, tip: deletedOid, hint: 'pass force to delete anyway — the tip oid stays in the receipt' },
+    );
+  }
+  const res = await git(
+    ['branch', isMerged ? '-d' : '-D', '--', params.name],
+    params.worktreePath,
+  );
+  if (res.code !== 0) {
+    throw new WorktreeError('git branch -d failed', 'conflict', 'branch_delete_failed', { stderr: res.stderr.trim() });
+  }
+  return { name: params.name, deletedOid, measuredAgainst, forced: !isMerged };
+}
+
+async function cherryPickInProgress(worktreePath: string): Promise<boolean> {
+  const res = await git(['rev-parse', '-q', '--verify', 'CHERRY_PICK_HEAD'], worktreePath);
+  return res.code === 0;
+}
+
+export type CherryPickResult =
+  | { status: 'picked'; branch: string; fromOids: string[]; newOids: string[] }
+  | { status: 'conflict'; branch: string; fromOids: string[]; conflictedPaths: string[] };
+
+/**
+ * Apply one or more commits onto the worktree's branch, in the worktree.
+ *
+ * THE CONTRACT ON CONFLICT is mergeFromRef's, copied verbatim: collect the
+ * conflicted paths, `cherry-pick --abort`, VERIFY the abort took (no
+ * CHERRY_PICK_HEAD, clean status, HEAD back where it started — or throw
+ * `cherry_pick_abort_failed` loudly), and return the paths as DATA. A
+ * multi-commit pick aborts the WHOLE sequence: partial application is a
+ * half-state a later verb would trip over.
+ */
+export async function cherryPick(params: {
+  worktreePath: string;
+  /** Commitishes to apply, oldest first. Each resolves before anything runs. */
+  commits: readonly string[];
+  expectedBranch?: string;
+  identity?: GitIdentity;
+}): Promise<CherryPickResult> {
+  const { branch } = await assertMutableWorktree(params);
+  await refuseMidMerge(params.worktreePath, 'cherry-pick');
+  if (await cherryPickInProgress(params.worktreePath)) {
+    throw new WorktreeError(
+      'cherry-pick refused: a cherry-pick is already in progress in this worktree',
+      'conflict', 'cherry_pick_in_progress',
+    );
+  }
+  if (params.commits.length === 0) {
+    throw new WorktreeError('cherry-pick needs at least one commit', 'invalid_input', 'no_commits');
+  }
+  const dirty = await changedFiles(params.worktreePath);
+  if (dirty.length > 0) {
+    throw new WorktreeError(
+      'cherry-pick refused: the worktree has uncommitted changes',
+      'conflict', 'dirty_worktree',
+      { hint: 'checkpoint or commit first, so a conflicted pick can abort to a clean state', files: dirty.length },
+    );
+  }
+
+  const fromOids: string[] = [];
+  for (const c of params.commits) fromOids.push(await resolveCommitish(params.worktreePath, c));
+  const before = await headOid(params.worktreePath);
+
+  const picked = await git(
+    [...identityArgs(params.identity), 'cherry-pick', '--allow-empty', ...fromOids],
+    params.worktreePath,
+  );
+  if (picked.code === 0) {
+    const listed = await git(['rev-list', '--reverse', `${before}..HEAD`], params.worktreePath);
+    const newOids = listed.stdout.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+    return { status: 'picked', branch, fromOids, newOids };
+  }
+
+  const conflicted = await git(['diff', '--name-only', '--diff-filter=U', '-z'], params.worktreePath);
+  const conflictedPaths = conflicted.stdout.split('\u0000').filter((p) => p.length > 0);
+  const sequencing = await cherryPickInProgress(params.worktreePath);
+  if (!sequencing && conflictedPaths.length === 0) {
+    throw new WorktreeError(
+      `git cherry-pick failed before starting: ${picked.stderr.trim()}`,
+      'conflict', 'cherry_pick_failed', { stderr: picked.stderr.trim() },
+    );
+  }
+
+  const aborted = await git(['cherry-pick', '--abort'], params.worktreePath);
+  const stillPicking = await cherryPickInProgress(params.worktreePath);
+  const residue = await changedFiles(params.worktreePath);
+  const after = await headOid(params.worktreePath);
+  if (aborted.code !== 0 || stillPicking || residue.length > 0 || after !== before) {
+    throw new WorktreeError(
+      'cherry-pick conflicted AND the abort did not restore a clean worktree — manual repair needed',
+      'internal', 'cherry_pick_abort_failed',
+      { stderr: aborted.stderr.trim(), stillPicking, residue: residue.length, headMoved: after !== before, conflictedPaths },
+    );
+  }
+  return { status: 'conflict', branch, fromOids, conflictedPaths };
+}
+
+// ── stash, per worktree ─────────────────────────────────────────────────────
+
+export interface StashEntry {
+  /** Position in the stash list; stash@{index}. */
+  index: number;
+  oid: string;
+  subject: string;
+  date: string;
+}
+
+/** stash@{n} is SERVER-FORMATTED from an integer — never a client string. */
+function stashRef(index: number): string {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new WorktreeError(`stash index must be a non-negative integer, got ${index}`, 'invalid_input', 'invalid_stash_index');
+  }
+  return `stash@{${index}}`;
+}
+
+export async function stashList(worktreePath: string): Promise<StashEntry[]> {
+  await assertWorktreeDir(worktreePath);
+  const res = await git(
+    ['stash', 'list', '--format=%H\u001f%ci\u001f%gs'],
+    worktreePath,
+  );
+  if (res.code !== 0) {
+    throw new WorktreeError('git stash list failed', 'internal', 'stash_list_failed', { stderr: res.stderr.trim() });
+  }
+  const entries: StashEntry[] = [];
+  for (const line of res.stdout.split('\n')) {
+    if (line.trim() === '') continue;
+    const [oid, date, subject] = line.split('\u001f');
+    if (!oid || !date) continue;
+    entries.push({ index: entries.length, oid, date, subject: subject ?? '' });
+  }
+  return entries;
+}
+
+export type StashPushResult =
+  | { status: 'stashed'; oid: string; branch: string; files: ChangedFile[] }
+  | { status: 'clean'; branch: string };
+
+/**
+ * Stash ALL work-in-progress, untracked included (`-u`): unlike rollback,
+ * pushing untracked files into a stash STORES them, so no force gate — the
+ * verb is the safe direction of the asymmetry. A clean tree is a success
+ * that stores nothing, mirroring checkpoint.
+ */
+export async function stashPush(params: {
+  worktreePath: string;
+  expectedBranch?: string;
+  message?: string;
+  identity?: GitIdentity;
+}): Promise<StashPushResult> {
+  const { branch } = await assertMutableWorktree(params);
+  await refuseMidMerge(params.worktreePath, 'stash push');
+  const message = params.message ?? `tm8 stash ${new Date().toISOString()}`;
+  assertSafeMessage(message);
+  const files = await changedFiles(params.worktreePath);
+  if (files.length === 0) return { status: 'clean', branch };
+  const res = await git(
+    [...identityArgs(params.identity), 'stash', 'push', '-u', '-m', message],
+    params.worktreePath,
+  );
+  if (res.code !== 0) {
+    throw new WorktreeError('git stash push failed', 'internal', 'stash_push_failed', { stderr: res.stderr.trim() });
+  }
+  const top = await git(['rev-parse', '--verify', 'refs/stash'], params.worktreePath);
+  return { status: 'stashed', oid: top.stdout.trim(), branch, files };
+}
+
+export type StashPopResult =
+  | { status: 'popped'; branch: string; oid: string; files: ChangedFile[] }
+  | { status: 'conflict'; branch: string; oid: string; conflictedPaths: string[] };
+
+/**
+ * Pop a stash entry into a CLEAN worktree. The clean-tree requirement exists
+ * for the same reason merge's does: it is what makes the conflict contract
+ * honest. On conflict the entry is NOT dropped (git keeps it), the apply is
+ * rolled back (`reset --hard` + `clean -fd` — every untracked file present
+ * came from the failed pop, the tree was clean), and the abort is VERIFIED:
+ * clean status AND the stash entry still present, or `stash_pop_abort_failed`
+ * is thrown loudly.
+ */
+export async function stashPop(params: {
+  worktreePath: string;
+  expectedBranch?: string;
+  index?: number;
+}): Promise<StashPopResult> {
+  const { branch } = await assertMutableWorktree(params);
+  await refuseMidMerge(params.worktreePath, 'stash pop');
+  const index = params.index ?? 0;
+  const ref = stashRef(index);
+  const entries = await stashList(params.worktreePath);
+  const entry = entries[index];
+  if (entry === undefined) {
+    throw new WorktreeError(`no stash entry at index ${index}`, 'not_found', 'stash_not_found', { entries: entries.length });
+  }
+  const dirty = await changedFiles(params.worktreePath);
+  if (dirty.length > 0) {
+    throw new WorktreeError(
+      'stash pop refused: the worktree has uncommitted changes',
+      'conflict', 'dirty_worktree',
+      { hint: 'checkpoint, commit, or stash first, so a conflicted pop can abort to a clean state', files: dirty.length },
+    );
+  }
+
+  const popped = await git(['stash', 'pop', ref], params.worktreePath);
+  if (popped.code === 0) {
+    return { status: 'popped', branch, oid: entry.oid, files: await changedFiles(params.worktreePath) };
+  }
+
+  const conflicted = await git(['diff', '--name-only', '--diff-filter=U', '-z'], params.worktreePath);
+  const conflictedPaths = conflicted.stdout.split('\u0000').filter((p) => p.length > 0);
+  if (conflictedPaths.length === 0) {
+    throw new WorktreeError(
+      `git stash pop failed: ${popped.stderr.trim()}`,
+      'conflict', 'stash_pop_failed', { stderr: popped.stderr.trim() },
+    );
+  }
+
+  // Abort: the tree was clean before the pop, so everything in it now came
+  // from the failed apply — reset tracked, clean untracked, then VERIFY.
+  const reset = await git(['reset', '--hard', 'HEAD'], params.worktreePath);
+  const cleaned = await git(['clean', '-fd'], params.worktreePath);
+  const residue = await changedFiles(params.worktreePath);
+  const stillStashed = (await stashList(params.worktreePath)).some((e) => e.oid === entry.oid);
+  if (reset.code !== 0 || cleaned.code !== 0 || residue.length > 0 || !stillStashed) {
+    throw new WorktreeError(
+      'stash pop conflicted AND the abort did not restore a clean worktree with the entry retained — manual repair needed',
+      'internal', 'stash_pop_abort_failed',
+      { residue: residue.length, stashRetained: stillStashed, conflictedPaths },
+    );
+  }
+  return { status: 'conflict', branch, oid: entry.oid, conflictedPaths };
+}
+
+export interface StashDropResult {
+  /** The destroyed entry's commit — reachable by oid until gc, and the receipt says so. */
+  droppedOid: string;
+  subject: string;
+}
+
+/**
+ * Destroy one stash entry. This is the stash family's one unrecoverable-ish
+ * act (the entry leaves every ref), so it GATES ON FORCE unconditionally —
+ * and the result carries the dropped oid, which keeps the content reachable
+ * (`git stash store <oid>` resurrects it) until gc.
+ */
+export async function stashDrop(params: {
+  worktreePath: string;
+  index: number;
+  force?: boolean;
+}): Promise<StashDropResult> {
+  await assertWorktreeDir(params.worktreePath);
+  const ref = stashRef(params.index);
+  const entries = await stashList(params.worktreePath);
+  const entry = entries[params.index];
+  if (entry === undefined) {
+    throw new WorktreeError(`no stash entry at index ${params.index}`, 'not_found', 'stash_not_found', { entries: entries.length });
+  }
+  if (params.force !== true) {
+    throw new WorktreeError(
+      `stash drop destroys ${ref} (${entry.subject}); refuse without force`,
+      'conflict', 'stash_drop_needs_force',
+      { index: params.index, oid: entry.oid, hint: 'pass force to drop — the oid stays in the receipt until gc' },
+    );
+  }
+  const res = await git(['stash', 'drop', ref], params.worktreePath);
+  if (res.code !== 0) {
+    throw new WorktreeError('git stash drop failed', 'internal', 'stash_drop_failed', { stderr: res.stderr.trim() });
+  }
+  return { droppedOid: entry.oid, subject: entry.subject };
+}
