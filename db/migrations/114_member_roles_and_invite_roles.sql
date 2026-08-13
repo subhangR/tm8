@@ -438,4 +438,125 @@ grant execute on function public.create_invite(uuid,integer,timestamptz,uuid,tex
 grant execute on function public.set_member_role(uuid,uuid,text,uuid,text) to tm8_app;
 grant execute on function public.preview_invite(text) to tm8_app;
 
+
+-- -----------------------------------------------------------------------------
+-- internal.w2_space_settings_view — SUPERSEDES 029.
+--
+-- WHY THIS IS HERE. This migration makes `role` a REQUIRED field on every
+-- invite in `SpaceSettingsView` (contract.ts), but 029's builder — the one
+-- `set_space_default_channel` returns through — never emitted it. So the moment
+-- a Space had a single invite, `spaces.defaultChannel.set` produced a payload
+-- its own frozen schema rejects, and `parseSpaceSettings`
+-- (services/w2/menu-default-channel.ts) turned that into
+-- `upstream_unavailable: default-channel result violates the frozen
+-- SpaceSettingsView contract`.
+--
+-- MEASURED, not theorised: `packages/cli/test/integration/space.test.ts:543`
+-- creates an invite and then sets the default channel, and went red on exactly
+-- this. The TypeScript reader (`identity-spaces.ts loadInvites`) was updated
+-- with the contract; this SQL projection is the second door onto the same view
+-- and was missed.
+--
+-- The whole function is restated because Postgres has no partial redefinition.
+-- The ONLY change from 029 is the `'role', invite_row.role` line.
+-- -----------------------------------------------------------------------------
+create or replace function internal.w2_space_settings_view(p_space_id uuid)
+returns jsonb language plpgsql stable security definer
+set search_path = public, internal, pg_temp as $$
+declare
+  space_row public.spaces;
+  menu_row public.space_menu_configs;
+  menu_result jsonb;
+  result jsonb;
+begin
+  select * into space_row from public.spaces where id = p_space_id;
+  if space_row.id is null then raise exception 'Space not found' using errcode = 'P0002'; end if;
+  select * into menu_row from public.space_menu_configs where space_id = p_space_id;
+  menu_result := internal.w2_render_menu(
+    p_space_id, menu_row.schema_version, menu_row.revision, menu_row.payload
+  );
+
+  select jsonb_build_object(
+    'space', jsonb_build_object(
+      'id', space_value.id,
+      'name', space_value.name,
+      'description', space_value.description,
+      'memberCount', (
+        select count(*)::integer from public.members member_count_row
+         where member_count_row.space_id = space_value.id
+      ),
+      'unreadTotal', (
+        select count(*)::integer
+          from public.messages message_row
+          join public.entities message_entity
+            on message_entity.id = message_row.entity_id and message_entity.deleted_at is null
+          join public.entities anchor_entity
+            on anchor_entity.id = message_row.anchor_id and anchor_entity.space_id = space_value.id
+          join public.members viewer
+            on viewer.space_id = space_value.id and viewer.identity_id = internal.identity_id()
+          left join public.read_marks mark_row
+            on mark_row.anchor_id = message_row.anchor_id
+           and mark_row.member_id = viewer.entity_id
+         where message_row.author_id is distinct from viewer.entity_id
+           and (mark_row.last_read_at is null
+             or message_row.entity_id > internal.uuid_at(mark_row.last_read_at))
+      ),
+      'githubRepo', space_value.github_repo,
+      'createdAt', internal.w2_iso(space_value.created_at)
+    ),
+    'members', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'actor', jsonb_build_object(
+          'id', member_row.entity_id,
+          'kind', 'member',
+          'displayName', coalesce(member_row.display_name, profile_row.display_name, 'Member'),
+          'avatar', profile_row.avatar,
+          'role', member_row.role,
+          'isAgent', false
+        ),
+        'role', member_row.role,
+        'joinedAt', internal.w2_iso(member_row.joined_at)
+      ) order by member_row.joined_at, member_row.entity_id)
+        from public.members member_row
+        left join public.user_profiles profile_row
+          on profile_row.identity_id = member_row.identity_id
+       where member_row.space_id = space_value.id
+    ), '[]'::jsonb),
+    'invites', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', invite_row.id,
+        'code', invite_row.code,
+        'role', invite_row.role,
+        'maxUses', invite_row.max_uses,
+        'uses', invite_row.use_count,
+        'expiresAt', case when invite_row.expires_at is null then null
+                          else internal.w2_iso(invite_row.expires_at) end,
+        'revoked', invite_row.revoked_at is not null
+      ) order by invite_row.created_at desc, invite_row.id desc)
+        from public.space_invites invite_row
+       where invite_row.space_id = space_value.id
+    ), '[]'::jsonb),
+    'taskAxes', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', axis_row.id,
+        'spaceId', axis_row.space_id,
+        'name', axis_row.name,
+        'axisValues', axis_row.axis_values,
+        'kind', axis_row.kind,
+        'position', axis_row.position
+      ) order by axis_row.position, axis_row.name, axis_row.id)
+        from public.task_axes axis_row
+       where axis_row.space_id = space_value.id
+    ), '[]'::jsonb),
+    'menu', menu_result,
+    'defaultChannelId', space_value.default_channel_id,
+    'defaultInteractionProfileId', space_value.default_interaction_profile_id,
+    'settingsRevision', space_value.settings_revision
+  ) into result
+    from public.spaces space_value
+   where space_value.id = p_space_id;
+  return result;
+end
+$$;
+
 reset role;
