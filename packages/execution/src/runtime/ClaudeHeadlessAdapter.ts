@@ -45,6 +45,7 @@ interface ThreadState {
   stderr: string;
   closeRequested: boolean;
   interruptRequested: boolean;
+  unusable: boolean;
   booting: boolean;
   closed: boolean;
 }
@@ -172,6 +173,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       stderr: '',
       closeRequested: false,
       interruptRequested: false,
+      unusable: false,
       booting: true,
       closed: false,
     };
@@ -210,6 +212,9 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     if (state.interruptRequested) {
       throw new AgentRuntimeError(`agent thread '${threadId}' is closing after interrupt`, 'thread_closing');
     }
+    if (state.unusable) {
+      throw new AgentRuntimeError(`agent thread '${threadId}' is closing after a runtime failure`, 'thread_closing');
+    }
     if (state.active) {
       throw new AgentRuntimeError(`agent thread '${threadId}' already has a turn in progress`, 'turn_in_progress');
     }
@@ -241,7 +246,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
 
   async interrupt(threadId: string): Promise<boolean> {
     const state = this.requireThread(threadId);
-    if (!state.active || state.closeRequested) return false;
+    if (!state.active || state.closeRequested || state.interruptRequested || state.unusable) return false;
     state.interruptRequested = true;
     const signalled = state.child.kill('SIGINT');
     if (!signalled) state.interruptRequested = false;
@@ -278,7 +283,8 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     return [...this.threads.keys()];
   }
 
-  canResumeInterruptedThread(threadId: string): boolean {
+  /** Same-process hint only; durable resume authority belongs to the caller. */
+  hasInterruptedThreadHint(threadId: string): boolean {
     return this.interruptedThreads.has(threadId);
   }
 
@@ -416,7 +422,6 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       event = parsed;
     } catch {
       this.failActiveTurn(state, 'invalid_json', 'Claude emitted a non-JSON stream event');
-      state.child.kill('SIGTERM');
       return;
     }
 
@@ -449,7 +454,6 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
         'native_session_mismatch',
         'Claude initialized a different native session than TM8 pre-minted',
       );
-      state.child.kill('SIGTERM');
     }
   }
 
@@ -551,10 +555,14 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
   }
 
   private failActiveTurn(state: ThreadState, code: string, message: string): void {
+    const firstFailure = !state.unusable;
+    state.unusable = true;
     const active = state.active;
-    if (!active) return;
-    active.queue.push({ kind: 'error', code, message });
-    this.finishActiveTurn(state, 'error');
+    if (active) {
+      active.queue.push({ kind: 'error', code, message });
+      this.finishActiveTurn(state, 'error');
+    }
+    if (firstFailure && !state.closed) state.child.kill('SIGTERM');
   }
 
   private handleProcessError(state: ThreadState, error: Error): void {

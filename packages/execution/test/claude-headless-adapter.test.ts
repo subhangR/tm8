@@ -211,7 +211,10 @@ describe('ClaudeHeadlessAdapter', () => {
         state: 'running',
       },
     });
-    expect(await runtime.interrupt(thread.threadId)).toBe(true);
+    const accepted = runtime.interrupt(thread.threadId);
+    const duplicate = runtime.interrupt(thread.threadId);
+    await expect(accepted).resolves.toBe(true);
+    await expect(duplicate).resolves.toBe(false);
     await expect(collectIterator(iterator)).resolves.toEqual([
       {
         kind: 'tool_result',
@@ -246,7 +249,7 @@ describe('ClaudeHeadlessAdapter', () => {
       expected: true,
       exit_code: 0,
     });
-    expect(runtime.canResumeInterruptedThread(thread.threadId)).toBe(true);
+    expect(runtime.hasInterruptedThreadHint(thread.threadId)).toBe(true);
     await expect(runtime.startThread(thread)).rejects.toMatchObject<Partial<AgentRuntimeError>>({
       code: 'resume_required',
     });
@@ -267,7 +270,7 @@ describe('ClaudeHeadlessAdapter', () => {
     const recorded = JSON.parse(await readFile(argvFile, 'utf8')) as { args: string[] };
     expect(recorded.args).toContain('--resume');
     expect(recorded.args).not.toContain('--session-id');
-    expect(runtime.canResumeInterruptedThread(thread.threadId)).toBe(false);
+    expect(runtime.hasInterruptedThreadHint(thread.threadId)).toBe(false);
     await expect(
       collect(runtime.sendTurn(thread.threadId, { text: 'resumed' })),
     ).resolves.toContainEqual({ kind: 'text', text: 'echo:resumed:1' });

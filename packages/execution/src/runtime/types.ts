@@ -79,7 +79,7 @@ export type TurnItem =
 export interface StartAgentThreadInput {
   /** Durable TM8 message-thread root id; the registry is keyed by this value. */
   threadId: string;
-  /** TM8-minted UUID passed to Claude as `--session-id`. */
+  /** TM8-minted UUID passed as `--session-id`, or `--resume` for R8. */
   nativeSessionId: string;
   model: string;
   /** Absolute and immutable for the thread: Claude transcripts are cwd-keyed. */
