@@ -130,9 +130,9 @@ describe('every row resolves through the client and the error mapping', () => {
     expect(resolved.size).toBe(EXPECTED_ROWS);
     // 136 HTTP rows produced an honest 8; the single WS row produced usage 2
     // without a request. Both are resolutions; neither is a fall-through.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(160);
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(162);
     expect([...resolved.entries()].filter(([, c]) => c === 2)).toEqual([['events.subscribe', 2]]);
-    expect(requested).toHaveLength(160);
+    expect(requested).toHaveLength(162);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
@@ -165,7 +165,7 @@ describe('every row resolves through the client and the error mapping', () => {
         expect(data.echoed, op.name).toContain(bindPath(op.name, params(op.name)));
       }
     }
-    expect(httpRows).toBe(160);
+    expect(httpRows).toBe(162);
   });
 });
 

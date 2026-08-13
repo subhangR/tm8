@@ -119,7 +119,7 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 129 -> 133: the four credentials.* v1 rows join the `none` population.
     // 135 -> 136: execution.dispatch, a v1 row, joins `none` too.
     // 142 -> 148 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(unknownRows).toHaveLength(159);
+    expect(unknownRows).toHaveLength(161);
     expect(unknownRows.every((r) => r.availabilitySource === 'none')).toBe(true);
   }, 15_000);
 });

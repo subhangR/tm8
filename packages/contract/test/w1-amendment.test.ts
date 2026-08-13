@@ -99,7 +99,11 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 58, POST: 74 /* +1 2026-08-13: tracking.pr.merge; +1 109: auth.invite.resolve, a POST-with-kind-read so the code stays out of the URL */, PATCH: 11 /* +1 109: spaces.members.updateRole */, DELETE: 10, PUT: 7, WS: 1 });
+    // MEASURED on the #204+#209 union: auth.claim.status (GET read) and
+    // auth.claim (POST command) join auth.invite.resolve (POST-with-kind-read,
+    // so an invite code never reaches a URL) and spaces.members.updateRole
+    // (PATCH). GET 58->59, POST 73->75, PATCH 10->11.
+    }).toEqual({ GET: 59, POST: 75, PATCH: 11, DELETE: 10, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
