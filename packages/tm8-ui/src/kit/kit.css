@@ -374,3 +374,17 @@
   font-size: 9px;
   color: var(--pn-ink-soft, var(--pn-ink));
 }
+
+/* --- BrandMark — the tm8 product mark ------------------------------------
+   Sized in `em` so one rule serves every brand line at whatever font-size it
+   is set at (11.5px tab bar, 13px auth and invite stages). Unscoped by
+   `.cv2-root` on purpose: the invite landing and the auth stage render outside
+   it, and a mark that vanishes on the sign-in screen is the whole point of the
+   mark missed. `aspect-ratio` reserves the box before the image decodes, so the
+   brand line does not reflow on load. */
+.kit-brandmark {
+  height: 1.15em;
+  width: auto;
+  aspect-ratio: 77 / 128;
+  vertical-align: -0.22em;
+}

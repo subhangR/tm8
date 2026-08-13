@@ -21,6 +21,7 @@ import {
   AuthStage,
   AuthStatus,
 } from './AuthCard';
+import { BrandMark } from '../kit';
 import { useAuthActions } from './gate-context';
 import { ACCOUNT_MENU, SERVER, TOKENS } from './specimen';
 import {
@@ -46,7 +47,9 @@ export function FrameAccountMenu(props: FrameProps) {
           the menu's ANCHOR only — the real header is the shell's, and this
           frame renders standalone so it needs something to hang from. */}
       <div className="auth-appbar">
-        <span className="auth-stage__brand">◈ tm8</span>
+        <span className="auth-stage__brand">
+          <BrandMark /> tm8
+        </span>
         <span className="auth-appbar__rule" aria-hidden />
         <span className="auth-appbar__space">
           <span className="auth-dot auth-dot--brand" aria-hidden />
