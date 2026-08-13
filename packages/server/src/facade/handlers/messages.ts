@@ -13,8 +13,10 @@
  */
 import {
   CollabError,
+  MessagePartSchema,
   decodeCursor,
   encodeCursor,
+  type MessagePart,
   type MessageView,
   type Page,
 } from '@tm8/contract';
@@ -85,6 +87,33 @@ export async function toMessageViews(
   );
   const stats = new Map(replyStats.map((r) => [r.root_message_id, r]));
 
+  const partRows = await q.query<{
+    message_id: string;
+    seq: number;
+    kind: MessagePart['kind'];
+    payload: unknown;
+    created_at: string;
+  }>(
+    `select message_id, seq, kind, payload,
+            ${MICROS('created_at')} as created_at
+       from public.message_parts
+      where message_id = any($1::uuid[])
+      order by message_id, seq`,
+    [rows.map((r) => r.id)],
+  );
+  const parts = new Map<string, MessagePart[]>();
+  for (const row of partRows) {
+    const part = MessagePartSchema.parse({
+      seq: Number(row.seq),
+      kind: row.kind,
+      payload: row.payload,
+      createdAt: iso(row.created_at),
+    });
+    const messageParts = parts.get(row.message_id) ?? [];
+    messageParts.push(part);
+    parts.set(row.message_id, messageParts);
+  }
+
   /*
    * The facepile names PEOPLE, so it needs actor summaries, not raw ids — and
    * one author is typically in several threads on a page, so they are loaded
@@ -101,6 +130,7 @@ export async function toMessageViews(
     const content = contentOf(row);
     if (state.kind !== 'message' || content.kind !== 'message') continue;
     const stat = stats.get(row.id);
+    const messageParts = parts.get(row.id);
     views.push({
       ...summary,
       state,
@@ -112,6 +142,7 @@ export async function toMessageViews(
       replyParticipants: (stat?.author_ids ?? [])
         .map((id) => replyActors.get(id))
         .filter((actor): actor is NonNullable<typeof actor> => actor !== undefined),
+      ...(messageParts ? { parts: messageParts } : {}),
     });
   }
   return views;

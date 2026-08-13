@@ -107,6 +107,15 @@ export interface W2MessagesHandoffsServiceOptions {
     readonly principalFor: (reservation: ReservedMessageDelivery) => unknown;
   };
   readonly handoffDelivery?: HandoffDeliveryAdapter;
+  /**
+   * Post-commit wake seam for TM8 Chat. It receives the already-projected
+   * messages and can only schedule work; message persistence never depends on
+   * the callback succeeding.
+   */
+  readonly onMessagesCommitted?: (
+    requesterIdentityId: string,
+    messages: readonly MessageView[],
+  ) => void;
 }
 
 interface BatchRpcResult {
@@ -476,6 +485,8 @@ export class W2MessagesHandoffsService {
         delivery: this.options.messageDelivery as unknown as MessageDeliveryPort,
       });
     }
+
+    this.options.onMessagesCommitted?.(viewerIdentityId, stored.messages);
 
     return {
       messageBatchId: stored.result.messageBatchId,

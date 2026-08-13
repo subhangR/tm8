@@ -303,9 +303,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // credentials.* add four mounted operations.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(SURFACE).toHaveLength(154);
-    expect(rows).toHaveLength(154);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(154);
+    expect(SURFACE).toHaveLength(155);
+    expect(rows).toHaveLength(155);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(155);
   });
 
   /**
@@ -471,7 +471,8 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // This is that re-measurement: `ls db/migrations/*.sql | wc -l` = 94.
     // Keeping either branch's 93 would have been the previous-plus-one error
     // the comment above warns against, arrived at by two correct measurements.
-    expect(server.appliedMigrations.length).toBe(98);
+    // Re-measured on the TM8 Chat tree: 99 files through 104.
+    expect(server.appliedMigrations.length).toBe(99);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -685,6 +686,9 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // 2026-08-02: auth.logout with a bare {} and no bearer session names nothing
   // to revoke — a handler-reached invalid_input, not a :166 gate rejection.
   'auth.logout',
+  // Chat is registered even without a provider runtime; the handler validates
+  // the requested model/identity before returning its degraded-mode refusal.
+  'chat.threads.start',
   // 2026-08-12: collections.addItem validates its body in-handler — the sweep's
   // synthetic path params name no real collection, a handler-reached 400.
   'collections.addItem',

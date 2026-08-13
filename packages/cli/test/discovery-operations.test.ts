@@ -58,7 +58,7 @@ import { createOutput } from '../src/output.js';
 // public, deliberately commandless: the CLI already runs these verbs locally
 // (session-git.ts), and one action must not have two names.
 // 150 -> 152 (2026-08-12): projects.file.history + projects.file.blame (GET reads, with CLI commands).
-const EXPECTED_ROWS = 157;
+const EXPECTED_ROWS = 158;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -124,7 +124,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 156 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 158 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -170,7 +170,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 153, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 154, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -184,6 +184,7 @@ describe('the CLI command projection', () => {
     // oblige four command implementations in the same change.
     expect(commandless.sort()).toEqual([
       'bridge.fetchBlob',
+      'chat.threads.start',
       'credentials.delete',
       'credentials.loginSessions.finish',
       'credentials.loginSessions.start',
@@ -230,8 +231,8 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the 24 commandless rows named exactly in the test above.
-    expect(counted).toBe(EXPECTED_ROWS - 24);
+    // Minus the 25 commandless rows named exactly in the test above.
+    expect(counted).toBe(EXPECTED_ROWS - 25);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {

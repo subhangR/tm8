@@ -73,9 +73,23 @@ import {
 } from './pty/index.js';
 import { readTm8SessionCookie } from './http/session-cookie.js';
 import { WsAdmissionController } from './http/ws-admission.js';
+import {
+  ChatOrchestrator,
+  ChatTurnPublisher,
+  type AgentRuntime,
+  type ResolveChatLaunchConfig,
+} from './chat/index.js';
+
+export interface ChatBootstrapOptions {
+  readonly runtime: AgentRuntime;
+  readonly resolveLaunchConfig: ResolveChatLaunchConfig;
+  readonly onError?: (error: unknown) => void;
+}
 
 export interface BootstrapOptions {
   readonly config?: ServerConfig;
+  /** Provider runtime is injected by the execution lane; absent stays 501. */
+  readonly chat?: ChatBootstrapOptions;
   /**
    * Start the R26 scheduler and its periodic jobs.
    *
@@ -218,6 +232,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // Declared before the registration block because `presence.get` is only
   // mounted when a presence source exists — see registerEventHandlers.
   const presence = new InMemoryPresenceStore();
+  const subscriptions = new SubscriptionRegistry();
+  const chat = db && opts.chat
+    ? new ChatOrchestrator({
+        db,
+        runtime: opts.chat.runtime,
+        publisher: new ChatTurnPublisher(subscriptions, (await owner!()).identityId),
+        resolveLaunchConfig: opts.chat.resolveLaunchConfig,
+        ...(opts.chat.onError ? { onError: opts.chat.onError } : {}),
+      })
+    : undefined;
 
   // Voice-channel roster (voice plan §2). Ephemeral for the same reason
   // presence is, but sourced from LiveKit webhooks rather than from client
@@ -278,6 +302,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         stateDir: pathResolve(dataDir, 'folder-uploads'),
       },
       ...(credentials ? { credentials } : {}),
+      ...(chat ? { chat: { orchestrator: chat, dataDir } } : {}),
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
       resolveAuthoredFromWorkSessionId: async (ctx) => {
         const claimed = commandEnvelope(ctx).workSessionId ?? null;
@@ -305,7 +330,6 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     );
   }
 
-  const subscriptions = new SubscriptionRegistry();
   // NOT a stand-in for the durable sequence — that misreading is why this
   // comment was rewritten. The durable per-Space seq is a committed table row
   // (`public.space_event_seq`, 003:282) minted by the capture trigger inside
