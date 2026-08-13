@@ -169,6 +169,13 @@ export interface ShellLaunchResult {
 
 export interface ShellSessionLauncherOptions {
   pty: PtyHostService;
+  /**
+   * The origin of the node this terminal belongs to — `SpawnService`'s own
+   * `baseUrl`. Written into the shell's `TM8_BASE_URL` so the `tm8` on its PATH
+   * addresses THIS node; required for the reason stated on
+   * `ComposeShellEnvInput.baseUrl`.
+   */
+  baseUrl: string;
   /** The SERVER's environment. Injected for tests; defaults to `process.env`. */
   env?: NodeJS.ProcessEnv;
   logger?: Logger;
@@ -176,11 +183,13 @@ export interface ShellSessionLauncherOptions {
 
 export class ShellSessionLauncher {
   private readonly pty: PtyHostService;
+  private readonly baseUrl: string;
   private readonly env: NodeJS.ProcessEnv;
   private readonly logger: Logger | undefined;
 
   constructor(options: ShellSessionLauncherOptions) {
     this.pty = options.pty;
+    this.baseUrl = options.baseUrl;
     this.env = options.env ?? process.env;
     this.logger = options.logger;
   }
@@ -205,7 +214,7 @@ export class ShellSessionLauncher {
   launch(request: ShellLaunchRequest): ShellLaunchResult {
     const shell = resolveLoginShell(this.env);
     const command = loginShellCommand(shell);
-    const env = composeShellEnv({ shell, parentEnv: this.env });
+    const env = composeShellEnv({ shell, parentEnv: this.env, baseUrl: this.baseUrl });
 
     const { reused } = this.pty.spawnIfAbsent({
       sessionId: request.sessionId,

@@ -1133,8 +1133,13 @@ export function resolveAgentBinary(binary: string, path: string): string | null 
  * Returns null rather than throwing when it cannot be made: a server on a
  * read-only or unbuilt checkout should still spawn agents that do useful work,
  * just without the reporting verbs. Failing the spawn outright is a worse trade.
+ *
+ * EXPORTED because a vanilla terminal needs the same directory for the same
+ * reason (`shell-env.ts`). Two copies of this resolution would be two places to
+ * get the `tm8`-vs-`index.js` distinction above wrong, and the second copy is
+ * the one nobody would remember to fix.
  */
-function cliBinDir(): string | null {
+export function cliBinDir(): string | null {
   const dir = fileURLToPath(new URL('../../../cli/dist', import.meta.url));
   const entry = join(dir, 'index.js');
   if (!existsSync(entry)) return null;

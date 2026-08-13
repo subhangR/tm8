@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 import { SpawnService } from '../src/spawn/SpawnService.js';
+import { cliBinDir } from '../src/spawn/manifest.js';
 import {
   FALLBACK_LOGIN_SHELL,
   SHELL_ENV_KEYS,
@@ -100,6 +101,7 @@ describe('the vanilla-terminal argv is closed', () => {
 });
 
 describe('the vanilla-terminal environment', () => {
+  const BASE_URL = 'http://127.0.0.1:7778';
   const parentEnv: NodeJS.ProcessEnv = {
     PATH: '/usr/bin:/bin',
     HOME: '/home/tm8',
@@ -125,7 +127,7 @@ describe('the vanilla-terminal environment', () => {
    * the same shape `credential-env.test.ts` uses, for the same reason.
    */
   it('emits exactly SHELL_ENV_KEYS and nothing else', () => {
-    const env = composeShellEnv({ shell: '/bin/bash', parentEnv });
+    const env = composeShellEnv({ shell: '/bin/bash', parentEnv, baseUrl: BASE_URL });
     expect(Object.keys(env).sort()).toEqual([...SHELL_ENV_KEYS].sort());
   });
 
@@ -133,17 +135,68 @@ describe('the vanilla-terminal environment', () => {
     // SHELL_ENV_KEYS is the MAXIMAL set. A server with no COLORTERM must
     // produce a child with no COLORTERM — an empty string is a different value
     // from absent, and shells branch on presence.
-    const env = composeShellEnv({ shell: '/bin/bash', parentEnv: { PATH: '/usr/bin' } });
+    const env = composeShellEnv({
+      shell: '/bin/bash',
+      parentEnv: { PATH: '/usr/bin' },
+      baseUrl: BASE_URL,
+    });
     expect(env.COLORTERM).toBeUndefined();
     expect(env.TMPDIR).toBeUndefined();
     expect(Object.keys(env).every((key) => (SHELL_ENV_KEYS as readonly string[]).includes(key))).toBe(true);
-    // The four written unconditionally still arrive, so a bare server still
+    // The five written unconditionally still arrive, so a bare server still
     // produces a usable terminal.
-    expect(Object.keys(env).sort()).toEqual(['LANG', 'PATH', 'SHELL', 'TERM', 'TM8_TERMINAL']);
+    expect(Object.keys(env).sort()).toEqual([
+      'LANG',
+      'PATH',
+      'SHELL',
+      'TERM',
+      'TM8_BASE_URL',
+      'TM8_TERMINAL',
+    ]);
+  });
+
+  /**
+   * THE REPORTED BUG: `tm8 help` → `zsh: command not found: tm8`, in a terminal
+   * opened from tm8 for the express purpose of running tm8 commands.
+   *
+   * `@tm8/cli` is a workspace package with a `bin` entry that nothing installs
+   * globally, so the CLI is reachable ONLY because the server puts its
+   * directory on PATH — `composeEnv` does it for agents, and this composer did
+   * not. Asserting the FIRST segment rather than mere membership: prepending is
+   * what keeps a stale global `tm8` from shadowing this server's own build.
+   */
+  it('puts the tm8 CLI first on PATH', () => {
+    const dir = cliBinDir();
+    expect(
+      dir,
+      'packages/cli must be built (`bun run build`) or this assertion measures nothing',
+    ).not.toBeNull();
+    const env = composeShellEnv({ shell: '/bin/bash', parentEnv, baseUrl: BASE_URL });
+    expect(env.PATH.split(':')[0]).toBe(dir);
+    // …and the server's own PATH is still there behind it.
+    expect(env.PATH.split(':')).toContain('/usr/bin');
+  });
+
+  /**
+   * A `tm8` on PATH that addresses the WRONG NODE is worse than no `tm8` at
+   * all: it answers. `readEnv` falls back to `http://127.0.0.1:4610`, so
+   * without this the terminal on a node listening anywhere else would quietly
+   * talk to a different one.
+   */
+  it('points that CLI at the node that opened the terminal', () => {
+    const env = composeShellEnv({ shell: '/bin/bash', parentEnv, baseUrl: BASE_URL });
+    expect(env.TM8_BASE_URL).toBe(BASE_URL);
+    // The ADDRESS is given; the IDENTITY is not. The CLI's credential store
+    // refuses to serve any process carrying an agent marker, so emitting one
+    // here would take the terminal from "acts as the human who logged in" to
+    // "unauthenticated", as well as handing a shell the spawner's token.
+    expect(env.TM8_SESSION_ID).toBeUndefined();
+    expect(env.TM8_TEAM_MEMBER_ID).toBeUndefined();
+    expect(env.TM8_ACTOR_ID).toBeUndefined();
   });
 
   it('carries no agent identity and no vendor or node credential', () => {
-    const env = composeShellEnv({ shell: '/bin/bash', parentEnv });
+    const env = composeShellEnv({ shell: '/bin/bash', parentEnv, baseUrl: BASE_URL });
     // Named individually as well, because the key-set assertion above states
     // WHAT is present and this states WHY these four in particular are not.
     // TM8_AGENT_TOKEN is the spawning human's FULL identity, and a shell is a
@@ -159,10 +212,30 @@ describe('the vanilla-terminal environment', () => {
     // `PtyHostService.spawn` resolves `env.SHELL || process.env.SHELL || …`.
     // Writing the resolved shell into SHELL is what makes the host pick THIS
     // value rather than re-deriving one that could differ.
-    const env = composeShellEnv({ shell: '/bin/dash', parentEnv });
+    const env = composeShellEnv({ shell: '/bin/dash', parentEnv, baseUrl: BASE_URL });
     expect(env.SHELL).toBe('/bin/dash');
   });
 });
+
+/**
+ * A SERVICE-SHAPED environment, and this test file cannot use `process.env`.
+ *
+ * The PTY inherits `PATH` from whatever the server's own environment is, and
+ * this suite's parent process is frequently a shell tm8 itself spawned — which
+ * already carries the CLI directory. Inheriting that would make the terminal's
+ * `tm8` resolve for a reason the SERVER did not supply, so the very assertion
+ * added for this bug would pass against the unfixed composer. Measured: it did.
+ *
+ * `/usr/bin:/bin:/usr/sbin:/sbin` is the PATH a macOS launchd agent or a
+ * systemd unit actually hands tm8-server, which is where the bug was reported.
+ * `HOME` and `SHELL` stay real: `-l -i` must source the operator's genuine
+ * login profile, because that profile is the hop most able to undo this.
+ */
+const SERVICE_ENV: NodeJS.ProcessEnv = {
+  PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+  ...(process.env.HOME ? { HOME: process.env.HOME } : {}),
+  ...(process.env.SHELL ? { SHELL: process.env.SHELL } : {}),
+};
 
 describe('SpawnService.startShell — a real shell, no agent', () => {
   let dataDir: string;
@@ -182,6 +255,7 @@ describe('SpawnService.startShell — a real shell, no agent', () => {
       baseUrl: 'http://127.0.0.1:4614',
       dataDir,
       nodeId: 'test-node',
+      env: SERVICE_ENV,
     });
   });
 
@@ -209,6 +283,27 @@ describe('SpawnService.startShell — a real shell, no agent', () => {
     // `hasSession` are both true of a shell that died on its first instruction.
     pty.write(result.sessionId, 'echo TM8-SHELL-ALIVE\n');
     await waitForOutput(pty, result.sessionId, 'TM8-SHELL-ALIVE');
+  });
+
+  /**
+   * THE REPORTED BUG, END TO END, in the shell a member actually gets.
+   *
+   * The composer test above proves `PATH` was composed correctly; this proves
+   * the value SURVIVES the hop that composition cannot control. `-l -i` sources
+   * the login profile, and a profile is free to rewrite `PATH` — macOS
+   * `path_helper` reorders it on every login shell, and a `.zshrc` that assigns
+   * rather than prepends would drop the entry entirely. So the oracle is the
+   * shell's own resolution after all of that has run, which is the only thing
+   * the member's `tm8 help` depends on.
+   */
+  it('resolves `tm8` in the shell, after the login profile has run', async () => {
+    const result = await service.startShell(AUTH, { spaceId: SPACE_ID, projectId: PROJECT_ID });
+
+    // `command -v` prints the resolved path and prints NOTHING when unresolved,
+    // so the marker distinguishes the two rather than just proving the shell is
+    // alive. Before the fix this printed `TM8-RESOLVED-` with an empty tail.
+    pty.write(result.sessionId, 'echo "TM8-RESOLVED-$(command -v tm8)"\n');
+    await waitForOutput(pty, result.sessionId, 'TM8-RESOLVED-/');
   });
 
   /**
@@ -251,7 +346,7 @@ describe('SpawnService.startShell — a real shell, no agent', () => {
     const epochBefore = pty.getEpoch(first.sessionId);
 
     // Same session id, second start — the double-click / reconnect.
-    const launcher = new ShellSessionLauncher({ pty });
+    const launcher = new ShellSessionLauncher({ pty, baseUrl: 'http://127.0.0.1:4610' });
     const again = launcher.launch({ sessionId: first.sessionId, cwd: projectDir });
     expect(again.reused).toBe(true);
 
