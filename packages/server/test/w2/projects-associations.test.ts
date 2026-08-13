@@ -229,7 +229,7 @@ describe('W2.G06 projects and association correction facade', () => {
     }
   });
 
-  it('allows authenticated non-admin users to browse, but not create, local directories', async () => {
+  it('refuses authenticated non-admin users both browsing and creating local directories', async () => {
     const registry = registered(new FakeDb());
     const identity = {
       kind: 'bearer' as const,
@@ -237,8 +237,23 @@ describe('W2.G06 projects and association correction facade', () => {
       token: 'test-token',
       nodeAdmin: false,
     };
-    const listing = await handler(registry, 'projects.directories.list')(
+
+    // Browsing used to be open to any authenticated user — the one filesystem
+    // verb that was. That was survivable while a node had a single account; it
+    // is not once space roles are writable and invite-bound signup makes
+    // ordinary members routine, because the default browse scope is the OS
+    // filesystem root and `project-files.ts` shares the same roots to read
+    // file CONTENTS. A non-admin cannot create a project from what they find
+    // (below), so browsing bought them nothing anyway.
+    await expect(handler(registry, 'projects.directories.list')(
       request('projects.directories.list', { identity }),
+    )).rejects.toMatchObject({ code: 'forbidden' });
+
+    // The node admin still browses, so the picker itself is not broken.
+    const listing = await handler(registry, 'projects.directories.list')(
+      request('projects.directories.list', {
+        identity: { ...identity, nodeAdmin: true },
+      }),
     );
     expect(ProjectDirectoryListingSchema.safeParse(listing).success).toBe(true);
 
