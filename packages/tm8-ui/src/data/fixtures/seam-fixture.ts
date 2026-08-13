@@ -56,6 +56,7 @@ import {
   type ExecutionDispatchInput,
   type ExecutionDispatchResult,
   type ExecutionSpawnInput,
+  type ExecutionTerminalStartInput,
   type ExecutionResumeInput,
   type ExecutionTerminateInput,
   type FeedItem,
@@ -1901,6 +1902,25 @@ export function createFixtureSeam(): FixtureSeam {
         if (input.content !== undefined) {
           const e = extrasOf(id);
           e.content = { ...e.content, ...input.content } as EntityContent;
+          /**
+           * `dueDate` IS PATCHED INTO CONTENT AND READ OUT OF STATE, so the
+           * double has to make the same crossing the node does. Server-side
+           * `update_task_content` writes `tasks.due_date` and `stateOf`
+           * projects it (`entity-read.ts:1112`) while `contentOf` never
+           * carries it — so a fixture that merged this into content alone
+           * would leave the list tile, the `dueDate` sort and the next open
+           * of the dialog all reading the OLD date while the write reported
+           * success. That is the fixture lying about a real write, which is
+           * worse than not supporting it.
+           *
+           * An explicit `null` clears, exactly as it does at the node; an
+           * ABSENT key changes nothing, which is `coalesce`'s behaviour there.
+           */
+          const patched = input.content as Record<string, unknown>;
+          if (s.state.kind === 'task' && 'dueDate' in patched) {
+            const due = patched.dueDate;
+            s.state.dueDate = typeof due === 'string' ? due : null;
+          }
         }
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
@@ -2073,6 +2093,46 @@ export function createFixtureSeam(): FixtureSeam {
         return commandResult(s);
       },
       /**
+       * A VANILLA TERMINAL (101).
+       *
+       * `agentTool: null` AND `sessionKind: 'shell'`, both written out, because
+       * the fixture is what every list test reads and this row is the one that
+       * proves an allow-list filter. A fixture that only ever produced agent
+       * sessions would let `sessionKind === 'agent'` pass the whole suite.
+       *
+       * No teammate to `requireSummary`, no task, and no parent: a terminal is
+       * a root started by a human, not work descending from something.
+       */
+      async startTerminal(input: ExecutionTerminalStartInput) {
+        const startedAt = tick();
+        const s = insertSummary({
+          id: nextId('ws'),
+          kind: 'work_session',
+          title: input.title ?? 'Terminal',
+          spaceId: input.spaceId,
+          parentId: null,
+          state: {
+            kind: 'work_session', status: 'running',
+            agentTool: null, model: null,
+            shareMode: 'none', startedAt, exitedAt: null,
+            sessionKind: 'shell',
+          },
+        });
+        extras.set(s.id, {
+          content: {
+            kind: 'work_session', nodeId: 'node-fixture',
+            launchProjectId: input.projectId ?? null,
+            workingOn: [], transcriptDoc: null,
+          },
+          connections: clone(NO_CONNECTIONS),
+          capabilities: { ...CAPS_FULL },
+        });
+        const snap = livenessBySpace.get(input.spaceId);
+        setLiveness(input.spaceId, [...(snap?.liveEntityIds ?? []), s.id], snap?.nodeBootId);
+        emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+        return commandResult(s);
+      },
+      /**
        * Mirrors `write_edge`: an UPSERT on (src, dst, type), and it re-projects
        * `state.assignees` the way the node's read path does — the fixture would
        * otherwise create an edge that no surface could see, which is precisely
@@ -2120,7 +2180,7 @@ export function createFixtureSeam(): FixtureSeam {
           throw new CollabError('invariant_violation', `${collectionId} is not a collection`);
         }
         const member = requireSummary(input.entityId);
-        // Same refusal as `set_collection_item` (migration 100): `contains`
+        // Same refusal as `set_collection_item` (migration 101): `contains`
         // is registered non-acyclic, so nothing else stops a collection from
         // listing itself in its own items.
         if (member.id === collection.id) {
