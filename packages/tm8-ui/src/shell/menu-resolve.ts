@@ -194,6 +194,11 @@ export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: strin
   dashboard: { label: 'Dashboard', icon: '⌂', art: VIEW_ART.dashboard },
   feed: { label: 'Feed', icon: '≋', art: VIEW_ART.feed },
   inbox: { label: 'Inbox', icon: '◹', art: VIEW_ART.inbox },
+  // 2026-08-13: the cross-entity conversation browser. Label "Messages"
+  // (plural) rather than "Chat" or "Conversations" because the rail's job is
+  // to name the CONTENT the row reaches, and the content is every message in
+  // the space regardless of which entity it was posted on.
+  messages: { label: 'Messages', icon: '✉', art: VIEW_ART.messages },
   workspace: { label: 'Workspace', icon: '⌗', art: VIEW_ART.workspace },
   graph: { label: 'Graph', icon: '◉', art: VIEW_ART.graph },
   channels: { label: 'Channels', icon: '#', art: VIEW_ART.channels },

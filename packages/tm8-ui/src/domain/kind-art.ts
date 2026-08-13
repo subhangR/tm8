@@ -212,6 +212,23 @@ export const VIEW_ART = {
   ],
   /** The hash, shared with the `channel` kind ON PURPOSE — it is that list. */
   channels: KIND_ART.channel,
+  /**
+   * TWO overlapping bubbles — a conversation, not a message.
+   *
+   * Deliberately NOT `KIND_ART.message` (a single bubble), and the reason is
+   * the distinction the whole view rests on: the `message` kind mark means ONE
+   * message, while this row opens the browser over every CONVERSATION in the
+   * space. The doubled silhouette is that difference drawn.
+   *
+   * Unlike `files`, there is no collision hazard to avoid here — `message` is
+   * `strategy: 'anchored'` with no slug, so it can never be a rail kind row and
+   * its mark never appears in this column. The two marks are kept apart because
+   * they mean different things, not because they would sit side by side.
+   */
+  messages: [
+    'M6.2 4.8V3.9a1.6 1.6 0 0 1 1.6-1.6h4.6a1.6 1.6 0 0 1 1.6 1.6v3.4a1.6 1.6 0 0 1-1.6 1.6h-.5',
+    'M2.2 6.4a1.6 1.6 0 0 1 1.6-1.6h5.2a1.6 1.6 0 0 1 1.6 1.6v3a1.6 1.6 0 0 1-1.6 1.6H5.1L2.2 13.4z',
+  ],
   /** A branch: trunk with a fork, node dots at the tips (Git UI wave). */
   git: [
     'M5.2 5.4a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z',

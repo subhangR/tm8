@@ -28,7 +28,9 @@ import { CUSTOM_KIND_FALLBACK } from './types';
  * (that command is a §10.7 deferred seam amendment).
  */
 // Revision 9 (2026-08-12, Git UI landing): the Git view row leads Tracking.
-export const SHIPPED_DEFAULT_MENU_REVISION = 9;
+// Revision 10 (2026-08-13): Messages (new view ref) and Inbox (an existing ref
+// whose finished screen was never mounted) join Dashboard under Home.
+export const SHIPPED_DEFAULT_MENU_REVISION = 10;
 
 /**
  * WLT §2, encoded literally:
@@ -67,7 +69,30 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     {
       id: 'home',
       label: 'Home',
-      items: [{ type: 'view', ref: 'dashboard' }],
+      // Revision 10 (2026-08-13): Messages and Inbox join Dashboard in Home.
+      //
+      // MESSAGES is a new view ref — the cross-entity conversation browser. It
+      // is a VIEW and not a kind row for two independent reasons, and both are
+      // worth knowing before anyone tries to "simplify" it into one: the
+      // `message` registry row is `strategy: 'anchored'` with `slug: null`, so
+      // `isMenuEligibleKind` refuses it and the rail would fail closed; and the
+      // DB's own twin (`internal.w2_normalize_menu_payload`) rejects a kind ref
+      // of `message` outright. There is exactly one door and this is it.
+      //
+      // INBOX was ALREADY a member of `MenuViewRef` and already had its
+      // `menu_view_registry` row (seeded by 029) — it was simply never given a
+      // rail row, and `GateApp` drew the "isn't built yet" card for it while a
+      // FINISHED `InboxScreen` sat unmounted in `src/inbox/`. Nothing was built
+      // for it here; it was pointed at.
+      //
+      // The two sit together deliberately: Messages is the corpus ("every
+      // conversation"), Inbox is the subset addressed to you ("what wants me").
+      // Neither answers the other's question, which is why both are rows.
+      items: [
+        { type: 'view', ref: 'dashboard' },
+        { type: 'view', ref: 'messages' },
+        { type: 'view', ref: 'inbox' },
+      ],
     },
     {
       id: 'workspace',

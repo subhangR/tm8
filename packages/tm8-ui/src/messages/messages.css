@@ -1,0 +1,484 @@
+/* ==========================================================================
+   MESSAGES — the unified cross-entity message browser.
+
+   Tokens only: zero raw hex, zero new custom properties, zero per-theme
+   overrides (design law 8 — a surface that needs one is probably
+   mis-tokenized). `src/hex-ban.test.ts` walks the whole package and this
+   directory is not excluded, so a raw hex here turns the package red.
+
+   LAYOUT. A full-width screen, not a panel: the left column is a fixed 280px
+   with its OWN scroll, the right column takes the rest and hosts
+   `ChannelScreen`, which manages its own feed scrolling. Only two things
+   scroll on this screen and they scroll independently — moving through the
+   conversation list never moves the conversation you are reading.
+
+   HAIRLINES follow the D-ledgered rule: `--pn-line` BOUNDS a component (the
+   column split, the header strips); `--pn-x-hairline-soft` SEPARATES repeated
+   siblings (rows in a list).
+
+   MICRO TYPE stays in the D5 8.5–13px family as literals. The one global
+   lever is `zoom` on `.cv2-root`; a per-element bump here would destroy
+   canvas-diff comparability.
+   ========================================================================== */
+
+.msg-root {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+}
+
+/* Visually hidden, still announced. Carries the WORD that L10 requires beside
+   a status or selection colour where the layout has no room to print it. */
+.msg-vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- left column --------------------------------------------------------- */
+
+.msg-list {
+  flex: none;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--pn-surface);
+  /* BOUNDS the column against the reading surface. */
+  border-right: 1px solid var(--pn-line);
+}
+
+.msg-list__head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.msg-list__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.msg-list__scroll:focus-visible {
+  outline: 1px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* --- mode switch (a real tablist) ---------------------------------------- */
+
+.msg-tabs {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  overflow: hidden;
+  background: var(--pn-card);
+}
+
+.msg-tab {
+  flex: 1;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-3);
+  background: none;
+  border: 0;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.msg-tab + .msg-tab {
+  border-left: 1px solid var(--pn-line);
+}
+
+.msg-tab:hover {
+  background: var(--pn-hover);
+}
+
+/* Selection is carried by weight and ink as well as fill — never by the tint
+   alone — and `aria-selected` carries it to assistive tech regardless. */
+.msg-tab--on {
+  font-weight: 600;
+  color: var(--pn-ink);
+  background: var(--pn-active);
+}
+
+/* --- the refused search --------------------------------------------------- */
+
+.msg-search {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+}
+
+/* --- kind chips ----------------------------------------------------------- */
+
+.msg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.msg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 1px 7px;
+  cursor: pointer;
+}
+
+.msg-chip:hover {
+  background: var(--pn-hover);
+}
+
+.msg-chip--on {
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.5);
+}
+
+.msg-chip--clear {
+  border-style: dashed;
+}
+
+/* --- rows ----------------------------------------------------------------- */
+
+.msg-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.msg-row {
+  /* SEPARATES repeated siblings inside one component — the soft hairline,
+     never --pn-line. */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+
+.msg-row:last-child {
+  border-bottom: 0;
+}
+
+.msg-row__hit {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.msg-row__hit:hover {
+  background: var(--pn-hover);
+}
+
+/* The selected row: a fill AND a rule AND (in the markup) the word
+   "selected", because colour never carries a state on its own. */
+.msg-row__hit--on {
+  background: var(--pn-active);
+  box-shadow: inset 2px 0 0 var(--pn-brand);
+}
+
+.msg-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.msg-row__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.msg-row__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-row__title--unread {
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.msg-row__time {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  color: var(--pn-ink-4);
+}
+
+.msg-row__foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* One line, ellipsised. `min-width: 0` on both this and the body is what
+   actually lets the ellipsis happen inside a flex column. */
+.msg-row__excerpt {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-row__author {
+  color: var(--pn-ink-3);
+}
+
+/* An absence is STATED, not shouted (design law 9). */
+.msg-row__excerpt--none {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+  font-style: italic;
+}
+
+/* The message count. Deliberately quiet: it is CONTEXT, not a claim about
+   what this viewer has read. */
+.msg-row__count {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  color: var(--pn-ink-4);
+}
+
+/* Rows whose unread was never computed carry the reason on `title`; the dotted
+   underline is the affordance that says there IS one to read. */
+.msg-row__count[data-uncomputed='true'] {
+  border-bottom: 1px dotted var(--pn-line-2);
+  cursor: help;
+}
+
+/* --- the flat reading's anchor line -------------------------------------- */
+
+.msg-row__anchor {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  color: var(--pn-ink-3);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* NOT a title. It reads as the absence it is — no invented name, and visibly
+   different from every resolved anchor beside it. */
+.msg-row__anchor--unresolved {
+  color: var(--pn-ink-4);
+  font-style: italic;
+}
+
+/* --- paging + notes ------------------------------------------------------- */
+
+.msg-more {
+  padding: 8px 12px 14px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+}
+
+.msg-more__btn {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 2px 9px;
+  cursor: pointer;
+}
+
+.msg-more__btn:hover:not(:disabled) {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+.msg-more__btn:disabled {
+  cursor: progress;
+}
+
+.msg-empty {
+  margin: 0;
+  padding: 16px 12px;
+  font-size: 11.5px;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+
+.msg-note {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: var(--pn-ink-3);
+}
+
+.msg-note--block {
+  padding: 14px 12px;
+  color: var(--pn-block);
+}
+
+/* --- right column --------------------------------------------------------- */
+
+.msg-read {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--pn-card);
+}
+
+.msg-read__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.msg-read__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 1px 7px;
+  flex: none;
+}
+
+.msg-read__kindword {
+  text-transform: lowercase;
+}
+
+.msg-read__title {
+  font-family: var(--pn-serif);
+  font-size: 15px;
+  font-weight: 500;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-spacer {
+  flex: 1;
+}
+
+.msg-open {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  padding: 2px 9px;
+  cursor: pointer;
+}
+
+.msg-open:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+/* The chat surface fills whatever is left; it owns its own internal scroll. */
+.msg-read__surface {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A failed feed REPLACES the surface. Nothing of the conversation survives
+   here — no cached excerpts, no partial history, no composer. */
+.msg-feed-error {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pn-space-6);
+  text-align: center;
+}
+
+.msg-feed-error__line {
+  margin: 0;
+  font-size: 12px;
+  color: var(--pn-block);
+}
+
+/* --- the honest empty reading -------------------------------------------- */
+
+.msg-nothing {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--pn-space-6);
+  text-align: center;
+  max-width: 46ch;
+  margin: 0 auto;
+}
+
+.msg-nothing__glyph {
+  font-size: 20px;
+  color: var(--pn-ink-4);
+}
+
+.msg-nothing__note {
+  margin: 0;
+  font-size: 12px;
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+}

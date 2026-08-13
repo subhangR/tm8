@@ -410,7 +410,7 @@ describe('T2-3 — the menu editor', () => {
    * control is LIVE. That is the editor-side proof that those views were
    * unrouted rather than deleted — a viewer who wants one back can put it back.
    */
-  it('“＋ view ref” is LIVE, offering the refs revision 5 freed', () => {
+  it('“＋ view ref” is LIVE, offering the refs the default leaves free', () => {
     render(<MenuEditor menu={MENU} spaceName="atelier" />);
     const add = screen.getByRole('button', { name: '＋ view ref' });
     expect(add.getAttribute('aria-disabled')).toBeNull();
@@ -418,7 +418,12 @@ describe('T2-3 — the menu editor', () => {
     const options = screen.getAllByRole('button').filter((b) => b.className === 'set-add');
     const labels = options.map((b) => (b.textContent ?? '').trim());
     expect(labels.some((l) => /Feed/i.test(l))).toBe(true);
-    expect(labels.some((l) => /Inbox/i.test(l))).toBe(true);
+    // Channels replaces Inbox as the second assertion here. Revision 10 gave
+    // Inbox a rail row — its screen was finished and unmounted, not missing —
+    // so the picker correctly stops offering it. The CONTROL being live is what
+    // this test is really about, and Feed and Channels still keep it live.
+    expect(labels.some((l) => /Channels/i.test(l))).toBe(true);
+    expect(labels.some((l) => /Inbox/i.test(l))).toBe(false);
   });
 
   it('“＋ kind ref” is LIVE, and adding one lands in the preview', () => {

@@ -83,22 +83,50 @@ describe('SHIPPED_DEFAULT_MENU', () => {
    * destination competing with the list panel for the same kind, which is the
    * two-divergent-homes shape the voice row's docblock already warned about.
    */
-  it('puts Home at Dashboard alone and keeps NO Channels group', () => {
+  it('puts Dashboard, Messages and Inbox in Home and keeps NO Channels group', () => {
+    // Revision 10 (2026-08-13): Home stopped being Dashboard alone. Messages
+    // is a NEW view ref (the cross-entity conversation browser) and Inbox is an
+    // OLD one whose finished screen had never been mounted — see the constant's
+    // docblock for why both belong here and why neither is a kind row.
     const home = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'home');
-    expect(home?.items).toEqual([{ type: 'view', ref: 'dashboard' }]);
+    expect(home?.items).toEqual([
+      { type: 'view', ref: 'dashboard' },
+      { type: 'view', ref: 'messages' },
+      { type: 'view', ref: 'inbox' },
+    ]);
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('channels');
   });
 
-  it('drops feed, inbox and channels from the RAIL, not from the union', () => {
-    // The distinction this test exists to hold: the three are unrouted from
-    // the rail, not deleted. `MenuViewRef` still carries all three, so the menu
+  it('leaves feed and channels off the RAIL without dropping them from the union', () => {
+    // The distinction this test exists to hold: a ref can be unrouted from the
+    // rail without being deleted. `MenuViewRef` still carries both, so the menu
     // editor can offer them and a deep link still resolves. Channels moved to
     // the Entity List Panel — see the registry row's `strategy: 'collection'`.
+    //
+    // INBOX LEFT THIS LIST on 2026-08-13. It was never unbuilt — the screen sat
+    // finished and unmounted in `src/inbox/` while the rail simply never named
+    // it. Revision 10 points at it, so `feed` is now the only free view ref.
     const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
     // The VIEW refs are gone; `channels` the view ref is not the same thing as
     // `channel` the kind ref, which revision 6 put under the Workspace caret.
-    for (const gone of ['feed', 'inbox', 'channels']) expect(refs).not.toContain(gone);
+    for (const gone of ['feed', 'channels']) expect(refs).not.toContain(gone);
+    expect(refs).toContain('inbox');
     expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toContain('channel');
+  });
+
+  it('names Messages as a VIEW ref, never as a kind row', () => {
+    // Two independent mechanisms refuse `message` as a kind ref, and this test
+    // pins BOTH the refusal and the alternative. The registry row is
+    // `strategy: 'anchored'` with `slug: null`, so `isMenuEligibleKind` says no;
+    // and the database's own twin (`internal.w2_normalize_menu_payload`)
+    // rejects a `message` kind ref outright. A future edit that "simplifies"
+    // Messages into a kind row would fail closed in the rail AND be refused at
+    // the next menu write, so the view ref is not a preference — it is the only
+    // door.
+    expect(isMenuEligibleKind('message')).toBe(false);
+    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).not.toContain('message');
+    const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
+    expect(refs).toContain('messages');
   });
 
   it('keeps depth at exactly ≤1 with Workspace as the one caret VIEW item', () => {
@@ -131,7 +159,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(9);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(10);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

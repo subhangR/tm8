@@ -511,7 +511,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // bare `git ls-tree db/migrations/ | wc -l` returns 107 for main alone,
     // because the directory holds a non-.sql entry — counting that and adding
     // one gives 108 and a red suite. Count the .sql files.
-    expect(server.appliedMigrations.length).toBe(107);
+    // 107 -> 108 on 2026-08-13: 117 adds the unified Messages menu view after
+    // 116 landed during this PR's green CI run. Re-measured: 108 SQL files.
+    expect(server.appliedMigrations.length).toBe(108);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

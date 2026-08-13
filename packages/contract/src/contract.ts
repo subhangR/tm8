@@ -1801,7 +1801,12 @@ export interface UpdateSpaceInput extends CommandContext {
  * `git` (Git UI wave, 2026-08-09): the project git screen — branch topology,
  * worktree lanes and the contention map, elevated out of Settings. Additive
  * union widening, the same R4 posture as `graph` and `worktree`. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git';
+/** `messages` added 2026-08-13 (same R4 additive widening) for the Messages
+ * surface — the cross-thread conversation screen. It is a VIEW, not the
+ * `message` KIND: `message` stays excluded from `MenuKindRef` because it is
+ * anchored, slugless and has no collection list, which is precisely why the
+ * conversation surface needs a view ref of its own to be addressable. */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
