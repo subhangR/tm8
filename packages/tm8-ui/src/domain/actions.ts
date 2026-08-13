@@ -309,6 +309,29 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
     ),
   ),
 
+  /**
+   * A VANILLA TERMINAL (101) — the shell you get without an agent in front.
+   *
+   * NOT wrapped in `launching()`, and that is the whole difference from its
+   * neighbour above. `launch-session` opens the quick config because a spawn
+   * has a teammate, a model, a profile and a project to choose, and the ruling
+   * behind that config is that a spawn's configuration must be visible at the
+   * moment it is committed. A vanilla terminal HAS no configuration — no
+   * persona, no model, no prompt — so an expand would show a card with nothing
+   * in it and cost a second click to say so. It commits on click.
+   *
+   * Gated on its own operation, never on `execution.spawn`: a node that
+   * refuses spawns (at the agent cap, say) can still open a terminal, because
+   * the two caps are disjoint by construction. Gating on spawn would refuse a
+   * terminal for a reason that does not apply to it.
+   */
+  'start-terminal': define(
+    'start-terminal',
+    'Terminal',
+    '▮',
+    (ctx) => opGate(ctx, 'execution.terminal.start') ?? AVAILABLE,
+  ),
+
   terminate: define(
     'terminate',
     'Terminate',

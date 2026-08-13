@@ -27,6 +27,9 @@ import {
   resolveSkills,
   readSessionTranscript,
   type CreateWorkSessionInput,
+  type ShellSessionContext,
+  type ShellSessionRequest,
+  type StartShellSessionResult,
   type CreateWorkSessionResult,
   type GraphAuth,
   type GraphPort,
@@ -62,6 +65,7 @@ import type {
   ExecutionLiveness,
   ExecutionPromptInput,
   ExecutionSpawnInput,
+  ExecutionTerminalStartInput,
   ExecutionStreamsAttachInput,
   ExecutionTerminateInput,
   SessionJournalPage,
@@ -235,6 +239,12 @@ export class DbGraphPort implements GraphPort {
      * appears next to a refusal.
      */
     private readonly sessionCap = resolveSessionCap(),
+    /**
+     * The VANILLA TERMINAL cap (101) — disjoint from `sessionCap` above and
+     * from the credential cap, so no one kind of session can starve another.
+     * See `resolveTerminalCap`.
+     */
+    private readonly terminalCap = resolveTerminalCap(),
   ) {}
 
   private claims(auth: GraphAuth): DbClaims {
@@ -494,6 +504,89 @@ export class DbGraphPort implements GraphPort {
     const sessionId = entity?.id;
     if (typeof sessionId !== 'string') {
       throw fail('upstream_unavailable', 'execution_spawn returned no work_session id');
+    }
+    return { sessionId, commandResult, replayed };
+  }
+
+  /**
+   * The ONE read behind a vanilla terminal (101) — the project, or nothing.
+   *
+   * Query-for-query identical to `loadSpawnContext`'s project block, including
+   * the not-linked/not-found conflation and the reason for it. What it does not
+   * do is the other four reads: no persona, no memory working set, no skill
+   * chain, no tasks. A shell session has no persona to read them for, and
+   * reaching the big loader with a synthetic team member id to get one column
+   * back is the "pretend it is an agent" shape this feature exists to avoid.
+   *
+   * No transaction, and unlike `loadSpawnContext` that is not a compromise: one
+   * query already describes one instant.
+   */
+  async loadShellContext(
+    auth: GraphAuth,
+    input: { spaceId: string; projectId: string | null },
+  ): Promise<ShellSessionContext> {
+    if (!input.projectId) return { project: null };
+    const rows = await this.db.query<ProjectRow>(
+      this.claims(auth),
+      `select p.id, p.name, p.working_dir, p.trust
+         from public.projects p
+         join public.space_projects sp
+           on sp.project_id = p.id and sp.space_id = $2
+        where p.id = $1`,
+      [input.projectId, input.spaceId],
+    );
+    const row = rows[0];
+    if (!row) {
+      throw fail('not_found', `project ${input.projectId} is not linked to this space`);
+    }
+    return {
+      project: {
+        id: row.id,
+        name: row.name,
+        workingDir: row.working_dir,
+        trust: row.trust === 'trusted' ? 'trusted' : 'untrusted',
+      },
+    };
+  }
+
+  /**
+   * `public.start_shell_session` (101) — mint the `session_kind='shell'` row.
+   *
+   * Positional, in the migration's declared order, and the same warning applies
+   * as on `createWorkSession`: getting the order wrong is a silent semantic
+   * swap, not a type error. `p_title`, `p_node_id` and `p_workdir_path` are
+   * three adjacent text parameters and are the set to watch.
+   *
+   * `this.terminalCap`, NOT `this.sessionCap`. They are separate ceilings on
+   * purpose (see the migration's externality 1): a member with terminals open
+   * must not find real spawns refusing with a capacity error.
+   */
+  async createShellSession(
+    auth: GraphAuth,
+    input: ShellSessionRequest & { nodeId: string | null; workdirPath: string | null },
+  ): Promise<StartShellSessionResult> {
+    const result = await this.db.rpc<Record<string, unknown>>(
+      this.claims(auth),
+      'public.start_shell_session',
+      [
+        input.spaceId,
+        input.projectId,
+        input.title ?? null,
+        input.nodeId,
+        input.workdirPath,
+        input.confirmUntrusted ?? false,
+        this.terminalCap,
+        null, // p_actor_id — resolve_actor derives it from the claims
+        input.clientMutationId ?? null,
+      ],
+    );
+
+    const replayed = result?.__tm8_replayed === true;
+    const { __tm8_replayed: _replayMarker, ...commandResult } = result ?? {};
+    const entity = commandResult.entity as { id?: string } | undefined;
+    const sessionId = entity?.id;
+    if (typeof sessionId !== 'string') {
+      throw fail('upstream_unavailable', 'start_shell_session returned no work_session id');
     }
     return { sessionId, commandResult, replayed };
   }
@@ -1016,6 +1109,30 @@ export function resolveSessionCap(env: NodeJS.ProcessEnv = process.env): number 
   // A typo must not silently become a SMALLER cap than the default: an
   // unparseable or negative value falls back rather than being coerced to 1.
   if (!Number.isFinite(parsed) || parsed < 1) return 8;
+  return Math.min(parsed, UNLIMITED_SESSION_CAP);
+}
+
+/**
+ * How many vanilla terminals (101) may be live on this node at once.
+ *
+ * A THIRD, DISJOINT CEILING, mirroring `resolveCredentialSessionCap`. The
+ * default is deliberately small: a terminal is a human-driven session, one
+ * person can only usefully watch a few, and a low default makes a runaway
+ * client (a start button in a reconnect loop) refuse early and visibly instead
+ * of filling the node with orphaned shells. Operators who want more say so.
+ *
+ * Shares `TM8_SESSION_CAP`'s parsing rules, including the saturating int4 for
+ * "unlimited" and the refusal to let a typo become a SMALLER cap than the
+ * default — see `resolveSessionCap` for why each of those is what it is.
+ */
+export const DEFAULT_TERMINAL_CAP = 4;
+
+export function resolveTerminalCap(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env['TM8_TERMINAL_CAP']?.trim();
+  if (raw === undefined || raw === '') return DEFAULT_TERMINAL_CAP;
+  if (/^(unlimited|none|off|0)$/i.test(raw)) return UNLIMITED_SESSION_CAP;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_TERMINAL_CAP;
   return Math.min(parsed, UNLIMITED_SESSION_CAP);
 }
 
@@ -2309,6 +2426,45 @@ function registerHandlers(
     }
 
     // 201: a spawn creates a work_session.
+    return json(
+      await assembleCommandResult(db, claims, result.commandResult, owner.identityId),
+      { status: 201 },
+    );
+  });
+
+  /**
+   * execution.terminal.start (101) — a VANILLA TERMINAL.
+   *
+   * Compare this handler with `execution.spawn` above. Spawn resolves
+   * assignment anchors, threads twelve launch fields into a `SpawnRequest`, and
+   * writes `dispatched_by` provenance afterwards. None of that has a meaning
+   * here: there is no persona, no launch configuration, and no dispatcher
+   * lineage, because a human pressed a button.
+   *
+   * THE BODY IS `.strict()`-PARSED and carries no command field — see
+   * `ExecutionTerminalStartInputSchema`. Nothing in this handler builds an
+   * argv; `ShellSessionLauncher` owns the only one, and it is closed.
+   *
+   * 201, same as spawn: this creates a work_session.
+   */
+  registry.register('execution.terminal.start', async (ctx) => {
+    const input = ctx.body as ExecutionTerminalStartInput;
+    const owner = await resolveOwner();
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
+
+    const result = await rethrowing(() =>
+      spawnService.startShell(claims, {
+        spaceId: input.spaceId,
+        projectId: input.projectId ?? null,
+        ...(input.confirmUntrusted ? { confirmUntrusted: true } : {}),
+        title: input.title ?? null,
+        clientMutationId: envelope.clientMutationId ?? null,
+        ...(input.cols ? { cols: input.cols } : {}),
+        ...(input.rows ? { rows: input.rows } : {}),
+      }),
+    );
+
     return json(
       await assembleCommandResult(db, claims, result.commandResult, owner.identityId),
       { status: 201 },
