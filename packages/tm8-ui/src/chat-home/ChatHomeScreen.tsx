@@ -219,6 +219,15 @@ export function ChatHomeScreen({
     [port, refreshDetail],
   );
 
+  /** This thread's own message ids: never chip them — they are already the
+   *  transcript. Messages from OTHER sessions/threads keep their chips. */
+  const ownMessageIds = useMemo(() => {
+    if (!detail) return undefined;
+    const ids = new Set<string>(detail.turns.map((turn) => turn.messageId));
+    ids.add(detail.summary.rootId);
+    return ids;
+  }, [detail]);
+
   const activeConfig = detail?.summary.config ?? null;
   const selectedModel = useMemo(
     () => models.find((model) => model.model === modelId) ?? null,
@@ -434,6 +443,7 @@ export function ChatHomeScreen({
                   turn={turn}
                   onOpenEntity={onOpenEntity}
                   resolveEntity={resolveEntity}
+                  suppressEntityIds={ownMessageIds}
                 />
               ))}
               {showThinking(phase, detail) ? (
@@ -561,10 +571,12 @@ function Turn({
   turn,
   onOpenEntity,
   resolveEntity,
+  suppressEntityIds,
 }: {
   turn: ChatThreadDetail['turns'][number];
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   resolveEntity?: ChatEntityResolver | undefined;
+  suppressEntityIds?: ReadonlySet<string> | undefined;
 }) {
   const label = turn.author?.displayName ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
@@ -583,7 +595,12 @@ function Turn({
         <Timestamp at={turn.createdAt} />
       </header>
       {turn.body ? <div className="tch-user-body">{turn.body}</div> : null}
-      <TurnParts parts={turn.parts} onOpenEntity={onOpenEntity} resolveEntity={resolveEntity} />
+      <TurnParts
+        parts={turn.parts}
+        onOpenEntity={onOpenEntity}
+        resolveEntity={resolveEntity}
+        suppressEntityIds={suppressEntityIds}
+      />
     </article>
   );
 }

@@ -149,3 +149,45 @@ describe('Chat Home stability', () => {
     await waitFor(() => expect(view.getAllByLabelText('Agent is working').length).toBeGreaterThan(0));
   });
 });
+
+describe('Chat Home entity chip suppression', () => {
+  it('never chips this thread’s own messages but keeps foreign entity chips', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() => expect(view.queryByTestId('chat-detail-loading')).toBeNull());
+
+    const ownMessageId = '019f0000-0000-7000-8000-000000000011';
+    const foreignId = '019f0000-0000-7000-8000-00000000dddd';
+    const messageId = '019f0000-0000-7000-8000-0000000000ee' as EntityId;
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.delta',
+        threadRootId: THREAD_ID,
+        messageId,
+        seq: 0,
+        part: {
+          kind: 'tool_call',
+          toolCallId: 'tc-sup',
+          name: 'tm8_read',
+          args: { ids: [ownMessageId, foreignId] },
+          state: 'completed',
+        },
+      });
+      controls.emit({
+        type: 'chat.turn.delta',
+        threadRootId: THREAD_ID,
+        messageId,
+        seq: 1,
+        part: {
+          kind: 'tool_result',
+          toolCallId: 'tc-sup',
+          content: { entity: { id: foreignId, kind: 'task', title: 'Foreign task' } },
+        },
+      });
+    });
+
+    await waitFor(() => expect(view.getByText('Foreign task')).toBeTruthy());
+    const chips = view.getAllByTestId('chat-entity-chip');
+    expect(chips.some((chip) => chip.textContent?.includes('000000000011'))).toBe(false);
+  });
+});

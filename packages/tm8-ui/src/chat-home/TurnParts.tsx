@@ -11,9 +11,13 @@ export interface TurnPartsProps {
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   /** Lazily resolves title/kind for bare-id references. */
   resolveEntity?: ChatEntityResolver | undefined;
+  /** Ids that must never chip — this thread's own messages. A chip pointing at
+   *  a message already on screen is noise; a message from another session or
+   *  thread stays a useful pointer. */
+  suppressEntityIds?: ReadonlySet<string> | undefined;
 }
 
-export function TurnParts({ parts, onOpenEntity, resolveEntity }: TurnPartsProps) {
+export function TurnParts({ parts, onOpenEntity, resolveEntity, suppressEntityIds }: TurnPartsProps) {
   return (
     <div className="tch-parts">
       {projectTurnParts(parts).map((part) => {
@@ -36,7 +40,9 @@ export function TurnParts({ parts, onOpenEntity, resolveEntity }: TurnPartsProps
           );
         }
         if (part.kind === 'tool') {
-          const entityRefs = extractEntityRefs(part.args, part.result);
+          const entityRefs = extractEntityRefs(part.args, part.result).filter(
+            (ref) => !suppressEntityIds?.has(ref.id),
+          );
           return (
             <article
               className="tch-tool"
