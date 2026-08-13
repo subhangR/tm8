@@ -18,6 +18,8 @@ export interface TileCountBadge {
   count: number;
   /** Singular noun for the title; the renderer pluralises. */
   label: string;
+  /** Human messages receive the visual attention treatment requested by 109. */
+  emphasis?: 'human';
 }
 
 export function tileCountBadgesOf(counters: EntityCounters): TileCountBadge[] {
@@ -28,7 +30,15 @@ export function tileCountBadgesOf(counters: EntityCounters): TileCountBadge[] {
   if (typeof counters.memories === 'number' && counters.memories > 0) {
     badges.push({ kind: 'memory', count: counters.memories, label: 'memory' });
   }
-  if (counters.messages > 0) {
+  if (typeof counters.humanMessages === 'number' && counters.humanMessages > 0) {
+    badges.push({ kind: 'human-message', count: counters.humanMessages, label: 'human message', emphasis: 'human' });
+  }
+  if (typeof counters.agentMessages === 'number' && counters.agentMessages > 0) {
+    badges.push({ kind: 'agent-message', count: counters.agentMessages, label: 'agent message' });
+  }
+  // Rolling compatibility: an older server cannot truthfully split the total.
+  // Preserve its existing neutral badge until its projection includes 109.
+  if (counters.humanMessages === undefined && counters.agentMessages === undefined && counters.messages > 0) {
     badges.push({ kind: 'message', count: counters.messages, label: 'message' });
   }
   return badges;

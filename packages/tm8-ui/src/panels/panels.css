@@ -1569,6 +1569,7 @@
    PR chips in the badge sub-row. Zero/absent counts render no badge at all. */
 .cv2-root .pn-st__counts { display: inline-flex; align-items: center; gap: var(--pn-space-2); flex: 0 0 auto; }
 .cv2-root .pn-st__count { display: inline-flex; align-items: center; gap: 3px; color: var(--pn-ink-3); font-family: var(--pn-mono); font-size: 10px; line-height: 1; }
+.cv2-root .pn-st__count--human { color: var(--pn-brand-2); background: var(--pn-brand-soft); border: 1px solid rgba(var(--pn-brand-rgb), 0.35); border-radius: 999px; padding: 3px 6px; }
 .cv2-root .pn-st__count svg { flex: 0 0 auto; }
 .cv2-root .pn-st__statusglyph { width: 16px; height: 16px; flex: 0 0 auto; }
 .cv2-root .pn-st__actions {

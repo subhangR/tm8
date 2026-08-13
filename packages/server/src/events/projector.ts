@@ -175,6 +175,8 @@ interface SummaryRow {
   stars: number | null;
   points: number | null;
   messages: number | null;
+  human_messages: number | null;
+  agent_messages: number | null;
   /** Link counters (108); optional keeps pre-108 row fixtures source-compatible. */
   docs?: number | null;
   memories?: number | null;
@@ -289,7 +291,8 @@ const SUMMARY_SQL = `
 select
   e.id, e.space_id, e.kind, e.parent_id, e.position, e.visibility, e.version,
   e.activity_at, e.created_at, e.updated_at, e.deleted_at, e.created_by,
-  c.likes, c.dislikes, c.stars, c.points, c.messages, c.docs, c.memories,
+  c.likes, c.dislikes, c.stars, c.points, c.messages,
+  c.human_messages, c.agent_messages, c.docs, c.memories,
   t.title            as task_title,
   t.description      as task_description,
   t.work_status, t.priority, t.axes, t.due_date, t.acceptance_criteria, t.completion_gate,
@@ -662,6 +665,8 @@ export class PgEntityProjector implements EntityProjector {
       stars: r.stars ?? 0,
       points: r.points ?? 0,
       messages: r.messages ?? 0,
+      humanMessages: r.human_messages ?? 0,
+      agentMessages: r.agent_messages ?? 0,
       // 108 — MIRRORS entity-read: a live row post-108 always has the
       // columns (NOT NULL DEFAULT 0); a missing counter row joins as null
       // and projects 0 like its five elders.

@@ -79,6 +79,9 @@ export interface EntityCounters {
   stars: number;
   points: number;
   messages: number;
+  /** Author-kind split (109); optional while older counter events replay. */
+  humanMessages?: number;
+  agentMessages?: number;
   /**
    * Attached docs / held memories (108), ADDITIVE and OPTIONAL: a rolling
    * node that predates the columns omits them and a client renders NOTHING —

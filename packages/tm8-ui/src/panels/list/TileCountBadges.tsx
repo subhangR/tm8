@@ -27,11 +27,11 @@ export function TileCountBadges({ counters }: { counters: EntityCounters }) {
       {badges.map((badge) => (
         <span
           key={badge.kind}
-          className="pn-st__count"
+          className={`pn-st__count${badge.emphasis === 'human' ? ' pn-st__count--human' : ''}`}
           data-count-kind={badge.kind}
           title={`${badge.count} ${badge.label}${badge.count === 1 ? '' : 's'}`}
         >
-          <KindIcon kind={badge.kind} size={12} />
+          <KindIcon kind={badge.kind.endsWith('-message') ? 'message' : badge.kind} size={12} />
           {badge.count}
         </span>
       ))}

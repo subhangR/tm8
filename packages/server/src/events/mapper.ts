@@ -611,6 +611,8 @@ export class WorkspaceEventMapper {
           stars: Number(p['stars'] ?? 0),
           points: Number(p['points'] ?? 0),
           messages: Number(p['messages'] ?? 0),
+          ...(p['human_messages'] === undefined ? {} : { humanMessages: Number(p['human_messages'] ?? 0) }),
+          ...(p['agent_messages'] === undefined ? {} : { agentMessages: Number(p['agent_messages'] ?? 0) }),
           // 108's link counters, SPREAD-WHEN-PRESENT rather than defaulted:
           // the durable log replays payloads captured BEFORE the columns
           // existed, and inventing 0 for those would turn "never counted"
