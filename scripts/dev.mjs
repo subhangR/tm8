@@ -10,8 +10,10 @@
 //   4. run          tm8-server under node (node-pty is broken under bun) + Vite UI on 4611
 //   5. watch        rebuild on source change, restart the server when its dist changes
 //
-// The sidecar Postgres on TM8_PG_PORT is started by tm8-server itself (R15,
-// packages/server, Castor at W1) — this script only reserves and reports the port.
+// Postgres is NOT started by anything in this repo. packages/server/src/sidecar/
+// looks like it does that job and is dead code (only `import type` references it),
+// so a database has to exist before this script is useful: run ./install.sh once.
+// Preflight now says so out loud instead of reporting "ready" over an empty node.
 //
 // Usage: node scripts/dev.mjs [--no-ui] [--no-watch] [--no-build] [--server-only] [--help]
 
@@ -138,8 +140,13 @@ function restartServer() {
 }
 
 startServer();
+// NOT "managed by tm8-server". That claim was here for months and was never
+// true: packages/server/src/sidecar/ is imported by nothing but `import type`,
+// so no tm8 process has ever started, owned or reconciled a postmaster. tm8 uses
+// the system Postgres (ruled 2026-08-12) and ./install.sh is what puts it there.
 log.dim(
-  `sidecar Postgres on ${env.TM8_PG_PORT} is managed by tm8-server (R15) — not started here`,
+  `Postgres on ${env.TM8_PG_PORT} is the system cluster — neither started nor owned by tm8 ` +
+    `(set it up with ./install.sh)`,
 );
 
 // --- 4. UI dev server -------------------------------------------------------
@@ -158,10 +165,10 @@ if (withUi) {
       log: uiLog,
     });
   } else {
-    uiLog.info(`UI dev server not started — ${ui.reason}.`);
+    uiLog.warn(`UI dev server not started — ${ui.reason}.`);
     uiLog.dim(
-      "packages/ui arrives at W3/M2 (collab-v2 transplant + RealFacade). " +
-        `Until then \`bun run dev\` is server-only; port ${env.TM8_UI_PORT} stays reserved.`,
+      `The product UI is packages/tm8-ui (NOT packages/ui, which is the legacy ` +
+        `collab-v2 oracle). Fix the reason above and re-run; port ${env.TM8_UI_PORT} stays reserved.`,
     );
   }
 }

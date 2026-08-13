@@ -9,6 +9,9 @@
   ],
   "scripts": {
     "postinstall": "bash scripts/repair-node-pty.sh",
+    "setup": "bash install.sh",
+    "setup:status": "bash install.sh --status",
+    "setup:dry-run": "bash install.sh --dry-run",
     "dev": "node scripts/dev.mjs",
     "dev:server": "node scripts/dev.mjs --server-only",
     "start": "node scripts/start.mjs",

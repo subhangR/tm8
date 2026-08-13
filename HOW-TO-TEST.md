@@ -25,20 +25,27 @@ the *runtime* for the server or execution packages is not.
 node --version        # v22+; verified on v25.6.1
 ```
 
-**Postgres 18 must be running on port 5442.** It is not on your PATH by default:
+**A database must exist and be migrated.** One command does all of it:
 
 ```bash
-PATH=/opt/homebrew/opt/postgresql@18/bin:$PATH pg_isready -h 127.0.0.1 -p 5442
-# → 127.0.0.1:5442 - accepting connections
+./install.sh                 # cluster, roles, database, migrations, build
+./install.sh --status        # confirm: migrations N/N, delivery role can authenticate
 ```
 
-If it is not running, start it:
+tm8 standardises on **Postgres 16** and the cluster is the *system* Postgres — the
+`dev` slot uses `tm8_dev` on port 5442. Nothing in this repo starts a postmaster:
+`packages/server/src/sidecar/` looks like it does and is dead code. See
+[`docs/ops/INSTALL.md`](docs/ops/INSTALL.md).
+
+If something is off, ask the doctor rather than guessing:
 
 ```bash
-PATH=/opt/homebrew/opt/postgresql@18/bin:$PATH \
-  pg_ctl -D ~/.tm8-dev/pg -l ~/.tm8-dev/pg.log \
-  -o "-p 5442 -c listen_addresses=127.0.0.1" start
+bun run doctor               # ports, build, AND the database + migration state
 ```
+
+A tm8 with no database still boots, still listens and still answers `/health` —
+while logging `graph: NOT CONFIGURED` and returning `501` to every operation. That
+state used to pass every check this file described.
 
 **node-pty is repaired automatically now — you no longer run anything.** bun
 extracts npm tarballs without the executable bit, so `spawn-helper` lands at
@@ -55,7 +62,7 @@ asserts the bit before it rotates a snapshot, so a broken helper can no longer
 reach a running server.
 
 ```bash
-cd ~/Desktop/Projects/tm8
+cd /path/to/your/tm8/clone
 bun install                                  # → postinstall repairs node-pty
 cd packages/execution && bun run harness     # → 5/5 checks passed / HARNESS GREEN
 ```
@@ -108,7 +115,7 @@ Do this when you want to watch it rather than trust it.
 ### 2.1 Reset the database
 
 ```bash
-cd ~/Desktop/Projects/tm8
+cd /path/to/your/tm8/clone
 PATH=/opt/homebrew/opt/postgresql@18/bin:$PATH \
 TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_dev \
   node db/migrate.mjs reset --force
@@ -340,7 +347,7 @@ confident zero, but where it does show one, that is why.
 ## 4. Running the test suites
 
 ```bash
-cd ~/Desktop/Projects/tm8
+cd /path/to/your/tm8/clone
 
 bun run typecheck                                    # whole workspace, exit 0
 

@@ -26,6 +26,22 @@ export const MAESTRO_RESERVED_DIRS = [
   join(homedir(), ".maestro-staging"),
 ];
 
+// These MUST agree with deploy/environments.sh, which is the one topology table
+// (`bash deploy/environments.sh` prints it). Two places is already one too many;
+// they are duplicated here only because a .mjs launcher cannot source a .sh, and
+// the day they disagree is the day `bun run dev` and `./install.sh` set up two
+// different tm8's in the same checkout.
+//
+// TM8_DATABASE_URL and TM8_DELIVERY_DATABASE_URL are the entries that were
+// missing until 2026-08-12, and their absence WAS the onboarding bug: without
+// them a fresh clone boots a server that logs
+//   graph: NOT CONFIGURED (set TM8_DATABASE_URL) — all operations answer 501
+// and every single operation answers 501. Nothing in the launcher path noticed,
+// because nothing in the launcher path ever looked at a database.
+//
+// TM8_DELIVERY_DATABASE_URL must AUTHENTICATE as tm8_delivery_worker — the
+// server rejects a connection that can merely SET ROLE to it — so the cluster
+// has to trust loopback. ./install.sh sets that up; see its PHASE 3.
 const DEFAULTS = {
   dev: {
     TM8_ENV: "dev",
@@ -34,16 +50,57 @@ const DEFAULTS = {
     TM8_UI_PORT: "4611",
     TM8_PG_PORT: "5442",
     TM8_LOG_LEVEL: "debug",
+    TM8_DATABASE_URL: "postgres://tm8@127.0.0.1:5442/tm8_dev",
+    TM8_DELIVERY_DATABASE_URL: "postgres://tm8_delivery_worker@127.0.0.1:5442/tm8_dev",
   },
+  // The canonical prod slot (ruled 2026-08-12): server 17777, database tm8_prod.
+  // This used to read 4610 / ~/.tm8, which described no instance that has ever
+  // run — the live prod has been 17777 behind nginx on 7777 the whole time.
   prod: {
     TM8_ENV: "prod",
     TM8_DATA_DIR: join(homedir(), ".tm8"),
-    TM8_PORT: "4610",
-    TM8_UI_PORT: "4611",
+    TM8_PORT: "17777",
+    TM8_UI_PORT: "7777",
     TM8_PG_PORT: "5442",
     TM8_LOG_LEVEL: "info",
+    TM8_DATABASE_URL: "postgres://tm8@127.0.0.1:5442/tm8_prod",
+    TM8_DELIVERY_DATABASE_URL: "postgres://tm8_delivery_worker@127.0.0.1:5442/tm8_prod",
   },
 };
+
+/**
+ * The per-session identity a tm8-spawned agent carries, which must NEVER be
+ * forwarded into a server this launcher starts.
+ *
+ * `resolveEnv` deliberately carries unknown TM8_* variables through so the
+ * server's own config can grow without editing this file. That is right for
+ * config and wrong for identity: an agent session running `bun run dev` exports
+ * TM8_AGENT_TOKEN, TM8_ACTOR_ID, TM8_SESSION_ID and TM8_BASE_URL pointing at the
+ * node that SPAWNED it, and forwarding those hands the new server a stranger's
+ * credentials while making every CLI probe against it fail as
+ * `unauthenticated: invalid token`. Running a launcher from inside a tm8 session
+ * is ordinary here, so this is a normal path, not an exotic one.
+ *
+ * Config stays; identity is dropped.
+ */
+const SESSION_VARS = new Set([
+  "TM8_AGENT_TOKEN",
+  "TM8_BASE_URL",
+  "TM8_ACTOR_ID",
+  "TM8_SESSION_ID",
+  "TM8_TEAM_MEMBER_ID",
+  "TM8_SPACE_ID",
+  "TM8_PROJECT_ID",
+  "TM8_TASK_IDS",
+  "TM8_MANIFEST_PATH",
+  "TM8_JOURNAL_PATH",
+  "TM8_MODE",
+  "TM8_MODEL",
+  "TM8_AGENT_TOOL",
+  "TM8_GIT_LOGIN",
+  "TM8_SESSION_COOKIE",
+  "TM8_CLIENT_HEADER",
+]);
 
 /** Minimal .env parser: KEY=VALUE, `#` comments, optional quotes, no interpolation. */
 function parseDotenv(text) {
@@ -111,6 +168,7 @@ export function resolveEnv(mode) {
     if (k.startsWith("TM8_") && !(k in env)) env[k] = process.env[k] ?? v;
   }
   for (const [k, v] of Object.entries(process.env)) {
+    if (SESSION_VARS.has(k)) continue;
     if (k.startsWith("TM8_") && !(k in env) && v !== undefined) env[k] = v;
   }
 

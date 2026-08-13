@@ -14,6 +14,7 @@ import {
   REPO_ROOT,
   port as readPort,
 } from "./env.mjs";
+import { inspectDatabase, redact } from "./pg.mjs";
 
 const MIN_NODE_MAJOR = 20;
 
@@ -118,16 +119,13 @@ export async function preflight(env, opts = {}) {
       continue;
     }
     if (key === "TM8_PG_PORT") {
-      results.push(
-        check(
-          "warn",
-          false,
-          `${key}=${value} already in use`,
-          "Something is listening on the sidecar Postgres port. If that is a previous " +
-            "tm8 sidecar for this data dir the server will reuse it; otherwise stop it " +
-            "or set TM8_PG_PORT.",
-        ),
-      );
+      // Not a problem — it is the EXPECTED state. tm8 uses the system Postgres
+      // (ruled 2026-08-12), so something listening here is the cluster tm8 is
+      // meant to talk to. This used to warn about reusing "a previous tm8
+      // sidecar", describing a subsystem that has never run: the fourteen files
+      // under packages/server/src/sidecar/ are imported by nothing but `import
+      // type`, so no tm8 process has ever started or owned a postmaster.
+      results.push(check("error", true, `${key}=${value} has a cluster`, ""));
       continue;
     }
     results.push(
@@ -150,6 +148,57 @@ export async function preflight(env, opts = {}) {
       "node_modules is missing at the repo root. Run `bun install` first.",
     ),
   );
+
+  // --- the database --------------------------------------------------------
+  // This block is why preflight exists at all now. Everything above it was
+  // already true of a tm8 that answers 501 to all 141 operations, which is
+  // exactly what a fresh clone used to produce: no TM8_DATABASE_URL, no
+  // database, no migrations, and a launcher that said "ready".
+  //
+  // WARN rather than ERROR, deliberately. The server does boot without a
+  // database — it just cannot do anything — and refusing to start would take
+  // away the one state in which the message below is visible. Loud, not fatal.
+  if (opts.checkDatabase !== false) {
+    const db = inspectDatabase(env);
+    if (!db.reachable) {
+      results.push(check("warn", false, "database", db.detail));
+    } else if (db.applied === 0) {
+      results.push(
+        check(
+          "warn",
+          false,
+          "database has no schema",
+          `${redact(env.TM8_DATABASE_URL)} is reachable but unmigrated (0 of ${db.onDisk} migrations). ` +
+            "The server does NOT migrate at boot. Run `node db/migrate.mjs up`, or ./install.sh",
+        ),
+      );
+    } else if (db.applied !== db.onDisk) {
+      results.push(
+        check(
+          "warn",
+          false,
+          "schema is behind",
+          `${db.applied} of ${db.onDisk} migrations applied. Run \`node db/migrate.mjs up\`.`,
+        ),
+      );
+    } else {
+      results.push(check("error", true, `database ${db.applied}/${db.onDisk} migrations`, ""));
+    }
+
+    if (db.reachable && db.delivery === false) {
+      results.push(
+        check(
+          "warn",
+          false,
+          "delivery role cannot authenticate",
+          "TM8_DELIVERY_DATABASE_URL must AUTHENTICATE as tm8_delivery_worker, not merely be " +
+            "able to SET ROLE to it. Until it can, messages are stored but never pushed to a " +
+            "live terminal — a failure with no error anywhere. Fix: trust loopback in pg_hba " +
+            "(./install.sh --configure-pg-hba).",
+        ),
+      );
+    }
+  }
 
   return results;
 }

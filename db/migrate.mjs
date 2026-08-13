@@ -34,25 +34,40 @@ const FILE_PATTERN = /^\d{3}_[a-z0-9_]+\.sql$/;
 // --- psql discovery ---------------------------------------------------------
 // The sidecar's binaries are not necessarily on PATH (they are a versioned
 // Homebrew keg on macOS), so look where they actually live before giving up.
+// tm8 standardises on Postgres 16 (ruled 2026-08-12) but accepts a newer client:
+// psql talks happily to an older server, and only pg_dump refuses the reverse.
+// So probe the standard major first, then newer ones, then PATH.
+//
+// Two things were wrong here before. It looked for major 18 ONLY — a version no
+// machine in this project has ever run (the three live clusters are 16, CI pinned
+// 17) — and it tried a bare `psql` FIRST, which on a host with more than one
+// Postgres is whichever formula happened to get linked, pointing at a different
+// cluster. A versioned path is a fact; `psql` on PATH is a guess, so the guess
+// goes last.
+const PG_MAJORS = [process.env.TM8_PG_MAJOR || '16', '18', '17', '16'];
+
 function findPsql() {
   if (process.env.TM8_PSQL) return process.env.TM8_PSQL;
-  const candidates = [
-    'psql',
-    '/opt/homebrew/opt/postgresql@18/bin/psql',
-    '/usr/local/opt/postgresql@18/bin/psql',
-    '/usr/lib/postgresql/18/bin/psql',
-  ];
-  for (const candidate of candidates) {
-    if (candidate === 'psql') {
-      const probe = spawnSync('psql', ['--version'], { stdio: 'ignore' });
-      if (probe.status === 0) return 'psql';
-      continue;
+  const seen = new Set();
+  for (const major of PG_MAJORS) {
+    if (seen.has(major)) continue;
+    seen.add(major);
+    for (const candidate of [
+      `/usr/lib/postgresql/${major}/bin/psql`,      // Debian / Ubuntu
+      `/opt/homebrew/opt/postgresql@${major}/bin/psql`, // Homebrew, Apple silicon
+      `/usr/local/opt/postgresql@${major}/bin/psql`,    // Homebrew, Intel
+      `/usr/pgsql-${major}/bin/psql`,               // RHEL family
+    ]) {
+      if (existsSync(candidate)) return candidate;
     }
-    if (existsSync(candidate)) return candidate;
   }
+  const probe = spawnSync('psql', ['--version'], { stdio: 'ignore' });
+  if (probe.status === 0) return 'psql';
   fail(
-    'psql not found. Install the Postgres 18 client or set TM8_PSQL to its path.\n' +
-      '  brew --prefix postgresql@18  → <prefix>/bin/psql',
+    `psql not found. Install the Postgres ${PG_MAJORS[0]} client, or set TM8_PSQL to its path.\n` +
+      `  Debian/Ubuntu  apt-get install postgresql-client-${PG_MAJORS[0]}\n` +
+      `  macOS          brew install postgresql@${PG_MAJORS[0]}\n` +
+      '  Or just run    ./install.sh',
   );
 }
 
