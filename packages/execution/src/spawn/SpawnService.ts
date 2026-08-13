@@ -42,6 +42,11 @@ import {
 import type { WorktreeManager } from '../worktree/WorktreeManager.js';
 import { provisionWorktree, type ProvisionedWorktree } from './worktree-provisioning.js';
 import { reconcileNodeWorktrees, type WorktreeReconcileReport } from './worktree-reconcile.js';
+import {
+  ShellSessionLauncher,
+  loginShellCommand,
+  resolveLoginShell,
+} from '../shell/ShellSessionLauncher.js';
 import type {
   CredentialSource,
   GraphAuth,
@@ -51,6 +56,8 @@ import type {
   InteractionProfilePinContext,
   ResumeRequest,
   SessionLaunchPosture,
+  ShellSessionRequest,
+  ShellSessionResult,
   SpawnContext,
   SpawnRequest,
   SpawnResult,
@@ -965,6 +972,157 @@ export class SpawnService {
           .releaseWorktreeLease(auth, worktree.worktreeId)
           .catch(() => undefined);
       }
+      this.sessionAuth.delete(sessionId);
+      throw error;
+    }
+  }
+
+  /**
+   * execution.terminal.start — a VANILLA TERMINAL (101).
+   *
+   * ===========================================================================
+   * WHY THIS LIVES ON `SpawnService` WHEN IT SPAWNS NO AGENT
+   * ===========================================================================
+   *
+   * Because of ONE field: `sessionAuth`. Read its docstring above — it is not a
+   * cache, it is the only way anything can write a session's exit transition to
+   * the graph. `work_session_transition` goes through `require_space_member`,
+   * which needs an identity, and a PTY exiting three hours later has none. A
+   * shell session registered anywhere else would exit into
+   * `handlePtyExit`'s "no captured claims — expect a ghost session" branch: the
+   * row stays `running` forever and the UI paints a dead shell as live.
+   *
+   * That is exactly the residual `credentials/` accepted (083's header states
+   * it: an absent member's login row reads `running` forever, and read models
+   * must therefore derive connection state from `credential_sessions` instead).
+   * A login terminal can live with it because it has a TTL and its own ledger
+   * to be honest from. A vanilla terminal has neither — its `status` IS the
+   * answer to "is this shell alive" — so it goes through the single writer,
+   * which means it goes through this map, which means it goes through this
+   * class. Everything else this method needs it gets for free from the same
+   * decision: `terminate`, `handlePtyActivity`, `handlePtyExit` and
+   * `reconcileNodeGhosts` are all keyed by session id and ask no questions
+   * about kind.
+   *
+   * ===========================================================================
+   * WHAT IT DOES NOT DO, ENUMERATED AGAINST `spawn()` ABOVE
+   * ===========================================================================
+   *
+   * No `loadSpawnContext` (no persona, no skills, no memory working set), no
+   * `resolveLaunchConfig`, no `resolveInteractionProfile` and no pin, no
+   * `issueWorkSessionAgentToken`, no `composeManifest`, no `writeManifestFile`,
+   * no `recordManifest`, no `composePrompt`, no `assertAgentRuntime`, no
+   * sandbox preflight, no worktree provisioning, and — the one with a visible
+   * failure mode — NO `trustClaudeWorkspace`/`trustCodexWorkspace`. Those two
+   * write into an agent CLI's config home to pre-answer a trust dialog that
+   * only that CLI raises. Running them for a session with no agent would at
+   * best write a trust record nothing reads, and at worst mark a directory
+   * trusted on the member's behalf because they opened a shell in it.
+   *
+   * There is also no boot-settlement window. It exists so a spawn does not
+   * report success for an agent CLI that exits 127 a moment later; a login
+   * shell that dies instantly is a broken node, not a mistyped launch config,
+   * and the honest report for it is the same exit transition every other death
+   * takes rather than a synthesized launch error.
+   */
+  async startShell(auth: GraphAuth, request: ShellSessionRequest): Promise<ShellSessionResult> {
+    const context = await this.graph.loadShellContext(auth, {
+      spaceId: request.spaceId,
+      projectId: request.projectId,
+    });
+
+    // Re-asserted here for the same reason `resolveWorkdir` re-asserts it: the
+    // DB CHECK already enforces this shape, and a future direct-write path must
+    // not be able to quietly hand a PTY a relative or traversing cwd.
+    if (context.project) {
+      const dir = context.project.workingDir;
+      if (!dir.startsWith('/') || dir.includes('..')) {
+        throw new SpawnError('project working directory is not a safe absolute path', 'internal', {
+          projectId: context.project.id,
+        });
+      }
+    }
+
+    const { sessionId, commandResult, replayed } = await this.graph.createShellSession(auth, {
+      ...request,
+      nodeId: this.nodeId,
+      // Recorded so the row says where the shell actually is. Null for a
+      // projectless terminal rather than the `.../pending` placeholder
+      // `execution_spawn` writes — see the migration for why.
+      workdirPath: context.project ? context.project.workingDir : null,
+    });
+
+    // A projectless terminal's directory is named for the session, which only
+    // exists now — the same re-resolution `spawn()` does, and for the same
+    // reason: the row must record the path the PTY will actually use.
+    const cwd = context.project
+      ? context.project.workingDir
+      : join(this.dataDir, 'scratch', sessionId);
+
+    const launcher = new ShellSessionLauncher({
+      pty: this.pty,
+      env: this.env,
+      ...(this.logger ? { logger: this.logger } : {}),
+    });
+
+    // A ledger replay is a transport retry of the original result, not
+    // permission to start a second shell under the same id. Unlike `spawn()`'s
+    // replay branch — which has to recompose a manifest to answer with — there
+    // is nothing to rebuild here, so the answer is the recorded result and the
+    // reattach state of whatever PTY is (or is not) already live.
+    if (replayed) {
+      const shell = resolveLoginShell(this.env);
+      return {
+        sessionId,
+        shell,
+        command: loginShellCommand(shell),
+        cwd,
+        envVarNames: [],
+        reused: launcher.hasLiveTerminal(sessionId),
+        commandResult,
+      };
+    }
+
+    this.sessionAuth.set(sessionId, auth);
+    let launchedPty = false;
+    try {
+      if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
+
+      const launched = launcher.launch({
+        sessionId,
+        cwd,
+        ...(request.cols ? { cols: request.cols } : {}),
+        ...(request.rows ? { rows: request.rows } : {}),
+      });
+
+      launchedPty = true;
+
+      await this.graph.transition(auth, { sessionId, status: 'running' });
+
+      return {
+        sessionId,
+        shell: launched.shell,
+        command: launched.command,
+        cwd,
+        envVarNames: Object.keys(launched.env).sort(),
+        reused: launched.reused,
+        commandResult,
+      };
+    } catch (error) {
+      // KILL THE PTY IF IT IS ALREADY UP, and this is not the same call `spawn`
+      // makes. If the launch succeeded and the `running` transition then threw,
+      // the row is about to be marked `failed` and the claims dropped — but the
+      // shell would stay alive with nothing claiming it. It cannot be reaped:
+      // `reconcileNodeGhosts` skips any session that still has a live PTY, so a
+      // boot-time sweep passes over it too. `spawn()` has the identical hole
+      // and it matters less there, because an agent process eventually exits on
+      // its own; A LOGIN SHELL RUNS FOREVER BY DESIGN. An orphaned interactive
+      // shell as the tm8 OS user, unreachable and unreapable short of
+      // restarting the node, is the one outcome this path must not produce.
+      if (launchedPty) this.pty.kill(sessionId);
+      // The row exists and the graph believes a session is spawning. Leaving it
+      // there would burn a slot against the terminal cap forever.
+      await this.failSession(auth, sessionId, error);
       this.sessionAuth.delete(sessionId);
       throw error;
     }

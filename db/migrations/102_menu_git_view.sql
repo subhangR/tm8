@@ -1,4 +1,4 @@
--- 101 — the Git view takes a rail row under Tracking (Git UI landing, 2026-08-12).
+-- 102 — the Git view takes a rail row under Tracking (Git UI landing, 2026-08-12).
 --
 -- The Git UI wave shipped a project git screen (topology, worktree lanes,
 -- contention) behind the widened `MenuViewRef` 'git', and the client's
@@ -11,7 +11,7 @@
 -- registry's closed ref constraint, register the implemented view, redefine
 -- the default payload, then upgrade byte-equivalent legacy defaults only.
 --
--- (The wave authored this as 089 against an 088 head; renumbered to 101 and
+-- (The wave authored this as 089 against an 088 head; renumbered (twice — main took both 089 and 101) to 102 and
 -- re-based on the CURRENT chain: the constraint and payload carry 094's
 -- 'loop' child and 096's 'files' view — a re-declared closed list must keep
 -- every widening that landed since the one it was drafted against.)

@@ -355,6 +355,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       },
       previewArtifact: (id, input) => ops.previewArtifact(id, input),
       spawn: (input) => ops.spawn(input),
+      startTerminal: (input) => ops.startTerminal(input),
       dispatch: (input) => ops.dispatch(input),
       prompt: (id, input) => ops.prompt(id, input),
       terminate: (id, input) => ops.terminate(id, input),
