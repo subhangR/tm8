@@ -1259,6 +1259,39 @@ const ROWS: Record<OperationName, Row> = {
       'worktree is not advertised until the node can create and clean one up safely',
     ],
   },
+  'execution.terminal.start': {
+    // NO CLI COMMAND, and it is a SCOPE DECISION rather than a refusal — the
+    // same shape `credentials.*` takes above, and the same reasoning.
+    //
+    // 101 delivered this operation for the UI: "starting a shell session with
+    // no agent FROM THE UI". Advertising `session terminal` in the grammar
+    // without wiring a handler would break a real invariant, not just a count
+    // — `discovery-commands.test.ts` asserts that EVERY command in the frozen
+    // grammar is registered, and it has been empty-by-construction until now.
+    // Documented-but-unwired is a state `run.ts` still models (exit 8), and
+    // that test records out loud that no live example exists; manufacturing
+    // one to save a row here would be the wrong way to spend that property.
+    //
+    // A CLI form would need no security change — a `cli`-kind human session is
+    // the same principal a browser one is. It is simply not this task's scope,
+    // and the row stays here so the operation is still DISCOVERABLE by exact
+    // lookup and by tag.
+    cmd: null,
+    sum: 'Open a vanilla terminal — a shell session with no agent attached',
+    authz: 'space',
+    input: 'bound',
+    side: 'execution',
+    tags: ['terminal', 'shell', 'pty', 'vanilla', 'console'],
+    notes: [
+      'NO CLI COMMAND — a scope decision, not a refusal; 101 delivered this for the UI. A `cli` human session is the same principal a browser one is, so a CLI form would need no security change',
+      'no Teammate, no model, no persona: this is the shell you get without `claude-code` or `codex` in front of it',
+      'the shell is resolved Server-side and CANNOT be named by the caller — there is no command, args or flags input',
+      'the cwd is the project ROOT when a project is named, never a provisioned worktree; with no project it is a Server-owned scratch directory and the row records `workdir_mode = scratch`',
+      'NO CLIENT NAMES A PROJECT TODAY — the UI header has no project picker and there is no CLI command, so every terminal a human can start is currently projectless',
+      'its own concurrency ceiling (`TM8_TERMINAL_CAP`, default 4), disjoint from the agent and credential caps',
+      'attach to it exactly like any other session — `execution.streams.attach` asks no questions about session kind',
+    ],
+  },
   'execution.dispatch': {
     cmd: ['session', 'dispatch'],
     syn: 'tm8 session dispatch <subject-entity-id> [--space <space-id>] [--note <text>] [--force-new-task] [--mutation-id <id>]',
@@ -1898,7 +1931,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:b3ae2249bfea065da873cdae97b1099a0d0db2f0f926eab6c3618d61ce7fbf2d';
+  'sha256:14c02f18b6d6e89238e1a73abea8b90a7e615d9f98dbdd50459c2968412af0b0';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -46,6 +46,15 @@ const done = (id: string) =>
     state: { kind: 'task', workStatus: 'done', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } } as EntitySummary['state'],
   });
 
+/** A task carrying a due date, or explicitly carrying none. */
+const due = (id: string, dueDate: string | null) =>
+  summary(id, {
+    state: {
+      kind: 'task', workStatus: 'open', priority: 'medium', axes: {}, dueDate,
+      assignees: [], acceptance: { total: 0, completed: 0 },
+    } as EntitySummary['state'],
+  });
+
 const table = (list: EntitySummary[]): Record<EntityId, EntitySummary> =>
   Object.fromEntries(list.map((s) => [s.id, s])) as Record<EntityId, EntitySummary>;
 
@@ -151,5 +160,47 @@ describe('projectRows — a server-ordered read kept current by the stream', () 
     const entities = table([summary('b')]);
     const out = projectRows({ ordered, entities, kind: 'task', spaceId: SPACE, filter: undefined });
     expect(out.map((r) => r.id)).toEqual(['b']);
+  });
+
+  /**
+   * NULLS LAST, AND THAT IS THE SERVER'S ORDER BEING MIRRORED, not a taste.
+   *
+   * `handlers/collections.ts` sorts `dueDate` as
+   * `coalesce(t.due_date, '9999-12-31'::date)` — a sentinel rather than
+   * `NULLS LAST`, because a keyset comparison over a nullable column cannot
+   * express "nulls last" as a row comparison and getting it subtly wrong loses
+   * rows at a page boundary. `ORDERINGS.dueDate` carries the same sentinel so
+   * an ARRIVAL lands where the server would have put it.
+   *
+   * Worth pinning now that the dialog can actually write a due date: while
+   * nothing filled the column, every task tied on the sentinel and this order
+   * was unobservable in either direction.
+   */
+  it('orders arrivals by due date and puts the ones with no due date LAST', () => {
+    const entities = table([
+      due('none', null),
+      due('late', '2026-12-01'),
+      due('soon', '2026-08-13'),
+    ]);
+    const out = projectRows({
+      ordered: [] as EntityId[], entities, kind: 'task', spaceId: SPACE, filter: undefined,
+      sort: 'dueDate',
+    });
+    expect(out.map((r) => r.id)).toEqual(['soon', 'late', 'none']);
+  });
+
+  it('slots a dated arrival into a server-ordered page, ahead of the undated tail', () => {
+    // The merge path, not the sort path: `base` is the server's page and the
+    // arrival has to find its own seat in it rather than displacing the page.
+    const entities = table([
+      due('a', '2026-08-10'),
+      due('b', null),
+      due('fresh', '2026-08-11'),
+    ]);
+    const out = projectRows({
+      ordered: ['a', 'b'] as EntityId[], entities, kind: 'task', spaceId: SPACE, filter: undefined,
+      sort: 'dueDate',
+    });
+    expect(out.map((r) => r.id)).toEqual(['a', 'fresh', 'b']);
   });
 });

@@ -118,7 +118,7 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     expect(rows[0]?.items).toEqual(DEFAULT_MENU_LIBRARY_SPINE);
   });
 
-  it('leads Tracking with the git VIEW row (101) — the wave’s screen must be reachable on real spaces', async () => {
+  it('leads Tracking with the git VIEW row (102) — the wave’s screen must be reachable on real spaces', async () => {
     const rows = await db.query<{ first: { type: string; ref: string } }>(
       `select g->'items'->0 as first
          from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g
@@ -130,7 +130,7 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
   it('the guard ACCEPTS the new default — the registry row exists, so the seeder cannot refuse its own payload', async () => {
     // The failure mode 071 hit: a default the write-path validator rejects.
     // w2_normalize_menu_payload checks view refs against menu_view_registry
-    // (menu_eligible AND implemented); if 101's registry insert were missing,
+    // (menu_eligible AND implemented); if 102's registry insert were missing,
     // this raises 22023 rather than returning the canonical payload.
     const rows = await db.query<{ ok: boolean }>(
       `select internal.w2_normalize_menu_payload(
@@ -323,16 +323,16 @@ describeDb('Loop default-menu saved-row compatibility', () => {
 });
 
 /**
- * The 101 BACKFILL, proven against real rows rather than asserted in prose:
- * the chain is applied only through 100-era files, two seeded spaces are
- * given menu rows — one holding the pre-101 default verbatim, one customized
- * — and then 101 runs. The default row must gain the git view with its
+ * The 102 BACKFILL, proven against real rows rather than asserted in prose:
+ * the chain is applied only through 101-era files, two seeded spaces are
+ * given menu rows — one holding the pre-102 default verbatim, one customized
+ * — and then 102 runs. The default row must gain the git view with its
  * revision bumped; the customized row must come through BYTE-IDENTICAL,
  * because overwriting an administrator's arrangement is the one thing the
  * backfill may never do (the git ref stays offerable via the menu editor's
  * free view refs instead).
  */
-describeDb('101 backfill — upgrades the verbatim default, never a customized menu', () => {
+describeDb('102 backfill — upgrades the verbatim default, never a customized menu', () => {
   let db: W1ScratchDatabase;
   const DEFAULT_SPACE = '00000000-0000-4000-8000-000000000089';
   const CUSTOM_SPACE = '00000000-0000-4000-8000-000000000090';
@@ -341,10 +341,10 @@ describeDb('101 backfill — upgrades the verbatim default, never a customized m
   beforeAll(async () => {
     db = await createW1ScratchDatabase('menu-git-backfill');
     const files = migrationFiles();
-    const before101 = files.filter((file) => file < '101');
-    // Split application is the point: rows must EXIST before 101 runs for the
+    const before102 = files.filter((file) => file < '102');
+    // Split application is the point: rows must EXIST before 102 runs for the
     // backfill's WHERE clause to be the thing under test.
-    db.apply(before101);
+    db.apply(before102);
 
     await db.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');
@@ -357,7 +357,7 @@ describeDb('101 backfill — upgrades the verbatim default, never a customized m
          values ($1, 'Default menu', 'backfill-default'), ($2, 'Custom menu', 'backfill-custom')`,
         [DEFAULT_SPACE, CUSTOM_SPACE],
       );
-      // The pre-101 seeder output IS the 094 payload at this point in the
+      // The pre-102 seeder output IS the 096 payload at this point in the
       // chain — inserted exactly as repair/seed paths insert it.
       await client.query(
         `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
@@ -380,7 +380,7 @@ describeDb('101 backfill — upgrades the verbatim default, never a customized m
     );
     customPayloadBefore = rows[0]?.payload;
 
-    // The RED side of the proof, measured not assumed: before 101 the seeded
+    // The RED side of the proof, measured not assumed: before 102 the seeded
     // default names no git ref anywhere. If a prior migration already carried
     // it, the upgrade assertion below would be testing nothing.
     const before = await db.query<{ has_git: boolean }>(
@@ -390,7 +390,7 @@ describeDb('101 backfill — upgrades the verbatim default, never a customized m
     );
     expect(before[0]?.has_git).toBe(false);
 
-    db.apply(['101_menu_git_view.sql']);
+    db.apply(['102_menu_git_view.sql']);
   }, 180_000);
 
   afterAll(async () => {
