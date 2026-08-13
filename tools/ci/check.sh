@@ -92,6 +92,10 @@ fi
 # Order matters: contract first (everything references it), then dependents.
 TSC_PROJECTS=(
   packages/contract
+  # mcp before server: the post-#188 server REQUIRES @tm8/mcp/dist at boot,
+  # and a project absent from this list is a dist CI never builds — every
+  # cli integration suite then dies at server start, masking real reds.
+  packages/mcp
   packages/server
   packages/execution
   packages/cli
