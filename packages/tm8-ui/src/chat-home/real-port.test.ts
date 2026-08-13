@@ -87,5 +87,52 @@ describe('real chat-home seam adapter', () => {
       body: 'First prompt',
     });
   });
+
+  it('self-heals a cache miss with ONE bridge refresh instead of failing the read', async () => {
+    const { seam } = seamStub();
+    const row = {
+      rootMessageId: ROOT,
+      anchorId: ANCHOR,
+      teammateId: TEAMMATE,
+      model: 'claude-sonnet-4-5',
+      createdAt: '2026-08-13T08:00:00.000Z',
+      lastReplyAt: null,
+    };
+    // First read answers EMPTY (the thread missed the last home read); the
+    // refresh answers the row. Shipped v1 threw "not present in the latest
+    // space-wide read" here — measured live by the operator.
+    const listThreads = vi.fn(async () => (listThreads.mock.calls.length > 1 ? [row] : []));
+    const port = createChatHomePortFromSeam(seam, { listThreads });
+    await port.listThreads('space-1');
+
+    await port.postTurn({ threadRootId: ROOT, body: 'hello again', clientMutationId: 'turn-x' });
+    expect(listThreads).toHaveBeenCalledTimes(2);
+
+    // A rootId the server has never heard of still fails honestly.
+    await expect(
+      port.postTurn({ threadRootId: '019f0000-0000-7000-8000-00000000dead' as EntityId, body: 'x', clientMutationId: 'turn-y' }),
+    ).rejects.toThrow(/not present in the latest space-wide read/);
+  });
+
+  it('seeds the caches at createRoot so a brand-new chat never races the home read', async () => {
+    const { seam, postMessage } = seamStub();
+    const configureThread = vi.fn(async () => ({ threadRootId: ROOT, teammateId: TEAMMATE, model: 'm' }));
+    // No listThreads bridge at all: the seeded entry must carry the sequence alone.
+    const port = createChatHomePortFromSeam(seam, { configureThread });
+
+    const { threadRootId } = await port.startThread.createRoot({
+      spaceId: 'space-1', anchorId: ANCHOR, body: 'first prompt', clientMutationId: 'root-1',
+    });
+    await port.startThread.configure({
+      rootMessageId: threadRootId, teammateId: TEAMMATE, model: 'claude-sonnet-4-5', clientMutationId: 'cfg-1',
+    });
+    await port.postTurn({ threadRootId, body: 'second turn', clientMutationId: 'turn-2' });
+    expect(postMessage).toHaveBeenLastCalledWith({
+      clientMutationId: 'turn-2',
+      anchorIds: [ANCHOR],
+      parentMessageId: ROOT,
+      body: 'second turn',
+    });
+  });
 });
 
