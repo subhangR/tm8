@@ -45,7 +45,11 @@ import type { Querier } from '../db/types.js';
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
 import { loadUnreadCounts } from '../facade/entity-read.js';
-import { projectForgeFacts } from '../tracking/pr-projection.js';
+import {
+  loadLinkedPullRequestBadges,
+  projectForgeFacts,
+  type LinkedPullRequestBadges,
+} from '../tracking/pr-projection.js';
 
 /**
  * Thrown when the database holds an entity kind the FROZEN contract does not
@@ -561,11 +565,21 @@ export class PgEntityProjector implements EntityProjector {
       for (const row of counted) containsCounts.set(row.src_id, Number(row.n));
     }
 
+    // `badges.pullRequests` — and it is NOT a KNOWN_GAP, deliberately. The
+    // other badges are omitted here because they need per-entity graph work
+    // this projector does not do; this one is a single bounded query, and
+    // leaving it out would be worse than absent: the chip would render on load
+    // and then VANISH on the next live `entity.upsert`, which reads as the PR
+    // being unlinked. Same loader as the facade assembler, so the two answers
+    // cannot drift. Skipped entirely when no task is in the batch.
+    const pullRequests = await loadLinkedPullRequestBadges(q, rows);
+
     for (const r of rows) {
       out.set(
         r.id,
         this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], memberIds.get(r.id) ?? [],
-          viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts, containsCounts),
+          viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts, containsCounts,
+          pullRequests.get(r.id)),
       );
     }
     return out;
@@ -637,6 +651,7 @@ export class PgEntityProjector implements EntityProjector {
     attention: EntityAttentionSummary | undefined,
     unreadCounts: ReadonlyMap<string, number>,
     containsCounts: ReadonlyMap<string, number>,
+    pullRequests: LinkedPullRequestBadges | undefined,
   ): EntitySummary {
     const counters: EntityCounters = {
       likes: r.likes ?? 0,
@@ -668,9 +683,18 @@ export class PgEntityProjector implements EntityProjector {
       // cannot be honestly empty. `restricted` is the one badge derivable from
       // the envelope alone. blocked/pulls/workingActors need graph traversals
       // that belong to the facade's assembler — see KNOWN_GAPS.
+      //
+      // `pullRequests` MIRRORS badgesOf in entity-read.ts, condition for
+      // condition: emitted only when non-empty, `truncated` only when true.
       badges: {
         ...(r.visibility === 'restricted' ? { restricted: true } : {}),
         ...(attention ? { attention } : {}),
+        ...(pullRequests && pullRequests.items.length > 0
+          ? {
+              pullRequests: pullRequests.items,
+              ...(pullRequests.truncated ? { pullRequestsTruncated: true } : {}),
+            }
+          : {}),
       },
     };
 

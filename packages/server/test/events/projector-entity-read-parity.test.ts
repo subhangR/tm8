@@ -107,3 +107,39 @@ describe('entity-read ↔ projector kind-dispatch parity', () => {
     expect(done, `both arms now exist — remove from IN_FLIGHT_KINDS so the guard applies: ${done}`).toEqual([]);
   });
 });
+
+/**
+ * The same drift hazard one level up from kind dispatch: a BADGE that exists
+ * over REST and not over the event feed.
+ *
+ * It is worse than a badge that exists nowhere. The chip renders on load from
+ * the facade read and then VANISHES on the next live `entity.upsert`, because
+ * the projector's summary omitted it — which a reader can only interpret as the
+ * PR having been unlinked. The defence is that neither file computes this
+ * itself: both call `loadLinkedPullRequestBadges`, so there is one answer and
+ * nothing to diverge.
+ */
+describe('badges.pullRequests is computed by ONE loader, on both paths', () => {
+  const LOADER = 'loadLinkedPullRequestBadges';
+
+  it.each([
+    ['entity-read.ts', ENTITY_READ_SRC],
+    ['projector.ts', PROJECTOR_SRC],
+  ])('%s calls the shared loader rather than assembling the badge itself', (_name, file) => {
+    const src = readFileSync(file, 'utf8');
+    expect(src).toContain(`${LOADER}(q, rows)`);
+    expect(src).toContain('pullRequests');
+    // No second copy of the query. If a lane ever inlines this SQL, the two
+    // paths can answer differently and the chip starts flickering.
+    expect(src).not.toContain("g.type = 'tracks'");
+  });
+
+  it('is NOT listed in the projector\'s KNOWN_GAPS', () => {
+    // The other badges are legitimately absent from the feed: they need
+    // per-entity graph work this projector does not do. This one is a single
+    // bounded query, and its absence would read as an unlink.
+    const gaps = /const KNOWN_GAPS[\s\S]*?\]\)/.exec(readFileSync(PROJECTOR_SRC, 'utf8'));
+    expect(gaps, 'KNOWN_GAPS not found in projector.ts — the parse degraded').not.toBeNull();
+    expect(gaps?.[0]).not.toContain('pullRequests');
+  });
+});
