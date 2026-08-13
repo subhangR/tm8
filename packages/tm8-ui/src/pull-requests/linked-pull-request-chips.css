@@ -1,0 +1,43 @@
+.cv2-root .pr-chips {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+}
+.cv2-root .pr-chips__request {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.cv2-root .pr-chips__ref {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.cv2-root a.pr-chips__ref:hover {
+  color: var(--pn-brand);
+  text-decoration: underline;
+}
+
+.cv2-root .pr-chips__state {
+  display: inline-flex;
+}
+
+.cv2-root .pr-chips__state .kit-pill {
+  min-height: 16px;
+  padding: 1px 5px;
+  font-size: 8.5px;
+  line-height: 1.2;
+}
+
+.cv2-root .pr-chips--detail {
+  padding-top: 5px;
+}

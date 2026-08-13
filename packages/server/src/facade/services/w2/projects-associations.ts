@@ -7,14 +7,18 @@ import {
   type EdgeView,
   type EntityCounters,
   type EntitySummary,
+  type CommitSessionAttribution,
   type ProjectBranchTopology,
   type ProjectCreateInput,
+  type ProjectFileBlame,
+  type ProjectFileHistory,
+  type ProjectRevisionDiff,
   type ProjectLinkInput,
   type ProjectResource,
   type ProjectUpdateInput,
 } from '@tm8/contract';
 
-import { readBranchTopology } from '@tm8/execution';
+import { UNCOMMITTED_OID, readBranchTopology, readFileBlame, readFileHistory, readFileRevisionDiff } from '@tm8/execution';
 
 import type { Querier } from '../../../db/types.js';
 import type { RequestContext } from '../../../http/types.js';
@@ -29,6 +33,7 @@ import {
 import type { FacadeDeps } from '../../deps.js';
 import { actorOf, iso, isoOrNull, loadActors } from '../../entity-read.js';
 import { ensureProjectWorkingDirectory, listProjectDirectories } from './project-directories.js';
+import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 /** `?staleAfterDays=` — absent means "use the module's own default". */
 function positiveInt(raw: string | null, field: string): number | undefined {
@@ -98,6 +103,8 @@ interface CorrectionEdgeRow {
   pr_repo: string | null;
   pr_number: number | null;
   pr_state: string | null;
+  pr_ci_status: string | null;
+  pr_mergeable_state: string | null;
   pr_url: string | null;
   pr_fetched_at: Date | string | null;
   commit_repo: string | null;
@@ -209,6 +216,7 @@ function artifactSummary(row: CorrectionEdgeRow, createdBy: ActorSummary): Entit
         ...(row.pr_url ? { url: row.pr_url } : {}),
         fetchedAt: isoOrNull(row.pr_fetched_at),
         stale: row.pr_fetched_at === null,
+        ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state),
       },
     };
   }
@@ -261,6 +269,7 @@ async function loadCorrectionEdge(
                  when 'dislikes' then 'dislike' when 'stars' then 'star' end artifact_viewer_reaction,
             pr.title pr_title, pr.repo pr_repo, pr.number pr_number, pr.state pr_state,
             pr.url pr_url, pr.fetched_at pr_fetched_at,
+            pr.ci_status pr_ci_status, pr.mergeable_state pr_mergeable_state,
             commit_row.repo commit_repo, commit_row.sha commit_sha,
             commit_row.message commit_message, commit_row.committed_at commit_committed_at,
             projection.id project_entity_id, projection.space_id project_space_id,
@@ -409,6 +418,189 @@ export class W2ProjectsAssociationsService {
       }
       throw error;
     }
+  };
+
+  /**
+   * The project row every file read starts from, under the CALLER's claims —
+   * authorization is exactly `projects.get`'s, and THE PATH COMES FROM THE
+   * ROW, NEVER FROM THE REQUEST (listBranches's law: the request names a
+   * pathspec INSIDE the checkout, never the directory git runs in).
+   */
+  private async projectRowFor(ctx: RequestContext): Promise<ProjectRow> {
+    const owner = await this.deps.owner();
+    const projectId = requireUuidParam(ctx, 'projectId');
+    const rows = await this.deps.db.query<ProjectRow>(
+      claimsFor(owner, ctx),
+      `${PROJECT_SELECT} where id = $1`,
+      [projectId],
+    );
+    const row = rows[0];
+    if (!row) throw new CollabError('not_found', `no such project: ${projectId}`);
+    return row;
+  }
+
+  /** `?path=` — the one pathspec both file reads take. Shape-checked here; the execution module re-refuses. */
+  private static pathParam(ctx: RequestContext): string {
+    const path = ctx.query.get('path');
+    if (path === null || path === '') {
+      throw new CollabError('invalid_input', 'path query parameter is required');
+    }
+    return path;
+  }
+
+  /**
+   * The `invalid_input`-class facts about the CALLER's project or path keep
+   * their contract code; anything else stays what it was. Same reasoning as
+   * listBranches: `internal` for a non-repo sends users hunting a tm8 bug.
+   */
+  private static liftFileReadError(error: unknown, projectId: string, workingDir: string): never {
+    const maybe = error as { code?: string; reason?: string };
+    if (maybe.code === 'invalid_input') {
+      throw new CollabError(
+        'invalid_input',
+        `project ${projectId} working directory ${workingDir}: ${maybe.reason ?? 'invalid_input'}`,
+        { details: { reason: maybe.reason ?? 'invalid_input' } },
+      );
+    }
+    throw error;
+  }
+
+  /**
+   * The attribution join — commit sha → `commits` row → `created_in` edge →
+   * work_session (→ its teammate over the newest `relates_to` edge). Read
+   * under the caller's claims so RLS decides what provenance is visible.
+   *
+   * ABSENT FACTS ARE ABSENT CLAIMS: a sha with no row here gets NO entry in
+   * the map, and callers render null — never a name-match or timestamp guess.
+   */
+  private async attributionFor(
+    ctx: RequestContext,
+    shas: readonly string[],
+  ): Promise<Map<string, CommitSessionAttribution>> {
+    const attribution = new Map<string, CommitSessionAttribution>();
+    const unique = [...new Set(shas.map((s) => s.toLowerCase()))];
+    if (unique.length === 0) return attribution;
+    const owner = await this.deps.owner();
+    interface JoinRow {
+      sha: string;
+      commit_entity_id: string;
+      session_id: string;
+      session_title: string;
+      agent_tool: string | null;
+      team_member_id: string | null;
+      team_member_name: string | null;
+    }
+    const rows = await this.deps.db.query<JoinRow>(
+      claimsFor(owner, ctx),
+      `select c.sha, c.entity_id as commit_entity_id,
+              ws.entity_id as session_id, ws.title as session_title, ws.agent_tool,
+              tm.entity_id as team_member_id, tm.name as team_member_name
+         from public.commits c
+         join public.edges e on e.src_id = c.entity_id and e.type = 'created_in'
+         join public.work_sessions ws on ws.entity_id = e.dst_id
+         left join lateral (
+           select t.entity_id, t.name
+             from public.edges ed
+             join public.team_members t on t.entity_id = ed.dst_id
+            where ed.src_id = ws.entity_id and ed.type = 'relates_to'
+            order by ed.created_at desc
+            limit 1
+         ) tm on true
+        where c.sha = any($1)
+        order by e.created_at asc`,
+      [unique],
+    );
+    for (const row of rows) {
+      // One `created_in` per commit ENTITY; if the same sha is mirrored in
+      // two visible spaces, first (oldest) recorded provenance wins here.
+      if (attribution.has(row.sha)) continue;
+      attribution.set(row.sha, {
+        commitEntityId: row.commit_entity_id,
+        sessionId: row.session_id,
+        sessionTitle: row.session_title,
+        agentTool: row.agent_tool,
+        teamMemberId: row.team_member_id,
+        teamMemberName: row.team_member_name,
+      });
+    }
+    return attribution;
+  }
+
+  /** `projects.file.history` — revisions of one path, each with its provenance join. */
+  readonly fileHistory = async (ctx: RequestContext): Promise<ProjectFileHistory> => {
+    const row = await this.projectRowFor(ctx);
+    const path = W2ProjectsAssociationsService.pathParam(ctx);
+    let history;
+    try {
+      history = await readFileHistory(row.working_dir, path, {
+        ...(positiveInt(ctx.query.get('maxRevisions'), 'maxRevisions') === undefined
+          ? {}
+          : { maxRevisions: positiveInt(ctx.query.get('maxRevisions'), 'maxRevisions') as number }),
+      });
+    } catch (error) {
+      W2ProjectsAssociationsService.liftFileReadError(error, row.id, row.working_dir);
+    }
+    const attribution = await this.attributionFor(ctx, history.revisions.map((r) => r.oid));
+
+    // `?diffOid=` — the patch ONE selected revision applied to the path, so
+    // the history browser can render a diff without a third operation. Asked
+    // with the path AT that revision (rename-follow), read from the window.
+    const diffOid = ctx.query.get('diffOid');
+    let diff: ProjectRevisionDiff | null = null;
+    if (diffOid !== null && diffOid !== '') {
+      const revision = history.revisions.find((r) => r.oid === diffOid.toLowerCase());
+      try {
+        diff = await readFileRevisionDiff(row.working_dir, revision?.path ?? path, diffOid.toLowerCase());
+      } catch (error) {
+        W2ProjectsAssociationsService.liftFileReadError(error, row.id, row.working_dir);
+      }
+    }
+
+    return {
+      projectId: row.id,
+      workingDir: row.working_dir,
+      path,
+      revisions: history.revisions.map((r) => ({
+        ...r,
+        session: attribution.get(r.oid.toLowerCase()) ?? null,
+      })),
+      truncated: history.truncated,
+      diff,
+    };
+  };
+
+  /** `projects.file.blame` — working-tree blame with the session-attribution overlay. */
+  readonly fileBlame = async (ctx: RequestContext): Promise<ProjectFileBlame> => {
+    const row = await this.projectRowFor(ctx);
+    const path = W2ProjectsAssociationsService.pathParam(ctx);
+    let blame;
+    try {
+      blame = await readFileBlame(row.working_dir, path, {
+        ...(positiveInt(ctx.query.get('maxLines'), 'maxLines') === undefined
+          ? {}
+          : { maxLines: positiveInt(ctx.query.get('maxLines'), 'maxLines') as number }),
+      });
+    } catch (error) {
+      W2ProjectsAssociationsService.liftFileReadError(error, row.id, row.working_dir);
+    }
+    // Uncommitted lines are not commits — never joined, never attributed.
+    const attribution = await this.attributionFor(
+      ctx,
+      blame.hunks.filter((h) => h.oid !== UNCOMMITTED_OID).map((h) => h.oid),
+    );
+    return {
+      projectId: row.id,
+      workingDir: row.working_dir,
+      path,
+      hunks: blame.hunks.map((h) => ({
+        ...h,
+        uncommitted: h.oid === UNCOMMITTED_OID,
+        session: h.oid === UNCOMMITTED_OID ? null : (attribution.get(h.oid.toLowerCase()) ?? null),
+      })),
+      blamedLines: blame.blamedLines,
+      totalLines: blame.totalLines,
+      truncated: blame.truncated,
+    };
   };
 
   readonly createProject = async (ctx: RequestContext): Promise<ProjectResource> => {

@@ -314,3 +314,59 @@
   justify-content: flex-end;
   flex-wrap: wrap;
 }
+
+/* --- preview renderers (image was the only one that existed) ------------- */
+.fx-preview-frame {
+  width: min(90vw, 900px);
+  height: min(80vh, 1000px);
+  border: 1px solid var(--pn-line);
+  /* A PDF viewer paints its own page; this is the frame behind it. */
+  background: var(--pn-card);
+}
+
+.fx-preview-text {
+  max-width: min(90vw, 900px);
+  max-height: 80vh;
+  overflow: auto;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--pn-line);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.fx-preview-media {
+  max-width: min(90vw, 900px);
+  max-height: 80vh;
+}
+
+.fx-download {
+  display: inline-block;
+  margin-top: 0.75rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* --- filter + measured progress ----------------------------------------- */
+.fx-filter {
+  flex: 0 1 14rem;
+  min-width: 0;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--pn-line);
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+/* Only ever rendered where the denominator is real — see folder-import.ts. */
+.fx-progress {
+  flex: 0 0 8rem;
+  height: 0.4rem;
+}

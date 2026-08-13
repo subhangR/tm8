@@ -17,6 +17,9 @@ import type {
   ResolvedInteractionProfileContext,
   ResumeWorkSessionResult,
   SessionLaunchPosture,
+  ShellSessionContext,
+  ShellSessionRequest,
+  StartShellSessionResult,
   SpawnContext,
   Tm8Manifest,
   TransitionInput,
@@ -38,6 +41,10 @@ export interface FakeGraphOptions {
 
 export class FakeGraph implements GraphPort {
   readonly created: CreateWorkSessionInput[] = [];
+  /** Vanilla-terminal rows minted through `start_shell_session` (101). */
+  readonly shellsCreated: Array<
+    ShellSessionRequest & { nodeId: string | null; workdirPath: string | null }
+  > = [];
   readonly transitions: TransitionInput[] = [];
   readonly commands: RecordCommandInput[] = [];
   readonly manifests: Array<{
@@ -116,6 +123,46 @@ export class FakeGraph implements GraphPort {
       };
     }
     this.created.push(input);
+    const sessionId = this.options.sessionId ?? randomUUID();
+    return { sessionId, commandResult: { entityId: sessionId, patches: [sessionId] }, replayed: false };
+  }
+
+  // --- vanilla terminals (101) ------------------------------------------------
+
+  async loadShellContext(
+    auth: GraphAuth,
+    input: { spaceId: string; projectId: string | null },
+  ): Promise<ShellSessionContext> {
+    this.authSeen.push(auth);
+    return {
+      project:
+        this.options.withProject === false
+          ? null
+          : {
+              id: input.projectId ?? randomUUID(),
+              name: 'tm8-fixture',
+              workingDir: this.options.workingDir,
+              trust: 'trusted',
+            },
+    };
+  }
+
+  async createShellSession(
+    auth: GraphAuth,
+    input: ShellSessionRequest & { nodeId: string | null; workdirPath: string | null },
+  ): Promise<StartShellSessionResult> {
+    this.authSeen.push(auth);
+    if (this.failNextCreate) {
+      const err = this.failNextCreate;
+      this.failNextCreate = null;
+      throw err;
+    }
+    if (this.replaySessionId) {
+      const sessionId = this.replaySessionId;
+      this.replaySessionId = null;
+      return { sessionId, commandResult: { entityId: sessionId, patches: [sessionId] }, replayed: true };
+    }
+    this.shellsCreated.push(input);
     const sessionId = this.options.sessionId ?? randomUUID();
     return { sessionId, commandResult: { entityId: sessionId, patches: [sessionId] }, replayed: false };
   }

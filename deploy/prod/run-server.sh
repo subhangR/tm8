@@ -13,6 +13,18 @@ if [[ ! -f "$TM8_PROD_ROOT/packages/server/dist/index.js" ]]; then
   exit 1
 fi
 
+# env.sh's node probe returns EMPTY rather than failing, on purpose: a sourced
+# file must not exit its caller, so it defers the complaint. deploy.sh's preflight
+# makes that complaint — but this script is also launched directly, by supervise.sh
+# and by systemd, where nothing has run that preflight. Without this guard an
+# empty TM8_NODE_BIN reaches `exec ""`, and the supervisor crash-loops on a
+# message that names nothing.
+if [[ -z "${TM8_NODE_BIN:-}" || ! -x "$TM8_NODE_BIN" ]]; then
+  echo "run-server.sh: no node 22 found. env.sh probes ~/.local/bin/node, the node@22" >&2
+  echo "  keg, then PATH. Install one, or set TM8_NODE_BIN=/path/to/node." >&2
+  exit 1
+fi
+
 mkdir -p "$TM8_PROJECT_DIR" "$TM8_DATA_DIR"
 cd "$TM8_PROJECT_DIR"
 exec "$TM8_NODE_BIN" --enable-source-maps "$TM8_PROD_ROOT/packages/server/dist/index.js"

@@ -54,6 +54,11 @@ import {
   type Page,
   type ProjectBranchTopology,
   type ProjectResource,
+  type ContentionReport,
+  type ProjectFileBlame,
+  type ProjectFileHistory,
+  type SessionGitDiff,
+  type SessionGitStatus,
   type SessionJournalPage,
   type SessionLaunchRecord,
   type SessionTranscriptPage,
@@ -62,7 +67,7 @@ import {
   type SpaceSettingsView,
   type SpaceSummary,
 } from '@tm8/contract';
-import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike } from './http';
 import { createOps } from './ops';
 import {
@@ -280,6 +285,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       list: (projectId, path) => ops.projectFiles(projectId, path),
       read: (projectId, path) => ops.readProjectFile(projectId, path),
       attach: (projectId, input) => ops.attachProjectFile(projectId, input),
+      archiveHref: (projectId, path) => ops.projectArchiveHref(projectId, path),
     },
     // Seam Amendment 8: browser-originated folder import (R7 materialization).
     projectFolderUploads: {
@@ -299,6 +305,14 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     launch: (workSessionId: EntityId): Promise<SessionLaunchRecord> => ops.launch(workSessionId),
     transcript: (workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> =>
       ops.transcript(workSessionId, opts),
+    projectContention: (projectId: string): Promise<ContentionReport> => ops.projectContention(projectId),
+    projectFileHistory: (projectId: string, path: string, opts?: FileHistoryOpts): Promise<ProjectFileHistory> =>
+      ops.projectFileHistory(projectId, path, opts),
+    projectFileBlame: (projectId: string, path: string, opts?: FileBlameOpts): Promise<ProjectFileBlame> =>
+      ops.projectFileBlame(projectId, path, opts),
+    gitStatus: (workSessionId: EntityId): Promise<SessionGitStatus> => ops.gitStatus(workSessionId),
+    gitDiff: (workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> =>
+      ops.gitDiff(workSessionId, opts),
     inbox: (opts?: PageOpts): Promise<Page<NotificationItem>> => ops.inbox(opts),
     attentionRequests: (input: AttentionRequestListQuery): Promise<AttentionRequestPage> =>
       ops.attentionRequests(input),
@@ -348,10 +362,18 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       },
       previewArtifact: (id, input) => ops.previewArtifact(id, input),
       spawn: (input) => ops.spawn(input),
+      startTerminal: (input) => ops.startTerminal(input),
       dispatch: (input) => ops.dispatch(input),
       prompt: (id, input) => ops.prompt(id, input),
       terminate: (id, input) => ops.terminate(id, input),
       resume: (id, input) => ops.resume(id, input),
+      gitCheckpoint: (id, input) => ops.gitCheckpoint(id, input),
+      gitRollback: (id, input) => ops.gitRollback(id, input),
+      gitCommit: (id, input) => ops.gitCommit(id, input),
+      gitMerge: (id, input) => ops.gitMerge(id, input),
+      gitCherryPick: (id, input) => ops.gitCherryPick(id, input),
+      gitBranch: (id, input) => ops.gitBranch(id, input),
+      gitStash: (id, input) => ops.gitStash(id, input),
     },
 
     // -- credentials ---------------------------------------------------------

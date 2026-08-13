@@ -66,6 +66,7 @@ import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { useSessionStart } from './useSessionStart';
 import { useRowLifecycle } from './useRowLifecycle';
 import type { ContentSurface } from '../routes';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
@@ -73,6 +74,8 @@ import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { gitSurfaceFor } from './gitSurface';
+import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { representedThreadMessageCount } from './message-thread';
 
@@ -386,6 +389,31 @@ export function EntityView(props: EntityViewProps) {
   }, [openEntity, boardMode, setSelectedId]);
 
   /**
+   * The session list's HEADER verbs (101) — the SAME hook the workspace calls,
+   * for the reason `useLaunchPort`'s docblock gives: this screen mounts the
+   * same `EntityListPanel`, and wiring only the workspace would leave
+   * `▮ Terminal` dead here and working there, which reads from outside like
+   * flaky state rather than like a missing call.
+   *
+   * `selectFromList` as `onOpen`, not `setSelectedId`: a terminal the member
+   * just started should land the same way a row they clicked does, including
+   * the board-mode branch.
+   */
+  const sessionStart = useSessionStart({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    onOpen: selectFromList,
+    onError: (_verb, error) => props.onNotice({
+      id: 'terminal-start-failed',
+      tone: 'error',
+      title: 'Terminal could not be started',
+      body: String((error as { message?: string })?.message ?? error),
+      ttlMs: 8_000,
+    }),
+  });
+
+  /**
    * Titles for the attention list. Attention spans every kind, so the left
    * list (one kind) is not enough — the graph hydration is the widest set of
    * summaries already in memory. A miss returns undefined and the inbox reads
@@ -626,6 +654,8 @@ export function EntityView(props: EntityViewProps) {
         />
       ) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
+      gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
+      taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
       graphSurface={
         detail
           ? graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
@@ -635,6 +665,7 @@ export function EntityView(props: EntityViewProps) {
       }
       messages={messages}
       connections={data.connectionsOf(selectedId)}
+      linkedPullRequests={data.linkedPullRequestsOf?.(selectedId) ?? []}
       onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], body })}
       /* GAP-2 (data-wiring handover): the save path — inline title + Save +
          conflict card, and now the doc editor behind the reader archetype —
@@ -725,6 +756,7 @@ export function EntityView(props: EntityViewProps) {
                 immediate={createFlow}
                 spaceId={data.spaceId}
                 commands={data.seam.commands}
+                files={data.seam.files}
                 onCreated={(id, result) => {
                   data.reconcileCommand(result);
                   setSelectedId(id);
@@ -736,6 +768,7 @@ export function EntityView(props: EntityViewProps) {
           livenessOf={data.livenessOf}
           activity={data.activity}
           messagePulses={data.messagePulses}
+          linkedPullRequestsOf={data.linkedPullRequestsOf}
           // Capability truth comes from the DETAIL, never the summary: a row
           // whose detail is not hydrated genuinely has unknown capabilities
           // and correctly stays refused (WorkspaceView states the same rule).
@@ -758,6 +791,9 @@ export function EntityView(props: EntityViewProps) {
              sheet itself now — and stays absent otherwise, keeping the
              honest disabled-with-reason state on hosts without one. */
           launch={launchPort}
+          /* The header verbs (101) — see the same pair in `WorkspaceView`. */
+          onAction={sessionStart.onAction}
+          wiredActions={sessionStart.wiredActions}
         />
       </section>
 
@@ -815,6 +851,8 @@ export function EntityView(props: EntityViewProps) {
                 pinRefusal="Pinning lives in the Workspace"
                 liveness={data.livenessOf(aux.id)}
                 debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
+                gitSurface={gitSurfaceFor(data.seam, aux.id, data.livenessOf)}
+                taskGitSection={taskGitSectionFor(data.seam, data.detailOf(aux.id), (id) => setAux({ sort: 'entity', id: id as EntityId }))}
                 graphSurface={graphSurfaceFor(data.seam, aux.id, data.livenessOf, (id) =>
                   setAux({ sort: 'entity', id: id as EntityId }),
                 )}
@@ -824,6 +862,7 @@ export function EntityView(props: EntityViewProps) {
                 viewerMemberId={props.viewerMemberId}
                 messages={data.messagesOf(aux.id)}
                 connections={data.connectionsOf(aux.id)}
+                linkedPullRequests={data.linkedPullRequestsOf?.(aux.id) ?? []}
                 commands={data.seam.commands}
                 onSaved={data.reconcileCommand}
                 // Drilling from the aux REPLACES the aux, it does not open a

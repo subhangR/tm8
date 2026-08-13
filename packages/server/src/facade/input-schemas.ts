@@ -47,6 +47,14 @@ import {
   ExecutionResumeInputSchema,
   ExecutionDispatchInputSchema,
   ExecutionSpawnInputSchema,
+  ExecutionGitCheckpointInputSchema,
+  ExecutionGitRollbackInputSchema,
+  ExecutionGitCommitInputSchema,
+  ExecutionGitMergeInputSchema,
+  ExecutionGitCherryPickInputSchema,
+  ExecutionGitBranchInputSchema,
+  ExecutionGitStashInputSchema,
+  ExecutionTerminalStartInputSchema,
   ExecutionStreamsAttachInputSchema,
   ExecutionTerminateInputSchema,
   FileUploadAbortInputSchema,
@@ -240,11 +248,21 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
 
   // execution (R16)
   'execution.spawn': ExecutionSpawnInputSchema,
+  'execution.terminal.start': ExecutionTerminalStartInputSchema,
   'execution.dispatch': ExecutionDispatchInputSchema,
   'execution.prompt': ExecutionPromptInputSchema,
   'execution.terminate': ExecutionTerminateInputSchema,
   'execution.streams.attach': ExecutionStreamsAttachInputSchema,
   'execution.resume': ExecutionResumeInputSchema,
+
+  // session git rail (Git UI wave)
+  'execution.gitCheckpoint': ExecutionGitCheckpointInputSchema,
+  'execution.gitRollback': ExecutionGitRollbackInputSchema,
+  'execution.gitCommit': ExecutionGitCommitInputSchema,
+  'execution.gitMerge': ExecutionGitMergeInputSchema,
+  'execution.gitCherryPick': ExecutionGitCherryPickInputSchema,
+  'execution.gitBranch': ExecutionGitBranchInputSchema,
+  'execution.gitStash': ExecutionGitStashInputSchema,
 
   // custom entity kinds (T-L4)
   'entityKinds.create': EntityKindCreateInputSchema,

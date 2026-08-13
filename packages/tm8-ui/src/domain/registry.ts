@@ -298,7 +298,7 @@ const also = (spec: SortSpec): SortSpec => ({ ...spec, default: false });
 const DEFAULT_SORT: readonly SortSpec[] = [BY_ACTIVITY, also(BY_UPDATED), BY_CREATED, BY_POSITION];
 
 /**
- * COLLECTION MEMBERSHIP ON EVERY LIST (migration 100). `contains` is
+ * COLLECTION MEMBERSHIP ON EVERY LIST (migration 101). `contains` is
  * registered collection → `*` (001:921), so any kind's rows can be curated —
  * which is why this rides `baseList` rather than being declared kind by kind.
  * One declaration powers two affordances: the expanded row's Collections
@@ -494,6 +494,54 @@ const ROWS: readonly KindConfig[] = [
     labelPlural: 'Tasks',
     icon: '◻',
     iconArt: KIND_ART.task,
+    /**
+     * TITLE AND DUE DATE — the write surface `dueDate` never had.
+     *
+     * The due date was modelled end to end and reachable from nowhere: the
+     * column, the `PatchTaskInput` member, the `::date` sort and the read
+     * projection all existed, and no control in the app wrote one. So `BY_DUE`
+     * below sorted a field only the CLI could fill, which is a sort that works
+     * perfectly and can never have anything to order.
+     *
+     * WHY THE DIALOG AND NOT A `valueControl`. That list is explicitly "an enum
+     * member of `EntityState` this kind lets a user set" — it renders a picker
+     * over declared `options`, and a calendar has none. The dialog is the
+     * surface that already draws arbitrary typed fields, so a due date is one
+     * more `editFields` row rather than a new control shape.
+     *
+     * TITLE RIDES ALONG because the dialog is "Edit task" and a form that
+     * cannot touch the name reads broken. It grants nothing new — the row and
+     * the panel header already edit the title inline (`inlineEdit.title`) — and
+     * it is not `required` theatre: `entities.title` is `not null`, so an empty
+     * one is a refusal the dialog states before spending a round trip.
+     *
+     * DESCRIPTION IS DELIBERATELY ABSENT. It is a body, not a field; the panel
+     * renders it as prose, and a three-row textarea in a dialog is where a long
+     * description goes to get truncated by hand.
+     */
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'What needs doing' },
+      {
+        target: 'content',
+        source: 'dueDate',
+        /*
+         * WRITTEN to `content.dueDate`, READ from `state.dueDate`. The server
+         * projects the column onto state (`entity-read.ts:1112`) and leaves it
+         * out of `contentOf` (`:1502-1508`), so this is the one field in the
+         * app whose two halves live in different places. Without this the
+         * dialog opens blank on a task that has a due date and Save clears it.
+         */
+        readFrom: 'state',
+        label: 'Due date',
+        /*
+         * OPTIONAL, and unusually literally so: `tasks.due_date` is a NULLABLE
+         * column, so "no due date" is a value the database holds rather than a
+         * hole in the record. Clearing the box sends an explicit `null`, which
+         * is the only thing the server reads as a clear — see `valueForWire`.
+         */
+        valueType: 'date',
+      },
+    ],
     slug: 'tasks',
     strategy: 'collection',
     defaultMode: 'list',
@@ -591,10 +639,19 @@ const ROWS: readonly KindConfig[] = [
            an anonymous chip, and nothing could write one. */
         COLLECTIONS_BLOCK,
       ],
-      // The detail header keeps one task action: Run. Coordinate and Complete
-      // remain available from their task-specific surfaces, not this compact
-      // panel toolbar.
-      primaries: ['run'],
+      /*
+       * The detail header keeps Run and Edit. Coordinate and Complete remain
+       * available from their task-specific surfaces, not this compact panel
+       * toolbar — but `edit` is not a fourth verb competing for that space, it
+       * is the ONLY door to `editFields` (§15.1 pins the two together, and
+       * `useEntityVerbs` drops the verb on a kind that declares nothing). A
+       * task with fields and no verb would be the "declared and unreachable"
+       * half of that rule.
+       */
+      primaries: ['run', 'edit'],
+      // Git UI wave: tasks carry the git section (tracked PRs, provenance,
+      // gate honesty). A registry field, so the panel never asks the kind.
+      gitSection: true,
       statusPill: {
         source: 'workStatus',
         tones: {
@@ -658,6 +715,12 @@ const ROWS: readonly KindConfig[] = [
       // row" — ruled once already; a refused control is not a control.
       quickCreate: false,
       quickLaunch: 'launch-session',
+      // Beside it, not beneath it (user ruling 2026-08-12). A vanilla terminal
+      // is the OTHER way to get a session, so it belongs in the same header
+      // slot as the way you get an agent one — not buried in a row action,
+      // where you would have to already have a session to find out how to
+      // start one.
+      quickStart: 'start-terminal',
       filters: [assigneeFilter, attentionFilter],
       sort: DEFAULT_SORT,
       needsAttentionGroup: sessionNeedsAttention,
@@ -1033,6 +1096,11 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'generic',
+      // B10 (git placement map §4.3): "Merge…" is the ActionBar PRIMARY — the
+      // missing counterpart to the session rail's deliberate exclusion of
+      // landing-on-base. It renders disabled with its named reason until a
+      // forge WRITE client exists (the tracker is read-only today).
+      primaries: ['merge-pr'],
       blocks: [
         { block: 'link-summary', label: 'PULL REQUEST' },
         { block: 'fields', label: 'DETAILS' },
@@ -1099,6 +1167,13 @@ const ROWS: readonly KindConfig[] = [
         COLLECTIONS_BLOCK,
       ],
     },
+    // The create door for a `file` is an UPLOAD, not a placeholder row. The
+    // generic immediate-create flow commits an entity titled "Untitled file"
+    // with no blob behind it: it lists in the browser, offers a Download link
+    // and 404s when that link is followed, because `files.download` joins onto
+    // `public.files` and finds nothing. Three such orphans exist in the
+    // production space, all created by pressing this very button.
+    createForm: 'file-upload',
     palette: { createLabel: 'Upload file' },
   },
 

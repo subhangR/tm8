@@ -206,9 +206,10 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(surfaceSwitch.className).toContain('pn-surface-switch--bar');
     // Still switchable in the bar — relocating a control may not quietly cost
     // it its behaviour. Debug and Graph are always present (neither depends on
-    // the chat pin), so a chat-enabled session shows all four.
+    // the chat pin), and the Git UI wave added the Git surface to every
+    // session panel, so a chat-enabled session shows all five.
     const tabs = [...surfaceSwitch.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
-    expect(tabs).toEqual(['Terminal', 'Chat', 'Debug', 'Graph']);
+    expect(tabs).toEqual(['Terminal', 'Chat', 'Git', 'Debug', 'Graph']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {
@@ -299,6 +300,92 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
     expect(container.querySelector('.lp__actions')).toBeNull();
     expect(getByTestId('list-search')).toBeTruthy();
+  });
+
+  /**
+   * VANILLA TERMINALS (101), and the ruling behind the placement: the start
+   * controls belong at the TOP of the sessions list, beside Launch session.
+   */
+  it('draws ▮ Terminal in the sessions header, beside Launch session', () => {
+    const onAction = vi.fn();
+    const { container, getByTestId } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor(sessions)}
+        ctx={ctx}
+        onAction={onAction}
+        wiredActions={['start-terminal']}
+      />,
+    );
+
+    const actions = container.querySelector('.lp__actions');
+    expect(actions).toBeTruthy();
+    // BESIDE, not instead of: both verbs are in the one header slot.
+    expect(actions?.textContent).toContain('Terminal');
+    expect(actions?.textContent).toContain('Launch session');
+
+    fireEvent.click(getByTestId('list-quick-start'));
+    expect(onAction).toHaveBeenCalledWith('start-terminal', '');
+  });
+
+  it('draws a vanilla terminal as a TERMINAL, not as an agent with an unknown tool', () => {
+    const shell = {
+      ...sessions[0]!,
+      id: 'ws_shell_tile',
+      title: 'Terminal',
+      state: {
+        kind: 'work_session', status: 'running', agentTool: null, model: null,
+        shareMode: 'none', startedAt: null, exitedAt: null, sessionKind: 'shell',
+      },
+    } as EntitySummary;
+    const { container } = render(
+      <EntityListPanel kind="work_session" rowsFor={rowsFor([shell])} ctx={ctx} />,
+    );
+    const mark = container.querySelector('[data-agent-kind]');
+    // `(tool || 'agent')` used to make this read `agent` — a shell wearing an
+    // agent's glyph and an agent's aria-label.
+    expect(mark?.getAttribute('data-agent-kind')).toBe('shell');
+    expect(mark?.getAttribute('aria-label')).toBe('terminal');
+  });
+
+  it('still calls a tool-less AGENT row an agent — absence is not shell-ness', () => {
+    // The other side of the same branch. A row with no `sessionKind` is a
+    // pre-083 payload, and a session that never recorded its tool is an agent
+    // whose tool is unknown — drawing it as a terminal would swap one wrong
+    // label for another.
+    const unknownTool = {
+      ...sessions[0]!,
+      id: 'ws_unknown_tool',
+      state: {
+        kind: 'work_session', status: 'running', agentTool: null, model: null,
+        shareMode: 'none', startedAt: null, exitedAt: null,
+      },
+    } as EntitySummary;
+    const { container } = render(
+      <EntityListPanel kind="work_session" rowsFor={rowsFor([unknownTool])} ctx={ctx} />,
+    );
+    expect(container.querySelector('[data-agent-kind]')?.getAttribute('data-agent-kind')).toBe('agent');
+  });
+
+  it('R5 #9: the unwired half of the pair refuses with a reason, it is not drawn live', () => {
+    // `Terminal` commits and `Launch session ▸` does not, because the sheet
+    // needs a launch SUBJECT the header has no way to name. That asymmetry has
+    // to be VISIBLE — a live button whose click the host's switch drops is the
+    // enabled-inert failure this panel refuses everywhere else.
+    const { container, getByTestId } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor(sessions)}
+        ctx={ctx}
+        onAction={() => {}}
+        wiredActions={['start-terminal']}
+      />,
+    );
+
+    const actions = container.querySelector('.lp__actions');
+    expect(within(actions as HTMLElement).getAllByTestId('disabled-with-reason')).toHaveLength(1);
+    // …and the live one is a real button, not a second refusal.
+    expect(getByTestId('list-quick-start').tagName).toBe('BUTTON');
   });
 
   it('D41: lifecycle tabs are UNIVERSAL, and coexist with sections rather than replacing them', () => {

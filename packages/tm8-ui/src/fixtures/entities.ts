@@ -169,6 +169,9 @@ export const taskUuidTitle = summary({
      * one story: change the criteria below and change this with them.
      */
     acceptance: { total: 4, completed: 2 },
+    // 082's opt-in gate, ON for this task: with PR #212 open, `complete`
+    // would refuse — the detail's git section states that before the click.
+    completionGate: 'pr_merged',
   },
   badges: {
     pulls: [
@@ -909,7 +912,14 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     },
     hierarchy: hierarchy(channelDesign, [sessionStale], [channelDesign]),
     connections: {
-      outgoing: [{ type: 'blocks', direction: 'outgoing', label: 'blocks', edges: [edge('edge-blocks-1', 'blocks', taskUuidTitle, taskBlocked, ada, { hard: true, resolved: false })] }],
+      outgoing: [
+        { type: 'blocks', direction: 'outgoing', label: 'blocks', edges: [edge('edge-blocks-1', 'blocks', taskUuidTitle, taskBlocked, ada, { hard: true, resolved: false })] },
+        // The git trail: the task tracks a PR and a commit (mirrors graph.ts).
+        { type: 'tracks', direction: 'outgoing', label: 'tracks', edges: [
+          edge('edge-tracks-pr', 'tracks', snap(taskUuidTitle), snap(prTransplant), forge),
+          edge('edge-tracks-commit', 'tracks', snap(taskUuidTitle), snap(commitFoundation), forge),
+        ] },
+      ],
       incoming: [{ type: 'references', direction: 'incoming', label: 'referenced by', edges: [edge('edge-ref-1', 'references', docLayoutSpec, taskUuidTitle, noor)] }],
       unresolvedHardDependencyCount: 0,
     },
@@ -1109,6 +1119,14 @@ export const fixtureDetails: Record<string, EntityDetail> = {
 
   [commitFoundation.id]: detail(commitFoundation, {
     content: { kind: 'commit', filesChanged: 21 },
+    connections: {
+      // 082 provenance: the commit was produced IN the live session.
+      outgoing: [{ type: 'created_in', direction: 'outgoing', label: 'created in', edges: [
+        edge('edge-created-in-1', 'created_in', snap(commitFoundation), snap(sessionLive), forge),
+      ] }],
+      incoming: [],
+      unresolvedHardDependencyCount: 0,
+    },
   }),
 
   [fileScreenshot.id]: detail(fileScreenshot, {

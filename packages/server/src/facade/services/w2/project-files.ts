@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
-import { open, readdir, realpath, stat } from 'node:fs/promises';
+import { open, readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 
 import {
@@ -389,4 +389,265 @@ async function hashFile(path: string): Promise<string> {
 /** Bytes for the blob store, read from the canonical path resolved above. */
 export function projectFileStream(path: string): AsyncIterable<Uint8Array> {
   return createReadStream(path);
+}
+
+// ---------------------------------------------------------------------------
+// Folder archive — the whole-subtree read (`projects.files.archive`)
+// ---------------------------------------------------------------------------
+
+/**
+ * ARCHIVE CEILINGS, deliberately larger than the picker's `MAX_PROJECT_FILES`
+ * and deliberately finite. A picker cap of 500 exists so a wide directory
+ * stays responsive; these exist so one request cannot walk an unbounded tree
+ * or mint a 4 GiB response. Both are REFUSALS naming the limit, never silent
+ * truncation: an archive missing files it did not mention is the one outcome a
+ * download must never produce.
+ */
+export const MAX_ARCHIVE_FILES = 20_000;
+export const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024; // 1 GiB of file bytes
+
+/** The manifest an archive carries when the policy withheld anything. */
+export const ARCHIVE_EXCLUSION_MANIFEST = '_tm8-excluded.txt';
+
+export interface ArchivePlanEntry {
+  /** Canonical absolute path on the node's disk. */
+  absolutePath: string;
+  /** POSIX path inside the archive, always under a single root directory. */
+  archivePath: string;
+  sizeBytes: number;
+  /** Device+inode as the walk saw them — the read re-checks both. */
+  dev: number;
+  ino: number;
+}
+
+export interface ArchivePlan {
+  /** Basename of the subtree, used for the archive root and the filename. */
+  rootName: string;
+  /** The PROJECT root the policy is judged against — never the subtree. */
+  rootPath: string;
+  entries: ArchivePlanEntry[];
+  totalBytes: number;
+  /** Archive-relative paths the policy withheld, with the reason, in order. */
+  excluded: Array<{ path: string; reason: string }>;
+}
+
+/**
+ * Walk a subtree and decide EVERYTHING before a single byte is written.
+ *
+ * The walk is separate from the streaming for one reason: once a response's
+ * headers are on the wire an error can no longer be an error, only a severed
+ * connection. So every refusal this operation can raise — outside the project,
+ * over a ceiling, unreadable root — is raised here, while a typed error still
+ * reaches the client as a typed error. The walk only stats; the bytes are read
+ * later, one file at a time.
+ *
+ * Withheld files are OMITTED and RECORDED. A secret silently dropped from an
+ * archive is indistinguishable from a secret that was never there, and the
+ * difference matters to whoever unzips it.
+ */
+export async function planProjectArchive(
+  workingDir: string,
+  requestedPath: string | undefined,
+  rawRoots?: readonly string[],
+  // Injectable so the ceiling behaviour is testable without building a 20,000
+  // file tree — a limit that can only be reached by exhausting it in earnest
+  // is a limit nobody ever tests.
+  limits?: { maxFiles?: number; maxBytes?: number },
+): Promise<ArchivePlan> {
+  const maxFiles = limits?.maxFiles ?? MAX_ARCHIVE_FILES;
+  const maxBytes = limits?.maxBytes ?? MAX_ARCHIVE_BYTES;
+  const { root } = await browsableWorkingDir(workingDir, rawRoots);
+  const subtree = await directoryInProject(root, requestedPath);
+  const rootName = basename(subtree) || 'project';
+
+  const entries: ArchivePlanEntry[] = [];
+  const excluded: Array<{ path: string; reason: string }> = [];
+  let totalBytes = 0;
+
+  const walk = async (dir: string, prefix: string): Promise<void> => {
+    let rows;
+    try {
+      rows = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'EACCES' || code === 'EPERM') {
+        excluded.push({ path: prefix || rootName, reason: 'directory is not readable' });
+        return;
+      }
+      throw new CollabError('upstream_unavailable', `could not list directory: ${dir}`);
+    }
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    for (const row of rows) {
+      const absolute = join(dir, row.name);
+      const archivePath = prefix === '' ? row.name : `${prefix}/${row.name}`;
+      // Symlinks are skipped for the same reason listing skips them: the
+      // canonical target may lie outside the project, and an archive that
+      // silently escaped its root would be a jail break with a .zip on it.
+      if (row.isSymbolicLink()) {
+        excluded.push({ path: archivePath, reason: 'symbolic link' });
+        continue;
+      }
+      if (row.isDirectory()) {
+        if (EXCLUDED_DIRECTORY_NAMES.has(row.name)) {
+          excluded.push({ path: archivePath, reason: 'excluded directory' });
+          continue;
+        }
+        const secret = secretReason(root, absolute);
+        if (secret !== null) {
+          excluded.push({ path: archivePath, reason: secret });
+          continue;
+        }
+        // The dirent above came from the PARENT's readdir; the recursion below
+        // re-resolves `absolute` BY NAME. Between the two, the entry can be
+        // renamed away and replaced with a symlink pointing outside the
+        // project — and the walk would follow it, because nothing re-checks
+        // containment after `directoryInProject` ran once at the start.
+        // Demonstrated: a 5 ms swap put an outside file in the archive with an
+        // EMPTY exclusion list. So the invariant is re-established here, on the
+        // resolved path, immediately before descending.
+        let resolvedDir: string;
+        try {
+          resolvedDir = await realpath(absolute);
+        } catch {
+          excluded.push({ path: archivePath, reason: 'unreadable' });
+          continue;
+        }
+        if (!containedBy(root, resolvedDir)) {
+          excluded.push({ path: archivePath, reason: 'resolves outside the project' });
+          continue;
+        }
+        await walk(resolvedDir, archivePath);
+        continue;
+      }
+      if (!row.isFile()) continue;
+      const secret = secretReason(root, absolute);
+      if (secret !== null) {
+        excluded.push({ path: archivePath, reason: secret });
+        continue;
+      }
+      if (await withinTm8DataDir(absolute)) {
+        excluded.push({ path: archivePath, reason: 'tm8 data directory' });
+        continue;
+      }
+      let info;
+      try {
+        info = await stat(absolute);
+      } catch {
+        excluded.push({ path: archivePath, reason: 'unreadable' });
+        continue;
+      }
+      entries.push({
+        absolutePath: absolute,
+        archivePath: `${rootName}/${archivePath}`,
+        sizeBytes: info.size,
+        // Identity, carried so the READ can prove it opened the same file the
+        // walk approved. See `projectArchiveEntries`.
+        dev: info.dev,
+        ino: info.ino,
+      });
+      totalBytes += info.size;
+      if (entries.length > maxFiles) {
+        throw new CollabError(
+          'payload_too_large',
+          `this folder holds more than ${maxFiles} files, which is the archive limit`,
+        );
+      }
+      if (totalBytes > maxBytes) {
+        throw new CollabError(
+          'payload_too_large',
+          `this folder is larger than ${maxBytes} bytes, which is the archive limit`,
+        );
+      }
+    }
+  };
+
+  await walk(subtree, '');
+  return { rootName, rootPath: root, entries, totalBytes, excluded };
+}
+
+/**
+ * The plan's bytes, one file at a time, RE-VERIFIED as they are read.
+ *
+ * Read errors become an EXCLUSION note rather than a thrown error: by the time
+ * this runs the response is already streaming, so the only honest ways to
+ * report a late failure are a severed connection or a line in the manifest,
+ * and a file that vanished between the walk and the read does not deserve to
+ * kill the whole archive.
+ *
+ * `root` is optional only so existing callers keep compiling; the service
+ * always passes it, and without it the re-check degrades to O_NOFOLLOW plus
+ * the inode identity check.
+ */
+export async function* projectArchiveEntries(
+  plan: ArchivePlan,
+  root?: string,
+): AsyncGenerator<{ path: string; bytes: Buffer }> {
+  const lateExclusions: Array<{ path: string; reason: string }> = [];
+  for (const entry of plan.entries) {
+    let bytes: Buffer;
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      // O_NOFOLLOW, exactly as `readProjectFile` opens. The plan walk ran
+      // seconds ago over a live filesystem, so "the walk approved this path"
+      // is not the same statement as "this path is still that file". Without
+      // the flag, a regular file swapped to a symlink between plan and read
+      // was followed — demonstrated laundering `.env` into an archive whose
+      // own manifest said `.env` had been withheld.
+      handle = await open(entry.absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const info = await handle.stat();
+      // Identity re-check: same device, same inode, still a regular file, same
+      // size. A swap that beat O_NOFOLLOW (a hardlink, or a replaced parent
+      // directory) changes the inode, and `readFile`-by-path cannot see that.
+      if (!info.isFile() || info.dev !== entry.dev || info.ino !== entry.ino) {
+        lateExclusions.push({ path: entry.archivePath, reason: 'changed while archiving' });
+        continue;
+      }
+      // And the secret policy again, on the path as it stands now — §4.2's
+      // rule is that the check runs on the RESOLVED path every time, not once.
+      if (root !== undefined) {
+        const resolved = await realpath(entry.absolutePath);
+        if (!containedBy(root, resolved) || secretReason(root, resolved) !== null) {
+          lateExclusions.push({ path: entry.archivePath, reason: 'withheld on re-check' });
+          continue;
+        }
+      }
+      bytes = await handle.readFile();
+    } catch {
+      lateExclusions.push({ path: entry.archivePath, reason: 'disappeared while archiving' });
+      continue;
+    } finally {
+      await handle?.close().catch(() => undefined);
+    }
+    yield { path: entry.archivePath, bytes };
+  }
+
+  // ALWAYS emitted, even when nothing was withheld. An archive that omits the
+  // manifest when the list is empty lets a file the project itself contains,
+  // named `_tm8-excluded.txt`, be the only one present and read as
+  // authoritative. A receipt that is sometimes absent is not a receipt.
+  const excluded = [...plan.excluded, ...lateExclusions];
+  const taken = new Set(plan.entries.map((entry) => entry.archivePath));
+  let manifestPath = `${plan.rootName}/${ARCHIVE_EXCLUSION_MANIFEST}`;
+  // A real file may already occupy that name. Two zip entries at one path
+  // extract to whichever came last, silently destroying the user's file.
+  for (let n = 2; taken.has(manifestPath); n += 1) {
+    manifestPath = `${plan.rootName}/_tm8-excluded (${n}).txt`;
+  }
+  const rows = excluded.map(
+    // JSON-quoted, because a filename may contain a tab or a newline and an
+    // unescaped one forges a row: a symlink named
+    // `boring.txt\tsymbolic link\nsanitised.txt\treviewed and safe` produced a
+    // fully-formed fake entry in this manifest.
+    (item) => `${JSON.stringify(item.path)}\t${JSON.stringify(item.reason)}`,
+  );
+  const manifest = [
+    excluded.length === 0
+      ? 'Nothing was withheld from this archive.'
+      : 'These paths were NOT included in this archive.',
+    'Paths and reasons are JSON-quoted so a filename cannot forge a row.',
+    '',
+    ...rows,
+    '',
+  ].join('\n');
+  yield { path: manifestPath, bytes: Buffer.from(manifest, 'utf8') };
 }

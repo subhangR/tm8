@@ -45,6 +45,16 @@ export interface UploadQueueSnapshot {
   done: number;
   failed: number;
   cancelled: number;
+  /**
+   * Byte totals across the WHOLE queue. Unlike a per-file percentage — which
+   * `capability.start` cannot measure and this module refuses to fake — these
+   * are real: `bytesTotal` is the sum of the picked files' sizes, and
+   * `bytesDone` counts only files whose upload actually completed. A queue of
+   * many files therefore has honest overall progress even though no single
+   * file inside it does.
+   */
+  bytesTotal: number;
+  bytesDone: number;
   /** True while anything is queued or in flight. */
   busy: boolean;
 }
@@ -85,6 +95,10 @@ export function createUploadQueue(
       done: count('done'),
       failed: count('failed'),
       cancelled: count('cancelled'),
+      bytesTotal: items.reduce((total, i) => total + i.sizeBytes, 0),
+      bytesDone: items
+        .filter((i) => i.status === 'done')
+        .reduce((total, i) => total + i.sizeBytes, 0),
       busy: queued > 0 || uploading > 0,
     };
   }

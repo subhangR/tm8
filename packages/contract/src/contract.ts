@@ -106,7 +106,15 @@ export interface EntitySummary {
 export type CoreEntityState =
   | { kind: 'task'; workStatus: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; assignees: ActorSummary[];
-      acceptance: { total: number; completed: number } }
+      acceptance: { total: number; completed: number };
+      /**
+       * 082's opt-in completion gate, ADDITIVE and OPTIONAL. 'pr_merged'
+       * means `complete` will REFUSE while a tracked PR is unmerged or
+       * CI-red — projected so the UI can say that on the button
+       * (DisabledWithReason) instead of drawing a verb that bounces.
+       * Absent ⇒ an older node; render nothing, assume nothing.
+       */
+      completionGate?: 'none' | 'pr_merged' }
   | { kind: 'channel'; topic: string; members: ActorSummary[]; unreadCount: number;
       workingAgentCount: number }
   | { kind: 'doc'; format: 'markdown'|'mermaid'|'excalidraw'; childCount: number }
@@ -115,8 +123,15 @@ export type CoreEntityState =
   | { kind: 'member'; role: 'owner'|'admin'|'member'; score: number; taskDoneCount: number }
   | { kind: 'team_member'; owner: ActorSummary; model?: string | null; agentTool?: string | null;
       liveWork?: LiveWork | null }
+  // `ciStatus`/`mergeState` are ADDITIVE and OPTIONAL (forge observer).
+  // `null` means this node has no verdict — nothing has observed the pull
+  // request yet, or the observer runs unauthenticated — and a consumer renders
+  // NOTHING for it. `mergeState: 'unknown'` is the DIFFERENT claim that GitHub
+  // said it was still computing the merge. Absence is not a verdict.
   | { kind: 'pull_request'; repository: string; number: number; state: string;
-      url?: string; fetchedAt?: string | null; stale: boolean }
+      url?: string; fetchedAt?: string | null; stale: boolean;
+      ciStatus?: 'passing' | 'failing' | 'pending' | null;
+      mergeState?: 'clean' | 'conflicted' | 'unknown' | null }
   | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
   | { kind: 'file'; name: string; mimeType: string; sizeBytes: number }
   | { kind: 'spell' | 'skill'; description?: string; equipped: boolean }
@@ -126,7 +141,8 @@ export type CoreEntityState =
       startedAt: string | null; exitedAt: string | null;
       /**
        * WHAT KIND OF SESSION THIS IS — the discriminator that lets a client
-       * tell a private credential login terminal from ordinary work (083).
+       * tell a private credential login terminal from ordinary work (083), and
+       * a vanilla shell from an agent (101).
        *
        * OPTIONAL, AND ITS ABSENCE IS LOAD-BEARING. A node that predates 083,
        * or a row hydrated from a payload cached before the column shipped,
@@ -141,6 +157,17 @@ export type CoreEntityState =
        * field can be missing. `=== 'agent'` passes every test written against
        * fresh data and silently blanks the session list for anyone holding an
        * older payload.
+       *
+       * 101 IS THE CASE THAT COMMENT WAS WRITTEN FOR. `shell` — a vanilla
+       * terminal with no agent attached — is a third value, and every
+       * allow-list filter anywhere in the tree drops it while continuing to
+       * pass every test.
+       *
+       * 101's header carries an audit of every SQL surface that branches on
+       * this column, including the one that had to change. It does NOT
+       * enumerate the TypeScript ones — those were checked and are deny-lists,
+       * but "checked once" is not a list you can rely on. If you add a FOURTH
+       * value, re-derive BOTH sides yourself; do not read either as covered.
        */
       sessionKind?: WorkSessionKind }
   | { kind: 'collection'; collectionType: string; itemCount: number }
@@ -1379,6 +1406,39 @@ export interface LinkPrInput extends CommandContext { clientMutationId: string; 
 /** POST /v2/entities/:id/commands/link-commit — analogous to link-pr (01 §6). */
 export interface LinkCommitInput extends CommandContext { clientMutationId: string; url: string; projectId?: ProjectId }
 
+/**
+ * `projects.contention` (GET /v2/projects/:projectId/contention) — the
+ * file-contention map over a project's ACTIVE worktrees. Lanes an RLS-visible
+ * node cannot read are reported as SKIPPED with the reason, never silently
+ * omitted; `pairs` lists only overlapping lane pairs, so empty means no
+ * contention observed.
+ */
+export interface ContentionLane {
+  worktreeId: string;
+  branch: string;
+  path: string;
+  sessionId: string | null;
+  touchedCount: number;
+  touchedPaths: string[];
+  skipped: string | null;
+}
+
+export interface ContentionPair {
+  aWorktreeId: string;
+  bWorktreeId: string;
+  aBranch: string;
+  bBranch: string;
+  overlappingPaths: string[];
+}
+
+export interface ContentionReport {
+  projectId: string;
+  generatedAt: string;
+  lanes: ContentionLane[];
+  /** Only pairs that actually overlap; empty means no contention observed. */
+  pairs: ContentionPair[];
+}
+
 /** POST /v2/entities/:id/commands/gate — 083's opt-in completion gate. 'pr_merged' makes complete refuse while a tracked PR is unmerged or CI-red. */
 export interface GateTaskInput extends CommandContext { expectedVersion: number; gate: 'none' | 'pr_merged' }
 
@@ -1418,8 +1478,11 @@ export interface UpdateSpaceInput extends CommandContext {
 /** `graph` added 2026-07-29 (additive union widening, R4) for the ◉ Graph view.
  * `files` added 2026-08-10 (same R4 posture) for the dedicated Files explorer —
  * a VIEW, distinct from the `file` KIND row (owner ruling R9, task 019fe5d6:
- * entity files and the file browser are different and both stay reachable). */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings';
+ * entity files and the file browser are different and both stay reachable).
+ * `git` (Git UI wave, 2026-08-09): the project git screen — branch topology,
+ * worktree lanes and the contention map, elevated out of Settings. Additive
+ * union widening, the same R4 posture as `graph` and `worktree`. */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -1711,15 +1774,24 @@ export type WorktreeStatus = 'active' | 'merged' | 'abandoned' | 'deleted';
 export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
 
 /**
- * What a work_session IS, mirroring 083's `work_sessions.session_kind`.
+ * What a work_session IS, mirroring 083's `work_sessions.session_kind` as
+ * widened by 101.
  *
  * `agent` is ordinary work. `credential` is a private login terminal minted by
  * `credentials.loginSessions.start` so a member can authenticate an agent tool
  * against their own account — it is not work, and it must not sit in session
  * lists pretending to be. See the note on `EntityState`'s work_session arm for
  * why every client filter must be written as the INVERSE of the SQL one.
+ *
+ * `shell` is a VANILLA TERMINAL (101): a real PTY running the node's login
+ * shell and nothing else. It has no persona, no manifest, no agent token and
+ * `agentTool === null` — which is why `agentTool` being null must never be
+ * read as "a broken agent session". Unlike `credential` it IS ordinary work
+ * from a listing's point of view: a member started it deliberately and expects
+ * to find it in the session list, so the deny-list filters that hide
+ * `credential` must continue to SHOW this.
  */
-export type WorkSessionKind = 'agent' | 'credential';
+export type WorkSessionKind = 'agent' | 'credential' | 'shell';
 
 // --- projects — linked resources, NOT an entity kind (AM-2 §1, T-D17) -------
 
@@ -1901,6 +1973,100 @@ export interface ProjectBranchTopology {
   /** True when the branch cap cut the list short — the read is bounded. */
   truncated: boolean;
   staleAfterDays: number;
+}
+
+/**
+ * The tm8 work session a commit's `created_in` provenance edge names
+ * (082's `record_session_commit` mints the edge; this type is the read side).
+ *
+ * ABSENT FACTS ARE ABSENT CLAIMS: consumers receive `null` when no edge
+ * exists — the commit was not made by a tm8 session, and nothing here is ever
+ * inferred from an author-name or timestamp match.
+ */
+export interface CommitSessionAttribution {
+  /** The commit-mirror entity the sha resolved to. */
+  commitEntityId: string;
+  sessionId: EntityId;
+  sessionTitle: string;
+  agentTool: string | null;
+  /** The teammate the session was spawned as, when the graph names one. */
+  teamMemberId: string | null;
+  teamMemberName: string | null;
+}
+
+/** One revision of a path, with its provenance join. */
+export interface ProjectFileRevision {
+  /** Full commit oid. */
+  oid: string;
+  author: string;
+  authorEmail: string;
+  /** Committer date, ISO-8601. */
+  committedAt: string;
+  subject: string;
+  /** Lines added for this path at this revision; null for binary. */
+  additions: number | null;
+  deletions: number | null;
+  /** The path AT that revision — history follows renames. */
+  path: string;
+  /** `created_in` join; null = no tm8 session recorded this commit. */
+  session: CommitSessionAttribution | null;
+}
+
+/**
+ * GET /v2/projects/:projectId/file-history?path= — the revisions of one path
+ * in the project's working directory, argv-only git, path from the QUERY but
+ * the directory always from the project row (the branches read's law).
+ */
+/** The patch one selected revision applied to the path, byte-capped honestly. */
+export interface ProjectRevisionDiff {
+  oid: string;
+  diff: string;
+  truncated: boolean;
+}
+
+export interface ProjectFileHistory {
+  projectId: ProjectId;
+  workingDir: string;
+  path: string;
+  revisions: ProjectFileRevision[];
+  /** True when the revision cap cut the walk short — the read is bounded. */
+  truncated: boolean;
+  /** Present only when the request named a `?diffOid=`; null otherwise. */
+  diff: ProjectRevisionDiff | null;
+}
+
+/** A contiguous run of lines last touched by one commit. */
+export interface ProjectBlameHunk {
+  /** Full commit oid; the all-zero oid marks not-yet-committed lines. */
+  oid: string;
+  /** 1-based first line in the CURRENT file. */
+  startLine: number;
+  lineCount: number;
+  author: string;
+  /** ISO-8601; empty for uncommitted lines. */
+  committedAt: string;
+  summary: string;
+  uncommitted: boolean;
+  /** `created_in` join; null = no tm8 session recorded this commit. */
+  session: CommitSessionAttribution | null;
+}
+
+/**
+ * GET /v2/projects/:projectId/blame?path= — working-tree blame of one path,
+ * line-ranges grouped into hunks, each joined to the session provenance graph.
+ *
+ * Bounded: `blamedLines` ≤ the line cap; `totalLines` is MEASURED, so a cut
+ * can say exactly how many lines it holds back (`totalLines - blamedLines`).
+ * The cap bounds rendering, never disclosure.
+ */
+export interface ProjectFileBlame {
+  projectId: ProjectId;
+  workingDir: string;
+  path: string;
+  hunks: ProjectBlameHunk[];
+  blamedLines: number;
+  totalLines: number;
+  truncated: boolean;
 }
 
 /** One selectable child in the node-local project directory browser. */
@@ -2148,6 +2314,54 @@ export interface ExecutionSpawnInput extends CommandContext {
 }
 
 /**
+ * execution.terminal.start — POST /v2/execution/terminal (101).
+ *
+ * A VANILLA TERMINAL: the shell you get without `claude-code` or `codex` in
+ * front of it. It mints a `work_session` with `sessionKind: 'shell'` and
+ * `agentTool: null`, and starts a PTY on the node's login shell.
+ *
+ * WHY THIS IS NOT `execution.spawn` WITH A NULL `agentTool`. Spawn's whole body
+ * is agent setup: it REQUIRES a `teamMemberId` and authorizes through the
+ * persona, composes a manifest and two prompts, mints a `TM8_AGENT_TOKEN`,
+ * resolves and pins an interaction profile, runs the workspace-trust probes and
+ * charges the node's agent concurrency cap. A vanilla terminal wants none of
+ * it, and there is no persona to authorize through. Threading a
+ * `skipEverything` flag through that path would leave every one of those steps
+ * one wrong branch away from running for a session that has no agent — which is
+ * at best wasted work and at worst a spurious trust prompt. So this is its own
+ * small door, exactly as `credentials.loginSessions.start` is.
+ *
+ * WHAT IT DELIBERATELY DOES NOT ACCEPT: a command, an argv, or any flags. The
+ * PTY runs as the tm8 OS user; a client-supplied command there is remote code
+ * execution with a pleasant user interface. The shell is resolved server-side
+ * and the caller cannot influence it — the absence of the field is the control,
+ * because a field that does not exist cannot be forwarded by a later refactor.
+ * This mirrors `CredentialLaunchRequest`, and for the same reason.
+ */
+export interface ExecutionTerminalStartInput extends CommandContext {
+  clientMutationId: string;
+  spaceId: SpaceId;
+  /**
+   * The project whose root the shell opens in. Omitted/null = a projectless
+   * scratch directory the server owns, the same fallback `execution.spawn`
+   * takes.
+   *
+   * ALWAYS THE PROJECT ROOT, NEVER A PROVISIONED WORKTREE. A worktree exists so
+   * concurrent AGENTS do not collide on one checkout; a human opening a
+   * terminal means the directory they named, and silently landing them in
+   * `…/worktrees/<uuid>` would be answering a question they did not ask.
+   */
+  projectId?: ProjectId | null;
+  /** Explicit consent carrier for untrusted Projects, as spawn's is. */
+  confirmUntrusted?: true;
+  /** Defaults to a server-composed title; never the shell's path. */
+  title?: string;
+  /** Initial terminal geometry. Advisory — the client resizes on attach. */
+  cols?: number;
+  rows?: number;
+}
+
+/**
  * execution.dispatch — POST /v2/execution/dispatch (DESIGN §4.3, D2/D4).
  *
  * Route `subjectId` to the space's resident dispatcher, which picks the
@@ -2237,6 +2451,242 @@ export interface StreamAttachGrant {
   token: string;
   expiresAt: string;
 }
+
+/**
+ * execution.git* — the session git rail (Git UI wave).
+ *
+ * The #76 verbs (checkpoint/rollback/stage/commit/merge) run argv git on the
+ * machine where the CLI runs; a browser has no such machine, so these six
+ * operations put the SAME verbs behind the facade, executed by the node that
+ * holds the session's worktree. The worktree path is resolved server-side
+ * from the graph (`in_worktree` edge → `public.worktrees` row) — no request
+ * ever names a filesystem path, mirroring `execution.journal`'s discipline.
+ *
+ * A session without a worktree answers `available: false` with a named
+ * reason, never a 500 — the UI renders that reason (DisabledWithReason),
+ * because a dead panel with no explanation is the failure mode this wave
+ * exists to remove.
+ */
+export interface ExecutionGitCheckpointInput extends CommandContext {
+  /** Optional checkpoint message; the server defaults to a timestamped one. */
+  message?: string;
+}
+
+export interface ExecutionGitRollbackInput extends CommandContext {
+  /** Checkpoint ref: full oid, short oid, or a symbolic ref. */
+  to: string;
+  /**
+   * Untracked files may exist in NO commit, so deleting them is the one
+   * unrecoverable act in a rollback — they, and only they, gate on force.
+   */
+  force?: boolean;
+}
+
+export interface ExecutionGitCommitInput extends CommandContext {
+  message: string;
+  /** Pathspecs to stage before committing. */
+  paths?: string[];
+  /** Stage everything (git add -A) before committing. */
+  all?: boolean;
+}
+
+/**
+ * Merge the session's BASE REF forward into the session branch. The other
+ * direction (session branch → base) is deliberately absent at every layer:
+ * base is checked out in the user's primary tree or nowhere, and a session
+ * verb that mutates the user's checkout is prohibited — landing on base goes
+ * through a PR. A content conflict is an ANSWER (status 'conflict' with the
+ * conflicted paths, worktree restored clean), never an error or a stranded
+ * mid-merge state.
+ */
+export interface ExecutionGitMergeInput extends CommandContext {
+  /** Ref to merge FROM; defaults to the session's recorded base ref. */
+  fromRef?: string;
+  message?: string;
+}
+
+/** One changed path in a session worktree, `git status --porcelain` shaped. */
+export interface SessionGitFile {
+  /** Two-column XY status ("M ", " M", "??", "A ", …). */
+  status: string;
+  path: string;
+  /** Present for renames/copies: the path the content came from. */
+  origPath?: string;
+}
+
+/**
+ * execution.gitStatus — GET /v2/work-sessions/:workSessionId/git/status.
+ * Branch, dirty counts and ahead/behind the session's base, read live from
+ * the worktree with capped file lists.
+ */
+export interface SessionGitStatus {
+  sessionId: EntityId;
+  available: boolean;
+  /** Named reason when unavailable — the UI renders this, verbatim. */
+  unavailableReason: 'no_worktree' | 'worktree_not_active' | 'worktree_unreadable' | null;
+  worktreeId: EntityId | null;
+  branch: string | null;
+  /** The symbolic base ref when the session recorded one. */
+  baseRef: string | null;
+  /** The resolved base commit the counts are measured against. */
+  baseOid: string | null;
+  headOid: string | null;
+  /** Commits on HEAD that base lacks; null when the base could not resolve. */
+  ahead: number | null;
+  /** Commits on base that HEAD lacks; null when the base could not resolve. */
+  behind: number | null;
+  dirty: { staged: number; unstaged: number; untracked: number; total: number };
+  /** Capped at the server's file cap; `filesTruncated` says when it cut. */
+  files: SessionGitFile[];
+  filesTruncated: boolean;
+  /**
+   * The worktree's stash entries (additive, Tier 2 completion) — the stash
+   * LIST rides on this read so `execution.gitStash` needs no read half.
+   * Absent (not empty) when the worktree is unavailable.
+   */
+  stashes?: SessionGitStashEntry[];
+  checkedAt: string;
+}
+
+/** Per-file numstat digest — always complete even when the diff text is cut. */
+export interface SessionGitDiffFile {
+  path: string;
+  /** null for binary files (git numstat prints "-"). */
+  additions: number | null;
+  deletions: number | null;
+}
+
+/**
+ * execution.gitDiff — GET /v2/work-sessions/:workSessionId/git/diff.
+ * "What did this session change": working tree vs the merge-base of the
+ * session's base ref, so upstream drift on base never pollutes the answer.
+ * The digest (`stat`, `files`) is always complete; the unified `diff` text is
+ * capped by `maxBytes` with `diffTruncated` saying so — digest+partial, the
+ * transcript precedent.
+ */
+export interface SessionGitDiff {
+  sessionId: EntityId;
+  available: boolean;
+  unavailableReason: 'no_worktree' | 'worktree_not_active' | 'worktree_unreadable' | null;
+  branch: string | null;
+  baseRef: string | null;
+  baseOid: string | null;
+  /** The commit the diff is measured from (merge-base of base and HEAD). */
+  mergeBaseOid: string | null;
+  headOid: string | null;
+  stat: { filesChanged: number; additions: number; deletions: number };
+  files: SessionGitDiffFile[];
+  filesTruncated: boolean;
+  /** Unified diff text, capped at `maxBytes`. */
+  diff: string;
+  diffTruncated: boolean;
+  checkedAt: string;
+}
+
+export interface SessionGitCheckpointResult {
+  sessionId: EntityId;
+  worktreeId: EntityId;
+  /** The checkpoint ref — a full commit oid on the session's branch. */
+  oid: string;
+  branch: string;
+  /** false when the tree was already clean and HEAD itself is the checkpoint. */
+  created: boolean;
+  files: SessionGitFile[];
+}
+
+export interface SessionGitRollbackResult {
+  sessionId: EntityId;
+  worktreeId: EntityId;
+  /** Where HEAD (and the branch) now point. */
+  oid: string;
+  branch: string;
+  /** HEAD before the rollback — the reflog keeps it reachable. */
+  previousOid: string;
+  /** Untracked paths deleted because `force` said to. */
+  deletedUntracked: string[];
+}
+
+export interface SessionGitCommitResult {
+  sessionId: EntityId;
+  worktreeId: EntityId;
+  oid: string;
+  branch: string;
+  files: SessionGitFile[];
+}
+
+/**
+ * execution.gitCherryPick — apply commits onto the session's branch, in the
+ * session's worktree. A conflict obeys merge's law exactly: the pick (the
+ * WHOLE sequence, for multi-commit picks) is aborted, the abort is verified
+ * server-side, and the conflicted paths come back as data.
+ */
+export interface ExecutionGitCherryPickInput extends CommandContext {
+  /** Commitishes to apply, oldest first. */
+  commits: string[];
+}
+
+export type SessionGitCherryPickResult =
+  | { sessionId: EntityId; worktreeId: EntityId; status: 'picked'; branch: string; fromOids: string[]; newOids: string[] }
+  | { sessionId: EntityId; worktreeId: EntityId; status: 'conflict'; branch: string; fromOids: string[]; conflictedPaths: string[] };
+
+/**
+ * execution.gitBranch — create/rename/delete a branch in the session's
+ * worktree. Refusals the server owns: a branch checked out in ANY worktree
+ * (the user's primary tree included), the project's default/base branch, and
+ * an unmerged delete without `force` — the refusal names what "unmerged" was
+ * measured against (the worktree's HEAD branch).
+ */
+export type ExecutionGitBranchInput = CommandContext & (
+  | { action: 'create'; name: string; from?: string }
+  | { action: 'rename'; from: string; to: string }
+  | { action: 'delete'; name: string; force?: boolean }
+);
+
+export type SessionGitBranchResult =
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'create'; name: string; oid: string }
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'rename'; from: string; to: string; oid: string }
+  | {
+      sessionId: EntityId; worktreeId: EntityId; action: 'delete'; name: string;
+      /** The deleted tip — reachable by this oid until gc; the receipt says so. */
+      deletedOid: string;
+      /** What "unmerged" was measured against. */
+      measuredAgainst: string;
+      forced: boolean;
+    };
+
+/**
+ * execution.gitStash — push/pop/drop per session worktree (the stash LIST
+ * rides on execution.gitStatus as `stashes`). Push stores untracked files
+ * (`-u`) with no force gate — storing is the safe direction of rollback's
+ * untracked asymmetry. A conflicted pop aborts (verified), RETAINS the entry
+ * and answers the conflicted paths as data. Drop destroys an entry and
+ * therefore gates on `force`, returning the oid that stays reachable until gc.
+ */
+export type ExecutionGitStashInput = CommandContext & (
+  | { action: 'push'; message?: string }
+  | { action: 'pop'; index?: number }
+  | { action: 'drop'; index: number; force?: boolean }
+);
+
+export type SessionGitStashResult =
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'push'; status: 'stashed'; oid: string; branch: string; files: SessionGitFile[] }
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'push'; status: 'clean'; branch: string }
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'pop'; status: 'popped'; oid: string; branch: string; files: SessionGitFile[] }
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'pop'; status: 'conflict'; oid: string; branch: string; conflictedPaths: string[] }
+  | { sessionId: EntityId; worktreeId: EntityId; action: 'drop'; droppedOid: string; subject: string };
+
+/** One stash entry, as listed on execution.gitStatus. */
+export interface SessionGitStashEntry {
+  index: number;
+  oid: string;
+  subject: string;
+  date: string;
+}
+
+/** A conflict is data with the worktree restored clean — see the input's doc. */
+export type SessionGitMergeResult =
+  | { sessionId: EntityId; worktreeId: EntityId; status: 'merged' | 'up_to_date'; oid: string; fromRef: string; fromOid: string }
+  | { sessionId: EntityId; worktreeId: EntityId; status: 'conflict'; fromRef: string; fromOid: string; conflictedPaths: string[] };
 
 /**
  * voice.token.create — POST /v2/entities/:id/commands/voice-token. Mints a

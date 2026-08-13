@@ -217,11 +217,30 @@ describe('THE GATE — composed T0-1 master screen', () => {
       fireEvent.click(full as HTMLElement);
       await waitFor(() => expect(getByTestId('launch-sheet')).toBeTruthy());
     } else {
-      // This fixture state has no task quick-config mounted. The Sessions
-      // list's old *disabled* Launch sentence was previously counted here as
-      // proof of reachability, even though clicking it could do nothing. Do
-      // not resurrect that false positive or its header row.
-      expect(container.querySelector('[data-kind="work_session"] .lp__actions')).toBeNull();
+      // This fixture state has no task quick-config mounted, so nothing here
+      // reaches the sheet — and the Sessions header must not be counted as if
+      // it did.
+      //
+      // THE ASSERTION MOVED IN 101, AND THE RULE DID NOT. It used to be "that
+      // header row does not exist", because the only thing in it was a
+      // DISABLED `Launch session ▸` sentence that had once been miscounted as
+      // proof of reachability. The row exists now: it carries `▮ Terminal`,
+      // which performs a real act (a vanilla shell session). So the check is
+      // written against what was actually wrong — an ENABLED control that
+      // opens nothing — rather than against the row that happened to contain
+      // one. `Launch session ▸` is still in there and still refuses, with its
+      // reason on screen, which is the honest state of this build.
+      // ASSERTED, NOT GUARDED. An `if (header)` here would go green the day
+      // the header stops rendering — which is precisely the defect this PR
+      // closed (no mount passed `onAction`, so the row drew nothing). A
+      // conditional assertion about a control that must exist cannot notice
+      // the control disappearing.
+      const header = container.querySelector('[data-kind="work_session"] .lp__actions');
+      expect(header).toBeTruthy();
+      const enabled = [...(header as HTMLElement).querySelectorAll('button')].map((b) => b.textContent ?? '');
+      expect(enabled.some((label) => /launch/i.test(label))).toBe(false);
+      expect(within(header as HTMLElement).getByTestId('disabled-with-reason').textContent)
+        .toMatch(/launch session/i);
     }
   });
 

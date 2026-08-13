@@ -57,6 +57,11 @@ export const REASONS = {
     'Withdrawing a handoff is deferred: handoffs.withdraw is not in the stamped facade seam, and withdrawal is not reversible once it is.',
   // R7 deferred features (never hidden, never built)
   graphDeferred: 'Graph view isn’t available yet.',
+  // B10 (git placement map §4.3). The named precondition, not a generic
+  // "coming soon": the tracking reader is read-only, and a merge button that
+  // guessed would land someone's lane on base without checks/review honesty.
+  mergePrDeferred:
+    'Merging needs a forge write client, and this node only has the read-only tracker — merge on the forge for now.',
   undoDeferred: 'Undo isn’t available yet — actions in this build are not reversible.',
   versionHistoryDeferred: 'Version history isn’t available yet.',
   leaderboardDeferred: 'The leaderboard isn’t available yet.',
@@ -309,6 +314,29 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
     ),
   ),
 
+  /**
+   * A VANILLA TERMINAL (101) — the shell you get without an agent in front.
+   *
+   * NOT wrapped in `launching()`, and that is the whole difference from its
+   * neighbour above. `launch-session` opens the quick config because a spawn
+   * has a teammate, a model, a profile and a project to choose, and the ruling
+   * behind that config is that a spawn's configuration must be visible at the
+   * moment it is committed. A vanilla terminal HAS no configuration — no
+   * persona, no model, no prompt — so an expand would show a card with nothing
+   * in it and cost a second click to say so. It commits on click.
+   *
+   * Gated on its own operation, never on `execution.spawn`: a node that
+   * refuses spawns (at the agent cap, say) can still open a terminal, because
+   * the two caps are disjoint by construction. Gating on spawn would refuse a
+   * terminal for a reason that does not apply to it.
+   */
+  'start-terminal': define(
+    'start-terminal',
+    'Terminal',
+    '▮',
+    (ctx) => opGate(ctx, 'execution.terminal.start') ?? AVAILABLE,
+  ),
+
   terminate: define(
     'terminate',
     'Terminate',
@@ -335,6 +363,7 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   'toggle-theme': define('toggle-theme', 'Toggle theme', '◐', () => AVAILABLE),
 
   // R7 disposition table (LLD §4.2) — every deferred member has a home.
+  'merge-pr': deferred('merge-pr', 'Merge…', '⇣', REASONS.mergePrDeferred),
   'graph-view': deferred('graph-view', 'Graph view', '◈', REASONS.graphDeferred),
   undo: deferred('undo', 'Undo', '↶', REASONS.undoDeferred),
   'version-history': deferred('version-history', 'Version history', '⟲', REASONS.versionHistoryDeferred),

@@ -95,7 +95,23 @@ export function workerBootstrapControl(f: BootstrapControlFacts): string {
   ].join('\n');
 }
 
+/**
+ * Every line below the orchestration sentence is pinned to an observed failure
+ * in a real `mode=coordinator` journal (prod-data/journals, 2026-08):
+ *
+ *   - <strategy>: 3 of 6 real coordinators never spawned anyone and did the
+ *     work solo for hours (019ff290, 019fed63, 019fed68).
+ *   - <reply_address>: 2 of 6 briefed workers to message the WORKER'S OWN
+ *     session id, so no result could ever arrive (019fce68 ×13 briefs;
+ *     019ff46f caught it only by luck and had to send a CORRECTION).
+ *     The coordinator's own session id is baked into the line — a concrete id
+ *     cannot be self-addressed by mistake the way a placeholder can.
+ *   - <tracking>: 019fce68 mass-terminated all seven workers without
+ *     collecting a single result; 019fce7c spawned one, terminated it, then
+ *     did 24 entity reads itself.
+ */
 export function coordinatorBootstrapControl(f: BootstrapControlFacts): string {
+  const self = attr(f.sessionId);
   return [
     '<trusted_control type="tm8.coordinator-bootstrap" version="1">',
     identityLine(f),
@@ -103,6 +119,9 @@ export function coordinatorBootstrapControl(f: BootstrapControlFacts): string {
     profileLine(f),
     `  <goal task_id="${attr(f.taskId)}" />`,
     '  <orchestration>Use graph tasks, edges, durable messages, events, projects, and execution operations. Do not use a private child-result or prompt channel.</orchestration>',
+    '  <strategy>You coordinate; workers execute. Delegate each scoped unit with `tm8 session spawn --teammate TEAM_MEMBER_ID --task TASK_ID --mode coordinated-worker --context BRIEF` — `--mode coordinated-worker` is what tells the worker a coordinator is waiting, so never omit it. Do a unit yourself only when writing its brief would cost more than doing it.</strategy>',
+    `  <reply_address session_id="${self}">Every brief MUST tell the worker to report completion or blockage with \`tm8 message send --to ${self}\` — this coordinator session's id, never the worker's own id, which sends the result where no one reads it.</reply_address>`,
+    '  <tracking>Track every spawned work-session id. Chase silence with `tm8 message send --to WORK_SESSION_ID` and read what a worker actually did with `tm8 session transcript WORK_SESSION_ID`. Collect a result or record a failure for every unit before terminating any worker, then close out on the goal anchor integrating all of them.</tracking>',
     '  <rule>Discover spawn actions and project associations before delegation. Choose project, worktree, or scratch explicitly.</rule>',
     '</trusted_control>',
   ].join('\n');

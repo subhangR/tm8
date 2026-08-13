@@ -44,7 +44,7 @@ import type { CommandResult, CreateEntityInput, EntityDetail, SpaceId } from '@t
 import { getKind, REASONS as DOMAIN_REASONS, type ActionContext, type ActionRef } from '../domain';
 import { FIXTURE_SPACE_ID, channelDesign, fixtureDetails, presenceHollowReason, taskUuidTitle } from '../fixtures';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
-import type { AuthoringCommands } from '../authoring';
+import { EditEntityDialog, type AuthoringCommands } from '../authoring';
 import { ENTITY_VERB_ACTIONS, useEntityVerbs } from './useEntityVerbs';
 
 afterEach(cleanup);
@@ -186,6 +186,70 @@ describe('edit opens the dialog for the SUBJECT’s kind, not the list’s', () 
     expect(fields).toEqual(['Name', 'Topic']);
     // Built from the registry `label`, so a renamed kind renames the dialog.
     expect(title).toBe('Edit channel');
+  });
+});
+
+/**
+ * THE DUE DATE'S SEAM — where the field is READ from, and why it is not where
+ * it is written.
+ *
+ * `edit-dialog.test.tsx` holds the dialog's own semantics against hand-made
+ * field arrays. This holds the crossing the dialog cannot see: the registry
+ * names `content.dueDate`, and the value that seeds it comes out of
+ * `EntityDetail.state` because that is the only place the server puts it
+ * (`stateOf`, `entity-read.ts:1112`; `contentOf` at `:1502-1508` does not
+ * carry it).
+ *
+ * THE FAILURE THIS PREVENTS IS SILENT AND DESTRUCTIVE. Seeded from `content`,
+ * the box opens EMPTY on a task that has a due date; an empty date field is an
+ * explicit `null`; so pressing Save without touching anything deletes the date
+ * and reports success. Nothing else in the suite would have noticed — the
+ * dialog tests pass their own seed in, and the registry test only reads data.
+ */
+describe('the task’s due date is seeded from state and patched into content', () => {
+  function openTaskDialog() {
+    const { commands, patchEntity } = commandsSpy();
+    function Probe() {
+      const verbs = useEntityVerbs({ detail: TASK, spaceId: FIXTURE_SPACE_ID as SpaceId, commands });
+      return (
+        <div>
+          <button type="button" data-testid="go" onClick={() => verbs.onAction('edit')}>go</button>
+          <EditEntityDialog flow={verbs.edit} fields={verbs.editFields} title={verbs.editTitle} />
+        </div>
+      );
+    }
+    render(<Probe />);
+    fireEvent.click(screen.getByTestId('go'));
+    return { patchEntity };
+  }
+
+  it('opens showing the date the task actually has', () => {
+    openTaskDialog();
+    const input = screen.getByTestId('edit-field-content.dueDate') as HTMLInputElement;
+    // The fixture's task carries this in `state.dueDate` and NOT in content —
+    // which is exactly the shape the node produces.
+    expect(taskUuidTitle.state).toMatchObject({ dueDate: '2026-07-30' });
+    expect((TASK.content as Record<string, unknown>).dueDate).toBeUndefined();
+    expect(input.value).toBe('2026-07-30');
+  });
+
+  it('saving an untouched dialog PRESERVES the date rather than clearing it', async () => {
+    const { patchEntity } = openTaskDialog();
+    fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
+    const [, input] = patchEntity.mock.calls[0] as unknown as [string, { content?: Record<string, unknown> }];
+    expect(input.content?.dueDate).toBe('2026-07-30');
+  });
+
+  it('clearing the box sends an explicit null, the only thing the server reads as a clear', async () => {
+    const { patchEntity } = openTaskDialog();
+    fireEvent.change(screen.getByTestId('edit-field-content.dueDate'), { target: { value: '' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
+    const [, input] = patchEntity.mock.calls[0] as unknown as [string, { content?: Record<string, unknown> }];
+    expect(input.content).toHaveProperty('dueDate', null);
   });
 });
 

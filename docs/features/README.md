@@ -14,6 +14,7 @@ verification specific to it.
 | Channels | [`channels/`](channels/) | [`README.md`](channels/README.md) |
 | Session resume | [`resume/`](resume/) | [`SESSION-RESUME-PLAN.md`](resume/SESSION-RESUME-PLAN.md) |
 | Hosted workspaces | [`shared-workspace/`](shared-workspace/) | [`README.md`](shared-workspace/README.md) |
+| Shareable links | [`sharing/`](sharing/) | [`SHAREABLE-LINKS-DESIGN.md`](sharing/SHAREABLE-LINKS-DESIGN.md) |
 
 Most feature directories also carry the lane brief they were built from:
 [`worktrees/BRIEF-WORKTREES.md`](worktrees/BRIEF-WORKTREES.md),

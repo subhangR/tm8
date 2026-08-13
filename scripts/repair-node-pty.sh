@@ -25,8 +25,20 @@ while IFS= read -r helper; do
 done < <(find "$root" -path '*/node-pty/prebuilds/*/spawn-helper' -not -path '*/win32-*/*')
 
 if [ "$found" -eq 0 ]; then
-  echo "no node-pty spawn-helper found under $root — is node-pty installed?" >&2
-  exit 1
+  # WARN, never fail. This script is the root package's `postinstall`, so a
+  # non-zero exit here fails the entire `bun install` that invoked it — and
+  # "no spawn-helper yet" is a perfectly ordinary state during one: a partial
+  # workspace install, an `--ignore-scripts` run, a platform with no matching
+  # prebuild, or simply a tree where node-pty has not been extracted yet.
+  # Turning that into a hard install failure blocks the very command that would
+  # have produced the file.
+  #
+  # Nothing is lost by warning: deploy/prod/deploy.sh and install.sh both ASSERT
+  # the executable bit before they let a build reach a running server, so a
+  # genuinely broken helper is still caught — at a point where failing is useful.
+  echo "note: no node-pty spawn-helper found under $root (nothing to repair yet)." >&2
+  echo "      If PTY spawns later fail with 'posix_spawnp failed', re-run this script." >&2
+  exit 0
 fi
 
 echo "node-pty repaired ($found spawn-helper binaries made executable)"

@@ -49,6 +49,21 @@ describe('four-mode identity', () => {
     expect(instructionFor('worker')).not.toMatch(/coordinator/i);
   });
 
+  it('teaches the COORDINATOR the full dispatch loop: spawn mode, reply address, transcript, collect-then-close', () => {
+    // Pinned against the six real mode=coordinator journals of 2026-08: three
+    // did the work solo, two told workers to reply to the WORKER'S own session
+    // id, one terminated its whole fleet without collecting a result. The
+    // live (v1) path renders THIS string, not the §14.2 control block.
+    const text = instructionFor('coordinator');
+    expect(text).toContain('--mode coordinated-worker');
+    expect(text).toMatch(/never omit it/);
+    expect(text).toContain('tm8 message send --to <your-session-id>');
+    expect(text).toMatch(/never the worker's own id/i);
+    expect(text).toContain('tm8 session transcript <work-session-id>');
+    expect(text).toMatch(/collect a result or record a failure/i);
+    expect(text).toMatch(/close out/i);
+  });
+
   it('D4: teaches the worker the reply verb the incoming envelope advertises', () => {
     // §14.4 incoming-message envelopes carry a `<reply>` element naming a
     // context_message_id. The identity must teach the MATCHING verb, or the

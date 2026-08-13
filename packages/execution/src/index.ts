@@ -63,12 +63,29 @@ export * from './worktree/index.js';
 // of `spawn/`, so that importing a login primitive is a deliberate act and a
 // reader can see at the import site which of the two environments is in play.
 export * from './credentials/index.js';
+// The vanilla-terminal block (101) — a PTY on the login shell with no agent
+// attached. Same reasoning as the line above: a separate barrel so the import
+// site names which of the three environments is being composed.
+export * from './shell/index.js';
 export {
   readBranchTopology,
   type BranchTopology,
   type BranchTopologyEntry,
   type BranchTopologyOptions,
 } from './git/branch-topology.js';
+export {
+  readFileBlame,
+  readFileHistory,
+  readFileRevisionDiff,
+  UNCOMMITTED_OID,
+  type RevisionDiffResult,
+  type BlameHunk,
+  type FileBlameOptions,
+  type FileBlameResult,
+  type FileHistoryOptions,
+  type FileHistoryResult,
+  type FileRevision,
+} from './git/file-history.js';
 
 // Agent transcript digest — reads the agent's OWN native JSONL (claude
 // ~/.claude/projects, codex ~/.codex/sessions) and normalizes both dialects to

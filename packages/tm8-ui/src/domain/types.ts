@@ -338,6 +338,12 @@ export type ActionRef =
   | 'run'
   | 'coordinate'
   | 'launch-session'
+  // A VANILLA TERMINAL (101) — a shell session with no agent attached. Its own
+  // verb rather than `launch-session` with a null tool, because it opens no
+  // launch config: there is no teammate, model or profile to choose, so the
+  // two-clicks-to-launch rule that governs a spawn has nothing to show in
+  // between and the verb commits directly.
+  | 'start-terminal'
   | 'terminate'
   | 'prompt-session'
   // §8 share-into-session (seam-deferred, §10.7)
@@ -345,6 +351,9 @@ export type ActionRef =
   | 'withdraw-handoff'
   // chrome
   | 'toggle-theme'
+  // B10 (git placement map §4.3): merge the PR — the sanctioned landing
+  // path for a lane, deferred until a forge WRITE client exists.
+  | 'merge-pr'
   // R7 deferred discovery rows (§4.2 disposition table)
   | 'graph-view'
   | 'undo'
@@ -523,6 +532,17 @@ export interface ListConfig {
   liveCount?: { filter: QueryFilter; label: (n: number) => string };
   quickCreate: boolean;
   quickLaunch?: ActionRef;
+  /**
+   * A second header verb, rendered BESIDE `quickLaunch` (user ruling
+   * 2026-08-12: "these options should be on the top of sessions entity list
+   * panel", "beside launch session").
+   *
+   * Separate from `quickLaunch` rather than a list, because the two are not
+   * interchangeable: `quickLaunch` carries `flow: 'launch'` and EXPANDS a
+   * config, while this one commits on click. Collapsing them into one array
+   * would put that difference in the reader's head instead of in the type.
+   */
+  quickStart?: ActionRef;
   primaryActions?: readonly ActionRef[];
   filters: readonly FilterSpec[];
   sort: readonly SortSpec[];
@@ -583,7 +603,7 @@ export interface ListConfig {
   board?: { groupBy: GroupByKey };
   /**
    * Curated-set membership on the LIST surface (the `contains` pair,
-   * migration 100): the expanded row's "Collections" picker, and the list's
+   * migration 101): the expanded row's "Collections" picker, and the list's
    * collection LENS — pick a set and the list narrows to its members via the
    * contract's `filters.edge` clause, which the server already executes.
    *
@@ -812,6 +832,12 @@ export interface PanelConfig {
   /** work_session only. */
   contentSurfaces?: ContentSurfaces;
   /**
+   * Git UI wave: the subtree body mounts the git section (tracked PRs,
+   * commit provenance, completion-gate honesty) when the REGISTRY says so —
+   * archetype law, never `kind === 'task'` in a component (§15.2).
+   */
+  gitSection?: boolean;
+  /**
    * 'chat': the content body is a conversation that ENDS at its composer —
    * the panel mounts no AttachmentStrip (the composer's + owns attach) and no
    * PanelFooter below it. Terminal panels already skip both via the archetype
@@ -860,6 +886,26 @@ export interface EditFieldSpec {
   target: 'title' | 'content';
   /** The member name inside `content`. Required when `target` is `'content'`. */
   source?: string;
+  /**
+   * WHERE THE CURRENT VALUE IS READ FROM, when that is not where it is WRITTEN.
+   *
+   * Defaults to `'content'`, because for almost every field the two are the
+   * same place: a channel's topic is patched as `content.topic` and read back
+   * from `EntityDetail.content.topic`.
+   *
+   * `dueDate` is the exception, and it is the server's asymmetry rather than
+   * one invented here. `contentOf` builds a task's content from description,
+   * acceptanceCriteria and pointsEstimate ONLY (`entity-read.ts:1502-1508`),
+   * while `stateOf` is what projects `due_date` (`:1112`) — so the field is
+   * patched through `content.dueDate` and readable only from `state.dueDate`.
+   *
+   * THIS IS NOT COSMETIC. Seeding the dialog from `content` for a field that
+   * lives in `state` yields a BLANK box on a task that has a due date, and an
+   * emptied date field is an explicit `null` — so merely opening the dialog and
+   * pressing Save would silently clear it. Naming the read side is what makes
+   * that unrepresentable rather than a comment someone has to remember.
+   */
+  readFrom?: 'content' | 'state';
   label: string;
   /** Empty is refused in the dialog rather than at the server. */
   required?: boolean;
@@ -875,8 +921,17 @@ export interface EditFieldSpec {
    * door's clear flag); `json-object` parses before Save and refuses arrays or
    * invalid JSON visibly; `schedule` validates against the executor grammar
    * and recomputes `nextRunAt` only when this field changed.
+   *
+   * `date` IS A CALENDAR DAY, NOT A TIMESTAMP, and that is the server's shape
+   * rather than a simplification made here: `tasks.due_date` is a `date`
+   * column, `entity-read.ts` projects it through `dateOnly()`, and
+   * `handlers/collections.ts` sorts it as `::date`. A control offering a time
+   * would invent precision the column cannot hold. Like `nullable-text` an
+   * empty draft is an explicit `null` — which is the ONLY way to clear one,
+   * since `update_task_content` COALESCEs an absent `dueDate` to the stored
+   * value (`handlers/entities.ts:682-685`).
    */
-  valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule';
+  valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule' | 'date';
 }
 
 export interface KindConfig {
@@ -936,7 +991,7 @@ export interface KindConfig {
    * `list.quickCreate` continues to decide whether the header has a create
    * affordance at all.
    */
-  createForm?: 'scheduled-work';
+  createForm?: 'scheduled-work' | 'file-upload';
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

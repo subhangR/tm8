@@ -947,6 +947,30 @@ const ROWS: Record<OperationName, Row> = {
       'ahead/behind are measured against the default branch, whose SOURCE travels with the answer: main is a convention, not a rule',
     ],
   },
+  'projects.file.history': {
+    cmd: ['project', 'file-history'],
+    syn: 'tm8 project file-history <project-resource-id> <path> [--max-revisions <count>]',
+    sum: 'Revisions of one path in a project working directory, with session attribution',
+    authz: 'project',
+    input: 'none',
+    tags: ['git', 'history', 'log', 'file', 'revision', 'attribution', 'provenance'],
+    notes: [
+      'a READ — argv-only git log --follow; the path is a pathspec inside the project checkout, never a directory',
+      'each revision carries the created_in session join when the graph recorded one; "no tm8 session recorded" is the honest absence',
+    ],
+  },
+  'projects.file.blame': {
+    cmd: ['project', 'blame'],
+    syn: 'tm8 project blame <project-resource-id> <path> [--max-lines <count>]',
+    sum: 'Working-tree blame of one path, hunks joined to the session that produced each commit',
+    authz: 'project',
+    input: 'none',
+    tags: ['git', 'blame', 'attribution', 'provenance', 'session', 'hunk'],
+    notes: [
+      'a READ — argv-only git blame --porcelain, bounded by --max-lines; the cut reports how many lines it holds back',
+      'attribution comes ONLY from the created_in edge; absent facts are absent claims',
+    ],
+  },
   'projects.update': {
     cmd: ['project', 'update'],
     syn: 'tm8 project update <project-resource-id> [--name <name>] [--working-dir <absolute-path>] [--trust trusted|untrusted] [--yes] [--mutation-id <id>]',
@@ -1005,6 +1029,19 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'confined to the project working directory AND to TM8_PROJECT_ROOTS; symlinks are refused rather than followed',
       'a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
+    ],
+  },
+  'projects.files.archive': {
+    cmd: null,
+    sum: 'Download a whole subtree of a connected project folder as one zip',
+    authz: 'project',
+    input: 'none',
+    tags: ['file', 'folder', 'download', 'archive', 'zip', 'local', 'browse'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'answers `application/zip` as an attachment, never an inline document, so §4.4 holds for a whole tree as it does for one file',
+      'withheld paths are omitted and listed in `_tm8-excluded.txt` inside the archive; the counts are also response headers',
+      'a CLI caller already holds the node filesystem and reaches the same bytes with `zip`/`tar`',
     ],
   },
   'projects.folderUploads.init': {
@@ -1235,6 +1272,39 @@ const ROWS: Record<OperationName, Row> = {
       'worktree is not advertised until the node can create and clean one up safely',
     ],
   },
+  'execution.terminal.start': {
+    // NO CLI COMMAND, and it is a SCOPE DECISION rather than a refusal — the
+    // same shape `credentials.*` takes above, and the same reasoning.
+    //
+    // 101 delivered this operation for the UI: "starting a shell session with
+    // no agent FROM THE UI". Advertising `session terminal` in the grammar
+    // without wiring a handler would break a real invariant, not just a count
+    // — `discovery-commands.test.ts` asserts that EVERY command in the frozen
+    // grammar is registered, and it has been empty-by-construction until now.
+    // Documented-but-unwired is a state `run.ts` still models (exit 8), and
+    // that test records out loud that no live example exists; manufacturing
+    // one to save a row here would be the wrong way to spend that property.
+    //
+    // A CLI form would need no security change — a `cli`-kind human session is
+    // the same principal a browser one is. It is simply not this task's scope,
+    // and the row stays here so the operation is still DISCOVERABLE by exact
+    // lookup and by tag.
+    cmd: null,
+    sum: 'Open a vanilla terminal — a shell session with no agent attached',
+    authz: 'space',
+    input: 'bound',
+    side: 'execution',
+    tags: ['terminal', 'shell', 'pty', 'vanilla', 'console'],
+    notes: [
+      'NO CLI COMMAND — a scope decision, not a refusal; 101 delivered this for the UI. A `cli` human session is the same principal a browser one is, so a CLI form would need no security change',
+      'no Teammate, no model, no persona: this is the shell you get without `claude-code` or `codex` in front of it',
+      'the shell is resolved Server-side and CANNOT be named by the caller — there is no command, args or flags input',
+      'the cwd is the project ROOT when a project is named, never a provisioned worktree; with no project it is a Server-owned scratch directory and the row records `workdir_mode = scratch`',
+      'NO CLIENT NAMES A PROJECT TODAY — the UI header has no project picker and there is no CLI command, so every terminal a human can start is currently projectless',
+      'its own concurrency ceiling (`TM8_TERMINAL_CAP`, default 4), disjoint from the agent and credential caps',
+      'attach to it exactly like any other session — `execution.streams.attach` asks no questions about session kind',
+    ],
+  },
   'execution.dispatch': {
     cmd: ['session', 'dispatch'],
     syn: 'tm8 session dispatch <subject-entity-id> [--space <space-id>] [--note <text>] [--force-new-task] [--mutation-id <id>]',
@@ -1327,6 +1397,95 @@ const ROWS: Record<OperationName, Row> = {
       'a session launched before prompt capture answers `prompts.unavailableReason: not_recorded` rather than an empty prompt',
       'the manifest is returned as-written, unvalidated, so a document from an older or newer build still renders instead of failing closed',
     ],
+  },
+  // ── the session git rail (Git UI wave) ──────────────────────────────────
+  // All six are deliberately `cmd: null`: the CLI already runs these verbs
+  // LOCALLY through `@tm8/execution/worktree` (`tm8 session checkpoint`,
+  // `tm8 session rollback`, `tm8 worktree stage|commit|merge|status`) with
+  // catalog-zero graph writes. The HTTP operations exist for surfaces that
+  // have no machine to run git on — the browser. A second CLI spelling of the
+  // same verb would give one action two names with different failure modes.
+  'execution.gitStatus': {
+    cmd: null,
+    sum: "Read a session worktree's live git status: branch, dirty counts, ahead/behind its base",
+    authz: 'entity',
+    input: 'none',
+    tags: ['git', 'status', 'branch', 'dirty', 'ahead', 'behind', 'worktree'],
+    reason: 'cli_runs_git_locally',
+    notes: ['a session with no worktree answers `available:false` with a named reason, never an error'],
+  },
+  'execution.gitDiff': {
+    cmd: null,
+    sum: 'Read what a session changed: working tree vs the merge-base of its base ref, digest always complete, diff text byte-capped',
+    authz: 'entity',
+    input: 'none',
+    tags: ['git', 'diff', 'numstat', 'changes', 'worktree', 'review'],
+    reason: 'cli_runs_git_locally',
+    notes: ['the numstat digest is never cut; `diffTruncated` says when the unified text was'],
+  },
+  'execution.gitCheckpoint': {
+    cmd: null,
+    sum: "Commit a session worktree's entire work-in-progress to its own branch and return the oid as the checkpoint ref",
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'checkpoint', 'commit', 'undo', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitRollback': {
+    cmd: null,
+    sum: 'Restore a session worktree to a checkpoint ref; untracked deletions gate on force',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'rollback', 'undo', 'reset', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitCommit': {
+    cmd: null,
+    sum: 'Stage (optionally) and commit exactly what is staged in a session worktree',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'commit', 'stage', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitMerge': {
+    cmd: null,
+    sum: "Merge the session's base ref forward into its branch; a conflict returns the conflicted paths with the worktree restored clean",
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'merge', 'base', 'conflict', 'worktree'],
+    reason: 'cli_runs_git_locally',
+    notes: ['session branch → base is deliberately absent at every layer: landing on base goes through a PR'],
+  },
+  'execution.gitCherryPick': {
+    cmd: null,
+    sum: "Apply commits onto a session's branch in its worktree; a conflict aborts (verified) and returns the conflicted paths with the worktree restored clean",
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'cherry-pick', 'commit', 'conflict', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitBranch': {
+    cmd: null,
+    sum: 'Create, rename or delete a branch in a session worktree; checked-out and protected branches refuse, an unmerged delete gates on force',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'branch', 'create', 'rename', 'delete', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitStash': {
+    cmd: null,
+    sum: 'Stash push/pop/drop per session worktree; a conflicted pop aborts (verified) retaining the entry, drop gates on force',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'stash', 'push', 'pop', 'drop', 'worktree'],
+    reason: 'cli_runs_git_locally',
   },
   'execution.transcript': {
     cmd: ['session', 'transcript'],
@@ -1785,7 +1944,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:c95e6de9b0ca67c4255d41ac304ca1f92e701c069f273c5eaa5ab86d7218f856';
+  'sha256:aefbae3bc972822d6f082bfe5a9d4046c2f4913d1a558de7bbb3b75644e307b3';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -2019,6 +2178,37 @@ const COMMAND_ALIASES = new Map<string, {
     notes: ['an empty index is a refusal, never an empty commit'],
     examples: ["tm8 worktree commit <session-id> --message 'feat: …'"],
   }],
+  ['worktree cherry-pick', {
+    path: ['worktree', 'cherry-pick'],
+    syntax: 'tm8 worktree cherry-pick <session-id|worktree-id> <commit>... [--task <task-id>] [--mutation-id <id>]',
+    summary: "Apply commits onto the session's branch in its own worktree; a conflict aborts cleanly and is surfaced durably",
+    notes: [
+      'direction is fixed: FROM the named commits ONTO the session lane — no other checkout is ever touched',
+      'on conflict the WHOLE sequence aborts, the abort is verified from git state, and the conflicted paths land as a durable message + attention on the owning task anchor (fallback session, then worktree) before exit 6',
+    ],
+    examples: ['tm8 worktree cherry-pick <session-id> <oid>'],
+  }],
+  ['worktree branch', {
+    path: ['worktree', 'branch'],
+    syntax: 'tm8 worktree branch <create|rename|delete> <session-id|worktree-id> <name> [<new-name>] [--from <ref>] [--force] [--mutation-id <id>]',
+    summary: "Create, rename or delete a branch in the session's repo, behind the safety refusals",
+    notes: [
+      'a branch checked out in ANY worktree (the user’s primary tree included) refuses rename and delete',
+      'an unmerged delete refuses without --force and names what "unmerged" was measured against; the deleted tip oid stays in the receipt, reachable until gc',
+    ],
+    examples: ['tm8 worktree branch create <session-id> feat/spike', 'tm8 worktree branch delete <session-id> feat/spike --force'],
+  }],
+  ['worktree stash', {
+    path: ['worktree', 'stash'],
+    syntax: 'tm8 worktree stash <push|list|pop|drop> <session-id|worktree-id> [--message <text>] [--index <n>] [--force] [--task <task-id>] [--mutation-id <id>]',
+    summary: 'Stash WIP per worktree: push stores untracked too, a conflicted pop aborts cleanly and retains the entry, drop gates on --force',
+    notes: [
+      'push needs no force gate — storing untracked files is the SAFE direction of rollback’s asymmetry',
+      'a conflicted pop obeys the merge conflict rail: abort + verify clean, entry RETAINED, durable message + attention, exit 6',
+      'drop destroys the entry and refuses without --force; the receipt carries the oid that stays reachable until gc',
+    ],
+    examples: ['tm8 worktree stash push <session-id>', 'tm8 worktree stash pop <session-id>'],
+  }],
   ['worktree merge', {
     path: ['worktree', 'merge'],
     syntax: 'tm8 worktree merge <session-id|worktree-id> --from <ref> [--task <task-id>] [--mutation-id <id>]',
@@ -2043,7 +2233,10 @@ COMMAND_OPS.set('session rollback', ['entities.get', 'edges.list', 'messages.pos
 COMMAND_OPS.set('worktree stage', ['entities.get', 'edges.list']);
 COMMAND_OPS.set('worktree commit', ['entities.get', 'edges.list', 'messages.post']);
 COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
-COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge');
+COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_OPS.set('worktree branch', ['entities.get', 'edges.list', 'messages.post']);
+COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
 
 /**
  * A command is as available as its LEAST available stage. `file upload` that

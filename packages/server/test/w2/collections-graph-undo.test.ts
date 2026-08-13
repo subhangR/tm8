@@ -10,6 +10,7 @@ import {
 } from '../../src/facade/handlers/w2/graph-undo.js';
 import type { EntityRow } from '../../src/facade/entity-read.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
+import { projectForgeFacts } from '../../src/tracking/pr-projection.js';
 import type { RequestContext } from '../../src/http/types.js';
 
 const SPACE_ID = '00000000-0000-7000-8000-000000000501';
@@ -18,6 +19,7 @@ const ROOT_ID = '00000000-0000-7000-8000-000000000503';
 const CHILD_ID = '00000000-0000-7000-8000-000000000504';
 const OTHER_ID = '00000000-0000-7000-8000-000000000505';
 const EDGE_ID = '00000000-0000-7000-8000-000000000506';
+const PR_ID = '00000000-0000-7000-8000-000000000507';
 
 function taskRow(id: string, title: string, parentId: string | null, position: number): EntityRow & { __sort: string; __sort_cursor: string } {
   const timestamp = `2026-07-2${position + 1}T10:00:00.000Z`;
@@ -242,6 +244,52 @@ describe('W2.G05 collection, graph, and undo handlers', () => {
     expect(result.clusters).toEqual([{ parentId: ROOT_ID, childIds: [CHILD_ID] }]);
     expect(edgeSql).toContain('src.deleted_at is null');
     expect(edgeSql).toContain('dst.deleted_at is null');
+  });
+
+  it('enriches a pull_request node with the same forge-fact fields as the connections read', async () => {
+    // Same stored facts the connections read projects in
+    // `projects-associations.ts` `artifactSummary`: the graph lens must serve
+    // the SAME field names and values, through the SAME shared mapper — a
+    // pull_request node whose state degrades to `fields: {}` is the live-rig
+    // defect this test freezes out (chips dark despite a truthful
+    // connections read).
+    const prRow: EntityRow & { __sort: string; __sort_cursor: string } = {
+      ...taskRow(PR_ID, '', null, 1),
+      kind: 'pull_request',
+      task_title: null,
+      task_description: null,
+      pr_title: 'Speed up CI',
+      pr_repo: 'subhangR/tm8',
+      pr_number: 89,
+      pr_state: 'open',
+      pr_ci_status: 'failing',
+      pr_mergeable_state: 'dirty',
+      pr_url: 'https://github.com/subhangR/tm8/pull/89',
+      pr_fetched_at: '2026-08-09T12:00:00.000Z',
+    };
+
+    const result = await queryGraph(
+      readQuerier([prRow]),
+      { spaceId: SPACE_ID, kinds: ['pull_request'], limit: 5 },
+      'g05-owner',
+    );
+
+    expect(result.nodes).toHaveLength(1);
+    const node = result.nodes[0]!;
+    expect(node.title).toBe('Speed up CI');
+    expect(node.state).toEqual({
+      kind: 'pull_request',
+      repository: 'subhangR/tm8',
+      number: 89,
+      state: 'open',
+      url: 'https://github.com/subhangR/tm8/pull/89',
+      fetchedAt: '2026-08-09T12:00:00.000Z',
+      stale: false,
+      // The shared mapper the connections read spreads — asserting THROUGH it
+      // binds the two doors to one vocabulary ('failing' / 'conflicted').
+      ...projectForgeFacts('failing', 'dirty'),
+    });
+    expect(node.state).toMatchObject({ ciStatus: 'failing', mergeState: 'conflicted' });
   });
 
   it('validates and forwards undo token, actor, and mutation identity through one RPC transaction', async () => {

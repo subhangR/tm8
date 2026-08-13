@@ -59,6 +59,28 @@
  * caller churn. Filed by the branch-topology-ui lane for dual re-consensus
  * recording alongside the catalog row it consumes (PR #74).
  *
+ * Amendment 8 (2026-08-09, Tier 1 file reads): reads gain `projectFileHistory`
+ * and `projectFileBlame` — the contract's `projects.file.history` and
+ * `projects.file.blame` (GET /v2/projects/:projectId/file-history|blame,
+ * catalog v1). READS over one path in a linked project's working directory:
+ * revisions (rename-following, optional selected-revision patch via
+ * `diffOid`) and working-tree blame hunks, each joined to the `created_in`
+ * session provenance — `session: null` means NO tm8 session recorded, and the
+ * UI must say so rather than guess. Contract-shaped and additive, zero caller
+ * churn. Filed by the tier1-file-history-blame lane for dual re-consensus
+ * recording alongside the catalog rows it consumes.
+ *
+ * Amendment 9 (2026-08-09, Tier 2 completion): commands gain
+ * `gitCherryPick` / `gitBranch` / `gitStash` — the contract's
+ * `execution.gitCherryPick|gitBranch|gitStash` (POST, catalog v1), and
+ * `SessionGitStatus` gains the additive optional `stashes` list the server
+ * now returns. Same conflict law as `gitMerge`: a conflict RESOLVES with
+ * `status:'conflict'` + the conflicted paths, worktree restored clean
+ * (verified server-side); the destructive gates (unmerged branch delete,
+ * stash drop) refuse without `force`. Additive, zero caller churn. Filed by
+ * the tier2-completion lane for dual re-consensus recording alongside the
+ * three catalog rows it consumes.
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -107,6 +129,7 @@ import type {
   ExecutionDispatchInput,
   ExecutionDispatchResult,
   ExecutionSpawnInput,
+  ExecutionTerminalStartInput,
   ExecutionResumeInput,
   ExecutionTerminateInput,
   FileUploadAbortInput,
@@ -131,6 +154,8 @@ import type {
   PatchTaskInput,
   PostMessageInput,
   ProjectBranchTopology,
+  ProjectFileBlame,
+  ProjectFileHistory,
   ProjectCreateInput,
   ProjectDirectoryListing,
   ProjectFileAttachInput,
@@ -146,6 +171,23 @@ import type {
   ProjectResource,
   ReactionInput,
   ResolveEntityAttentionInput,
+  ContentionReport,
+  ExecutionGitCheckpointInput,
+  ExecutionGitCommitInput,
+  ExecutionGitMergeInput,
+  ExecutionGitCherryPickInput,
+  ExecutionGitBranchInput,
+  ExecutionGitStashInput,
+  ExecutionGitRollbackInput,
+  SessionGitCheckpointResult,
+  SessionGitCommitResult,
+  SessionGitDiff,
+  SessionGitMergeResult,
+  SessionGitCherryPickResult,
+  SessionGitBranchResult,
+  SessionGitStashResult,
+  SessionGitRollbackResult,
+  SessionGitStatus,
   SessionJournalPage,
   SessionLaunchRecord,
   SessionTranscriptPage,
@@ -284,6 +326,26 @@ export interface BranchTopologyOpts {
   limit?: number;
 }
 
+/** `projectFileHistory` options — bounded server-side (default 100 revisions). */
+export interface FileHistoryOpts {
+  /** Max revisions returned; the DTO's `truncated` says when this cut the walk. */
+  maxRevisions?: number;
+  /** Full 40-hex oid: also answer that revision's patch (`diff`), byte-capped. */
+  diffOid?: string;
+}
+
+/** `projectFileBlame` options — bounded server-side (default 2000 lines). */
+export interface FileBlameOpts {
+  /** Max lines blamed; `totalLines - blamedLines` is what a cut holds back. */
+  maxLines?: number;
+}
+
+/** `gitDiff` options — bounded server-side (`maxBytes` caps at 1 MiB). */
+export interface GitDiffOpts {
+  /** Unified-diff byte cap; server default 256 KiB, max 1 MiB. */
+  maxBytes?: number;
+}
+
 export interface Seam {
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
@@ -349,6 +411,27 @@ export interface Seam {
    */
   projectBranches(projectId: string, opts?: BranchTopologyOpts): Promise<ProjectBranchTopology>;
   /**
+   * The file-contention map over one project's ACTIVE worktrees (Git UI
+   * wave): which lanes exist, what each touched beyond its base, and which
+   * PAIRS overlap — the read that sees a silent-revert collision while both
+   * lanes are still alive, not after the second merge. Lanes the node cannot
+   * read are SKIPPED with a reason, never silently omitted.
+   */
+  projectContention(projectId: string): Promise<ContentionReport>;
+  /**
+   * The revisions of one path in a linked project's working directory
+   * (Amendment 8) — argv-only git server-side, rename-following, each
+   * revision carrying its `created_in` session attribution or null. The same
+   * `invalid_input`-is-a-project-fact rule as `projectBranches` applies.
+   */
+  projectFileHistory(projectId: string, path: string, opts?: FileHistoryOpts): Promise<ProjectFileHistory>;
+  /**
+   * Working-tree blame of one path (Amendment 8): hunks with commit oid and
+   * the session provenance join. `session: null` means no tm8 session
+   * recorded — consumers must render that as a named absence, never guess.
+   */
+  projectFileBlame(projectId: string, path: string, opts?: FileBlameOpts): Promise<ProjectFileBlame>;
+  /**
    * Node-local onboarding is optional because fixture seams have no filesystem.
    * The real seam exposes the complete contract-backed saga surface; its
    * absence keeps the Add Space control disabled-with-reason.
@@ -380,6 +463,22 @@ export interface Seam {
      */
     read(projectId: ProjectId, path: string): Promise<ProjectFileReadResult>;
     attach(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult>;
+    /**
+     * Amendment 9 (2026-08-12, folder download): the URL of
+     * `projects.files.archive` — a whole subtree as one zip.
+     *
+     * An HREF here and a DTO for `read` is not an inconsistency, it is §4.4.
+     * A single file off a project's disk must never get a document context on
+     * the app origin, so it travels as JSON and the UI decides how to render
+     * it. An archive cannot BE a document: it is `application/zip` served
+     * `attachment` with `nosniff`, so the browser's own download path is both
+     * safe and the only sensible transport — streaming a 200 MB tree through
+     * JSON to rebuild it as a Blob would buy nothing and cost the heap.
+     *
+     * `path` is ABSOLUTE, the same vocabulary the rest of this group speaks;
+     * omitted means the project root.
+     */
+    archiveHref(projectId: ProjectId, path?: string): string;
   };
   /**
    * Amendment 8 (2026-08-10, folder import — owner ruling R7): the
@@ -455,6 +554,23 @@ export interface Seam {
    * liveness claim; `execution.liveness` is the authority on that.
    */
   transcript(workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage>;
+  /**
+   * The session GIT RAIL's two reads (Git UI wave).
+   *
+   * `gitStatus` answers "where is this lane": branch, dirty counts,
+   * ahead/behind its recorded base — read LIVE from the worktree by the node
+   * that holds it. `gitDiff` answers "what did this session change": working
+   * tree vs the merge-base of the base ref, so upstream drift never pollutes
+   * the answer. Both carry `available:false` with a NAMED reason as a real,
+   * common state (a scratch/project-dir session simply has no worktree) and
+   * consumers render the reason, never an empty or broken panel.
+   *
+   * The diff is digest+partial (the transcript precedent): `stat`/`files`
+   * are always complete; the unified text is byte-capped with
+   * `diffTruncated` saying when the cap cut it.
+   */
+  gitStatus(workSessionId: EntityId): Promise<SessionGitStatus>;
+  gitDiff(workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff>;
   /**
    * The space-wide attention queue — the ONLY way to discover *which* entities
    * are waiting on a human. `collections.query` has neither an attention filter
@@ -592,6 +708,21 @@ export interface Seam {
     previewArtifact(id: EntityId, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
     spawn(input: ExecutionSpawnInput): Promise<CommandResult>;
     /**
+     * `execution.terminal.start` — a VANILLA TERMINAL (101): a shell session
+     * with no agent attached.
+     *
+     * NOT A VARIANT OF `spawn` WITH THE AGENT FIELDS LEFT NULL, and the input
+     * type is what enforces that: it has no `teamMemberId`, no `model`, no
+     * `agentTool` and no `mode` to leave null. A seam method taking
+     * `ExecutionSpawnInput` with those omitted would be one optional-field edit
+     * away from a terminal that quietly spawns an agent.
+     *
+     * Returns a `CommandResult` like `spawn` does, because it creates exactly
+     * the same thing — a `work_session` entity — and every store that
+     * reconciles a spawn's patches must reconcile this one's identically.
+     */
+    startTerminal(input: ExecutionTerminalStartInput): Promise<CommandResult>;
+    /**
      * `execution.dispatch` — hand a subject to the space's resident dispatcher
      * and let IT choose the teammate and the memories (DESIGN §4.3, D2/D4).
      *
@@ -617,6 +748,28 @@ export interface Seam {
      * refuses any field the contract does not name.
      */
     resume(id: EntityId, input: ExecutionResumeInput): Promise<CommandResult>;
+    /**
+     * The session git rail's four verbs (Git UI wave) — checkpoint, rollback,
+     * commit, and merge-the-base-FORWARD. The other merge direction (session
+     * branch → base) is deliberately absent at every layer: base is checked
+     * out in the user's primary tree or nowhere, and landing on base goes
+     * through a PR. A merge CONFLICT resolves (not rejects) with
+     * `status:'conflict'` and the conflicted paths — the worktree is restored
+     * clean server-side, and the UI's job is to surface the paths loudly.
+     */
+    gitCheckpoint(id: EntityId, input: ExecutionGitCheckpointInput): Promise<SessionGitCheckpointResult>;
+    gitRollback(id: EntityId, input: ExecutionGitRollbackInput): Promise<SessionGitRollbackResult>;
+    gitCommit(id: EntityId, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult>;
+    gitMerge(id: EntityId, input: ExecutionGitMergeInput): Promise<SessionGitMergeResult>;
+    /**
+     * Tier 2 completion (Amendment 8). Cherry-pick's direction is fixed by
+     * construction — FROM the named commits ONTO the session branch; branch
+     * delete/rename refuse checked-out and protected branches server-side;
+     * stash drop and an unmerged branch delete gate on `force`.
+     */
+    gitCherryPick(id: EntityId, input: ExecutionGitCherryPickInput): Promise<SessionGitCherryPickResult>;
+    gitBranch(id: EntityId, input: ExecutionGitBranchInput): Promise<SessionGitBranchResult>;
+    gitStash(id: EntityId, input: ExecutionGitStashInput): Promise<SessionGitStashResult>;
   };
 
   /**

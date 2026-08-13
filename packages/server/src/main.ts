@@ -42,6 +42,12 @@ import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver } from './http/identity-resolver.js';
+import { createForgeWatcherJob } from './tracking/loops.js';
+import {
+  dispatchSessionMessages,
+  type DispatchableRoute,
+  type MessageDeliveryPort,
+} from './facade/services/w2/message-dispatch.js';
 import {
   loadConfig,
   resolveClipboardDir,
@@ -679,6 +685,49 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
+    // Tier 3 forge closed loops: the WATCHER, which is the complement of the
+    // queue drainer above. It decides for itself what to poll (the watch
+    // list) and turns semantic changes into messages in the owning session.
+    // `runOnStart` is false — it makes provider calls, and a node that restarts
+    // three times during a deploy should not make three rounds of them.
+    scheduler.register(
+      createForgeWatcherJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return {
+            identityId: o.identityId,
+            nodeAdmin: o.isNodeAdmin,
+            requestId: 'forge-watcher',
+          };
+        },
+        // The same delivery machinery the `messages.post` request path uses, so
+        // a nudge reaches an agent's terminal by exactly the route a human's
+        // message does. Absent when there is no execution runtime: the nudge is
+        // still stored, it is simply never injected — the honest degraded mode,
+        // and the same one `registerFacadeHandlers` takes above.
+        ...(delivery
+          ? {
+              dispatch: async ({ routes, workSessionId }: {
+                routes: unknown;
+                workSessionId: string;
+              }) => {
+                await dispatchSessionMessages({
+                  routes: Array.isArray(routes) ? (routes as DispatchableRoute[]) : [],
+                  parentsById: new Map(),
+                  requestId: `forge-watcher:${workSessionId}`,
+                  // The watcher is not a session, so there is no authoring
+                  // session and attribution is `recorded_only` — the same value
+                  // 019 derives for any writer that is not an agent.
+                  sourceWorkSessionId: null,
+                  senderAttribution: 'recorded_only',
+                  delivery: delivery.messageDelivery as unknown as MessageDeliveryPort,
+                });
+              },
+            }
+          : {}),
+      }),
+    );
     // The file-upload slot sweep — expiry + staged-byte cleanup (094). Only
     // where a blob store exists; the doors are node-admin-only by design.
     if (blobStore) {
@@ -696,6 +745,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     scheduler.start();
     console.log('  tracking: observer draining the refresh queue every 60s');
     console.log('  tracking: commit recorder walking active worktrees every 60s');
+    console.log('  tracking: forge watcher closing CI/conflict/review loops every 90s');
     if (blobStore) {
       console.log('  files: upload-slot sweep expiring slots and purging staged bytes every 10m');
       console.log('  files: deleted-blob purge reclaiming soft-deleted file bytes daily (30d grace)');

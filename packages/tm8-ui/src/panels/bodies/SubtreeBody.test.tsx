@@ -6,9 +6,11 @@ import type { SessionLiveness } from '../../data/seam';
 import { allKinds, getKind } from '../../domain';
 import {
   ada,
+  commitFoundation,
   docLayoutSpec,
   fixtureDetails,
   memoryTokens,
+  prTransplant,
   sessionStale,
   taskBlocked,
   taskGuideLines,
@@ -126,7 +128,14 @@ describe('the composed metadata grid', () => {
     const { getByTestId } = renderBody();
     const grid = getByTestId('subtree-grid');
     expect(grid.textContent).toContain(taskUuidTitle.id);
-    // `dueDate` has no registry control, so the grid is still its only home.
+    /*
+     * `dueDate` is EDITABLE now (the task's `editFields` dialog) and the grid
+     * is still where it is READ. Not a contradiction: suppression is keyed on
+     * `valueControls`/`assignControl` — the controls mounted PERSISTENTLY in
+     * the strip above this body, which would otherwise be drawn twice on one
+     * screen. A dialog is modal and absent the rest of the time, so removing
+     * the row would leave the due date visible nowhere.
+     */
     expect(grid.textContent).toMatch(/Due/);
   });
 
@@ -490,9 +499,13 @@ describe('LINKED — connection peers as chips', () => {
   it('chips every non-session peer, counted', () => {
     const { getByTestId } = renderBody();
     const section = getByTestId('linked-section');
-    expect(section.textContent).toMatch(/LINKED · 2/);
+    // Git UI wave: the fixture task now also tracks a PR and carries a
+    // created_in commit — both are non-session peers, so the count is 4.
+    expect(section.textContent).toMatch(/LINKED · 4/);
     expect(section.textContent).toContain(taskBlocked.title);
     expect(section.textContent).toContain(docLayoutSpec.title);
+    expect(section.textContent).toContain(prTransplant.title);
+    expect(section.textContent).toContain(commitFoundation.title);
   });
 
   it('opens a peer on click', () => {

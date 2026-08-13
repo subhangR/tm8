@@ -113,6 +113,11 @@ export const OPERATIONS = [
   { name: 'projects.get',            method: 'GET',    path: '/v2/projects/:projectId',                     kind: 'read',    status: 'v1' },
   { name: 'projects.contention',     method: 'GET',    path: '/v2/projects/:projectId/contention',          kind: 'read',    status: 'v1' },
   { name: 'projects.branches.list',  method: 'GET',    path: '/v2/projects/:projectId/branches',            kind: 'read',    status: 'v1' },
+  // Tier 1 file reads: the path is a `?path=` QUERY pathspec (a file path
+  // cannot ride a route segment); the directory git runs in always comes from
+  // the project row. Authorization is exactly `projects.get`'s.
+  { name: 'projects.file.history',   method: 'GET',    path: '/v2/projects/:projectId/file-history',        kind: 'read',    status: 'v1' },
+  { name: 'projects.file.blame',     method: 'GET',    path: '/v2/projects/:projectId/blame',               kind: 'read',    status: 'v1' },
   { name: 'projects.update',         method: 'PATCH',  path: '/v2/projects/:projectId',                     kind: 'command', status: 'v1' },
   { name: 'projects.link',           method: 'POST',   path: '/v2/spaces/:spaceId/projects',                kind: 'command', status: 'v1' },
   { name: 'projects.unlink',         method: 'DELETE', path: '/v2/spaces/:spaceId/projects/:projectId',     kind: 'command', status: 'v1' },
@@ -123,6 +128,14 @@ export const OPERATIONS = [
   // never raw bytes and never an inline document, so nothing off a project's
   // disk gets a document context on the app origin (FILES-DESIGN §4.4).
   { name: 'projects.files.read',     method: 'GET',    path: '/v2/projects/:projectId/files/content',       kind: 'read',    status: 'v1' },
+  // A whole subtree as one zip. This is the one project-disk read that answers
+  // BYTES rather than a DTO, and it does not weaken §4.4: an archive is
+  // `application/zip` with an unconditional `attachment` disposition, so there
+  // is no browser context in which it becomes a document on the app origin.
+  // The response is chunked — a STORED zip's length is not known until the
+  // central directory is written, and a guessed content-length is worse than
+  // none.
+  { name: 'projects.files.archive',  method: 'GET',    path: '/v2/projects/:projectId/files/archive',       kind: 'read',    status: 'v1' },
 
   // Browser-originated project folder import. Unlike projects.files.*, these
   // operations never read a path on the browser's machine: init freezes a
@@ -166,6 +179,11 @@ export const OPERATIONS = [
 
   // execution.* family (R16) — server-hosted PTY is the only spawn path (AM-1)
   { name: 'execution.spawn',          method: 'POST',  path: '/v2/execution/spawn',                         kind: 'command', status: 'v1' },
+  // A VANILLA TERMINAL (101) — a shell session with no agent attached. Its own
+  // door rather than a flag on `execution.spawn`, because spawn's body IS agent
+  // setup (persona authorization, manifest, agent token, profile pin, trust
+  // probes) and none of it applies. See `ExecutionTerminalStartInput`.
+  { name: 'execution.terminal.start', method: 'POST',  path: '/v2/execution/terminal',                      kind: 'command', status: 'v1' },
   { name: 'execution.prompt',         method: 'POST',  path: '/v2/entities/:id/commands/prompt',            kind: 'command', status: 'v1' },
   { name: 'execution.terminate',      method: 'POST',  path: '/v2/entities/:id/commands/terminate',         kind: 'command', status: 'v1' },
   { name: 'execution.streams.attach', method: 'POST',  path: '/v2/entities/:id/commands/streams-attach',    kind: 'command', status: 'v1' },
@@ -186,6 +204,27 @@ export const OPERATIONS = [
   // build doing the reading rather than the launch being inspected. Pairs with
   // `execution.journal` on one debug surface: told, then did.
   { name: 'execution.launch',         method: 'GET',   path: '/v2/work-sessions/:workSessionId/launch',     kind: 'read',    status: 'v1' },
+  // The session git rail (Git UI wave): the #76 verbs behind the facade so a
+  // BROWSER can drive them — the CLI runs argv git on its own machine; a
+  // browser has no machine. The worktree path is resolved server-side from
+  // the graph (`in_worktree` edge → `public.worktrees` row); no request ever
+  // names a filesystem path, `execution.journal`'s discipline. Reads cap
+  // their output (digest+partial, the transcript precedent); a session with
+  // no worktree answers `available:false` with a named reason, never a 500.
+  { name: 'execution.gitStatus',      method: 'GET',   path: '/v2/work-sessions/:workSessionId/git/status',      kind: 'read',    status: 'v1' },
+  { name: 'execution.gitDiff',        method: 'GET',   path: '/v2/work-sessions/:workSessionId/git/diff',        kind: 'read',    status: 'v1' },
+  { name: 'execution.gitCheckpoint',  method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/checkpoint',  kind: 'command', status: 'v1' },
+  { name: 'execution.gitRollback',    method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/rollback',    kind: 'command', status: 'v1' },
+  { name: 'execution.gitCommit',      method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/commit',      kind: 'command', status: 'v1' },
+  { name: 'execution.gitMerge',       method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/merge',       kind: 'command', status: 'v1' },
+  // Tier 2 completion (same laws as the six above): cherry-pick and stash
+  // obey merge's abort-verify-surface contract — a conflict is DATA with the
+  // worktree restored clean; branch delete/rename refuse checked-out and
+  // protected branches, and the destructive gates (unmerged delete, stash
+  // drop) require an explicit force. Stash LIST rides on execution.gitStatus.
+  { name: 'execution.gitCherryPick',  method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/cherry-pick', kind: 'command', status: 'v1' },
+  { name: 'execution.gitBranch',      method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/branch',      kind: 'command', status: 'v1' },
+  { name: 'execution.gitStash',       method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/stash',       kind: 'command', status: 'v1' },
 
   // custom entity kinds (T-L4, R7–R9)
   { name: 'entityKinds.list',        method: 'GET',    path: '/v2/spaces/:spaceId/entity-kinds',            kind: 'read',    status: 'v1' },

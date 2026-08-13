@@ -62,6 +62,7 @@ import {
   type ExecutionDispatchInput,
   type ExecutionDispatchResult,
   type ExecutionSpawnInput,
+  type ExecutionTerminalStartInput,
   type ExecutionResumeInput,
   type ExecutionTerminateInput,
   type FileUploadAbortInput,
@@ -85,6 +86,8 @@ import {
   type PatchTaskInput,
   type PostMessageInput,
   type ProjectBranchTopology,
+  type ProjectFileBlame,
+  type ProjectFileHistory,
   type ProjectCreateInput,
   type ProjectDirectoryListing,
   type ProjectFileAttachInput,
@@ -100,6 +103,23 @@ import {
   type ProjectResource,
   type ReactionInput,
   type ResolveEntityAttentionInput,
+  type ContentionReport,
+  type ExecutionGitCheckpointInput,
+  type ExecutionGitCommitInput,
+  type ExecutionGitMergeInput,
+  type ExecutionGitCherryPickInput,
+  type ExecutionGitBranchInput,
+  type ExecutionGitStashInput,
+  type ExecutionGitRollbackInput,
+  type SessionGitCheckpointResult,
+  type SessionGitCommitResult,
+  type SessionGitDiff,
+  type SessionGitMergeResult,
+  type SessionGitCherryPickResult,
+  type SessionGitBranchResult,
+  type SessionGitStashResult,
+  type SessionGitRollbackResult,
+  type SessionGitStatus,
   type SessionJournalPage,
   type SessionLaunchRecord,
   type SessionTranscriptPage,
@@ -110,7 +130,7 @@ import {
   type WorkInput,
 } from '@tm8/contract';
 import type { HttpClient, QueryParams } from './http';
-import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
 
 /**
  * `GET /v2/spaces/:spaceId/events` response (server `DurableEventPage`,
@@ -311,6 +331,23 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    /**
+     * The URL of `projects.files.archive` — a whole subtree as one zip.
+     *
+     * An HREF, unlike `readProjectFile` right above it, and for the reason
+     * §4.4 gives: a single project file must not become a document on the app
+     * origin, so it travels as a DTO. An archive cannot be a document —
+     * `application/zip`, `attachment`, `nosniff` — so the browser's own
+     * download path is both safe and the only sane transport for a tree that
+     * may be hundreds of megabytes. Built from the CATALOG binding for the
+     * same reason `fileDownloadHref` is: if the route moves, this moves with
+     * it rather than silently 404ing.
+     */
+    projectArchiveHref(projectId: ProjectId, path?: string): string {
+      const query = path === undefined ? '' : `?path=${encodeURIComponent(path)}`;
+      return `${http.baseUrl}${bindPath('projects.files.archive', { projectId })}${query}`;
+    },
+
     attachProjectFile(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult> {
       return http.call<CommandResult>('projects.files.attach', { params: { projectId }, body: input });
     },
@@ -414,6 +451,73 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<SessionTranscriptPage>('execution.transcript', {
         params: { workSessionId },
         query: { last: opts?.last },
+      });
+    },
+    projectContention(projectId: string): Promise<ContentionReport> {
+      return http.call<ContentionReport>('projects.contention', { params: { projectId } });
+    },
+    /** Tier 1 file reads — seam Amendment 8. */
+    projectFileHistory(projectId: string, path: string, opts?: FileHistoryOpts): Promise<ProjectFileHistory> {
+      return http.call<ProjectFileHistory>('projects.file.history', {
+        params: { projectId },
+        query: { path, maxRevisions: opts?.maxRevisions, diffOid: opts?.diffOid },
+      });
+    },
+    projectFileBlame(projectId: string, path: string, opts?: FileBlameOpts): Promise<ProjectFileBlame> {
+      return http.call<ProjectFileBlame>('projects.file.blame', {
+        params: { projectId },
+        query: { path, maxLines: opts?.maxLines },
+      });
+    },
+    gitStatus(workSessionId: EntityId): Promise<SessionGitStatus> {
+      return http.call<SessionGitStatus>('execution.gitStatus', { params: { workSessionId } });
+    },
+    gitDiff(workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> {
+      return http.call<SessionGitDiff>('execution.gitDiff', {
+        params: { workSessionId },
+        query: { maxBytes: opts?.maxBytes },
+      });
+    },
+    gitCheckpoint(workSessionId: EntityId, input: ExecutionGitCheckpointInput): Promise<SessionGitCheckpointResult> {
+      return http.call<SessionGitCheckpointResult>('execution.gitCheckpoint', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitRollback(workSessionId: EntityId, input: ExecutionGitRollbackInput): Promise<SessionGitRollbackResult> {
+      return http.call<SessionGitRollbackResult>('execution.gitRollback', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitCommit(workSessionId: EntityId, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult> {
+      return http.call<SessionGitCommitResult>('execution.gitCommit', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitMerge(workSessionId: EntityId, input: ExecutionGitMergeInput): Promise<SessionGitMergeResult> {
+      return http.call<SessionGitMergeResult>('execution.gitMerge', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitCherryPick(workSessionId: EntityId, input: ExecutionGitCherryPickInput): Promise<SessionGitCherryPickResult> {
+      return http.call<SessionGitCherryPickResult>('execution.gitCherryPick', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitBranch(workSessionId: EntityId, input: ExecutionGitBranchInput): Promise<SessionGitBranchResult> {
+      return http.call<SessionGitBranchResult>('execution.gitBranch', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitStash(workSessionId: EntityId, input: ExecutionGitStashInput): Promise<SessionGitStashResult> {
+      return http.call<SessionGitStashResult>('execution.gitStash', {
+        params: { workSessionId },
+        body: input,
       });
     },
 
@@ -670,6 +774,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     spawn(input: ExecutionSpawnInput): Promise<CommandResult> {
       return http.call<CommandResult>('execution.spawn', { body: input });
+    },
+
+    /** A vanilla terminal (101). Its own op, not `spawn` with nulls. */
+    startTerminal(input: ExecutionTerminalStartInput): Promise<CommandResult> {
+      return http.call<CommandResult>('execution.terminal.start', { body: input });
     },
 
     /**

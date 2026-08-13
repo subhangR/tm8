@@ -50,6 +50,7 @@ import {
   type EntityRow,
 } from '../../entity-read.js';
 import type { RpcCommandResult } from '../../handlers/entities.js';
+import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REACTION_TYPES = new Set(['likes', 'dislikes', 'stars']);
@@ -264,6 +265,9 @@ function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): Entity
           url: contentString(content, 'url') ?? undefined,
           fetchedAt,
           stale: fetchedAt === null,
+          // 103: entity_content carries the whole pull_requests row, so the two
+          // forge facts arrive here with no query change.
+          ...projectForgeFacts(content.ci_status, content.mergeable_state),
         },
       };
     }

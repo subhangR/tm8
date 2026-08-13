@@ -238,9 +238,10 @@ describe('resolving one file for attachment', () => {
 });
 
 describe('W2 connected project folder facade', () => {
-  it('exports one registration seam for exactly the three project-file operations', async () => {
+  it('exports one registration seam for exactly the four project-file operations', async () => {
     const { registry } = await registered(new FakeDb());
     expect(registry.implemented()).toEqual([
+      'projects.files.archive',
       'projects.files.attach',
       'projects.files.list',
       'projects.files.read',

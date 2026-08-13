@@ -75,6 +75,7 @@ export {
 } from './useCollectionMembership';
 export { NewTaskControl } from './NewTaskControl';
 export { EntityCreateControl } from './EntityCreateControl';
+export { FileUploadCreateControl } from './FileUploadCreateControl';
 export { RefusalCard, type RefusalMove } from './RefusalCard';
 export { AuthoringHost, SaveControls } from './SaveControls';
 export { StatusSelect, type StatusOption } from './StatusSelect';

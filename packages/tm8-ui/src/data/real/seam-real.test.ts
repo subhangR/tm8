@@ -279,7 +279,14 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // not a `CommandResult`. It creates no session and leaves no patches to
       // reconcile, so nothing may journal it optimistically.
       'dispatch',
-      'editMessage', 'markRead',
+      'editMessage',
+      // Git UI wave (2026-08-09): the session git rail's four verbs — the #76
+      // verbs behind the facade, for surfaces with no machine to run git on.
+      // Amendment 8 (2026-08-09): Tier 2 completion — gitBranch,
+      // gitCherryPick, gitStash join the rail's verbs.
+      'gitBranch', 'gitCheckpoint', 'gitCherryPick', 'gitCommit', 'gitMerge', 'gitRollback',
+      'gitStash',
+      'markRead',
       'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
       // Amendment 2 (2026-07-31): the artifacts preview decisions were
       // ratified, so the Run button gained its one command (seam.ts header).
@@ -294,7 +301,18 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // restoreEntity ('rest' < 'resu'), which is not where it reads like it
       // belongs. Locked here the same way, so the seam cannot gain a command
       // without this list saying so.
-      'restoreEntity', 'resume', 'spawn', 'terminate',
+      'restoreEntity', 'resume', 'spawn',
+      // 2026-08-12: `startTerminal` — `execution.terminal.start`, a VANILLA
+      // TERMINAL (101). Sorts after `spawn`, which is where it reads like it
+      // belongs and is a coincidence worth not relying on.
+      //
+      // It is NOT `spawn` with the agent fields left null, and the INPUT TYPE
+      // is where that is enforced: `ExecutionTerminalStartInput` has no
+      // `teamMemberId`, no `model`, no `agentTool` and no `mode` to leave null.
+      // A seam method taking `ExecutionSpawnInput` with those omitted would be
+      // one optional-field edit away from a terminal that spawns an agent.
+      'startTerminal',
+      'terminate',
       // Amendment 4 (2026-08-01): updateProfile — identity display (067).
       // The viewer's OWN profile row; the op names no subject by design.
       'updateProfile',

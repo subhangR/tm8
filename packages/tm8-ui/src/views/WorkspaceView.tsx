@@ -40,6 +40,7 @@ import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attentio
 import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { useSessionStart } from './useSessionStart';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
@@ -48,6 +49,8 @@ import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { debugSurfaceFor } from './debugSurface';
+import { gitSurfaceFor } from './gitSurface';
+import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { attachmentsFor } from '../files/port';
 import { representedThreadMessageCount } from './message-thread';
@@ -237,6 +240,17 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const handleSessionClose = primaries.terminate;
 
   /**
+   * The session list's HEADER verbs (101). Same reason `primaries` is a hook:
+   * this panel is mounted twice here and once in `EntityView`, and wiring it at
+   * one site would leave `▮ Terminal` dead on the other two — the exact "two
+   * screens, one wired and one not" shape `useLaunchPort` was extracted to end.
+   *
+   * No `projectId`: the header has no project picker, so a terminal opens in a
+   * server-owned scratch directory rather than in a repository the member did
+   * not name. See `SessionStartHost.projectId`.
+   */
+
+  /**
    * Resume — the inverse of close, and the reason the exited card has a button.
    *
    * `resumingId` is not cosmetic: resume boots a real agent process, and a
@@ -315,6 +329,25 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       : {}),
   });
 
+  const sessionStart = useSessionStart({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    onOpen: openEntity,
+    onError: (_verb, error) => {
+      props.onNotice({
+        id: 'terminal-start-failed',
+        tone: 'error',
+        // The node's refusal, verbatim. This fails for reasons a member can
+        // act on — the terminal cap, an untrusted project — and paraphrasing
+        // them into "could not start" would discard the remedy.
+        title: 'Terminal could not be started',
+        body: String((error as { message?: string })?.message ?? error),
+        ttlMs: 8_000,
+      });
+    },
+  });
+
   const renderPanel = useCallback(
     (id: EntityId, host: 'pinned' | 'stack') => {
       const detail = data.detailOf(id);
@@ -377,6 +410,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           }
           liveness={data.livenessOf(id)}
           debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
+          gitSurface={gitSurfaceFor(data.seam, id, data.livenessOf)}
+          taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}
           graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
           attachments={attachments}
           onAttachmentUploaded={() => props.data.refetchDetail(id)}
@@ -424,6 +459,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           ) : undefined}
           messages={messages}
           connections={data.connectionsOf(id)}
+          linkedPullRequests={data.linkedPullRequestsOf?.(id) ?? []}
           onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${id}:${Date.now()}`, anchorIds: [id], body })}
           onResumeSession={() => handleSessionResume(id)}
           resumingSession={resumingId === id}
@@ -522,6 +558,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                 immediate={leftCreateFlow}
                 spaceId={data.spaceId}
                 commands={data.seam.commands}
+                files={data.seam.files}
                 onCreated={(id, result) => {
                   data.reconcileCommand(result);
                   nav.push?.(id);
@@ -551,6 +588,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           activity={data.activity}
           messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
+          linkedPullRequestsOf={data.linkedPullRequestsOf}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}
           onTerminate={leftConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
@@ -581,6 +619,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           // since views compose panels. One map at the seam, no cast on
           // either side.
           launch={launchPort}
+          /* The header verbs (101). `wiredActions` is what makes the pair
+             honest: `▮ Terminal` commits, `Launch session ▸` renders its
+             not-wired refusal beside it rather than being drawn as a live
+             button this dispatcher would drop. */
+          onAction={sessionStart.onAction}
+          wiredActions={sessionStart.wiredActions}
         />
       }
       center={
@@ -647,6 +691,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                 immediate={rightCreateFlow}
                 spaceId={data.spaceId}
                 commands={data.seam.commands}
+                files={data.seam.files}
                 onCreated={(id, result) => {
                   data.reconcileCommand(result);
                   nav.push?.(id);
@@ -668,6 +713,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           activity={data.activity}
           messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
+          linkedPullRequestsOf={data.linkedPullRequestsOf}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}
           onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
@@ -683,6 +729,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
           onNeedDetail={(id) => data.pull?.(id)}
           launch={launchPort}
+          /* The header verbs (101). `wiredActions` is what makes the pair
+             honest: `▮ Terminal` commits, `Launch session ▸` renders its
+             not-wired refusal beside it rather than being drawn as a live
+             button this dispatcher would drop. */
+          onAction={sessionStart.onAction}
+          wiredActions={sessionStart.wiredActions}
         />
       }
     />

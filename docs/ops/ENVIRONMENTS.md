@@ -1,22 +1,61 @@
-# tm8 environments — PROD and STAGING are two separate tm8's
+# tm8 environments
 
-Established 2026-07-31. This is the standard; treat any instruction that
-conflicts with it as stale.
+Established 2026-07-31, corrected 2026-08-12. Treat any instruction that conflicts
+with this as stale.
 
-There are **two** tm8 installations on this machine. They share nothing but the
-Postgres *cluster* (one server on 5442, two different databases inside it).
+**The one table lives in [`deploy/environments.sh`](../../deploy/environments.sh).**
+Print it with `bash deploy/environments.sh`. Every script reads it from there, so
+this page describes it rather than restating it.
 
-| | **PROD** | **STAGING** |
-|---|---|---|
-| UI | http://127.0.0.1:**7777** | http://127.0.0.1:**8888** |
-| Server | http://127.0.0.1:**7778** | http://127.0.0.1:**8887** |
-| Code | `~/.local/share/tm8-stable` — a **frozen `tsc -b` snapshot** | `~/Desktop/Projects/tm8` — **the live working tree** |
-| Reloads? | **No.** Never. It is a built thing. | **Yes.** Server rebuilds+restarts on source change; UI is vite dev with HMR. |
-| UI serving | `vite preview` over a built `dist/` | `vite dev` over source |
-| Database | `tm8_stable` @ 5442 | `tm8_staging` @ 5442 |
-| Data dir | `~/.local/share/tm8/data` | `~/.tm8-staging/data` |
-| Workspace | `~/.local/share/tm8/workspace` | `~/.tm8-staging/workspace` |
-| Launch scripts | `~/.local/share/tm8-stable/run-{server,ui}.sh` | `deploy/staging/run-{server,ui}.sh` (in-repo) |
+| | `dev` | `staging` | `prod` | `private` |
+|---|---|---|---|---|
+| server (node) | **4610** | **8887** | **17777** | **7779** |
+| what a human opens | 4611 (vite) | 8888 (nginx) | 7777 (nginx) | — |
+| vite dev | 4611 | 18888 | — | — |
+| database | `tm8_dev` @ 5442 | `tm8_staging` @ 5443 | `tm8_prod` @ 5442 | `tm8_private` @ 5444 |
+| checkout | your clone | `/opt/tm8/staging` | `/opt/tm8/prod` | `/opt/tm8/private` |
+| env file | `.env.dev.local` | `/etc/tm8/staging.env` | `/etc/tm8/prod.env` | `/etc/tm8/private.env` |
+| units | (foreground) | `tm8-staging`, `tm8-staging-ui` | `tm8-prod` | `tm8-private` |
+| reloads on edit? | **yes** | **yes** (vite dev over source) | **no** — a built bundle | **no** |
+| UI serving | vite dev | vite dev over source | built `dist/` | built `dist/` |
+
+`server` is the node process and is always loopback-only. Postgres is the **system**
+Postgres (ruled 2026-08-12) — `staging` and `private` have their own clusters;
+`dev` and `prod` share the 5442 cluster but not a database.
+
+## What this page used to say, and why it was wrong
+
+It described **two** installations on a macOS laptop: prod as a frozen snapshot in
+`~/.local/share/tm8-stable` on 7777/7778 with database `tm8_stable`, and staging as
+the working tree on 8887/8888. `README.md` described a *third* topology (4610/4611,
+data in `~/.tm8/`), and `deploy/utho/deploy.sh` described a fourth — the one that
+was actually running.
+
+Three of the four were fiction, and every new reader was sent to a machine that did
+not exist. That was the onboarding bug. The live topology is now canonical and the
+numbers live in one file.
+
+## Installing any of them
+
+```bash
+./install.sh                          # dev, into this clone
+./install.sh --env prod --systemd     # prod: unit file, enabled, started, verified
+./install.sh --env staging --systemd
+./install.sh --env prod --status
+```
+
+Full guide: [`INSTALL.md`](INSTALL.md).
+
+## Deploying a pushed ref to an installed box
+
+```bash
+./deploy/utho/deploy.sh staging <ref>
+./deploy/utho/deploy.sh prod <ref> --plan   # print the migration delta, change nothing
+./deploy/utho/deploy.sh prod <ref>          # typed confirmation required
+```
+
+The box fetches from GitHub — this never rsyncs a working tree, so what runs there
+is always a commit you can name.
 
 **The distinction that matters:** if you want to *see your code change*, look at
 staging. Prod will not show it until someone rebuilds and redeploys the
