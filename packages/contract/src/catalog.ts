@@ -95,6 +95,10 @@ export const OPERATIONS = [
   { name: 'messages.edit',           method: 'PATCH',  path: '/v2/messages/:id',                            kind: 'command', status: 'v1' },
   { name: 'messages.delete',         method: 'DELETE', path: '/v2/messages/:id',                            kind: 'command', status: 'v1' },
 
+  // chat — configure an already-posted human root and start its first turn.
+  // Every later user turn still travels through messages.post.
+  { name: 'chat.threads.start',      method: 'POST',   path: '/v2/chat/threads',                            kind: 'command', status: 'v1' },
+
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },
   { name: 'collections.addItem',     method: 'POST',   path: '/v2/collections/:id/items',                   kind: 'command', status: 'v1' },

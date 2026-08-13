@@ -797,6 +797,18 @@ const ROWS: Record<OperationName, Row> = {
       'thread history survives — replies, ordering, and cursors are unaffected',
     ],
   },
+  'chat.threads.start': {
+    cmd: ['chat', 'thread', 'start'],
+    syn: 'tm8 chat thread start <root-message-id> --teammate <teammate-id> --model <model> [--mutation-id <id>]',
+    sum: 'Configure an already-posted human root as a write-once TM8 Chat thread',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['chat', 'thread', 'agent', 'teammate', 'model'],
+    notes: [
+      'post the human-authored root first with message send; this operation creates no message',
+      'configuration is write-once and this call is the sole trigger for turn one',
+    ],
+  },
 
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
