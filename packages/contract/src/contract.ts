@@ -251,6 +251,22 @@ export interface EntityBadges {
   pulls?: PullState[];
   workingActors?: LiveWork[];
   /**
+   * The pull requests this task `tracks`, projected onto the task's OWN
+   * summary. Newest-first by link recency, capped — see
+   * `LinkedPullRequestBadge`.
+   *
+   * ABSENT MEANS NO CLAIM, never "no linked PRs". A node predating this field
+   * omits it, and a reader must fall back to the graph rather than render an
+   * emptiness the server never asserted.
+   */
+  pullRequests?: LinkedPullRequestBadge[];
+  /**
+   * True when the cap dropped links. A SIBLING rather than a wrapper object
+   * because `pullRequests` is read exactly like `workingActors` — absent flag
+   * means nothing was dropped.
+   */
+  pullRequestsTruncated?: boolean;
+  /**
    * Additive: the latest `completed_by` edge, readable at last — the house
    * pattern (written by the completion command, and it IS an ending). Detail
    * header line "Completed by {actor} {date}" and the Z2 card field.
@@ -262,6 +278,46 @@ export interface EntityBadges {
    * ABSENT MEANS UNFLAGGED — it does NOT mean verified or current.
    */
   staleness?: EntityStaleness;
+}
+
+/**
+ * A pull request a task tracks, carried ON THE TASK'S OWN SUMMARY.
+ *
+ * ## WHY THIS EXISTS AT ALL, given the `tracks` edge already says it
+ *
+ * The edge is the truth; this is the truth a TILE can reach. A client
+ * re-hydrates its edge projection from a BOUNDED graph page, so after a hard
+ * reload a freshly linked PR renders its chip only if the new edge AND the
+ * pull_request summary both won a seat on that page — measured 2026-08-13:
+ * they routinely did not, and the chip appeared only once the task detail was
+ * opened and fetched the edge directly. A fact that arrives with the row it
+ * describes has no such lottery: any tile that renders at all can render its
+ * chips.
+ *
+ * This is the same ruling `badges.workingActors` already makes, for the same
+ * reason — and it is a PROJECTION, never storage. The edge and the
+ * `pull_requests` mirror remain the only writable truth; this is recomputed
+ * from them on every read, by ONE loader both assemblers call.
+ *
+ * `ciStatus`/`mergeState` keep the meaning `EntityState`'s `pull_request` arm
+ * gives them: `null` is "nothing observed this PR", NOT a passing verdict.
+ * `headRef` is the branch, which is also how a session claims a PR it has no
+ * edge to.
+ */
+export interface LinkedPullRequestBadge {
+  /** The pull_request entity's id — the dedup key wherever these merge with edge-sourced facts. */
+  entityId: EntityId;
+  repository: string;
+  number: number;
+  /** The PR's title, already resolved to `repo#number` when the mirror has none. */
+  title: string;
+  /** Lifecycle word, same vocabulary as the `pull_request` EntityState arm. */
+  state: string;
+  url: string | null;
+  ciStatus: 'passing' | 'failing' | 'pending' | null;
+  mergeState: 'clean' | 'conflicted' | 'unknown' | null;
+  /** Source branch, or null when no observer has told us one. */
+  headRef: string | null;
 }
 
 /**
