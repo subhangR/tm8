@@ -176,6 +176,9 @@ export const EntityCountersSchema: z.ZodType<EntityCounters> = z.object({
   stars: z.number().int().nonnegative(),
   points: z.number().int(),
   messages: z.number().int().nonnegative(),
+  // 108, additive-optional: absent = a pre-108 node never counted, no claim.
+  docs: z.number().int().nonnegative().optional(),
+  memories: z.number().int().nonnegative().optional(),
   viewerReaction: z.enum(['like', 'dislike', 'star']).nullable(),
 }).strict();
 

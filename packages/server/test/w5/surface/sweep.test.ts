@@ -481,9 +481,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 107 (session checkout_branch lane fact) joins the chat stack's
     // 104-106 — it was numbered 107 on its own branch precisely because
     // those three were claimed in flight, so the rebase changes the count
-    // and nothing else. Re-measured on THIS tree, not incremented:
-    // `ls db/migrations/*.sql | wc -l` = 102.
-    expect(server.appliedMigrations.length).toBe(102);
+    // and nothing else.
+    // 102 -> 103 on 2026-08-13, same lane, same day: 108 (entity_counters
+    // docs/memories link counters). Re-measured on THIS tree, not
+    // incremented: `ls db/migrations/*.sql | wc -l` = 103.
+    expect(server.appliedMigrations.length).toBe(103);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

@@ -78,6 +78,7 @@ export {
 
 export { KIND_ART, VIEW_ART, type KindArt } from './kind-art';
 export { KindIcon } from './KindIcon';
+export { tileCountBadgesOf, type TileCountBadge } from './tile-counts';
 
 export { REASONS, allActions, deferredActions, resolveAction } from './actions';
 
