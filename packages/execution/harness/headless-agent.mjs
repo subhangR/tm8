@@ -36,6 +36,40 @@ if (process.env.TM8_FAKE_HEADLESS_MODE === 'idle-crash') {
 const send = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 let turn = 0;
+let hanging = false;
+
+process.on('SIGINT', () => {
+  if (!hanging) {
+    process.exit(0);
+    return;
+  }
+  hanging = false;
+  send({
+    type: 'user',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'interrupt-tool',
+          content: 'User rejected tool use',
+          is_error: true,
+        },
+      ],
+    },
+  });
+  send({
+    type: 'result',
+    subtype: 'error_during_execution',
+    is_error: true,
+    result: 'Request interrupted by user',
+    terminal_reason: 'aborted_streaming',
+    usage: { input_tokens: 0, output_tokens: 0 },
+    total_cost_usd: 0.001,
+  });
+  // Real Claude drains for a short period after its terminal result, during
+  // which stdin can misleadingly accept a write, then exits cleanly.
+  setTimeout(() => process.exit(0), 150);
+});
 
 input.on('line', (line) => {
   turn += 1;
@@ -56,9 +90,19 @@ input.on('line', (line) => {
     return;
   }
   if (text === 'hang') {
+    hanging = true;
     send({
       type: 'assistant',
-      message: { content: [{ type: 'text', text: 'turn-started' }] },
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id: 'interrupt-tool',
+            name: 'mcp__tm8__slow_read',
+            input: { entityId: 'probe-1' },
+          },
+        ],
+      },
     });
     return;
   }

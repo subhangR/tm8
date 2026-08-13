@@ -159,6 +159,13 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     if (state.closeRequested) {
       throw new AgentRuntimeError(`agent thread '${threadId}' is closing`, 'thread_closing');
     }
+    // Measured against real Claude 2.1.212: SIGINT emits a terminal aborted
+    // result, then the process drains and exits code 0. There is a short window
+    // where stdin.write still returns true but no next-turn event is ever
+    // emitted. Keep that window fail-fast instead of accepting a lost turn.
+    if (state.interruptRequested) {
+      throw new AgentRuntimeError(`agent thread '${threadId}' is closing after interrupt`, 'thread_closing');
+    }
     if (state.active) {
       throw new AgentRuntimeError(`agent thread '${threadId}' already has a turn in progress`, 'turn_in_progress');
     }
@@ -166,10 +173,6 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       throw new AgentRuntimeError('turn text must be a non-empty string without NUL bytes', 'invalid_input');
     }
 
-    // A prior SIGINT may have completed the turn without exiting the hot child.
-    // Starting another turn proves that old interrupt intent is no longer an
-    // explanation for a future, unrelated process exit.
-    state.interruptRequested = false;
     const active: ActiveTurn = {
       queue: new AsyncTurnQueue(),
       toolCalls: new Map(),

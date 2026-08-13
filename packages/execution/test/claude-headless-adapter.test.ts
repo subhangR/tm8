@@ -188,7 +188,9 @@ describe('ClaudeHeadlessAdapter', () => {
   });
 
   it('rejects an overlapping turn synchronously, outside the C1 stream', async () => {
-    const runtime = adapter();
+    let resolveExit!: (event: AgentThreadExit) => void;
+    const exited = new Promise<AgentThreadExit>((resolve) => (resolveExit = resolve));
+    const runtime = adapter({ onThreadExit: resolveExit });
     const thread = input();
     await runtime.startThread(thread);
     const first = runtime.sendTurn(thread.threadId, { text: 'hang' });
@@ -199,12 +201,42 @@ describe('ClaudeHeadlessAdapter', () => {
     const iterator = first[Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toEqual({
       done: false,
-      value: { kind: 'text', text: 'turn-started' },
+      value: {
+        kind: 'tool_call',
+        id: 'interrupt-tool',
+        name: 'mcp__tm8__slow_read',
+        args: { entityId: 'probe-1' },
+        state: 'running',
+      },
     });
     expect(await runtime.interrupt(thread.threadId)).toBe(true);
     await expect(collectIterator(iterator)).resolves.toEqual([
+      {
+        kind: 'tool_result',
+        tool_call_id: 'interrupt-tool',
+        content: 'User rejected tool use',
+        is_error: true,
+      },
+      {
+        kind: 'tool_call',
+        id: 'interrupt-tool',
+        name: 'mcp__tm8__slow_read',
+        args: { entityId: 'probe-1' },
+        state: 'error',
+      },
+      { kind: 'usage', input_tokens: 0, output_tokens: 0, total_cost_usd: 0.001 },
       { kind: 'done', reason: 'interrupted' },
     ]);
+    // The terminal result arrives before Claude's clean process exit. This is
+    // the measured lost-write window: accepting another turn here would lie.
+    expect(() => runtime.sendTurn(thread.threadId, { text: 'racing follow-up' })).toThrowError(
+      expect.objectContaining({ code: 'thread_closing' }),
+    );
+    await expect(exited).resolves.toMatchObject({
+      reason: 'interrupted',
+      expected: true,
+      exit_code: 0,
+    });
   });
 
   it('turns a mid-turn process crash into error + exactly one done and evicts it', async () => {

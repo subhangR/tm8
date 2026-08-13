@@ -125,6 +125,10 @@ export interface AgentThreadExit {
 export interface AgentRuntime {
   startThread(input: StartAgentThreadInput): Promise<AgentThread>;
   sendTurn(threadId: string, input: AgentTurnInput): AsyncIterable<TurnItem>;
+  /**
+   * `true` means the runtime accepted delivery of its interrupt signal. Turn
+   * completion is proved only by the stream's terminal `done` item.
+   */
   interrupt(threadId: string): Promise<boolean>;
   close(threadId: string): Promise<void>;
 }
