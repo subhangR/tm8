@@ -2522,7 +2522,7 @@ export function Tile({
               {linkedPullRequests.length > 0 ? (
                 <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
               ) : null}
-              <TileCountBadges counters={row.counters} />
+              <TileCountBadges counters={row.counters} humanAuthors={row.badges.humanMessageAuthors} />
             </>
           ) : undefined
         }
@@ -2566,7 +2566,7 @@ export function Tile({
               {linkedPullRequests.length > 0 ? (
                 <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
               ) : null}
-              <TileCountBadges counters={row.counters} />
+              <TileCountBadges counters={row.counters} humanAuthors={row.badges.humanMessageAuthors} />
             </>
           ) : undefined
         }

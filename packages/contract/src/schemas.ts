@@ -176,6 +176,9 @@ export const EntityCountersSchema: z.ZodType<EntityCounters> = z.object({
   stars: z.number().int().nonnegative(),
   points: z.number().int(),
   messages: z.number().int().nonnegative(),
+  // 112, additive-optional: older durable counter events have only the total.
+  humanMessages: z.number().int().nonnegative().optional(),
+  agentMessages: z.number().int().nonnegative().optional(),
   // 108, additive-optional: absent = a pre-108 node never counted, no claim.
   docs: z.number().int().nonnegative().optional(),
   memories: z.number().int().nonnegative().optional(),
@@ -396,6 +399,10 @@ export const LinkedPullRequestBadgeSchema: z.ZodType<LinkedPullRequestBadge> = z
 }).strict();
 
 export const EntityBadgesSchema: z.ZodType<EntityBadges> = z.lazy(() => z.object({
+  humanMessageAuthors: z.object({
+    actors: z.array(ActorSummarySchema).max(3),
+    total: z.number().int().positive(),
+  }).strict().optional(),
   attention: z.object({
     pendingCount: z.number().int().positive(),
     totalPoints: z.number().int().positive(),

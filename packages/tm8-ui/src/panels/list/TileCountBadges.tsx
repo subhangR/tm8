@@ -1,5 +1,6 @@
-import type { EntityCounters } from '@tm8/contract';
+import type { EntityBadges, EntityCounters } from '@tm8/contract';
 import { KindIcon, tileCountBadgesOf } from '../../domain';
+import { AvatarStack } from '../../kit';
 
 /**
  * TILE COUNT BADGES (108): glyph+count for what an entity carries — docs,
@@ -18,7 +19,10 @@ export function hasTileCounts(counters: EntityCounters): boolean {
   return tileCountBadgesOf(counters).length > 0;
 }
 
-export function TileCountBadges({ counters }: { counters: EntityCounters }) {
+export function TileCountBadges({ counters, humanAuthors }: {
+  counters: EntityCounters;
+  humanAuthors?: EntityBadges['humanMessageAuthors'];
+}) {
   const badges = tileCountBadgesOf(counters);
   if (badges.length === 0) return null;
 
@@ -27,11 +31,14 @@ export function TileCountBadges({ counters }: { counters: EntityCounters }) {
       {badges.map((badge) => (
         <span
           key={badge.kind}
-          className="pn-st__count"
+          className={`pn-st__count${badge.emphasis === 'human' ? ' pn-st__count--human' : ''}`}
           data-count-kind={badge.kind}
           title={`${badge.count} ${badge.label}${badge.count === 1 ? '' : 's'}`}
         >
-          <KindIcon kind={badge.kind} size={12} />
+          <KindIcon kind={badge.kind.endsWith('-message') ? 'message' : badge.kind} size={12} />
+          {badge.kind === 'human-message' && humanAuthors
+            ? <AvatarStack actors={humanAuthors.actors} total={humanAuthors.total} />
+            : null}
           {badge.count}
         </span>
       ))}

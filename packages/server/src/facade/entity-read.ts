@@ -51,6 +51,7 @@ import {
   projectForgeFacts,
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
+import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message-author-projection.js';
 
 // ---------------------------------------------------------------------------
 // Row shape
@@ -69,6 +70,8 @@ export const ENTITY_COLUMNS = `
   coalesce(ec.stars, 0)    as stars,
   coalesce(ec.points, 0)   as points,
   coalesce(ec.messages, 0) as messages,
+  coalesce(ec.human_messages, 0) as human_messages,
+  coalesce(ec.agent_messages, 0) as agent_messages,
   coalesce(ec.docs, 0)     as docs,
   coalesce(ec.memories, 0) as memories,
   t.title as task_title, t.description as task_description, t.axes as task_axes,
@@ -187,6 +190,8 @@ export interface EntityRow {
   stars: number;
   points: number;
   messages: number;
+  human_messages?: number;
+  agent_messages?: number;
   /** Link counters (108); optional keeps legacy row fixtures source-compatible. */
   docs?: number;
   memories?: number;
@@ -1120,6 +1125,7 @@ export interface AssemblyContext {
   actors: Map<string, ActorSummary>;
   relations: EntityRelations;
   viewerReactions: Map<string, EntityCounters['viewerReaction']>;
+  humanMessageAuthors?: Map<string, HumanMessageAuthorIds>;
   /** Per-viewer unread message counts, per anchor. Absent key means zero. */
   unreadCounts?: Map<string, number>;
   /**
@@ -1363,6 +1369,14 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
 function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
   const badges: EntityBadges = {};
 
+  const humanAuthors = ctx.humanMessageAuthors?.get(row.id);
+  if (humanAuthors && humanAuthors.total > 0) {
+    badges.humanMessageAuthors = {
+      actors: humanAuthors.ids.map((id) => actorOf(ctx.actors, id)),
+      total: humanAuthors.total,
+    };
+  }
+
   const attention = ctx.relations.attention?.get(row.id);
   if (attention) badges.attention = attention;
 
@@ -1573,6 +1587,8 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
       stars: row.stars,
       points: row.points,
       messages: row.messages,
+      ...(row.human_messages === undefined ? {} : { humanMessages: row.human_messages }),
+      ...(row.agent_messages === undefined ? {} : { agentMessages: row.agent_messages }),
       // 108, spread-when-known: a legacy row fixture without the columns
       // omits the keys, which is the contract's "never counted" claim —
       // an invented 0 would be a different (wrong) claim.
@@ -1765,6 +1781,7 @@ export async function assembleSummaries(
   // THE SAME loader the events projector calls — see its header for why this
   // is one function and not two twins.
   const pullRequests = await loadLinkedPullRequestBadges(q, rows);
+  const humanMessageAuthors = await loadHumanMessageAuthorIds(q, ids);
 
   // Dependency targets are referenced by the blocked badge and are usually NOT
   // in the page being rendered, so they are fetched explicitly.
@@ -1790,6 +1807,7 @@ export async function assembleSummaries(
   for (const list of relations.pulls.values()) actorIds.push(...list.map((p) => p.actorId));
   for (const list of relations.workingOn.values()) actorIds.push(...list.map((w) => w.actorId));
   for (const completion of relations.completedBy.values()) actorIds.push(completion.actorId);
+  for (const authors of humanMessageAuthors.values()) actorIds.push(...authors.ids);
 
   const actors = await loadActors(q, actorIds);
 
@@ -1805,7 +1823,7 @@ export async function assembleSummaries(
 
   // Pass 2: the real thing, with relations and the summaries the badges need.
   const ctx: AssemblyContext = {
-    actors, relations, viewerReactions, unreadCounts, related, pullRequests,
+    actors, relations, viewerReactions, unreadCounts, related, pullRequests, humanMessageAuthors,
   };
   return rows.map((r) => toEntitySummary(r, ctx));
 }

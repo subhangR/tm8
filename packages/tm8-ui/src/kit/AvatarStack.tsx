@@ -11,11 +11,11 @@ import { Avatar } from './Avatar';
 
 const VISIBLE = 3;
 
-export function AvatarStack({ actors }: { actors: readonly ActorSummary[] }) {
+export function AvatarStack({ actors, total = actors.length }: { actors: readonly ActorSummary[]; total?: number }) {
   if (actors.length === 0) return null;
   const faces = actors.filter((actor) => actorPresentation(actor) !== 'run');
   const shown = faces.slice(0, VISIBLE);
-  const overflow = actors.length - shown.length;
+  const overflow = Math.max(total - shown.length, 0);
   return (
     <span className="kit-avatarstack" data-testid="avatar-stack">
       {shown.map((actor) => (

@@ -45,6 +45,7 @@ import type { Querier } from '../db/types.js';
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
 import { loadUnreadCounts } from '../facade/entity-read.js';
+import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from '../facade/message-author-projection.js';
 import {
   loadLinkedPullRequestBadges,
   projectForgeFacts,
@@ -175,6 +176,8 @@ interface SummaryRow {
   stars: number | null;
   points: number | null;
   messages: number | null;
+  human_messages: number | null;
+  agent_messages: number | null;
   /** Link counters (108); optional keeps pre-108 row fixtures source-compatible. */
   docs?: number | null;
   memories?: number | null;
@@ -289,7 +292,8 @@ const SUMMARY_SQL = `
 select
   e.id, e.space_id, e.kind, e.parent_id, e.position, e.visibility, e.version,
   e.activity_at, e.created_at, e.updated_at, e.deleted_at, e.created_by,
-  c.likes, c.dislikes, c.stars, c.points, c.messages, c.docs, c.memories,
+  c.likes, c.dislikes, c.stars, c.points, c.messages,
+  c.human_messages, c.agent_messages, c.docs, c.memories,
   t.title            as task_title,
   t.description      as task_description,
   t.work_status, t.priority, t.axes, t.due_date, t.acceptance_criteria, t.completion_gate,
@@ -468,6 +472,8 @@ export class PgEntityProjector implements EntityProjector {
     const rows = await q.query<SummaryRow>(SUMMARY_SQL, [unique]);
     if (rows.length === 0) return out;
 
+    const humanMessageAuthors = await loadHumanMessageAuthorIds(q, unique);
+
     // Actors referenced by the summaries themselves (`createdBy`, message
     // authors, assignees) may not be in `ids` — resolve them in a second pass
     // over the same query rather than a different one.
@@ -475,6 +481,9 @@ export class PgEntityProjector implements EntityProjector {
     for (const r of rows) {
       actorIds.add(r.created_by);
       if (r.msg_author_id !== null) actorIds.add(r.msg_author_id);
+    }
+    for (const authors of humanMessageAuthors.values()) {
+      for (const id of authors.ids) actorIds.add(id);
     }
 
     const edges = await q.query<{ src_id: string; dst_id: string; type: string }>(EDGE_SQL, [unique]);
@@ -582,7 +591,7 @@ export class PgEntityProjector implements EntityProjector {
         r.id,
         this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], memberIds.get(r.id) ?? [],
           viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts, containsCounts,
-          pullRequests.get(r.id)),
+          pullRequests.get(r.id), humanMessageAuthors.get(r.id)),
       );
     }
     return out;
@@ -655,6 +664,7 @@ export class PgEntityProjector implements EntityProjector {
     unreadCounts: ReadonlyMap<string, number>,
     containsCounts: ReadonlyMap<string, number>,
     pullRequests: LinkedPullRequestBadges | undefined,
+    humanMessageAuthors: HumanMessageAuthorIds | undefined,
   ): EntitySummary {
     const counters: EntityCounters = {
       likes: r.likes ?? 0,
@@ -662,6 +672,8 @@ export class PgEntityProjector implements EntityProjector {
       stars: r.stars ?? 0,
       points: r.points ?? 0,
       messages: r.messages ?? 0,
+      humanMessages: r.human_messages ?? 0,
+      agentMessages: r.agent_messages ?? 0,
       // 108 — MIRRORS entity-read: a live row post-108 always has the
       // columns (NOT NULL DEFAULT 0); a missing counter row joins as null
       // and projects 0 like its five elders.
@@ -697,6 +709,14 @@ export class PgEntityProjector implements EntityProjector {
       badges: {
         ...(r.visibility === 'restricted' ? { restricted: true } : {}),
         ...(attention ? { attention } : {}),
+        ...(humanMessageAuthors
+          ? {
+              humanMessageAuthors: {
+                actors: humanMessageAuthors.ids.map((id) => actors.get(id) ?? this.unknownActor(id)),
+                total: humanMessageAuthors.total,
+              },
+            }
+          : {}),
         ...(pullRequests && pullRequests.items.length > 0
           ? {
               pullRequests: pullRequests.items,
