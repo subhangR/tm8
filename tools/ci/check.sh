@@ -90,6 +90,18 @@ fi
 
 # --- 2. typecheck: per-package scoped tsc -b, SEQUENTIAL --------------------
 # Order matters: contract first (everything references it), then dependents.
+#
+# The three groups below (TSC_PROJECTS, packages/ui, packages/tm8-ui) are
+# mirrored by the root `bun run typecheck` shorthand, in this same order, as
+# typecheck:core -> typecheck:ui -> typecheck:tm8-ui. Keep them in step. The
+# shorthand used to cover TSC_PROJECTS only, and a green there read as "my
+# types are fine" while both UIs went unchecked until push time — that gap
+# cost two lanes a day in 2026-08 and produced a whole follow-up task built on
+# the belief that the GATE had the hole. It did not; the shorthand did.
+#
+# The order is also load-bearing, not cosmetic: packages/tm8-ui resolves
+# @tm8/contract through its BUILT dist/*.d.ts, so it must run after the
+# contract is built or it reports errors for fields that exist in source.
 TSC_PROJECTS=(
   packages/contract
   # mcp before server: the post-#188 server REQUIRES @tm8/mcp/dist at boot,
