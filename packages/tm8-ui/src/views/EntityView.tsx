@@ -636,6 +636,7 @@ export function EntityView(props: EntityViewProps) {
       messages={messages}
       connections={data.connectionsOf(selectedId)}
       linkedPullRequests={data.linkedPullRequestsOf?.(selectedId) ?? []}
+      linkedPullRequestsOf={data.linkedPullRequestsOf}
       onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], body })}
       /* GAP-2 (data-wiring handover): the save path — inline title + Save +
          conflict card, and now the doc editor behind the reader archetype —
@@ -834,6 +835,7 @@ export function EntityView(props: EntityViewProps) {
                 messages={data.messagesOf(aux.id)}
                 connections={data.connectionsOf(aux.id)}
                 linkedPullRequests={data.linkedPullRequestsOf?.(aux.id) ?? []}
+                linkedPullRequestsOf={data.linkedPullRequestsOf}
                 commands={data.seam.commands}
                 onSaved={data.reconcileCommand}
                 // Drilling from the aux REPLACES the aux, it does not open a

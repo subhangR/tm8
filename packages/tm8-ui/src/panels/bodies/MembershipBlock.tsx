@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
-import { KindIcon } from '../../domain';
+import { KindIcon, getKind } from '../../domain';
 import { Chip } from '../../kit';
+import { Tile, type EntityListPanelProps } from '../EntityListPanel';
 import { edgesOf, type MemorySetParams } from './MemorySetBlock';
 import './profile-body.css';
 
@@ -47,11 +48,25 @@ export function MembershipBlock({
   params,
   onOpenEntity,
   authoring,
+  itemsHost,
 }: {
   detail: EntityDetail;
   params: MemorySetParams;
   onOpenEntity?: (id: string) => void;
   authoring?: MembershipAuthoring | null;
+  /**
+   * When set, the OUTGOING side (a collection's ITEMS) renders each member as
+   * a REAL list tile — the kind's own registry anatomy, badges, PR chips and
+   * control strip — instead of a chip (user ruling 2026-08-13: "the items
+   * that are linked should be shown like the task items… whatever task tile,
+   * session tile we are using, with the git baked in"). The host object is
+   * composed ONCE by the detail panel; per row only `kind` is re-pointed so
+   * each member draws from its own registry row (§15.2). Absent ⇒ chips, the
+   * honest degradation for hosts with nothing to wire. The INCOMING side (an
+   * entity's COLLECTIONS) keeps chips: a list of containers is a list of
+   * names, not of workloads.
+   */
+  itemsHost?: EntityListPanelProps | null;
 }) {
   const direction = params.direction === 'incoming' ? 'incoming' : 'outgoing';
   const edges = edgesOf(detail, params);
@@ -156,6 +171,50 @@ export function MembershipBlock({
     return (
       <div className="pn-membership" data-testid="membership-block">
         <p className="pn-section__empty">{empty}</p>
+        {add}
+      </div>
+    );
+  }
+
+  if (direction === 'outgoing' && itemsHost) {
+    return (
+      <div className="pn-membership" data-testid="membership-block">
+        <div className="pn-membership__items" data-testid="membership-items">
+          {edges.map((edge) => {
+            const peer = edge.source.id === detail.id ? edge.target : edge.source;
+            const inFlight = pending.has(peer.id);
+            return (
+              <div className="pn-membership__itemrow" data-testid="membership-row" key={edge.id}>
+                {/* The member's OWN registry row decides the anatomy — a task
+                    draws the control-card, a session the session tile — so
+                    `kind` is re-pointed per row and nothing else changes. */}
+                <div className="pn-membership__tile">
+                  <Tile
+                    row={peer}
+                    props={{ ...itemsHost, kind: peer.kind }}
+                    config={getKind(peer.kind)}
+                  />
+                </div>
+                {authoring ? (
+                  <button
+                    type="button"
+                    className="pn-membership__remove"
+                    data-testid="membership-remove"
+                    aria-label={`Remove ${peer.title}`}
+                    aria-disabled={refusal || inFlight ? true : undefined}
+                    title={refusal ?? (inFlight ? 'Removing…' : `Remove ${peer.title}`)}
+                    onClick={(event) =>
+                      refusal || inFlight
+                        ? event.preventDefault()
+                        : authoring.onRemove(peer.id, peer.title)}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
         {add}
       </div>
     );

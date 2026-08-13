@@ -541,6 +541,26 @@
   cursor: not-allowed;
   opacity: 0.5;
 }
+/* MEMBERS AS TILES (user ruling 2026-08-13). The tile brings its own card
+   treatment from the list vocabulary; this only stacks the rows and seats the
+   remove control beside each tile without letting it steal the tile's width. */
+.cv2-root .pn-membership__items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cv2-root .pn-membership__itemrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.cv2-root .pn-membership__tile {
+  flex: 1;
+  min-width: 0;
+}
+.cv2-root .pn-membership__itemrow .pn-membership__remove {
+  margin-top: 8px;
+}
 .cv2-root .pn-membership__picker {
   display: flex;
   flex-direction: column;

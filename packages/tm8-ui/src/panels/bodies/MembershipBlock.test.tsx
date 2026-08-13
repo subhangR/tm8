@@ -301,6 +301,35 @@ describe('MembershipBlock — rows, remove, and the bounded picker', () => {
     expect(queryByTestId('membership-picker')).toBeNull();
   });
 
+  it('with an itemsHost, a collection’s members render as REAL list tiles, remove intact', async () => {
+    // User ruling 2026-08-13: "the items that are linked should be shown like
+    // the task items… whatever task tile we are using". The member here is a
+    // task, so its registry anatomy is the control-card — assert the tile
+    // vocabulary is present, not the chip one, and that remove still raises.
+    const seam = await openSeam();
+    const collectionId = await createCollection(seam, 'Tiled list');
+    await seam.commands.addToCollection(collectionId, { clientMutationId: cmid(), entityId: taskUuidTitle.id });
+    const detail = await seam.entity(collectionId);
+    const authoring = authoringOf();
+    const { getByTestId } = render(
+      <div className="cv2-root">
+        <MembershipBlock
+          detail={detail}
+          params={{ edgeType: 'contains', direction: 'outgoing' }}
+          authoring={authoring}
+          itemsHost={{ kind: 'collection', rowsFor: () => [], ctx: { spaceId: FIXTURE_SPACE_ID } }}
+        />
+      </div>,
+    );
+    const items = getByTestId('membership-items');
+    // The control-card tile, not a chip row.
+    expect(items.querySelector('.pn-tt')).toBeTruthy();
+    expect(items.textContent).toContain(taskUuidTitle.title);
+    expect(items.querySelector('.pn-chiprow')).toBeNull();
+    fireEvent.click(within(items).getByTestId('membership-remove'));
+    expect(authoring.onRemove).toHaveBeenCalledWith(taskUuidTitle.id, taskUuidTitle.title);
+  });
+
   it('an empty membership is a designed empty with the add control beside it', async () => {
     const seam = await openSeam();
     const collectionId = await createCollection(seam, 'Empty list');

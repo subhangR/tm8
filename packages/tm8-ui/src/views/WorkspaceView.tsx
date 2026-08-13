@@ -472,6 +472,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           messages={messages}
           connections={data.connectionsOf(id)}
           linkedPullRequests={data.linkedPullRequestsOf?.(id) ?? []}
+          linkedPullRequestsOf={data.linkedPullRequestsOf}
           onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${id}:${Date.now()}`, anchorIds: [id], body })}
           onResumeSession={() => handleSessionResume(id)}
           resumingSession={resumingId === id}

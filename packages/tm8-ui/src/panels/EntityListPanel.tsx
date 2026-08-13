@@ -2398,7 +2398,14 @@ function resolvePulses(
 }
 
 
-function Tile({
+/**
+ * EXPORTED for the membership block (user ruling 2026-08-13): a collection's
+ * ITEMS render as REAL tiles — the same anatomies, badges, PR chips and
+ * control strip as the kind's own list — not as a second, poorer chip
+ * vocabulary. One tile implementation; a copy is how the control-card's
+ * chips drifted dead once already (D67).
+ */
+export function Tile({
   row,
   depth = 0,
   props,

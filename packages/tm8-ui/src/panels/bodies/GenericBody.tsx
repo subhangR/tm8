@@ -17,6 +17,7 @@ import { LoopControls } from '../../loops/LoopControls';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { edgesOf } from './MemorySetBlock';
 import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
+import type { EntityListPanelProps } from '../EntityListPanel';
 
 /**
  * The one command this body can execute (threaded from the host's seam
@@ -57,6 +58,7 @@ export function GenericBody({
   onSaved,
   downloadHref,
   membership,
+  membersHost,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
@@ -69,6 +71,12 @@ export function GenericBody({
    * controls.
    */
   membership?: MembershipAuthoring | null;
+  /**
+   * The list-tile host for the membership block's OUTGOING side, composed
+   * once by the detail panel — see `MembershipBlock.itemsHost`. Absent ⇒
+   * members render as chips.
+   */
+  membersHost?: EntityListPanelProps | null;
   /**
    * Resolves a file entity's bytes URL, from the host's attachment port — the
    * SAME resolver the attachment strip uses, so a file previews here exactly
@@ -99,6 +107,7 @@ export function GenericBody({
           onSaved={onSaved}
           downloadHref={downloadHref}
           membership={membership}
+          membersHost={membersHost}
         />
       ))}
     </div>
@@ -113,6 +122,7 @@ function ContentBlock({
   onSaved,
   downloadHref,
   membership,
+  membersHost,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
@@ -121,6 +131,7 @@ function ContentBlock({
   onSaved?: (result: CommandResult) => void;
   downloadHref?: DownloadHref;
   membership?: MembershipAuthoring | null;
+  membersHost?: EntityListPanelProps | null;
 }) {
   const body = (() => {
     switch (block.block) {
@@ -163,6 +174,7 @@ function ContentBlock({
             params={block.params ?? {}}
             onOpenEntity={onOpenEntity}
             authoring={membership}
+            itemsHost={membersHost}
           />
         );
       case 'lifecycle':

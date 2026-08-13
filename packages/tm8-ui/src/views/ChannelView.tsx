@@ -192,6 +192,7 @@ export function ChannelView({
       livenessOf={data.livenessOf}
       messages={selectedMessages}
       connections={data.connectionsOf(selectedId)}
+      linkedPullRequestsOf={data.linkedPullRequestsOf}
       onPostMessage={(body) => data.postMessage({
         clientMutationId: `entity-post:${selectedId}:${Date.now()}`,
         anchorIds: [selectedId],

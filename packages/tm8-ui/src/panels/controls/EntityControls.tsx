@@ -40,7 +40,7 @@
  * (`priority`), the edge (`assigned_to`) and the words, exactly as before.
  */
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import type {
   ActorSummary,
   Connections,
@@ -409,6 +409,33 @@ function RowValueControl({
 }
 
 /**
+ * WHICH WAY AN ATTACHED MENU OPENS — measured, not assumed.
+ *
+ * `.lp__assignmenu` hangs off its trigger at `top: 100%`, which is right for
+ * most rows and wrong for the ones near the bottom of the screen: there the
+ * menu ran past the viewport edge ("the drop downs are going under the
+ * screen") and the options a user reached for were the ones they could not
+ * see. Measured ON OPEN against the VIEWPORT — the list clips nothing (the
+ * menu escapes the tile either way); the question is where there is visible
+ * room. Flips only when below is too short AND above is taller, so a menu at
+ * the very top of a short window still opens downward rather than vanishing.
+ */
+function useOpensUpward(open: boolean, boxRef: RefObject<HTMLElement | null>): boolean {
+  const [up, setUp] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const box = boxRef.current?.getBoundingClientRect();
+    if (!box) return;
+    // 214 = the menu's own max-height (210, panels.css) + its 4px offset.
+    const below = window.innerHeight - box.bottom;
+    setUp(below < 214 && box.top > below);
+  }, [open, boxRef]);
+  return up;
+}
+
+const menuClass = (up: boolean) => (up ? 'lp__assignmenu lp__assignmenu--up' : 'lp__assignmenu');
+
+/**
  * The assignee picker.
  *
  * IT WRITES EDGES, ONE AT A TIME. `state.assignees` is a projection of
@@ -432,6 +459,7 @@ function RowAssignControl({
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLSpanElement>(null);
   useDismissable(open, boxRef, () => setOpen(false));
+  const up = useOpensUpward(open, boxRef);
 
   const raw = (row.state as unknown as Record<string, unknown>)[control.source];
   const assigned: readonly ActorSummary[] = Array.isArray(raw)
@@ -533,7 +561,7 @@ function RowAssignControl({
         {face}
       </button>
       {open ? (
-        <span className="lp__assignmenu" role="group" aria-label={`Assign ${row.title}`}>
+        <span className={menuClass(up)} role="group" aria-label={`Assign ${row.title}`}>
           {roster.map((actor) => {
             const on = assignedIds.has(actor.id);
             return (
@@ -611,6 +639,7 @@ export function RowMembershipControl({
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLSpanElement>(null);
   useDismissable(open, boxRef, () => setOpen(false));
+  const up = useOpensUpward(open, boxRef);
 
   // The sets currently containing this row: its incoming edges of the
   // declared type, sources collected. Live — the projection advances with
@@ -694,7 +723,7 @@ export function RowMembershipControl({
         {face}
       </button>
       {open ? (
-        <span className="lp__assignmenu" role="group" aria-label={`${control.label} for ${row.title}`}>
+        <span className={menuClass(up)} role="group" aria-label={`${control.label} for ${row.title}`}>
           {sets.map((set) => {
             const on = containing.has(set.id);
             return (
