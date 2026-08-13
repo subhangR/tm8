@@ -182,6 +182,15 @@ is a seam the user has to notice.
 Note that `auth.claim` works in `multi` mode too: the token is the
 authorization, not loopback. An operator may install directly as multiplayer.
 
+**Refusal shapes** (measured, `packages/server/test/w3/node-claim.test.ts`). A
+bad token and an already-burned token are both `unauthenticated`, saying the
+same thing — the rule `auth.login` follows. A token presented against an
+already-**claimed** node is `forbidden`, because step 2 runs before step 3, and
+that ordering is what makes a leaked token inert. Distinguishing it leaks
+nothing: `auth.claim.status` publishes `claimed` to anonymous callers by design,
+so it is a fact the caller can already read, and it is far more actionable than
+a generic credential refusal.
+
 ---
 
 ## 4. Surface changes

@@ -182,9 +182,14 @@ grant execute on function public.issue_node_claim_token(text) to tm8_app;
 --      than as a separate select-then-update is what makes single-use real under
 --      concurrency.
 --
--- A caller presenting a bad token and a caller presenting a burned token get
--- the SAME refusal, for the same reason `auth.login` does not distinguish "no
--- such account" from "wrong password".
+-- REFUSAL SHAPES. A bad token and an already-burned token both raise 28000 —
+-- the same refusal, for the reason `auth.login` will not distinguish "no such
+-- account" from "wrong password". A token presented against an already-CLAIMED
+-- node raises 42501 instead, because guard 2 runs before guard 3. That
+-- distinction leaks nothing: `public.node_is_claimed()` publishes the same fact
+-- to anonymous callers by design, and "already claimed" is far more actionable
+-- to an operator than a generic credential refusal. Asserted in
+-- packages/server/test/w3/node-claim.test.ts.
 -- -----------------------------------------------------------------------------
 create or replace function public.claim_node(
   p_token_hash text,

@@ -237,10 +237,15 @@ async function profileDisplayName(
  * token check, the single-use burn and the re-assertion that the node is still
  * unclaimed cannot be separated by a race.
  *
- * A wrong token, a burned token and a token presented against an
- * already-claimed node all surface as `unauthenticated` with the same words,
- * for the reason `auth.login` refuses to distinguish an unknown username from
- * a wrong password.
+ * REFUSAL SHAPES, and why they are not all the same. A wrong or already-burned
+ * token is `unauthenticated`, with the same words for both — the reason
+ * `auth.login` refuses to distinguish an unknown username from a wrong
+ * password. A token presented against an already-CLAIMED node is `forbidden`,
+ * because `claim_node` re-asserts the node's state before it burns anything
+ * and that guard order is what makes a leaked token inert. Saying so leaks
+ * nothing: `auth.claim.status` publishes `claimed` to anonymous callers by
+ * design, so this is a fact the caller can already read — and it is far more
+ * actionable than a generic credential refusal.
  */
 function authClaim(deps: FacadeDeps): OperationHandler {
   return async (ctx) => {

@@ -303,9 +303,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // credentials.* add four mounted operations.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(SURFACE).toHaveLength(156);
-    expect(rows).toHaveLength(156);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(156);
+    // 156 -> 158 (2026-08-13, first-run claim): auth.claim + auth.claim.status.
+    expect(SURFACE).toHaveLength(158);
+    expect(rows).toHaveLength(158);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(158);
   });
 
   /**
@@ -499,7 +500,15 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // landed 111 and 112 while it was in review, and 113/114 are claimed on
     // branches that have not landed (node_claim, member roles). Re-measured on
     // THIS tree, not incremented: `ls db/migrations/*.sql | wc -l` = 106.
-    expect(server.appliedMigrations.length).toBe(106);
+    // 106 -> 107 on 2026-08-13: 116, the first-run node claim. THIRD renumber
+    // for this lane (110 -> 112 -> 113 -> 116) as 111, 112 and then 115 landed
+    // ahead of it. The number is not decoration: the assertion below requires
+    // APPLIED order to equal SORTED order, so a file sorting below an
+    // already-applied one breaks the invariant on a live deployment while a
+    // fresh test database, which always applies in sorted order, never notices.
+    // Taking the next number ABOVE the highest applied file is the whole rule.
+    // Re-measured: `ls db/migrations/*.sql | wc -l` = 107.
+    expect(server.appliedMigrations.length).toBe(108);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

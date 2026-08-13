@@ -233,6 +233,11 @@ const IDENTITY_V2_NET_NEW_OPERATIONS = [
   'auth.login',
   'auth.logout',
   'auth.session.get',
+  // First-run node claim (2026-08-13). Both CLAIM-FREE, and both mounted on
+  // the same seam: they are the only operations reachable on a node where no
+  // credential exists yet.
+  'auth.claim',
+  'auth.claim.status',
 ] as const;
 
 /**
@@ -608,7 +613,9 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // bodies bind (gitStatus/gitDiff are GETs and bind nothing).
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, forge write): tracking.pr.merge binds its body.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(90); // + StartChatThreadInput
+    // +1 (2026-08-13, first-run claim): auth.claim binds its body;
+    // auth.claim.status is a READ and binds nothing.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(91); // + StartChatThreadInput
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -759,8 +766,10 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 141/139 -> 143/141 (2026-08-12): collections.addItem/removeItem, mounted.
     // 143/141 -> 149/147 (2026-08-12, Git UI landing): the six execution.git*
     // rows, all mounted.
-    expect(health).toMatchObject({ ok: true, operations: 158, implemented: 156 });
-    expect(harness.production.server.registry.size).toBe(156);
+    // 158/156 -> 160/158 (2026-08-13, first-run claim): both auth.claim rows
+    // are v1 HTTP and both are mounted.
+    expect(health).toMatchObject({ ok: true, operations: 160, implemented: 158 });
+    expect(harness.production.server.registry.size).toBe(158);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -780,7 +789,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(156);
+    expect(registered.size + residual.length).toBe(158);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

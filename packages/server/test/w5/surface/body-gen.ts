@@ -115,6 +115,12 @@ function stringFor(key: string, schema: ZodTypeAny): string {
 function matchRegex(regex: RegExp, key: string): string {
   const source = regex.source;
   if (source.includes('c:')) return 'c:w5surface';
+  // `auth.claim`'s setup token. The prefix is asserted by the schema so a
+  // pasted SESSION token (`tm8s_`) is refused by shape rather than by an
+  // opaque 28000 from the database — the two are easy to confuse and both
+  // start `tm8`. The sweep needs a value that satisfies it, or the generated
+  // body arrives as a 400 and reads as a handler refusal.
+  if (source.includes('tm8c_')) return 'tm8c_w5surface';
   return stringFor(key, { _def: { checks: [] } } as unknown as ZodTypeAny);
 }
 
