@@ -1,6 +1,6 @@
 /**
  * execution.transcript — the read handler that turns an agent's OWN native
- * JSONL (`~/.claude/projects/**`, `~/.codex/sessions/**`) into a browser-visible
+ * JSONL (the session's recorded CLAUDE_CONFIG_DIR/CODEX_HOME) into a browser-visible
  * page. The third face of a session, after `execution.launch` (what it was
  * TOLD) and `execution.journal` (what it DID).
  *
@@ -39,6 +39,7 @@ interface SessionRow {
   workdir_path: string | null;
   workdir_mode: string | null;
   agent_tool: string | null;
+  agent_config_dir: string | null;
 }
 
 function row(over: Partial<SessionRow> = {}): SessionRow {
@@ -47,6 +48,7 @@ function row(over: Partial<SessionRow> = {}): SessionRow {
     workdir_path: '/work/tm8',
     workdir_mode: 'project',
     agent_tool: 'claude-code',
+    agent_config_dir: null,
     ...over,
   };
 }
@@ -98,6 +100,12 @@ async function plantClaude(home: string, cwd: string, lines: unknown[]): Promise
     join(dir, `${NATIVE_ID}.jsonl`),
     lines.map((l) => JSON.stringify(l)).join('\n'),
   );
+}
+
+async function plantClaudeConfigDir(configDir: string, cwd: string, lines: unknown[]): Promise<void> {
+  const dir = join(configDir, 'projects', encodeClaudeProjectDir(cwd));
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${NATIVE_ID}.jsonl`), lines.map((l) => JSON.stringify(l)).join('\n'));
 }
 
 const userTurn = (text: string, at: string) => ({
@@ -169,6 +177,21 @@ describe('execution.transcript handler', () => {
     expect(page.entries[1]?.text).toBe('Reading the PTY resize path.');
     expect(page.stats?.assistantMessages).toBe(1);
     expect(page.lastActivityAt).toBe('2026-08-01T10:00:20.000Z');
+  });
+
+  it('reads a member-credential transcript from the config dir recorded at spawn', async () => {
+    const configDir = join(dataDir, 'credentials', 'id_member', 'anthropic');
+    await plantClaudeConfigDir(configDir, '/work/tm8', [
+      assistantTurn('Visible from the member home.', '2026-08-01T10:01:00.000Z'),
+    ]);
+    const handler = buildHandler({
+      dataDir,
+      home,
+      rows: () => [row({ agent_config_dir: configDir })],
+    });
+    const page = await call(handler, ctxFor(SESSION_ID));
+    expect(page.available).toBe(true);
+    expect(page.entries[0]?.text).toBe('Visible from the member home.');
   });
 
   /**

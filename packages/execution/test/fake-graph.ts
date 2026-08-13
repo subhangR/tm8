@@ -219,6 +219,7 @@ export class FakeGraph implements GraphPort {
     manifest: Tm8Manifest,
     envVarNames: string[],
     prompts: { system: string; task: string },
+    _agentConfigDir: string | null,
   ): Promise<void> {
     this.authSeen.push(auth);
     this.manifests.push({ sessionId, manifest, envVarNames, prompts });

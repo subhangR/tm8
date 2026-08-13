@@ -42,6 +42,7 @@ const RESUME_INFO: WorkSessionResumeInfo = {
   title: 'a session that stopped',
   status: 'exited',
   nativeSessionId: 'pre-minted-claude-uuid',
+  agentConfigDir: null,
 };
 
 // --- codex rollout fixture helpers (same shapes as session-resume.test.ts) ---
@@ -178,8 +179,8 @@ describe('SpawnService.resume — guards and orchestration', () => {
       await rm(home, { recursive: true, force: true });
     });
 
-    async function writeOwningRollout(): Promise<void> {
-      const day = join(home, '.codex', 'sessions', '2026', '07', '31');
+    async function writeOwningRollout(configDir = join(home, '.codex')): Promise<void> {
+      const day = join(configDir, 'sessions', '2026', '07', '31');
       await mkdir(day, { recursive: true });
       await writeFile(
         join(day, 'own.jsonl'),
@@ -220,6 +221,21 @@ describe('SpawnService.resume — guards and orchestration', () => {
       ]);
       expect(result.reused).toBe(true);
       expect(graph.resumes[0]?.nodeId).toBe(NODE_ID);
+    });
+
+    it('resolves the rollout from the CODEX_HOME recorded for the original run', async () => {
+      const originalConfigDir = join(home, 'credentials', 'id_member', 'openai');
+      graph.resumeInfo = {
+        ...graph.resumeInfo!,
+        agentConfigDir: originalConfigDir,
+      };
+      await writeOwningRollout(originalConfigDir);
+      graph.resumeReplayed = true;
+
+      await serviceWith({ HOME: home }).resume(AUTH, { sessionId: SESSION_ID });
+      expect(graph.nativeIds).toEqual([
+        { sessionId: SESSION_ID, nativeSessionId: 'rollout-scanned' },
+      ]);
     });
 
     it('refuses when no rollout can be proven to belong to this session', async () => {

@@ -405,6 +405,8 @@ export interface WorkSessionResumeInfo {
    * yet.
    */
   nativeSessionId: string | null;
+  /** Exact CLAUDE_CONFIG_DIR/CODEX_HOME used for the original run. */
+  agentConfigDir: string | null;
 }
 
 export interface ResumeWorkSessionResult {
@@ -482,6 +484,7 @@ export interface GraphPort {
     manifest: Tm8Manifest,
     envVarNames: string[],
     prompts: { system: string; task: string },
+    agentConfigDir: string | null,
   ): Promise<void>;
   /** `public.work_session_transition` — R29's single writer. Never UPDATE directly. */
   transition(auth: GraphAuth, input: TransitionInput): Promise<void>;

@@ -101,5 +101,6 @@ export {
   readSessionTranscript,
   type ReadTranscriptOptions,
 } from './transcript/read-transcript.js';
+export { knownAgentConfigDirs } from './transcript/agent-config-dirs.js';
 
 export const EXECUTION_PACKAGE = '@tm8/execution';

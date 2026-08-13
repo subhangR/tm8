@@ -2639,6 +2639,7 @@ export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.o
     'no_transcript_file',
     'unreadable',
   ]).nullable(),
+  searchedPaths: z.array(z.string()),
   agentTool: z.enum(['claude-code', 'codex']).nullable(),
   entries: z.array(SessionTranscriptEntrySchema),
   // Nullable for the same reason `entries` is empty on an unavailable page:

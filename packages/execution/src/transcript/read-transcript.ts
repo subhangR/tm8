@@ -584,6 +584,10 @@ export interface ReadTranscriptOptions {
   /** The session's resolved cwd — its project workdir or its scratch dir. */
   cwd: string | null;
   home: string;
+  /** Exact provider config dir used by the child: CLAUDE_CONFIG_DIR/CODEX_HOME. */
+  agentConfigDir?: string | null;
+  /** Bounded historical candidates (known identity homes plus the node home). */
+  fallbackAgentConfigDirs?: string[];
   last?: number;
   maxChars?: number;
   now?: number;
@@ -618,10 +622,12 @@ export async function readSessionTranscript(
   const unavailable = (
     reason: NonNullable<SessionTranscriptPage['unavailableReason']>,
     agentTool: SessionTranscriptPage['agentTool'] = null,
+    searchedPaths: string[] = [],
   ): SessionTranscriptPage => ({
     sessionId: opts.sessionId,
     available: false,
     unavailableReason: reason,
+    searchedPaths,
     agentTool,
     entries: [],
     stats: null,
@@ -632,28 +638,46 @@ export async function readSessionTranscript(
 
   let path: string;
   let agentTool: 'claude-code' | 'codex';
+  const providerDefault =
+    opts.agentTool === 'claude-code' ? join(opts.home, '.claude') : join(opts.home, '.codex');
+  const configDirs = [...new Set([
+    ...(opts.agentConfigDir ? [opts.agentConfigDir] : []),
+    ...(opts.fallbackAgentConfigDirs ?? []),
+    providerDefault,
+  ])];
+  const searchedPaths: string[] = [];
 
   if (opts.agentTool === 'claude-code') {
     agentTool = 'claude-code';
     if (!opts.nativeSessionId) return unavailable('no_native_session_id', agentTool);
     if (!opts.cwd) return unavailable('no_transcript_file', agentTool);
-    path = join(
-      opts.home,
-      '.claude',
-      'projects',
-      encodeClaudeProjectDir(opts.cwd),
-      `${opts.nativeSessionId}.jsonl`,
-    );
+    const candidates = configDirs.map((dir) =>
+      join(dir, 'projects', encodeClaudeProjectDir(opts.cwd!), `${opts.nativeSessionId}.jsonl`));
+    searchedPaths.push(...candidates);
+    path = candidates[0]!;
+    for (const candidate of candidates) {
+      try {
+        await stat(candidate);
+        path = candidate;
+        break;
+      } catch { /* try the next bounded candidate */ }
+    }
   } else if (opts.agentTool === 'codex') {
     agentTool = 'codex';
     // Codex mints its own rollout id, so the file is found by the ownership
     // marker rather than by name — the same scan resume already relies on.
-    const rollout = await resolveCodexRollout({
-      home: opts.home,
-      tm8SessionId: opts.sessionId,
-      cwd: opts.cwd,
-    });
-    if (!rollout) return unavailable('no_transcript_file', agentTool);
+    let rollout = null;
+    for (const configDir of configDirs) {
+      searchedPaths.push(join(configDir, 'sessions'));
+      rollout = await resolveCodexRollout({
+        home: opts.home,
+        configDir,
+        tm8SessionId: opts.sessionId,
+        cwd: opts.cwd,
+      });
+      if (rollout) break;
+    }
+    if (!rollout) return unavailable('no_transcript_file', agentTool, searchedPaths);
     path = rollout.path;
   } else {
     return unavailable('unsupported_agent_tool');
@@ -664,7 +688,9 @@ export async function readSessionTranscript(
     tail = await readTail(path);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException | undefined)?.code;
-    return unavailable(code === 'ENOENT' ? 'no_transcript_file' : 'unreadable', agentTool);
+    return unavailable(
+      code === 'ENOENT' ? 'no_transcript_file' : 'unreadable', agentTool, searchedPaths,
+    );
   }
 
   // Sniff the dialect from the CONTENT, never from the recorded agent_tool: a
@@ -684,6 +710,7 @@ export async function readSessionTranscript(
     sessionId: opts.sessionId,
     available: true,
     unavailableReason: null,
+    searchedPaths: [],
     agentTool,
     entries: last > 0 ? all.slice(-last) : all,
     stats: collectStats(tail.lines, all, codex, tail.partial),
