@@ -55,7 +55,17 @@ export function MembershipBlock({
 }) {
   const direction = params.direction === 'incoming' ? 'incoming' : 'outgoing';
   const edges = edgesOf(detail, params);
-  const refusal = authoring?.refusal ?? null;
+  /**
+   * AN UNWIRED HOST IS A REFUSAL, NOT AN ABSENCE (L6/D28). This used to be
+   * `authoring ? <add> : null`, which made a host that forgot to pass
+   * `membershipAuthoring` pixel-identical to a genuine read-only refusal —
+   * the add control simply did not exist, and the defect read as "i dont see
+   * any add item in the collection detail page". The control now always
+   * renders; a missing authoring lane is one more disabled-with-reason.
+   */
+  const refusal = authoring
+    ? authoring.refusal ?? null
+    : 'This view has not wired membership authoring; the panel can show these collections but not change them here.';
   const pending = new Set(authoring?.pending ?? []);
 
   const [open, setOpen] = useState(false);
@@ -84,7 +94,7 @@ export function MembershipBlock({
   };
 
   const addLabel = typeof params.addLabel === 'string' ? params.addLabel : '+ add';
-  const add = authoring ? (
+  const add = (
     <div className="pn-membership__add">
       <button
         type="button"
@@ -121,7 +131,9 @@ export function MembershipBlock({
                 className="pn-membership__option"
                 data-testid="membership-option"
                 onClick={() => {
-                  authoring.onAdd(option.id, option.title);
+                  // The picker cannot open unauthored (`open && !refusal`),
+                  // so this only narrows the type, never the behaviour.
+                  authoring?.onAdd(option.id, option.title);
                   setOpen(false);
                   setQuery('');
                 }}
@@ -133,7 +145,7 @@ export function MembershipBlock({
         </div>
       ) : null}
     </div>
-  ) : null;
+  );
 
   if (edges.length === 0) {
     const empty = typeof params.empty === 'string'

@@ -53,6 +53,7 @@ import { gitSurfaceFor } from './gitSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { attachmentsFor } from '../files/port';
+import { useMembershipSurface } from './membershipSurface';
 import { representedThreadMessageCount } from './message-thread';
 
 /** The session collection is selected by capability, never by panel position
@@ -315,6 +316,16 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     [data.seam, data.spaceId],
   );
 
+  /* COLLECTION MEMBERSHIP — the one shared composer (see `membershipSurface`).
+     A hook called ONCE here, because `renderPanel` below renders one panel per
+     id and cannot call hooks; each mount gets `authoringFor(detail)`. */
+  const membership = useMembershipSurface({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    refetchDetail: (id) => props.data.refetchDetail(id),
+    onNotice: props.onNotice,
+  });
+
   /* ONE construction, shared with EntityView. It used to be built inline here,
      twice — and not at all on the kind screens, which is why their quick config
      showed no teammates and no models. See `useLaunchPort`.
@@ -398,6 +409,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
              add-child come from `EntityVerbs` — see `composePanelActions`. */
           onAction={panelActions.onAction}
           wiredActions={panelActions.wiredActions}
+          membershipAuthoring={membership.authoringFor(detail)}
           launch={launchPort}
           onRestore={() => rowLifecycle.archive('restore', id)}
           pinned={nav.pinned.includes(id)}
@@ -485,7 +497,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         </EntityVerbs>
       );
     },
-    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, attachments, primaries, launchPort],
+    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, attachments, primaries, launchPort, membership],
   );
 
   /** Keep the server's recent-activity order; EmptyCenter applies the bounded

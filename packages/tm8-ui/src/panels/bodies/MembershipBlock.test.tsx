@@ -154,18 +154,19 @@ describe('fixture seam — the membership pair', () => {
 });
 
 describe('useCollectionMembership — the direction decides which endpoint is the collection', () => {
-  const port = (direction: 'outgoing' | 'incoming', commands: {
+  const port = (commands: {
     addToCollection: ReturnType<typeof vi.fn>;
     removeFromCollection: ReturnType<typeof vi.fn>;
   }) => ({
-    spaceId: FIXTURE_SPACE_ID,
-    subjectId: 'subject-1' as EntityId,
-    direction,
-    pickerKind: null,
     commands: commands as never,
     searchPage: async () => [],
     onChanged: vi.fn(),
     onError: vi.fn(),
+  });
+  const subject = (direction: 'outgoing' | 'incoming') => ({
+    id: 'subject-1' as EntityId,
+    direction,
+    pickerKind: null,
   });
 
   it('outgoing (a collection panel): the subject IS the collection', async () => {
@@ -173,8 +174,8 @@ describe('useCollectionMembership — the direction decides which endpoint is th
       addToCollection: vi.fn(async () => ({ patches: [] })),
       removeFromCollection: vi.fn(async () => ({ patches: [] })),
     };
-    const { result } = renderHook(() => useCollectionMembership(port('outgoing', commands)));
-    result.current.authoring!.onAdd('peer-1', 'Peer');
+    const { result } = renderHook(() => useCollectionMembership(port(commands)));
+    result.current.authoringFor(subject('outgoing'))!.onAdd('peer-1', 'Peer');
     await waitFor(() => expect(commands.addToCollection).toHaveBeenCalled());
     expect(commands.addToCollection.mock.calls[0]![0]).toBe('subject-1');
     expect(commands.addToCollection.mock.calls[0]![1]).toMatchObject({ entityId: 'peer-1' });
@@ -185,16 +186,25 @@ describe('useCollectionMembership — the direction decides which endpoint is th
       addToCollection: vi.fn(async () => ({ patches: [] })),
       removeFromCollection: vi.fn(async () => ({ patches: [] })),
     };
-    const { result } = renderHook(() => useCollectionMembership(port('incoming', commands)));
-    result.current.authoring!.onAdd('collection-1', 'A collection');
+    const { result } = renderHook(() => useCollectionMembership(port(commands)));
+    result.current.authoringFor(subject('incoming'))!.onAdd('collection-1', 'A collection');
     await waitFor(() => expect(commands.addToCollection).toHaveBeenCalled());
     // Reversed arguments, identical record: collection first, member second.
     expect(commands.addToCollection.mock.calls[0]![0]).toBe('collection-1');
     expect(commands.addToCollection.mock.calls[0]![1]).toMatchObject({ entityId: 'subject-1' });
 
-    result.current.authoring!.onRemove('collection-1', 'A collection');
+    result.current.authoringFor(subject('incoming'))!.onRemove('collection-1', 'A collection');
     await waitFor(() => expect(commands.removeFromCollection).toHaveBeenCalled());
     expect(commands.removeFromCollection.mock.calls[0]!.slice(0, 2)).toEqual(['collection-1', 'subject-1']);
+  });
+
+  it('an unhosted subject answers null, never a throwing stub', () => {
+    const commands = {
+      addToCollection: vi.fn(async () => ({ patches: [] })),
+      removeFromCollection: vi.fn(async () => ({ patches: [] })),
+    };
+    const { result } = renderHook(() => useCollectionMembership(port(commands)));
+    expect(result.current.authoringFor(null)).toBeNull();
   });
 });
 
@@ -271,6 +281,24 @@ describe('MembershipBlock — rows, remove, and the bounded picker', () => {
     const remove = getByTestId('membership-remove');
     fireEvent.click(remove);
     expect(authoring.onRemove).not.toHaveBeenCalled();
+  });
+
+  it('an UNWIRED host still renders the add control, refused with the reason — never nothing', async () => {
+    // The regression this pins: four of five panel hosts passed no
+    // `membershipAuthoring`, and the block hid the add control entirely —
+    // indistinguishable from a read-only entity. Unwired must LOOK unwired.
+    const { detail } = await memberDetail();
+    const { getByTestId, queryByTestId } = render(
+      <MembershipBlock
+        detail={detail}
+        params={{ edgeType: 'contains', direction: 'incoming' }}
+      />,
+    );
+    const add = getByTestId('membership-add');
+    expect(add.getAttribute('aria-disabled')).toBe('true');
+    expect(add.getAttribute('title')).toMatch(/not wired membership authoring/i);
+    fireEvent.click(add);
+    expect(queryByTestId('membership-picker')).toBeNull();
   });
 
   it('an empty membership is a designed empty with the add control beside it', async () => {

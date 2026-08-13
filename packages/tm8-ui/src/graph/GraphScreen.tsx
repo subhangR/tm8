@@ -32,6 +32,7 @@ import { gitSurfaceFor } from '../views/gitSurface';
 import { taskGitSectionFor } from '../views/taskGitSection';
 import { graphSurfaceFor } from '../views/graphSurface';
 import { attachmentsFor } from '../files/port';
+import { useMembershipSurface } from '../views/membershipSurface';
 
 export interface GraphScreenData {
   spaceId: string;
@@ -106,6 +107,16 @@ export function GraphScreen(props: GraphScreenProps) {
     [data.seam, data.spaceId],
   );
 
+  /* COLLECTION MEMBERSHIP — the one shared composer (see `membershipSurface`).
+     `data.seam` is optional on this port; without one `authoringFor` answers
+     null and the block's add control refuses with the unwired reason. */
+  const membership = useMembershipSurface({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    refetchDetail: (id) => data.refetchDetail(id),
+    ...(props.onNotice ? { onNotice: props.onNotice } : {}),
+  });
+
   /* The aside is a FULL panel, so its primaries are wired from the same hook
      the workspace uses. `data.seam` is optional on this port; without one the
      hook answers `undefined` and the verb keeps its honest refusal rather than
@@ -158,6 +169,7 @@ export function GraphScreen(props: GraphScreenProps) {
       ctx={{ ...ctx, entityId: selectedId }}
       onAction={primaries.forEntity(selectedId)}
       wiredActions={primaries.wiredActions}
+      membershipAuthoring={membership.authoringFor(detail)}
       launch={props.launch}
       pinned={false}
       // Same refusal shape as EntityView: the panel HAS a permanent slot here,

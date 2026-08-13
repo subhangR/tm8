@@ -588,15 +588,25 @@ function RowAssignControl({
  * the row's own `canEdit`/`canLink` answers the wrong question. The node
  * authorizes the write, and a refusal surfaces through the host's notice —
  * attempted-and-refused, the same posture as the board (§8.5).
+ *
+ * TWO ANATOMIES, ONE CONTROL (user ruling 2026-08-13: "every entity tile
+ * should have option to add it to a collection"). `face` is the expanded
+ * strip's labelled badge, exactly as before; `icon` is the COLLAPSED tile's
+ * hover-cluster button — same menu, same gates, same refusal words, because a
+ * second copy of a membership control is exactly the duplication D67 removed.
+ * EXPORTED so the tile anatomies can mount the icon form directly.
  */
-function RowMembershipControl({
+export function RowMembershipControl({
   row,
   props,
   control,
+  variant = 'face',
 }: {
   row: ControlSubject;
   props: ControlHost;
   control: MembershipListControl;
+  /** `icon` for the collapsed tile's action cluster. */
+  variant?: 'face' | 'icon';
 }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLSpanElement>(null);
@@ -614,7 +624,15 @@ function RowMembershipControl({
   }
   const names = [...containing.values()];
 
-  const face = (
+  const icon = variant === 'icon';
+  const label = `Change ${control.label.toLowerCase()} for ${row.title}`;
+  /* The icon form wears the set kind's own glyph — the same mark the lens
+     trigger and the collection rows carry, so the affordance reads as "this
+     row, into one of those". */
+  const glyph = <KindIcon kind={control.setKind} />;
+  const face = icon ? (
+    <span aria-hidden>{glyph}</span>
+  ) : (
     <span className="pn-badge pn-badge--membership" data-testid="row-membership-face">
       {names.length === 0
         ? control.emptyLabel
@@ -625,10 +643,14 @@ function RowMembershipControl({
   );
 
   if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
-    return <CheckingPermission label={`Change ${control.label.toLowerCase()}`} />;
+    return icon
+      ? <CheckingPermission label={label} glyph={glyph} />
+      : <CheckingPermission label={`Change ${control.label.toLowerCase()}`} />;
   }
   if (!props.onMembership || !props.connectionsOf) {
-    return (
+    return icon ? (
+      <DisabledIconControl label={label} glyph={glyph} reason={NOT_WIRED_REASON} />
+    ) : (
       <DisabledAction label={`Change ${control.label.toLowerCase()}`} reason={NOT_WIRED_REASON}>
         {face}
       </DisabledAction>
@@ -641,14 +663,14 @@ function RowMembershipControl({
    */
   const sets = (props.membershipSets ?? []).filter((candidate) => candidate.id !== row.id);
   if (sets.length === 0) {
-    return (
-      <DisabledAction
-        label={`Change ${control.label.toLowerCase()}`}
-        reason={{
-          cause: `No ${control.label.toLowerCase()} are loaded for this space.`,
-          remedy: 'Create one from its own list first; the menu offers the most recent page once any exist.',
-        }}
-      >
+    const reason = {
+      cause: `No ${control.label.toLowerCase()} are loaded for this space.`,
+      remedy: 'Create one from its own list first; the menu offers the most recent page once any exist.',
+    };
+    return icon ? (
+      <DisabledIconControl label={label} glyph={glyph} reason={reason} />
+    ) : (
+      <DisabledAction label={`Change ${control.label.toLowerCase()}`} reason={reason}>
         {face}
       </DisabledAction>
     );
@@ -658,11 +680,12 @@ function RowMembershipControl({
     <span className="lp__assignwrap" ref={boxRef}>
       <button
         type="button"
-        className="lp__assignbtn"
+        className={icon ? 'lp__rowaction' : 'lp__assignbtn'}
         data-testid="row-membership-trigger"
+        title={icon ? label : undefined}
         aria-expanded={open}
         aria-haspopup="true"
-        aria-label={`Change ${control.label.toLowerCase()} for ${row.title}`}
+        aria-label={label}
         onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);

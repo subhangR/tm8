@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type {
   CollectionAddItemInput,
   CommandContext,
@@ -6,7 +6,6 @@ import type {
   EntityId,
   EntityKind,
   EntitySummary,
-  SpaceId,
 } from '@tm8/contract';
 import type { MembershipAuthoring } from '../panels/bodies/MembershipBlock';
 import { nextMutationId } from './commands';
@@ -19,6 +18,14 @@ import { nextMutationId } from './commands';
  * block raises intent (add this peer, remove that one) and this hook performs
  * the writes through the seam's membership pair.
  *
+ * ONE HOOK, MANY SUBJECTS. The hook used to take a single `subjectId`, which
+ * fit `EntityView`'s one open panel and nothing else: `WorkspaceView` renders
+ * SEVERAL detail panels through one `renderPanel` callback, where a per-panel
+ * hook call is illegal. So the handle is `authoringFor(subject)` — one hook
+ * instance per host, one authoring object per rendered panel — and the
+ * in-flight `pending` set is keyed by subject so panels cannot bleed spinners
+ * into each other.
+ *
  * ONE HOOK, BOTH DIRECTIONS. The block serves a collection's ITEMS (outgoing)
  * and an entity's COLLECTIONS (incoming); which endpoint of the pair is "the
  * collection" therefore depends on the direction the registry declared:
@@ -28,7 +35,7 @@ import { nextMutationId } from './commands';
  *
  * Getting this wrong is not a cosmetic bug: `contains` runs collection →
  * entity and `validate_edge` refuses the reverse, so the mapping lives here
- * once rather than in every block instance.
+ * once rather than in every block instance or every host.
  *
  * THE PICKER SEARCH IS ONE BOUNDED RECENT PAGE. `search.query` is reserved
  * (honest 501 forever), so there is no server text search to call. The hook
@@ -46,10 +53,10 @@ export interface CollectionMembershipCommands {
   ): Promise<CommandResult>;
 }
 
-export interface CollectionMembershipPort {
-  spaceId: SpaceId;
-  /** The entity whose panel hosts the block. Null unhosts the hook. */
-  subjectId: EntityId | null;
+/** ONE panel's subject, as the registry's `membership` block declared it. */
+export interface MembershipSubject {
+  /** The entity whose panel hosts the block. */
+  id: EntityId;
   /** Registry params off the declared `membership` block. */
   direction: 'outgoing' | 'incoming';
   /** Narrow the picker page to one kind (the entity side lists collections). */
@@ -59,6 +66,9 @@ export interface CollectionMembershipPort {
    * the controls refused-but-focusable instead of hiding them (L6/D28).
    */
   refusal?: string | null;
+}
+
+export interface CollectionMembershipPort {
   commands: CollectionMembershipCommands;
   /** One bounded recent page for the picker; the block filters it by title. */
   searchPage(kind: EntityKind | null): Promise<EntitySummary[]>;
@@ -69,25 +79,31 @@ export interface CollectionMembershipPort {
 
 export interface CollectionMembershipHandle {
   /** Pass to the host panel's `membershipAuthoring`. Null when unhosted. */
-  authoring: MembershipAuthoring | null;
+  authoringFor(subject: MembershipSubject | null): MembershipAuthoring | null;
 }
 
 export function useCollectionMembership(port: CollectionMembershipPort): CollectionMembershipHandle {
-  const { spaceId, subjectId, direction, pickerKind, commands, searchPage, onChanged, onError } = port;
-  void spaceId;
-  /** Peer ids in flight, so a row says so rather than looking inert. */
-  const [pending, setPending] = useState<readonly string[]>([]);
+  const { commands, searchPage, onChanged, onError } = port;
+  /** Peer ids in flight PER SUBJECT, so a row says so rather than looking
+      inert — and so one panel's write never spins another panel's row. */
+  const [pending, setPending] = useState<Readonly<Record<string, readonly string[]>>>({});
 
-  const settle = useCallback((peerId: string) => {
-    setPending((current) => current.filter((id) => id !== peerId));
+  const settle = useCallback((subjectId: string, peerId: string) => {
+    setPending((current) => ({
+      ...current,
+      [subjectId]: (current[subjectId] ?? []).filter((id) => id !== peerId),
+    }));
   }, []);
 
   const write = useCallback(
-    (verb: 'add' | 'remove', peerId: string, title: string) => {
-      if (!subjectId) return;
-      const collectionId = direction === 'outgoing' ? subjectId : (peerId as EntityId);
-      const entityId = direction === 'outgoing' ? (peerId as EntityId) : subjectId;
-      setPending((current) => [...current, peerId]);
+    (subject: MembershipSubject, verb: 'add' | 'remove', peerId: string, title: string) => {
+      const subjectId = subject.id;
+      const collectionId = subject.direction === 'outgoing' ? subjectId : (peerId as EntityId);
+      const entityId = subject.direction === 'outgoing' ? (peerId as EntityId) : subjectId;
+      setPending((current) => ({
+        ...current,
+        [subjectId]: [...(current[subjectId] ?? []), peerId],
+      }));
       void (async () => {
         try {
           if (verb === 'add') {
@@ -108,23 +124,26 @@ export function useCollectionMembership(port: CollectionMembershipPort): Collect
             message,
           );
         } finally {
-          settle(peerId);
+          settle(subjectId, peerId);
         }
       })();
     },
-    [commands, direction, onChanged, onError, settle, subjectId],
+    [commands, onChanged, onError, settle],
   );
 
-  const authoring = useMemo<MembershipAuthoring | null>(() => {
-    if (!subjectId) return null;
-    return {
-      onAdd: (peerId, title) => write('add', peerId, title),
-      onRemove: (peerId, title) => write('remove', peerId, title),
-      search: () => searchPage(pickerKind),
-      refusal: port.refusal ?? null,
-      pending,
-    };
-  }, [pending, pickerKind, port.refusal, searchPage, subjectId, write]);
+  const authoringFor = useCallback(
+    (subject: MembershipSubject | null): MembershipAuthoring | null => {
+      if (!subject) return null;
+      return {
+        onAdd: (peerId, title) => write(subject, 'add', peerId, title),
+        onRemove: (peerId, title) => write(subject, 'remove', peerId, title),
+        search: () => searchPage(subject.pickerKind),
+        refusal: subject.refusal ?? null,
+        pending: pending[subject.id] ?? [],
+      };
+    },
+    [pending, searchPage, write],
+  );
 
-  return { authoring };
+  return { authoringFor };
 }

@@ -52,7 +52,6 @@ import {
   MemoryComposer,
   MemoryMarkComposer,
   placeholderTitleFor,
-  useCollectionMembership,
   useMemoryMarks,
   useMemoryWorkingSet,
   useNewTask,
@@ -68,6 +67,7 @@ import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './Lau
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { useSessionStart } from './useSessionStart';
 import { useRowLifecycle } from './useRowLifecycle';
+import { useMembershipSurface } from './membershipSurface';
 import type { ContentSurface } from '../routes';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
@@ -501,47 +501,17 @@ export function EntityView(props: EntityViewProps) {
   });
 
   /**
-   * Collection-membership authoring for whatever the centre is showing —
-   * offered exactly where a row declares a `membership` block, the same
-   * registry test the working set uses. The block's `direction` decides which
-   * endpoint of the `contains` pair the open entity is (a collection's ITEMS
-   * vs. an entity's COLLECTIONS); the hook owns that mapping.
+   * Collection-membership authoring, through the ONE composer every panel
+   * host shares (`membershipSurface`, the `gitSurface` pattern) — hand-wiring
+   * it per host is how four of the five mounts shipped without an add
+   * control. Which panels offer it stays a registry question inside the
+   * surface, and it serves BOTH mounts here: the centre and the aux column.
    */
-  const membershipBlock = detail
-    ? (getKind(detail.state.kind).panel.blocks ?? []).find((block) => block.block === 'membership')
-    : undefined;
-  const membershipHost = membershipBlock ? detail : null;
-  const membership = useCollectionMembership({
+  const membership = useMembershipSurface({
     spaceId: data.spaceId,
-    subjectId: membershipHost?.id ?? null,
-    direction: membershipBlock?.params?.direction === 'incoming' ? 'incoming' : 'outgoing',
-    /* Registry DATA, never a literal here — the entity side narrows the picker
-       to collections, the collection side accepts any kind. */
-    pickerKind: typeof membershipBlock?.params?.pickerKind === 'string'
-      ? (membershipBlock.params.pickerKind as EntityKind)
-      : null,
-    refusal: membershipHost && !membershipHost.capabilities.canEdit
-      ? 'The node refuses edits to this entity, so its membership is read-only here.'
-      : null,
-    commands: data.seam.commands,
-    /* One bounded recent page — `search.query` is reserved, so the picker is
-       honest about being a recency list the block filters locally. */
-    searchPage: async (kind) => {
-      const result = await data.seam.query({
-        spaceId: data.spaceId,
-        ...(kind ? { kinds: [kind] } : {}),
-        limit: 50,
-      });
-      return result.page.items;
-    },
-    onChanged: (id) => props.data.refetchDetail(id),
-    onError: (title, body) => props.onNotice({
-      id: `collection-membership:${String(membershipHost?.id ?? 'none')}`,
-      tone: 'error',
-      title,
-      body,
-      ttlMs: 12_000,
-    }),
+    seam: data.seam,
+    refetchDetail: (id) => props.data.refetchDetail(id),
+    onNotice: props.onNotice,
   });
 
   /**
@@ -593,7 +563,7 @@ export function EntityView(props: EntityViewProps) {
       onAction={panelActions.onAction}
       wiredActions={panelActions.wiredActions}
       memoryAuthoring={memoryWorkingSet.authoring}
-      membershipAuthoring={membership.authoring}
+      membershipAuthoring={membership.authoringFor(detail)}
       onMarkMemory={memoryMarks.begin}
       launch={launchPort}
       /* The tombstone's way back. `restore` is the same verb the strip's
@@ -845,6 +815,7 @@ export function EntityView(props: EntityViewProps) {
                 controls={controlHost}
                 onAction={primaries.forEntity(aux.id)}
                 wiredActions={primaries.wiredActions}
+                membershipAuthoring={membership.authoringFor(auxDetail)}
                 launch={launchPort}
                 onRestore={() => rowLifecycle.archive('restore', aux.id)}
                 pinned={false}
