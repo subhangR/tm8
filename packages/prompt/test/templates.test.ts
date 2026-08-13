@@ -116,6 +116,32 @@ describe('§14.2 coordinator bootstrap', () => {
     expect(xml).toMatch(/Discover spawn actions and project associations before delegation/);
     expect(xml).toMatch(/Choose project, worktree, or scratch explicitly/);
   });
+
+  // Each pin below answers a failure observed in a real mode=coordinator
+  // journal: coordinators that never delegated, briefs that told workers to
+  // reply to the worker's OWN session, and terminate-without-collecting.
+  it('spells the full spawn form including --mode coordinated-worker', () => {
+    const xml = coordinatorBootstrapControl(BOOTSTRAP);
+    expect(xml).toContain(
+      'tm8 session spawn --teammate TEAM_MEMBER_ID --task TASK_ID --mode coordinated-worker --context BRIEF',
+    );
+    expect(xml).toMatch(/never omit it/);
+    expect(xml).toMatch(/Do a unit yourself only when writing its brief would cost more than doing it/);
+  });
+
+  it('bakes the COORDINATOR session id into the reply address — a concrete id, not a placeholder', () => {
+    const xml = coordinatorBootstrapControl(BOOTSTRAP);
+    expect(xml).toContain('<reply_address session_id="ses_1">');
+    expect(xml).toContain('tm8 message send --to ses_1');
+    expect(xml).toMatch(/never the worker's own id/);
+  });
+
+  it('demands tracking, chasing, and collect-before-terminate', () => {
+    const xml = coordinatorBootstrapControl(BOOTSTRAP);
+    expect(xml).toContain('tm8 session transcript WORK_SESSION_ID');
+    expect(xml).toMatch(/Collect a result or record a failure for every unit before terminating any worker/);
+    expect(xml).toMatch(/close out on the goal anchor/);
+  });
 });
 
 describe('§§14.3-14.6, 14.9 — every injection that carries authored content', () => {
