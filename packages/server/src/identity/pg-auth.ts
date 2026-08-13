@@ -39,8 +39,13 @@ const hasher = new ScryptPasswordHasher();
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-/** R6 expiry (mirrors identity/service.ts): browser 30d, cli 90d, agent 7d. */
-export const SESSION_TTL_MS = { browser: 30 * DAY, cli: 90 * DAY, agent: 7 * DAY } as const;
+/** R6 expiry: a runtime token is additionally revoked when its thread closes. */
+export const SESSION_TTL_MS = {
+  browser: 30 * DAY,
+  cli: 90 * DAY,
+  agent: 7 * DAY,
+  agent_runtime: DAY,
+} as const;
 
 export type LoginKind = keyof typeof SESSION_TTL_MS;
 
@@ -56,6 +61,8 @@ export interface ResolvedAuthSession {
   kind: LoginKind;
   actingAsTeamMemberId: string | null;
   workSessionId: string | null;
+  runtimeMemberId: string | null;
+  runtimeThreadRootId: string | null;
   expiresAt: string;
   label: string | null;
 }
@@ -80,6 +87,8 @@ interface SessionRowJson {
   kind: LoginKind;
   acting_as_team_member_id: string | null;
   work_session_id?: string | null;
+  runtime_member_id?: string | null;
+  runtime_thread_root_id?: string | null;
   label: string | null;
   created_at: string;
   expires_at: string;
@@ -130,6 +139,15 @@ export interface IssuedAgentSession {
   expiresAt: string;
 }
 
+export interface IssuedAgentRuntimeSession {
+  token: string;
+  sessionId: string;
+  runtimeMemberId: string;
+  runtimeThreadRootId: string;
+  actingAsTeamMemberId: string;
+  expiresAt: string;
+}
+
 /**
  * Mint the credential for one concrete agent run.
  *
@@ -167,6 +185,51 @@ export async function revokeAgentSession(
   workSessionId: string,
 ): Promise<void> {
   await db.rpc(claims, 'revoke_agent_auth_session', [workSessionId]);
+}
+
+/**
+ * Mint the MCP credential for one hot chat thread.
+ *
+ * This is an internal server helper, never a facade/catalog operation. The SQL
+ * function derives the account and member from `claims`, verifies teammate
+ * authority in the thread's space, and atomically replaces any prior live
+ * token for the same root. Plaintext leaves this function exactly once so the
+ * orchestrator can pass it as `TM8_AGENT_RUNTIME_TOKEN` to the stdio server.
+ */
+export async function issueAgentRuntimeSession(
+  db: Db,
+  claims: DbClaims,
+  input: { threadRootId: string; teamMemberId: string; label?: string | null },
+): Promise<IssuedAgentRuntimeSession> {
+  const secret = generateSecret();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS.agent_runtime).toISOString();
+  const session = await db.rpc<SessionRowJson>(claims, 'issue_agent_runtime_session', [
+    input.threadRootId,
+    input.teamMemberId,
+    hashToken(secret),
+    expiresAt,
+    input.label ?? `chat:${input.threadRootId}`,
+  ]);
+  if (!session.runtime_member_id || !session.runtime_thread_root_id) {
+    throw new CollabError('upstream_unavailable', 'agent runtime session returned no attribution');
+  }
+  return {
+    token: formatToken(session.id, secret),
+    sessionId: session.id,
+    runtimeMemberId: session.runtime_member_id,
+    runtimeThreadRootId: session.runtime_thread_root_id,
+    actingAsTeamMemberId: input.teamMemberId,
+    expiresAt: session.expires_at,
+  };
+}
+
+/** Idempotently revoke every live runtime credential owned by a thread root. */
+export async function revokeAgentRuntimeSession(
+  db: Db,
+  claims: DbClaims,
+  threadRootId: string,
+): Promise<void> {
+  await db.rpc(claims, 'revoke_agent_runtime_session', [threadRootId]);
 }
 
 /** One message and one code for every rejection: a caller holding a bad credential learns nothing. */
