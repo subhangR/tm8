@@ -23,6 +23,7 @@ export function MaestroSessionTile({
   statusTone,
   statusTitle,
   tasks,
+  badges,
   childCount,
   childrenExpanded,
   onToggleChildren,
@@ -55,6 +56,8 @@ export function MaestroSessionTile({
   statusTone: string;
   statusTitle?: string;
   tasks: readonly EntitySummary[];
+  /** Glanceable git state (PR chips via the session's tasks) — same slot the task tile has. */
+  badges?: ReactNode;
   childCount: number;
   childrenExpanded: boolean;
   onToggleChildren?: () => void;
@@ -160,6 +163,8 @@ export function MaestroSessionTile({
           </button>
         </span>
       </div>
+
+      {badges ? <div className="pn-st__badges">{badges}</div> : null}
 
       {detailsExpanded && tasks.length > 0 ? (
         <div className="pn-st__tasklines">

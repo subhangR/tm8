@@ -148,6 +148,18 @@ export function indexLinkedPullRequests(
     if (sourceFacts !== null && targetFacts === null) add(target.id, sourceFacts);
   }
 
+  // SESSIONS INHERIT THEIR TASKS' PRs (session → working_on → task → tracks):
+  // the session tile carries the same chip vocabulary the task tile does,
+  // because the PR a session's work tracks is that session's PR in every
+  // sense the reader cares about. Second pass, so every tracks edge has
+  // already been indexed regardless of edge ordering.
+  for (const edge of edges) {
+    if (edge.type !== 'working_on') continue;
+    const taskLinked = mutable.get(edge.target.id);
+    if (taskLinked === undefined) continue;
+    for (const facts of taskLinked.values()) add(edge.source.id, facts);
+  }
+
   return new Map(
     [...mutable].map(([entityId, linked]) => [
       entityId,

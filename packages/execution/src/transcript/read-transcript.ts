@@ -35,6 +35,7 @@ import type {
   SessionTranscriptStuck,
 } from '@tm8/contract';
 import { resolveCodexRollout } from '../spawn/native-session.js';
+import { collectFileChanges } from './file-changes.js';
 
 /** Tail window, doubled up to MAX when a window parses to nothing — a single
  *  oversized tool-output line can be larger than the whole window. Maestro's
@@ -586,6 +587,12 @@ export interface ReadTranscriptOptions {
   last?: number;
   maxChars?: number;
   now?: number;
+  /**
+   * Also scan the WHOLE file for Edit/Write tool calls and attach
+   * `fileChanges` (claude-code dialect only; codex attaches null). Off by
+   * default: the full-file scan costs more than the tail window.
+   */
+  includeFileChanges?: boolean;
 }
 
 /**
@@ -673,7 +680,7 @@ export async function readSessionTranscript(
     return ts !== null && (newest === null || ts > newest) ? ts : newest;
   }, null);
 
-  return {
+  const page: SessionTranscriptPage = {
     sessionId: opts.sessionId,
     available: true,
     unavailableReason: null,
@@ -684,4 +691,22 @@ export async function readSessionTranscript(
     lastActivityAt: iso(lastActivity),
     malformed: tail.malformed,
   };
+
+  if (opts.includeFileChanges) {
+    // Codex records patches in a different envelope; null is the honest
+    // answer until that parser exists — never a half-parsed accounting.
+    if (codex) {
+      page.fileChanges = null;
+    } else {
+      try {
+        page.fileChanges = await collectFileChanges(path);
+      } catch {
+        // The tail read above succeeded, so the file existed moments ago; a
+        // racing cleanup loses the accounting, not the transcript page.
+        page.fileChanges = null;
+      }
+    }
+  }
+
+  return page;
 }

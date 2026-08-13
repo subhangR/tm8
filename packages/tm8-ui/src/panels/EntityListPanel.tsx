@@ -2480,7 +2480,9 @@ export function Tile({
   const done = row.deletedAt != null;
   const controlExpanded = controlCard && (detailsExpanded || flowRef !== null);
   const controlFacts = controlCard ? factsForControlCard(row) : null;
-  const linkedPullRequests = controlCard ? (props.linkedPullRequestsOf?.(row.id) ?? []) : [];
+  // Session tiles carry the same chip slot: the index resolves a session's
+  // PRs through its working_on task's tracks edges.
+  const linkedPullRequests = (controlCard || sessionTree) ? (props.linkedPullRequestsOf?.(row.id) ?? []) : [];
 
   if (sessionTree) {
     const state = row.state as unknown as Record<string, unknown>;
@@ -2508,6 +2510,11 @@ export function Tile({
         statusTone={statusTone}
         statusTitle={statusTitle}
         tasks={props.linkedTasksOf?.(row.id) ?? []}
+        badges={
+          linkedPullRequests.length > 0 ? (
+            <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
+          ) : undefined
+        }
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
