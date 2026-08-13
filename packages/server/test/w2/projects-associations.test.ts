@@ -186,9 +186,11 @@ describe('W2.G06 projects and association correction facade', () => {
       expect(listing.roots.length).toBeGreaterThan(0);
       for (const root of listing.roots) expect(parse(root).root).toBe(root);
 
-      // Browsing opens at the top, and there is nothing above the top.
-      expect(listing.roots).toContain(listing.path);
-      expect(listing.parentPath).toBeNull();
+      // The SCOPE is the filesystem root but the picker OPENS on home: `/` is
+      // one click away in the roots rail, while "register a project at /" is
+      // not two clicks from the start. See `defaultStartPath`.
+      const homeCanonical = await realpath(homedir());
+      expect(listing.path).toBe(homeCanonical);
 
       // The regression itself: the root of the volume that holds the home
       // directory used to be refused as 'outside TM8_PROJECT_ROOTS', which is
@@ -196,11 +198,12 @@ describe('W2.G06 projects and association correction facade', () => {
       const osRoot = parse(homedir()).root;
       const atRoot = await listProjectDirectories(osRoot);
       expect(atRoot.path).toBe(await realpath(osRoot));
+      expect(atRoot.parentPath).toBeNull();
 
-      // ...and the picker no longer dead-ends at home with no way up.
-      const homeCanonical = await realpath(homedir());
+      // ...and the picker no longer dead-ends at home with no way up, which is
+      // what makes opening on home safe to prefer.
       if (homeCanonical !== atRoot.path) {
-        expect((await listProjectDirectories(homeCanonical)).parentPath).not.toBeNull();
+        expect(listing.parentPath).not.toBeNull();
       }
     } finally {
       if (previous === undefined) delete process.env.TM8_PROJECT_ROOTS;

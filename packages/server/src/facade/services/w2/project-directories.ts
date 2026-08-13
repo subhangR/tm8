@@ -68,6 +68,36 @@ export async function canonicalRoots(rawRoots = configuredRoots()): Promise<stri
   return [...new Set(roots)].sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * Where the picker OPENS when the caller names no path — the home directory,
+ * falling back to the first root when home is outside the allowed window.
+ *
+ * Deliberately NOT the first root, even though the browse SCOPE is now the
+ * filesystem root. Opening on `/` would put "register a project whose working
+ * directory is the whole filesystem" two clicks from the start, and that slip
+ * is not self-correcting: `projects.files.list` is member-reachable, so the
+ * project row silently exposes every readable file under it to everyone in the
+ * space, and nothing later announces it.
+ *
+ * The asymmetry decides it. Opening on home costs an admin who genuinely wants
+ * `/` a single navigation — the roots rail lists it and `parentPath` now walks
+ * up to it. Opening on `/` costs a silent, persistent, member-visible mistake.
+ * A default is a claim about what is normal, and `/` is not the normal answer
+ * to "where does your project live".
+ */
+async function defaultStartPath(roots: readonly string[]): Promise<string> {
+  try {
+    const home = await realpath(homedir());
+    if ((await stat(home)).isDirectory() && roots.some((root) => containedBy(root, home))) {
+      return home;
+    }
+  } catch {
+    // No readable home (or none configured) — the root is still a valid place
+    // to open, and a narrowed TM8_PROJECT_ROOTS lands here by design.
+  }
+  return roots[0]!;
+}
+
 export function requireAllowed(path: string, roots: readonly string[]): void {
   if (!roots.some((root) => containedBy(root, path))) {
     throw new CollabError('forbidden', 'project directory is outside TM8_PROJECT_ROOTS');
@@ -105,7 +135,7 @@ export async function listProjectDirectories(
   rawRoots?: readonly string[],
 ): Promise<ProjectDirectoryListing> {
   const roots = await canonicalRoots(rawRoots ? [...rawRoots] : undefined);
-  const current = await canonicalDirectory(requestedPath?.trim() || roots[0]!);
+  const current = await canonicalDirectory(requestedPath?.trim() || await defaultStartPath(roots));
   requireAllowed(current, roots);
 
   let entries;
