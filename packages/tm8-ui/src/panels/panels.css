@@ -2870,3 +2870,10 @@
   border-radius: 4px;
   cursor: pointer;
 }
+
+/* Session tile chip slot (mirrors the task tile's badges row). Left padding
+   matches the 35px sub-row indent .pn-st__tasklines established, so the chips
+   start where the title text starts, not at the tile edge (user screenshot,
+   2026-08-13) — the rule itself was lost to a branch hop in #185/#187 and the
+   unstyled div rendered flush left. */
+.cv2-root .pn-st__badges { padding: 0 10px 6px 35px; }
