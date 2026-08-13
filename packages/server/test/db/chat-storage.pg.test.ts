@@ -184,9 +184,12 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
     });
   });
 
-  it('queues only the configuring human while retaining other replies as context', async () => {
+  // 112 widened this from "only the configuring human" to "every human member
+  // of the Space". The teammate's own reply stays inert — that suppression now
+  // comes from the author having no `members` row, not from an id comparison.
+  it('queues every human member while the teammate never self-triggers', async () => {
     authorReplyId = await post(fixture.identityA, 'next human turn', rootMessageId);
-    const otherReplyId = await post(fixture.identityB, 'visible context only', rootMessageId);
+    const otherReplyId = await post(fixture.identityB, 'second member asks too', rootMessageId);
     const agentReplyId = await post(
       fixture.identityA,
       'agent reply must not self-trigger',
@@ -197,7 +200,7 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
       `select user_message_id::text from public.chat_turns order by queued_at, user_message_id`,
     );
     expect(turns.map((row) => row.user_message_id).sort()).toEqual(
-      [rootMessageId, authorReplyId].sort(),
+      [rootMessageId, authorReplyId, otherReplyId].sort(),
     );
     const visibleReplies = await database.query<{ entity_id: string }>(
       `select entity_id::text from public.messages where root_message_id=$1`,

@@ -257,7 +257,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ? new ChatOrchestrator({
         db,
         runtime: chatBlock.runtime,
-        publisher: new ChatTurnPublisher(subscriptions, (await owner!()).identityId),
+        publisher: new ChatTurnPublisher(subscriptions),
         resolveLaunchConfig: chatBlock.resolveLaunchConfig,
         ...(chatBlock.onError ? { onError: chatBlock.onError } : {}),
         // F2: only the production (factory) composition gets the boot sweep —

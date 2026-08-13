@@ -24,6 +24,15 @@ interface ClaimedTurn {
   readonly requesterIdentityId: string;
   /** R9: server-resolved auth kind recorded at the human-gated thread start; null on pre-106 rows. */
   readonly requesterAuthKind?: string | null;
+  /**
+   * 112: who sent THIS turn. Equal to the configuring human on a single-member
+   * thread, different once a second member speaks. Provenance for attribution
+   * and audit — never claims: every write below still runs on
+   * `requesterIdentityId`.
+   */
+  readonly requestedByMemberId?: string | null;
+  readonly requestedByIdentityId?: string | null;
+  readonly requestedByDisplayName?: string | null;
   readonly teammateId: string;
   readonly model: string;
   readonly provider: string;
@@ -63,6 +72,24 @@ function payloadOf(item: TurnItem): unknown {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Server-written speaker line (112). A chat thread is shared, so "who is
+ * talking" cannot be inferred from position any more — an unlabelled turn
+ * would read as the configuring human whoever sent it. Every turn carries the
+ * line, including the configurer's: a convention with an exception is a
+ * convention an untrusted body can imitate.
+ *
+ * Display names are user-controlled and therefore quoted, never trusted; the
+ * member id beside them is the identifier the agent can actually resolve.
+ */
+function promptFor(turn: ClaimedTurn): string {
+  const speaker = turn.requestedByDisplayName?.trim();
+  const memberId = turn.requestedByMemberId;
+  if (!speaker && !memberId) return turn.body;
+  const label = speaker ? `"${speaker.replace(/[\r\n]+/g, ' ')}"` : 'unnamed member';
+  return `[from ${label}${memberId ? ` · member ${memberId}` : ''}]\n${turn.body}`;
 }
 
 /**
@@ -141,20 +168,38 @@ export class ChatOrchestrator {
     return drain;
   }
 
+  /**
+   * 112: any human member who can post in a chat thread queues a turn, so the
+   * poster is no longer necessarily the configuring human. Two consequences,
+   * both load-bearing:
+   *
+   *   * the lookup no longer filters on `configured_by_identity_id`. RLS on
+   *     `chat_threads` is what keeps this honest — the row is visible only if
+   *     THIS poster can read the thread root and its anchor.
+   *   * the drain is woken under the thread's CONFIGURING identity, not the
+   *     poster's. `claim_next_chat_turn` refuses every other caller, so waking
+   *     as the poster would raise `chat thread not found for this identity`
+   *     and the turn would sit queued until the configurer next spoke — which
+   *     is the silence this fix removes.
+   */
   async wakeForMessages(requesterIdentityId: string, messages: readonly MessageView[]): Promise<void> {
     const roots = [...new Set(messages
       .map((message) => message.state.rootMessageId)
       .filter((root): root is string => root !== null))];
     if (roots.length === 0) return;
-    const configured = await this.options.db.query<{ root_message_id: string }>(
+    const configured = await this.options.db.query<{
+      root_message_id: string;
+      configured_by_identity_id: string;
+    }>(
       claims(requesterIdentityId),
-      `select root_message_id
+      `select root_message_id, configured_by_identity_id
          from public.chat_threads
-        where root_message_id = any($1::uuid[])
-          and configured_by_identity_id = $2`,
-      [roots, requesterIdentityId],
+        where root_message_id = any($1::uuid[])`,
+      [roots],
     );
-    await Promise.all(configured.map((row) => this.wake(row.root_message_id, requesterIdentityId)));
+    await Promise.all(configured.map((row) => (
+      this.wake(row.root_message_id, row.configured_by_identity_id)
+    )));
   }
 
   private async drain(rootMessageId: string, requesterIdentityId: string): Promise<void> {
@@ -185,7 +230,7 @@ export class ChatOrchestrator {
         [agentMessageId, seq, item.kind, payloadOf(item)],
       );
       const part = MessagePartSchema.parse(stored);
-      this.options.publisher.publish(turn.spaceId, turn.requesterIdentityId, {
+      this.options.publisher.publish(turn.spaceId, {
         type: 'chat.turn.delta',
         threadRootId: turn.rootMessageId,
         messageId: agentMessageId,
@@ -205,7 +250,7 @@ export class ChatOrchestrator {
 
     try {
       const threadId = await this.ensureRuntime(turn);
-      for await (const item of this.options.runtime.sendTurn(threadId, { text: turn.body })) {
+      for await (const item of this.options.runtime.sendTurn(threadId, { text: promptFor(turn) })) {
         // F6 (PR188 review): claude emits an empty thinking block on some
         // turns; persisting it draws an empty "Thinking" disclosure. Skip it —
         // absence of thought is not a part.
@@ -263,7 +308,7 @@ export class ChatOrchestrator {
       }
     }
 
-    this.options.publisher.publish(turn.spaceId, turn.requesterIdentityId, {
+    this.options.publisher.publish(turn.spaceId, {
       type: 'chat.turn.done',
       threadRootId: turn.rootMessageId,
       messageId: agentMessageId,
