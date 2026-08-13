@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import { Avatar, Timestamp } from '../kit';
-import { mergeChatTurnFrame } from './turn-model';
+import { mergeChatTurnFrame, reconcileDetails } from './turn-model';
 import type { ChatEntityResolver } from './EntityChip';
 import { TurnParts } from './TurnParts';
 import type {
@@ -71,13 +71,23 @@ export function ChatHomeScreen({
   /** Message ids of the active thread's turns that are streaming right now
    *  (delta seen, done not yet). The single source of truth for `streaming`. */
   const liveTurnsRef = useRef<Set<string>>(new Set());
-  /** Monotonic count of done frames on the active thread — lets a post-send
-   *  read tell "no frames yet" apart from "the turn already finished". */
-  const turnsDoneRef = useRef(0);
-  /** Thread we just posted into and expect to start streaming — keeps the
-   *  pulse honest between configure/post and the first frame. */
+  /** Monotonic frame counter + first-seen index per message, so a done can be
+   *  attributed to a turn that STARTED before or after our own post — another
+   *  participant's finishing turn must not settle our still-queued one. */
+  const frameSeqRef = useRef(0);
+  const firstSeenRef = useRef<Map<string, number>>(new Map());
+  /** Thread we just posted into and expect to start streaming, plus the frame
+   *  counter at post time. Cleared only by a done for a turn that started
+   *  after the post (ours or a successor), or by leaving the thread. */
   const expectingRootRef = useRef<EntityId | null>(null);
-  const refreshingDetailRef = useRef(false);
+  const expectingMarkRef = useRef(0);
+  /** Per-root single-flight for participant-message refreshes — one thread's
+   *  pending refresh must not swallow another thread's. */
+  const refreshingRootsRef = useRef<Set<string>>(new Set());
+  /** Roots currently known to the sidebar — a frame for an unknown root means
+   *  another member started a thread and the list must re-read. */
+  const knownRootsRef = useRef<Set<string>>(new Set());
+  const refreshingThreadsRef = useRef(false);
 
   useEffect(() => {
     detailRef.current = detail;
@@ -85,6 +95,7 @@ export function ChatHomeScreen({
 
   const refreshThreads = useCallback(async (preferRoot?: EntityId) => {
     const next = await port.listThreads(spaceId);
+    knownRootsRef.current = new Set(next.map((thread) => thread.rootId));
     setThreads(next);
     setSelectedRootId((current) => preferRoot ?? current ?? next[0]?.rootId ?? null);
   }, [port, spaceId]);
@@ -109,18 +120,20 @@ export function ChatHomeScreen({
    *  a message we do not have yet (another participant posted). */
   const refreshDetail = useCallback(
     (rootId: EntityId) => {
-      if (refreshingDetailRef.current) return;
-      refreshingDetailRef.current = true;
+      if (refreshingRootsRef.current.has(rootId)) return;
+      refreshingRootsRef.current.add(rootId);
       void loadDetail(rootId)
         .then((next) => {
-          if (activeRootRef.current === rootId) setDetail(next);
+          if (activeRootRef.current === rootId) {
+            setDetail((current) => reconcileDetails(current, next));
+          }
         })
         .catch(() => {
           // The next frame or thread switch retries; a missed refresh only
           // delays another participant's message, it never corrupts state.
         })
         .finally(() => {
-          refreshingDetailRef.current = false;
+          refreshingRootsRef.current.delete(rootId);
         });
     },
     [loadDetail],
@@ -153,6 +166,7 @@ export function ChatHomeScreen({
     activeRootRef.current = selectedRootId;
     recentFramesRef.current = [];
     liveTurnsRef.current.clear();
+    firstSeenRef.current.clear();
     if (expectingRootRef.current && expectingRootRef.current !== selectedRootId) {
       expectingRootRef.current = null;
     }
@@ -165,7 +179,7 @@ export function ChatHomeScreen({
     void loadDetail(selectedRootId)
       .then((next) => {
         if (!alive) return;
-        setDetail(next);
+        setDetail((current) => reconcileDetails(current, next));
         stoppedRootRef.current =
           next.summary.state === 'stopped-continuable' ? selectedRootId : null;
         setPhase(
@@ -197,20 +211,35 @@ export function ChatHomeScreen({
               frame,
             ];
             liveTurnsRef.current.delete(frame.messageId);
-            turnsDoneRef.current += 1;
           } else {
             recentFramesRef.current.push(frame);
             liveTurnsRef.current.add(frame.messageId);
+            frameSeqRef.current += 1;
+            if (!firstSeenRef.current.has(frame.messageId)) {
+              firstSeenRef.current.set(frame.messageId, frameSeqRef.current);
+            }
           }
           if (recentFramesRef.current.length > 2000) {
             recentFramesRef.current = recentFramesRef.current.slice(-1000);
           }
         }
-        // Any thread's activity keeps the sidebar honest, active or not.
+        // Any thread's activity keeps the sidebar honest, active or not — and
+        // a frame for a root the list has never seen means another member
+        // started a thread: re-read the list.
+        if (!knownRootsRef.current.has(frame.threadRootId) && !refreshingThreadsRef.current) {
+          refreshingThreadsRef.current = true;
+          void refreshThreads().finally(() => {
+            refreshingThreadsRef.current = false;
+          });
+        }
         setThreads((current) =>
           current.map((thread) =>
             thread.rootId === frame.threadRootId
-              ? { ...thread, state: frame.type === 'chat.turn.done' ? 'idle' : 'streaming' }
+              ? {
+                  ...thread,
+                  state: frame.type === 'chat.turn.done' ? 'idle' : 'streaming',
+                  updatedAt: new Date().toISOString(),
+                }
               : thread,
           ),
         );
@@ -234,23 +263,35 @@ export function ChatHomeScreen({
         });
         if (stopped) setPhase('stopped-continuable');
         else if (frame.type === 'chat.turn.done') {
-          if (liveTurnsRef.current.size === 0) {
-            expectingRootRef.current = null;
-            setPhase('idle');
+          if (liveTurnsRef.current.size > 0) return;
+          // Only a done for a turn that STARTED after our post settles the
+          // expectation — another participant's older turn finishing must not
+          // hide the pulse for our still-queued one.
+          const startedAt = firstSeenRef.current.get(frame.messageId) ?? 0;
+          if (expectingRootRef.current === frame.threadRootId && startedAt < expectingMarkRef.current) {
+            return;
           }
+          expectingRootRef.current = null;
+          setPhase('idle');
         } else setPhase('streaming');
       }),
     [port, refreshDetail],
   );
 
   /** This thread's own message ids: never chip them — they are already the
-   *  transcript. Messages from OTHER sessions/threads keep their chips. */
+   *  transcript. Messages from OTHER sessions/threads keep their chips. Keyed
+   *  by the joined ids, not the detail object, so streamed part updates do not
+   *  mint a new Set and defeat every tool card's extraction memo. */
+  const ownMessageIdsKey = detail
+    ? `${detail.summary.rootId}:${detail.turns.map((turn) => turn.messageId).join(',')}`
+    : '';
   const ownMessageIds = useMemo(() => {
     if (!detail) return undefined;
     const ids = new Set<string>(detail.turns.map((turn) => turn.messageId));
     ids.add(detail.summary.rootId);
     return ids;
-  }, [detail]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by id list
+  }, [ownMessageIdsKey]);
 
   const activeConfig = detail?.summary.config ?? null;
   const selectedModel = useMemo(
@@ -280,21 +321,23 @@ export function ChatHomeScreen({
       if (selectedRootId) {
         stoppedRootRef.current = null;
         setPhase('posting-turn');
-        const doneBeforePost = turnsDoneRef.current;
         expectingRootRef.current = selectedRootId;
+        expectingMarkRef.current = frameSeqRef.current;
         await port.postTurn({
           threadRootId: selectedRootId,
           body,
           clientMutationId: newMutationId('chat-turn'),
         });
-        setDraft('');
+        // Clear only the draft we actually sent — if the user switched threads
+        // and typed something new while the post was in flight, keep it.
+        setDraft((current) => (current.trim() === body ? '' : current));
         const posted = await loadDetail(selectedRootId);
         // The user may have switched threads while the post was in flight —
         // this thread's snapshot must never overwrite another thread's screen.
         if (activeRootRef.current === selectedRootId) {
-          setDetail(posted);
+          setDetail((current) => reconcileDetails(current, posted));
           setPhase(
-            liveTurnsRef.current.size > 0 || turnsDoneRef.current === doneBeforePost
+            liveTurnsRef.current.size > 0 || expectingRootRef.current === selectedRootId
               ? 'streaming'
               : 'idle',
           );
@@ -326,16 +369,18 @@ export function ChatHomeScreen({
       ) {
         throw new Error('The node returned a different thread configuration than the one selected.');
       }
-      setDraft('');
+      setDraft((current) => (current.trim() === body ? '' : current));
       // The select effect owns loading the new thread — a second concurrent
       // read here would race it for setDetail/setPhase. `expecting` keeps the
       // pulse honest until the first frame arrives.
       expectingRootRef.current = root.threadRootId;
+      expectingMarkRef.current = frameSeqRef.current;
       setSelectedRootId(root.threadRootId);
       setPhase('streaming');
       await refreshThreads(root.threadRootId);
     } catch (error) {
-      // Never let a failed send in one thread rewrite the phase of another.
+      // Never let a failed send in one thread rewrite another's phase or show
+      // its error under an unrelated conversation.
       if (activeRootRef.current === originRoot) {
         if (continuingStoppedRoot) {
           stoppedRootRef.current = continuingStoppedRoot;
@@ -343,8 +388,8 @@ export function ChatHomeScreen({
         } else {
           setPhase('idle');
         }
+        setSubmitError(describeError(error));
       }
-      setSubmitError(describeError(error));
     }
   }, [
     anchorId,
@@ -368,13 +413,15 @@ export function ChatHomeScreen({
     stoppedRootRef.current = rootId;
     try {
       await port.interrupt(rootId);
-      liveTurnsRef.current.clear();
-      expectingRootRef.current = null;
       const stoppedDetail = await port.readThread(rootId);
+      // Live-turn bookkeeping belongs to whichever thread is active NOW — an
+      // interrupt that resolves after switching away must not touch it.
       if (activeRootRef.current === rootId) {
-        setDetail({
-          ...stoppedDetail,
-          summary: { ...stoppedDetail.summary, state: 'stopped-continuable' },
+        liveTurnsRef.current.clear();
+        expectingRootRef.current = null;
+        setDetail((current) => {
+          const merged = reconcileDetails(current, stoppedDetail);
+          return { ...merged, summary: { ...merged.summary, state: 'stopped-continuable' } };
         });
         setPhase('stopped-continuable');
       }
@@ -386,9 +433,11 @@ export function ChatHomeScreen({
         ),
       );
     } catch (error) {
-      stoppedRootRef.current = null;
-      if (activeRootRef.current === rootId) setPhase('streaming');
-      setSubmitError(describeError(error));
+      if (activeRootRef.current === rootId) {
+        stoppedRootRef.current = null;
+        setPhase('streaming');
+        setSubmitError(describeError(error));
+      }
     }
   }, [port, selectedRootId]);
 

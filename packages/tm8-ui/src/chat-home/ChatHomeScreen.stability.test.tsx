@@ -203,6 +203,83 @@ describe('Chat Home cross-thread and multiplayer safety', () => {
   });
 });
 
+describe('Chat Home snapshot reconciliation', () => {
+  it('never loses streamed content to a read that snapshotted before the stream', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    // Capture the snapshot IMMEDIATELY but delay resolution — the hostile
+    // ordering: snapshot predates the frames, resolution postdates them.
+    let holds: Array<() => void> = [];
+    let arm = false;
+    const hostile: ChatHomePort = {
+      ...port,
+      readThread: async (rootId) => {
+        const snapshot = await port.readThread(rootId);
+        if (arm) await new Promise<void>((resolve) => holds.push(resolve));
+        return snapshot;
+      },
+    };
+    const view = render(<ChatHomeScreen port={hostile} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() => expect(view.getByTestId('chat-usage-card')).toBeTruthy());
+
+    arm = true;
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Race me.' },
+    });
+    fireEvent.keyDown(view.getByLabelText('Message the chat agent'), { key: 'Enter' });
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+
+    const messageId = '019f0000-0000-7000-8000-00000000abab' as EntityId;
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.delta',
+        threadRootId: THREAD_ID,
+        messageId,
+        seq: 0,
+        part: { kind: 'text', text: 'Streamed after the snapshot.' },
+      });
+      controls.emit({
+        type: 'chat.turn.done',
+        threadRootId: THREAD_ID,
+        messageId,
+        usage: { output_tokens: 3 },
+      });
+    });
+    await waitFor(() => expect(view.getByText('Streamed after the snapshot.')).toBeTruthy());
+
+    // Resolve the stale read: the streamed answer must survive it.
+    act(() => {
+      const waiting = holds;
+      holds = [];
+      for (const release of waiting) release();
+    });
+    await waitFor(() => expect(view.getByText('Streamed after the snapshot.')).toBeTruthy());
+    expect(view.queryByText('Agent is working')).toBeNull();
+  });
+
+  it('keeps a newly typed draft when an older thread’s send resolves late', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const gated = gateReads(port);
+    const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() => {
+      act(() => gated.release());
+      expect(view.getByTestId('chat-usage-card')).toBeTruthy();
+    });
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Sent into thread A.' },
+    });
+    fireEvent.keyDown(view.getByLabelText('Message the chat agent'), { key: 'Enter' });
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+
+    fireEvent.click(view.getByRole('button', { name: /new/i }));
+    const composer = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: 'Fresh draft for a new conversation.' } });
+    act(() => gated.release());
+
+    await waitFor(() => expect(composer.value).toBe('Fresh draft for a new conversation.'));
+  });
+});
+
 describe('Chat Home entity chip suppression', () => {
   it('never chips this thread’s own messages but keeps foreign entity chips', async () => {
     const { port, controls } = createChatHomeFixturePort();

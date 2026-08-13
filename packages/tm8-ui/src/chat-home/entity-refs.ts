@@ -97,7 +97,11 @@ export function extractEntityRefs(...payloads: readonly unknown[]): ChatEntityRe
 
     if (typeof value === 'object') {
       const record = value as Record<string, unknown>;
-      if (typeof record.id === 'string' && isEntityIdLike(record.id)) {
+      // An edge row's own id is a UUIDv7 but not an openable entity — its
+      // endpoints (srcId/dstId) still chip via the key heuristic below.
+      const edgeShaped =
+        ('srcId' in record && 'dstId' in record) || ('src' in record && 'dst' in record);
+      if (!edgeShaped && typeof record.id === 'string' && isEntityIdLike(record.id)) {
         add({
           id: record.id,
           ...(typeof record.kind === 'string' ? { kind: record.kind } : {}),
