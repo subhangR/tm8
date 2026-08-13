@@ -203,7 +203,10 @@ describe('the expanded row’s Collections picker', () => {
     );
 
     fireEvent.click(within(strip).getByTestId('row-membership-trigger'));
-    const options = within(strip).getAllByTestId('row-membership-option');
+    // The menu PORTALS out of the strip (the tile clips positioned
+    // descendants — overflow:hidden + container-type), so options are
+    // queried at the document level.
+    const options = screen.getAllByTestId('row-membership-option');
     const inbox = options.find((node) => node.getAttribute('data-set') === collectionInbox.id)!;
     const empty = options.find((node) => node.getAttribute('data-set') === collectionEmpty.id)!;
     expect(inbox.getAttribute('aria-pressed')).toBe('true');
@@ -233,7 +236,8 @@ describe('the expanded row’s Collections picker', () => {
     );
     const strip = expandFirstRow();
     fireEvent.click(within(strip).getByTestId('row-membership-trigger'));
-    const offered = within(strip)
+    // Portaled menu — document-level query, same as above.
+    const offered = screen
       .getAllByTestId('row-membership-option')
       .map((node) => node.getAttribute('data-set'));
     expect(offered).toContain(collectionEmpty.id);

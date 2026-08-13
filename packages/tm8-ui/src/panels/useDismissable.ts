@@ -15,11 +15,18 @@ import { useEffect, type RefObject } from 'react';
  */
 export function useDismissable(
   open: boolean,
-  ref: RefObject<HTMLElement | null>,
+  /**
+   * One ref, or several: a menu PORTALED out of its clipping tile (see
+   * EntityControls) lives in a different subtree from its trigger, and
+   * "outside" must mean outside BOTH — with a single ref, choosing an option
+   * counted as an outside click and dismissed the menu under the cursor.
+   */
+  ref: RefObject<HTMLElement | null> | readonly RefObject<HTMLElement | null>[],
   onDismiss: () => void,
 ): void {
   useEffect(() => {
     if (!open) return;
+    const refs = Array.isArray(ref) ? (ref as readonly RefObject<HTMLElement | null>[]) : [ref as RefObject<HTMLElement | null>];
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -28,8 +35,11 @@ export function useDismissable(
       onDismiss();
     };
     const onPointerDown = (e: MouseEvent) => {
-      const el = ref.current;
-      if (el && e.target instanceof Node && !el.contains(e.target)) onDismiss();
+      if (!(e.target instanceof Node)) return;
+      const mounted = refs.filter((r) => r.current != null);
+      if (mounted.length === 0) return;
+      if (mounted.some((r) => r.current!.contains(e.target as Node))) return;
+      onDismiss();
     };
 
     document.addEventListener('keydown', onKey, true);

@@ -2679,26 +2679,11 @@
   background: var(--pn-card);
   box-shadow: 0 8px 20px rgb(0 0 0 / 0.18);
 }
-/* FLIPPED when the trigger sits too low for the menu's max-height — the
-   default `top: 100%` ran rows near the bottom of the screen straight past
-   the viewport edge. The DIRECTION is measured in `useOpensUpward`
-   (EntityControls); this ruleset only says what "up" looks like. */
-.cv2-root .lp__assignmenu--up {
-  top: auto;
-  bottom: calc(100% + 4px);
-  box-shadow: 0 -8px 20px rgb(0 0 0 / 0.18);
-}
-/* AN OPEN MENU OUTRANKS THE TILES AFTER IT. Every tile is positioned (and the
-   hovered one carries a transform, which mints a stacking context), so the
-   menu's own z-index competes only INSIDE its tile — against sibling tiles
-   later in the DOM it lost, and the menu painted UNDERNEATH the next rows.
-   Lifting the tile that currently hosts an open menu settles the contest at
-   the level it is actually fought. All three tile anatomies, one rule. */
-.cv2-root .lp__tile:has(.lp__assignmenu),
-.cv2-root .pn-tt:has(.lp__assignmenu),
-.cv2-root .pn-st:has(.lp__assignmenu) {
-  z-index: 60;
-}
+/* NOTE: the menu's real coordinates are INLINE, viewport-fixed, set by
+   `useMenuAnchor` (EntityControls) — it renders through a portal because
+   `.pn-tt`'s `overflow: hidden` + `container-type` clip and trap any
+   positioned descendant, fixed included. The `position`/`top`/`left` above
+   are the in-tile fallback for a menu rendered without an anchor. */
 .cv2-root .lp__assignopt {
   appearance: none;
   display: flex;
