@@ -31,14 +31,21 @@ export function isEntityIdLike(value: unknown): boolean {
   return typeof value === 'string' && UUIDV7.test(value);
 }
 
-/** Id-bearing keys that never name an openable graph entity. */
+/** Id-bearing keys that never name an openable graph entity — singular and
+ *  plural forms both, since batch tool args use the plurals. */
 const SKIP_KEYS = new Set([
   'spaceId',
+  'spaceIds',
   'clientMutationId',
+  'clientMutationIds',
   'edgeId',
+  'edgeIds',
   'toolCallId',
+  'toolCallIds',
   'requestId',
+  'requestIds',
   'cursorId',
+  'cursorIds',
 ]);
 
 const MAX_REFS = 8;
@@ -109,7 +116,7 @@ export function extractEntityRefs(...payloads: readonly unknown[]): ChatEntityRe
 }
 
 function idKey(key: string): boolean {
-  return key === 'id' || key.endsWith('Id') || key.endsWith('Ids');
+  return key === 'id' || key === 'ids' || key.endsWith('Id') || key.endsWith('Ids');
 }
 
 /** A UUID is unreadable; show enough of both ends to be recognisable. */

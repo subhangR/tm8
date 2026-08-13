@@ -86,6 +86,10 @@ export function mergeChatTurnFrame(
   let index = turns.findIndex((turn) => turn.messageId === frame.messageId);
 
   if (index < 0) {
+    // A done for a message we never saw a delta or snapshot row for carries
+    // nothing worth rendering — fabricating an empty assistant turn would put
+    // a blank bubble with a made-up timestamp in the transcript.
+    if (frame.type === 'chat.turn.done') return detail;
     turns.push(emptyAssistantTurn(frame.messageId));
     index = turns.length - 1;
   }

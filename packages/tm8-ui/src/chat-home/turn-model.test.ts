@@ -30,7 +30,7 @@ describe('rich turn projection', () => {
     expect(twice.turns.at(-1)?.parts).toEqual([{ seq: 7, kind: 'text', text: 'streamed once' }]);
   });
 
-  it('does not fabricate zero-valued usage when the done frame has none', () => {
+  it('ignores a done frame for a message it has never seen', () => {
     expect(hasUsage({})).toBe(false);
     const next = mergeChatTurnFrame(CHAT_HOME_FIXTURE_THREAD, {
       type: 'chat.turn.done',
@@ -38,7 +38,8 @@ describe('rich turn projection', () => {
       messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
       usage: {},
     });
-    expect(next.turns.at(-1)?.parts).toEqual([]);
+    // No fabricated empty assistant turn, no fabricated usage — unchanged.
+    expect(next.turns).toEqual(CHAT_HOME_FIXTURE_THREAD.turns);
   });
 });
 

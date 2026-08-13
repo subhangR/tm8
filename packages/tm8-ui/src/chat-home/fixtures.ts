@@ -1,4 +1,5 @@
 import type { ActorSummary, EntityId } from '@tm8/contract';
+import { mergeChatTurnFrame } from './turn-model';
 import type {
   ChatHomePort,
   ChatConfigureInput,
@@ -309,6 +310,12 @@ export function createChatHomeFixturePort(
       posts,
       interrupts,
       emit(frame) {
+        // Server truth: every part is appended durably BEFORE its frame
+        // publishes, so a snapshot read always contains what earlier frames
+        // carried. The fixture must model that or replay-pruning cannot be
+        // exercised honestly.
+        const stored = details.get(frame.threadRootId);
+        if (stored) details.set(frame.threadRootId, mergeChatTurnFrame(stored, frame));
         for (const listener of listeners) listener(frame);
       },
     },

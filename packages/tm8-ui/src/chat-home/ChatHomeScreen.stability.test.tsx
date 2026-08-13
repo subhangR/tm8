@@ -46,8 +46,10 @@ describe('Chat Home stability', () => {
     const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
 
     await waitFor(() => expect(view.getByTestId('chat-detail-loading')).toBeTruthy());
-    act(() => gated.release());
-    await waitFor(() => expect(view.queryByTestId('chat-detail-loading')).toBeNull());
+    await waitFor(() => {
+      act(() => gated.release());
+      expect(view.queryByTestId('chat-detail-loading')).toBeNull();
+    });
   });
 
   it('settles to idle when the done frame lands during the post-turn read', async () => {
@@ -147,6 +149,57 @@ describe('Chat Home stability', () => {
       });
     });
     await waitFor(() => expect(view.getAllByLabelText('Agent is working').length).toBeGreaterThan(0));
+  });
+});
+
+describe('Chat Home cross-thread and multiplayer safety', () => {
+  it('does not paint a posted thread over the screen after switching away mid-send', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const gated = gateReads(port);
+    const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() => {
+      act(() => gated.release());
+      expect(view.getByTestId('chat-usage-card')).toBeTruthy();
+    });
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Posted into thread A.' },
+    });
+    fireEvent.keyDown(view.getByLabelText('Message the chat agent'), { key: 'Enter' });
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+
+    // Switch to the new-thread composer while the post-send read is gated.
+    fireEvent.click(view.getByRole('button', { name: /new/i }));
+    await waitFor(() => expect(view.getByText('What should we work on?')).toBeTruthy());
+    act(() => gated.release());
+
+    // Thread A's snapshot must not overwrite the new-thread screen.
+    await waitFor(() => expect(view.getByText('What should we work on?')).toBeTruthy());
+    expect(view.queryByTestId('chat-usage-card')).toBeNull();
+  });
+
+  it('keeps the composer usable while another participant’s turn streams', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    await waitFor(() => expect(view.getByTestId('chat-usage-card')).toBeTruthy());
+
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.delta',
+        threadRootId: THREAD_ID,
+        messageId: '019f0000-0000-7000-8000-0000000000ff' as EntityId,
+        seq: 0,
+        part: { kind: 'text', text: 'Someone else’s agent is answering.' },
+      });
+    });
+
+    await waitFor(() => expect(view.getByText('Agent is working')).toBeTruthy());
+    const composer = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
+    expect(composer.disabled).toBe(false);
+    fireEvent.change(composer, { target: { value: 'I can still type and send.' } });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+    expect(controls.posts[0]?.body).toBe('I can still type and send.');
   });
 });
 
