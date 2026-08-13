@@ -170,7 +170,9 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 135 -> 137 (2026-08-12): collection add + collection remove.
     // 137 -> 139 (2026-08-12): project file-history + project blame.
     // 139 -> 142 (2026-08-12): worktree cherry-pick|branch|stash aliases.
-    expect(COMMAND_PATHS).toHaveLength(142);
+    // 142 -> 143 (2026-08-13): `task import-issue`, an alias over
+    // entities.create (catalog rows unmoved).
+    expect(COMMAND_PATHS).toHaveLength(143);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {
