@@ -2108,6 +2108,23 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ["tm8 message reply <message-id> '<body>' --mutation-id <uuid>"],
   }],
+  // `task import-issue` is SUGAR over `entities.create`: the GitHub read is a
+  // local network act the catalog does not model (same reasoning as the Tier 2
+  // git verbs' local git execution), and the only graph write is an ordinary
+  // task create. A `tasks.importIssue` row would have opened the catalog for a
+  // door that already exists.
+  ['task import-issue', {
+    path: ['task', 'import-issue'],
+    syntax: 'tm8 task import-issue <issue-url> [--parent <task-id>] [--mutation-id <id>]',
+    summary: 'Import a GitHub issue as a task, one-way, storing the origin link',
+    notes: [
+      'sugar over entities.create — the issue is read once from the GitHub API and nothing is ever written back',
+      'the origin URL is stored in the task description footer; the issue is not tracked afterwards',
+      'a pull request URL is refused: PRs are linked live with `tm8 task link-pr`, not copied once',
+      'a token is read from TM8_GITHUB_TOKEN, GITHUB_TOKEN or GH_TOKEN; public issues need none',
+    ],
+    examples: ['tm8 task import-issue https://github.com/owner/repo/issues/123 --parent <task-id>'],
+  }],
   // `worktree list|status` are SUGAR over operations that already exist, which
   // is what keeps the catalog closed while the grammar grows. They are aliases
   // for exactly that reason: an alias declares a second spelling of an existing
@@ -2223,6 +2240,15 @@ const COMMAND_ALIASES = new Map<string, {
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
 COMMAND_ORDER.splice(messageSendIndex < 0 ? COMMAND_ORDER.length : messageSendIndex + 1, 0, 'message reply');
+// `task import-issue`'s only wire operation is the create it performs; the
+// GitHub read is local network execution the availability model does not see.
+COMMAND_OPS.set('task import-issue', ['entities.create']);
+const taskLinkCommitIndex = COMMAND_ORDER.indexOf('task link-commit');
+COMMAND_ORDER.splice(
+  taskLinkCommitIndex < 0 ? COMMAND_ORDER.length : taskLinkCommitIndex + 1,
+  0,
+  'task import-issue',
+);
 COMMAND_OPS.set('worktree list', ['collections.query']);
 COMMAND_OPS.set('worktree status', ['entities.get']);
 COMMAND_ORDER.push('worktree list', 'worktree status');
