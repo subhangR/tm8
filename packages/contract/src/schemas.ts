@@ -66,6 +66,7 @@ import type {
   NotificationItem, Page, PaletteAction, PatchEdgeInput, PatchEntityInput,
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot, StartChatThreadInput,
+  StartChatThreadResult,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
   CommitSessionAttribution,
   ProjectBlameHunk, ProjectBranch, ProjectBranchTopology,
@@ -839,6 +840,10 @@ export const StartChatThreadInputSchema: z.ZodType<StartChatThreadInput> = z.obj
   teammateId: EntityIdSchema,
   model: z.string().min(1),
   clientMutationId: z.string().min(1),
+}).strict();
+
+export const StartChatThreadResultSchema: z.ZodType<StartChatThreadResult> = z.object({
+  thread: ChatThreadSummarySchema,
 }).strict();
 
 export const ChatTurnFrameSchema: z.ZodType<ChatTurnFrame> = z.discriminatedUnion('type', [

@@ -159,7 +159,7 @@ describe('what this node is, measured rather than assumed', () => {
     // tranche, six execution.git* routes, collections membership). 156 is
     // MEASURED off /health on main (routes, not catalog rows) — the same
     // number event/message pin, so the three files cannot silently diverge.
-    expect(h.operations).toBe(156);
+    expect(h.operations).toBe(157);
     // `implemented` is registry.size — MOUNTED handlers, not behaviourally
     // implemented. Asserted as a floor only, never quoted as an implemented count.
     expect(h.implemented).toBeGreaterThan(0);

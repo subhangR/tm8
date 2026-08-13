@@ -22,12 +22,12 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {135/133/134/132}: the four credentials.* rows.
         // -> {137/135/136/134}: projects.files.list/attach.
         // -> {138/136/137/135} (2026-08-09, merge): execution.dispatch.
-        total: 157,
-        v1: 155,
+        total: 158,
+        v1: 156,
         reserved: 2,
-        http: 156,
+        http: 157,
         ws: 1,
-        registerableV1Http: 154,
+        registerableV1Http: 155,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

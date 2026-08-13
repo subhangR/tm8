@@ -126,6 +126,7 @@ declare
   result jsonb;
 begin
   perform internal.require_identity();
+  perform internal.require_human_auth_kind();
   if p_client_mutation_id is null or btrim(p_client_mutation_id) = '' then
     raise exception 'clientMutationId is required' using errcode = '22023';
   end if;
@@ -285,6 +286,7 @@ begin
   return jsonb_build_object(
     'turnId', turn_row.turn_id,
     'rootMessageId', binding.root_message_id,
+    'spaceId', binding.space_id,
     'userMessageId', turn_row.user_message_id,
     'agentMessageId', turn_row.agent_message_id,
     'body', user_message.body,

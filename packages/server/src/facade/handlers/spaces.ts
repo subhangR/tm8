@@ -10,6 +10,7 @@
 import {
   CollabError,
   type CollectionResult,
+  type ChatThreadSummary,
   type HomeSnapshot,
   type NavChannelNode,
   type SpaceKindCounts,
@@ -309,6 +310,32 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
         viewerIdentity,
       );
       const activityPage = await loadActivity(q, { spaceId, limit: 20 });
+      const chatThreads = await q.query<{
+        root_message_id: string;
+        anchor_id: string;
+        teammate_id: string;
+        model: string;
+        created_at: string;
+        last_reply_at: string | null;
+      }>(
+        `select ct.root_message_id, ct.anchor_id, ct.teammate_id, ct.model,
+                to_char(ct.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
+                to_char(max(reply.created_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as last_reply_at
+           from public.chat_threads ct
+           left join public.messages reply on reply.root_message_id = ct.root_message_id
+          where ct.space_id = $1
+          group by ct.root_message_id, ct.anchor_id, ct.teammate_id, ct.model, ct.created_at
+          order by coalesce(max(reply.created_at), ct.created_at) desc, ct.root_message_id desc`,
+        [spaceId],
+      );
+      const chatThreadItems: ChatThreadSummary[] = chatThreads.map((thread) => ({
+        rootMessageId: thread.root_message_id,
+        anchorId: thread.anchor_id,
+        teammateId: thread.teammate_id,
+        model: thread.model,
+        createdAt: thread.created_at,
+        lastReplyAt: thread.last_reply_at,
+      }));
 
       const home: HomeSnapshot = {
         readyToPull: readyToPull as CollectionResult,
@@ -328,6 +355,7 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
         // through — the cursor itself is microsecond-exact as of the fix to
         // ActivityRow.cursor_created_at.
         activity: { items: activityPage.items, nextCursor: null },
+        chatThreads: chatThreadItems,
       };
       return home;
     });
