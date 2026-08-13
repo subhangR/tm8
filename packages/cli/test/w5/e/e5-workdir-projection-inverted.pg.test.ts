@@ -183,16 +183,20 @@ describe('E-5 — the projection and handler now agree on the supported modes', 
   });
 
   /**
-   * ⚠ THE ASSERTION THE FINDING RESTS ON. The projection says this mode answers
-   * not_implemented. `execution-handlers.ts:565-567` passes it through as
-   * supported. If this test goes RED, the projection is right and my reading of
-   * the handler is wrong — which is exactly the outcome I want to be told about.
+   * 2026-08-13: THE FINDING THIS FILE PINNED IS RESOLVED. The git wave landed
+   * worktree as a first-class advertised mode (`--workdir project|scratch|
+   * worktree`, spawn provisions a real lane), so the old assertion — local
+   * exit 2 because unadvertised — now asserts a bug that was fixed. The mode
+   * is held to the same bar as `scratch`: it reaches the handler and is not
+   * refused as unimplemented.
    */
-  it('--workdir worktree is rejected locally because it is not advertised', async () => {
+  it('--workdir worktree is advertised and reaches the handler like scratch', async () => {
     const r = await spawnWith('worktree');
     measured['worktree'] = r;
-    expect(r.code).toBe(2);
-    expect(r.stderr).toContain('project|scratch');
+    expect(r.code).not.toBe(0);
+    expect(isNotImplemented(r.stderr), `unexpected not_implemented: ${r.stderr}`).toBe(false);
+    // Not refused LOCALLY as an unknown mode — the old inversion, inverted.
+    expect(r.code).not.toBe(2);
   });
 
   /**
@@ -206,7 +210,7 @@ describe('E-5 — the projection and handler now agree on the supported modes', 
    * So the honest repair — renaming the mode in the note — turns this green,
    * and a reword that keeps the inversion keeps it red.
    */
-  it('the shipped projection advertises exactly project and scratch', () => {
+  it('the shipped projection advertises project, scratch AND worktree', () => {
     // ⚠ `DISCOVERY` IS A READONLY ARRAY, NOT A KEYED MAP (`operations.ts:1312`).
     // The raw table in that file IS keyed by operation name, and reading the
     // table led me to index the EXPORT the same way. It returned `undefined`,
@@ -217,8 +221,9 @@ describe('E-5 — the projection and handler now agree on the supported modes', 
     const row = DISCOVERY.find((d) => d.operation === 'execution.spawn');
     // The projection field is `syntax` (the source table's `syn` is internal —
     // asserting on `syn` returned undefined, a false all-clear).
-    expect(row?.syntax).toContain('--workdir project|scratch');
-    expect(row?.syntax).not.toContain('project|worktree|scratch');
-    expect(row?.notes.some((note) => /worktree is not advertised/.test(note))).toBe(true);
+    expect(row?.syntax).toContain('--workdir project|scratch|worktree');
+    // The contradiction this file existed to pin: a note claiming worktree is
+    // unadvertised while the syntax advertises it. Neither half may return.
+    expect(row?.notes.some((note) => /worktree is not advertised/.test(note))).toBe(false);
   });
 });

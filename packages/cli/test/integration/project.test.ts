@@ -155,7 +155,11 @@ describe('what this node is, measured rather than assumed', () => {
       `[g06] ${server.baseUrl} operations=${h.operations} registered=${h.implemented} ` +
         `bind-start ${server.bindStart.files}/${server.bindStart.digest}`,
     );
-    expect(h.operations).toBe(137); // +1: projects.files.read, the viewer half. MEASURED off /health (routes, not catalog rows).
+    // 137 -> 156 (2026-08-13): this pin predates several merged lanes (files
+    // tranche, six execution.git* routes, collections membership). 156 is
+    // MEASURED off /health on main (routes, not catalog rows) — the same
+    // number event/message pin, so the three files cannot silently diverge.
+    expect(h.operations).toBe(156);
     // `implemented` is registry.size — MOUNTED handlers, not behaviourally
     // implemented. Asserted as a floor only, never quoted as an implemented count.
     expect(h.implemented).toBeGreaterThan(0);

@@ -152,7 +152,9 @@ describe('the node, measured rather than reported', () => {
     // upgrade path and is not a mounted HTTP route.
     // Already red at 141 before the collections membership rows landed; 143 is
     // MEASURED off /health on the merged tree (routes, not catalog rows).
-    expect(health.operations).toBe(155);
+    // 155 -> 156 (2026-08-13, MEASURED off /health on main): one route joined
+    // between the 2026-08-12 155-pin and the git-track re-measure.
+    expect(health.operations).toBe(156);
     // `implemented` is `registry.size` — REGISTERED handlers, not behaviourally
     // implemented ones. No expected number is asserted here on purpose: it moves
     // as composition tranches land, and pinning it would turn another wave's
