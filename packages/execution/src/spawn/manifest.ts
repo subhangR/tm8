@@ -291,13 +291,28 @@ export function resolveLaunchConfig(
   const inheritedAccessMode =
     asAccessMode(inherited?.accessMode) ??
     (inheritedPermissionMode ? accessModeForPermissionMode(inheritedPermissionMode) : null);
-  const permissionMode = requestedAccessMode
+  const requestedPermissionMode = requestedAccessMode
     ? permissionModeForAccessMode(requestedAccessMode)
     : asPermissionMode(env.TM8_PERMISSION_MODE?.trim()) ??
       (inheritedAccessMode ? permissionModeForAccessMode(inheritedAccessMode) : null) ??
       asPermissionMode(member.permissionMode) ??
       DEFAULT_PERMISSION_MODE;
-  const accessMode = requestedAccessMode ?? accessModeForPermissionMode(permissionMode);
+
+  // THE DISPATCHER ALWAYS RUNS UNPROMPTED, and that outranks every link above
+  // rather than joining the chain as one more default. The dispatcher is
+  // resident and unattended: nobody is sitting at its PTY to answer an
+  // approval, and its entire job — read the request, decide the teammate,
+  // spawn the session — is shell commands that a prompting posture stops dead
+  // at the first one. A dispatcher parked on an approval still reports
+  // `running` and still answers liveness, so the failure looks like a
+  // dispatcher that simply never did anything. There is no posture in which a
+  // prompting dispatcher is the intended thing, so nothing below gets to
+  // select one — not the persona, not the node's env override, not the caller.
+  const dispatcher = mode === 'dispatcher';
+  const permissionMode = dispatcher ? 'bypassPermissions' : requestedPermissionMode;
+  const accessMode = dispatcher
+    ? 'fullAccess'
+    : requestedAccessMode ?? accessModeForPermissionMode(permissionMode);
   const reasoningEffort = asReasoningEffort(request.reasoningEffort);
 
   // Each provider resolves independently. New provider keys outrank the

@@ -107,6 +107,36 @@ describe('resolveLaunchConfig', () => {
     ).toBe('auto');
   });
 
+  /**
+   * The dispatcher link, which is the only one that outranks the request.
+   * A resident dispatcher has no human at its PTY and does its whole job
+   * through shell commands, so any prompting posture parks it silently while
+   * it still reports `running`.
+   */
+  it('always launches a dispatcher with bypass, whoever asked for what', () => {
+    const parked = { accessMode: 'plan' as const, permissionMode: 'readOnly' as const };
+    for (const resolved of [
+      resolveLaunchConfig({ ...base, mode: 'dispatcher' }, context(), {}),
+      resolveLaunchConfig(base, context({ mode: 'dispatcher', permissionMode: 'readOnly' }), {}),
+      resolveLaunchConfig(
+        { ...base, mode: 'dispatcher', accessMode: 'plan' },
+        context({ permissionMode: 'readOnly' }),
+        { TM8_PERMISSION_MODE: 'interactive' },
+        parked,
+      ),
+    ]) {
+      expect(resolved).toMatchObject({
+        mode: 'dispatcher',
+        permissionMode: 'bypassPermissions',
+        accessMode: 'fullAccess',
+      });
+    }
+    // Control: the same inputs on any other mode still resolve down the chain.
+    expect(
+      resolveLaunchConfig({ ...base, accessMode: 'plan' }, context(), {}, parked).permissionMode,
+    ).toBe('readOnly');
+  });
+
   it('ignores permission and mode values that are not in the enum', () => {
     expect(
       resolveLaunchConfig(base, context({ permissionMode: 'yolo' }), {}).permissionMode,
