@@ -46,6 +46,7 @@ interface MemberRow extends MembershipRow {
 interface InviteRow {
   id: string;
   code: string;
+  role: 'admin' | 'member';
   max_uses: number;
   use_count: number;
   expires_at: Date | string | null;
@@ -178,6 +179,7 @@ function toInvite(row: InviteRow): InviteView {
   return {
     id: row.id,
     code: row.code,
+    role: row.role,
     maxUses: Number(row.max_uses),
     uses: Number(row.use_count),
     expiresAt: isoOrNull(row.expires_at),
@@ -269,7 +271,7 @@ async function loadMembers(q: Querier, spaceId: string): Promise<MemberView[]> {
 
 async function loadInvites(q: Querier, spaceId: string): Promise<InviteView[]> {
   const rows = await q.query<InviteRow>(
-    `select id, code, max_uses, use_count, expires_at, revoked_at
+    `select id, code, role, max_uses, use_count, expires_at, revoked_at
        from public.space_invites
       where space_id = $1
       order by created_at desc, id desc`,
@@ -402,7 +404,7 @@ export class W2IdentitySpacesService {
     const owner = await this.deps.owner();
     const spaceId = requireUuidParam(ctx, 'spaceId');
     const body = bodyObject(ctx.body);
-    assertStrictKeys(body, ['actorId', 'clientMutationId', 'maxUses', 'expiresAt']);
+    assertStrictKeys(body, ['actorId', 'clientMutationId', 'maxUses', 'expiresAt', 'role']);
     const clientMutationId = requireMutationId(body);
     const actorId = optionalActorId(body);
     const maxUses = body.maxUses ?? 1;
@@ -413,12 +415,53 @@ export class W2IdentitySpacesService {
     if (expiresAt !== null && (typeof expiresAt !== 'string' || Number.isNaN(Date.parse(expiresAt)))) {
       throw new CollabError('invalid_input', 'expiresAt must be an ISO timestamp or null');
     }
+    // 114 R4. Checked here as well as in SQL, and the two are not redundant:
+    // this one turns a wrong word into a 400 with the vocabulary in it, while
+    // the SQL check is what actually holds when a caller reaches the RPC by
+    // another road. Absent means 'member' — the value every pre-114 invite
+    // already had.
+    const role = body.role ?? 'member';
+    if (role !== 'admin' && role !== 'member') {
+      throw new CollabError('invalid_input', "role must be 'admin' or 'member': an invite cannot confer ownership");
+    }
     const result = await this.deps.db.rpc<InviteMutationResult>(
       claimsFor(owner, ctx, commandEnvelope(ctx)),
       'create_invite',
-      [spaceId, maxUses, expiresAt, actorId, clientMutationId],
+      [spaceId, maxUses, expiresAt, actorId, clientMutationId, role],
     );
     return { kind: 'json' as const, status: 201, data: toInvite(result.invite) };
+  };
+
+  /**
+   * `spaces.members.updateRole` — the space-role writer (114).
+   *
+   * The subject is the PATH pair (spaceId, memberId) and both travel to SQL,
+   * where `set_member_role` names them in ONE predicate. Passing only the
+   * member id would authorize against a space the row is not in.
+   *
+   * Every rule — admin to change anything, owner to touch the owner role, and
+   * never demote the last owner — is enforced in the RPC, not here. This
+   * handler validates the vocabulary and binds claims; it makes no
+   * authorization decision, which is what keeps there being exactly one place
+   * the rules live.
+   */
+  readonly spacesMembersUpdateRole: OperationHandler = async (ctx) => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const memberId = requireUuidParam(ctx, 'memberId');
+    const body = bodyObject(ctx.body);
+    assertStrictKeys(body, ['actorId', 'clientMutationId', 'role']);
+    const clientMutationId = requireMutationId(body);
+    const actorId = optionalActorId(body);
+    const role = requireString(body, 'role');
+    if (role !== 'owner' && role !== 'admin' && role !== 'member') {
+      throw new CollabError('invalid_input', "role must be 'owner', 'admin' or 'member'");
+    }
+    return this.deps.db.rpc(
+      claimsFor(owner, ctx, commandEnvelope(ctx)),
+      'set_member_role',
+      [spaceId, memberId, role, actorId, clientMutationId],
+    );
   };
 
   readonly spacesInvitesRevoke: OperationHandler = async (ctx) => {

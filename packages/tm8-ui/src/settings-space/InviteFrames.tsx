@@ -1,47 +1,159 @@
 /**
  * T2-1c INVITES (oracle L91–L122) and T2-1d REDEEM LANDING (L124–L141).
  *
- * THE WHOLE FEATURE HAS NO SEAM. Searched on 2026-07-29 and stated plainly:
- * `data/seam.ts` has no invite read and no invite command; `@tm8/contract`
- * defines no invite DTO. That is a MISSING CAPABILITY, not a missing wire, and
- * it changes what honesty requires here.
+ * WHAT THIS FILE USED TO SAY, AND WHY IT WAS HALF WRONG. Its header opened
+ * "THE WHOLE FEATURE HAS NO SEAM… That is a MISSING CAPABILITY, not a missing
+ * wire." The first half was true — `data/seam.ts` carried no invite verb. The
+ * second half was false: `create_invite`, `w2_revoke_invite` and
+ * `redeem_invite` had been in `007_rpc_catalog.sql` since W1, with
+ * `spaces.invites.*` in the contract catalog the whole time. The node could
+ * always do this. **"The seam cannot" and "the node cannot" are different
+ * facts, and only one of them is a missing capability** — a screen can only
+ * observe the first, and this file reported the second.
  *
- * So the list does not render specimen rows in product. A screen showing
- * `i-7f3c · member · 0/5 used · expires in 5d` when nothing was ever read is
- * the worst artefact this surface could produce — every one of those fields
- * reads as measured. Product gets one quiet line saying no invite list exists
- * to read (D-law 9: an absence is stated, not shouted), and the specimen rows
- * live on the dev review board where they are labelled as the oracle's words.
+ * It is wired now (seam Amendment 11; migration 114 added the role an invite
+ * confers). `InvitesPanel` reads, creates, copies and revokes for real, and
+ * the specimen rows moved to their own component so the dev review board can
+ * still diff the canvas without product ever reaching them.
  *
- * The CONTROLS still exist, because R7 says unavailable ≠ invisible: create,
- * copy, revoke and join all render disabled-with-reason. A user learns the
- * feature exists and learns why it cannot run.
+ * WHAT IS STILL REFUSED, and it is a refusal rather than a gap: the redeem
+ * landing at the foot of this file. `auth.invite.resolve` and
+ * `spaces.invites.redeem` both exist, but no `/join/<code>` route mounts this
+ * card against them yet — so its primary action carries
+ * `INVITE_REDEEM_LANDING_UNWIRED`, which names the two live operations and the
+ * CLI verb that works today rather than claiming nothing can.
+ *
+ * R7 still governs throughout: unavailable ≠ invisible.
  */
+import { useState } from 'react';
+import type { CreateInviteInput, SpaceInviteView, SpaceMemberRole } from '@tm8/contract';
 import { BrandMark } from '../kit';
 import { DisabledAction, DisabledIconControl } from '../panels';
-import { defaultInviteRole } from './port';
+import { defaultInviteRole, inviteRoles } from './port';
 import type { RedeemState, SpecimenInvite } from './types';
 import {
-  INVITE_COPY_UNAVAILABLE,
-  INVITE_CREATE_UNAVAILABLE,
-  INVITE_REDEEM_UNAVAILABLE,
-  INVITE_REVOKE_UNAVAILABLE,
-  INVITES_UNREADABLE,
+  INVITE_CREATE_NOT_ADMIN,
+  INVITE_REDEEM_LANDING_UNWIRED,
+  INVITE_REVOKE_NOT_ADMIN,
 } from './reasons';
+
+/**
+ * The join URL a code becomes.
+ *
+ * Built from the CURRENT ORIGIN, never from a configured base: the person
+ * copying it reached this screen at some origin, and that is the one their
+ * colleague can also reach. A configured base goes stale silently and produces
+ * a link that fails for the recipient and works for the sender — the worst
+ * failure shape for a thing whose entire job is to be sent to somebody else.
+ *
+ * The route it names is not mounted yet, which is stated next to the control.
+ * The CODE is what actually carries the capability, and `tm8 space invite
+ * redeem <code>` consumes it today.
+ */
+export function joinUrlFor(code: string, origin?: string): string {
+  const base = origin ?? (typeof window === 'undefined' ? '' : window.location.origin);
+  return `${base}/join/${code}`;
+}
 
 export interface InvitesPanelProps {
   /**
-   * `null` in product — nothing can read invites. The dev board passes the
-   * oracle's rows so the built list can be diffed against the canvas; the
-   * prop is named for what it is so a future caller cannot mistake specimen
-   * rows for data.
+   * The live list, newest first. `null` means NOT LOADED — the panel says so
+   * rather than drawing an empty list, because "no invites exist" and "the read
+   * has not answered" are different facts and only one of them is actionable.
+   */
+  invites?: readonly SpaceInviteView[] | null;
+  /** Absent ⇒ this viewer cannot mint one; the control renders locked. */
+  onCreate?: (input: Omit<CreateInviteInput, 'clientMutationId' | 'actorId'>) => Promise<unknown>;
+  /** Absent ⇒ revoke renders locked, for the same reason. */
+  onRevoke?: (inviteId: string) => Promise<unknown>;
+  /** Injected in tests; production reads `window.location.origin`. */
+  origin?: string;
+  /**
+   * The dev review board's oracle rows. Kept so the canvas can still be
+   * diffed, and still named for what it is so nobody mistakes it for data.
+   * When supplied it REPLACES the live list.
    */
   specimen?: readonly SpecimenInvite[] | null;
 }
 
-export function InvitesPanel({ specimen = null }: InvitesPanelProps) {
-  const active = (specimen ?? []).filter((i) => !i.revoked);
-  const revoked = (specimen ?? []).filter((i) => i.revoked);
+/**
+ * The roles an invite may confer, from REGISTRY DATA (114 R4: never `owner`).
+ * See `port.inviteRoles` for why this is derived and not a written pair.
+ */
+type InviteRole = Exclude<SpaceMemberRole, 'owner'>;
+
+/** Expiry choices, as offsets. `null` = never, which is the RPC's own default. */
+const EXPIRY_CHOICES: ReadonlyArray<{ label: string; days: number | null }> = [
+  { label: 'never expires', days: null },
+  { label: 'expires in 7 days', days: 7 },
+  { label: 'expires in 30 days', days: 30 },
+];
+
+export function InvitesPanel({
+  invites = null,
+  onCreate,
+  onRevoke,
+  origin,
+  specimen = null,
+}: InvitesPanelProps) {
+  if (specimen !== null) return <SpecimenInvitesPanel specimen={specimen} />;
+
+  const roles = inviteRoles();
+  // The least-privileged role is the default: an invitation should grant the
+  // smallest thing that works, and the person minting it can widen it in one
+  // click on the control right there.
+  const [role, setRole] = useState<string>(defaultInviteRole());
+  const [maxUses, setMaxUses] = useState(1);
+  const [expiryDays, setExpiryDays] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  /** Which code was last copied, so the control can confirm it happened. */
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const rows = invites ?? [];
+  const active = rows.filter((i) => !i.revoked);
+  const revoked = rows.filter((i) => i.revoked);
+
+  async function create() {
+    if (!onCreate) return;
+    setBusy(true);
+    setFailure(null);
+    try {
+      await onCreate({
+        // The vocabulary came from the registry, so the cast asserts what the
+        // derivation already guarantees: `inviteRoles()` is every role except
+        // the owner word, which is exactly `InviteRole`.
+        role: role as InviteRole,
+        maxUses,
+        // An offset resolved HERE, at click time, from the browser's clock.
+        // The alternative — sending "7 days" and letting the server resolve it
+        // — would make the expiry depend on which clock answered, and the two
+        // disagree often enough to matter for a thing measured in days.
+        expiresAt:
+          expiryDays === null
+            ? null
+            : new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString(),
+      });
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy(code: string) {
+    const url = joinUrlFor(code, origin);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(code);
+    } catch {
+      // Clipboard access is refusable (permissions, insecure origin, jsdom).
+      // Selecting the link so it can be copied by hand is the honest fallback;
+      // reporting success we did not have is not.
+      setCopied(null);
+      setFailure(`could not reach the clipboard — copy this by hand: ${url}`);
+    }
+  }
 
   return (
     <>
@@ -53,42 +165,114 @@ export function InvitesPanel({ specimen = null }: InvitesPanelProps) {
       {/* create — role + budget + expiry at creation (oracle L99–L104) */}
       <div className="set-invite-form">
         <div style={{ display: 'flex', gap: 6 }}>
-          <DisabledIconControl label="invite role" reason={INVITE_CREATE_UNAVAILABLE}>
-            <span className="set-field set-field--grow">role: {defaultInviteRole()} ▾</span>
-          </DisabledIconControl>
-          <DisabledIconControl label="invite use budget" reason={INVITE_CREATE_UNAVAILABLE}>
-            <span className="set-field">5 uses ▾</span>
-          </DisabledIconControl>
+          <select
+            className="set-field set-field--grow"
+            aria-label="invite role"
+            data-testid="invite-role"
+            value={role}
+            disabled={!onCreate || busy}
+            onChange={(e) => setRole(e.target.value)}
+          >
+            {roles.map((r) => (
+              <option key={r} value={r}>
+                joins as {r}
+              </option>
+            ))}
+          </select>
+          <select
+            className="set-field"
+            aria-label="invite use budget"
+            data-testid="invite-uses"
+            value={maxUses}
+            disabled={!onCreate || busy}
+            onChange={(e) => setMaxUses(Number(e.target.value))}
+          >
+            {[1, 5, 25].map((n) => (
+              <option key={n} value={n}>
+                {n} {n === 1 ? 'use' : 'uses'}
+              </option>
+            ))}
+          </select>
+          <select
+            className="set-field"
+            aria-label="invite expiry"
+            data-testid="invite-expiry"
+            value={expiryDays === null ? '' : String(expiryDays)}
+            disabled={!onCreate || busy}
+            onChange={(e) => setExpiryDays(e.target.value === '' ? null : Number(e.target.value))}
+          >
+            {EXPIRY_CHOICES.map((c) => (
+              <option key={c.label} value={c.days === null ? '' : String(c.days)}>
+                {c.label}
+              </option>
+            ))}
+          </select>
         </div>
-        {/* The refusal skin IS the brass chip geometry (honesty.css L46–55:
-            brand-2 / brand-soft / r6 / 3px 12px / 12px 600), so the control
-            wears it directly rather than nesting a second brass box inside
-            it. `set-refuse--block` only makes it full-width, which is the one
-            thing the oracle adds here (L104 `padding:4px 0;text-align:center`). */}
-        <span className="set-refuse--block">
-          <DisabledAction reason={INVITE_CREATE_UNAVAILABLE} label="create invite link">
-            Create invite link
-          </DisabledAction>
+
+        {onCreate ? (
+          <button
+            type="button"
+            className="set-refuse--block"
+            data-testid="invite-create"
+            disabled={busy}
+            onClick={() => void create()}
+          >
+            {busy ? 'Creating…' : 'Create invite link'}
+          </button>
+        ) : (
+          <span className="set-refuse--block">
+            <DisabledAction reason={INVITE_CREATE_NOT_ADMIN} label="create invite link">
+              Create invite link
+            </DisabledAction>
+          </span>
+        )}
+
+        {/* Stated once, next to the control that mints them, rather than in a
+            tooltip nobody opens: an invite is a bearer capability. */}
+        <span className="set-absent__why">
+          anyone holding the link can join as {role} until it is used up or revoked — send it the way
+          you would send a password
         </span>
+
+        {failure ? (
+          <span className="set-absent__why" role="alert" data-testid="invite-error">
+            {failure}
+          </span>
+        ) : null}
       </div>
 
       <div className="set-section__scroll">
-        {specimen === null ? (
+        {invites === null ? (
           <div className="set-absent" data-testid="invites-absent">
-            <span className="set-absent__head">No invite list exists to read.</span>
+            <span className="set-absent__head">The invite list has not been read.</span>
             <span className="set-absent__why">
-              {INVITES_UNREADABLE.cause} — {INVITES_UNREADABLE.remedy}
+              this is an unread, not a measured empty — listing invites needs admin in this space
             </span>
           </div>
         ) : (
           <>
             <div className="set-invite__group set-eyebrow">Active · {active.length}</div>
+            {active.length === 0 ? (
+              <div className="set-absent" data-testid="invites-none-active">
+                <span className="set-absent__head">No live invitations.</span>
+                <span className="set-absent__why">
+                  the list was read and carries none — create one above to invite somebody
+                </span>
+              </div>
+            ) : null}
             {active.map((i) => (
-              <InviteRow invite={i} key={i.code} />
+              <LiveInviteRow
+                invite={i}
+                key={i.id}
+                origin={origin}
+                copied={copied === i.code}
+                onCopy={() => void copy(i.code)}
+                {...(onRevoke ? { onRevoke: () => void onRevoke(i.id) } : {})}
+              />
             ))}
             <div className="set-invite__group set-eyebrow">Revoked · {revoked.length}</div>
             {revoked.map((i) => (
-              <InviteRow invite={i} key={i.code} />
+              <LiveInviteRow invite={i} key={i.id} origin={origin} copied={false} />
             ))}
           </>
         )}
@@ -97,7 +281,109 @@ export function InvitesPanel({ specimen = null }: InvitesPanelProps) {
   );
 }
 
-/** One invite row. Revoked rows keep their audit trail struck through, never deleted (oracle L137). */
+/**
+ * One live invite row.
+ *
+ * A revoked row KEEPS ITS CODE VISIBLE and struck through rather than being
+ * deleted (oracle L137). The code is dead — `redeem_invite` refuses it with
+ * 42501 — so showing it discloses nothing, and it is the only way somebody
+ * holding a link that stopped working can confirm which link it was.
+ */
+function LiveInviteRow({
+  invite,
+  origin,
+  copied,
+  onCopy,
+  onRevoke,
+}: {
+  invite: SpaceInviteView;
+  origin?: string;
+  copied: boolean;
+  onCopy?: () => void;
+  onRevoke?: () => void;
+}) {
+  const dead = invite.revoked;
+  const exhausted = !dead && invite.uses >= invite.maxUses;
+  return (
+    <div className={dead ? 'set-invite set-invite--revoked' : 'set-invite'} data-testid="invite-row">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <span className="set-invite__code">{invite.code}</span>
+        <span className="set-invite__meta">
+          joins as {invite.role} · {invite.uses}/{invite.maxUses} used
+          {exhausted ? ' · used up' : ''}
+        </span>
+        <div className="set-section__grow" />
+        {dead ? (
+          <span className="set-invite__revoked-word">revoked</span>
+        ) : (
+          <>
+            {onCopy ? (
+              <button
+                type="button"
+                className="set-invite__meta"
+                style={{ color: 'var(--pn-brand-2)' }}
+                data-testid="invite-copy"
+                aria-label={`copy the join link for ${invite.code}`}
+                onClick={onCopy}
+              >
+                {copied ? '✓ copied' : '⧉ copy link'}
+              </button>
+            ) : null}
+            {onRevoke ? (
+              <button
+                type="button"
+                className="set-invite__meta"
+                data-testid="invite-revoke"
+                aria-label={`revoke ${invite.code}`}
+                onClick={onRevoke}
+              >
+                revoke
+              </button>
+            ) : (
+              <DisabledIconControl label={`revoke ${invite.code}`} reason={INVITE_REVOKE_NOT_ADMIN}>
+                <span className="set-invite__meta">revoke</span>
+              </DisabledIconControl>
+            )}
+          </>
+        )}
+      </div>
+      <span className="set-invite__stamp">
+        {dead
+          ? 'revoked — the code no longer joins anyone, and it is kept so a stale link can still be identified'
+          : `${joinUrlFor(invite.code, origin)} · ${
+              invite.expiresAt === null ? 'never expires' : `expires ${invite.expiresAt}`
+            }`}
+      </span>
+    </div>
+  );
+}
+
+/** The oracle's rows, unchanged — dev review board only, never product. */
+function SpecimenInvitesPanel({ specimen }: { specimen: readonly SpecimenInvite[] }) {
+  const active = specimen.filter((i) => !i.revoked);
+  const revoked = specimen.filter((i) => i.revoked);
+  return (
+    <>
+      <div className="set-section__head">
+        <span className="set-section__title">Invites</span>
+        <div className="set-section__grow" />
+        <span className="set-invite__meta">oracle specimen — not data</span>
+      </div>
+      <div className="set-section__scroll">
+        <div className="set-invite__group set-eyebrow">Active · {active.length}</div>
+        {active.map((i) => (
+          <InviteRow invite={i} key={i.code} />
+        ))}
+        <div className="set-invite__group set-eyebrow">Revoked · {revoked.length}</div>
+        {revoked.map((i) => (
+          <InviteRow invite={i} key={i.code} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** One specimen row. Revoked rows keep their audit trail struck through (oracle L137). */
 function InviteRow({ invite }: { invite: SpecimenInvite }) {
   const dead = invite.revoked;
   return (
@@ -108,20 +394,7 @@ function InviteRow({ invite }: { invite: SpecimenInvite }) {
           {invite.role} · {invite.used}/{invite.uses} used
         </span>
         <div className="set-section__grow" />
-        {dead ? (
-          <span className="set-invite__revoked-word">revoked</span>
-        ) : (
-          <>
-            <DisabledIconControl label={`copy ${invite.code}`} reason={INVITE_COPY_UNAVAILABLE}>
-              <span className="set-invite__meta" style={{ color: 'var(--pn-brand-2)' }}>
-                ⧉ copy
-              </span>
-            </DisabledIconControl>
-            <DisabledIconControl label={`revoke ${invite.code}`} reason={INVITE_REVOKE_UNAVAILABLE}>
-              <span className="set-invite__meta">revoke</span>
-            </DisabledIconControl>
-          </>
-        )}
+        {dead ? <span className="set-invite__revoked-word">revoked</span> : null}
       </div>
       <span className="set-invite__stamp">
         {dead
@@ -229,7 +502,7 @@ export function RedeemLanding({
           Mechanics are honesty.css's verbatim (aria-disabled, focusable,
           reason in the DOM, .45); only the fill changes. */}
       <span className="set-refuse--ink">
-        <DisabledAction reason={INVITE_REDEEM_UNAVAILABLE} label={`join as ${role}`}>
+        <DisabledAction reason={INVITE_REDEEM_LANDING_UNWIRED} label={`join as ${role}`}>
           Join as {role}
         </DisabledAction>
       </span>

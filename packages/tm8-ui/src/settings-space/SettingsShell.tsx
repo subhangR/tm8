@@ -52,6 +52,7 @@ export function SettingsShell({
     members: [],
     identity: null,
     menu: null,
+    invites: null,
   });
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -61,13 +62,18 @@ export function SettingsShell({
     // other three sections. A screen that goes empty because an unrelated
     // request failed is the failure mode "loading" states hide.
     void (async () => {
-      const [space, members, identity, menu] = await Promise.allSettled([
+      const [space, members, identity, menu, invites] = await Promise.allSettled([
         port.loadSpace(),
         port.loadMembers(),
         port.loadIdentity(),
         port.loadMenu(),
+        port.loadInvites(),
       ]);
       if (!live) return;
+      // The invite read is EXCLUDED from the failure count. It is admin-only,
+      // so a plain member's settings screen rejects it every single time and
+      // that is the correct answer, not a fault — counting it would tell every
+      // member "1 of 5 settings reads failed" on a screen that is working.
       const failures = [space, members, identity, menu].filter((r) => r.status === 'rejected');
       setLoadError(failures.length ? `${failures.length} of 4 settings reads failed` : null);
       setData({
@@ -75,6 +81,10 @@ export function SettingsShell({
         members: members.status === 'fulfilled' ? members.value : [],
         identity: identity.status === 'fulfilled' ? identity.value : null,
         menu: menu.status === 'fulfilled' ? menu.value : null,
+        // `null` on rejection, which the panel renders as "has not been read"
+        // rather than as an empty list — the distinction the panel exists to
+        // keep.
+        invites: invites.status === 'fulfilled' ? invites.value : null,
       });
     })();
     return () => {
@@ -94,6 +104,29 @@ export function SettingsShell({
   function refreshIdentity() {
     void port.loadIdentity().then(
       (identity) => setData((d) => ({ ...d, identity })),
+      () => undefined,
+    );
+  }
+
+  /**
+   * Re-read after a membership write rather than patching state locally.
+   *
+   * Same rule as `refreshIdentity` above and the same reason: the server is the
+   * authority on what was actually written. It matters more here — the role
+   * rules are enforced in SQL, so a locally-patched row could show a promotion
+   * that a rule refused, and the refusal is exactly the case the reader needs
+   * to see.
+   */
+  function refreshMembers() {
+    void port.loadMembers().then(
+      (members) => setData((d) => ({ ...d, members })),
+      () => undefined,
+    );
+  }
+
+  function refreshInvites() {
+    void port.loadInvites().then(
+      (invites) => setData((d) => ({ ...d, invites })),
       () => undefined,
     );
   }
@@ -146,6 +179,8 @@ export function SettingsShell({
             onGo={go}
             port={port}
             onProfileSaved={refreshIdentity}
+            onMembersChanged={refreshMembers}
+            onInvitesChanged={refreshInvites}
             nodeKey={nodeKey}
           />
         </div>
@@ -161,6 +196,8 @@ function SectionBody({
   onGo,
   port,
   onProfileSaved,
+  onMembersChanged,
+  onInvitesChanged,
   nodeKey,
 }: {
   id: SettingsSectionId;
@@ -169,6 +206,8 @@ function SectionBody({
   onGo: (id: SettingsSectionId) => void;
   port: SettingsShellProps['port'];
   onProfileSaved: () => void;
+  onMembersChanged: () => void;
+  onInvitesChanged: () => void;
   nodeKey: string;
 }) {
   const injected = sections?.[id];
@@ -178,9 +217,35 @@ function SectionBody({
 
   switch (id) {
     case 'members':
-      return <MembersSection members={data.members} identity={data.identity} onInvite={() => onGo('invites')} />;
+      return (
+        <MembersSection
+          members={data.members}
+          identity={data.identity}
+          onInvite={() => onGo('invites')}
+          onRoleChange={async (memberId, role) => {
+            // Deliberately NOT caught here: `MembersSection` renders the
+            // server's own refusal text beside the row it belongs to, and a
+            // catch at this level would swallow the one message that tells the
+            // reader what to do next.
+            await port.setMemberRole(memberId, role);
+            onMembersChanged();
+          }}
+        />
+      );
     case 'invites':
-      return <InvitesPanel />;
+      return (
+        <InvitesPanel
+          invites={data.invites}
+          onCreate={async (input) => {
+            await port.createInvite(input);
+            onInvitesChanged();
+          }}
+          onRevoke={async (inviteId) => {
+            await port.revokeInvite(inviteId);
+            onInvitesChanged();
+          }}
+        />
+      );
     case 'menu':
       return (
         <>

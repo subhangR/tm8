@@ -93,9 +93,9 @@ import type {
   SessionFileChange, SessionFileChanges, SessionFileHunk,
   SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
   SessionTranscriptStuck,
-  SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
+  ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingPrMergeInput, TrackingRefreshInput,
-  UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
+  UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
   WorkInput, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
@@ -1862,6 +1862,28 @@ export const UpdateSpaceInputSchema: z.ZodType<UpdateSpaceInput> = z.object({
   githubRepo: z.string().nullable().optional(),
 }).strict();
 
+/** The role vocabulary, in one place, so the wire and the check constraint agree. */
+export const SpaceMemberRoleSchema: z.ZodType<SpaceMemberRole> =
+  z.enum(['owner', 'admin', 'member']);
+
+/** The role an INVITE may confer — 114 R4: a forwarded link cannot mint an owner. */
+export const InviteRoleSchema = z.enum(['admin', 'member']);
+
+/**
+ * `auth.invite.resolve`. `.strict()` with EXACTLY one member: this op is
+ * claim-free, so an `actorId` or a `clientMutationId` on the wire is refused
+ * with a 400 rather than silently ignored by a handler that has no identity to
+ * check it against.
+ */
+export const ResolveInviteInputSchema: z.ZodType<ResolveInviteInput> = z.object({
+  code: z.string().min(1),
+}).strict();
+
+export const UpdateMemberRoleInputSchema: z.ZodType<UpdateMemberRoleInput> = z.object({
+  ...commandContextShape,
+  role: SpaceMemberRoleSchema,
+}).strict();
+
 // ---------------------------------------------------------------------------
 // Space menu and shared settings revision (W0 dossier A01-A03/A20)
 // ---------------------------------------------------------------------------
@@ -3135,6 +3157,7 @@ export const SpaceSettingsSchema: z.ZodType<SpaceSettings> = z.lazy(() => z.obje
   invites: z.array(z.object({
     id: z.string(),
     code: z.string(),
+    role: InviteRoleSchema,
     maxUses: z.number().int(),
     uses: z.number().int().nonnegative(),
     expiresAt: IsoTimestamp.nullable(),
@@ -3153,6 +3176,7 @@ export const SpaceSettingsViewSchema: z.ZodType<SpaceSettingsView> = z.lazy(() =
   invites: z.array(z.object({
     id: z.string(),
     code: z.string(),
+    role: InviteRoleSchema,
     maxUses: z.number().int(),
     uses: z.number().int().nonnegative(),
     expiresAt: IsoTimestamp.nullable(),

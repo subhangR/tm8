@@ -93,6 +93,9 @@ import {
   TaskAxisInputSchema,
   TrackingPrMergeInputSchema,
   TrackingRefreshInputSchema,
+  InviteRoleSchema,
+  ResolveInviteInputSchema,
+  UpdateMemberRoleInputSchema,
   UpdateSpaceInputSchema,
   UpdateAttentionRequestInputSchema,
   WithdrawHandoffInputSchema,
@@ -109,6 +112,9 @@ const RequiredCommandContextSchema = z.object({
 const InviteCreateInputSchema = z.object({
   actorId: EntityIdSchema.optional(),
   clientMutationId: z.string().min(1),
+  // 114 R4: an invite may confer admin or member, never owner. Bound here so a
+  // wrong word is a 400 naming the vocabulary rather than a SQL 22023.
+  role: InviteRoleSchema.optional(),
   maxUses: z.number().int().positive().optional(),
   expiresAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
     message: 'expiresAt must be an ISO timestamp',
@@ -139,6 +145,10 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'auth.logout': AuthLogoutInputSchema,
   // auth.claim.status takes no input; the catalog marks it a read.
   'auth.claim': AuthClaimInputSchema,
+  // Claim-free, so strictness is the only control on this body: the schema has
+  // exactly one member and `.strict()`, which turns a stray actorId into a 400
+  // instead of a field nobody is in a position to check.
+  'auth.invite.resolve': ResolveInviteInputSchema,
 
   // credentials (Tier B). All three command bodies are BOUND rather than
   // enumerated as unbound gaps, because strictness here is a security control
@@ -160,6 +170,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaces.taskAxes.create': TaskAxisInputSchema,
   'spaces.taskAxes.update': TaskAxisInputSchema,
   'spaces.taskAxes.delete': RequiredCommandContextSchema,
+  'spaces.members.updateRole': UpdateMemberRoleInputSchema,
   'spaces.invites.create': InviteCreateInputSchema,
   'spaces.invites.revoke': RequiredCommandContextSchema,
   'spaces.invites.redeem': InviteRedeemInputSchema,

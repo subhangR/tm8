@@ -1790,6 +1790,91 @@ export interface UpdateSpaceInput extends CommandContext {
   githubRepo?: string | null;
 }
 
+/**
+ * PATCH /v2/spaces/:spaceId/members/:memberId — the space-role writer (114).
+ *
+ * The subject is the PATH, never the body: a member id in a body is a field a
+ * handler has to remember to check against the space it was reached through,
+ * and 114's `set_member_role` names both in one predicate so a cross-space id
+ * is "not found here" rather than found-and-updated. The body carries only the
+ * new role.
+ *
+ * `owner` is in the union because an owner may transfer ownership; SQL, not
+ * this type, decides who may use it (only an owner) and refuses to leave a
+ * space with none.
+ */
+export interface UpdateMemberRoleInput extends CommandContext {
+  role: SpaceMemberRole;
+}
+
+/** The three roles `public.members.role` has admitted since 002. */
+export type SpaceMemberRole = 'owner' | 'admin' | 'member';
+
+/**
+ * POST /v2/spaces/:spaceId/invites.
+ *
+ * `role` is what REDEMPTION confers, and it excludes `owner` in the type rather
+ * than at the edges: a code travels out of band, so it is worth exactly what
+ * the channel it was sent over is worth, and ownership is not something a
+ * forwarded link may confer. Absent means `member` — the value every invite
+ * minted before 114 already had.
+ */
+export interface CreateInviteInput extends CommandContext {
+  role?: Exclude<SpaceMemberRole, 'owner'>;
+  maxUses?: number;
+  expiresAt?: string | null;
+}
+
+/**
+ * POST /v2/auth/invite/resolve — the request body for `auth.invite.resolve`.
+ *
+ * A body rather than a path parameter, and that is the whole reason this type
+ * exists at all: the code is a bearer capability, and a capability in a URL is
+ * a capability in an access log.
+ */
+export interface ResolveInviteInput {
+  code: string;
+}
+
+/** POST /v2/invites/redeem — join as the CURRENT caller. */
+export interface RedeemInviteInput extends CommandContext {
+  code: string;
+}
+
+/** One row of the invite list, as `spaces.settings` and the invite ops project it. */
+export type SpaceInviteView = SpaceSettings['invites'][number];
+
+/** What `spaces.invites.redeem` answers. `joined` is false for an existing member. */
+export interface InviteRedemption {
+  spaceId: SpaceId;
+  memberId: EntityId;
+  joined: boolean;
+}
+
+/**
+ * GET /v2/invites/:code — what a join code lets you join, answered before the
+ * holder is anybody on this node (114).
+ *
+ * A DISCRIMINATED UNION rather than one optional-heavy shape, because the whole
+ * point of this read is that a dead code discloses less than a live one, and an
+ * interface with six optional fields cannot express "these are absent BY RULE".
+ * `unknown` carries nothing at all: no space, no inviter, not even a hint that
+ * some other code would have worked.
+ */
+export type InvitePreview =
+  | { status: 'unknown' }
+  | { status: 'revoked' | 'expired' | 'exhausted'; spaceName: string }
+  | {
+      status: 'valid';
+      spaceId: SpaceId;
+      spaceName: string;
+      /** The role redemption confers. Never `owner` — an invite cannot mint one. */
+      role: Exclude<SpaceMemberRole, 'owner'>;
+      /** The inviter's display name, or `null` when they have never set one. */
+      invitedBy: string | null;
+      expiresAt: string | null;
+    };
+
 // ---------------------------------------------------------------------------
 // W0 dossier: Space menu and shared settings revision
 // ---------------------------------------------------------------------------
@@ -2029,8 +2114,9 @@ export interface PointEventView {
 /** GET /v2/spaces/:spaceId/settings */
 export interface SpaceSettings {
   space: SpaceSummary;
-  members: Array<{ actor: ActorSummary; role: 'owner'|'admin'|'member'; joinedAt: string }>;
-  invites: Array<{ id: string; code: string; maxUses: number; uses: number; expiresAt: string | null; revoked: boolean }>;
+  members: Array<{ actor: ActorSummary; role: SpaceMemberRole; joinedAt: string }>;
+  /** `role` (114) is the role redemption confers — 'admin' or 'member', never 'owner'. */
+  invites: Array<{ id: string; code: string; role: Exclude<SpaceMemberRole, 'owner'>; maxUses: number; uses: number; expiresAt: string | null; revoked: boolean }>;
   taskAxes: TaskAxis[];
 }
 

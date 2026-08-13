@@ -347,17 +347,17 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 155 -> 156 (2026-08-13, merge): execution.terminal.start joins from main (#161).
   // 157 -> 158 (2026-08-13, forge write): tracking.pr.merge (POST command) —
   // the one guarded write door to the forge.
-  // 159 -> 161 (2026-08-13, first-run claim): auth.claim (POST command) +
-  // auth.claim.status (GET read). MEASURED.
-  assertEqual(names.length, 161, 'catalog total');
-  assertEqual(V1_OPERATIONS.length, 159, 'v1 total');
+  assertEqual(names.length, 163, 'catalog total');
+  // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
+  // auth.invite.resolve (POST read — the code rides in the body, never a URL).
+  assertEqual(V1_OPERATIONS.length, 161, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
   assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');
-  assertEqual(methods, { GET: 59, POST: 74, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 }, 'method accounting');
-  assertEqual(kinds, { read: 62, command: 98, stream: 1 }, 'kind accounting');
-  assertEqual(router.http.length, 160, 'server router HTTP total');
+  assertEqual(methods, { GET: 59, POST: 75, PATCH: 11, DELETE: 10, PUT: 7, WS: 1 }, 'method accounting');
+  assertEqual(kinds, { read: 63, command: 99, stream: 1 }, 'kind accounting');
+  assertEqual(router.http.length, 162, 'server router HTTP total');
   assertEqual(router.ws.length, 1, 'server router WS total');
   // These four are SNAPSHOT self-checks (the frozen W1 registry boundary) and
   // never move with an amendment; A21's live handler shows up only in the

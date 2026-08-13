@@ -219,6 +219,14 @@ const ROWS: Record<OperationName, Row> = {
       'revoking this shell\'s own session also removes the matching stored credential for this Server origin',
     ],
   },
+  'auth.invite.resolve': {
+    cmd: ['space', 'invite', 'resolve'],
+    syn: 'tm8 space invite resolve <code>',
+    sum: 'Read what an invitation code lets you join, before joining',
+    authz: 'server',
+    input: 'bound',
+    tags: ['join', 'invite', 'preview'],
+  },
   'auth.session.get': {
     cmd: ['auth', 'session'],
     syn: 'tm8 auth session',
@@ -425,6 +433,14 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'none',
   },
+  'spaces.members.updateRole': {
+    cmd: ['space', 'member', 'role'],
+    syn: 'tm8 space member role <member-id> --role <owner|admin|member> [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: "Change a Member's role in a Space",
+    authz: 'space',
+    input: 'bound',
+    tags: ['permission', 'promote', 'demote', 'admin'],
+  },
   'spaces.invites.list': {
     cmd: ['space', 'invite', 'list'],
     syn: 'tm8 space invite list [<space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -434,7 +450,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaces.invites.create': {
     cmd: ['space', 'invite', 'create'],
-    syn: 'tm8 space invite create [<space-id>] [--max-uses <count>] [--expires-at <iso-time|none>] [--mutation-id <id>]',
+    syn: 'tm8 space invite create [<space-id>] [--role <admin|member>] [--max-uses <count>] [--expires-at <iso-time|none>] [--mutation-id <id>]',
     sum: 'Mint an invitation code for a Space',
     authz: 'space',
     input: 'unbound',
@@ -1996,7 +2012,7 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
-  'sha256:52f86f3711ca9d9ae92dcede746e0bfcfcdaee84a6f170d4713abb2ce1065894';
+  'sha256:4f48f15d8ac03dfcc5fce979ba12b627d2fe1af7ebd8028c397c0631eb7ed3ce';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -165,7 +165,6 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // family's first write verbs, mounted in the G05 seam.
     // 137 -> 143 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 143 -> 145 (2026-08-12): projects.file.history/blame (GET reads).
-    // 152 -> 154 (2026-08-13, first-run claim): auth.claim + auth.claim.status.
     expect(REGISTERABLE).toHaveLength(154);
     expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(154);
     expect(REGISTERABLE).toContain(PRESENCE_GATED);
@@ -199,15 +198,12 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     expect(onlyWithout, `mounted only WITHOUT presence: ${onlyWithout.join(',')}`).toEqual([]);
   }, 15_000);
 
-  it('BOTH READINGS ARE CORRECT — 153/0 and 153/1 name the two compositions, not a defect', () => {
+  it('BOTH READINGS ARE CORRECT — 153/0 and 152/1 name the two compositions, not a defect', () => {
     // The sentence the frozen file could not say, wired to something that
     // fails. `test/w2/reserved-honesty.test.ts` composes WITHOUT presence
     // (its `:66`); `src/main.ts:148` composes WITH it. This test asserts that
     // BOTH of those numbers are reachable from the SAME production code, which
     // is what makes "the frozen file drifted" the wrong diagnosis.
-    // 152 -> 154 (2026-08-13, first-run claim): auth.claim + auth.claim.status
-    // mount in BOTH compositions — they are on the auth seam, which neither
-    // world gates on presence.
     expect([withPresence.size, 154 - withPresence.size]).toEqual([154, 0]);
     expect([withoutPresence.size, 154 - withoutPresence.size]).toEqual([153, 1]);
   }, 15_000);

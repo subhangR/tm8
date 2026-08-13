@@ -189,9 +189,6 @@ describe('W5.C generator proof', () => {
     // 84 -> 87 (2026-08-12): the three Tier 2 command bodies bind.
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, forge write): tracking.pr.merge binds its body.
-    // +1 (2026-08-13, first-run claim): auth.claim binds its body.
-    // `auth.claim.status` is a READ and binds nothing, which is why this moves
-    // by one where the catalog pins move by two.
-    expect(ENTRIES).toHaveLength(91); // + chat.threads.start disposition
+    expect(ENTRIES).toHaveLength(93); // + chat.threads.start disposition; +2 (114): spaces.members.updateRole, auth.invite.resolve
   });
 });

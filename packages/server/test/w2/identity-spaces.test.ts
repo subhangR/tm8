@@ -34,6 +34,7 @@ const G01_OPERATIONS = [
   'spaces.home',
   'spaces.settings',
   'spaces.members.list',
+  'spaces.members.updateRole',
   'spaces.invites.list',
   'spaces.invites.create',
   'spaces.invites.revoke',
@@ -142,7 +143,7 @@ function registryFor(db: Db): HandlerRegistry {
 }
 
 describe('W2.G01 identity and Spaces handler seam', () => {
-  it('registers the complete frozen 21-operation group and nothing else', () => {
+  it('registers the complete frozen 22-operation group and nothing else', () => {
     const registry = registryFor(new FakeDb());
     expect(registry.implemented()).toEqual([...G01_OPERATIONS].sort());
   });
@@ -606,11 +607,17 @@ describe('W2.G01 identity and Spaces handler seam', () => {
         '2026-07-27T10:00:00.000Z',
         null,
         'cmid-invite-create',
+        // 114: the role an invite confers, LAST in the positional list. A body
+        // that omits it means `member` — the value every pre-114 invite already
+        // had — and the default is applied by the handler, not by SQL, so a
+        // wrong word is a 400 naming the vocabulary rather than a 22023.
+        'member',
       ]);
       return {
         invite: {
           id: MEMBER_ID,
           code: 'inv_12345678',
+          role: 'member',
           max_uses: 2,
           use_count: 0,
           expires_at: '2026-07-27T10:00:00.000Z',
@@ -635,6 +642,7 @@ describe('W2.G01 identity and Spaces handler seam', () => {
       data: {
         id: MEMBER_ID,
         code: 'inv_12345678',
+        role: 'member',
         maxUses: 2,
         uses: 0,
         expiresAt: '2026-07-27T10:00:00.000Z',

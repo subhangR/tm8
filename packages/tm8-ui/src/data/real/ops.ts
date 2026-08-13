@@ -28,6 +28,12 @@
  *      so this adapter stamps the request id onto the snapshot.
  */
 import {
+  type CreateInviteInput,
+  type InvitePreview,
+  type InviteRedemption,
+  type RedeemInviteInput,
+  type SpaceInviteView,
+  type UpdateMemberRoleInput,
   bindPath,
   type ActivityItem,
   type ArtifactPreviewSession,
@@ -224,6 +230,52 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
      */
     updateProfile(input: IdentityProfileUpdateInput): Promise<IdentityProfileView> {
       return http.call<IdentityProfileView>('identity.profile.update', { body: input });
+    },
+
+    /**
+     * Membership writes (114). All three name their subject in the PATH, never
+     * the body — `set_member_role` and `w2_revoke_invite` both authorize
+     * against the (space, row) pair, and a body-carried id would authorize
+     * against a space the row is not in.
+     */
+    setMemberRole(
+      spaceId: SpaceId,
+      memberId: EntityId,
+      input: UpdateMemberRoleInput,
+    ): Promise<CommandResult> {
+      return http.call<CommandResult>('spaces.members.updateRole', {
+        params: { spaceId, memberId },
+        body: input,
+      });
+    },
+
+    createInvite(spaceId: SpaceId, input: CreateInviteInput): Promise<SpaceInviteView> {
+      return http.call<SpaceInviteView>('spaces.invites.create', { params: { spaceId }, body: input });
+    },
+
+    revokeInvite(spaceId: SpaceId, inviteId: string, body: CommandContext): Promise<SpaceInviteView> {
+      return http.call<SpaceInviteView>('spaces.invites.revoke', {
+        params: { spaceId, inviteId },
+        body,
+      });
+    },
+
+    /** Joins as the CURRENT viewer; the space is whatever the code resolves to. */
+    redeemInvite(input: RedeemInviteInput): Promise<InviteRedemption> {
+      return http.call<InviteRedemption>('spaces.invites.redeem', { body: input });
+    },
+
+    /**
+     * `auth.invite.resolve` — the read that answers before the caller is anybody
+     * here. A join page has no identity to bind, and every other read on this
+     * client would correctly answer with nothing.
+     *
+     * POST with the code in the BODY, and it must stay that way: a join code is
+     * a bearer capability, and a URL carrying one is copied into access logs,
+     * browser history and `Referer` on the first outbound link the page renders.
+     */
+    previewInvite(code: string): Promise<InvitePreview> {
+      return http.call<InvitePreview>('auth.invite.resolve', { body: { code } });
     },
 
     /**
