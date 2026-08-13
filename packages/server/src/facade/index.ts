@@ -77,6 +77,7 @@ import {
   type CredentialHandlerDeps,
 } from './handlers/w2/credentials.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
+import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
 
 export interface RegisterFacadeHandlersDeps {
   readonly db: Db;
@@ -130,6 +131,8 @@ export interface RegisterFacadeHandlersDeps {
    * the same conditional shape `deps.files` already uses.
    */
   readonly credentials?: CredentialHandlerDeps;
+  /** TM8 Chat runtime composition; absent mounts a narrowed 503 degraded mode. */
+  readonly chat?: ChatHandlerDeps;
 }
 
 /**
@@ -208,7 +211,13 @@ export function registerFacadeHandlers(
     ...(deps.messageDelivery ? { messageDelivery: deps.messageDelivery } : {}),
     resolveAuthoredFromWorkSessionId: deps.resolveAuthoredFromWorkSessionId
       ?? (async (ctx) => (ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null)),
+    ...(deps.chat ? {
+      onMessagesCommitted: (identityId, messages) => {
+        void deps.chat!.orchestrator.wakeForMessages(identityId, messages);
+      },
+    } : {}),
   });
+  registerChatHandlers(registry, facade, deps.chat);
 
   /**
    * G12, G13 and G14 are pure additions — no operation below was registered by

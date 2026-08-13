@@ -806,6 +806,19 @@ const ROWS: Record<OperationName, Row> = {
       'thread history survives — replies, ordering, and cursors are unaffected',
     ],
   },
+  'chat.threads.start': {
+    cmd: null,
+    sum: 'Configure an already-posted human root as a write-once TM8 Chat thread',
+    authz: 'entity',
+    input: 'bound',
+    reason: 'browser_chat_composer_only',
+    tags: ['chat', 'thread', 'agent', 'teammate', 'model'],
+    notes: [
+      'post the human-authored root first with message send; this operation creates no message',
+      'configuration is write-once and this call is the sole trigger for turn one',
+      'v1 exposes this through the browser composer; exact-operation help remains available to CLI users',
+    ],
+  },
 
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
@@ -1899,6 +1912,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   teamMembers: 'teammate',
   voice: 'voice',
   artifacts: 'artifact',
+  chat: 'chat-thread',
   // Required even though all four `credentials.*` rows are `cmd: null`: the
   // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
   // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
@@ -1953,7 +1967,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:dceade5e3a670bbdb7356f1500685343f33bdbafc4a41e162e4810a889c25b28';
+  'sha256:10936f405460bfb1c5b613d83e36981de053cc6f99911c8380695829cd4db353';
 
 export const GRAMMAR_VERSION = '2';
 

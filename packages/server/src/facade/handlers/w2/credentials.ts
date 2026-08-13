@@ -47,8 +47,8 @@
  * It FAILS CLOSED. Anything that is not exactly `browser` or `cli` is refused,
  * including `undefined` — a request whose resolver did not establish a kind is
  * refused rather than admitted. An allowlist rather than `!== 'agent'`, so a
- * fourth session kind added to `auth_sessions.kind` in future is refused until
- * somebody decides otherwise instead of silently inheriting credential access.
+ * `agent_runtime` (and any later kind) is refused instead of silently
+ * inheriting credential access.
  *
  * This is layer 1 of two. Layer 2 is `internal.require_human_auth_kind()`
  * inside all four SECURITY DEFINER RPCs, reading the `tm8.auth_kind` claim

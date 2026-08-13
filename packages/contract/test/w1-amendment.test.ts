@@ -80,8 +80,10 @@ describe('W1 adopted catalog target', () => {
     // 155 -> 156 (2026-08-13, merge): execution.terminal.start joins from main (#161).
     // 157 -> 158 (2026-08-13, forge write): tracking.pr.merge — the one
     // guarded write door to the forge.
-    expect(OPERATIONS).toHaveLength(158);
-    expect(V1_OPERATIONS).toHaveLength(156);
+    // 158 -> 159 (2026-08-13, merge union): chat.threads.start — MEASURED on
+    // the merged tree; both sides moved this pin independently.
+    expect(OPERATIONS).toHaveLength(159);
+    expect(V1_OPERATIONS).toHaveLength(157);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -97,12 +99,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 58, POST: 72 /* +1 2026-08-13: tracking.pr.merge */, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 58, POST: 73 /* +1 2026-08-13: tracking.pr.merge */, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 61, command: 96 /* +1 2026-08-13: tracking.pr.merge */, stream: 1 });
+    }).toEqual({ read: 61, command: 97 /* +1 2026-08-13: tracking.pr.merge */, stream: 1 });
   });
 });
 

@@ -67,6 +67,9 @@ describe('claim set (R2/T-L11)', () => {
       'browser',
     );
     expect(byName(toClaimBindings(claims, 'req_1', 'agent'))[CLAIM_NAMES.authKind]).toBe('agent');
+    expect(
+      byName(toClaimBindings(claims, 'req_1', 'agent_runtime'))[CLAIM_NAMES.authKind],
+    ).toBe('agent_runtime');
   });
 
   it('never binds membership or can_act_as into Postgres', async () => {

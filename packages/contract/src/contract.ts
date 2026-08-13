@@ -507,7 +507,122 @@ export interface MessageView extends EntitySummary {
    * echo, where no branch has been read.
    */
   lastReplyAt?: string | null; replyParticipants?: ActorSummary[];
+  /** Structured runtime output, appended durably in stream order. */
+  parts?: MessagePart[];
 }
+
+// ---------------------------------------------------------------------------
+// Chat threads and structured turn parts (TM8 Chat C1-C4)
+// ---------------------------------------------------------------------------
+
+export type MessagePart =
+  | MessageThinkingPart
+  | MessageTextPart
+  | MessageToolCallPart
+  | MessageToolResultPart
+  | MessageUsagePart
+  | MessageErrorPart
+  | MessageDonePart;
+
+interface MessagePartBase {
+  seq: number;
+  createdAt: string;
+}
+
+export interface MessageThinkingPart extends MessagePartBase {
+  kind: 'thinking';
+  payload: { text: string };
+}
+
+export interface MessageTextPart extends MessagePartBase {
+  kind: 'text';
+  payload: { text: string };
+}
+
+export interface MessageToolCallPart extends MessagePartBase {
+  kind: 'tool_call';
+  payload: {
+    id: string;
+    name: string;
+    args: unknown;
+    state: 'running' | 'completed' | 'error';
+  };
+}
+
+export interface MessageToolResultPart extends MessagePartBase {
+  kind: 'tool_result';
+  payload: { tool_call_id: string; content: unknown; is_error: boolean };
+}
+
+/** Unknown provider facts stay absent. In particular, absent cost is not zero. */
+export interface ChatTurnUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  total_cost_usd?: number;
+}
+
+export interface MessageUsagePart extends MessagePartBase {
+  kind: 'usage';
+  payload: ChatTurnUsage;
+}
+
+export interface MessageErrorPart extends MessagePartBase {
+  kind: 'error';
+  payload: { code: string; message: string };
+}
+
+export interface MessageDonePart extends MessagePartBase {
+  kind: 'done';
+  payload: { reason: 'success' | 'error' | 'interrupted' | 'closed' };
+}
+
+/** One write-once runtime binding for a human-authored message-thread root. */
+export interface ChatThreadSummary {
+  rootMessageId: EntityId;
+  anchorId: EntityId;
+  teammateId: EntityId;
+  model: string;
+  createdAt: string;
+  lastReplyAt: string | null;
+  /**
+   * Root message body excerpt (PR188 review F4): without it every list row
+   * reads "Conversation" and threads are indistinguishable. Optional so the
+   * write path's minted summary (start_chat_thread) stays valid.
+   */
+  title?: string | null;
+  /** Reply count for the thread footer; optional for the same reason. */
+  replyCount?: number;
+}
+
+export interface StartChatThreadInput {
+  rootMessageId: EntityId;
+  teammateId: EntityId;
+  model: string;
+  clientMutationId: string;
+}
+
+export interface StartChatThreadResult {
+  thread: ChatThreadSummary;
+}
+
+export interface ChatTurnDeltaFrame {
+  type: 'chat.turn.delta';
+  threadRootId: EntityId;
+  messageId: EntityId;
+  seq: number;
+  part: MessagePart;
+}
+
+export interface ChatTurnDoneFrame {
+  type: 'chat.turn.done';
+  threadRootId: EntityId;
+  messageId: EntityId;
+  usage: ChatTurnUsage | null;
+}
+
+export type ChatTurnFrame = ChatTurnDeltaFrame | ChatTurnDoneFrame;
 
 export interface ActivityItem { id: string; entityId?: EntityId | null; actor?: ActorSummary | null;
   verb: string; summary: Record<string, unknown>; createdAt: string; refId?: string | null;
@@ -941,8 +1056,11 @@ export function commandAcceptsClientMutationId(opName: string): boolean {
   return !opName.startsWith('auth.');
 }
 
-/** How a session authenticates thereafter. `agent` sessions are minted at spawn, never by `auth.login`. */
-export type AuthSessionKindView = 'browser' | 'cli' | 'agent';
+/**
+ * How a session authenticates thereafter. `agent` and `agent_runtime` are
+ * internal mints, never accepted by `auth.login`.
+ */
+export type AuthSessionKindView = 'browser' | 'cli' | 'agent' | 'agent_runtime';
 
 /** The session half of every auth response. The token itself appears exactly once, at issuance. */
 export interface AuthSessionView {
@@ -950,6 +1068,10 @@ export interface AuthSessionView {
   kind: AuthSessionKindView;
   /** Persona-scoped agent sessions only; null for human sessions. */
   actingAsTeamMemberId: string | null;
+  /** Present only for a chat runtime: the requesting human member. */
+  runtimeMemberId?: string | null;
+  /** Present only for a chat runtime: the root message whose process owns it. */
+  runtimeThreadRootId?: string | null;
   label: string | null;
   /** Present at issuance; `auth.session.get` verifies live rather than re-reading the row. */
   createdAt?: string;
@@ -1690,12 +1812,14 @@ export interface KindCounts { total: number; unseen: number }
  */
 export type SpaceKindCounts = Partial<Record<EntityKind, KindCounts>>;
 
-/** Home — My Work: the three server-defined presets plus compact activity. */
+/** Home — chat threads plus the legacy My Work snapshot during migration. */
 export interface HomeSnapshot {
   readyToPull: CollectionResult;
   inFlight: CollectionResult;
   needsMe: CollectionResult;
   activity: Page<ActivityItem>;
+  /** Additive: every configured chat root readable by this viewer. */
+  chatThreads?: ChatThreadSummary[];
 }
 
 /** GET /v2/spaces/:spaceId/task-axes */

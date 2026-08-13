@@ -67,6 +67,10 @@ export function createSessionIdentityResolver(
         ...(session.workSessionId ? { workSessionId: session.workSessionId } : {}),
         token: raw,
         ...(session.actingAsTeamMemberId ? { actorId: session.actingAsTeamMemberId } : {}),
+        ...(session.runtimeMemberId ? { runtimeMemberId: session.runtimeMemberId } : {}),
+        ...(session.runtimeThreadRootId
+          ? { runtimeThreadRootId: session.runtimeThreadRootId }
+          : {}),
         // 082 / R11. Taken straight off the verified session row, which
         // `resolveBearerIdentity` looked up by TOKEN HASH — so it is a
         // server fact, not a client assertion. This is the only thing that

@@ -3,6 +3,16 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PoolClient } from 'pg';
 
+import { CollabError } from '@tm8/contract';
+
+import { createDb } from '../../src/db/client.js';
+import type { Db, DbClaims } from '../../src/db/types.js';
+import {
+  issueAgentRuntimeSession,
+  resolveBearerIdentity,
+  revokeAgentRuntimeSession,
+} from '../../src/identity/pg-auth.js';
+
 import {
   createW1ScratchDatabase,
   migrationFiles,
@@ -21,17 +31,28 @@ interface Fixture {
   memberB: string;
   personaId: string;
   workSessionId: string;
+  threadRootId: string;
 }
 
 let database: W1ScratchDatabase;
+let db: Db;
 let fixture: Fixture;
 
-async function asApp<T>(identityId: string, fn: (client: PoolClient) => Promise<T>): Promise<T> {
+async function asApp<T>(
+  identityId: string,
+  fn: (client: PoolClient) => Promise<T>,
+  authKind = 'browser',
+): Promise<T> {
   return database.transaction(async (client) => {
     await client.query('set local role tm8_app');
     await client.query(`select set_config('tm8.identity_id',$1,true)`, [identityId]);
+    await client.query(`select set_config('tm8.auth_kind',$1,true)`, [authKind]);
     return fn(client);
   });
+}
+
+function claims(identityId: string, authKind = 'browser'): DbClaims {
+  return { identityId, authKind, requestId: `agent-runtime-${randomUUID()}` };
 }
 
 async function seed(): Promise<Fixture> {
@@ -47,6 +68,7 @@ async function seed(): Promise<Fixture> {
       memberB: randomUUID(),
       personaId: randomUUID(),
       workSessionId: randomUUID(),
+      threadRootId: randomUUID(),
     };
     await client.query(
       `insert into public.user_profiles(identity_id, display_name)
@@ -67,8 +89,16 @@ async function seed(): Promise<Fixture> {
        values ($1, $5, 'member', $1, 'space'),
               ($2, $5, 'member', $2, 'space'),
               ($3, $5, 'team_member', $1, 'space'),
-              ($4, $5, 'work_session', $3, 'space')`,
-      [ids.memberA, ids.memberB, ids.personaId, ids.workSessionId, ids.spaceId],
+              ($4, $5, 'work_session', $3, 'space'),
+              ($6, $5, 'message', $1, 'space')`,
+      [
+        ids.memberA,
+        ids.memberB,
+        ids.personaId,
+        ids.workSessionId,
+        ids.spaceId,
+        ids.threadRootId,
+      ],
     );
     await client.query(
       `insert into public.members(entity_id, space_id, identity_id, role, display_name)
@@ -87,6 +117,11 @@ async function seed(): Promise<Fixture> {
       [ids.workSessionId],
     );
     await client.query(
+      `insert into public.messages(entity_id, anchor_id, author_id, body)
+       values ($1, $2, $3, 'Chat thread root')`,
+      [ids.threadRootId, ids.workSessionId, ids.memberA],
+    );
+    await client.query(
       `insert into public.edges(space_id, src_id, dst_id, type, created_by)
        values ($1, $2, $3, 'participates_in', $2)`,
       [ids.spaceId, ids.personaId, ids.workSessionId],
@@ -99,9 +134,11 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('agent_auth_session');
   database.apply(migrationFiles());
   fixture = await seed();
+  db = createDb(database.url, { max: 4 });
 }, 180_000);
 
 afterAll(async () => {
+  await db?.end();
   await database?.destroy();
 }, 180_000);
 
@@ -214,5 +251,81 @@ describe('072 persona-pinned agent auth sessions', () => {
       return result.rows[0]!.value;
     });
     expect(issued.id).toBeTruthy();
+  });
+});
+
+describe('attributable agent_runtime sessions', () => {
+  it('mints through the internal helper, replaces on resume, and revokes with the thread', async () => {
+    // The root was authored by member A. Mint as member B so this proves the
+    // attribution comes from the requesting human claims, not the message.
+    const first = await issueAgentRuntimeSession(db, claims(fixture.identityB), {
+      threadRootId: fixture.threadRootId,
+      teamMemberId: fixture.personaId,
+    });
+
+    expect(first).toMatchObject({
+      runtimeMemberId: fixture.memberB,
+      runtimeThreadRootId: fixture.threadRootId,
+      actingAsTeamMemberId: fixture.personaId,
+    });
+    expect(await resolveBearerIdentity(db, first.token)).toMatchObject({
+      sessionId: first.sessionId,
+      identityId: fixture.identityB,
+      kind: 'agent_runtime',
+      runtimeMemberId: fixture.memberB,
+      runtimeThreadRootId: fixture.threadRootId,
+      actingAsTeamMemberId: fixture.personaId,
+      workSessionId: null,
+    });
+
+    const persisted = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{
+        kind: string;
+        runtime_member_id: string;
+        runtime_thread_root_id: string;
+        token_hash: string;
+      }>(
+        `select kind, runtime_member_id::text, runtime_thread_root_id::text, token_hash
+           from public.auth_sessions where id=$1`,
+        [first.sessionId],
+      )).rows[0]!;
+    });
+    expect(persisted).toMatchObject({
+      kind: 'agent_runtime',
+      runtime_member_id: fixture.memberB,
+      runtime_thread_root_id: fixture.threadRootId,
+    });
+    expect(persisted.token_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(persisted.token_hash).not.toContain(first.token);
+
+    const resumed = await issueAgentRuntimeSession(db, claims(fixture.identityB), {
+      threadRootId: fixture.threadRootId,
+      teamMemberId: fixture.personaId,
+    });
+    await expect(resolveBearerIdentity(db, first.token)).rejects.toMatchObject({
+      code: 'unauthenticated',
+    });
+    const [live] = await database.query<{ count: string }>(
+      `select count(*)::text count from public.auth_sessions
+        where runtime_thread_root_id=$1 and revoked_at is null`,
+      [fixture.threadRootId],
+    );
+    expect(live!.count).toBe('1');
+
+    await revokeAgentRuntimeSession(db, claims(fixture.identityB), fixture.threadRootId);
+    await expect(resolveBearerIdentity(db, resumed.token)).rejects.toMatchObject({
+      code: 'unauthenticated',
+    });
+  });
+
+  it('does not let agent_runtime authority mint or extend another runtime', async () => {
+    const error = await issueAgentRuntimeSession(db, claims(fixture.identityB, 'agent_runtime'), {
+      threadRootId: fixture.threadRootId,
+      teamMemberId: fixture.personaId,
+    }).then(() => null, (caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(CollabError);
+    expect((error as CollabError).code).toBe('forbidden');
   });
 });

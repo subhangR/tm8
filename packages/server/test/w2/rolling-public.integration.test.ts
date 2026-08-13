@@ -295,6 +295,11 @@ const COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS = [
   'collections.removeItem',
 ] as const;
 
+/** TM8 Chat's one budgeted catalog command, mounted in degraded mode too. */
+const CHAT_NET_NEW_OPERATIONS = [
+  'chat.threads.start',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
@@ -303,6 +308,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...PROJECT_FOLDER_NET_NEW_OPERATIONS,
   ...GIT_NET_NEW_OPERATIONS,
   ...COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS,
+  ...CHAT_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -437,7 +443,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 122 -> 123: projects.files.read (the viewer half).
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registry.size).toBe(138); // +1 2026-08-13: tracking.pr.merge
+    expect(registry.size).toBe(139); // merge union 2026-08-13: + chat.threads.start, MEASURED
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -446,7 +452,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + IDENTITY_V2_NET_NEW_OPERATIONS.length
         + PROJECT_FOLDER_NET_NEW_OPERATIONS.length
         + GIT_NET_NEW_OPERATIONS.length
-        + COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS.length,
+        + COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS.length
+        + CHAT_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -601,7 +608,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // bodies bind (gitStatus/gitDiff are GETs and bind nothing).
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, forge write): tracking.pr.merge binds its body.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(89);
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(90); // + StartChatThreadInput
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -752,8 +759,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 141/139 -> 143/141 (2026-08-12): collections.addItem/removeItem, mounted.
     // 143/141 -> 149/147 (2026-08-12, Git UI landing): the six execution.git*
     // rows, all mounted.
-    expect(health).toMatchObject({ ok: true, operations: 157, implemented: 155 });
-    expect(harness.production.server.registry.size).toBe(155);
+    expect(health).toMatchObject({ ok: true, operations: 158, implemented: 156 });
+    expect(harness.production.server.registry.size).toBe(156);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -773,7 +780,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(155);
+    expect(registered.size + residual.length).toBe(156);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

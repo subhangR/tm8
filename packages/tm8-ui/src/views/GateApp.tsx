@@ -50,7 +50,7 @@ import { useTheme } from '../theme/useTheme';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
-import { HomeScreen } from '../home';
+import { ChatHomeSurface } from '../chat-home';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
@@ -496,6 +496,26 @@ export function GateApp(props: GateAppProps = {}) {
   // ChannelView, so a deep link and a bookmark keep working.
   const channelEntities = data.rowsFor('channel')(undefined);
 
+  /**
+   * PR188 review F1: the UI half of the chat composition. The server got its
+   * composition commit (compose.ts); without this bridge the shipped home
+   * rendered a disabled composer blaming the node for operations it serves.
+   * Amendment 10 seam calls: `home` (thread list) + `startChatThread`.
+   */
+  const chatBridge = useMemo(() => ({
+    listThreads: async (sid: string) => (await data.seam.home(sid)).chatThreads ?? [],
+    configureThread: async (input: {
+      rootMessageId: string; teammateId: string; model: string; clientMutationId: string;
+    }) => {
+      const result = await data.seam.commands.startChatThread(input);
+      return {
+        threadRootId: result.thread.rootMessageId,
+        teammateId: result.thread.teammateId,
+        model: result.thread.model,
+      };
+    },
+  }), [data.seam]);
+
   // The same grammar for VOICE: "Voice" is a label, the space's voice_channel
   // entities are the rows. The glyph comes from the REGISTRY row (as
   // `presentKind` does above) rather than being authored here — a second
@@ -817,13 +837,18 @@ export function GateApp(props: GateAppProps = {}) {
               }
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'dashboard' ? (
-            /* T5-1 Home — the first void route dispatching to a real screen
-               (surface wave, home lane). Above the unbuilt-view branch, whose
-               placeholder stopped being true the moment this landed. */
-            <HomeScreen
-              data={data}
+            /* D1-amended: Chat is the home screen. The existing dashboard
+               route stays stable while its centre is replaced wholesale. */
+            <ChatHomeSurface
+              seam={data.seam}
+              spaceId={data.spaceId}
+              nodeKey={nodeKey}
               spaceLabel={data.spaces.find((sp) => sp.id === data.spaceId)?.name}
-              onOpenEntity={(id) => nav.push?.(id as EntityId)}
+              bridge={chatBridge}
+              /* PR188 review F3: the space id is NOT an entity and
+                 messages.post 404s on it (measured). Bare-home chats anchor
+                 to the seeded default channel. */
+              anchorId={channelEntities[0]?.id}
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&

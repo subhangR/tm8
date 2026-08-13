@@ -45,8 +45,8 @@ export interface DbClaims {
   readonly requestId?: string | undefined;
   /**
    * → `SET LOCAL tm8.auth_kind`. The fifth claim (082, ruling R11): the
-   * SERVER-RESOLVED kind of the auth session — `'browser'`, `'cli'` or
-   * `'agent'` — read from `auth_sessions` by token hash in
+   * SERVER-RESOLVED kind of the auth session — `'browser'`, `'cli'`, `'agent'`
+   * or `'agent_runtime'` — read from `auth_sessions` by token hash in
    * `resolveBearerIdentity`, never asserted by the client.
    *
    * Read by `internal.require_human_auth_kind()`, which gates the four

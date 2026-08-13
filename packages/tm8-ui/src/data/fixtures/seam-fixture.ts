@@ -35,6 +35,7 @@ import {
   type CollectionGroup,
   type CollectionQuery,
   type CollectionResult,
+  type HomeSnapshot,
   type CommandContext,
   type CommandResult,
   type CompleteTaskInput,
@@ -1101,6 +1102,9 @@ export function createFixtureSeam(): FixtureSeam {
       eventSubs.add(cb);
       return () => eventSubs.delete(cb);
     },
+    onChatTurn() {
+      return () => undefined;
+    },
     onConnection(cb) {
       connectionSubs.add(cb);
       return () => connectionSubs.delete(cb);
@@ -1461,6 +1465,26 @@ export function createFixtureSeam(): FixtureSeam {
       }
       return clone(pageOf(items, opts));
     },
+    /**
+     * Amendment 10: minimal honest fixture arm. The chat-home surface never
+     * reads this — in fixture mode it resolves the fixture PORT before any
+     * seam call — so an empty snapshot keeps the type satisfied without
+     * inventing home data no test asserts.
+     */
+    async home(spaceId): Promise<HomeSnapshot> {
+      const empty = (): CollectionResult => ({
+        query: { spaceId },
+        page: { items: [], nextCursor: null },
+      });
+      return {
+        readyToPull: empty(),
+        inFlight: empty(),
+        needsMe: empty(),
+        activity: { items: [], nextCursor: null },
+        chatThreads: [],
+      };
+    },
+
     async messages(anchorId, opts): Promise<Page<MessageView>> {
       requireSummary(anchorId);
       // `rootMessageId` reads the branch under a root, oldest-first, exactly
@@ -2296,6 +2320,21 @@ export function createFixtureSeam(): FixtureSeam {
         emit(member.spaceId, { type: 'entity.upsert', entity: clone(member) }, ctx);
         return commandResult(collection, { patches: [clone(collection), clone(member)] });
       },
+      /** Amendment 10: fixture echo of `chat.threads.start` (never turn-running). */
+      async startChatThread(input) {
+        const root = requireSummary(input.rootMessageId);
+        return {
+          thread: {
+            rootMessageId: input.rootMessageId,
+            anchorId: root.parentId ?? input.rootMessageId,
+            teammateId: input.teammateId,
+            model: input.model,
+            createdAt: new Date().toISOString(),
+            lastReplyAt: null,
+          },
+        };
+      },
+
       async postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult> {
         if (input.anchorIds.length === 0) throw new CollabError('invalid_input', 'anchorIds must not be empty');
         const anchors = input.anchorIds.map(requireSummary);

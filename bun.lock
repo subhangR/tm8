@@ -53,6 +53,21 @@
         "vitest": "^2.0.0",
       },
     },
+    "packages/mcp": {
+      "name": "@tm8/mcp",
+      "version": "0.1.0",
+      "bin": {
+        "tm8-mcp": "./dist/cli.js",
+      },
+      "dependencies": {
+        "@tm8/contract": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^20.14.0",
+        "typescript": "^5.5.0",
+        "vitest": "^2.0.0",
+      },
+    },
     "packages/prompt": {
       "name": "@tm8/prompt",
       "version": "0.1.0",
@@ -72,6 +87,7 @@
       "dependencies": {
         "@tm8/contract": "workspace:*",
         "@tm8/execution": "workspace:*",
+        "@tm8/mcp": "workspace:*",
         "@tm8/prompt": "workspace:*",
         "pg": "^8.22.0",
         "zod": "^3.23.0",
@@ -412,6 +428,8 @@
     "@tm8/contract": ["@tm8/contract@workspace:packages/contract"],
 
     "@tm8/execution": ["@tm8/execution@workspace:packages/execution"],
+
+    "@tm8/mcp": ["@tm8/mcp@workspace:packages/mcp"],
 
     "@tm8/prompt": ["@tm8/prompt@workspace:packages/prompt"],
 

@@ -259,6 +259,18 @@ describe('R11 — tm8.auth_kind is bound by the server, not by a test harness', 
     expect(refusalCode(error)).toBe('forbidden');
   });
 
+  it('refuses an AGENT_RUNTIME principal with 42501 at the Postgres guard too', async () => {
+    const error = await captureError(() =>
+      db.rpc(
+        { ...humanClaims(fixture.aliceIdentity), authKind: 'agent_runtime' },
+        'start_credential_session',
+        [fixture.space, 'openai', 900, 2],
+      ),
+    );
+    expectRefusedBySqlstate(error, '42501');
+    expect(refusalCode(error)).toBe('forbidden');
+  });
+
   it('refuses a principal with NO kind — fail closed, no is-null escape', async () => {
     const { authKind: _dropped, ...noKind } = humanClaims(fixture.aliceIdentity);
     const error = await captureError(() =>

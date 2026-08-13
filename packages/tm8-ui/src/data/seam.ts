@@ -191,6 +191,9 @@ import type {
   SessionJournalPage,
   SessionLaunchRecord,
   SessionTranscriptPage,
+  HomeSnapshot,
+  StartChatThreadInput,
+  StartChatThreadResult,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
@@ -199,6 +202,7 @@ import type {
   WorkSessionStatus,
   WorkStatus,
 } from '@tm8/contract';
+import type { ChatTurnFrame } from '../chat-home/types';
 
 export type Unsubscribe = () => void;
 
@@ -366,6 +370,8 @@ export interface Seam {
    * frames never appear here (R8 dormant; W5: no publisher exists).
    */
   onEvent(cb: (e: DurableWorkspaceEvent) => void): Unsubscribe;
+  /** C3 transient turn frames. Durable parts are re-read after a reconnect. */
+  onChatTurn(cb: (frame: ChatTurnFrame) => void): Unsubscribe;
   onConnection(cb: (s: ConnectionState) => void): Unsubscribe;
   getConnection(): ConnectionState;
   /**
@@ -520,6 +526,14 @@ export interface Seam {
    * the two shapes of this read.
    */
   messages(anchorId: EntityId, opts?: MessageListOpts): Promise<Page<MessageView>>;
+  /**
+   * Amendment 10 (2026-08-13, TM8 Chat composition — PR188 review F1): the
+   * contract's `spaces.home` read. The chat home's thread list rides its
+   * additive `chatThreads` field, so this is the read half of the bridge the
+   * shipped chat home was missing — the surface rendered a disabled composer
+   * blaming the server for operations the node in fact serves.
+   */
+  home(spaceId: SpaceId | string): Promise<HomeSnapshot>;
   handoffs(workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>>;
   /**
    * The session's `tm8` CLI command journal — the DEBUG surface's only read.
@@ -692,6 +706,12 @@ export interface Seam {
       ctx?: CommandContext,
     ): Promise<CommandResult>;
     postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult>;
+    /**
+     * Amendment 10 (with `home` above): the contract's `chat.threads.start`
+     * — the write half of the chat-home bridge. Input is an ALREADY-POSTED
+     * root message id; the op never creates messages and triggers turn 1.
+     */
+    startChatThread(input: StartChatThreadInput): Promise<StartChatThreadResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;

@@ -32,7 +32,7 @@ import type {
   ActivityItem, ActorSummary, AddMessageAttachmentsInput,
   AuthAccountView, AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthSessionGetResult, AuthSessionView, AuthSignupInput,
-  AuthSignupResult, ChannelTab,
+  AuthSignupResult, ChannelTab, ChatThreadSummary, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
@@ -62,10 +62,11 @@ import type {
   InteractionProfileView, LeaderboardRow, LinkCommitInput, LinkPrInput,
   LiveWork, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
   Mention, MessageBatchResult, MessageDeliveryQuery, MessageDeliveryRecord,
-  MessageDeliveryView, MessageView, MoveEntityInput, NavChannelNode,
+  MessageDeliveryView, MessagePart, MessageView, MoveEntityInput, NavChannelNode,
   NotificationItem, Page, PaletteAction, PatchEdgeInput, PatchEntityInput,
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
-  PostMessageInput, PostMessageWireInput, PresenceSnapshot,
+  PostMessageInput, PostMessageWireInput, PresenceSnapshot, StartChatThreadInput,
+  StartChatThreadResult,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
   CommitSessionAttribution,
   ProjectBlameHunk, ProjectBranch, ProjectBranchTopology,
@@ -752,6 +753,118 @@ const MessageContentSchema = z.object({
   attachments: z.array(FileAttachmentSchema),
 }).strict();
 
+export const ChatTurnUsageSchema: z.ZodType<ChatTurnUsage> = z.object({
+  input_tokens: z.number().int().nonnegative().optional(),
+  output_tokens: z.number().int().nonnegative().optional(),
+  cache_creation_input_tokens: z.number().int().nonnegative().optional(),
+  cache_read_input_tokens: z.number().int().nonnegative().optional(),
+  total_cost_usd: z.number().nonnegative().finite().optional(),
+}).strict();
+
+type ChatJsonValue = null | boolean | number | string | ChatJsonValue[] | {
+  readonly [key: string]: ChatJsonValue;
+};
+const ChatJsonValueSchema: z.ZodType<ChatJsonValue> = z.lazy(() => z.union([
+  z.null(),
+  z.boolean(),
+  z.number().finite(),
+  z.string(),
+  z.array(ChatJsonValueSchema),
+  z.record(ChatJsonValueSchema),
+]));
+
+export const MessagePartSchema: z.ZodType<MessagePart> = z.discriminatedUnion('kind', [
+  z.object({
+    seq: z.number().int().nonnegative(),
+    kind: z.literal('thinking'),
+    payload: z.object({ text: z.string() }).strict(),
+    createdAt: IsoTimestamp,
+  }).strict(),
+  z.object({
+    seq: z.number().int().nonnegative(),
+    kind: z.literal('text'),
+    payload: z.object({ text: z.string() }).strict(),
+    createdAt: IsoTimestamp,
+  }).strict(),
+  z.object({
+    seq: z.number().int().nonnegative(),
+    kind: z.literal('tool_call'),
+    payload: z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      args: ChatJsonValueSchema,
+      state: z.enum(['running', 'completed', 'error']),
+    }).strict(),
+    createdAt: IsoTimestamp,
+  }).strict(),
+  z.object({
+    seq: z.number().int().nonnegative(),
+    kind: z.literal('tool_result'),
+    payload: z.object({
+      tool_call_id: z.string().min(1),
+      content: ChatJsonValueSchema,
+      is_error: z.boolean(),
+    }).strict(),
+    createdAt: IsoTimestamp,
+  }).strict(),
+  z.object({
+    seq: z.number().int().nonnegative(),
+    kind: z.literal('usage'),
+    payload: ChatTurnUsageSchema,
+    createdAt: IsoTimestamp,
+  }).strict(),
+  z.object({
+    seq: z.number().int().nonnegative(),
+    kind: z.literal('error'),
+    payload: z.object({ code: z.string().min(1), message: z.string() }).strict(),
+    createdAt: IsoTimestamp,
+  }).strict(),
+  z.object({
+    seq: z.number().int().nonnegative(),
+    kind: z.literal('done'),
+    payload: z.object({ reason: z.enum(['success', 'error', 'interrupted', 'closed']) }).strict(),
+    createdAt: IsoTimestamp,
+  }).strict(),
+]);
+
+export const ChatThreadSummarySchema: z.ZodType<ChatThreadSummary> = z.object({
+  rootMessageId: EntityIdSchema,
+  anchorId: EntityIdSchema,
+  teammateId: EntityIdSchema,
+  model: z.string().min(1),
+  createdAt: IsoTimestamp,
+  lastReplyAt: IsoTimestamp.nullable(),
+  title: z.string().nullable().optional(),
+  replyCount: z.number().int().nonnegative().optional(),
+}).strict();
+
+export const StartChatThreadInputSchema: z.ZodType<StartChatThreadInput> = z.object({
+  rootMessageId: EntityIdSchema,
+  teammateId: EntityIdSchema,
+  model: z.string().min(1),
+  clientMutationId: z.string().min(1),
+}).strict();
+
+export const StartChatThreadResultSchema: z.ZodType<StartChatThreadResult> = z.object({
+  thread: ChatThreadSummarySchema,
+}).strict();
+
+export const ChatTurnFrameSchema: z.ZodType<ChatTurnFrame> = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('chat.turn.delta'),
+    threadRootId: EntityIdSchema,
+    messageId: EntityIdSchema,
+    seq: z.number().int().nonnegative(),
+    part: MessagePartSchema,
+  }).strict(),
+  z.object({
+    type: z.literal('chat.turn.done'),
+    threadRootId: EntityIdSchema,
+    messageId: EntityIdSchema,
+    usage: ChatTurnUsageSchema.nullable(),
+  }).strict(),
+]);
+
 export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   ...entitySummaryShape(),
   state: MessageStateSchema,
@@ -761,6 +874,7 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   pending: z.boolean().optional(),
   lastReplyAt: z.string().nullable().optional(),
   replyParticipants: z.array(ActorSummarySchema).optional(),
+  parts: z.array(MessagePartSchema).optional(),
 }).strict());
 
 export const MessageBatchResultSchema: z.ZodType<MessageBatchResult> = z.lazy(() => z.object({
@@ -1154,8 +1268,10 @@ export const AuthAccountViewSchema: z.ZodType<AuthAccountView> = z.object({
 
 export const AuthSessionViewSchema: z.ZodType<AuthSessionView> = z.object({
   sessionId: z.string().uuid(),
-  kind: z.enum(['browser', 'cli', 'agent']),
+  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime']),
   actingAsTeamMemberId: z.string().uuid().nullable(),
+  runtimeMemberId: z.string().uuid().nullable().optional(),
+  runtimeThreadRootId: z.string().uuid().nullable().optional(),
   label: z.string().nullable(),
   createdAt: IsoTimestamp.optional(),
   expiresAt: IsoTimestamp,
@@ -2904,6 +3020,7 @@ export const HomeSnapshotSchema: z.ZodType<HomeSnapshot> = z.lazy(() => z.object
   inFlight: CollectionResultSchema,
   needsMe: CollectionResultSchema,
   activity: pageOf(ActivityItemSchema),
+  chatThreads: z.array(ChatThreadSummarySchema).optional(),
 }).strict());
 
 export const TaskAxisSchema: z.ZodType<TaskAxis> = z.object({

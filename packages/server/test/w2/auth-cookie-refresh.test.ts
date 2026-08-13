@@ -33,6 +33,8 @@ class AuthDb implements Db {
           kind: this.kind,
           actingAsTeamMemberId: null,
           workSessionId: null,
+          runtimeMemberId: null,
+          runtimeThreadRootId: null,
           expiresAt: EXPIRES_AT,
           label: null,
         } as R;
@@ -109,8 +111,8 @@ describe('auth.session.get browser cookie refresh', () => {
     });
   });
 
-  it('does not turn a CLI or agent pass into ambient browser cookie authority', async () => {
-    for (const kind of ['cli', 'agent'] as const) {
+  it('does not turn CLI, agent, or agent_runtime passes into ambient browser cookies', async () => {
+    for (const kind of ['cli', 'agent', 'agent_runtime'] as const) {
       const result = await sessionGet(kind);
       expect(result).not.toHaveProperty('headers.set-cookie');
     }

@@ -13,7 +13,8 @@
     "@tm8/execution": "workspace:*",
     "@tm8/prompt": "workspace:*",
     "pg": "^8.22.0",
-    "zod": "^3.23.0"
+    "zod": "^3.23.0",
+    "@tm8/mcp": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

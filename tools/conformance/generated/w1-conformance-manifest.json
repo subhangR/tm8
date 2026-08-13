@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:dceade5e3a670bbdb7356f1500685343f33bdbafc4a41e162e4810a889c25b28",
+  "catalogDigest": "sha256:10936f405460bfb1c5b613d83e36981de053cc6f99911c8380695829cd4db353",
   "catalog": {
-    "total": 158,
-    "v1": 156,
+    "total": 159,
+    "v1": 157,
     "reserved": 2,
-    "http": 157,
+    "http": 158,
     "ws": 1,
-    "registerableV1Http": 155,
+    "registerableV1Http": 156,
     "methods": {
       "GET": 58,
-      "POST": 72,
+      "POST": 73,
       "PATCH": 10,
       "DELETE": 10,
       "PUT": 7,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 61,
-      "command": 96,
+      "command": 97,
       "stream": 1
     },
-    "uniqueNames": 158,
-    "uniqueBindings": 158
+    "uniqueNames": 159,
+    "uniqueBindings": 159
   },
   "reservedOperations": [
     "search.query",
@@ -603,6 +603,13 @@
         "operation": "messages.delete",
         "method": "DELETE",
         "path": "/v2/messages/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "chat.threads.start",
+        "method": "POST",
+        "path": "/v2/chat/threads",
         "status": "registered",
         "source": "server-router"
       },
@@ -1510,7 +1517,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 127
+    "unimplementedV1Http": 128
   },
   "schemas": {
     "additive": {
@@ -2632,6 +2639,23 @@
         ],
         "inputSchemaRef": "DeleteMessageInputSchema",
         "resultSchemaRef": "MessageViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "chat.threads.start",
+        "noun": "chat-thread",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/chat.threads.start",
+        "intentTags": [
+          "chat",
+          "threads",
+          "start"
+        ],
+        "inputSchemaRef": "StartChatThreadInputSchema",
+        "resultSchemaRef": "StartChatThreadResultSchema",
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,

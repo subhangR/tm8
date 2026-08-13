@@ -73,9 +73,35 @@ import {
 } from './pty/index.js';
 import { readTm8SessionCookie } from './http/session-cookie.js';
 import { WsAdmissionController } from './http/ws-admission.js';
+import {
+  ChatOrchestrator,
+  ChatTurnPublisher,
+  composeChatBootstrap,
+  type AgentRuntime,
+  type ResolveChatLaunchConfig,
+} from './chat/index.js';
+
+export interface ChatBootstrapOptions {
+  readonly runtime: AgentRuntime;
+  readonly resolveLaunchConfig: ResolveChatLaunchConfig;
+  readonly onError?: (error: unknown) => void;
+}
+
+/**
+ * Factory form: bootstrap owns db/dataDir construction, so a production
+ * caller cannot build the chat block up front. main() passes
+ * `composeChatBootstrap`; the factory runs only once a database exists.
+ */
+export type ChatBootstrapFactory = (ctx: {
+  db: Db;
+  dataDir: string;
+  baseUrl: string;
+}) => ChatBootstrapOptions;
 
 export interface BootstrapOptions {
   readonly config?: ServerConfig;
+  /** Provider runtime block or factory; absent stays 501. */
+  readonly chat?: ChatBootstrapOptions | ChatBootstrapFactory;
   /**
    * Start the R26 scheduler and its periodic jobs.
    *
@@ -218,6 +244,30 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // Declared before the registration block because `presence.get` is only
   // mounted when a presence source exists — see registerEventHandlers.
   const presence = new InMemoryPresenceStore();
+  const subscriptions = new SubscriptionRegistry();
+  // Factory callers get the composed context; block callers pass through
+  // unchanged (every test harness injects the block form directly).
+  const chatBlock: ChatBootstrapOptions | undefined =
+    db && opts.chat
+      ? typeof opts.chat === 'function'
+        ? opts.chat({ db, dataDir, baseUrl: `http://127.0.0.1:${config.port}` })
+        : opts.chat
+      : undefined;
+  const chat = db && chatBlock
+    ? new ChatOrchestrator({
+        db,
+        runtime: chatBlock.runtime,
+        publisher: new ChatTurnPublisher(subscriptions, (await owner!()).identityId),
+        resolveLaunchConfig: chatBlock.resolveLaunchConfig,
+        ...(chatBlock.onError ? { onError: chatBlock.onError } : {}),
+        // F2: only the production (factory) composition gets the boot sweep —
+        // block-form test harnesses must never see sweep queries.
+        ...(typeof opts.chat === 'function'
+          ? { sweepClaims: { identityId: (await owner!()).identityId, nodeAdmin: true } }
+          : {}),
+      })
+    : undefined;
+  if (chat && typeof opts.chat === 'function') void chat.reconcileOnBoot();
 
   // Voice-channel roster (voice plan §2). Ephemeral for the same reason
   // presence is, but sourced from LiveKit webhooks rather than from client
@@ -278,6 +328,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         stateDir: pathResolve(dataDir, 'folder-uploads'),
       },
       ...(credentials ? { credentials } : {}),
+      ...(chat ? { chat: { orchestrator: chat, dataDir } } : {}),
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
       resolveAuthoredFromWorkSessionId: async (ctx) => {
         const claimed = commandEnvelope(ctx).workSessionId ?? null;
@@ -305,7 +356,6 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     );
   }
 
-  const subscriptions = new SubscriptionRegistry();
   // NOT a stand-in for the durable sequence — that misreading is why this
   // comment was rewritten. The durable per-Space seq is a committed table row
   // (`public.space_event_seq`, 003:282) minted by the capture trigger inside
@@ -789,6 +839,10 @@ export async function main(): Promise<void> {
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
     const { server, url, db, delivery, preview, scheduler } = await bootstrap({
       startBackgroundJobs: true,
+      // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
+      // launch-config resolver. Without this line the chat ships dead — the
+      // orchestrator only exists when a runtime is injected (see compose.ts).
+      chat: composeChatBootstrap,
     });
     const { registry, router } = server;
     console.log(`tm8-server listening on ${url}`);

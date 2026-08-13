@@ -302,6 +302,10 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // belongs. Locked here the same way, so the seam cannot gain a command
       // without this list saying so.
       'restoreEntity', 'resume', 'spawn',
+      // Amendment 10 (2026-08-13, PR188 review F1): `chat.threads.start` — the
+      // write half of the chat-home bridge. Sorts between spawn and
+      // startTerminal.
+      'startChatThread',
       // 2026-08-12: `startTerminal` — `execution.terminal.start`, a VANILLA
       // TERMINAL (101). Sorts after `spawn`, which is where it reads like it
       // belongs and is a coincidence worth not relying on.
@@ -328,7 +332,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
     ]);
     for (const m of ['openSpace', 'closeSpace', 'dispose', 'onEvent', 'onConnection', 'getConnection',
       'onResync', 'identity', 'spaces', 'menu', 'query', 'entityKinds', 'entity', 'children',
-      'connections', 'activity', 'messages', 'handoffs', 'journal', 'launch', 'inbox', 'feed',
+      'connections', 'activity', 'messages', 'home', 'handoffs', 'journal', 'launch', 'inbox', 'feed',
       'delivery', 'attentionRequests']) {
       expect(typeof (seam as unknown as Record<string, unknown>)[m]).toBe('function');
     }
