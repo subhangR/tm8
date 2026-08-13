@@ -203,4 +203,7 @@ export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: strin
   // duplicate (the R9 follow-up recorded on task 019fe5d6).
   files: { label: 'File browser', icon: '▤', art: VIEW_ART.files },
   settings: { label: 'Settings', icon: '⛭', art: VIEW_ART.settings },
+  // Git UI wave: the project git screen — its glyph is a branch fork, an
+  // idiom no kind row uses (the commit mark is a bare ring; this one forks).
+  git: { label: 'Git', icon: '⎇', art: VIEW_ART.git },
 };

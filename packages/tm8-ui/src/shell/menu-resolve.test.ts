@@ -87,10 +87,11 @@ describe('the shipped default menu', () => {
       expect(presentation.icon.length, ref).toBeGreaterThan(0);
     }
     // 'files' added 2026-08-09 with the MenuViewRef widening (FILES-DESIGN
-    // §5.3). The union is closed, so this list is how a widening announces
-    // itself rather than silently shipping a ref with no glyph.
+    // §5.3); `git` joined with the Git UI wave (additive widening, same R4
+    // posture as `graph`). The union is closed, so this list is how a widening
+    // announces itself rather than silently shipping a ref with no glyph.
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['channels', 'dashboard', 'feed', 'files', 'graph', 'inbox', 'settings', 'workspace'].sort(),
+      ['channels', 'dashboard', 'feed', 'files', 'git', 'graph', 'inbox', 'settings', 'workspace'].sort(),
     );
   });
 });

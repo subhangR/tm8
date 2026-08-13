@@ -26,6 +26,7 @@ import { screenStackStore } from '../stores/screenStackStore';
 import { navStore, useNavStore } from '../stores/navStore';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { PromptsOverlay } from '../prompts';
+import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART } from '../domain';
 import { getKind } from '../domain';
@@ -696,6 +697,20 @@ export function GateApp(props: GateAppProps = {}) {
               onRetry={data.graph.refresh}
               launch={graphLaunchPort}
               onNotice={notices.push}
+            />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'git' ? (
+            /* ⎇ Git (Git UI wave) — git elevated out of Settings: branch
+               topology per project, live worktree lanes with owning-session
+               click-through, and the contention map. Lane click-through
+               lands in the workspace with the session panel pushed, the
+               same handoff the spawn path performs. */
+            <ProjectGitScreen
+              seam={data.seam}
+              spaceId={data.spaceId as SpaceId}
+              onOpenEntity={(id) => {
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id as EntityId);
+              }}
             />
           ) : data.ready && activeTarget?.type === 'kind' ? (
             /* D65: a rail KIND row opens its EntityView — wide list, Z3 aside

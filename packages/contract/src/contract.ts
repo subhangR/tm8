@@ -1406,6 +1406,39 @@ export interface LinkPrInput extends CommandContext { clientMutationId: string; 
 /** POST /v2/entities/:id/commands/link-commit — analogous to link-pr (01 §6). */
 export interface LinkCommitInput extends CommandContext { clientMutationId: string; url: string; projectId?: ProjectId }
 
+/**
+ * `projects.contention` (GET /v2/projects/:projectId/contention) — the
+ * file-contention map over a project's ACTIVE worktrees. Lanes an RLS-visible
+ * node cannot read are reported as SKIPPED with the reason, never silently
+ * omitted; `pairs` lists only overlapping lane pairs, so empty means no
+ * contention observed.
+ */
+export interface ContentionLane {
+  worktreeId: string;
+  branch: string;
+  path: string;
+  sessionId: string | null;
+  touchedCount: number;
+  touchedPaths: string[];
+  skipped: string | null;
+}
+
+export interface ContentionPair {
+  aWorktreeId: string;
+  bWorktreeId: string;
+  aBranch: string;
+  bBranch: string;
+  overlappingPaths: string[];
+}
+
+export interface ContentionReport {
+  projectId: string;
+  generatedAt: string;
+  lanes: ContentionLane[];
+  /** Only pairs that actually overlap; empty means no contention observed. */
+  pairs: ContentionPair[];
+}
+
 /** POST /v2/entities/:id/commands/gate — 083's opt-in completion gate. 'pr_merged' makes complete refuse while a tracked PR is unmerged or CI-red. */
 export interface GateTaskInput extends CommandContext { expectedVersion: number; gate: 'none' | 'pr_merged' }
 
@@ -1445,8 +1478,11 @@ export interface UpdateSpaceInput extends CommandContext {
 /** `graph` added 2026-07-29 (additive union widening, R4) for the ◉ Graph view.
  * `files` added 2026-08-10 (same R4 posture) for the dedicated Files explorer —
  * a VIEW, distinct from the `file` KIND row (owner ruling R9, task 019fe5d6:
- * entity files and the file browser are different and both stay reachable). */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings';
+ * entity files and the file browser are different and both stay reachable).
+ * `git` (Git UI wave, 2026-08-09): the project git screen — branch topology,
+ * worktree lanes and the contention map, elevated out of Settings. Additive
+ * union widening, the same R4 posture as `graph` and `worktree`. */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a

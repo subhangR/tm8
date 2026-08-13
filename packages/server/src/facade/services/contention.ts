@@ -14,39 +14,13 @@
  * read is reported as SKIPPED with its reason, never silently omitted — an
  * unreadable lane is exactly the one you want named in a contention report.
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, type ContentionLane, type ContentionPair, type ContentionReport } from '@tm8/contract';
 
 import type { RequestContext } from '../../http/types.js';
 import { claimsFor, requireUuidParam } from '../context.js';
 import type { FacadeDeps } from '../deps.js';
 import type { HandlerRegistry } from '../registry.js';
 import { touchedPaths } from '../../tracking/git-local.js';
-
-export interface ContentionLane {
-  worktreeId: string;
-  branch: string;
-  path: string;
-  sessionId: string | null;
-  touchedCount: number;
-  touchedPaths: string[];
-  skipped: string | null;
-}
-
-export interface ContentionPair {
-  aWorktreeId: string;
-  bWorktreeId: string;
-  aBranch: string;
-  bBranch: string;
-  overlappingPaths: string[];
-}
-
-export interface ContentionReport {
-  projectId: string;
-  generatedAt: string;
-  lanes: ContentionLane[];
-  /** Only pairs that actually overlap; empty means no contention observed. */
-  pairs: ContentionPair[];
-}
 
 interface WorktreeRow {
   entity_id: string;
