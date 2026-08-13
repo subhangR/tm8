@@ -179,7 +179,7 @@ export interface SettingsPort {
   loadInvites(): Promise<SpaceInviteView[]>;
 
   /**
-   * Change one member's role in THIS space (114).
+   * Change one member's role in THIS space (117).
    *
    * Takes no space id: the port is already bound to one, and letting a caller
    * name a different space would be the exact confusion `set_member_role`'s

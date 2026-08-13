@@ -32,7 +32,7 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
         { noun: 'project', operationCount: 19 },
-        { noun: 'space', operationCount: 24 }, // +1 (114): spaces.members.updateRole
+        { noun: 'space', operationCount: 24 }, // +1 (117): spaces.members.updateRole
       ]),
     });
     expect(JSON.stringify(response.result)).not.toContain('/v2/');

@@ -244,7 +244,7 @@ const IDENTITY_V2_NET_NEW_OPERATIONS = [
 ] as const;
 
 /**
- * The membership WRITER (114).
+ * The membership WRITER (117).
  *
  * Its own list rather than an entry in the identity block, because it is not an
  * identity operation: it changes a member's role INSIDE a space, and it joined
@@ -465,7 +465,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 122 -> 123: projects.files.read (the viewer half).
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
-    // 139 -> 141 (114): auth.invite.resolve + spaces.members.updateRole, MEASURED
+    // 139 -> 141 (117): auth.invite.resolve + spaces.members.updateRole, MEASURED
     expect(registry.size).toBe(143);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
@@ -632,7 +632,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // bodies bind (gitStatus/gitDiff are GETs and bind nothing).
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, forge write): tracking.pr.merge binds its body.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(93); // + StartChatThreadInput; +2 (114): UpdateMemberRoleInput, ResolveInviteInput
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(93); // + StartChatThreadInput; +2 (117): UpdateMemberRoleInput, ResolveInviteInput
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long

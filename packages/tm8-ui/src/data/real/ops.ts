@@ -233,7 +233,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
 
     /**
-     * Membership writes (114). All three name their subject in the PATH, never
+     * Membership writes (117). All three name their subject in the PATH, never
      * the body — `set_member_role` and `w2_revoke_invite` both authorize
      * against the (space, row) pair, and a body-carried id would authorize
      * against a space the row is not in.

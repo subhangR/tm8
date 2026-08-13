@@ -46,7 +46,7 @@ import { isExitCode } from '../src/exit.js';
 // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows — the
 // session git rail behind the facade.
 // 150 -> 152 (2026-08-12): projects.file.history + projects.file.blame (GET reads, with CLI commands).
-const EXPECTED_ROWS = 163; // 159 -> 161 (114): spaces.members.updateRole + auth.invite.resolve — MEASURED on the rebased tree
+const EXPECTED_ROWS = 163; // 159 -> 161 (117): spaces.members.updateRole + auth.invite.resolve — MEASURED on the rebased tree
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));

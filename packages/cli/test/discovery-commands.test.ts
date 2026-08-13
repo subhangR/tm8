@@ -137,7 +137,7 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // catalog does not model; ZERO new catalog rows.
     // 143 -> 144 (2026-08-13, forge write): `pr merge` — the one catalog
     // row this tranche adds carries its own command.
-    // 144 -> 146 (114): `space member role` and `space invite resolve`.
+    // 144 -> 146 (117): `space member role` and `space invite resolve`.
     expect(COMMAND_PATHS).toHaveLength(146);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
