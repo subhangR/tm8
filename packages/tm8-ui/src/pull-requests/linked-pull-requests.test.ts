@@ -181,6 +181,56 @@ describe('sessions inherit their tasks\' PRs (working_on second pass)', () => {
   });
 });
 
+describe('mechanical headRef association (fourth pass, 107)', () => {
+  const laneSession = summary('ws-lane-1', {
+    kind: 'work_session',
+    status: 'running',
+    agentTool: 'claude-code',
+    shareMode: 'none',
+    checkoutBranch: 'tm8/abc12345',
+    workdirMode: 'worktree',
+  });
+
+  it('associates a PR to a session by headRef == checkoutBranch, with no edge and no task', () => {
+    const pr = pullRequest({ headRef: 'tm8/abc12345', ciStatus: 'passing' });
+    const index = indexLinkedPullRequests([pr, laneSession], []);
+    expect(index.get('ws-lane-1')?.[0]).toMatchObject({
+      id: 'pr-1',
+      headRef: 'tm8/abc12345',
+      ciStatus: 'passing',
+    });
+  });
+
+  it('makes no association when the branch fact is absent, null, or different', () => {
+    const pr = pullRequest({ headRef: 'tm8/abc12345' });
+    const noFact = summary('ws-old', { kind: 'work_session', status: 'running' });
+    const nullFact = summary('ws-scratch', { kind: 'work_session', status: 'running', checkoutBranch: null });
+    const otherBranch = summary('ws-other', { kind: 'work_session', status: 'running', checkoutBranch: 'main' });
+    const index = indexLinkedPullRequests([pr, noFact, nullFact, otherBranch], []);
+    expect(index.get('ws-old')).toBeUndefined();
+    expect(index.get('ws-scratch')).toBeUndefined();
+    expect(index.get('ws-other')).toBeUndefined();
+  });
+
+  it('makes no association from an unobserved headRef — absence is not a key', () => {
+    const pr = pullRequest({ headRef: null });
+    const index = indexLinkedPullRequests([pr, laneSession], []);
+    expect(index.get('ws-lane-1')).toBeUndefined();
+  });
+
+  it('deduplicates against the higher-precedence passes — one PR, once', () => {
+    // Same PR reaches the session via working_on AND via headRef; the map
+    // keys on PR id, so the mechanical pass merely confirms the linked one.
+    const pr = pullRequest({ headRef: 'tm8/abc12345' });
+    const workingOn: EdgeView = { ...tracks(laneSession, task), id: 'edge-wo-2', type: 'working_on' };
+    const index = indexLinkedPullRequests(
+      [task, pr, laneSession],
+      [tracks(task, pr), workingOn],
+    );
+    expect(index.get('ws-lane-1')?.map((f) => f.id)).toEqual(['pr-1']);
+  });
+});
+
 describe('sessions resolve from task badges when the working_on edge missed the graph page', () => {
   it('badges.workingActors[].actor.via.sessionId carries the PRs without any working_on edge', () => {
     const pr = pullRequest({ state: 'merged', ciStatus: 'failing' });

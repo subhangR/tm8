@@ -343,6 +343,27 @@
   white-space: nowrap;
 }
 
+/* -- the ONE lane line (107): `⎇ branch · [worktree|shared|scratch]`,
+      identical on the session tile and atop the Git tab. No lane fact ⇒ the
+      component renders nothing — honest absence draws no placeholder. ------ */
+.pn-lane {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+.pn-lane__branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* -- transcript-observed file changes (renders with OR without a worktree) -- */
 .pn-git__change-totals { display: inline-flex; gap: var(--pn-space-2); }
 .pn-git__added { color: var(--pn-run); font-family: var(--pn-mono); font-size: var(--pn-fs-micro); }

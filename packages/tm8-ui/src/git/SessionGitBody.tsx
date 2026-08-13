@@ -9,6 +9,12 @@ import { DiffView, Pill } from '../kit';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import { SessionGitFacts } from './SessionGitFacts';
 import { SessionFileChanges } from './SessionFileChanges';
+import {
+  SessionLaneLine,
+  SessionLaneModeBadge,
+  sessionLaneOf,
+  type SessionLaneFacts,
+} from './SessionLane';
 import './session-git.css';
 
 /**
@@ -113,6 +119,26 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
   const [deleteForce, setDeleteForce] = useState(false);
   const hasLoaded = useRef(false);
   const diffOpen = useRef(false);
+  /**
+   * The lane FACTS (107), from the session's own summary — one read per
+   * mount, independent of the checkout: a session with no operable worktree
+   * still answers "what branch, what mode". `null` = no claim, render
+   * nothing; the read failing degrades to exactly that.
+   */
+  const [lane, setLane] = useState<SessionLaneFacts | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    seam
+      .entity(sessionId)
+      .then((detail) => {
+        if (!cancelled) setLane(sessionLaneOf(detail.state));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [seam, sessionId]);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -197,6 +223,15 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
     const reason = reasonFor(s);
     return (
       <div className="pn-git" data-testid="session-git-body">
+        {/* The ONE lane line (107), atop the tab: the checkout is unavailable
+            but the session still knows its branch and mode — a shared-checkout
+            session says `⎇ main · shared` here instead of nothing. No lane
+            fact renders no claim. */}
+        {lane !== null ? (
+          <div className="pn-git__header" data-testid="session-git-lane-line">
+            <SessionLaneLine lane={lane} />
+          </div>
+        ) : null}
         <div className="pn-git__empty" data-testid="session-git-unavailable">
           <p className="pn-git__note">{reason.cause}</p>
           {reason.remedy ? <p className="pn-git__remedy">{reason.remedy}</p> : null}
@@ -204,7 +239,7 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
         {/* The checkout is unavailable; the GRAPH is not. Commits this session
             recorded, PRs its task tracks, and its lane entity render below the
             reason — the refusal covers the verbs, not the history. */}
-        <SessionGitFacts seam={seam} sessionId={sessionId} />
+        <SessionGitFacts seam={seam} sessionId={sessionId} lane={lane} />
         {/* And neither is the TRANSCRIPT: the session's observed edits render
             without any worktree — per file, with ± counts and a diff view. */}
         <SessionFileChanges seam={seam} sessionId={sessionId} />
@@ -222,6 +257,10 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
           <span aria-hidden className="pn-git__branch-glyph">⎇</span>
           {s.branch ?? '(detached)'}
         </span>
+        {/* The lane MODE beside the live branch — the header already draws
+            the branch from git status, so only the honesty badge is added:
+            worktree = attributable, shared = not exclusively yours. */}
+        <SessionLaneModeBadge mode={lane?.mode ?? null} />
         {s.ahead !== null && s.behind !== null ? (
           <span className="pn-git__counts" data-testid="session-git-ahead-behind">
             <Pill tone={s.ahead > 0 ? 'run' : 'idle'} title={`${s.ahead} commit(s) ahead of ${s.baseRef ?? 'base'}`}>
@@ -768,7 +807,7 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
       </div>
 
       {/* -- graph facts: commits, PRs, lane entity --------------------------- */}
-      <SessionGitFacts seam={seam} sessionId={sessionId} />
+      <SessionGitFacts seam={seam} sessionId={sessionId} lane={lane} />
 
       {/* -- transcript-observed edits: per file, ± counts, diff view ---------- */}
       <SessionFileChanges seam={seam} sessionId={sessionId} />

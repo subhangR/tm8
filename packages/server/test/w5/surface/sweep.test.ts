@@ -477,7 +477,13 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // requester_auth_kind replay column lands the same day. `ls
     // db/migrations/*.sql | wc -l` = 101 on integrate/tm8-chat — same
     // two-correct-measurements-still-stale class as the 92 -> 94 note above.
-    expect(server.appliedMigrations.length).toBe(101);
+    // 101 -> 102 on 2026-08-13, resolved AT THE REBASE onto the merged #188:
+    // 107 (session checkout_branch lane fact) joins the chat stack's
+    // 104-106 — it was numbered 107 on its own branch precisely because
+    // those three were claimed in flight, so the rebase changes the count
+    // and nothing else. Re-measured on THIS tree, not incremented:
+    // `ls db/migrations/*.sql | wc -l` = 102.
+    expect(server.appliedMigrations.length).toBe(102);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

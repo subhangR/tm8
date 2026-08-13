@@ -105,6 +105,7 @@ interface CorrectionEdgeRow {
   pr_state: string | null;
   pr_ci_status: string | null;
   pr_mergeable_state: string | null;
+  pr_head_ref: string | null;
   pr_url: string | null;
   pr_fetched_at: Date | string | null;
   commit_repo: string | null;
@@ -216,7 +217,7 @@ function artifactSummary(row: CorrectionEdgeRow, createdBy: ActorSummary): Entit
         ...(row.pr_url ? { url: row.pr_url } : {}),
         fetchedAt: isoOrNull(row.pr_fetched_at),
         stale: row.pr_fetched_at === null,
-        ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state),
+        ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       },
     };
   }
@@ -270,6 +271,7 @@ async function loadCorrectionEdge(
             pr.title pr_title, pr.repo pr_repo, pr.number pr_number, pr.state pr_state,
             pr.url pr_url, pr.fetched_at pr_fetched_at,
             pr.ci_status pr_ci_status, pr.mergeable_state pr_mergeable_state,
+            pr.head_ref pr_head_ref,
             commit_row.repo commit_repo, commit_row.sha commit_sha,
             commit_row.message commit_message, commit_row.committed_at commit_committed_at,
             projection.id project_entity_id, projection.space_id project_space_id,

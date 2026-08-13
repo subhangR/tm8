@@ -19,6 +19,9 @@ export interface LinkedPullRequestFacts {
   url: string | null;
   ciStatus: 'passing' | 'failing' | 'pending' | null;
   mergeState: 'clean' | 'conflicted' | 'unknown' | null;
+  /** The PR's source branch (observer head_ref, 107) — the mechanical
+   *  association key against a session's `checkoutBranch`. Null: unobserved. */
+  headRef: string | null;
 }
 export type PullRequestChipState =
   | PullRequestLifecycle
@@ -85,6 +88,8 @@ export function pullRequestFactsOf(row: EntitySummary): LinkedPullRequestFacts |
     // Exact additive read-door names. Missing/null/unknown values stay null.
     ciStatus: optionalEnum(state.ciStatus, CI_STATUS),
     mergeState: optionalEnum(state.mergeState, MERGE_STATE),
+    headRef:
+      typeof state.headRef === 'string' && state.headRef !== '' ? state.headRef : null,
   };
 }
 
@@ -175,6 +180,33 @@ export function indexLinkedPullRequests(
       if (typeof sessionId === 'string' && sessionId !== '') {
         for (const facts of linked.values()) add(sessionId, facts);
       }
+    }
+  }
+
+  // FOURTH AND LOWEST-PRECEDENCE PASS — MECHANICAL headRef ASSOCIATION (107):
+  // a PR whose observed `headRef` equals a session's `checkoutBranch` fact is
+  // that session's PR with NO task link and NO edge — nobody had to remember
+  // `link-pr`. Worktree lanes make this near-certain (`tm8/xxxxxxxx` branch
+  // names are minted unique); a shared checkout's match is LOWER confidence
+  // (any terminal can sit on that branch) and this pass deliberately cannot
+  // outrank the passes above: `add` de-duplicates by PR id, so an association
+  // already made through tracks/working_on/badges is simply confirmed, and
+  // the server-side nudge addressee (pr_owning_session, 103) is untouched.
+  const byHeadRef = new Map<string, LinkedPullRequestFacts[]>();
+  for (const node of nodes) {
+    const facts = pullRequestFactsOf(node);
+    if (facts === null || facts.headRef === null) continue;
+    const bucket = byHeadRef.get(facts.headRef) ?? [];
+    bucket.push(facts);
+    byHeadRef.set(facts.headRef, bucket);
+  }
+  if (byHeadRef.size > 0) {
+    for (const node of nodes) {
+      const state = node.state as unknown as Record<string, unknown>;
+      if (state.kind !== 'work_session') continue;
+      const branch = typeof state.checkoutBranch === 'string' ? state.checkoutBranch : null;
+      if (branch === null || branch === '') continue;
+      for (const facts of byHeadRef.get(branch) ?? []) add(node.id, facts);
     }
   }
 

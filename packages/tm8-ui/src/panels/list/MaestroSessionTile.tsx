@@ -23,6 +23,7 @@ export function MaestroSessionTile({
   statusTone,
   statusTitle,
   tasks,
+  lane,
   badges,
   childCount,
   childrenExpanded,
@@ -56,6 +57,12 @@ export function MaestroSessionTile({
   statusTone: string;
   statusTitle?: string;
   tasks: readonly EntitySummary[];
+  /**
+   * The ONE lane line (107): `⎇ branch · [worktree|shared|scratch]`, from the
+   * session's summary lane facts. Renders beside the PR chips; absent when
+   * the session has no branch fact — honest absence draws nothing.
+   */
+  lane?: ReactNode;
   /** Glanceable git state (PR chips via the session's tasks) — same slot the task tile has. */
   badges?: ReactNode;
   childCount: number;
@@ -164,7 +171,12 @@ export function MaestroSessionTile({
         </span>
       </div>
 
-      {badges ? <div className="pn-st__badges">{badges}</div> : null}
+      {lane || badges ? (
+        <div className="pn-st__badges">
+          {lane}
+          {badges}
+        </div>
+      ) : null}
 
       {detailsExpanded && tasks.length > 0 ? (
         <div className="pn-st__tasklines">

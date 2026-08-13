@@ -312,6 +312,22 @@ export class FakeGraph implements GraphPort {
     return this.nativeIdWriteAccepted;
   }
 
+  /** Lane facts recorded (107), in order. */
+  readonly checkoutBranches: Array<{ sessionId: string; branch: string | null }> = [];
+  /** Set to make the lane-fact write throw — spawns must survive it. */
+  checkoutBranchError: Error | null = null;
+
+  async recordCheckoutBranch(
+    auth: GraphAuth,
+    sessionId: string,
+    branch: string | null,
+  ): Promise<boolean> {
+    this.authSeen.push(auth);
+    if (this.checkoutBranchError) throw this.checkoutBranchError;
+    this.checkoutBranches.push({ sessionId, branch });
+    return true;
+  }
+
   // --- posture inheritance seam ----------------------------------------------
 
   /** Recorded postures by session id — what a parent session was launched with. */

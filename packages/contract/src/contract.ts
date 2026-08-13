@@ -131,7 +131,17 @@ export type CoreEntityState =
   | { kind: 'pull_request'; repository: string; number: number; state: string;
       url?: string; fetchedAt?: string | null; stale: boolean;
       ciStatus?: 'passing' | 'failing' | 'pending' | null;
-      mergeState?: 'clean' | 'conflicted' | 'unknown' | null }
+      mergeState?: 'clean' | 'conflicted' | 'unknown' | null;
+      /**
+       * The PR's source branch, from the forge observer (103's `head_ref`),
+       * ADDITIVE and OPTIONAL like the two facts above and under the same
+       * law: `null` means the observer never told us, and a consumer renders
+       * NOTHING for it. Carried on the summary because it is the mechanical
+       * association key — a PR whose `headRef` equals a session's
+       * `checkoutBranch` is that session's PR without anyone remembering to
+       * link it (107), at LOWER confidence than created_in/in_worktree.
+       */
+      headRef?: string | null }
   | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
   | { kind: 'file'; name: string; mimeType: string; sizeBytes: number }
   | { kind: 'spell' | 'skill'; description?: string; equipped: boolean }
@@ -169,7 +179,30 @@ export type CoreEntityState =
        * but "checked once" is not a list you can rely on. If you add a FOURTH
        * value, re-derive BOTH sides yourself; do not read either as covered.
        */
-      sessionKind?: WorkSessionKind }
+      sessionKind?: WorkSessionKind;
+      /**
+       * THE SESSION'S LANE FACTS (107) — "what am I working on, git-wise",
+       * answerable from every list/tile read without a second fetch and
+       * without requiring a worktree. Both ADDITIVE and OPTIONAL; a node
+       * that predates 107 omits them and a consumer renders NO lane claim.
+       *
+       * `checkoutBranch` is the branch of the checkout the session works in,
+       * captured at spawn and refreshed opportunistically. `null` is a
+       * MEASURED absence — no repo (scratch), a detached HEAD, or a git read
+       * that failed — and renders nothing, never a default.
+       *
+       * `workdirMode` is the honesty that goes WITH the branch: 'worktree'
+       * means the branch is this session's own attributable lane; 'project'
+       * means a SHARED checkout — the branch is not exclusively yours and
+       * any terminal can move it; 'scratch' means no project repo at all.
+       * It is projected as a fact rather than derived from the `in_worktree`
+       * edge because the bounded graph page can miss an edge (the exact
+       * defect the linked-PR index's badge pass exists to patch) — a mode
+       * badge that flickers to 'shared' when an edge misses the page would
+       * be a lie about attribution.
+       */
+      checkoutBranch?: string | null;
+      workdirMode?: WorkSessionWorkdirMode }
   | { kind: 'collection'; collectionType: string; itemCount: number }
   | { kind: 'project'; projectId: ProjectId; materializedVersion: number }
   | { kind: 'interaction_profile'; status: InteractionProfileStatus;
@@ -1939,6 +1972,15 @@ export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
  * `credential` must continue to SHOW this.
  */
 export type WorkSessionKind = 'agent' | 'credential' | 'shell';
+
+/**
+ * Where a session's working directory lives — `work_sessions.workdir_mode`'s
+ * CHECK verbatim (001, widened by 015). Projected in the summary state (107)
+ * as the honesty that accompanies `checkoutBranch`: 'worktree' is the
+ * session's own attributable lane, 'project' is a SHARED checkout whose
+ * branch is not exclusively the session's, 'scratch' has no project repo.
+ */
+export type WorkSessionWorkdirMode = 'project' | 'worktree' | 'scratch';
 
 // --- projects — linked resources, NOT an entity kind (AM-2 §1, T-D17) -------
 

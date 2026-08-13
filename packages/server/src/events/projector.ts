@@ -211,6 +211,8 @@ interface SummaryRow {
   ws_share_mode: string | null;
   ws_started_at: Date | string | null;
   ws_exited_at: Date | string | null;
+  ws_checkout_branch: string | null;
+  ws_workdir_mode: string | null;
   file_name: string | null;
   file_mime_type: string | null;
   file_size_bytes: string | number | null;
@@ -220,6 +222,7 @@ interface SummaryRow {
   pr_state: string | null;
   pr_ci_status: string | null;
   pr_mergeable_state: string | null;
+  pr_head_ref: string | null;
   pr_url: string | null;
   pr_fetched_at: Date | string | null;
   commit_repo: string | null;
@@ -314,6 +317,8 @@ select
   ws.share_mode      as ws_share_mode,
   ws.started_at      as ws_started_at,
   ws.exited_at       as ws_exited_at,
+  ws.checkout_branch as ws_checkout_branch,
+  ws.workdir_mode    as ws_workdir_mode,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
   f.size_bytes       as file_size_bytes,
@@ -323,6 +328,7 @@ select
   pr.state           as pr_state,
   pr.ci_status       as pr_ci_status,
   pr.mergeable_state as pr_mergeable_state,
+  pr.head_ref        as pr_head_ref,
   pr.url             as pr_url,
   pr.fetched_at      as pr_fetched_at,
   cm.repo            as commit_repo,
@@ -923,6 +929,16 @@ export class PgEntityProjector implements EntityProjector {
           shareMode: oneOf(r.ws_share_mode, WS_SHARE_MODES, 'none'),
           startedAt: iso(r.ws_started_at),
           exitedAt: iso(r.ws_exited_at),
+          // The lane facts (107) — MIRRORS entity-read.ts stateOf: an
+          // explicit null branch renders no claim; the mode key is spread
+          // in only when the column holds a CHECK value, because absence
+          // means "too old to know" while a wrong word would be a lie.
+          checkoutBranch: r.ws_checkout_branch ?? null,
+          ...(r.ws_workdir_mode === 'project' ||
+          r.ws_workdir_mode === 'worktree' ||
+          r.ws_workdir_mode === 'scratch'
+            ? { workdirMode: r.ws_workdir_mode }
+            : {}),
         };
       case 'file':
         return {
@@ -941,7 +957,7 @@ export class PgEntityProjector implements EntityProjector {
           // `stale` is "the mirror is older than the upstream", which needs a
           // tracking comparison. Never fetched ⇒ definitionally stale.
           stale: r.pr_fetched_at === null,
-          ...projectForgeFacts(r.pr_ci_status, r.pr_mergeable_state),
+          ...projectForgeFacts(r.pr_ci_status, r.pr_mergeable_state, r.pr_head_ref),
         };
         return r.pr_url === null ? base : { ...base, url: r.pr_url };
       }
