@@ -92,12 +92,18 @@ export interface ChatThreadDetail {
   turns: ChatTurn[];
 }
 
-export interface ChatStartInput {
+export interface ChatRootInput {
   spaceId: SpaceId | string;
+  /** Bare Home uses the space entity id; contextual Chat uses that context entity. */
+  anchorId: EntityId;
+  body: string;
+  clientMutationId: string;
+}
+
+export interface ChatConfigureInput {
+  rootMessageId: EntityId;
   teammateId: EntityId;
   model: string;
-  provider: string;
-  clientMutationId: string;
 }
 
 export interface ChatPostInput {
@@ -108,6 +114,8 @@ export interface ChatPostInput {
 
 export interface ChatStartResult {
   threadRootId: EntityId;
+  teammateId: EntityId;
+  model: string;
 }
 
 export interface ChatPostResult {
@@ -124,7 +132,10 @@ export interface ChatHomePort {
    */
   startThread: {
     unavailableReason: string | null;
-    run(input: ChatStartInput): Promise<ChatStartResult>;
+    /** Call 1: existing messages.post creates the human-authored root/first prompt. */
+    createRoot(input: ChatRootInput): Promise<{ threadRootId: EntityId }>;
+    /** Call 2: the sole new catalog op write-once configures the root and triggers turn one. */
+    configure(input: ChatConfigureInput): Promise<ChatStartResult>;
   };
   /** C4: every user turn, including the first, is an existing messages.post reply. */
   postTurn(input: ChatPostInput): Promise<ChatPostResult>;
@@ -140,10 +151,10 @@ export function isChatTurnFrame(value: unknown): value is ChatTurnFrame {
       typeof frame.threadRootId === 'string' &&
       typeof frame.messageId === 'string' &&
       Number.isInteger(frame.seq) &&
-      frame.seq as number >= 0 &&
+      (frame.seq as number) >= 0 &&
       typeof frame.part === 'object' &&
       frame.part !== null &&
-      typeof (frame.part as Record<string, unknown>).kind === 'string'
+      TURN_ITEM_KINDS.has((frame.part as Record<string, unknown>).kind)
     );
   }
   if (frame.type === 'chat.turn.done') {
@@ -157,3 +168,12 @@ export function isChatTurnFrame(value: unknown): value is ChatTurnFrame {
   return false;
 }
 
+const TURN_ITEM_KINDS = new Set<unknown>([
+  'thinking',
+  'text',
+  'tool_call',
+  'tool_result',
+  'usage',
+  'error',
+  'done',
+]);

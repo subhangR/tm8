@@ -1,8 +1,9 @@
 import type { ActorSummary, EntityId } from '@tm8/contract';
 import type {
   ChatHomePort,
+  ChatConfigureInput,
   ChatPostInput,
-  ChatStartInput,
+  ChatRootInput,
   ChatThreadDetail,
   ChatThreadSummary,
   ChatTurnFrame,
@@ -13,6 +14,7 @@ const HUMAN: ActorSummary = {
   kind: 'member',
   displayName: 'You',
   avatar: null,
+  isAgent: false,
 };
 
 const AGENT: ActorSummary = {
@@ -64,7 +66,7 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
           toolCallId: 'tool-1',
           name: 'tm8_read',
           args: { view: 'task_tree' },
-          state: 'completed',
+          state: 'running',
         },
         {
           seq: 2,
@@ -74,11 +76,19 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
         },
         {
           seq: 3,
+          kind: 'tool_call',
+          toolCallId: 'tool-1',
+          name: 'tm8_read',
+          args: { view: 'task_tree' },
+          state: 'completed',
+        },
+        {
+          seq: 4,
           kind: 'text',
           text: 'I mapped the work into three dependency-safe lanes. The storage lane is the only current blocker.',
         },
         {
-          seq: 4,
+          seq: 5,
           kind: 'usage',
           usage: {
             input_tokens: 842,
@@ -88,14 +98,15 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
             provider: 'Anthropic',
           },
         },
-        { seq: 5, kind: 'done' },
+        { seq: 6, kind: 'done' },
       ],
     },
   ],
 };
 
 export interface ChatHomeFixtureControls {
-  starts: ChatStartInput[];
+  roots: ChatRootInput[];
+  configs: ChatConfigureInput[];
   posts: ChatPostInput[];
   emit(frame: ChatTurnFrame): void;
 }
@@ -105,7 +116,8 @@ export function createChatHomeFixturePort(
 ): { port: ChatHomePort; controls: ChatHomeFixtureControls } {
   const details = new Map(initial.map((thread) => [thread.summary.rootId, structuredClone(thread)]));
   const listeners = new Set<(frame: ChatTurnFrame) => void>();
-  const starts: ChatStartInput[] = [];
+  const roots: ChatRootInput[] = [];
+  const configs: ChatConfigureInput[] = [];
   const posts: ChatPostInput[] = [];
   let serial = 100;
 
@@ -135,30 +147,59 @@ export function createChatHomeFixturePort(
     },
     startThread: {
       unavailableReason: null,
-      async run(input) {
-        starts.push(input);
+      async createRoot(input) {
+        roots.push(input);
         serial += 1;
         const rootId = `019f0000-0000-7000-8000-${String(serial).padStart(12, '0')}` as EntityId;
-        const config = {
-          teammateId: input.teammateId,
-          teammateLabel: input.teammateId === AGENT.id ? 'Forge' : 'Researcher',
-          model: input.model,
-          modelLabel: input.model,
-          provider: input.provider,
-        };
         details.set(rootId, {
           summary: {
             rootId,
-            title: 'New conversation',
-            preview: 'Waiting for the first turn…',
+            title: input.body,
+            preview: input.body,
             updatedAt: new Date().toISOString(),
-            replyCount: 0,
-            config,
+            replyCount: 1,
+            config: {
+              teammateId: AGENT.id as EntityId,
+              teammateLabel: 'Pending configuration',
+              model: '',
+              modelLabel: 'Pending configuration',
+              provider: '',
+            },
             state: 'idle',
           },
-          turns: [],
+          turns: [
+            {
+              messageId: rootId,
+              role: 'user',
+              author: HUMAN,
+              createdAt: new Date().toISOString(),
+              body: input.body,
+              parts: [],
+            },
+          ],
         });
         return { threadRootId: rootId };
+      },
+      async configure(input) {
+        configs.push(input);
+        const detail = details.get(input.rootMessageId);
+        if (!detail) throw new Error(`Fixture thread ${input.rootMessageId} does not exist.`);
+        detail.summary = {
+          ...detail.summary,
+          config: {
+            teammateId: input.teammateId,
+            teammateLabel: input.teammateId === AGENT.id ? 'Forge' : 'Researcher',
+            model: input.model,
+            modelLabel: input.model,
+            provider: input.model.startsWith('claude') ? 'Anthropic' : 'OpenAI',
+          },
+          state: 'streaming',
+        };
+        return {
+          threadRootId: input.rootMessageId,
+          teammateId: input.teammateId,
+          model: input.model,
+        };
       },
     },
     async postTurn(input) {
@@ -195,7 +236,8 @@ export function createChatHomeFixturePort(
   return {
     port,
     controls: {
-      starts,
+      roots,
+      configs,
       posts,
       emit(frame) {
         for (const listener of listeners) listener(frame);
@@ -203,4 +245,3 @@ export function createChatHomeFixturePort(
     },
   };
 }
-
