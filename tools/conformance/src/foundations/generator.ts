@@ -337,18 +337,19 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // + projects.folderUploads.init/complete/abort (3 POST commands).
   // 142 -> 144 (2026-08-12): collections.addItem (POST command) +
   // collections.removeItem (DELETE command) — collection membership writes.
-  // 144 -> 145 (2026-08-12): execution.terminal.start — a vanilla terminal
-  // (101). Landed alongside collections.addItem/removeItem; MEASURED on the
-  // merged tree, not added to either lane's number.
-  assertEqual(names.length, 145, 'catalog total');
-  assertEqual(V1_OPERATIONS.length, 143, 'v1 total');
+  // 144 -> 150 (2026-08-12, Git UI landing): execution.gitStatus + gitDiff
+  // (GET reads) and gitCheckpoint/gitRollback/gitCommit/gitMerge (POST
+  // commands) — the session git rail behind the facade.
+  // 150 -> 151 (2026-08-13, merge): execution.terminal.start joins from main (#161 vanilla terminals).
+  assertEqual(names.length, 151, 'catalog total');
+  assertEqual(V1_OPERATIONS.length, 149, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
   assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');
-  assertEqual(methods, { GET: 53, POST: 64, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 }, 'method accounting');
-  assertEqual(kinds, { read: 56, command: 88, stream: 1 }, 'kind accounting');
-  assertEqual(router.http.length, 144, 'server router HTTP total');
+  assertEqual(methods, { GET: 55, POST: 68, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 }, 'method accounting');
+  assertEqual(kinds, { read: 58, command: 92, stream: 1 }, 'kind accounting');
+  assertEqual(router.http.length, 150, 'server router HTTP total');
   assertEqual(router.ws.length, 1, 'server router WS total');
   // These four are SNAPSHOT self-checks (the frozen W1 registry boundary) and
   // never move with an amendment; A21's live handler shows up only in the

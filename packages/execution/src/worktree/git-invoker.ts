@@ -23,6 +23,13 @@ export interface GitRunOptions {
   cwd?: string;
   /** Kill the process after this long — a hung git must not hang a saga. */
   timeoutMs?: number;
+  /**
+   * stdout/stderr cap. Node's execFile default (1 MiB) REJECTS past the cap,
+   * turning a large-but-legitimate `git diff` into a 500; callers that read
+   * potentially-large output (the diff read op) raise this and cap the text
+   * themselves, honestly, with a `truncated` flag.
+   */
+  maxBufferBytes?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -45,6 +52,7 @@ export function runGit(args: readonly string[], options: GitRunOptions = {}): Pr
       {
         cwd: options.cwd,
         timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        ...(options.maxBufferBytes === undefined ? {} : { maxBuffer: options.maxBufferBytes }),
         encoding: 'utf8',
         // NO `shell` option. execFile's default (false) is the point.
         windowsHide: true,

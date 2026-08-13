@@ -48,7 +48,7 @@ describe('W1 adopted catalog target', () => {
     expect(OPERATIONS.slice(start, start + ADDITIVE_OPERATIONS.length)).toEqual(ADDITIVE_OPERATIONS);
   });
 
-  it('reconciles the additive 138-row target without changing reserved honesty', () => {
+  it('reconciles the additive 151-row target without changing reserved honesty', () => {
     // 119 -> 120 (2026-08-01): `execution.journal` joined the catalog without
     // this pin moving — the tree carried a red literal until the next
     // amendment (identity.profile.update, also 2026-08-01) reconciled both.
@@ -71,8 +71,13 @@ describe('W1 adopted catalog target', () => {
     // 142 -> 144 (2026-08-12): collections.addItem (POST command) +
     // collections.removeItem (DELETE command) — membership sugar over the
     // `contains` edge; the collection family's first write verbs.
-    expect(OPERATIONS).toHaveLength(145);
-    expect(V1_OPERATIONS).toHaveLength(143);
+    // 144 -> 150 (2026-08-12, Git UI landing): execution.gitStatus + gitDiff
+    // (GET reads) and gitCheckpoint/gitRollback/gitCommit/gitMerge (POST
+    // commands) — the session git rail behind the facade. MEASURED per PIN
+    // RULE v3, never carried.
+    // 150 -> 151 (2026-08-13, merge): execution.terminal.start joins from main (#161 vanilla terminals).
+    expect(OPERATIONS).toHaveLength(151);
+    expect(V1_OPERATIONS).toHaveLength(149);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -88,12 +93,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 53, POST: 64, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 55, POST: 68, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 56, command: 88, stream: 1 });
+    }).toEqual({ read: 58, command: 92, stream: 1 });
   });
 });
 

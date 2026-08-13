@@ -114,7 +114,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  it('keeps the exact 141 = 139 v1 + 2 reserved, 140 HTTP + 1 WS boundary', () => {
+  it('keeps the exact 151 = 149 v1 + 2 reserved, 150 HTTP + 1 WS boundary', () => {
     // A21 (execution.liveness), then voice.token.create, are the +1s on every axis they touch.
     // The six artifacts rows (create/publish/revisions.list/preview.start/export/restore) are
     // the latest +6 on OPERATIONS and V1: +4 POST commands, +2 GET reads.
@@ -126,15 +126,16 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // 128 -> 129 (2026-08-09): projects.branches.list, one GET read.
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
     // 137 -> 138 (2026-08-09, merge): execution.dispatch.
-    // 142 -> 143 (2026-08-12): execution.terminal.start, one POST command — a
-    // vanilla terminal, the shell session with no agent attached (101).
-    expect(OPERATIONS).toHaveLength(145);
-    expect(V1_OPERATIONS).toHaveLength(143);
+    // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows —
+    // gitStatus/gitDiff (GET reads), gitCheckpoint/gitRollback/gitCommit/
+    // gitMerge (POST commands).
+    expect(OPERATIONS).toHaveLength(151);
+    expect(V1_OPERATIONS).toHaveLength(149);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(144);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(150);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
@@ -146,7 +147,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // execution.transcript moved it to 125; projects.branches.list moves it to 126.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(142);
+    )).toHaveLength(148);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

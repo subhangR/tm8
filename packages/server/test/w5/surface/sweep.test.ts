@@ -287,7 +287,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 142 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 136 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
@@ -302,9 +302,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
-    expect(SURFACE).toHaveLength(142);
-    expect(rows).toHaveLength(142);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(142);
+    // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
+    // 147 -> 148 (2026-08-13, merge): execution.terminal.start (#161).
+    expect(SURFACE).toHaveLength(148);
+    expect(rows).toHaveLength(148);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(148);
   });
 
   /**
@@ -470,8 +472,6 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // This is that re-measurement: `ls db/migrations/*.sql | wc -l` = 94.
     // Keeping either branch's 93 would have been the previous-plus-one error
     // the comment above warns against, arrived at by two correct measurements.
-    // 94 -> 95 on 2026-08-12: 101 (shell sessions — vanilla terminals).
-    // Measured with the same command on this tree, not incremented.
     expect(server.appliedMigrations.length).toBe(96);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
@@ -686,6 +686,9 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // 2026-08-02: auth.logout with a bare {} and no bearer session names nothing
   // to revoke — a handler-reached invalid_input, not a :166 gate rejection.
   'auth.logout',
+  // 2026-08-12: collections.addItem validates its body in-handler — the sweep's
+  // synthetic path params name no real collection, a handler-reached 400.
+  'collections.addItem',
   // 2026-08-07: credentials.delete reads `:provider` off the PATH and checks it
   // against the fixed three-value list BEFORE the value can name a directory.
   // The sweep supplies a synthetic path param, so the refusal is correct and

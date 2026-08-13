@@ -115,8 +115,15 @@ export type CoreEntityState =
   | { kind: 'member'; role: 'owner'|'admin'|'member'; score: number; taskDoneCount: number }
   | { kind: 'team_member'; owner: ActorSummary; model?: string | null; agentTool?: string | null;
       liveWork?: LiveWork | null }
+  // `ciStatus`/`mergeState` are ADDITIVE and OPTIONAL (forge observer).
+  // `null` means this node has no verdict — nothing has observed the pull
+  // request yet, or the observer runs unauthenticated — and a consumer renders
+  // NOTHING for it. `mergeState: 'unknown'` is the DIFFERENT claim that GitHub
+  // said it was still computing the merge. Absence is not a verdict.
   | { kind: 'pull_request'; repository: string; number: number; state: string;
-      url?: string; fetchedAt?: string | null; stale: boolean }
+      url?: string; fetchedAt?: string | null; stale: boolean;
+      ciStatus?: 'passing' | 'failing' | 'pending' | null;
+      mergeState?: 'clean' | 'conflicted' | 'unknown' | null }
   | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
   | { kind: 'file'; name: string; mimeType: string; sizeBytes: number }
   | { kind: 'spell' | 'skill'; description?: string; equipped: boolean }
@@ -2306,6 +2313,167 @@ export interface StreamAttachGrant {
   token: string;
   expiresAt: string;
 }
+
+/**
+ * execution.git* — the session git rail (Git UI wave).
+ *
+ * The #76 verbs (checkpoint/rollback/stage/commit/merge) run argv git on the
+ * machine where the CLI runs; a browser has no such machine, so these six
+ * operations put the SAME verbs behind the facade, executed by the node that
+ * holds the session's worktree. The worktree path is resolved server-side
+ * from the graph (`in_worktree` edge → `public.worktrees` row) — no request
+ * ever names a filesystem path, mirroring `execution.journal`'s discipline.
+ *
+ * A session without a worktree answers `available: false` with a named
+ * reason, never a 500 — the UI renders that reason (DisabledWithReason),
+ * because a dead panel with no explanation is the failure mode this wave
+ * exists to remove.
+ */
+export interface ExecutionGitCheckpointInput extends CommandContext {
+  /** Optional checkpoint message; the server defaults to a timestamped one. */
+  message?: string;
+}
+
+export interface ExecutionGitRollbackInput extends CommandContext {
+  /** Checkpoint ref: full oid, short oid, or a symbolic ref. */
+  to: string;
+  /**
+   * Untracked files may exist in NO commit, so deleting them is the one
+   * unrecoverable act in a rollback — they, and only they, gate on force.
+   */
+  force?: boolean;
+}
+
+export interface ExecutionGitCommitInput extends CommandContext {
+  message: string;
+  /** Pathspecs to stage before committing. */
+  paths?: string[];
+  /** Stage everything (git add -A) before committing. */
+  all?: boolean;
+}
+
+/**
+ * Merge the session's BASE REF forward into the session branch. The other
+ * direction (session branch → base) is deliberately absent at every layer:
+ * base is checked out in the user's primary tree or nowhere, and a session
+ * verb that mutates the user's checkout is prohibited — landing on base goes
+ * through a PR. A content conflict is an ANSWER (status 'conflict' with the
+ * conflicted paths, worktree restored clean), never an error or a stranded
+ * mid-merge state.
+ */
+export interface ExecutionGitMergeInput extends CommandContext {
+  /** Ref to merge FROM; defaults to the session's recorded base ref. */
+  fromRef?: string;
+  message?: string;
+}
+
+/** One changed path in a session worktree, `git status --porcelain` shaped. */
+export interface SessionGitFile {
+  /** Two-column XY status ("M ", " M", "??", "A ", …). */
+  status: string;
+  path: string;
+  /** Present for renames/copies: the path the content came from. */
+  origPath?: string;
+}
+
+/**
+ * execution.gitStatus — GET /v2/work-sessions/:workSessionId/git/status.
+ * Branch, dirty counts and ahead/behind the session's base, read live from
+ * the worktree with capped file lists.
+ */
+export interface SessionGitStatus {
+  sessionId: EntityId;
+  available: boolean;
+  /** Named reason when unavailable — the UI renders this, verbatim. */
+  unavailableReason: 'no_worktree' | 'worktree_not_active' | 'worktree_unreadable' | null;
+  worktreeId: EntityId | null;
+  branch: string | null;
+  /** The symbolic base ref when the session recorded one. */
+  baseRef: string | null;
+  /** The resolved base commit the counts are measured against. */
+  baseOid: string | null;
+  headOid: string | null;
+  /** Commits on HEAD that base lacks; null when the base could not resolve. */
+  ahead: number | null;
+  /** Commits on base that HEAD lacks; null when the base could not resolve. */
+  behind: number | null;
+  dirty: { staged: number; unstaged: number; untracked: number; total: number };
+  /** Capped at the server's file cap; `filesTruncated` says when it cut. */
+  files: SessionGitFile[];
+  filesTruncated: boolean;
+  checkedAt: string;
+}
+
+/** Per-file numstat digest — always complete even when the diff text is cut. */
+export interface SessionGitDiffFile {
+  path: string;
+  /** null for binary files (git numstat prints "-"). */
+  additions: number | null;
+  deletions: number | null;
+}
+
+/**
+ * execution.gitDiff — GET /v2/work-sessions/:workSessionId/git/diff.
+ * "What did this session change": working tree vs the merge-base of the
+ * session's base ref, so upstream drift on base never pollutes the answer.
+ * The digest (`stat`, `files`) is always complete; the unified `diff` text is
+ * capped by `maxBytes` with `diffTruncated` saying so — digest+partial, the
+ * transcript precedent.
+ */
+export interface SessionGitDiff {
+  sessionId: EntityId;
+  available: boolean;
+  unavailableReason: 'no_worktree' | 'worktree_not_active' | 'worktree_unreadable' | null;
+  branch: string | null;
+  baseRef: string | null;
+  baseOid: string | null;
+  /** The commit the diff is measured from (merge-base of base and HEAD). */
+  mergeBaseOid: string | null;
+  headOid: string | null;
+  stat: { filesChanged: number; additions: number; deletions: number };
+  files: SessionGitDiffFile[];
+  filesTruncated: boolean;
+  /** Unified diff text, capped at `maxBytes`. */
+  diff: string;
+  diffTruncated: boolean;
+  checkedAt: string;
+}
+
+export interface SessionGitCheckpointResult {
+  sessionId: EntityId;
+  worktreeId: EntityId;
+  /** The checkpoint ref — a full commit oid on the session's branch. */
+  oid: string;
+  branch: string;
+  /** false when the tree was already clean and HEAD itself is the checkpoint. */
+  created: boolean;
+  files: SessionGitFile[];
+}
+
+export interface SessionGitRollbackResult {
+  sessionId: EntityId;
+  worktreeId: EntityId;
+  /** Where HEAD (and the branch) now point. */
+  oid: string;
+  branch: string;
+  /** HEAD before the rollback — the reflog keeps it reachable. */
+  previousOid: string;
+  /** Untracked paths deleted because `force` said to. */
+  deletedUntracked: string[];
+}
+
+export interface SessionGitCommitResult {
+  sessionId: EntityId;
+  worktreeId: EntityId;
+  oid: string;
+  branch: string;
+  files: SessionGitFile[];
+}
+
+/** A conflict is data with the worktree restored clean — see the input's doc. */
+export type SessionGitMergeResult =
+  | { sessionId: EntityId; worktreeId: EntityId; status: 'merged' | 'up_to_date'; oid: string; fromRef: string; fromOid: string }
+  | { sessionId: EntityId; worktreeId: EntityId; status: 'conflict'; fromRef: string; fromOid: string; conflictedPaths: string[] };
 
 /**
  * voice.token.create — POST /v2/entities/:id/commands/voice-token. Mints a

@@ -300,10 +300,11 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // 131 -> 135: credentials.* Tier B.
     // 137 -> 138 (2026-08-09): execution.dispatch (public, `session dispatch`).
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
-    expect(rows.length).toBe(145);
+    // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
+    expect(rows.length).toBe(151);
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
-    expect(result.valueProbes).toBeGreaterThan(101);
+    expect(result.valueProbes).toBeGreaterThan(100);
     expect(result.bareProbes).toBeGreaterThan(5);
     // Named witnesses: the sweep demonstrably REACHED the rows that matter,
     // rather than iterating a set that happens to exclude them.
@@ -399,6 +400,11 @@ const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   confirm: '--yes, the §7.5 destructive confirmation (interaction-profile activate|retire set body.confirm from it)',
   enabled: '--off, which sets enabled:false for `entity react`',
   isNodeAdmin: '--node-admin, which sets isNodeAdmin:true for `auth signup` (2026-08-02)',
+  // execution.gitCommit is a deliberately COMMANDLESS catalog row (the CLI
+  // already runs the same verb locally as `session git commit --all`, and one
+  // action must not have two names), so its `all` reaches the wire only from
+  // the UI seam — there is no CLI flag to collide with.
+  all: '`session git commit --all`, the CLI-local spelling of execution.gitCommit body.all (2026-08-12)',
 };
 
 describe('CLASS SWEEP: every boolean the frozen input schemas accept is expressible', () => {

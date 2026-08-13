@@ -254,7 +254,8 @@ describe('the node this suite measured', () => {
     // This pin was already red at 141 before the collections membership rows
     // landed (it said 137 while four other lanes' routes had mounted); 143 is
     // MEASURED off /health on the merged tree (routes, not catalog rows).
-    expect(health.operations).toBe(143);
+    // 143 -> 149 (2026-08-12, Git UI landing): the six execution.git* routes.
+    expect(health.operations).toBe(149);
     // `implemented` is `registry.size` — REGISTERED, never "behaviourally
     // implemented". It is reported, never re-labelled.
     expect(health.implemented).toBeGreaterThan(0);

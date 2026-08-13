@@ -49,7 +49,9 @@ import type {
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
   ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
   ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
-  ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
+  ExecutionStreamsAttachInput, ExecutionTerminateInput,
+  ExecutionGitCheckpointInput, ExecutionGitRollbackInput, ExecutionGitCommitInput, ExecutionGitMergeInput,
+  FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GateTaskInput,
   GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
@@ -236,6 +238,16 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     url: z.string().optional(),
     fetchedAt: z.string().nullable().optional(),
     stale: z.boolean(),
+    // Nullable-and-optional is deliberate honesty (084 forge observer): null
+    // node has no verdict — either nothing has observed the PR yet or the
+    // observer runs unauthenticated — and a consumer must render NOTHING for
+    // null rather than inventing a neutral-looking default. An absent fact and
+    // a green one are different claims.
+    ciStatus: z.enum(['passing', 'failing', 'pending']).nullable().optional(),
+    // Three values, not GitHub's eight: the question a reader has is "can this
+    // land", and `unknown` means GitHub SAID it was still computing the merge —
+    // never merely that we have not looked.
+    mergeState: z.enum(['clean', 'conflicted', 'unknown']).nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('commit'),
@@ -2109,6 +2121,30 @@ export const ExecutionResumeInputSchema: z.ZodType<ExecutionResumeInput> = z.obj
 export const ExecutionStreamsAttachInputSchema: z.ZodType<ExecutionStreamsAttachInput> = z.object({
   ...commandContextShape,
   mode: z.enum(['view', 'drive']),
+}).strict();
+
+export const ExecutionGitCheckpointInputSchema: z.ZodType<ExecutionGitCheckpointInput> = z.object({
+  ...commandContextShape,
+  message: z.string().min(1).optional(),
+}).strict();
+
+export const ExecutionGitRollbackInputSchema: z.ZodType<ExecutionGitRollbackInput> = z.object({
+  ...commandContextShape,
+  to: z.string().min(1),
+  force: z.boolean().optional(),
+}).strict();
+
+export const ExecutionGitCommitInputSchema: z.ZodType<ExecutionGitCommitInput> = z.object({
+  ...commandContextShape,
+  message: z.string().min(1),
+  paths: z.array(z.string().min(1)).optional(),
+  all: z.boolean().optional(),
+}).strict();
+
+export const ExecutionGitMergeInputSchema: z.ZodType<ExecutionGitMergeInput> = z.object({
+  ...commandContextShape,
+  fromRef: z.string().min(1).optional(),
+  message: z.string().min(1).optional(),
 }).strict();
 
 export const StreamAttachGrantSchema: z.ZodType<StreamAttachGrant> = z.object({
