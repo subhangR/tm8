@@ -56,6 +56,8 @@ import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } fro
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
 import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
+import { InboxView } from './InboxView';
+import { MessagesView } from './MessagesView';
 import { CredentialsSection, credentialsPortFromSeam } from '../settings-credentials';
 import { nodeKeyOf } from '../data/launch-cache';
 import { readLastTarget, writeLastTarget } from './last-place';
@@ -618,6 +620,11 @@ export function GateApp(props: GateAppProps = {}) {
       { id: 'view:workspace', label: 'Workspace', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
       { id: 'view:graph', label: 'Graph', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
       { id: 'view:channels', label: 'Channels', glyph: <VectorIcon paths={VIEW_ART.channels} /> },
+      // Both rows are now MOUNTED views, so the palette offers them as live
+      // destinations. A palette row for a ref that falls through to the
+      // unbuilt-view card would be discovery pointing at a placeholder.
+      { id: 'view:messages', label: 'Messages', glyph: <VectorIcon paths={VIEW_ART.messages} /> },
+      { id: 'view:inbox', label: 'Inbox', glyph: <VectorIcon paths={VIEW_ART.inbox} /> },
       ...allKinds()
         .filter((row) => !row.kind.startsWith('c:'))
         .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: <KindIcon kind={row.kind} /> })),
@@ -768,6 +775,38 @@ export function GateApp(props: GateAppProps = {}) {
                 nav.push(id as EntityId);
               }}
             />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'messages' ? (
+            /* ✉ Messages — one browser over every conversation in the space,
+               whatever entity it is anchored on. Follows the D65 posture the
+               Graph, Files and Git rows established: an activated menu view
+               replaces the centre WHOLESALE, no side lists.
+
+               The cross-entity reading is the SERVER's, not this screen's:
+               `entities.feed` resolves the right scope per anchor kind, so
+               selecting a task and selecting a session run the same call. */
+            <MessagesView
+              seam={data.seam}
+              spaceId={data.spaceId as SpaceId}
+              onOpenEntity={(id) => {
+                /* A lens, not a terminus — leaving a conversation for the
+                   entity it lives on lands in the workspace with the panel
+                   pushed, the same handoff Git's lane click-through performs. */
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id as EntityId);
+              }}
+            />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'inbox' ? (
+            /* ◹ Inbox — the finished screen that was never mounted. Nothing
+               was built for this branch; `src/inbox/` has been complete and
+               unreferenced, and `GateApp` drew the unbuilt-view card over it.
+               See `views/InboxView.tsx` for the full account. */
+            <InboxView
+              seam={data.seam}
+              onOpenEntity={(id) => {
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id as EntityId);
+              }}
+            />
           ) : data.ready && activeTarget?.type === 'kind' ? (
             /* D65: a rail KIND row opens its EntityView — wide list, Z3 aside
                on row click, Z4 full on promote. The workspace stays the one
@@ -893,9 +932,13 @@ export function GateApp(props: GateAppProps = {}) {
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             activeTarget.ref !== 'workspace' ? (
-            /* Unbuilt view refs (feed/inbox/…) SAY SO — rendering the
-               workspace under a highlighted Dashboard row was a silent lie
-               about where you are (same audit, same class). */
+            /* Unbuilt view refs SAY SO — rendering the workspace under a
+               highlighted Dashboard row was a silent lie about where you are
+               (same audit, same class).
+
+               `inbox` LEFT THIS SET on 2026-08-13: its screen was finished all
+               along and is now mounted above, so the card no longer covers it.
+               `feed` is the last remaining member. */
             <div className="ev-root" data-testid="unbuilt-view">
               <p className="evt-empty" style={{ margin: 24 }}>
                 {`${activeTarget.ref} isn’t built yet — its designed screen is coming. Nothing is hidden here; it does not exist in this build.`}

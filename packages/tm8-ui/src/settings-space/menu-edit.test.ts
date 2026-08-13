@@ -141,23 +141,31 @@ describe('remove', () => {
 });
 
 describe('add', () => {
-  it('offers exactly the view refs revision 5 freed', () => {
-    // `MenuViewRef` is a CLOSED union of 7. Until revision 5 the default spent
-    // all 7 and this control had literally nothing to add; the user ruling of
+  it('offers exactly the view refs the shipped default leaves free', () => {
+    // `MenuViewRef` is a CLOSED union. Until revision 5 the default spent every
+    // member and this control had literally nothing to add; the user ruling of
     // 2026-08-01 took Feed, Inbox and Channels off the rail WITHOUT taking any
-    // of them out of the union, so they are the three refs the picker can now
-    // offer — which is exactly what "removed from the rail, not from the app"
-    // has to look like from the editor's side.
-    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels']);
+    // of them out of the union, which is what "removed from the rail, not from
+    // the app" has to look like from the editor's side.
+    //
+    // INBOX LEFT THE FREE SET on 2026-08-13. Revision 10 points a rail row at
+    // it — its screen had been finished and unmounted all along — so the picker
+    // correctly stops offering it, and `messages` (the new ref, also placed)
+    // never enters the free set at all. Feed and Channels remain the two the
+    // editor can put back. Nothing here is hardcoded: `availableViewRefs` is
+    // VIEW_PRESENTATION minus what the draft already places, so this assertion
+    // moves whenever the shipped default does — which is the point of it.
+    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'channels']);
   });
 
   it('adds a freed view ref back onto the rail', () => {
     const d = addItem(startDraft(BASE), 'home', { type: 'view', ref: 'feed' });
     expect(draftIssue(d)).toBeNull();
     expect(draftConfig(d).groups.find((g) => g.id === 'home')?.items.map((i) => i.ref))
-      .toEqual(['dashboard', 'feed']);
-    // And once used, it stops being on offer.
-    expect(availableViewRefs(d)).toEqual(['inbox', 'channels']);
+      .toEqual(['dashboard', 'messages', 'inbox', 'feed']);
+    // And once used, it stops being on offer. Channels is the only ref left:
+    // Inbox was placed by revision 10, so Feed was the last free one besides it.
+    expect(availableViewRefs(d)).toEqual(['channels']);
   });
 
   it('offers only refs the rail can actually render, and never a duplicate', () => {
@@ -236,7 +244,12 @@ describe('capacity — the caps are the RAIL’s caps, cross-checked not copied'
   it('reports group and item capacity too', () => {
     const d = startDraft(BASE);
     expect(groupCapacity(d)).toEqual({ used: BASE.groups.length, max: MENU_CAPS.groups, full: false });
-    expect(itemCapacity(d, 'home')).toEqual({ used: 1, max: MENU_CAPS.items, full: false });
+    // Home carries three rows since revision 10 (Dashboard · Messages · Inbox).
+    // Derived from BASE rather than typed, so a future Home edit moves this
+    // assertion with it instead of turning it red for the wrong reason.
+    const homeItems = BASE.groups.find((g) => g.id === 'home')?.items.length ?? 0;
+    expect(homeItems).toBe(3);
+    expect(itemCapacity(d, 'home')).toEqual({ used: homeItems, max: MENU_CAPS.items, full: false });
   });
 
   it('an add past the cap is REFUSED by the model, so the control can state the cap', () => {
