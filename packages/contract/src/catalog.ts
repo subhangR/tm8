@@ -291,6 +291,25 @@ export const OPERATIONS = [
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
 
+  // First-run node claim (docs/identity/FIRST-RUN-CLAIM-DESIGN.md, D1/D2).
+  // Both are CLAIM-FREE, and both must stay that way: they are the only
+  // operations reachable on a node where no credential exists yet.
+  //
+  // `auth.claim` closes the bootstrap dead end — the loopback owner bootstrap
+  // mints account #1 with no password AND consumes `ensure_account`'s
+  // zero-accounts window, so a node reached over a tailnet or a reverse proxy
+  // showed a sign-in card for an account that could never exist. The one-time
+  // `tm8c_…` token is the authorization, which is what lets the ceremony run
+  // from a device that is not the server. It sets a credential on the EXISTING
+  // owner row rather than creating an account, so `ensure_account` F1 is
+  // untouched and `identity_id` — and every attribution keyed to it — survives.
+  //
+  // `auth.claim.status` is the bootstrap read the UI gate needs to pick a
+  // frame. It shares a path with the command, which is established
+  // (`artifacts.publish` / `artifacts.revisions.list` below).
+  { name: 'auth.claim',                                  method: 'POST',   path: '/v2/auth/claim',                                                     kind: 'command', status: 'v1' },
+  { name: 'auth.claim.status',                           method: 'GET',    path: '/v2/auth/claim',                                                     kind: 'read',    status: 'v1' },
+
   // Tier B per-member credentials (sub-doc 11 §D). A member connects their OWN
   // vendor account in a login terminal tm8 opens for them, so an agent they
   // spawn runs as them instead of as the node.
