@@ -91,6 +91,7 @@ export function workerBootstrapControl(f: BootstrapControlFacts): string {
     `  <assignment primary_task_id="${attr(f.taskId)}" coordinator_session_id="${attr(f.coordinatorSessionId)}" />`,
     `  <discovery root="${DISCOVERY_PROMPT_FORM.root}" actions="${DISCOVERY_PROMPT_FORM.actions}" context="${DISCOVERY_PROMPT_FORM.context}" />`,
     '  <rule>Fetch the bounded assignment snapshot before acting. Current server permissions and entity versions govern every mutation.</rule>',
+    '  <git>If you create a pull request or a meaningful commit for your task, link it immediately: `tm8 task link-pr TASK_ID PR_URL` / `tm8 task link-commit TASK_ID COMMIT_URL`. An unlinked PR is invisible to tm8 — no chips, no CI nudges, and a pr_merged gate can never pass against it. After linking, tracking is automatic.</git>',
     '</trusted_control>',
   ].join('\n');
 }
@@ -123,6 +124,7 @@ export function coordinatorBootstrapControl(f: BootstrapControlFacts): string {
     `  <reply_address session_id="${self}">Every brief MUST tell the worker to report completion or blockage with \`tm8 message send --to ${self}\` — this coordinator session's id, never the worker's own id, which sends the result where no one reads it.</reply_address>`,
     '  <tracking>Track every spawned work-session id. Chase silence with `tm8 message send --to WORK_SESSION_ID` and read what a worker actually did with `tm8 session transcript WORK_SESSION_ID`. Collect a result or record a failure for every unit before terminating any worker, then close out on the goal anchor integrating all of them.</tracking>',
     '  <rule>Discover spawn actions and project associations before delegation. Choose project, worktree, or scratch explicitly.</rule>',
+    '  <git>Every brief that involves code MUST tell the worker to `tm8 task link-pr` its PR the moment it opens one — an unlinked PR is invisible to your tracking. Spawn code workers with `--workdir worktree` for checkpoint/rollback and automatic commit recording; gate a task with `tm8 task gate TASK_ID pr_merged` when completion must wait for the merge.</git>',
     '</trusted_control>',
   ].join('\n');
 }

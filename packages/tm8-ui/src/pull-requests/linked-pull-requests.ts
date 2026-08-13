@@ -148,6 +148,36 @@ export function indexLinkedPullRequests(
     if (sourceFacts !== null && targetFacts === null) add(target.id, sourceFacts);
   }
 
+  // SESSIONS INHERIT THEIR TASKS' PRs (session → working_on → task → tracks):
+  // the session tile carries the same chip vocabulary the task tile does,
+  // because the PR a session's work tracks is that session's PR in every
+  // sense the reader cares about. Second pass, so every tracks edge has
+  // already been indexed regardless of edge ordering.
+  for (const edge of edges) {
+    if (edge.type !== 'working_on') continue;
+    const taskLinked = mutable.get(edge.target.id);
+    if (taskLinked === undefined) continue;
+    for (const facts of taskLinked.values()) add(edge.source.id, facts);
+  }
+
+  // AND FROM THE TASK'S OWN BADGES — the deterministic half. The graph page
+  // is bounded (limit 150 on a space several times that size), so a live
+  // session's `working_on` edge is a lottery ticket; but every LOADED task
+  // summary carries `badges.workingActors[].actor.via.sessionId`, which names
+  // the same session from the task's side. Measured live 2026-08-13: session
+  // tiles rendered no chips while their tasks' did, purely because the edge
+  // missed the page.
+  for (const node of nodes) {
+    const linked = mutable.get(node.id);
+    if (linked === undefined) continue;
+    for (const work of node.badges.workingActors ?? []) {
+      const sessionId = work.actor.via?.sessionId;
+      if (typeof sessionId === 'string' && sessionId !== '') {
+        for (const facts of linked.values()) add(sessionId, facts);
+      }
+    }
+  }
+
   return new Map(
     [...mutable].map(([entityId, linked]) => [
       entityId,

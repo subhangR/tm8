@@ -188,7 +188,7 @@ describe('W5.C generator proof', () => {
     // bodies bind.
     // 84 -> 87 (2026-08-12): the three Tier 2 command bodies bind.
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
-    // +1 (2026-08-13, TM8 Chat): chat.threads.start binds its body.
-    expect(ENTRIES).toHaveLength(89);
+    // +1 (2026-08-13, forge write): tracking.pr.merge binds its body.
+    expect(ENTRIES).toHaveLength(90); // + chat.threads.start disposition
   });
 });

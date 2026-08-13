@@ -22,9 +22,9 @@ function fixturePath(path: string): string {
 }
 
 describe('W1 stub route and honesty oracle', () => {
-  it('recognizes all 157 HTTP catalog bindings as 501, never 404', async () => {
+  it('recognizes all 158 HTTP catalog bindings as 501, never 404', async () => {
     const http = OPERATIONS.filter(({ method }) => method !== 'WS');
-    expect(http).toHaveLength(157);
+    expect(http).toHaveLength(158);
 
     for (const operation of http) {
       const response = await fetch(new URL(fixturePath(operation.path), baseUrl), {

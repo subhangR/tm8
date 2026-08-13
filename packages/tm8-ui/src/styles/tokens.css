@@ -34,6 +34,8 @@
 
   /* --- 3 · functional / status (desaturated, anti-neon) ------------------- */
   --pn-run:    #3E8E5A;   --pn-run-soft:   rgba(62, 142, 90, 0.12);
+  /* Forge lifecycle: GitHub's merged-purple, desaturated to the anti-neon ramp. */
+  --pn-pr-merged: #7B5EA7; --pn-pr-merged-soft: rgba(123, 94, 167, 0.14);
   --pn-wait:   #BD8A2A;   --pn-wait-soft:  rgba(189, 138, 42, 0.14);
   --pn-block:  #BB4D3D;   --pn-block-soft: rgba(187, 77, 61, 0.12);
   --pn-info:   #3F6C90;   --pn-info-soft:  rgba(63, 108, 144, 0.12);
@@ -141,6 +143,7 @@
   --pn-brand-rgb:  224, 164, 90;
 
   --pn-run:   #5CB381;  --pn-run-soft:   rgba(92, 179, 129, 0.17);
+  --pn-pr-merged: #9C82C9; --pn-pr-merged-soft: rgba(156, 130, 201, 0.20);
   --pn-wait:  #D9AA49;  --pn-wait-soft:  rgba(217, 170, 73, 0.18);
   --pn-block: #DA7D6A;  --pn-block-soft: rgba(218, 125, 106, 0.17);
   --pn-info:  #6F9FC7;  --pn-info-soft:  rgba(111, 159, 199, 0.17);

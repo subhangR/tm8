@@ -1520,6 +1520,29 @@ export interface WorkInput extends CommandContext { status: WorkStatus; startedA
 export interface TrackingRefreshInput extends CommandContext { entityIds?: EntityId[] }
 
 /**
+ * POST /v2/tracking/pr/:id/merge — merge the PR a `pull_request` entity
+ * mirrors, ON THE FORGE, as the acting member. The server refuses before any
+ * network unless the OBSERVED facts allow it: state `open`, mergeable not
+ * `dirty`, `ci_status` not `failing`, and a stored member GitHub credential
+ * for the actor. `expectedHeadSha` defaults to the stored head so a branch
+ * that moved after review answers `head_moved` instead of merging blind.
+ */
+export interface TrackingPrMergeInput extends CommandContext {
+  clientMutationId: string;
+  /** Not a version guard: the OBSERVED head to merge, GitHub-refused if the branch moved past it. */
+  headSha?: string;
+  commitTitle?: string;
+}
+export interface TrackingPrMergeResult {
+  entityId: EntityId;
+  repo: string;
+  number: number;
+  merged: true;
+  /** The merge commit the forge created. */
+  mergeSha: string;
+}
+
+/**
  * POST /v2/entities/:id/commands/link-pr (DEV-3): creates/upserts the
  * pull_request entity for `url` and the `tracks` edge atomically.
  */
@@ -3150,6 +3173,44 @@ export interface SessionTranscriptPage {
   lastActivityAt: string | null;
   /** Lines the reader could not parse — surfaced, never silently dropped. */
   malformed: number;
+  /**
+   * Present only when the caller asked (`files=1`) AND the dialect supports
+   * it (claude-code). WHAT THIS IS: the file writes the harness OBSERVED this
+   * session's agent make through its Edit/Write tools, parsed from the whole
+   * transcript — attribution git cannot give in a shared tree. WHAT IT IS
+   * NOT: a git diff. Changes made through shell commands are invisible to
+   * tool-call parsing, and a later session may have rewritten the same lines;
+   * `source: 'transcript'` is the label that keeps the claim honest.
+   */
+  fileChanges?: SessionFileChanges | null;
+}
+
+/** One observed Edit/Write, with its text capped but its counts exact. */
+export interface SessionFileHunk {
+  tool: 'edit' | 'write' | 'multiedit' | 'notebook';
+  linesAdded: number;
+  linesRemoved: number;
+  /** Null when the text exceeded the per-hunk cap — the counts above stay exact. */
+  oldText: string | null;
+  newText: string | null;
+}
+
+export interface SessionFileChange {
+  path: string;
+  edits: number;
+  linesAdded: number;
+  linesRemoved: number;
+  hunks: SessionFileHunk[];
+  hunksTruncated: boolean;
+}
+
+export interface SessionFileChanges {
+  files: SessionFileChange[];
+  totalAdded: number;
+  totalRemoved: number;
+  filesTruncated: boolean;
+  /** The provenance label the UI must carry: observed tool calls, not git. */
+  source: 'transcript';
 }
 
 // --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------

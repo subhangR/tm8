@@ -2333,6 +2333,11 @@ function registerHandlers(
           : resolvePath(dataDir, 'scratch', sessionId)
         : session.workdir_path;
 
+    // `files=1` also scans the WHOLE transcript for Edit/Write tool calls —
+    // "what did this session change", answerable without a worktree, labelled
+    // source:'transcript' (observed tool calls, not git).
+    const includeFileChanges = ctx.query.get('files') === '1';
+
     return json(
       await readSessionTranscript({
         sessionId,
@@ -2341,6 +2346,7 @@ function registerHandlers(
         cwd,
         home: process.env.HOME ?? homedir(),
         last,
+        includeFileChanges,
       }),
     );
   });

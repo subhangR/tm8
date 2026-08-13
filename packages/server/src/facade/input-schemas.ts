@@ -90,6 +90,7 @@ import {
   ServerConnectionCreateInputSchema,
   ServerConnectionDeleteInputSchema,
   TaskAxisInputSchema,
+  TrackingPrMergeInputSchema,
   TrackingRefreshInputSchema,
   UpdateSpaceInputSchema,
   UpdateAttentionRequestInputSchema,
@@ -188,6 +189,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'entities.commands.linkCommit': LinkCommitInputSchema,
   'entities.commands.gate': GateTaskInputSchema,
   'tracking.refresh': TrackingRefreshInputSchema,
+  'tracking.pr.merge': TrackingPrMergeInputSchema,
 
   // edges + messages
   'edges.create': CreateEdgeInputSchema,

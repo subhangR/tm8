@@ -141,3 +141,60 @@ describe('linked pull request facts', () => {
     expect(indexLinkedPullRequests([task, commit], [tracks(task, commit)]).get(task.id)).toBeUndefined();
   });
 });
+
+describe('sessions inherit their tasks\' PRs (working_on second pass)', () => {
+  const session = summary('ws-1', {
+    kind: 'work_session',
+    status: 'running',
+    agentTool: 'claude-code',
+    shareMode: 'none',
+    sessionKind: 'agent',
+  });
+
+  function workingOn(source: EntitySummary, target: EntitySummary): EdgeView {
+    return { ...tracks(source, target), id: 'edge-wo-1', type: 'working_on' };
+  }
+
+  it('indexes the session with the PRs its working_on task tracks', () => {
+    const pr = pullRequest({ ciStatus: 'failing', state: 'merged' });
+    const index = indexLinkedPullRequests(
+      [task, pr, session],
+      [tracks(task, pr), workingOn(session, task)],
+    );
+    expect(index.get('task-1')?.map((f) => f.id)).toEqual(['pr-1']);
+    // The session carries the SAME facts — merged, ci-red and all.
+    expect(index.get('ws-1')?.[0]).toMatchObject({ id: 'pr-1', lifecycle: 'merged', ciStatus: 'failing' });
+  });
+
+  it('edge order does not matter — working_on before tracks still resolves', () => {
+    const pr = pullRequest();
+    const index = indexLinkedPullRequests(
+      [task, pr, session],
+      [workingOn(session, task), tracks(task, pr)],
+    );
+    expect(index.get('ws-1')?.map((f) => f.id)).toEqual(['pr-1']);
+  });
+
+  it('a session working an untracked task inherits nothing', () => {
+    const index = indexLinkedPullRequests([task, session], [workingOn(session, task)]);
+    expect(index.get('ws-1')).toBeUndefined();
+  });
+});
+
+describe('sessions resolve from task badges when the working_on edge missed the graph page', () => {
+  it('badges.workingActors[].actor.via.sessionId carries the PRs without any working_on edge', () => {
+    const pr = pullRequest({ state: 'merged', ciStatus: 'failing' });
+    const workingTask = {
+      ...task,
+      badges: {
+        workingActors: [{
+          actor: { ...ACTOR, via: { sessionId: 'ws-badge-1' } },
+          task,
+          startedAt: '2026-08-13T00:00:00.000Z',
+        }],
+      },
+    } as EntitySummary;
+    const index = indexLinkedPullRequests([workingTask, pr], [tracks(workingTask, pr)]);
+    expect(index.get('ws-badge-1')?.[0]).toMatchObject({ id: 'pr-1', lifecycle: 'merged', ciStatus: 'failing' });
+  });
+});

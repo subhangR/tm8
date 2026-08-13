@@ -317,6 +317,12 @@ export interface JournalOpts {
 export interface TranscriptOpts {
   /** Newest turns to return; server default is 20, max 200. */
   last?: number;
+  /**
+   * Also scan the whole transcript for Edit/Write tool calls and attach
+   * `fileChanges` — "what did this session change", without a worktree,
+   * labelled source:'transcript' (observed tool calls, not git).
+   */
+  files?: boolean;
 }
 
 /**
