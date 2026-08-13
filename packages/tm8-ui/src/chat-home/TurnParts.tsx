@@ -1,8 +1,19 @@
+import type { EntityId } from '@tm8/contract';
 import { Markdown } from '../kit';
+import { EntityChip, type ChatEntityResolver } from './EntityChip';
+import { extractEntityRefs } from './entity-refs';
 import { projectTurnParts } from './turn-model';
 import type { ChatTurnPart, ChatUsage } from './types';
 
-export function TurnParts({ parts }: { parts: readonly ChatTurnPart[] }) {
+export interface TurnPartsProps {
+  parts: readonly ChatTurnPart[];
+  /** Opens the entity detail panel; absent renders chips as inert badges. */
+  onOpenEntity?: ((id: EntityId) => void) | undefined;
+  /** Lazily resolves title/kind for bare-id references. */
+  resolveEntity?: ChatEntityResolver | undefined;
+}
+
+export function TurnParts({ parts, onOpenEntity, resolveEntity }: TurnPartsProps) {
   return (
     <div className="tch-parts">
       {projectTurnParts(parts).map((part) => {
@@ -25,6 +36,7 @@ export function TurnParts({ parts }: { parts: readonly ChatTurnPart[] }) {
           );
         }
         if (part.kind === 'tool') {
+          const entityRefs = extractEntityRefs(part.args, part.result);
           return (
             <article
               className="tch-tool"
@@ -46,6 +58,22 @@ export function TurnParts({ parts }: { parts: readonly ChatTurnPart[] }) {
                   <summary>{part.resultIsError ? 'Error result' : 'Result'}</summary>
                   <pre>{formatPayload(part.result)}</pre>
                 </details>
+              ) : null}
+              {entityRefs.length > 0 ? (
+                <div
+                  className="tch-tool__entities"
+                  data-testid="chat-tool-entities"
+                  aria-label="Entities referenced by this tool call"
+                >
+                  {entityRefs.map((ref) => (
+                    <EntityChip
+                      key={ref.id}
+                      refInfo={ref}
+                      resolve={resolveEntity}
+                      onOpen={onOpenEntity}
+                    />
+                  ))}
+                </div>
               ) : null}
             </article>
           );

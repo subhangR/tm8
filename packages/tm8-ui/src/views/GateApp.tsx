@@ -849,6 +849,14 @@ export function GateApp(props: GateAppProps = {}) {
                  messages.post 404s on it (measured). Bare-home chats anchor
                  to the seeded default channel. */
               anchorId={channelEntities[0]?.id}
+              /* Entity chips in the transcript open the detail panel through
+                 the SAME handoff every other screen commits (ProjectGitScreen,
+                 lane click-through): land in the workspace three-pane layout
+                 with the entity pushed onto the right-side panel stack. */
+              onOpenEntity={(id) => {
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id as EntityId);
+              }}
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&

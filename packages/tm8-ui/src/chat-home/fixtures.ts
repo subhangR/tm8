@@ -71,7 +71,20 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
           seq: 2,
           kind: 'tool_result',
           toolCallId: 'tool-1',
-          content: { tasks: 7, blocked: 1 },
+          content: {
+            tasks: 7,
+            blocked: 1,
+            // A tm8_* tool result carrying real graph entities: one with the
+            // full id/kind/title shape and one bare id a chip resolves lazily.
+            items: [
+              {
+                id: '019f0000-0000-7000-8000-000000000021',
+                kind: 'task',
+                title: 'Unblock the storage lane',
+              },
+            ],
+            blockerId: '019f0000-0000-7000-8000-000000000022',
+          },
         },
         {
           seq: 3,

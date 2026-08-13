@@ -3,5 +3,7 @@ export * from './fixtures';
 export * from './turn-model';
 export * from './ChatHomeScreen';
 export * from './TurnParts';
+export * from './EntityChip';
+export * from './entity-refs';
 export * from './real-port';
 export * from './ChatHomeSurface';

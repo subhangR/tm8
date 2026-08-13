@@ -318,6 +318,64 @@
 .tch-tool__detail pre { overflow-x: auto; margin: 6px 0 0; color: var(--pn-ink-2); font: 9.5px/1.45 var(--pn-mono); }
 .tch-tool__detail[data-error] { color: var(--pn-block); }
 
+/* Entity chips — graph entities a tool call touched, first-class in the
+   transcript. Same visual family as list rows: kind mark + title + kind word. */
+.tch-tool__entities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-1) 9px var(--pn-space-2);
+  border-top: 1px solid var(--pn-line);
+}
+
+.tch-entity-chip {
+  display: inline-flex;
+  gap: var(--pn-space-1);
+  align-items: center;
+  max-width: 260px;
+  padding: 2px var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font: 9.5px var(--pn-mono);
+  text-align: left;
+}
+
+button.tch-entity-chip { cursor: pointer; }
+
+button.tch-entity-chip:hover {
+  border-color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  color: var(--pn-ink-1);
+}
+
+.tch-entity-chip__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--pn-brand-2);
+}
+
+.tch-entity-chip__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tch-entity-chip__kind {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: 8px;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+}
+
+/* An id still resolving (or unresolved) reads quieter than a real title. */
+.tch-entity-chip[data-resolved='pending'] .tch-entity-chip__title,
+.tch-entity-chip[data-resolved='unresolved'] .tch-entity-chip__title {
+  color: var(--pn-ink-3);
+}
+
 .tch-usage {
   display: flex;
   flex-wrap: wrap;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import { Avatar, Timestamp } from '../kit';
 import { mergeChatTurnFrame } from './turn-model';
+import type { ChatEntityResolver } from './EntityChip';
 import { TurnParts } from './TurnParts';
 import type {
   ChatHomePort,
@@ -21,6 +22,10 @@ export interface ChatHomeScreenProps {
   models: readonly ChatModelOption[];
   spaceLabel?: string;
   newMutationId?: (prefix: string) => string;
+  /** Opens the entity detail panel for an entity a tool call referenced. */
+  onOpenEntity?: ((id: EntityId) => void) | undefined;
+  /** Lazily resolves title/kind for bare entity ids in tool payloads. */
+  resolveEntity?: ChatEntityResolver | undefined;
 }
 
 type ComposerPhase =
@@ -38,6 +43,8 @@ export function ChatHomeScreen({
   models,
   spaceLabel,
   newMutationId = defaultMutationId,
+  onOpenEntity,
+  resolveEntity,
 }: ChatHomeScreenProps) {
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [teammates, setTeammates] = useState<readonly ChatTeammateOption[]>([]);
@@ -421,7 +428,14 @@ export function ChatHomeScreen({
             </div>
           ) : detail ? (
             <>
-              {detail.turns.map((turn) => <Turn key={turn.messageId} turn={turn} />)}
+              {detail.turns.map((turn) => (
+                <Turn
+                  key={turn.messageId}
+                  turn={turn}
+                  onOpenEntity={onOpenEntity}
+                  resolveEntity={resolveEntity}
+                />
+              ))}
               {showThinking(phase, detail) ? (
                 <div className="tch-thinking" role="status" data-testid="chat-thinking">
                   <span className="tch-dots" aria-hidden><i /><i /><i /></span>
@@ -543,7 +557,15 @@ function Selector({
   );
 }
 
-function Turn({ turn }: { turn: ChatThreadDetail['turns'][number] }) {
+function Turn({
+  turn,
+  onOpenEntity,
+  resolveEntity,
+}: {
+  turn: ChatThreadDetail['turns'][number];
+  onOpenEntity?: ((id: EntityId) => void) | undefined;
+  resolveEntity?: ChatEntityResolver | undefined;
+}) {
   const label = turn.author?.displayName ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
   const agent = turn.author?.isAgent ?? turn.role === 'assistant';
@@ -561,7 +583,7 @@ function Turn({ turn }: { turn: ChatThreadDetail['turns'][number] }) {
         <Timestamp at={turn.createdAt} />
       </header>
       {turn.body ? <div className="tch-user-body">{turn.body}</div> : null}
-      <TurnParts parts={turn.parts} />
+      <TurnParts parts={turn.parts} onOpenEntity={onOpenEntity} resolveEntity={resolveEntity} />
     </article>
   );
 }
