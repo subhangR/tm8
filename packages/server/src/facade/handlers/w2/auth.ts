@@ -5,7 +5,7 @@
  * decision except the scrypt comparison lives inside the SECURITY DEFINER
  * RPCs (`ensure_account`'s F1 node-admin gate, `revoke_auth_session`'s
  * self-or-admin gate, `resolve_auth_session`'s revocation/expiry/status
- * checks, and 110's `claim_node` single-use token burn). The handlers bind the
+ * checks, and 112's `claim_node` single-use token burn). The handlers bind the
  * right claims and translate shapes.
  *
  * THREE OF THE SIX ARE CLAIM-FREE, and that is a property to preserve rather
