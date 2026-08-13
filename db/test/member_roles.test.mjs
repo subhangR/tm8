@@ -26,6 +26,7 @@ import {
   literal,
   ok,
   rootClaims,
+  runAsync,
   scalar,
   uuid,
 } from './helpers.mjs';
@@ -227,6 +228,38 @@ test('R3: the sole owner cannot demote themselves, and the space keeps its owner
     { claims: w.claimsA, expect: '42501' },
   );
   assert.equal(roleOf(w.memberA), 'owner');
+});
+
+test('R3: concurrent demotions of two owners cannot both commit', async () => {
+  const second = seat('r3-concurrent', 'admin');
+  ok(`select public.set_member_role(${uuid(w.spaceA)}, ${uuid(second.memberId)}, 'owner', null, ${literal(cmid('r3-promote'))})`,
+    { claims: w.claimsA });
+
+  const demote = (memberId, claims, tag) => runAsync(
+    `select pg_sleep(0.2); select public.set_member_role(${uuid(w.spaceA)}, ${uuid(memberId)}, 'admin', null, ${literal(cmid(tag))})`,
+    { claims, verbose: true },
+  );
+  const [first, other] = await Promise.all([
+    demote(w.memberA, w.claimsA, 'r3-concurrent-a'),
+    demote(second.memberId, second.claims, 'r3-concurrent-b'),
+  ]);
+
+  assert.equal(Number(first.ok) + Number(other.ok), 1,
+    `exactly one demotion may commit; results: ${JSON.stringify([first, other])}`);
+  assert.equal(
+    Number(scalar(`select count(*) from public.members where space_id = ${uuid(w.spaceA)} and role = 'owner'`,
+      { claims: first.ok ? second.claims : w.claimsA })),
+    1,
+    'the serialization/deadlock outcome must preserve one owner',
+  );
+
+  // Restore the shared world for later tests using the surviving owner's claims.
+  const survivorClaims = first.ok ? second.claims : w.claimsA;
+  const demotedId = first.ok ? w.memberA : second.memberId;
+  ok(`select public.set_member_role(${uuid(w.spaceA)}, ${uuid(demotedId)}, 'owner', null, ${literal(cmid('r3-restore-owner'))})`,
+    { claims: survivorClaims });
+  ok(`select public.set_member_role(${uuid(w.spaceA)}, ${uuid(second.memberId)}, 'admin', null, ${literal(cmid('r3-restore-second'))})`,
+    { claims: w.claimsA });
 });
 
 // ---------------------------------------------------------------------------
