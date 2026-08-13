@@ -113,10 +113,7 @@ export const ENTITY_COLUMNS = `
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
   pr.title as pr_title, pr.repo as pr_repo, pr.number as pr_number,
   pr.state as pr_state, pr.ci_status as pr_ci_status,
-  -- pull_requests.mergeable_state arrives with the forge-observer migration
-  -- (unlanded); until then the fact is ABSENT, and absence is not a verdict:
-  -- projectForgeFacts projects null as "no claim", never as clean.
-  null::text as pr_mergeable_state, pr.url as pr_url,
+  pr.mergeable_state as pr_mergeable_state, pr.url as pr_url,
   pr.fetched_at as pr_fetched_at,
   art.name as artifact_name, art.description as artifact_description,
   arev.revision_number as artifact_revision_number,

@@ -243,7 +243,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     url: z.string().optional(),
     fetchedAt: z.string().nullable().optional(),
     stale: z.boolean(),
-    // Nullable-and-optional is deliberate honesty (084 forge observer): null
+    // Nullable-and-optional is deliberate honesty (forge observer): null
     // node has no verdict — either nothing has observed the PR yet or the
     // observer runs unauthenticated — and a consumer must render NOTHING for
     // null rather than inventing a neutral-looking default. An absent fact and

@@ -57,6 +57,11 @@ export const REASONS = {
     'Withdrawing a handoff is deferred: handoffs.withdraw is not in the stamped facade seam, and withdrawal is not reversible once it is.',
   // R7 deferred features (never hidden, never built)
   graphDeferred: 'Graph view isn’t available yet.',
+  // B10 (git placement map §4.3). The named precondition, not a generic
+  // "coming soon": the tracking reader is read-only, and a merge button that
+  // guessed would land someone's lane on base without checks/review honesty.
+  mergePrDeferred:
+    'Merging needs a forge write client, and this node only has the read-only tracker — merge on the forge for now.',
   undoDeferred: 'Undo isn’t available yet — actions in this build are not reversible.',
   versionHistoryDeferred: 'Version history isn’t available yet.',
   leaderboardDeferred: 'The leaderboard isn’t available yet.',
@@ -358,6 +363,7 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   'toggle-theme': define('toggle-theme', 'Toggle theme', '◐', () => AVAILABLE),
 
   // R7 disposition table (LLD §4.2) — every deferred member has a home.
+  'merge-pr': deferred('merge-pr', 'Merge…', '⇣', REASONS.mergePrDeferred),
   'graph-view': deferred('graph-view', 'Graph view', '◈', REASONS.graphDeferred),
   undo: deferred('undo', 'Undo', '↶', REASONS.undoDeferred),
   'version-history': deferred('version-history', 'Version history', '⟲', REASONS.versionHistoryDeferred),

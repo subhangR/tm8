@@ -1096,6 +1096,11 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'generic',
+      // B10 (git placement map §4.3): "Merge…" is the ActionBar PRIMARY — the
+      // missing counterpart to the session rail's deliberate exclusion of
+      // landing-on-base. It renders disabled with its named reason until a
+      // forge WRITE client exists (the tracker is read-only today).
+      primaries: ['merge-pr'],
       blocks: [
         { block: 'link-summary', label: 'PULL REQUEST' },
         { block: 'fields', label: 'DETAILS' },
