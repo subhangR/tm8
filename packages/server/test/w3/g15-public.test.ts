@@ -82,8 +82,9 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       ok: true,
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
-      operations: 158,
-      implemented: 156,
+      // 158/156 -> 160/158 (2026-08-13, first-run claim).
+      operations: 160,
+      implemented: 158,
     });
   });
 
