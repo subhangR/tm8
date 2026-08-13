@@ -20,7 +20,7 @@ everything below is derivation.
 | D2 | The passwordless bootstrap `owner` row | **Claim it in place** — set username + credential on the existing row, same `identity_id`, so pre-claim history stays correctly attributed |
 | D3 | What single-player means | **The credential always exists**; single-player additionally waves through loopback callers so the solo user never sees a gate on their own machine |
 | D4 | Where the mode lives | **Server config** (`TM8_NODE_MODE`), restart to convert. Not reachable from the network |
-| D5 | Teammate #2 | **Invite-bound self-signup** — the invite is the authorization; the new person picks their own password and the operator never learns it |
+| D5 | Teammate #2 | **Invite-bound self-signup** — the invite is the authorization; the new person picks their own password and the operator never learns it. **NOT YET DELIVERED — see §10.0** |
 
 D3's rationale is the conversion story: because the credential exists from the
 moment of claim, converting single→multiplayer is one env line and a restart,
@@ -140,14 +140,28 @@ server mints one:
 
 ```
 tm8 is unclaimed. Claim it at:
-  https://tm8-server.tail28ac62.ts.net:8888/?claim=tm8c_8f3a2c91…
+  https://tm8-server.tail28ac62.ts.net:8888/#claim=tm8c_8f3a2c91…
 also written to /home/tm8/.tm8/setup-token (0600)
 ```
+
+**A FRAGMENT, NOT A QUERY STRING.** `#claim=` is never transmitted to the
+server by any browser, so it cannot reach an access log, an upstream proxy, or
+a `Referer`. `?claim=` would: nginx's default `combined` format writes the full
+request line, and a reverse-proxied tailnet node is the exact deployment this
+feature exists for — so a query string would write a node-ownership capability
+into the proxy log *before* the ceremony burns it. The UI also scrubs the
+fragment with `history.replaceState` as soon as it reads it. (Review finding;
+the first implementation used `?claim=`.)
 
 The origin in that URL comes from `TM8_PUBLIC_ORIGIN` when set, else the bind
 address. Getting it wrong prints an unreachable link, not an insecure one.
 
-**Lifetime: no expiry, single-use, re-issuable.** An expiry punishes the
+**Lifetime: no expiry, single-use, and preserved across restarts.** An ordinary
+reboot REPRINTS the live token rather than rotating it: the boot path hashes
+`<dataDir>/setup-token` and asks `node_claim_token_is_live` before minting.
+Rotation is a deliberate act, never a side effect of `systemctl restart` — the
+first implementation minted unconditionally, which silently killed a saved link
+and made the no-expiry promise below false in practice. An expiry punishes the
 operator who installs on Friday and claims on Monday, and buys little, because
 the token's power is bounded by a state the claim itself ends:
 
@@ -243,10 +257,13 @@ transport error.
 
 ```
 tm8 auth claim --token <tok> --username <u> --password <p> [--display-name <n>]
-tm8 auth claim --show          # print the current claim URL (on-box, unclaimed only)
-tm8 auth claim --reissue       # burn the old token, mint and print a new one
-tm8 node mode                  # report single|multi and whether the node is claimed
+tm8 auth claim status          # claimed?, node mode, and how an account can be made
 ```
+
+**`--show`, `--reissue` and `tm8 node mode` are specified here and NOT built.**
+Flagged by review; recorded as outstanding rather than quietly dropped, because
+§3.1's rotation story leans on `--reissue` existing. Until it does, rotating a
+claim token means restarting with `<dataDir>/setup-token` removed.
 
 `--show` / `--reissue` read `<dataDir>/setup-token` and require filesystem
 access to the data dir — they are on-box operations by construction, not by a
@@ -423,6 +440,23 @@ downstream half.
 ---
 
 ## 10. Open, deliberately not decided here
+
+0. **D5 (invite-bound signup) IS NOT DELIVERED — by this PR or by #209.**
+   Both reviewers verified independently: #209 ships `auth.invite.resolve`
+   (read-only preview) and a role-aware `redeem_invite` that calls
+   `internal.require_identity()` — i.e. **you must already have an account to
+   redeem**. No `auth.invite.signup` exists on either branch, and no
+   `signup_via_invite` SQL. So §4.1's four operations are three, and §5.3's
+   "Bob picks his own password, the operator never learns it" is **not
+   achievable today**: Bob's only route to an account is the node-admin-gated
+   `auth.signup`, which means the operator sets and knows his first password.
+
+   Two consequences worth stating rather than leaving implied:
+   - `NodeSignupPath`'s `'invite'` member is vocabulary nothing can currently
+     return. `auth.claim.status` answering `'admin'` is therefore **honest**,
+     not stale — and it must be changed to `'invite'` in the same change that
+     lands the signup operation, or it becomes a lie at that moment.
+   - The operator-password dead end D5 was chosen to remove is still open.
 
 1. **The first-run wizard's steps 2 and 3.** `FirstRunFrames.tsx` draws
    `1a`/`1b`/`1c` (claim → name the server → first space) but the handover

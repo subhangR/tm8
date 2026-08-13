@@ -481,7 +481,22 @@ export async function claimNodeOnServer(
     // The node is claimed now by definition — record it before storing the
     // pass so a storage failure still leaves the gate showing sign-in rather
     // than re-offering a ceremony whose token is already burned.
-    writeCachedNodeClaim(serverId, { claimed: true, mode: 'single', signupPath: 'admin' });
+    //
+    // `mode` and `signupPath` are RE-READ from the server rather than assumed.
+    // An earlier revision hardcoded `single`/`admin` here, which meant a
+    // successful claim on a MULTI node wrote `single` into the cache — the
+    // gate guessing again, which is the exact habit this module was rewritten
+    // to break. A failed refresh leaves the previous cached values rather than
+    // inventing new ones; `claimed` is the only field this act actually knows.
+    const refreshed = await fetchNodeClaim().catch(() => null);
+    if (!refreshed) {
+      const prior = readCachedNodeClaim();
+      writeCachedNodeClaim(serverId, {
+        claimed: true,
+        mode: prior?.mode ?? 'single',
+        signupPath: prior?.signupPath ?? 'admin',
+      });
+    }
     return storePass(serverId, claimed);
   } catch (err) {
     return { ok: false, failure: failureFrom(err, 'login') };

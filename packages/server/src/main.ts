@@ -839,8 +839,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     await announceNodeClaim({
       db,
       dataDir,
-      url,
+      // The bind address is loopback by S1, so behind a proxy or a tailnet the
+      // server's own url is one the claimant cannot open. TM8_PUBLIC_ORIGIN is
+      // how an operator says where the node actually answers.
+      url: config.publicOrigin ?? url,
       nodeMode: config.nodeMode ?? 'single',
+      // The claim ceremony credentials the EXISTING owner row, so the row has
+      // to exist before the token is advertised. `owner` is the same memoised
+      // loopback bootstrap every other path uses.
+      ensureOwner: () => owner!(),
     });
   }
 

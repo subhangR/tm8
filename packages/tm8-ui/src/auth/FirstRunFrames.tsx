@@ -30,17 +30,32 @@ import { CLAIM_TOKEN_REQUIRED, CREATE_OWNER, CREATE_SPACE, NAME_SERVER } from '.
 import type { FrameProps } from './types';
 
 /**
- * The `?claim=` token the server printed in its boot link.
+ * The `#claim=` token the server printed in its boot link.
  *
- * A URL is a poor place for a secret and this is the one deliberate exception:
- * a click-to-claim link cannot work without it, the token is single-use, and
- * it is burned the moment the ceremony completes. Read once at mount rather
- * than watched — the field is the state after that, so a viewer editing it is
- * not fighting the URL.
+ * A FRAGMENT, NOT A QUERY STRING, and that is the whole point: browsers never
+ * send the fragment to the server, so the token cannot reach an access log, an
+ * upstream proxy, or a `Referer`. An earlier revision used `?claim=`, which
+ * would have written a node-ownership capability into the nginx log of exactly
+ * the reverse-proxied deployment this feature exists to serve — before the
+ * ceremony burns it. Same click for the operator, no disclosure.
+ *
+ * Read once at mount rather than watched: the field is the state after that,
+ * so a viewer editing it is not fighting the URL. The fragment is scrubbed
+ * immediately (see below) so it does not linger in the address bar or in
+ * session history.
  */
 function readClaimTokenFromUrl(): string {
   try {
-    return new URLSearchParams(globalThis.location?.search ?? '').get('claim')?.trim() ?? '';
+    const hash = globalThis.location?.hash ?? '';
+    const token = new URLSearchParams(hash.replace(/^#/, '')).get('claim')?.trim() ?? '';
+    if (token && globalThis.history?.replaceState) {
+      // Out of the address bar the moment it is in the field. The token is
+      // still single-use and still burned server-side; this only stops a
+      // shoulder-surfer, a screenshot or a back-button from carrying it.
+      const { pathname, search } = globalThis.location;
+      globalThis.history.replaceState(null, '', `${pathname}${search}`);
+    }
+    return token;
   } catch {
     return '';
   }

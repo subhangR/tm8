@@ -438,6 +438,23 @@ export async function issueNodeClaimToken(db: Db): Promise<string> {
   return token;
 }
 
+/**
+ * Is this exact plaintext still a live claim token?
+ *
+ * The boot path asks before minting, so an ordinary restart REPRINTS the token
+ * it already issued. Minting unconditionally burned the previous one, which
+ * quietly broke the design's own no-expiry promise: an operator who saved the
+ * first boot's URL and restarted before claiming found a dead link and no
+ * indication why.
+ */
+export async function claimTokenIsLive(db: Db, token: string): Promise<boolean> {
+  if (!token.startsWith(CLAIM_TOKEN_PREFIX)) return false;
+  const live = await db.rpc<boolean | null>({}, 'node_claim_token_is_live', [
+    hashToken(token.slice(CLAIM_TOKEN_PREFIX.length)),
+  ]);
+  return live === true;
+}
+
 export interface ClaimNodeInput {
   token: string;
   username: string;

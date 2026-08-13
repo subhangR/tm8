@@ -107,6 +107,21 @@ export interface ServerConfig {
    */
   readonly nodeMode?: 'single' | 'multi';
   /**
+   * The origin this node is actually reachable at from a browser
+   * (`TM8_PUBLIC_ORIGIN`), when that differs from its bind address.
+   *
+   * Exists for exactly one reason: the first-run claim link. S1 keeps the bind
+   * loopback, so behind nginx or a tailnet the server's own `url` is
+   * `http://127.0.0.1:<port>` — a link the off-box claimant cannot open, which
+   * defeats the entire point of a ceremony designed to run from another device.
+   * The design specified this and the first implementation shipped without it.
+   *
+   * Display only. It never widens who is trusted, and nothing authorizes
+   * against it — an operator who sets it wrong prints an unreachable link, not
+   * an insecure one.
+   */
+  readonly publicOrigin?: string;
+  /**
    * Upper bound on the Postgres pool (`TM8_DB_POOL_MAX`). Default 8.
    *
    * This number IS the node's read concurrency: the pool queues past it and
@@ -306,6 +321,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   }
   const nodeMode: 'single' | 'multi' = nodeModeRaw === 'multi' ? 'multi' : 'single';
 
+  // Validated at load rather than at print time: a malformed origin should stop
+  // the operator now, not silently produce a broken claim link on the one boot
+  // where it matters.
+  const publicOriginRaw = env.TM8_PUBLIC_ORIGIN?.trim();
+  let publicOrigin: string | undefined;
+  if (publicOriginRaw) {
+    let parsed: URL;
+    try {
+      parsed = new URL(publicOriginRaw);
+    } catch {
+      throw new ConfigError(`TM8_PUBLIC_ORIGIN must be a valid URL, got ${JSON.stringify(publicOriginRaw)}`);
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new ConfigError(`TM8_PUBLIC_ORIGIN must be http(s), got ${JSON.stringify(publicOriginRaw)}`);
+    }
+    publicOrigin = parsed.origin;
+  }
+
   const livekit = resolveLiveKit(env);
 
   const extraAllowedHostnames = (env.TM8_ALLOWED_HOSTNAMES ?? '')
@@ -377,6 +410,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
     nodeMode,
+    ...(publicOrigin ? { publicOrigin } : {}),
     // `multi` implies the kill switch. The explicit env var still wins when it
     // asks for MORE restriction (a hardened single-player node), and can never
     // ask for less: `||` here means no combination of the two can produce a

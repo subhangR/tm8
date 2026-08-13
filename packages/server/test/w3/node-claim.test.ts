@@ -149,6 +149,44 @@ describe('first-run node claim, over the public surface', () => {
     expect(await server.rows('select 1 from public.accounts')).toHaveLength(1);
   });
 
+  /**
+   * REGRESSION — both reviewers found this independently, and it was a real
+   * hole rather than a theoretical one.
+   *
+   * With `status = 'active'` in the claimed predicate, disabling the only
+   * credentialed account made the node read UNCLAIMED again. The next boot
+   * minted a token and `claim_node` overwrote that account's username,
+   * credential and `is_node_admin` — committing, and burning the token, before
+   * the follow-on login refused it as disabled. Re-enabling later would have
+   * handed the account to whoever ran that claim.
+   */
+  it('a DISABLED credentialed account still counts as claimed — disabling is not a way to reopen first-run', async () => {
+    const [account] = await server.rows<{ id: string }>(
+      'select id from public.accounts where is_owner',
+    );
+    // `accounts_disabled_shape` (002:59) pairs status with disabled_at, so the
+    // disable must be shaped the way `set_account_disabled` shapes it.
+    await server.rows(
+      "update public.accounts set status = 'disabled', disabled_at = now() where is_owner",
+    );
+    try {
+      const status = successData<{ claimed: boolean }>(
+        await server.request('GET', '/v2/auth/claim'),
+      );
+      expect(status.claimed).toBe(true);
+
+      // And minting is refused, so no token can even be advertised for it.
+      await expect(
+        server.rows('select public.issue_node_claim_token($1)', ['deadbeef']),
+      ).rejects.toThrow();
+    } finally {
+      await server.rows(
+        "update public.accounts set status = 'active', disabled_at = null where id = $1",
+        [account!.id],
+      );
+    }
+  });
+
   it('the credential set by the claim actually logs in', async () => {
     const login = successData<{ token: string; account: { username: string } }>(
       await server.request('POST', '/v2/auth/login', {

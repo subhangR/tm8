@@ -86,9 +86,29 @@ set search_path = public, internal, pg_temp as $$
   select exists (
     select 1 from public.accounts
      where password_hash is not null
-       and status = 'active'
   );
 $$;
+
+-- WHY THERE IS NO `status = 'active'` HERE, though an earlier revision had one.
+--
+-- Review finding (both reviewers, independently). With the status clause, a
+-- node whose only credentialed account is DISABLED reads unclaimed again: the
+-- next boot mints a fresh token and `claim_node` happily overwrites that
+-- account's username, credential and `is_node_admin`. The claim commits, the
+-- token burns, and the follow-on login then fails at `pg-auth.ts`'s
+-- `status !== 'active'` check with "invalid credentials" — immediately after a
+-- ceremony that reported success. Re-enabling the account later hands it to
+-- whoever ran that claim.
+--
+-- The clause also contradicted this file's own header, which defines claimed as
+-- "ANY account has a password_hash". The header was right: a node that HAS a
+-- credential must never be re-claimable by a stranger, and whether an operator
+-- has temporarily switched that account off is not the stranger's business.
+-- Disabling an account is not a way to reopen first-run.
+--
+-- Consequence to accept deliberately: a node whose only account is disabled is
+-- CLAIMED and cannot be re-claimed. Recovery is to re-enable the account, which
+-- is a node-admin act — not to hand ownership to the next caller.
 
 revoke all on function internal.node_is_claimed_unsafe() from public;
 
@@ -159,6 +179,36 @@ comment on function public.issue_node_claim_token(text) is
 
 revoke all on function public.issue_node_claim_token(text) from public;
 grant execute on function public.issue_node_claim_token(text) to tm8_app;
+
+-- -----------------------------------------------------------------------------
+-- public.node_claim_token_is_live — does this exact hash still authorize?
+--
+-- Exists so an ordinary restart can REPRINT the token it already issued rather
+-- than rotating it. `issue_node_claim_token` burns every live token, which is
+-- right for a deliberate reissue and wrong for a reboot: the design promises a
+-- claim link with no expiry so an operator can install on Friday and claim on
+-- Monday, and a restart in between was silently killing the saved URL.
+--
+-- The server holds the plaintext only in `<dataDir>/setup-token`; the database
+-- holds only the hash. So the boot path hashes the file and asks THIS, and
+-- mints fresh only when the answer is no.
+-- -----------------------------------------------------------------------------
+create or replace function public.node_claim_token_is_live(p_token_hash text)
+returns boolean language sql stable security definer
+set search_path = public, internal, pg_temp as $$
+  select exists (
+    select 1 from public.node_claim_tokens
+     where token_hash = p_token_hash
+       and used_at is null
+  );
+$$;
+
+comment on function public.node_claim_token_is_live(text) is
+  'Claim-free (auth bootstrap). Lets an ordinary restart reprint its existing '
+  'claim token instead of rotating it out from under the operator.';
+
+revoke all on function public.node_claim_token_is_live(text) from public;
+grant execute on function public.node_claim_token_is_live(text) to tm8_app;
 
 -- -----------------------------------------------------------------------------
 -- public.claim_node — the ceremony. ONE transaction, or none of it.
