@@ -113,12 +113,15 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
+  type TrackingPrMergeInput,
+  type TrackingPrMergeResult,
   type WorkInput,
   type WorkStatus,
 } from '@tm8/contract';
 import type {
   ConnectionState,
   FeedOpts,
+  FixturePrMergeGuard,
   FixtureSeam,
   IdentityView,
   LivenessSnapshot,
@@ -671,6 +674,13 @@ export function createFixtureSeam(): FixtureSeam {
     branches: ['main'] as string[],
   };
   const gitHead = (): string => gitLane.history[gitLane.history.length - 1] as string;
+  /**
+   * Which branch `commands.mergePullRequest` takes. Default `'available'`:
+   * the fixture's own PR is the mergeable one, so a screen wired against it
+   * demonstrates the SUCCESS path without setup, and every refusal — including
+   * the 501 an older node answers — is one `setPrMergeGuard` call away.
+   */
+  let prMergeGuard: FixturePrMergeGuard = 'available';
   /** oid → the files a stash entry holds, so pop restores what push took. */
   const stashedFiles = new Map<string, SessionGitFile[]>();
   const gitUnavailable = (
@@ -2868,6 +2878,78 @@ export function createFixtureSeam(): FixtureSeam {
         stashedFiles.delete(entry.oid);
         return clone({ sessionId: id, worktreeId: wtId, action: 'drop' as const, droppedOid: entry.oid, subject: entry.subject });
       },
+
+      /**
+       * `tracking.pr.merge` (Amendment 11). Every branch below is a REAL
+       * `CollabError` carrying the same code and the same `details.reason` the
+       * server throws (`facade/services/w2/tracking-write.ts:81-135`), because
+       * the refusal vocabulary IS the contract a caller renders — a fixture
+       * that answered a plain string here would let a screen pass in jsdom and
+       * render nothing against a node.
+       *
+       * Which branch fires is chosen by `fixtureControls.setPrMergeGuard`
+       * rather than derived from PR facts: the fixture holds no
+       * `mergeable_state` / `ci_status` to derive from, and inventing them
+       * would be a second, divergent model of a row only the server owns.
+       * `not_implemented` is in the list on purpose — it is the state this
+       * control actually ships into until the node restarts, not an error path.
+       */
+      async mergePullRequest(id, input: TrackingPrMergeInput): Promise<TrackingPrMergeResult> {
+        const repo = 'tm8/tm8';
+        const number = 42;
+        const label = `PR ${repo}#${String(number)}`;
+        switch (prMergeGuard) {
+          case 'available':
+            break;
+          case 'not_implemented':
+            throw new CollabError('not_implemented', 'tracking.pr.merge is not implemented on this node');
+          case 'not_found':
+            throw new CollabError('not_found', `no pull_request entity ${id}`);
+          case 'not_open':
+            throw new CollabError('invariant_violation', `${label} is closed, not open`, {
+              details: { reason: 'not_open', state: 'closed' },
+            });
+          case 'conflicted':
+            throw new CollabError('invariant_violation', `${label} has conflicts (observed mergeable_state=dirty)`, {
+              details: { reason: 'conflicted' },
+            });
+          case 'ci_red':
+            throw new CollabError('invariant_violation', `${label} has failing checks (observed ci_status=failing)`, {
+              details: { reason: 'ci_red' },
+            });
+          case 'no_github_credential':
+            throw new CollabError('forbidden', 'no GitHub credential stored for this account — connect one under Settings → Agent credentials', {
+              details: { reason: 'no_github_credential' },
+            });
+          case 'forge_blocked':
+            throw new CollabError('invariant_violation', 'the forge refused the merge: required review is missing', {
+              details: { reason: 'forge_blocked' },
+            });
+          case 'head_moved':
+            throw new CollabError('conflict', 'the branch moved after review: head is no longer the reviewed sha', {
+              details: { reason: 'head_moved' },
+            });
+          // The vocabulary's TAIL: these three carry NO `details.reason`, which
+          // is exactly why they are here — a renderer that keys off `reason`
+          // alone shows an empty refusal for all of them.
+          case 'unauthorized':
+            throw new CollabError('forbidden', 'GitHub refused this credential: token lacks repo scope');
+          case 'rate_limited':
+            throw new CollabError('rate_limited', 'GitHub secondary rate limit — retry shortly');
+          case 'upstream_unavailable':
+            throw new CollabError('upstream_unavailable', 'GitHub is unreachable');
+        }
+        return clone({
+          entityId: id,
+          repo,
+          number,
+          merged: true as const,
+          // Pinned-head honesty: the fixture's merge sha is derived from what
+          // the caller pinned, so a test can prove the panel sent the sha the
+          // human was SHOWN rather than an unpinned merge.
+          mergeSha: `${(input.headSha ?? fxOid(0xc3)).slice(0, 8)}${fxOid(0xd4).slice(8)}`,
+        });
+      },
     },
 
     /**
@@ -2984,6 +3066,9 @@ export function createFixtureSeam(): FixtureSeam {
       setLiveness,
       triggerResync(spaceId) {
         for (const cb of resyncSubs) cb(spaceId);
+      },
+      setPrMergeGuard(guard) {
+        prMergeGuard = guard;
       },
     },
   };

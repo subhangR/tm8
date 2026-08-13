@@ -14,6 +14,7 @@ import { channelFeedPortFromGateData } from './channel-feed-port';
 import { KindIcon, getKind } from '../domain';
 import type { ActionRef } from '../domain';
 import { useLaunchPort } from './useLaunchPort';
+import { mergePrPortFor } from './mergePrPort';
 import { usePanelPrimaries } from './usePanelPrimaries';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
@@ -178,6 +179,7 @@ export function ChannelView({
       wiredActions={primaries.wiredActions}
       membershipAuthoring={membership.authoringFor(selectedDetail)}
       launch={launchPort}
+      mergePr={mergePrPortFor(data.seam)}
       pinned={false}
       pinRefusal="Pinning lives in the Workspace — this channel keeps the entity beside its feed already"
       liveness={data.livenessOf(selectedId)}

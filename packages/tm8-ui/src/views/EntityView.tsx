@@ -63,6 +63,7 @@ import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
+import { mergePrPortFor } from './mergePrPort';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { useSessionStart } from './useSessionStart';
@@ -566,6 +567,7 @@ export function EntityView(props: EntityViewProps) {
       membershipAuthoring={membership.authoringFor(detail)}
       onMarkMemory={memoryMarks.begin}
       launch={launchPort}
+      mergePr={mergePrPortFor(data.seam)}
       /* The tombstone's way back. `restore` is the same verb the strip's
          archive control flips to, through the same executor — so an archived
          task reopens from wherever the user meets it. */
@@ -818,6 +820,7 @@ export function EntityView(props: EntityViewProps) {
                 wiredActions={primaries.wiredActions}
                 membershipAuthoring={membership.authoringFor(auxDetail)}
                 launch={launchPort}
+                mergePr={mergePrPortFor(data.seam)}
                 onRestore={() => rowLifecycle.archive('restore', aux.id)}
                 pinned={false}
                 pinRefusal="Pinning lives in the Workspace"

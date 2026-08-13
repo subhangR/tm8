@@ -57,11 +57,6 @@ export const REASONS = {
     'Withdrawing a handoff is deferred: handoffs.withdraw is not in the stamped facade seam, and withdrawal is not reversible once it is.',
   // R7 deferred features (never hidden, never built)
   graphDeferred: 'Graph view isn’t available yet.',
-  // B10 (git placement map §4.3). The named precondition, not a generic
-  // "coming soon": the tracking reader is read-only, and a merge button that
-  // guessed would land someone's lane on base without checks/review honesty.
-  mergePrDeferred:
-    'Merging needs a forge write client, and this node only has the read-only tracker — merge on the forge for now.',
   undoDeferred: 'Undo isn’t available yet — actions in this build are not reversible.',
   versionHistoryDeferred: 'Version history isn’t available yet.',
   leaderboardDeferred: 'The leaderboard isn’t available yet.',
@@ -362,8 +357,35 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
 
   'toggle-theme': define('toggle-theme', 'Toggle theme', '◐', () => AVAILABLE),
 
+  /**
+   * B10 — RETIRED FROM THE R7 TABLE by `tracking.pr.merge` (#184). It sat here
+   * as `deferred` carrying "this node only has the read-only tracker"; that
+   * precondition is now false, and leaving the authored copy in place would be
+   * this package asserting an absence the seam has since filled.
+   *
+   * It gates on the OP ONLY. The refusals that decide whether this particular
+   * PR can land — not open, conflicted, red CI, no credential — are read from
+   * observed facts `ActionContext` does not carry, and putting them here would
+   * mean teaching the shared context one kind's vocabulary (§15.2). They are
+   * answered by the flow, which is why the label keeps its ellipsis: the verb
+   * promises a confirm, not a merge.
+   *
+   * `opUnavailable['tracking.pr.merge']` is the ONE gate it does keep, and it
+   * is what makes the 501 from a node predating the merge door a first-class
+   * rendering rather than an error: the shell caches that verdict and this
+   * verb reads it back as disabled-with-reason on every later surface.
+   */
+  'merge-pr': {
+    ...define(
+      'merge-pr',
+      'Merge…',
+      '⇣',
+      (ctx) => opGate(ctx, 'tracking.pr.merge') ?? (ctx.entityId ? AVAILABLE : disabled(REASONS.noEntity)),
+    ),
+    flow: 'merge-pr',
+  },
+
   // R7 disposition table (LLD §4.2) — every deferred member has a home.
-  'merge-pr': deferred('merge-pr', 'Merge…', '⇣', REASONS.mergePrDeferred),
   'graph-view': deferred('graph-view', 'Graph view', '◈', REASONS.graphDeferred),
   undo: deferred('undo', 'Undo', '↶', REASONS.undoDeferred),
   'version-history': deferred('version-history', 'Version history', '⟲', REASONS.versionHistoryDeferred),

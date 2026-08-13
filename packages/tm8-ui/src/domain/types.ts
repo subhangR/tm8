@@ -436,8 +436,16 @@ export interface ActionDef {
    * flow — so the tile button, the panel primary, ⌘Enter and the palette row
    * all reach the same launch config rather than one of them firing a bare
    * spawn. A verb without `flow` dispatches immediately, as before.
+   *
+   * `'merge-pr'` (B10) joins for a different reason than `'launch'`: not
+   * configuration, but CONFIRMATION. `tracking.pr.merge` refuses from facts
+   * this context does not carry — PR state, mergeability, CI — and widening
+   * `ActionContext` with them would put one kind's words on the shared type
+   * every verb sees (§15.2). So the action bar's verb gates on op availability
+   * only, and the flow surface owns the fact-refusals: the click that
+   * discovers a refusal is the click that reads it.
    */
-  flow?: 'launch';
+  flow?: 'launch' | 'merge-pr';
   /**
    * The session mode this flow verb commits, when it is not the default.
    *

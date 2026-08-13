@@ -334,15 +334,18 @@ function ActionButton({
   const availability = def.availability(ctx);
 
   /*
-   * D44 — a flow verb OPENS ITS CONFIG instead of dispatching, exactly as the
+   * D44 — a flow verb OPENS ITS SURFACE instead of dispatching, exactly as the
    * list row's `RowAction` does. Asking the resolved def for `flow` keeps this
    * free of both kind and action-id literals (§15.2): the registry says which
-   * verbs configure before they commit, and this only knows how to honour it.
+   * verbs stop for a surface before they commit, and this only knows how to
+   * honour it. It tests for a flow's PRESENCE, not for `'launch'` — the moment
+   * a second flow existed (B10's merge confirm) the equality check was itself
+   * the action-id literal this comment claims not to have.
    *
    * It is therefore NOT enabled-inert without `onAction` — clicking genuinely
    * does something, and the config states for itself whether it can commit.
    */
-  const opensFlow = def.flow === 'launch' && onFlow != null;
+  const opensFlow = def.flow != null && onFlow != null;
 
   /*
    * R5 #9: an unwired verb is DISABLED-WITH-REASON, not enabled-inert. The

@@ -82,6 +82,13 @@ export { tileCountBadgesOf, type TileCountBadge } from './tile-counts';
 
 export { REASONS, allActions, deferredActions, resolveAction } from './actions';
 
+export {
+  PREDATES_MERGE_DOOR,
+  mergeRefusalOf,
+  mergeRefusalText,
+  type MergeRefusal,
+} from './pr-merge';
+
 export { actorPresentation, type ActorPresentation } from './actors';
 
 export { QUIET_SESSION_DETAIL, needsAttentionOf, toRowFacts } from './needs-attention';

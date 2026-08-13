@@ -2316,6 +2316,114 @@
 .cv2-root .lq__launch:disabled { opacity: 0.6; cursor: default; }
 
 /* ==========================================================================
+   MERGE CONFIRM (B10) — the PR panel's flow surface, sharing the launch
+   config's popover geometry because it hangs off the same `pn-actions__flow`
+   slot and must not be a second, differently-shaped card in the same corner.
+   It is DANGER-toned rather than brand-toned: this is the one act in the
+   build that lands code on a base branch someone else reads.
+   ========================================================================== */
+.cv2-root .pm { display: flex; flex-direction: column; gap: 9px; }
+.cv2-root .pm__head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.cv2-root .pm__heading { flex: none; font-size: 11.5px; font-weight: 700; color: var(--pn-ink); }
+.cv2-root .pm__subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .pm__close {
+  appearance: none;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cv2-root .pm__close:hover { color: var(--pn-ink); background: var(--pn-active); }
+.cv2-root .pm__confirm-text {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-1);
+}
+.cv2-root .pm__actions { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+.cv2-root .pm__spacer { flex: 1 1 auto; }
+/* A refusal caption takes its own full-width line rather than crushing the
+   verb pair into one word per line at the 200px floor — the lq rule. */
+.cv2-root .pm__actions .hon-disabled-group {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.cv2-root .pm__verb {
+  appearance: none;
+  font-family: var(--pn-ui);
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  background: transparent;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.cv2-root .pm__verb:hover { color: var(--pn-ink); background: var(--pn-active); }
+.cv2-root .pm__go {
+  appearance: none;
+  font-family: var(--pn-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--pn-card);
+  background: var(--pn-block);
+  border: 1px solid var(--pn-block);
+  border-radius: var(--pn-r-sm);
+  padding: 4px 11px;
+  cursor: pointer;
+}
+.cv2-root .pm__go:hover { filter: brightness(1.06); }
+.cv2-root .pm__go:disabled { opacity: 0.6; cursor: default; }
+.cv2-root .pm__refusal {
+  margin: 0;
+  padding: 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--pn-block) 40%, transparent);
+  border-radius: 5px;
+  background: var(--pn-block-soft);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--pn-ink-1);
+}
+.cv2-root .pm__refusal-label { font-weight: 600; color: var(--pn-block); }
+/* The receipt is NOT success-green all through: the merge succeeded, but the
+   note under it reports a state that has NOT changed yet, and a uniformly
+   affirmative block would read as though the chip had already flipped. */
+.cv2-root .pm__receipt {
+  margin: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 5px;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--pn-ink-1);
+}
+.cv2-root .pm__receipt-note { display: block; margin-top: 3px; color: var(--pn-ink-4); }
+
+/* ==========================================================================
    READER SURFACE — the reader archetype's two stances (T5-3 mount).
    The bar is the oracle's `Edit` primary row above the prose column; the body
    is whichever stance is showing, and it OWNS the scroll so the bar stays put

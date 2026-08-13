@@ -287,6 +287,14 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       'gitBranch', 'gitCheckpoint', 'gitCherryPick', 'gitCommit', 'gitMerge', 'gitRollback',
       'gitStash',
       'markRead',
+      // Amendment 11 (2026-08-13): `tracking.pr.merge` — the FORGE WRITE, and
+      // the counterpart to `gitMerge`'s deliberate exclusion from the tracking
+      // side. It sorts between `markRead` and `moveEntity`, beside nothing it
+      // resembles: `gitMerge` merges a session's worktree on this machine,
+      // while this lands code on someone else's base branch through GitHub.
+      // Two verbs spelled alike, one machine apart — which is exactly why this
+      // list is hand-maintained.
+      'mergePullRequest',
       'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
       // Amendment 2 (2026-07-31): the artifacts preview decisions were
       // ratified, so the Run button gained its one command (seam.ts header).

@@ -39,6 +39,7 @@ import { placeholderNameFor } from '../domain/title-grammar';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
 import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
+import { mergePrPortFor } from './mergePrPort';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { useSessionStart } from './useSessionStart';
 import { EmptyCenter } from './EmptyCenter';
@@ -411,6 +412,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           wiredActions={panelActions.wiredActions}
           membershipAuthoring={membership.authoringFor(detail)}
           launch={launchPort}
+          mergePr={mergePrPortFor(data.seam)}
           onRestore={() => rowLifecycle.archive('restore', id)}
           pinned={nav.pinned.includes(id)}
           // A1c's contract: the refusal string renders as the disabled pin
