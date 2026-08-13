@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
-import { KindIcon } from '../../domain';
+import { KindIcon, getKind } from '../../domain';
 import { Chip } from '../../kit';
+import { Tile, type EntityListPanelProps } from '../EntityListPanel';
 import { edgesOf, type MemorySetParams } from './MemorySetBlock';
 import './profile-body.css';
 
@@ -47,15 +48,39 @@ export function MembershipBlock({
   params,
   onOpenEntity,
   authoring,
+  itemsHost,
 }: {
   detail: EntityDetail;
   params: MemorySetParams;
   onOpenEntity?: (id: string) => void;
   authoring?: MembershipAuthoring | null;
+  /**
+   * When set, the OUTGOING side (a collection's ITEMS) renders each member as
+   * a REAL list tile — the kind's own registry anatomy, badges, PR chips and
+   * control strip — instead of a chip (user ruling 2026-08-13: "the items
+   * that are linked should be shown like the task items… whatever task tile,
+   * session tile we are using, with the git baked in"). The host object is
+   * composed ONCE by the detail panel; per row only `kind` is re-pointed so
+   * each member draws from its own registry row (§15.2). Absent ⇒ chips, the
+   * honest degradation for hosts with nothing to wire. The INCOMING side (an
+   * entity's COLLECTIONS) keeps chips: a list of containers is a list of
+   * names, not of workloads.
+   */
+  itemsHost?: EntityListPanelProps | null;
 }) {
   const direction = params.direction === 'incoming' ? 'incoming' : 'outgoing';
   const edges = edgesOf(detail, params);
-  const refusal = authoring?.refusal ?? null;
+  /**
+   * AN UNWIRED HOST IS A REFUSAL, NOT AN ABSENCE (L6/D28). This used to be
+   * `authoring ? <add> : null`, which made a host that forgot to pass
+   * `membershipAuthoring` pixel-identical to a genuine read-only refusal —
+   * the add control simply did not exist, and the defect read as "i dont see
+   * any add item in the collection detail page". The control now always
+   * renders; a missing authoring lane is one more disabled-with-reason.
+   */
+  const refusal = authoring
+    ? authoring.refusal ?? null
+    : 'This view has not wired membership authoring; the panel can show these collections but not change them here.';
   const pending = new Set(authoring?.pending ?? []);
 
   const [open, setOpen] = useState(false);
@@ -84,7 +109,7 @@ export function MembershipBlock({
   };
 
   const addLabel = typeof params.addLabel === 'string' ? params.addLabel : '+ add';
-  const add = authoring ? (
+  const add = (
     <div className="pn-membership__add">
       <button
         type="button"
@@ -121,7 +146,9 @@ export function MembershipBlock({
                 className="pn-membership__option"
                 data-testid="membership-option"
                 onClick={() => {
-                  authoring.onAdd(option.id, option.title);
+                  // The picker cannot open unauthored (`open && !refusal`),
+                  // so this only narrows the type, never the behaviour.
+                  authoring?.onAdd(option.id, option.title);
                   setOpen(false);
                   setQuery('');
                 }}
@@ -133,7 +160,7 @@ export function MembershipBlock({
         </div>
       ) : null}
     </div>
-  ) : null;
+  );
 
   if (edges.length === 0) {
     const empty = typeof params.empty === 'string'
@@ -144,6 +171,63 @@ export function MembershipBlock({
     return (
       <div className="pn-membership" data-testid="membership-block">
         <p className="pn-section__empty">{empty}</p>
+        {add}
+      </div>
+    );
+  }
+
+  if (direction === 'outgoing' && itemsHost) {
+    return (
+      <div className="pn-membership" data-testid="membership-block">
+        <div className="pn-membership__items" data-testid="membership-items">
+          {edges.map((edge) => {
+            const peer = edge.source.id === detail.id ? edge.target : edge.source;
+            const inFlight = pending.has(peer.id);
+            return (
+              <div className="pn-membership__itemrow" data-testid="membership-row" key={edge.id}>
+                {/* A LEADING KIND MARK on every member (user, 2026-08-13: "we
+                    know what item each type is"). The tiles carry their own
+                    status vocabularies, but in a MIXED list the first question
+                    is "what is this row" — answered here once, uniformly,
+                    with the registry's label as the hover word. */}
+                <span
+                  className="pn-membership__kind"
+                  data-testid="membership-item-kind"
+                  title={getKind(peer.kind).label}
+                  aria-label={getKind(peer.kind).label}
+                >
+                  <KindIcon kind={peer.kind} />
+                </span>
+                {/* The member's OWN registry row decides the anatomy — a task
+                    draws the control-card, a session the session tile — so
+                    `kind` is re-pointed per row and nothing else changes. */}
+                <div className="pn-membership__tile">
+                  <Tile
+                    row={peer}
+                    props={{ ...itemsHost, kind: peer.kind }}
+                    config={getKind(peer.kind)}
+                  />
+                </div>
+                {authoring ? (
+                  <button
+                    type="button"
+                    className="pn-membership__remove"
+                    data-testid="membership-remove"
+                    aria-label={`Remove ${peer.title}`}
+                    aria-disabled={refusal || inFlight ? true : undefined}
+                    title={refusal ?? (inFlight ? 'Removing…' : `Remove ${peer.title}`)}
+                    onClick={(event) =>
+                      refusal || inFlight
+                        ? event.preventDefault()
+                        : authoring.onRemove(peer.id, peer.title)}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
         {add}
       </div>
     );

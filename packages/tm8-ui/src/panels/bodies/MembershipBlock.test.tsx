@@ -154,18 +154,19 @@ describe('fixture seam — the membership pair', () => {
 });
 
 describe('useCollectionMembership — the direction decides which endpoint is the collection', () => {
-  const port = (direction: 'outgoing' | 'incoming', commands: {
+  const port = (commands: {
     addToCollection: ReturnType<typeof vi.fn>;
     removeFromCollection: ReturnType<typeof vi.fn>;
   }) => ({
-    spaceId: FIXTURE_SPACE_ID,
-    subjectId: 'subject-1' as EntityId,
-    direction,
-    pickerKind: null,
     commands: commands as never,
     searchPage: async () => [],
     onChanged: vi.fn(),
     onError: vi.fn(),
+  });
+  const subject = (direction: 'outgoing' | 'incoming') => ({
+    id: 'subject-1' as EntityId,
+    direction,
+    pickerKind: null,
   });
 
   it('outgoing (a collection panel): the subject IS the collection', async () => {
@@ -173,8 +174,8 @@ describe('useCollectionMembership — the direction decides which endpoint is th
       addToCollection: vi.fn(async () => ({ patches: [] })),
       removeFromCollection: vi.fn(async () => ({ patches: [] })),
     };
-    const { result } = renderHook(() => useCollectionMembership(port('outgoing', commands)));
-    result.current.authoring!.onAdd('peer-1', 'Peer');
+    const { result } = renderHook(() => useCollectionMembership(port(commands)));
+    result.current.authoringFor(subject('outgoing'))!.onAdd('peer-1', 'Peer');
     await waitFor(() => expect(commands.addToCollection).toHaveBeenCalled());
     expect(commands.addToCollection.mock.calls[0]![0]).toBe('subject-1');
     expect(commands.addToCollection.mock.calls[0]![1]).toMatchObject({ entityId: 'peer-1' });
@@ -185,16 +186,25 @@ describe('useCollectionMembership — the direction decides which endpoint is th
       addToCollection: vi.fn(async () => ({ patches: [] })),
       removeFromCollection: vi.fn(async () => ({ patches: [] })),
     };
-    const { result } = renderHook(() => useCollectionMembership(port('incoming', commands)));
-    result.current.authoring!.onAdd('collection-1', 'A collection');
+    const { result } = renderHook(() => useCollectionMembership(port(commands)));
+    result.current.authoringFor(subject('incoming'))!.onAdd('collection-1', 'A collection');
     await waitFor(() => expect(commands.addToCollection).toHaveBeenCalled());
     // Reversed arguments, identical record: collection first, member second.
     expect(commands.addToCollection.mock.calls[0]![0]).toBe('collection-1');
     expect(commands.addToCollection.mock.calls[0]![1]).toMatchObject({ entityId: 'subject-1' });
 
-    result.current.authoring!.onRemove('collection-1', 'A collection');
+    result.current.authoringFor(subject('incoming'))!.onRemove('collection-1', 'A collection');
     await waitFor(() => expect(commands.removeFromCollection).toHaveBeenCalled());
     expect(commands.removeFromCollection.mock.calls[0]!.slice(0, 2)).toEqual(['collection-1', 'subject-1']);
+  });
+
+  it('an unhosted subject answers null, never a throwing stub', () => {
+    const commands = {
+      addToCollection: vi.fn(async () => ({ patches: [] })),
+      removeFromCollection: vi.fn(async () => ({ patches: [] })),
+    };
+    const { result } = renderHook(() => useCollectionMembership(port(commands)));
+    expect(result.current.authoringFor(null)).toBeNull();
   });
 });
 
@@ -271,6 +281,57 @@ describe('MembershipBlock — rows, remove, and the bounded picker', () => {
     const remove = getByTestId('membership-remove');
     fireEvent.click(remove);
     expect(authoring.onRemove).not.toHaveBeenCalled();
+  });
+
+  it('an UNWIRED host still renders the add control, refused with the reason — never nothing', async () => {
+    // The regression this pins: four of five panel hosts passed no
+    // `membershipAuthoring`, and the block hid the add control entirely —
+    // indistinguishable from a read-only entity. Unwired must LOOK unwired.
+    const { detail } = await memberDetail();
+    const { getByTestId, queryByTestId } = render(
+      <MembershipBlock
+        detail={detail}
+        params={{ edgeType: 'contains', direction: 'incoming' }}
+      />,
+    );
+    const add = getByTestId('membership-add');
+    expect(add.getAttribute('aria-disabled')).toBe('true');
+    expect(add.getAttribute('title')).toMatch(/not wired membership authoring/i);
+    fireEvent.click(add);
+    expect(queryByTestId('membership-picker')).toBeNull();
+  });
+
+  it('with an itemsHost, a collection’s members render as REAL list tiles, remove intact', async () => {
+    // User ruling 2026-08-13: "the items that are linked should be shown like
+    // the task items… whatever task tile we are using". The member here is a
+    // task, so its registry anatomy is the control-card — assert the tile
+    // vocabulary is present, not the chip one, and that remove still raises.
+    const seam = await openSeam();
+    const collectionId = await createCollection(seam, 'Tiled list');
+    await seam.commands.addToCollection(collectionId, { clientMutationId: cmid(), entityId: taskUuidTitle.id });
+    const detail = await seam.entity(collectionId);
+    const authoring = authoringOf();
+    const { getByTestId } = render(
+      <div className="cv2-root">
+        <MembershipBlock
+          detail={detail}
+          params={{ edgeType: 'contains', direction: 'outgoing' }}
+          authoring={authoring}
+          itemsHost={{ kind: 'collection', rowsFor: () => [], ctx: { spaceId: FIXTURE_SPACE_ID } }}
+        />
+      </div>,
+    );
+    const items = getByTestId('membership-items');
+    // The control-card tile, not a chip row.
+    expect(items.querySelector('.pn-tt')).toBeTruthy();
+    expect(items.textContent).toContain(taskUuidTitle.title);
+    expect(items.querySelector('.pn-chiprow')).toBeNull();
+    // A mixed list leads every row with its kind mark, named for hover.
+    expect(
+      within(items).getByTestId('membership-item-kind').getAttribute('title'),
+    ).toBe('Task');
+    fireEvent.click(within(items).getByTestId('membership-remove'));
+    expect(authoring.onRemove).toHaveBeenCalledWith(taskUuidTitle.id, taskUuidTitle.title);
   });
 
   it('an empty membership is a designed empty with the add control beside it', async () => {

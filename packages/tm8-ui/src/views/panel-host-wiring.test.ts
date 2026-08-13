@@ -119,6 +119,17 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
+  it.each(hosts)('%s passes membershipAuthoring at every mount', (_label, file) => {
+    for (const { block } of mounts.filter((m) => m.file === file)) {
+      expect(
+        block.includes('membershipAuthoring'),
+        `an <EntityDetailPanel> in ${file} does not pass membershipAuthoring, so the membership ` +
+          "block's add control refuses with the unwired reason — collections would be " +
+          'read-only on this host while editable one screen over',
+      ).toBe(true);
+    }
+  });
+
   it.each(hosts)('%s passes attachments at every mount', (_label, file) => {
     for (const { block } of mounts.filter((m) => m.file === file)) {
       expect(
@@ -161,6 +172,23 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
           readFileSync(file, 'utf8').includes('attachmentsFor'),
           `${file} builds its attachments port by hand; use attachmentsFor() so every host ` +
             'treats an absent seam the same way',
+        ).toBe(true);
+      }
+      if (block.includes('membershipAuthoring')) {
+        // The authoring lane holds state, so the composer is a HOOK called
+        // once per host (`useMembershipSurface`) with `authoringFor(detail)`
+        // at the mount — the direction/picker/refusal mapping must not be
+        // rebuilt per host, which is exactly how the first four copies of
+        // this wiring drifted apart.
+        expect(
+          readFileSync(file, 'utf8').includes('useMembershipSurface'),
+          `${file} builds membershipAuthoring by hand; use useMembershipSurface() so every ` +
+            'host maps the registry block the same way',
+        ).toBe(true);
+        expect(
+          block.includes('authoringFor('),
+          `${file} passes membershipAuthoring from somewhere other than authoringFor(detail); ` +
+            'the per-subject mapping lives in the shared surface',
         ).toBe(true);
       }
     }

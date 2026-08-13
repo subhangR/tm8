@@ -171,6 +171,13 @@ export interface EntityDetailPanelProps {
   authoredFrom?: Readonly<Record<string, string | null>>;
   /** Observer-backed PR facts linked to this subject by tracking edges. */
   linkedPullRequests?: readonly LinkedPullRequestFacts[];
+  /**
+   * The same facts BY ID, for rows this panel draws about OTHER entities —
+   * today the membership block's member tiles, which carry the same PR chips
+   * their own list gives them. Absent ⇒ tiles render without chips, exactly
+   * like a list whose host wired none.
+   */
+  linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
 
   /** work_session inputs — ignored by every other archetype. */
   handoffs?: readonly HandoffView[];
@@ -1034,6 +1041,24 @@ function PanelBody(
       onSaved={props.onSaved}
       downloadHref={props.attachments?.downloadHref}
       membership={props.membershipAuthoring}
+      /* The membership block's member TILES (user ruling 2026-08-13): a
+         collection's items draw the kind's own list tile, so they need a
+         list-shaped host. `ControlHost` is a STRUCTURAL SUBSET of
+         `EntityListPanelProps` (the EntityControls reasoning, reused), so the
+         panel's own control-strip host doubles as the tile host with no
+         adapter. `kind` here is nominal — the block re-points it per row. */
+      membersHost={{
+        kind: detail.kind,
+        rowsFor: () => [],
+        ctx: props.ctx,
+        ...(props.controls ?? {}),
+        ...(props.livenessOf ? { livenessOf: props.livenessOf } : {}),
+        ...(props.launch ? { launch: props.launch } : {}),
+        ...(props.linkedPullRequestsOf
+          ? { linkedPullRequestsOf: props.linkedPullRequestsOf }
+          : {}),
+        ...(onOpenEntity ? { onSelect: onOpenEntity } : {}),
+      }}
     />
   );
 }

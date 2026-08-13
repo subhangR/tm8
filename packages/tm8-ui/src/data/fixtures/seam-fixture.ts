@@ -141,6 +141,37 @@ import {
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
 
+
+/** Transcript-observed file changes for the live session (files=1). */
+const FIXTURE_FILE_CHANGES = {
+  files: [
+    {
+      path: 'packages/execution/src/pty/PtyHostService.ts',
+      edits: 2,
+      linesAdded: 14,
+      linesRemoved: 3,
+      hunks: [
+        { tool: 'edit' as const, linesAdded: 9, linesRemoved: 2, oldText: '  emit(frame);\n  return;', newText: '  if (!this.closed) {\n    emit(frame);\n  }\n  return;' },
+        { tool: 'edit' as const, linesAdded: 5, linesRemoved: 1, oldText: 'const RETRY = 1;', newText: 'const RETRY = 3; // measured' },
+      ],
+      hunksTruncated: false,
+    },
+    {
+      path: 'packages/execution/test/spawn-loop.test.ts',
+      edits: 1,
+      linesAdded: 22,
+      linesRemoved: 0,
+      hunks: [
+        { tool: 'write' as const, linesAdded: 22, linesRemoved: 0, oldText: null, newText: null },
+      ],
+      hunksTruncated: true,
+    },
+  ],
+  totalAdded: 36,
+  totalRemoved: 3,
+  filesTruncated: false,
+  source: 'transcript' as const,
+};
 /**
  * Re-exported because seam-level tests address the fixture space through the
  * SEAM module they exercise. This was imported here and NOT re-exported for a
@@ -1586,6 +1617,9 @@ export function createFixtureSeam(): FixtureSeam {
         stuck: null,
         lastActivityAt: '2026-01-04T09:18:10.000Z',
         malformed: 0,
+        // The transcript-derived file accounting — attached only when asked,
+        // like the real server's `files=1`. Observed tool calls, not git.
+        ...(opts?.files ? { fileChanges: clone(FIXTURE_FILE_CHANGES) } : {}),
       });
     },
     /**

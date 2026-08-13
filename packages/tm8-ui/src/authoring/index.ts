@@ -72,6 +72,7 @@ export {
   type CollectionMembershipCommands,
   type CollectionMembershipHandle,
   type CollectionMembershipPort,
+  type MembershipSubject,
 } from './useCollectionMembership';
 export { NewTaskControl } from './NewTaskControl';
 export { EntityCreateControl } from './EntityCreateControl';

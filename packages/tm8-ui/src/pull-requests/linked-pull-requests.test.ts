@@ -141,3 +141,42 @@ describe('linked pull request facts', () => {
     expect(indexLinkedPullRequests([task, commit], [tracks(task, commit)]).get(task.id)).toBeUndefined();
   });
 });
+
+describe('sessions inherit their tasks\' PRs (working_on second pass)', () => {
+  const session = summary('ws-1', {
+    kind: 'work_session',
+    status: 'running',
+    agentTool: 'claude-code',
+    shareMode: 'none',
+    sessionKind: 'agent',
+  });
+
+  function workingOn(source: EntitySummary, target: EntitySummary): EdgeView {
+    return { ...tracks(source, target), id: 'edge-wo-1', type: 'working_on' };
+  }
+
+  it('indexes the session with the PRs its working_on task tracks', () => {
+    const pr = pullRequest({ ciStatus: 'failing', state: 'merged' });
+    const index = indexLinkedPullRequests(
+      [task, pr, session],
+      [tracks(task, pr), workingOn(session, task)],
+    );
+    expect(index.get('task-1')?.map((f) => f.id)).toEqual(['pr-1']);
+    // The session carries the SAME facts — merged, ci-red and all.
+    expect(index.get('ws-1')?.[0]).toMatchObject({ id: 'pr-1', lifecycle: 'merged', ciStatus: 'failing' });
+  });
+
+  it('edge order does not matter — working_on before tracks still resolves', () => {
+    const pr = pullRequest();
+    const index = indexLinkedPullRequests(
+      [task, pr, session],
+      [workingOn(session, task), tracks(task, pr)],
+    );
+    expect(index.get('ws-1')?.map((f) => f.id)).toEqual(['pr-1']);
+  });
+
+  it('a session working an untracked task inherits nothing', () => {
+    const index = indexLinkedPullRequests([task, session], [workingOn(session, task)]);
+    expect(index.get('ws-1')).toBeUndefined();
+  });
+});

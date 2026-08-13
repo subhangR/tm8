@@ -56,7 +56,7 @@ import {
 } from './honesty/DisabledWithReason';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
-import { EntityControlStrip, RowAction, type ControlHost } from './controls/EntityControls';
+import { EntityControlStrip, RowAction, RowMembershipControl, type ControlHost } from './controls/EntityControls';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
 import { MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
@@ -2398,7 +2398,14 @@ function resolvePulses(
 }
 
 
-function Tile({
+/**
+ * EXPORTED for the membership block (user ruling 2026-08-13): a collection's
+ * ITEMS render as REAL tiles — the same anatomies, badges, PR chips and
+ * control strip as the kind's own list — not as a second, poorer chip
+ * vocabulary. One tile implementation; a copy is how the control-card's
+ * chips drifted dead once already (D67).
+ */
+export function Tile({
   row,
   depth = 0,
   props,
@@ -2473,7 +2480,9 @@ function Tile({
   const done = row.deletedAt != null;
   const controlExpanded = controlCard && (detailsExpanded || flowRef !== null);
   const controlFacts = controlCard ? factsForControlCard(row) : null;
-  const linkedPullRequests = controlCard ? (props.linkedPullRequestsOf?.(row.id) ?? []) : [];
+  // Session tiles carry the same chip slot: the index resolves a session's
+  // PRs through its working_on task's tracks edges.
+  const linkedPullRequests = (controlCard || sessionTree) ? (props.linkedPullRequestsOf?.(row.id) ?? []) : [];
 
   if (sessionTree) {
     const state = row.state as unknown as Record<string, unknown>;
@@ -2501,6 +2510,11 @@ function Tile({
         statusTone={statusTone}
         statusTitle={statusTitle}
         tasks={props.linkedTasksOf?.(row.id) ?? []}
+        badges={
+          linkedPullRequests.length > 0 ? (
+            <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
+          ) : undefined
+        }
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
@@ -2540,17 +2554,32 @@ function Tile({
             <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
           ) : undefined
         }
-        actions={(list.rowActions ?? []).map((ref) => (
-          <RowAction
-            key={ref}
-            ref_={ref}
-            row={row}
-            props={props}
-            openFlow={flowRef}
-            onFlow={setFlowRef}
-            onOpenLaunch={props.launch?.onFullOptions}
-          />
-        ))}
+        actions={[
+          ...(list.rowActions ?? []).map((ref) => (
+            <RowAction
+              key={ref}
+              ref_={ref}
+              row={row}
+              props={props}
+              openFlow={flowRef}
+              onFlow={setFlowRef}
+              onOpenLaunch={props.launch?.onFullOptions}
+            />
+          )),
+          /* The collapsed control-card gets the same icon-anatomy membership
+             control as the standard tile — one component, not a second copy. */
+          ...(list.membership
+            ? [
+                <RowMembershipControl
+                  key="membership"
+                  row={row}
+                  props={props}
+                  control={list.membership}
+                  variant="icon"
+                />,
+              ]
+            : []),
+        ]}
         detailsExpanded={controlExpanded}
         flowOpen={flowRef !== null}
         onToggleDetails={() => {
@@ -2734,6 +2763,13 @@ function Tile({
                 onOpenLaunch={props.launch?.onFullOptions}
               />
             ))}
+            {/* Add-to-collection on the COLLAPSED tile (user ruling
+                2026-08-13) — the expanded strip already carries the labelled
+                form; a curation verb two clicks deep is one the user reported
+                as absent. Same component, icon anatomy, same gates. */}
+            {list.membership ? (
+              <RowMembershipControl row={row} props={props} control={list.membership} variant="icon" />
+            ) : null}
             {/* D67 — the details disclosure, on EVERY standard tile.
                 DELIBERATELY NOT the leading `lp__disclosure`: that chevron
                 means "show this row's CHILDREN" on tree kinds, and giving one

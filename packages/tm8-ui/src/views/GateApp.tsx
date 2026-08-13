@@ -10,7 +10,8 @@
  * state and the URL, the panels own anatomy. This file is composition only.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, EntitySummary, SpaceId } from '@tm8/contract';
+import type { EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
+import { startFolderImport } from '../files-explorer/folder-import';
 import {
   MenuRail,
   NoticeHost,
@@ -194,9 +195,44 @@ export function GateApp(props: GateAppProps = {}) {
   const projectOnboardingPort = useMemo<ProjectOnboardingPort | null>(() => {
     const setup = data.seam.projectSetup;
     if (!setup) return null;
+    const folderUploads = data.seam.projectFolderUploads;
     return {
       ...setup,
       createMemory: (input) => data.seam.commands.createEntity(input),
+      // The dialog's Upload radio exists only when the node serves the
+      // lifecycle ops; the import itself is the SAME `startFolderImport` the
+      // Files explorer uses, so one folder-upload implementation serves both
+      // surfaces and they cannot drift.
+      ...(folderUploads
+        ? {
+            importFolder: (input: {
+              spaceId: SpaceId;
+              projectName: string;
+              destinationParent: string;
+              rootName: string;
+              trust: ProjectTrustLevel;
+              files: readonly { file: File; relativePath: string }[];
+            }) => {
+              const task = startFolderImport(
+                {
+                  folderUploads,
+                  putBytes: (grant, bytes) => data.seam.files.putBytes(grant, bytes),
+                  directories: (path?: string) => setup.directories(path),
+                  spaceId: input.spaceId,
+                  projectName: input.projectName,
+                  destinationParent: input.destinationParent,
+                  trust: input.trust,
+                },
+                [...input.files],
+                input.rootName,
+              );
+              return {
+                result: task.result.then((outcome) => outcome.project),
+                cancel: task.cancel,
+              };
+            },
+          }
+        : {}),
     };
   }, [data.seam]);
 

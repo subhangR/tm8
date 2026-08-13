@@ -40,7 +40,7 @@
  * (`priority`), the edge (`assigned_to`) and the words, exactly as before.
  */
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import type {
   ActorSummary,
   Connections,
@@ -409,6 +409,33 @@ function RowValueControl({
 }
 
 /**
+ * WHICH WAY AN ATTACHED MENU OPENS — measured, not assumed.
+ *
+ * `.lp__assignmenu` hangs off its trigger at `top: 100%`, which is right for
+ * most rows and wrong for the ones near the bottom of the screen: there the
+ * menu ran past the viewport edge ("the drop downs are going under the
+ * screen") and the options a user reached for were the ones they could not
+ * see. Measured ON OPEN against the VIEWPORT — the list clips nothing (the
+ * menu escapes the tile either way); the question is where there is visible
+ * room. Flips only when below is too short AND above is taller, so a menu at
+ * the very top of a short window still opens downward rather than vanishing.
+ */
+function useOpensUpward(open: boolean, boxRef: RefObject<HTMLElement | null>): boolean {
+  const [up, setUp] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const box = boxRef.current?.getBoundingClientRect();
+    if (!box) return;
+    // 214 = the menu's own max-height (210, panels.css) + its 4px offset.
+    const below = window.innerHeight - box.bottom;
+    setUp(below < 214 && box.top > below);
+  }, [open, boxRef]);
+  return up;
+}
+
+const menuClass = (up: boolean) => (up ? 'lp__assignmenu lp__assignmenu--up' : 'lp__assignmenu');
+
+/**
  * The assignee picker.
  *
  * IT WRITES EDGES, ONE AT A TIME. `state.assignees` is a projection of
@@ -432,6 +459,7 @@ function RowAssignControl({
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLSpanElement>(null);
   useDismissable(open, boxRef, () => setOpen(false));
+  const up = useOpensUpward(open, boxRef);
 
   const raw = (row.state as unknown as Record<string, unknown>)[control.source];
   const assigned: readonly ActorSummary[] = Array.isArray(raw)
@@ -533,7 +561,7 @@ function RowAssignControl({
         {face}
       </button>
       {open ? (
-        <span className="lp__assignmenu" role="group" aria-label={`Assign ${row.title}`}>
+        <span className={menuClass(up)} role="group" aria-label={`Assign ${row.title}`}>
           {roster.map((actor) => {
             const on = assignedIds.has(actor.id);
             return (
@@ -588,19 +616,30 @@ function RowAssignControl({
  * the row's own `canEdit`/`canLink` answers the wrong question. The node
  * authorizes the write, and a refusal surfaces through the host's notice —
  * attempted-and-refused, the same posture as the board (§8.5).
+ *
+ * TWO ANATOMIES, ONE CONTROL (user ruling 2026-08-13: "every entity tile
+ * should have option to add it to a collection"). `face` is the expanded
+ * strip's labelled badge, exactly as before; `icon` is the COLLAPSED tile's
+ * hover-cluster button — same menu, same gates, same refusal words, because a
+ * second copy of a membership control is exactly the duplication D67 removed.
+ * EXPORTED so the tile anatomies can mount the icon form directly.
  */
-function RowMembershipControl({
+export function RowMembershipControl({
   row,
   props,
   control,
+  variant = 'face',
 }: {
   row: ControlSubject;
   props: ControlHost;
   control: MembershipListControl;
+  /** `icon` for the collapsed tile's action cluster. */
+  variant?: 'face' | 'icon';
 }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLSpanElement>(null);
   useDismissable(open, boxRef, () => setOpen(false));
+  const up = useOpensUpward(open, boxRef);
 
   // The sets currently containing this row: its incoming edges of the
   // declared type, sources collected. Live — the projection advances with
@@ -614,7 +653,15 @@ function RowMembershipControl({
   }
   const names = [...containing.values()];
 
-  const face = (
+  const icon = variant === 'icon';
+  const label = `Change ${control.label.toLowerCase()} for ${row.title}`;
+  /* The icon form wears the set kind's own glyph — the same mark the lens
+     trigger and the collection rows carry, so the affordance reads as "this
+     row, into one of those". */
+  const glyph = <KindIcon kind={control.setKind} />;
+  const face = icon ? (
+    <span aria-hidden>{glyph}</span>
+  ) : (
     <span className="pn-badge pn-badge--membership" data-testid="row-membership-face">
       {names.length === 0
         ? control.emptyLabel
@@ -625,10 +672,14 @@ function RowMembershipControl({
   );
 
   if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
-    return <CheckingPermission label={`Change ${control.label.toLowerCase()}`} />;
+    return icon
+      ? <CheckingPermission label={label} glyph={glyph} />
+      : <CheckingPermission label={`Change ${control.label.toLowerCase()}`} />;
   }
   if (!props.onMembership || !props.connectionsOf) {
-    return (
+    return icon ? (
+      <DisabledIconControl label={label} glyph={glyph} reason={NOT_WIRED_REASON} />
+    ) : (
       <DisabledAction label={`Change ${control.label.toLowerCase()}`} reason={NOT_WIRED_REASON}>
         {face}
       </DisabledAction>
@@ -641,14 +692,14 @@ function RowMembershipControl({
    */
   const sets = (props.membershipSets ?? []).filter((candidate) => candidate.id !== row.id);
   if (sets.length === 0) {
-    return (
-      <DisabledAction
-        label={`Change ${control.label.toLowerCase()}`}
-        reason={{
-          cause: `No ${control.label.toLowerCase()} are loaded for this space.`,
-          remedy: 'Create one from its own list first; the menu offers the most recent page once any exist.',
-        }}
-      >
+    const reason = {
+      cause: `No ${control.label.toLowerCase()} are loaded for this space.`,
+      remedy: 'Create one from its own list first; the menu offers the most recent page once any exist.',
+    };
+    return icon ? (
+      <DisabledIconControl label={label} glyph={glyph} reason={reason} />
+    ) : (
+      <DisabledAction label={`Change ${control.label.toLowerCase()}`} reason={reason}>
         {face}
       </DisabledAction>
     );
@@ -658,11 +709,12 @@ function RowMembershipControl({
     <span className="lp__assignwrap" ref={boxRef}>
       <button
         type="button"
-        className="lp__assignbtn"
+        className={icon ? 'lp__rowaction' : 'lp__assignbtn'}
         data-testid="row-membership-trigger"
+        title={icon ? label : undefined}
         aria-expanded={open}
         aria-haspopup="true"
-        aria-label={`Change ${control.label.toLowerCase()} for ${row.title}`}
+        aria-label={label}
         onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);
@@ -671,7 +723,7 @@ function RowMembershipControl({
         {face}
       </button>
       {open ? (
-        <span className="lp__assignmenu" role="group" aria-label={`${control.label} for ${row.title}`}>
+        <span className={menuClass(up)} role="group" aria-label={`${control.label} for ${row.title}`}>
           {sets.map((set) => {
             const on = containing.has(set.id);
             return (

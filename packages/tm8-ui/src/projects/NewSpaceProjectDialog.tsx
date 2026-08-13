@@ -8,13 +8,54 @@ import type {
   ProjectDirectoryListing,
   ProjectLinkInput,
   ProjectResource,
+  ProjectTrustLevel,
   SpaceId,
   SpaceSummary,
 } from '@tm8/contract';
 
+import type { PickedFile } from '../files-explorer/picker';
+import { filesFromInput } from '../files-explorer/picker';
+
 import './projects.css';
 
-export type OnboardingStage = 'space' | 'project' | 'link' | 'memory';
+export type OnboardingStage = 'space' | 'project' | 'upload' | 'link' | 'memory';
+
+/**
+ * One source, radio-selected (owner ruling 2026-08-12). They are mutually
+ * exclusive because their failure modes are: `folder` records a path that
+ * already exists on the node, `upload` MATERIALIZES bytes into a new root, and
+ * `github` records a remote URL against a folder nobody has cloned into yet.
+ * Offering them as independent fields would let a user describe a state the
+ * server cannot produce.
+ */
+export type ProjectSource =
+  | { kind: 'folder'; workingDir: string; ensureWorkingDir: boolean }
+  /**
+   * LINK NOW, CLONE LATER. `repoUrl` is recorded on the project; no clone is
+   * attempted here. A clone is slow, needs credentials for a private repo, and
+   * can fail halfway — none of which belongs inside a create dialog's saga.
+   * The folder is still required: a project without a working directory is not
+   * a shape `projects.create` accepts.
+   */
+  | { kind: 'github'; repoUrl: string; workingDir: string; ensureWorkingDir: boolean }
+  | { kind: 'upload'; destinationParent: string; rootName: string; files: readonly PickedFile[] };
+
+export interface ProjectOnboardingProject {
+  name: string;
+  trusted: boolean;
+  source: ProjectSource;
+}
+
+/**
+ * The imported-folder lifecycle, as the dialog needs it. Shaped as a task and
+ * not a promise so a cancel ABORTS the server-side session instead of
+ * orphaning its staging directory — the contract `files-explorer/folder-import`
+ * already implements over `projects.folderUploads.*`.
+ */
+export interface FolderImportHandle {
+  result: Promise<ProjectResource>;
+  cancel(): void;
+}
 
 export interface ProjectOnboardingPort {
   directories(path?: string): Promise<ProjectDirectoryListing>;
@@ -22,14 +63,25 @@ export interface ProjectOnboardingPort {
   createProject(input: ProjectCreateInput): Promise<ProjectResource>;
   linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void>;
   createMemory(input: CreateEntityInput): Promise<CommandResult>;
+  /**
+   * Absent when this node does not serve `projects.folderUploads.*`; the
+   * Upload radio is then disabled with the truthful reason rather than
+   * offered and failed at submit.
+   */
+  importFolder?(input: {
+    spaceId: SpaceId;
+    projectName: string;
+    destinationParent: string;
+    rootName: string;
+    trust: ProjectTrustLevel;
+    files: readonly PickedFile[];
+  }): FolderImportHandle;
 }
 
 export interface ProjectOnboardingInput {
   spaceName: string;
-  projectName: string;
-  workingDir: string;
-  ensureWorkingDir: boolean;
-  trusted: boolean;
+  /** Absent is the ruled default: a Space may be created with no project. */
+  project?: ProjectOnboardingProject;
 }
 
 export interface OnboardingMutationIds {
@@ -77,48 +129,156 @@ async function stage<T>(
   }
 }
 
-/** The retry-safe four-command saga, kept separate from rendering for tests. */
+// ---------------------------------------------------------------------------
+// Validation — one function, so "what the button refuses" and "what the tests
+// assert" cannot drift apart. A message here means NO request is made.
+// ---------------------------------------------------------------------------
+
+export function validateOnboarding(input: ProjectOnboardingInput): string | null {
+  if (!input.spaceName.trim()) return 'Give the Space a name.';
+  const project = input.project;
+  if (!project) return null;
+  if (!project.name.trim()) return 'Give the project a name, or remove the project.';
+  const source = project.source;
+  if (source.kind === 'folder') {
+    if (!source.workingDir) return 'Choose the local folder this project lives in.';
+    return null;
+  }
+  if (source.kind === 'github') {
+    if (!isGithubUrl(source.repoUrl)) return 'Enter a GitHub repository URL, like https://github.com/owner/repo.';
+    if (!source.workingDir) return 'Choose the local folder the repository will live in.';
+    return null;
+  }
+  if (source.files.length === 0) return 'Choose a folder or files to upload.';
+  if (!source.destinationParent) return 'Choose where on the node the uploaded folder should land.';
+  if (!source.rootName) return 'Name the folder that will be created for the upload.';
+  return null;
+}
+
+/** Deliberately narrow: this URL is RECORDED, so a typo is silent forever. */
+export function isGithubUrl(raw: string): boolean {
+  const value = raw.trim();
+  if (!value) return false;
+  const ssh = /^git@github\.com:[^/\s]+\/[^/\s]+?(?:\.git)?$/.test(value);
+  if (ssh) return true;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+    if (url.hostname !== 'github.com' && url.hostname !== 'www.github.com') return false;
+    const segments = url.pathname.split('/').filter(Boolean);
+    return segments.length >= 2;
+  } catch {
+    return false;
+  }
+}
+
+/** `https://github.com/owner/repo(.git)` → `repo`; '' when unreadable. */
+export function repoFolderName(raw: string): string {
+  const value = raw.trim().replace(/\.git$/, '');
+  const tail = value.split(/[/:]/).filter(Boolean).pop() ?? '';
+  return /^[^\\/]+$/.test(tail) && tail !== '.' && tail !== '..' ? tail : '';
+}
+
+function memoryStatement(spaceName: string, project: ProjectResource, source: ProjectSource): string {
+  const base = `Space “${spaceName}” uses project “${project.name}” at node-local folder “${project.workingDir}”.`;
+  if (source.kind === 'github') {
+    return `${base} Its GitHub repository ${source.repoUrl} is RECORDED as the project's remote; nothing has been cloned.`;
+  }
+  if (source.kind === 'upload') {
+    return `${base} Its contents were uploaded from a browser and materialized on the node.`;
+  }
+  return base;
+}
+
+/**
+ * The retry-safe saga, kept separate from rendering for tests.
+ *
+ * The Space is committed FIRST and independently: a project step that fails
+ * leaves a real, usable Space behind rather than nothing, which is why the
+ * project is optional in the first place.
+ */
 export async function onboardSpaceProject(
   port: ProjectOnboardingPort,
   input: ProjectOnboardingInput,
   ids: OnboardingMutationIds,
   onStage?: (stage: OnboardingStage) => void,
-): Promise<{ space: SpaceSummary; project: ProjectResource }> {
+  registerCancel?: (cancel: (() => void) | null) => void,
+): Promise<{ space: SpaceSummary; project: ProjectResource | null }> {
   const createdSpace = await stage('space', onStage, () => port.createSpace({
     name: input.spaceName.trim(),
     visibility: 'private',
     clientMutationId: ids.space,
   }));
-  const project = await stage('project', onStage, () => port.createProject({
-    name: input.projectName.trim(),
-    workingDir: input.workingDir,
-    ensureWorkingDir: input.ensureWorkingDir,
-    trust: input.trusted ? 'trusted' : 'untrusted',
-    clientMutationId: ids.project,
-  }));
-  await stage('link', onStage, () => port.linkProject(createdSpace.space.id, {
-    projectId: project.id,
-    clientMutationId: ids.link,
-  }));
+  const space = createdSpace.space;
+  const wanted = input.project;
+  if (!wanted) return { space, project: null };
+
+  const trust: ProjectTrustLevel = wanted.trusted ? 'trusted' : 'untrusted';
+  const source = wanted.source;
+  let project: ProjectResource;
+
+  if (source.kind === 'upload') {
+    const importFolder = port.importFolder;
+    if (!importFolder) {
+      throw new OnboardingStageError('upload', new Error(FOLDER_UPLOAD_UNAVAILABLE));
+    }
+    project = await stage('upload', onStage, async () => {
+      const task = importFolder({
+        spaceId: space.id,
+        projectName: wanted.name.trim(),
+        destinationParent: source.destinationParent,
+        rootName: source.rootName,
+        trust,
+        files: source.files,
+      });
+      registerCancel?.(task.cancel);
+      try {
+        return await task.result;
+      } finally {
+        registerCancel?.(null);
+      }
+    });
+    // `projects.folderUploads.complete` creates AND links the project itself,
+    // so a second `projects.link` here would be a duplicate, not a safety net.
+  } else {
+    project = await stage('project', onStage, () => port.createProject({
+      name: wanted.name.trim(),
+      workingDir: source.workingDir,
+      ensureWorkingDir: source.ensureWorkingDir,
+      trust,
+      ...(source.kind === 'github' ? { repoUrl: source.repoUrl.trim() } : {}),
+      clientMutationId: ids.project,
+    }));
+    await stage('link', onStage, () => port.linkProject(space.id, {
+      projectId: project.id,
+      clientMutationId: ids.link,
+    }));
+  }
+
   await stage('memory', onStage, () => port.createMemory({
     clientMutationId: ids.memory,
-    spaceId: createdSpace.space.id,
+    spaceId: space.id,
     kind: 'memory',
     title: `Project folder: ${project.name}`,
     content: {
-      statement: `Space “${createdSpace.space.name}” uses project “${project.name}” at node-local folder “${project.workingDir}”.`,
-      mechanism: 'Recorded by Space project onboarding after projects.create and projects.link succeeded.',
-      subjectScope: `Space ${createdSpace.space.id}; project ${project.id}; working directory ${project.workingDir}`,
-      doesNotEstablish: 'This records the configured working directory; it does not establish file synchronization, Git status, or commit state.',
+      statement: memoryStatement(space.name, project, source),
+      mechanism: source.kind === 'upload'
+        ? 'Recorded by Space project onboarding after projects.folderUploads.complete succeeded.'
+        : 'Recorded by Space project onboarding after projects.create and projects.link succeeded.',
+      subjectScope: `Space ${space.id}; project ${project.id}; working directory ${project.workingDir}`,
+      doesNotEstablish: source.kind === 'github'
+        ? 'This records the repository URL and the configured working directory; it does not establish a clone, fetched refs, or any Git state on disk.'
+        : 'This records the configured working directory; it does not establish file synchronization, Git status, or commit state.',
       measuredAt: ids.measuredAt,
     },
   }));
-  return { space: createdSpace.space, project };
+  return { space, project };
 }
 
 const STAGE_LABEL: Record<OnboardingStage, string> = {
   space: 'Creating Space',
   project: 'Creating project folder',
+  upload: 'Uploading folder',
   link: 'Connecting project',
   memory: 'Recording memory',
 };
@@ -126,19 +286,25 @@ const STAGE_LABEL: Record<OnboardingStage, string> = {
 /**
  * Truthful early refusal: the server's `projects.create` is node-admin-only,
  * so a non-admin must not be walked into a saga that commits a Space and then
- * refuses its project — that is how orphaned, project-less Spaces are made.
+ * refuses its project. Since 2026-08-12 the Space is no longer hostage to it —
+ * the project section is what disables, not the dialog.
  */
 export const FOLDER_CONNECT_FORBIDDEN =
-  'Connecting a local folder creates a project on the node’s disk, which needs node-admin rights on this node. Ask an owner to run this setup or to grant your account node-admin.';
+  'Adding a project creates a folder on the node’s disk, which needs node-admin rights on this node. You can still create the Space; ask an owner to add the project, or to grant your account node-admin.';
+
+export const FOLDER_UPLOAD_UNAVAILABLE =
+  'This node does not serve the folder-upload operations, so bytes cannot be sent from the browser here. Browse to a folder on the node instead.';
+
+type SourceKind = ProjectSource['kind'];
 
 export interface NewSpaceProjectDialogProps {
   open: boolean;
   nodeLabel: string;
   /**
    * The viewer's node-admin standing when the host has resolved it; `false`
-   * disables the connect flow with the truthful reason. Unknown
-   * (undefined/null) keeps the flow available — the server remains the
-   * backstop, and a failed enhancement read must not lock the door.
+   * disables the PROJECT section with the truthful reason. Unknown
+   * (undefined/null) keeps it available — the server remains the backstop, and
+   * a failed enhancement read must not lock the door.
    */
   viewerIsNodeAdmin?: boolean | null;
   port: ProjectOnboardingPort;
@@ -148,11 +314,19 @@ export interface NewSpaceProjectDialogProps {
 
 export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
   const [spaceName, setSpaceName] = useState('');
+  const [addProject, setAddProject] = useState(false);
   const [projectName, setProjectName] = useState('');
+  const [sourceKind, setSourceKind] = useState<SourceKind>('folder');
   const [workingDir, setWorkingDir] = useState('');
   const [ensureWorkingDir, setEnsureWorkingDir] = useState(false);
+  const [repoUrl, setRepoUrl] = useState('');
+  const [picked, setPicked] = useState<PickedFile[]>([]);
+  const [refusedCount, setRefusedCount] = useState(0);
+  const [destinationParent, setDestinationParent] = useState('');
+  const [uploadRootName, setUploadRootName] = useState('');
   const [trusted, setTrusted] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
+  const [browserMode, setBrowserMode] = useState<'workingDir' | 'destinationParent'>('workingDir');
   const [listing, setListing] = useState<ProjectDirectoryListing | null>(null);
   const [browserBusy, setBrowserBusy] = useState(false);
   const [browserError, setBrowserError] = useState<string | null>(null);
@@ -160,9 +334,19 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
   const [busy, setBusy] = useState(false);
   const [currentStage, setCurrentStage] = useState<OnboardingStage | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [validation, setValidation] = useState<string | null>(null);
   const ids = useRef<OnboardingMutationIds | null>(null);
+  const cancelUpload = useRef<(() => void) | null>(null);
+  /**
+   * The double-submit guard that a `disabled` attribute cannot be: two clicks
+   * dispatched in the same tick both read the pre-render `busy`, so the second
+   * one has to be refused by a ref that was already written synchronously.
+   */
+  const submitting = useRef(false);
 
   const lockedForRetry = ids.current !== null && !busy;
+  const folderBlocked = props.viewerIsNodeAdmin === false;
+  const uploadUnavailable = !props.port.importFolder;
 
   useEffect(() => {
     if (!props.open) return undefined;
@@ -188,10 +372,18 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
     }
   };
 
+  const openBrowser = (mode: 'workingDir' | 'destinationParent') => {
+    setBrowserMode(mode);
+    void browse();
+  };
+
   const useCurrent = () => {
     if (!listing) return;
-    setWorkingDir(listing.path);
-    setEnsureWorkingDir(false);
+    if (browserMode === 'destinationParent') setDestinationParent(listing.path);
+    else {
+      setWorkingDir(listing.path);
+      setEnsureWorkingDir(false);
+    }
     setBrowserOpen(false);
   };
 
@@ -201,49 +393,102 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
     && cleanFolderName !== '..'
     && !/[\\/]/.test(cleanFolderName);
   const useNew = () => {
-    if (!listing || !validFolderName) return;
+    if (!listing || !validFolderName || browserMode !== 'workingDir') return;
     const seam = listing.path.endsWith(listing.separator) ? '' : listing.separator;
     setWorkingDir(`${listing.path}${seam}${cleanFolderName}`);
     setEnsureWorkingDir(true);
     setBrowserOpen(false);
   };
 
-  const folderBlocked = props.viewerIsNodeAdmin === false;
+  const onPick = (list: FileList | null) => {
+    const result = filesFromInput(list);
+    setPicked(result.files);
+    setRefusedCount(result.refused.length);
+    setValidation(null);
+    if (!uploadRootName) {
+      const first = result.files[0]?.relativePath ?? '';
+      const root = first.includes('/') ? first.split('/')[0]! : '';
+      if (root) setUploadRootName(root);
+      if (root && !projectName) setProjectName(root);
+    }
+  };
+
+  const currentSource = (): ProjectSource => {
+    if (sourceKind === 'upload') {
+      return { kind: 'upload', destinationParent, rootName: uploadRootName.trim(), files: picked };
+    }
+    if (sourceKind === 'github') {
+      return { kind: 'github', repoUrl, workingDir, ensureWorkingDir };
+    }
+    return { kind: 'folder', workingDir, ensureWorkingDir };
+  };
+
+  const buildInput = (): ProjectOnboardingInput => ({
+    spaceName,
+    ...(addProject && !folderBlocked
+      ? { project: { name: projectName, trusted, source: currentSource() } }
+      : {}),
+  });
+
+  const resetForm = () => {
+    setSpaceName('');
+    setAddProject(false);
+    setProjectName('');
+    setSourceKind('folder');
+    setWorkingDir('');
+    setEnsureWorkingDir(false);
+    setRepoUrl('');
+    setPicked([]);
+    setRefusedCount(0);
+    setDestinationParent('');
+    setUploadRootName('');
+    setTrusted(false);
+    setListing(null);
+    setNewFolderName('');
+    setValidation(null);
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (folderBlocked) return;
-    if (!spaceName.trim() || !projectName.trim() || !workingDir) return;
+    if (submitting.current) return;
+    const input = buildInput();
+    const invalid = validateOnboarding(input);
+    if (invalid) {
+      // No request is made: an invalid form never reaches the wire.
+      setValidation(invalid);
+      return;
+    }
+    setValidation(null);
+    submitting.current = true;
     const stableIds = ids.current ?? newOnboardingMutationIds();
     ids.current = stableIds;
     setBusy(true);
     setError(null);
     try {
-      const result = await onboardSpaceProject(props.port, {
-        spaceName,
-        projectName,
-        workingDir,
-        ensureWorkingDir,
-        trusted,
-      }, stableIds, setCurrentStage);
+      const result = await onboardSpaceProject(
+        props.port,
+        input,
+        stableIds,
+        setCurrentStage,
+        (cancel) => { cancelUpload.current = cancel; },
+      );
       ids.current = null;
       setCurrentStage(null);
-      setSpaceName('');
-      setProjectName('');
-      setWorkingDir('');
-      setEnsureWorkingDir(false);
-      setTrusted(false);
-      setListing(null);
-      setNewFolderName('');
+      resetForm();
       props.onCreated(result.space);
     } catch (cause) {
+      // The dialog STAYS OPEN with every value intact: re-typing a folder path
+      // because the node answered 409 is the failure this guards.
       const failed = cause instanceof OnboardingStageError ? cause.stage : currentStage;
       const label = failed ? STAGE_LABEL[failed] : 'Onboarding';
       setError(`${label} failed: ${String((cause as { message?: unknown } | null)?.message ?? cause)} Retry resumes safely with the same mutation ids.`);
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
+
+  const disabled = busy || lockedForRetry;
 
   return (
     <div className="project-onboard__backdrop" role="presentation" onMouseDown={(event) => {
@@ -253,7 +498,7 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
         <header className="project-onboard__header">
           <div>
             <div className="project-onboard__eyebrow">NEW SPACE · {props.nodeLabel}</div>
-            <h2 id="project-onboard-title">Add a local project</h2>
+            <h2 id="project-onboard-title">Create Space</h2>
           </div>
           <button type="button" className="project-onboard__close" onClick={props.onDismiss} disabled={busy} aria-label="Close">×</button>
         </header>
@@ -262,7 +507,11 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
           <div className="project-browser">
             <div className="project-browser__head">
               <button type="button" className="project-onboard__button" onClick={() => setBrowserOpen(false)}>← Form</button>
-              <strong>Browse folders on {props.nodeLabel}</strong>
+              <strong>
+                {browserMode === 'destinationParent'
+                  ? `Choose where the upload lands on ${props.nodeLabel}`
+                  : `Browse folders on ${props.nodeLabel}`}
+              </strong>
             </div>
             {listing ? (
               <>
@@ -289,19 +538,25 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
                   {!browserBusy && listing.directories.length === 0 ? <li className="project-browser__empty">No child folders</li> : null}
                 </ul>
                 {listing.truncated ? <p className="project-onboard__note">Only the first 500 folders are shown.</p> : null}
-                <div className="project-browser__new">
-                  <label htmlFor="project-new-folder">Create a new folder here</label>
-                  <div>
-                    <input
-                      id="project-new-folder"
-                      value={newFolderName}
-                      onChange={(event) => setNewFolderName(event.target.value)}
-                      placeholder="folder-name"
-                    />
-                    <button type="button" className="project-onboard__button" onClick={useNew} disabled={!validFolderName}>Use new folder</button>
+                {browserMode === 'workingDir' ? (
+                  <div className="project-browser__new">
+                    <label htmlFor="project-new-folder">Create a new folder here</label>
+                    <div>
+                      <input
+                        id="project-new-folder"
+                        value={newFolderName}
+                        onChange={(event) => setNewFolderName(event.target.value)}
+                        placeholder="folder-name"
+                      />
+                      <button type="button" className="project-onboard__button" onClick={useNew} disabled={!validFolderName}>Use new folder</button>
+                    </div>
+                    {newFolderName && !validFolderName ? <span role="alert">Use one folder name without slashes.</span> : null}
                   </div>
-                  {newFolderName && !validFolderName ? <span role="alert">Use one folder name without slashes.</span> : null}
-                </div>
+                ) : (
+                  <p className="project-onboard__note">
+                    The uploaded folder is created inside the folder you choose here.
+                  </p>
+                )}
               </>
             ) : null}
             {browserBusy ? <p className="project-onboard__note" role="status">Reading folders…</p> : null}
@@ -311,38 +566,184 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
           <form className="project-onboard__form" onSubmit={submit}>
             <label>
               <span>Space name</span>
-              <input value={spaceName} onChange={(event) => setSpaceName(event.target.value)} disabled={busy || lockedForRetry} autoFocus />
+              <input
+                value={spaceName}
+                onChange={(event) => { setSpaceName(event.target.value); setValidation(null); }}
+                disabled={disabled}
+                autoFocus
+              />
             </label>
-            <label>
-              <span>Project name</span>
-              <input value={projectName} onChange={(event) => setProjectName(event.target.value)} disabled={busy || lockedForRetry} />
-            </label>
-            <div className="project-onboard__field">
-              <span>Local folder on {props.nodeLabel}</span>
-              <div className="project-onboard__folder-row">
-                <code>{workingDir || 'No folder selected'}</code>
-                <button type="button" className="project-onboard__button" onClick={() => void browse()} disabled={busy || lockedForRetry || folderBlocked}>Browse folders</button>
-              </div>
-              {folderBlocked ? <p className="project-onboard__error" role="alert">{FOLDER_CONNECT_FORBIDDEN}</p> : null}
-              {ensureWorkingDir ? <small>This folder will be created when you submit.</small> : null}
-            </div>
+
             <label className="project-onboard__trust">
-              <input type="checkbox" checked={trusted} onChange={(event) => setTrusted(event.target.checked)} disabled={busy || lockedForRetry} />
+              <input
+                type="checkbox"
+                checked={addProject}
+                onChange={(event) => { setAddProject(event.target.checked); setValidation(null); }}
+                disabled={disabled || folderBlocked}
+              />
               <span>
-                <strong>Trust this folder for agent execution</strong>
-                <small>Off by default. Trusted projects allow agents to run with this folder as their working directory.</small>
+                <strong>Add a project to this Space</strong>
+                <small>Optional. A Space works without one; you can add a project later.</small>
               </span>
             </label>
+            {folderBlocked ? <p className="project-onboard__error" role="alert">{FOLDER_CONNECT_FORBIDDEN}</p> : null}
+
+            {addProject && !folderBlocked ? (
+              <fieldset className="project-onboard__section" disabled={disabled}>
+                <legend>Project</legend>
+                <label>
+                  <span>Project name</span>
+                  <input value={projectName} onChange={(event) => { setProjectName(event.target.value); setValidation(null); }} />
+                </label>
+
+                <div className="project-onboard__field" role="radiogroup" aria-label="Project source">
+                  <span>Where do its files come from?</span>
+                  <label className="project-onboard__radio">
+                    <input
+                      type="radio"
+                      name="project-source"
+                      checked={sourceKind === 'folder'}
+                      onChange={() => { setSourceKind('folder'); setValidation(null); }}
+                    />
+                    <span>A folder already on {props.nodeLabel}</span>
+                  </label>
+                  <label className="project-onboard__radio">
+                    <input
+                      type="radio"
+                      name="project-source"
+                      checked={sourceKind === 'upload'}
+                      disabled={uploadUnavailable}
+                      onChange={() => { setSourceKind('upload'); setValidation(null); }}
+                    />
+                    <span>Upload a folder or files from this computer</span>
+                  </label>
+                  <label className="project-onboard__radio">
+                    <input
+                      type="radio"
+                      name="project-source"
+                      checked={sourceKind === 'github'}
+                      onChange={() => { setSourceKind('github'); setValidation(null); }}
+                    />
+                    <span>A GitHub repository</span>
+                  </label>
+                  {uploadUnavailable ? <p className="project-onboard__note">{FOLDER_UPLOAD_UNAVAILABLE}</p> : null}
+                </div>
+
+                {sourceKind === 'folder' || sourceKind === 'github' ? (
+                  <div className="project-onboard__field">
+                    <span>{sourceKind === 'github' ? `Folder for the repository on ${props.nodeLabel}` : `Local folder on ${props.nodeLabel}`}</span>
+                    <div className="project-onboard__folder-row">
+                      <code>{workingDir || 'No folder selected'}</code>
+                      <button type="button" className="project-onboard__button" onClick={() => openBrowser('workingDir')}>Browse folders</button>
+                    </div>
+                    {ensureWorkingDir ? <small>This folder will be created when you submit.</small> : null}
+                  </div>
+                ) : null}
+
+                {sourceKind === 'github' ? (
+                  <>
+                    <label>
+                      <span>GitHub repository URL</span>
+                      <input
+                        value={repoUrl}
+                        placeholder="https://github.com/owner/repo"
+                        onChange={(event) => {
+                          setRepoUrl(event.target.value);
+                          setValidation(null);
+                          if (!projectName) {
+                            const suggested = repoFolderName(event.target.value);
+                            if (suggested) setProjectName(suggested);
+                          }
+                        }}
+                      />
+                    </label>
+                    <p className="project-onboard__note">
+                      The repository URL is recorded on the project. Nothing is cloned now — clone it from the
+                      project once the Space exists.
+                    </p>
+                  </>
+                ) : null}
+
+                {sourceKind === 'upload' ? (
+                  <div className="project-onboard__field">
+                    <span>Folder or files to upload</span>
+                    <div className="project-onboard__upload-row">
+                      <label className="project-onboard__button">
+                        Choose folder
+                        <input
+                          type="file"
+                          aria-label="Choose folder"
+                          multiple
+                          // Non-standard attributes, spread because React's DOM
+                          // typings have no member for either.
+                          {...{ webkitdirectory: '', directory: '' }}
+                          onChange={(event) => onPick(event.target.files)}
+                        />
+                      </label>
+                      <label className="project-onboard__button">
+                        Choose files
+                        <input
+                          type="file"
+                          aria-label="Choose files"
+                          multiple
+                          onChange={(event) => onPick(event.target.files)}
+                        />
+                      </label>
+                    </div>
+                    {picked.length > 0 ? (
+                      <small>{picked.length} file{picked.length === 1 ? '' : 's'} selected.</small>
+                    ) : null}
+                    {refusedCount > 0 ? (
+                      <p className="project-onboard__error" role="alert">
+                        {refusedCount} path{refusedCount === 1 ? ' was' : 's were'} refused for an unsafe shape and will not be uploaded.
+                      </p>
+                    ) : null}
+                    <label>
+                      <span>New folder name on {props.nodeLabel}</span>
+                      <input value={uploadRootName} onChange={(event) => { setUploadRootName(event.target.value); setValidation(null); }} placeholder="folder-name" />
+                    </label>
+                    <div className="project-onboard__folder-row">
+                      <code>{destinationParent || 'No destination chosen'}</code>
+                      <button type="button" className="project-onboard__button" onClick={() => openBrowser('destinationParent')}>Choose destination</button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <label className="project-onboard__trust">
+                  <input type="checkbox" checked={trusted} onChange={(event) => setTrusted(event.target.checked)} />
+                  <span>
+                    <strong>Trust this folder for agent execution</strong>
+                    <small>Off by default. Trusted projects allow agents to run with this folder as their working directory.</small>
+                  </span>
+                </label>
+              </fieldset>
+            ) : null}
+
             {lockedForRetry ? <p className="project-onboard__note">Values are locked so Retry replays the same safe saga.</p> : null}
+            {validation ? <p className="project-onboard__error" role="alert">{validation}</p> : null}
             {error ? <p className="project-onboard__error" role="alert">{error}</p> : null}
             <footer className="project-onboard__footer">
-              <button type="button" className="project-onboard__button" onClick={props.onDismiss} disabled={busy}>Cancel</button>
+              <button
+                type="button"
+                className="project-onboard__button"
+                onClick={() => {
+                  cancelUpload.current?.();
+                  props.onDismiss();
+                }}
+                disabled={busy && currentStage !== 'upload'}
+              >
+                {busy && currentStage === 'upload' ? 'Cancel upload' : 'Cancel'}
+              </button>
               <button
                 type="submit"
                 className="project-onboard__button project-onboard__button--primary"
-                disabled={busy || folderBlocked || !spaceName.trim() || !projectName.trim() || !workingDir}
+                disabled={busy}
               >
-                {busy && currentStage ? `${STAGE_LABEL[currentStage]}…` : lockedForRetry ? 'Retry' : 'Create Space & add project'}
+                {busy && currentStage
+                  ? `${STAGE_LABEL[currentStage]}…`
+                  : lockedForRetry
+                    ? 'Retry'
+                    : addProject && !folderBlocked ? 'Create Space & add project' : 'Create Space'}
               </button>
             </footer>
           </form>

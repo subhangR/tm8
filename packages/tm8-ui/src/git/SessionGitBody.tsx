@@ -8,6 +8,7 @@ import type { Seam } from '../data/seam';
 import { DiffView, Pill } from '../kit';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import { SessionGitFacts } from './SessionGitFacts';
+import { SessionFileChanges } from './SessionFileChanges';
 import './session-git.css';
 
 /**
@@ -204,6 +205,9 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
             recorded, PRs its task tracks, and its lane entity render below the
             reason — the refusal covers the verbs, not the history. */}
         <SessionGitFacts seam={seam} sessionId={sessionId} />
+        {/* And neither is the TRANSCRIPT: the session's observed edits render
+            without any worktree — per file, with ± counts and a diff view. */}
+        <SessionFileChanges seam={seam} sessionId={sessionId} />
       </div>
     );
   }
@@ -765,6 +769,9 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
 
       {/* -- graph facts: commits, PRs, lane entity --------------------------- */}
       <SessionGitFacts seam={seam} sessionId={sessionId} />
+
+      {/* -- transcript-observed edits: per file, ± counts, diff view ---------- */}
+      <SessionFileChanges seam={seam} sessionId={sessionId} />
     </div>
   );
 }
