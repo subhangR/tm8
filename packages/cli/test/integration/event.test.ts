@@ -155,7 +155,7 @@ describe('the node, measured rather than reported', () => {
     // 155 -> 156 (2026-08-13, MEASURED off /health on main): one route joined
     // between the 2026-08-12 155-pin and the git-track re-measure.
         // 156 -> 157 (2026-08-13, forge write): the tracking.pr.merge route.
-    expect(health.operations).toBe(160) /* 157→158 2026-08-13: #188 chat route */;
+    expect(health.operations).toBe(162) /* 157→158 2026-08-13: #188 chat route */;
     // `implemented` is `registry.size` — REGISTERED handlers, not behaviourally
     // implemented ones. No expected number is asserted here on purpose: it moves
     // as composition tranches land, and pinning it would turn another wave's
