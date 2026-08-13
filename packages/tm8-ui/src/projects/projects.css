@@ -255,3 +255,53 @@
     flex-direction: column;
   }
 }
+
+/* --- Create Space: the optional project section (2026-08-12) ------------- */
+
+.project-onboard__section {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+}
+
+.project-onboard__section > legend {
+  padding: 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.project-onboard__radio {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.project-onboard__radio input {
+  width: auto;
+}
+
+.project-onboard__upload-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The file inputs are driven by their wrapping label, which is styled as a
+   button; the raw control would otherwise show the browser's own chrome. */
+.project-onboard__upload-row input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.project-onboard__upload-row > label {
+  position: relative;
+  cursor: pointer;
+}
