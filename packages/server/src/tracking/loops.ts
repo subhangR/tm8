@@ -4,7 +4,7 @@
  * 081's observer drains a queue: somebody asked, so it looked. That is a
  * state-fetcher, and a state-fetcher cannot close a loop, because nobody is
  * asking. This tick is the complement: it decides for itself what to look at
- * (102 §G's watch list — open PRs a task tracks), computes a SEMANTIC DIFF
+ * (103 §G's watch list — open PRs a task tracks), computes a SEMANTIC DIFF
  * against stored facts, and turns the diff into messages in the owning
  * session's inbox.
  *
@@ -17,7 +17,7 @@
  *
  *   * THE DIFF IS COMPUTED IN POSTGRES, not here. `apply_pr_check_facts` and
  *     `apply_pr_review_thread_facts` compare against the previous observation
- *     in the same statement that overwrites it (102 §H). Doing it here would
+ *     in the same statement that overwrites it (103 §H). Doing it here would
  *     mean reading the old facts, comparing, then writing — three round trips
  *     with a window in the middle where two observer nodes both decide the same
  *     check "just went red" and both nudge.
@@ -315,7 +315,7 @@ async function watchOne(
 
   // ---- 4. Decide, fetch only the logs a decision actually needs, deliver.
   // ---- 4. Detection ONLY. The transitions were made durable by the apply
-  // doors (102 §K) in the same statement that stored the facts; delivery is a
+  // doors (103 §K) in the same statement that stored the facts; delivery is a
   // separate pass over that queue, so a tick that finds no addressee — or dies
   // here — does not consume what it detected.
   //
@@ -337,7 +337,7 @@ async function watchOne(
 }
 
 /**
- * The delivery pass: drain 102 §K's queue, render each row, post and dispatch.
+ * The delivery pass: drain 103 §K's queue, render each row, post and dispatch.
  *
  * Separate from the observation pass on purpose. Observation is rate-limited by
  * a provider; delivery is rate-limited by whether anybody is listening, and
@@ -528,7 +528,7 @@ export function createForgeWatcherJob(options: ForgeWatcherOptions): ScheduledJo
     name: FORGE_WATCHER_JOB_NAME,
     // Ninety seconds, with `minAgeSeconds` as the real throttle. The interval
     // governs how quickly a NEW pull request enters the watch list; how often
-    // any one of them is re-read is 102 §G's floor, and separating the two is
+    // any one of them is re-read is 103 §G's floor, and separating the two is
     // what lets the loop feel responsive without multiplying provider traffic.
     intervalMs: options.intervalMs ?? 90_000,
     jitterRatio: 0.1,

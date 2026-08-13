@@ -28,7 +28,7 @@
  *       Capped per thread, because an unanswered reviewer does not become more
  *       unanswered every sixty seconds.
  *
- * DEDUP IS DURABLE AND IT IS THE DATABASE'S JOB (102 §J). The signature is
+ * DEDUP IS DURABLE AND IT IS THE DATABASE'S JOB (103 §J). The signature is
  * computed here — content, hashed — and `claim_session_nudge` decides. A Map in
  * this process would be dedup that a deploy erases.
  */
@@ -75,7 +75,7 @@ export interface NudgeCandidate {
   sessionId: string;
   /** The axis a cap applies to. Per check for CI, per thread for review. */
   scopeKey: string;
-  /** The content signature 102 §J stores. Identical signature ⇒ identical message. */
+  /** The content signature 103 §J stores. Identical signature ⇒ identical message. */
   signature: string;
   body: string;
   /** null means uncapped. */
@@ -245,7 +245,7 @@ export function decideNudges(
 
   for (const check of diff.newlyFailing) {
     const tail = logTails.get(check.name) ?? null;
-    // 102 §J's signature, verbatim: check name + commit sha + status + log-tail
+    // 103 §J's signature, verbatim: check name + commit sha + status + log-tail
     // hash. The log tail is IN the signature because a job that fails twice for
     // two different reasons is two things the agent needs to know, and a
     // signature of only (name, sha, status) would swallow the second.
@@ -562,7 +562,7 @@ export interface NudgeDelivery {
   failed: string[];
 }
 
-/** One row of 102 §K's outbox, joined with the pull request it is about. */
+/** One row of 103 §K's outbox, joined with the pull request it is about. */
 export interface PendingNudge {
   pendingId: string;
   spaceId: string;
@@ -598,7 +598,7 @@ export type NudgeDispatcher = (posted: {
 }) => Promise<void>;
 
 /**
- * Drain: for each queued transition, post through 102 §K4 and dispatch.
+ * Drain: for each queued transition, post through 103 §K4 and dispatch.
  *
  * THE ORDERING IS THE DOOR'S, NOT OURS, and that is the point of the rewrite.
  * The first version claimed a dedup signature, posted, and released on failure
