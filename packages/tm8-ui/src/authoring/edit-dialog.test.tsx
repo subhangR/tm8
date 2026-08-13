@@ -301,6 +301,104 @@ describe('typed loop fields preserve the loop door semantics', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 4. A date is a calendar day, and an emptied one is a CLEAR
+// ---------------------------------------------------------------------------
+
+/**
+ * THE DUE DATE, AND THE ONE WAY IT CAN SILENTLY GO WRONG.
+ *
+ * `dueDate` was modelled end to end and writable from nowhere: the column, the
+ * `PatchTaskInput` member, the `::date` sort and the read projection all
+ * existed, and no control in the app ever filled one. Adding the control is the
+ * easy half. The half that fails quietly is the CLEAR — `update_task_content`
+ * COALESCEs an absent `dueDate` to the stored value and treats only an explicit
+ * `null` as "remove it" (`handlers/entities.ts:682-685`). A patch built the
+ * ordinary way, sending changed fields and omitting empty ones, therefore
+ * reports success and leaves yesterday's date in place.
+ *
+ * So these hold the two directions separately, plus the shape in between.
+ */
+describe('a date field writes a calendar day and clears with an explicit null', () => {
+  const DUE: DialogField = {
+    target: 'content', source: 'dueDate', readFrom: 'state', label: 'Due date', valueType: 'date',
+  };
+  const TASK_FIELDS: readonly DialogField[] = [{ target: 'title', label: 'Title', required: true }, DUE];
+
+  it('draws the native picker rather than a text box', () => {
+    openDialog(TASK_FIELDS, TASK);
+    const input = screen.getByTestId('edit-field-content.dueDate') as HTMLInputElement;
+    /*
+     * `type="date"` is the whole guarantee that the draft is `YYYY-MM-DD` or
+     * empty and never a locale string the column would refuse. A text box here
+     * would move that problem onto the person typing.
+     */
+    expect(input.type).toBe('date');
+  });
+
+  it('sends the day the user picked, inside content', async () => {
+    const { patchEntity } = openDialog(TASK_FIELDS, TASK);
+    fireEvent.change(screen.getByTestId('edit-field-content.dueDate'), {
+      target: { value: '2026-09-01' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
+    const [, input] = patchEntity.mock.calls[0] as unknown as [string, PatchEntityInput];
+    expect((input.content as Record<string, unknown>).dueDate).toBe('2026-09-01');
+  });
+
+  it('sends an explicit NULL when the date is emptied — the only thing that clears it', async () => {
+    const { patchEntity } = openDialog(TASK_FIELDS, TASK);
+    fireEvent.change(screen.getByTestId('edit-field-content.dueDate'), { target: { value: '' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
+    const [, input] = patchEntity.mock.calls[0] as unknown as [string, PatchEntityInput];
+    const content = input.content as Record<string, unknown>;
+    /*
+     * BOTH ASSERTIONS EARN THEIR PLACE. `null` is what the server reads as a
+     * clear; `'dueDate' in content` is what fails if a future "omit unchanged
+     * members" optimisation drops the key — at which point the value assertion
+     * alone would still pass on `undefined === undefined` under a loose read.
+     */
+    expect(content.dueDate).toBeNull();
+    expect('dueDate' in content).toBe(true);
+  });
+
+  it('reads the stored day from STATE, where the server actually puts it', () => {
+    /*
+     * `contentOf` builds a task's content from description, acceptanceCriteria
+     * and pointsEstimate only (`entity-read.ts:1502-1508`); `stateOf` is what
+     * projects `due_date` (`:1112`). A field seeded from content would open
+     * BLANK on a task that has a due date — and since blank means null, the
+     * next Save would delete it without anyone touching the box.
+     */
+    expect(DUE.readFrom).toBe('state');
+    expect(draftValueFor(DUE, '2026-07-30')).toBe('2026-07-30');
+  });
+
+  it('truncates a timestamp to its day and refuses what is not a date', () => {
+    // The column is a `date`, but a value that arrived as a timestamp must not
+    // blank the control — a blank control is a pending deletion.
+    expect(draftValueFor(DUE, '2026-07-30T11:00:00.000Z')).toBe('2026-07-30');
+    expect(draftValueFor(DUE, null)).toBe('');
+
+    expect(fieldProblem(DUE, '')).toBeNull();
+    expect(fieldProblem(DUE, '2026-07-30')).toBeNull();
+    expect(fieldProblem(DUE, 'tomorrow')).toContain('calendar date');
+    // Shaped like a date, and not one. Postgres refuses this as an opaque
+    // `invariant_violation`, which is the failure #42 was filed for.
+    expect(fieldProblem(DUE, '2026-02-30')).toContain('calendar date');
+  });
+
+  it('an empty date leaves Save live — no due date is a value, not a hole', () => {
+    openDialog(TASK_FIELDS, TASK);
+    fireEvent.change(screen.getByTestId('edit-field-content.dueDate'), { target: { value: '' } });
+    expect((screen.getByText('Save') as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Honesty states
 // ---------------------------------------------------------------------------
 

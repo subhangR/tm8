@@ -166,6 +166,11 @@ export const OPERATIONS = [
 
   // execution.* family (R16) — server-hosted PTY is the only spawn path (AM-1)
   { name: 'execution.spawn',          method: 'POST',  path: '/v2/execution/spawn',                         kind: 'command', status: 'v1' },
+  // A VANILLA TERMINAL (101) — a shell session with no agent attached. Its own
+  // door rather than a flag on `execution.spawn`, because spawn's body IS agent
+  // setup (persona authorization, manifest, agent token, profile pin, trust
+  // probes) and none of it applies. See `ExecutionTerminalStartInput`.
+  { name: 'execution.terminal.start', method: 'POST',  path: '/v2/execution/terminal',                      kind: 'command', status: 'v1' },
   { name: 'execution.prompt',         method: 'POST',  path: '/v2/entities/:id/commands/prompt',            kind: 'command', status: 'v1' },
   { name: 'execution.terminate',      method: 'POST',  path: '/v2/entities/:id/commands/terminate',         kind: 'command', status: 'v1' },
   { name: 'execution.streams.attach', method: 'POST',  path: '/v2/entities/:id/commands/streams-attach',    kind: 'command', status: 'v1' },

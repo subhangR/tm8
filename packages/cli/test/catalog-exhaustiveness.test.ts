@@ -45,15 +45,15 @@ import { isExitCode } from '../src/exit.js';
 // family's first write verbs (membership over the `contains` edge).
 // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows — the
 // session git rail behind the facade.
-const EXPECTED_ROWS = 150;
+const EXPECTED_ROWS = 151;
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
 
 describe('the catalog itself is the shape W4 was briefed on', () => {
-  it('150 rows = 148 v1 + 2 reserved, 149 HTTP + 1 WS', () => {
+  it('151 rows = 149 v1 + 2 reserved, 150 HTTP + 1 WS', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(148);
+    expect(V1_OPERATIONS.length).toBe(149);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
   });
@@ -129,9 +129,9 @@ describe('every row resolves through the client and the error mapping', () => {
     expect(resolved.size).toBe(EXPECTED_ROWS);
     // 136 HTTP rows produced an honest 8; the single WS row produced usage 2
     // without a request. Both are resolutions; neither is a fall-through.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(149);
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(150);
     expect([...resolved.entries()].filter(([, c]) => c === 2)).toEqual([['events.subscribe', 2]]);
-    expect(requested).toHaveLength(149);
+    expect(requested).toHaveLength(150);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
@@ -164,7 +164,7 @@ describe('every row resolves through the client and the error mapping', () => {
         expect(data.echoed, op.name).toContain(bindPath(op.name, params(op.name)));
       }
     }
-    expect(httpRows).toBe(149);
+    expect(httpRows).toBe(150);
   });
 });
 
