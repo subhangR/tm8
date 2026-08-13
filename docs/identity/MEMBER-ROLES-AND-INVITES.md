@@ -25,7 +25,7 @@ before the caller is anybody on the node.
 
 ## 1. What is new
 
-### SQL — `db/migrations/117_member_roles_and_invite_roles.sql`
+### SQL — `db/migrations/118_member_roles_and_invite_roles.sql`
 
 | | |
 |---|---|

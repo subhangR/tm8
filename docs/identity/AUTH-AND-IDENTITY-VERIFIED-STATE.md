@@ -350,7 +350,7 @@ Two delivery risks the same doc flags: the remote design is an **untracked worki
 
 ## 6. File index
 
-**Identity block** — `packages/server/src/identity/`: `types.ts` (191) `service.ts` (467) `pg-store.ts` (427, unexercised) `in-memory-store.ts` (249) `crypto.ts` (126) `loopback.ts` (138, **the live path**) `system-delivery-principal.ts` (137) `repository.ts` (117) `index.ts` (102) `claims.ts` (97) `ids.ts` (70) `errors.ts` (26)
+**Identity block** — `packages/server/src/identity/`: `types.ts` (191) `service.ts` (467) `pg-store.ts` (427, unexercised) `in-memory-store.ts` (249) `crypto.ts` (126) `loopback.ts` (138, **the live path**) `system-delivery-principal.ts` (137) `repository.ts` (118) `index.ts` (102) `claims.ts` (97) `ids.ts` (70) `errors.ts` (26)
 
 **Frame/auth** — `http/config.ts` (S1) · `http/security.ts` (S2–S6 no-ops + `autoOwnerResolver`) · `http/types.ts` (`RequestIdentity`) · `http/server.ts:90` · `http/w2-file-upload.ts` (only real bearer use) · `http/remote-proxy.ts` · `main.ts:288-311` · `facade/context.ts` (`claimsFor`) · `facade/handlers/identity.ts` · `pty/pty-ws-server.ts` (**ungated**)
 

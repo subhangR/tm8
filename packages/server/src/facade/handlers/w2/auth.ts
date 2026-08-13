@@ -237,7 +237,7 @@ async function profileDisplayName(
 
 /**
  * `auth.invite.resolve` — what a join code lets you join, before the holder is
- * anybody on this node (117).
+ * anybody on this node (118).
  *
  * CLAIM-FREE, and that is the requirement rather than an oversight. A join link
  * is opened by someone with no account, or with one and no membership in the

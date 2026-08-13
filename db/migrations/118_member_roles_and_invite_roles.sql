@@ -1,4 +1,4 @@
--- 117 — PERMISSIONS YOU CAN ACTUALLY CHANGE: member roles, invite roles, and a
+-- 118 — PERMISSIONS YOU CAN ACTUALLY CHANGE: member roles, invite roles, and a
 -- pre-membership invite preview.
 --
 -- `public.members.role` has carried 'owner'|'admin'|'member' since 002:97 and
@@ -85,7 +85,7 @@ alter table public.space_invites
     check (role in ('admin','member'));
 
 comment on column public.space_invites.role is
-  'The space role this invite confers on redemption (117). Admits admin and '
+  'The space role this invite confers on redemption (118). Admits admin and '
   'member only — R4: a bearer capability that travels out of band may not '
   'confer ownership. Existing rows default to member, which is what '
   'redeem_invite already gave them.';
@@ -335,7 +335,7 @@ end
 $$;
 
 comment on function public.set_member_role(uuid, uuid, text, uuid, text) is
-  'Change a member''s space role (117). Space admin required; only an owner may '
+  'Change a member''s space role (118). Space admin required; only an owner may '
   'grant or revoke owner; the last owner cannot be demoted. Idempotent on a '
   'role that is already set.';
 
@@ -416,7 +416,7 @@ $$;
 
 comment on function public.preview_invite(text) is
   'What a join code lets you join, answered before the holder is anybody here '
-  '(117). Claim-free by necessity — the reader is not a member of the space the '
+  '(118). Claim-free by necessity — the reader is not a member of the space the '
   'code names. Discloses nothing for an unresolvable code.';
 
 -- -----------------------------------------------------------------------------

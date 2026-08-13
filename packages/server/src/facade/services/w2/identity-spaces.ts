@@ -433,7 +433,7 @@ export class W2IdentitySpacesService {
   };
 
   /**
-   * `spaces.members.updateRole` — the space-role writer (117).
+   * `spaces.members.updateRole` — the space-role writer (118).
    *
    * The subject is the PATH pair (spaceId, memberId) and both travel to SQL,
    * where `set_member_role` names them in ONE predicate. Passing only the

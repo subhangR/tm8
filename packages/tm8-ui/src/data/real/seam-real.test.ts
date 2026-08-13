@@ -310,7 +310,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // belongs. Locked here the same way, so the seam cannot gain a command
       // without this list saying so.
       'restoreEntity', 'resume', 'spawn',
-      // Amendment 11 (117): the membership verbs. `settings-space/reasons.ts`
+      // Amendment 11 (118): the membership verbs. `settings-space/reasons.ts`
       // had said since 2026-07-29 that "the seam has no membership verb at
       // all", and every role and invite control on the settings surface
       // rendered disabled-with-reason because of it. These four close exactly
@@ -350,7 +350,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
     for (const m of ['openSpace', 'closeSpace', 'dispose', 'onEvent', 'onConnection', 'getConnection',
       'onResync', 'identity', 'spaces', 'menu', 'query', 'entityKinds', 'entity', 'children',
       'connections', 'activity', 'messages', 'home', 'handoffs', 'journal', 'launch', 'inbox', 'feed',
-      // Amendment 11 (117): `previewInvite` sits with the READS, not under
+      // Amendment 11 (118): `previewInvite` sits with the READS, not under
       // `commands`, because it writes nothing — and it is the only read on
       // this seam that answers before the caller is anybody on the node.
       'previewInvite',

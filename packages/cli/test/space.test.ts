@@ -317,7 +317,7 @@ describe('mutation identity (§7.4)', () => {
       expect(seen, path.join(' ')).toHaveLength(0);
       checked++;
     }
-    expect(checked).toBe(12); // +1 (117): `space invite resolve`
+    expect(checked).toBe(12); // +1 (118): `space invite resolve`
   });
 
   it('a mutation generates a UUIDv7 when --mutation-id is omitted', async () => {

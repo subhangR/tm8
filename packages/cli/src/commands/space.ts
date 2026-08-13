@@ -360,7 +360,7 @@ function renderInvite(row: unknown): string {
 /**
  * The preview's shape CHANGES with its status, and the renderer says so rather
  * than printing empty columns: a dead code carries no inviter and no space id
- * by rule (117), so a line reading `invitedBy —` would misreport a deliberate
+ * by rule (118), so a line reading `invitedBy —` would misreport a deliberate
  * refusal as missing data.
  */
 function renderInvitePreview(dto: unknown): string {
@@ -594,7 +594,7 @@ async function spaceMemberList(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /**
- * `space member role <member-id> --role <role>` — the space-role writer (117).
+ * `space member role <member-id> --role <role>` — the space-role writer (118).
  *
  * The member id is an ARGUMENT and the space comes from context or `--space`,
  * mirroring `invite revoke`, because both address a row INSIDE a space and the
