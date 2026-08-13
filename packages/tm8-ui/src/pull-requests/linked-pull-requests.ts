@@ -105,6 +105,11 @@ export function pullRequestFactsOf(row: EntitySummary): LinkedPullRequestFacts |
  * An ABSENT `badges.pullRequests` yields nothing rather than an empty claim: a
  * node predating this field says nothing about links, and the edge passes below
  * are what answers for it.
+ *
+ * `headRef` rides along because the FOURTH pass keys on it: a badge-carried PR
+ * can therefore reach a session by branch match, with no edge and no PR node on
+ * the page at all. `''` normalises to null exactly as `pullRequestFactsOf` does
+ * — an empty branch name is not a key, and must not bucket with other blanks.
  */
 export function badgePullRequestFactsOf(row: EntitySummary): LinkedPullRequestFacts[] {
   const facts: LinkedPullRequestFacts[] = [];
@@ -120,6 +125,7 @@ export function badgePullRequestFactsOf(row: EntitySummary): LinkedPullRequestFa
       url: badge.url,
       ciStatus: badge.ciStatus,
       mergeState: badge.mergeState,
+      headRef: badge.headRef !== null && badge.headRef !== '' ? badge.headRef : null,
     });
   }
   return facts;

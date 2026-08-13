@@ -276,7 +276,9 @@ function withBadges(row: EntitySummary, badges: EntitySummary['badges']): Entity
 describe('badges.pullRequests carries the facts without any edge', () => {
   it('maps a badge onto the same facts the graph read produces', () => {
     expect(badgePullRequestFactsOf(withBadges(task, {
-      pullRequests: [badge({ state: 'draft', ciStatus: 'failing', mergeState: 'conflicted' })],
+      pullRequests: [badge({
+        state: 'draft', ciStatus: 'failing', mergeState: 'conflicted', headRef: 'tm8/abc12345',
+      })],
     }))).toEqual([{
       id: 'pr-1',
       title: 'Ship linked PR chips',
@@ -286,7 +288,15 @@ describe('badges.pullRequests carries the facts without any edge', () => {
       url: 'https://github.com/acme/tm8/pull/42',
       ciStatus: 'failing',
       mergeState: 'conflicted',
+      headRef: 'tm8/abc12345',
     }]);
+  });
+
+  it('normalises an empty headRef to null — a blank branch is not a key', () => {
+    // The fourth pass buckets by headRef; `''` carried through from either side
+    // would bucket every unobserved PR together.
+    expect(badgePullRequestFactsOf(withBadges(task, { pullRequests: [badge({ headRef: '' })] }))[0])
+      .toMatchObject({ headRef: null });
   });
 
   it('an ABSENT badge array is no claim, not an empty one', () => {
