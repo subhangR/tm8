@@ -83,12 +83,33 @@ function errorMessage(error: unknown): string {
  *
  * Display names are user-controlled and therefore quoted, never trusted; the
  * member id beside them is the identifier the agent can actually resolve.
+ *
+ * The name is SANITIZED, not merely quoted: quotes, brackets, the separator
+ * glyph, every C0/C1 control and every Unicode line/paragraph separator are
+ * stripped and the result length-capped, so no display name can close the
+ * quoted span, fabricate a `member <id>` suffix, or start a new line inside
+ * the one server-written line the system prompt declares trustworthy. The id
+ * is emitted from the server row, never from the name.
  */
+const SPEAKER_NAME_MAX = 80;
+
+function sanitizeSpeakerName(name: string): string {
+  return name
+    // C0/C1 controls, DEL, and the Unicode line breaks the model could render
+    // as a new line: NEL (U+0085), LS (U+2028), PS (U+2029).
+    .replace(/[\u0000-\u001f\u007f-\u009f\u0085\u2028\u2029]+/g, ' ')
+    // Structural characters of the envelope itself.
+    .replace(/["\[\]·]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, SPEAKER_NAME_MAX);
+}
+
 function promptFor(turn: ClaimedTurn): string {
-  const speaker = turn.requestedByDisplayName?.trim();
+  const speaker = turn.requestedByDisplayName ? sanitizeSpeakerName(turn.requestedByDisplayName) : '';
   const memberId = turn.requestedByMemberId;
   if (!speaker && !memberId) return turn.body;
-  const label = speaker ? `"${speaker.replace(/[\r\n]+/g, ' ')}"` : 'unnamed member';
+  const label = speaker ? `"${speaker}"` : 'unnamed member';
   return `[from ${label}${memberId ? ` · member ${memberId}` : ''}]\n${turn.body}`;
 }
 
@@ -101,6 +122,8 @@ function promptFor(turn: ClaimedTurn): string {
  */
 export class ChatOrchestrator {
   private readonly drains = new Map<string, Promise<void>>();
+  /** Wakes that arrived while a drain for the same root was exiting. */
+  private readonly pendingWakes = new Map<string, string>();
   private readonly liveThreads = new Map<string, string>();
 
   constructor(private readonly options: ChatOrchestratorOptions) {}
@@ -160,10 +183,25 @@ export class ChatOrchestrator {
 
   wake(rootMessageId: string, requesterIdentityId: string): Promise<void> {
     const running = this.drains.get(rootMessageId);
-    if (running) return running;
+    if (running) {
+      // A wake can land after the running drain's final null claim but before
+      // its finally removes it from the map. Coalescing onto that dying
+      // promise would strand the just-queued turn until the next unrelated
+      // message or a restart sweep — so remember the wake and re-drain once
+      // the current drain settles.
+      this.pendingWakes.set(rootMessageId, requesterIdentityId);
+      return running;
+    }
     const drain = this.drain(rootMessageId, requesterIdentityId)
       .catch((error) => this.options.onError?.(error))
-      .finally(() => this.drains.delete(rootMessageId));
+      .finally(() => {
+        this.drains.delete(rootMessageId);
+        const requeued = this.pendingWakes.get(rootMessageId);
+        if (requeued !== undefined) {
+          this.pendingWakes.delete(rootMessageId);
+          void this.wake(rootMessageId, requeued);
+        }
+      });
     this.drains.set(rootMessageId, drain);
     return drain;
   }
