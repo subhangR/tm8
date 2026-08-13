@@ -82,6 +82,32 @@ describe('ops: launch resources', () => {
     expect(f.last().url).toBe('/v2/projects/project-1/branches?staleAfterDays=14&limit=50');
   });
 
+  it('binds the session git rail reads and verbs to their catalog routes', async () => {
+    const status = { sessionId: 's-1', available: true };
+    const { ops, f } = harness(status);
+
+    await expect(ops.gitStatus('s-1' as never)).resolves.toEqual(status);
+    expect(f.last().method).toBe('GET');
+    expect(f.last().url).toBe('/v2/work-sessions/s-1/git/status');
+
+    // No opts ⇒ no query string; the cap travels only when the caller sets it.
+    await ops.gitDiff('s-1' as never);
+    expect(f.last().url).toBe('/v2/work-sessions/s-1/git/diff');
+    await ops.gitDiff('s-1' as never, { maxBytes: 4096 });
+    expect(f.last().url).toBe('/v2/work-sessions/s-1/git/diff?maxBytes=4096');
+
+    await ops.gitCheckpoint('s-1' as never, { message: 'cp' });
+    expect(f.last().method).toBe('POST');
+    expect(f.last().url).toBe('/v2/work-sessions/s-1/git/checkpoint');
+
+    await ops.gitRollback('s-1' as never, { to: 'abc', force: true });
+    expect(f.last().url).toBe('/v2/work-sessions/s-1/git/rollback');
+    await ops.gitCommit('s-1' as never, { message: 'm', all: true });
+    expect(f.last().url).toBe('/v2/work-sessions/s-1/git/commit');
+    await ops.gitMerge('s-1' as never, {});
+    expect(f.last().url).toBe('/v2/work-sessions/s-1/git/merge');
+  });
+
   it('uses catalog bindings for node-local onboarding reads and commands', async () => {
     const listing = {
       roots: ['/srv/projects'],

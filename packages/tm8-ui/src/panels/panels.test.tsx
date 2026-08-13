@@ -206,9 +206,10 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(surfaceSwitch.className).toContain('pn-surface-switch--bar');
     // Still switchable in the bar — relocating a control may not quietly cost
     // it its behaviour. Debug and Graph are always present (neither depends on
-    // the chat pin), so a chat-enabled session shows all four.
+    // the chat pin), and the Git UI wave added the Git surface to every
+    // session panel, so a chat-enabled session shows all five.
     const tabs = [...surfaceSwitch.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
-    expect(tabs).toEqual(['Terminal', 'Chat', 'Debug', 'Graph']);
+    expect(tabs).toEqual(['Terminal', 'Chat', 'Git', 'Debug', 'Graph']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {

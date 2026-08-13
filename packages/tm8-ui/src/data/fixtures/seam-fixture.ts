@@ -83,6 +83,17 @@ import {
   type ProjectBranchTopology,
   type ProjectResource,
   type ReactionInput,
+  type ExecutionGitCheckpointInput,
+  type ExecutionGitCommitInput,
+  type ExecutionGitMergeInput,
+  type ExecutionGitRollbackInput,
+  type SessionGitCheckpointResult,
+  type SessionGitCommitResult,
+  type SessionGitDiff,
+  type SessionGitFile,
+  type SessionGitMergeResult,
+  type SessionGitRollbackResult,
+  type SessionGitStatus,
   type SessionJournalPage,
   type SessionLaunchRecord,
   type SessionJournalRecord,
@@ -108,6 +119,7 @@ import {
   FIXTURE_BRANCH_TOPOLOGY,
   FIXTURE_NOW,
   FIXTURE_SPACE_ID,
+  SAMPLE_DIFF,
   ada,
   fixtureDetails,
   fixtureHandoffsBySession,
@@ -506,6 +518,83 @@ export function createFixtureSeam(): FixtureSeam {
     // 'absent' is the fixture's default deliberately: it is the state of the
     // deployed staging line, and the one a screen gets wrong silently.
     gitCredentialStore: 'absent',
+  };
+
+  /**
+   * -- session git rail state (Git UI wave) ---------------------------------
+   *
+   * MUTABLE per-seam-instance, like `credentialsState`: only the live PTY
+   * (C-5) has a worktree, and the rail's verbs move this state the way the
+   * server's would move a real one, so FLOW A (status → diff → checkpoint →
+   * rollback → diff reflects it) is drivable end-to-end against the fixture.
+   *
+   * Determinism rules, mirrored from the real verbs:
+   *  - checkpoint on a clean tree is a SUCCESS that creates nothing;
+   *  - rollback refuses while untracked files exist, unless `force`;
+   *  - commit refuses an empty index by `conflict`;
+   *  - merge with `fromRef: 'conflict/base'` answers `status:'conflict'`
+   *    with conflicted paths and CHANGES NOTHING — the scripted conflict
+   *    trigger, the same idea as fixtureControls.setConnection.
+   */
+  const fxOid = (n: number): string => n.toString(16).padStart(40, '0');
+  const gitLane = {
+    branch: 'tm8/fixture-lane',
+    baseRef: 'main',
+    baseOid: fxOid(0xa1),
+    /** History of head oids since branch-off; index in it = commits ahead. */
+    history: [fxOid(0xb2)] as string[],
+    behind: 1,
+    dirty: [
+      // The modified path matches SAMPLE_DIFF so status, diff and checkpoint
+      // narrate one coherent change.
+      { status: ' M', path: 'packages/server/src/facade/handlers/projects.ts' },
+      { status: '??', path: 'notes/scratch.md' },
+    ] as SessionGitFile[],
+    serial: 0xb2,
+  };
+  const gitHead = (): string => gitLane.history[gitLane.history.length - 1] as string;
+  const gitUnavailable = (
+    sessionId: EntityId,
+    kind: 'status' | 'diff',
+  ): SessionGitStatus | SessionGitDiff => {
+    const common = {
+      sessionId,
+      available: false as const,
+      unavailableReason: 'no_worktree' as const,
+      branch: null,
+      baseRef: null,
+      baseOid: null,
+      checkedAt: FIXTURE_NOW,
+    };
+    return kind === 'status'
+      ? {
+          ...common,
+          worktreeId: null,
+          headOid: null,
+          ahead: null,
+          behind: null,
+          dirty: { staged: 0, unstaged: 0, untracked: 0, total: 0 },
+          files: [],
+          filesTruncated: false,
+        }
+      : {
+          ...common,
+          mergeBaseOid: null,
+          headOid: null,
+          stat: { filesChanged: 0, additions: 0, deletions: 0 },
+          files: [],
+          filesTruncated: false,
+          diff: '',
+          diffTruncated: false,
+        };
+  };
+  const requireGitLane = (sessionId: EntityId): void => {
+    requireSummary(sessionId);
+    if (sessionId !== sessionLive.id) {
+      throw new CollabError('conflict', 'session has no operable worktree (no_worktree)', {
+        details: { reason: 'no_worktree' },
+      });
+    }
   };
 
   // Out-of-the-box liveness truth (C-5): sessionLive is the ONLY live PTY;
@@ -1291,6 +1380,79 @@ export function createFixtureSeam(): FixtureSeam {
         stuck: null,
         lastActivityAt: '2026-01-04T09:18:10.000Z',
         malformed: 0,
+      });
+    },
+    /**
+     * The git rail reads (Git UI wave). Only the live PTY (C-5) has a
+     * worktree; every other session answers the explained `no_worktree`
+     * empty, exactly as the journal/launch/transcript trio above answers
+     * theirs — the honest-degradation state is the fixture's default posture.
+     */
+    async gitStatus(workSessionId): Promise<SessionGitStatus> {
+      requireSummary(workSessionId);
+      if (workSessionId !== sessionLive.id) {
+        return clone(gitUnavailable(workSessionId, 'status') as SessionGitStatus);
+      }
+      const untracked = gitLane.dirty.filter((f) => f.status === '??').length;
+      const unstaged = gitLane.dirty.filter((f) => f.status !== '??' && f.status[1] !== ' ').length;
+      const staged = gitLane.dirty.filter((f) => f.status !== '??' && f.status[0] !== ' ').length;
+      return clone({
+        sessionId: workSessionId,
+        available: true,
+        unavailableReason: null,
+        worktreeId: 'fx-worktree-1' as EntityId,
+        branch: gitLane.branch,
+        baseRef: gitLane.baseRef,
+        baseOid: gitLane.baseOid,
+        headOid: gitHead(),
+        ahead: gitLane.history.length - 1,
+        behind: gitLane.behind,
+        dirty: { staged, unstaged, untracked, total: gitLane.dirty.length },
+        files: [...gitLane.dirty],
+        filesTruncated: false,
+        checkedAt: FIXTURE_NOW,
+      });
+    },
+    /**
+     * Honours `maxBytes` HERE too (the projectBranches rule): a fixture that
+     * ignored the cap would let a caller's bound go unexercised and still
+     * pass. The diff text is SAMPLE_DIFF while the lane has work (dirty or
+     * ahead), and honestly empty after a rollback to base.
+     */
+    async gitDiff(workSessionId, opts): Promise<SessionGitDiff> {
+      requireSummary(workSessionId);
+      if (workSessionId !== sessionLive.id) {
+        return clone(gitUnavailable(workSessionId, 'diff') as SessionGitDiff);
+      }
+      const hasWork = gitLane.dirty.length > 0 || gitLane.history.length > 1;
+      let diff = hasWork ? SAMPLE_DIFF : '';
+      let diffTruncated = false;
+      if (opts?.maxBytes !== undefined && diff.length > opts.maxBytes) {
+        diff = diff.slice(0, opts.maxBytes);
+        diffTruncated = true;
+      }
+      return clone({
+        sessionId: workSessionId,
+        available: true,
+        unavailableReason: null,
+        branch: gitLane.branch,
+        baseRef: gitLane.baseRef,
+        baseOid: gitLane.baseOid,
+        mergeBaseOid: gitLane.baseOid,
+        headOid: gitHead(),
+        stat: hasWork
+          ? { filesChanged: 2, additions: 9, deletions: 2 }
+          : { filesChanged: 0, additions: 0, deletions: 0 },
+        files: hasWork
+          ? [
+              { path: 'packages/server/src/facade/handlers/projects.ts', additions: 7, deletions: 2 },
+              { path: 'notes/scratch.md', additions: 2, deletions: 0 },
+            ]
+          : [],
+        filesTruncated: false,
+        diff,
+        diffTruncated,
+        checkedAt: FIXTURE_NOW,
       });
     },
     async inbox(opts): Promise<Page<NotificationItem>> {
@@ -2185,6 +2347,106 @@ export function createFixtureSeam(): FixtureSeam {
         }
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
+      },
+      /**
+       * The git rail verbs, mirroring the real ones' refusal shapes (a
+       * fixture that cheerfully rolled back over untracked files would let
+       * the UI ship a flow the real seam refuses). State moves on the SAME
+       * lane the reads answer from, so FLOW A composes end-to-end.
+       */
+      async gitCheckpoint(id, input: ExecutionGitCheckpointInput): Promise<SessionGitCheckpointResult> {
+        requireGitLane(id);
+        void input;
+        if (gitLane.dirty.length === 0) {
+          return clone({
+            sessionId: id, worktreeId: 'fx-worktree-1' as EntityId,
+            oid: gitHead(), branch: gitLane.branch, created: false, files: [],
+          });
+        }
+        const files = [...gitLane.dirty];
+        gitLane.serial += 1;
+        gitLane.history.push(fxOid(gitLane.serial));
+        gitLane.dirty = [];
+        return clone({
+          sessionId: id, worktreeId: 'fx-worktree-1' as EntityId,
+          oid: gitHead(), branch: gitLane.branch, created: true, files,
+        });
+      },
+      async gitRollback(id, input: ExecutionGitRollbackInput): Promise<SessionGitRollbackResult> {
+        requireGitLane(id);
+        const isBase = input.to === gitLane.baseOid;
+        if (!isBase && !gitLane.history.includes(input.to)) {
+          throw new CollabError('not_found', `not a commit in this worktree: ${input.to}`);
+        }
+        const untracked = gitLane.dirty.filter((f) => f.status === '??').map((f) => f.path);
+        if (untracked.length > 0 && input.force !== true) {
+          throw new CollabError('conflict', 'rollback would delete untracked files', {
+            details: { untracked, hint: 'pass force to delete them' },
+          });
+        }
+        const previousOid = gitHead();
+        if (isBase) {
+          // Rolling to base keeps the branch-off commit as the floor — the
+          // real reset lands ON the given oid; the fixture's floor is close
+          // enough only if it lands there too:
+          gitLane.history = [gitLane.baseOid];
+        } else {
+          gitLane.history = gitLane.history.slice(0, gitLane.history.indexOf(input.to) + 1);
+        }
+        gitLane.dirty = [];
+        return clone({
+          sessionId: id, worktreeId: 'fx-worktree-1' as EntityId,
+          oid: gitHead(), branch: gitLane.branch, previousOid, deletedUntracked: untracked,
+        });
+      },
+      async gitCommit(id, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult> {
+        requireGitLane(id);
+        const staging = input.all === true
+          ? [...gitLane.dirty]
+          : gitLane.dirty.filter((f) => input.paths?.includes(f.path));
+        if (staging.length === 0) {
+          throw new CollabError('conflict', 'nothing is staged', {
+            details: { hint: 'stage changes first' },
+          });
+        }
+        gitLane.serial += 1;
+        gitLane.history.push(fxOid(gitLane.serial));
+        gitLane.dirty = gitLane.dirty.filter((f) => !staging.includes(f));
+        return clone({
+          sessionId: id, worktreeId: 'fx-worktree-1' as EntityId,
+          oid: gitHead(), branch: gitLane.branch, files: staging,
+        });
+      },
+      async gitMerge(id, input: ExecutionGitMergeInput): Promise<SessionGitMergeResult> {
+        requireGitLane(id);
+        const fromRef = input.fromRef ?? gitLane.baseRef;
+        // The scripted conflict trigger — same idea as setConnection: the
+        // conflict UI is only provable if some deterministic input causes one.
+        if (fromRef === 'conflict/base') {
+          return clone({
+            sessionId: id, worktreeId: 'fx-worktree-1' as EntityId,
+            status: 'conflict' as const, fromRef, fromOid: fxOid(0xcc),
+            conflictedPaths: ['packages/server/src/facade/handlers/projects.ts'],
+          });
+        }
+        if (gitLane.dirty.length > 0) {
+          throw new CollabError('conflict', 'merge refused: the worktree has uncommitted changes', {
+            details: { hint: 'checkpoint or commit first, so a conflicted merge can abort to a clean state' },
+          });
+        }
+        if (gitLane.behind === 0) {
+          return clone({
+            sessionId: id, worktreeId: 'fx-worktree-1' as EntityId,
+            status: 'up_to_date' as const, fromRef, fromOid: fxOid(0xcd), oid: gitHead(),
+          });
+        }
+        gitLane.serial += 1;
+        gitLane.history.push(fxOid(gitLane.serial));
+        gitLane.behind = 0;
+        return clone({
+          sessionId: id, worktreeId: 'fx-worktree-1' as EntityId,
+          status: 'merged' as const, fromRef, fromOid: fxOid(0xcd), oid: gitHead(),
+        });
       },
     },
 

@@ -74,6 +74,7 @@ import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { gitSurfaceFor } from './gitSurface';
 import { graphSurfaceFor } from './graphSurface';
 import { representedThreadMessageCount } from './message-thread';
 
@@ -652,6 +653,7 @@ export function EntityView(props: EntityViewProps) {
         />
       ) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
+      gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       graphSurface={
         detail
           ? graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
@@ -844,6 +846,7 @@ export function EntityView(props: EntityViewProps) {
                 pinRefusal="Pinning lives in the Workspace"
                 liveness={data.livenessOf(aux.id)}
                 debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
+                gitSurface={gitSurfaceFor(data.seam, aux.id, data.livenessOf)}
                 graphSurface={graphSurfaceFor(data.seam, aux.id, data.livenessOf, (id) =>
                   setAux({ sort: 'entity', id: id as EntityId }),
                 )}
