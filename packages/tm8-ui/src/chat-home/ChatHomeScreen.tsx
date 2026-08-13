@@ -9,6 +9,7 @@ import type {
   ChatTeammateOption,
   ChatThreadDetail,
   ChatThreadSummary,
+  ChatTurnFrame,
 } from './types';
 import './chat-home.css';
 
@@ -43,6 +44,7 @@ export function ChatHomeScreen({
   const [selectedRootId, setSelectedRootId] = useState<EntityId | null>(null);
   const [detail, setDetail] = useState<ChatThreadDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [phase, setPhase] = useState<ComposerPhase>('idle');
@@ -51,12 +53,70 @@ export function ChatHomeScreen({
   const [modelId, setModelId] = useState(models[0]?.model ?? '');
   const activeRootRef = useRef<EntityId | null>(null);
   const stoppedRootRef = useRef<EntityId | null>(null);
+  const detailRef = useRef<ChatThreadDetail | null>(null);
+  /** Rolling cache of the active thread's recent frames, replayed over every
+   *  snapshot read. A snapshot races the stream two ways — frames landing while
+   *  the read is in flight, and a refresh whose snapshot predates frames already
+   *  merged on screen — and replay heals both because the merge is idempotent
+   *  (per-message seq dedupe). Reset on thread switch; bounded as a leak guard. */
+  const recentFramesRef = useRef<ChatTurnFrame[]>([]);
+  const refreshingDetailRef = useRef(false);
+
+  useEffect(() => {
+    detailRef.current = detail;
+  }, [detail]);
 
   const refreshThreads = useCallback(async (preferRoot?: EntityId) => {
     const next = await port.listThreads(spaceId);
     setThreads(next);
     setSelectedRootId((current) => preferRoot ?? current ?? next[0]?.rootId ?? null);
   }, [port, spaceId]);
+
+  /** Read a thread snapshot and replay every frame that streamed in while the
+   *  read was in flight. `streamed` reports what the replay concluded about the
+   *  live turn (null when nothing streamed), so callers set an honest phase
+   *  instead of assuming the agent is still working. */
+  const loadDetail = useCallback(
+    async (
+      rootId: EntityId,
+      /** Frames before this index still replay into the detail, but only newer
+       *  ones speak for the live phase — an old turn's `done` must not settle a
+       *  turn posted after it. Callers pass the cache length from before their
+       *  write; the default considers every cached frame. */
+      sinceIndex = 0,
+    ): Promise<{ detail: ChatThreadDetail; streamed: 'streaming' | 'idle' | null }> => {
+      let next = await port.readThread(rootId);
+      let streamed: 'streaming' | 'idle' | null = null;
+      for (const [index, frame] of recentFramesRef.current.entries()) {
+        if (frame.threadRootId !== rootId) continue;
+        next = mergeChatTurnFrame(next, frame);
+        if (index >= sinceIndex) streamed = frame.type === 'chat.turn.done' ? 'idle' : 'streaming';
+      }
+      return { detail: next, streamed };
+    },
+    [port],
+  );
+
+  /** Single-flight re-read of the active thread — used when a frame references
+   *  a message we do not have yet (another participant posted). */
+  const refreshDetail = useCallback(
+    (rootId: EntityId) => {
+      if (refreshingDetailRef.current) return;
+      refreshingDetailRef.current = true;
+      void loadDetail(rootId)
+        .then(({ detail: next }) => {
+          if (activeRootRef.current === rootId) setDetail(next);
+        })
+        .catch(() => {
+          // The next frame or thread switch retries; a missed refresh only
+          // delays another participant's message, it never corrupts state.
+        })
+        .finally(() => {
+          refreshingDetailRef.current = false;
+        });
+    },
+    [loadDetail],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -83,33 +143,60 @@ export function ChatHomeScreen({
 
   useEffect(() => {
     activeRootRef.current = selectedRootId;
+    recentFramesRef.current = [];
     if (!selectedRootId) {
       setDetail(null);
       return;
     }
     let alive = true;
     setLoadError(null);
-    void port
-      .readThread(selectedRootId)
-      .then((next) => {
+    setDetailLoading(true);
+    void loadDetail(selectedRootId)
+      .then(({ detail: next, streamed }) => {
         if (!alive) return;
         setDetail(next);
         stoppedRootRef.current =
           next.summary.state === 'stopped-continuable' ? selectedRootId : null;
-        setPhase(phaseForThreadState(next.summary.state));
+        setPhase(streamed ?? phaseForThreadState(next.summary.state));
       })
       .catch((error: unknown) => {
         if (alive) setLoadError(describeError(error));
+      })
+      .finally(() => {
+        if (alive) setDetailLoading(false);
       });
     return () => {
       alive = false;
     };
-  }, [port, selectedRootId]);
+  }, [loadDetail, selectedRootId]);
 
   useEffect(
     () =>
       port.subscribe((frame) => {
+        if (frame.threadRootId === activeRootRef.current) {
+          recentFramesRef.current.push(frame);
+          if (recentFramesRef.current.length > 500) {
+            recentFramesRef.current = recentFramesRef.current.slice(-250);
+          }
+        }
+        // Any thread's activity keeps the sidebar honest, active or not.
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.rootId === frame.threadRootId
+              ? { ...thread, state: frame.type === 'chat.turn.done' ? 'idle' : 'streaming' }
+              : thread,
+          ),
+        );
         if (frame.threadRootId !== activeRootRef.current) return;
+        // A delta for a message we have never seen means another participant
+        // started this turn — pull their message in alongside the stream.
+        if (
+          frame.type === 'chat.turn.delta' &&
+          detailRef.current &&
+          !detailRef.current.turns.some((turn) => turn.messageId === frame.messageId)
+        ) {
+          refreshDetail(frame.threadRootId);
+        }
         const stopped = frame.threadRootId === stoppedRootRef.current;
         setDetail((current) => {
           if (!current) return current;
@@ -122,7 +209,7 @@ export function ChatHomeScreen({
         else if (frame.type === 'chat.turn.done') setPhase('idle');
         else setPhase('streaming');
       }),
-    [port],
+    [port, refreshDetail],
   );
 
   const activeConfig = detail?.summary.config ?? null;
@@ -152,14 +239,16 @@ export function ChatHomeScreen({
       if (selectedRootId) {
         stoppedRootRef.current = null;
         setPhase('posting-turn');
+        const framesBeforePost = recentFramesRef.current.length;
         await port.postTurn({
           threadRootId: selectedRootId,
           body,
           clientMutationId: newMutationId('chat-turn'),
         });
         setDraft('');
-        setDetail(await port.readThread(selectedRootId));
-        setPhase('streaming');
+        const posted = await loadDetail(selectedRootId, framesBeforePost);
+        setDetail(posted.detail);
+        setPhase(posted.streamed ?? 'streaming');
         await refreshThreads(selectedRootId);
         return;
       }
@@ -188,8 +277,10 @@ export function ChatHomeScreen({
       setDraft('');
       setSelectedRootId(root.threadRootId);
       activeRootRef.current = root.threadRootId;
-      setDetail(await port.readThread(root.threadRootId));
-      setPhase('streaming');
+      recentFramesRef.current = [];
+      const started = await loadDetail(root.threadRootId);
+      setDetail(started.detail);
+      setPhase(started.streamed ?? 'streaming');
       await refreshThreads(root.threadRootId);
     } catch (error) {
       if (continuingStoppedRoot) {
@@ -204,6 +295,7 @@ export function ChatHomeScreen({
     anchorId,
     busy,
     draft,
+    loadDetail,
     newMutationId,
     port,
     phase,
@@ -278,7 +370,12 @@ export function ChatHomeScreen({
               data-active={thread.rootId === selectedRootId || undefined}
               onClick={() => setSelectedRootId(thread.rootId)}
             >
-              <span className="tch-thread__title">{thread.title}</span>
+              <span className="tch-thread__title">
+                {thread.state === 'streaming' ? (
+                  <span className="tch-thread__live" title="Agent is working" aria-label="Agent is working" />
+                ) : null}
+                {thread.title}
+              </span>
               <span className="tch-thread__preview">{thread.preview}</span>
               <span className="tch-thread__meta">
                 <span>{thread.config.teammateLabel}</span>
@@ -317,8 +414,21 @@ export function ChatHomeScreen({
               <strong>Chat could not be read.</strong>
               <span>{loadError}</span>
             </div>
+          ) : detailLoading ? (
+            <div className="tch-loading" role="status" data-testid="chat-detail-loading">
+              <span className="tch-dots" aria-hidden><i /><i /><i /></span>
+              Reading this conversation…
+            </div>
           ) : detail ? (
-            detail.turns.map((turn) => <Turn key={turn.messageId} turn={turn} />)
+            <>
+              {detail.turns.map((turn) => <Turn key={turn.messageId} turn={turn} />)}
+              {showThinking(phase, detail) ? (
+                <div className="tch-thinking" role="status" data-testid="chat-thinking">
+                  <span className="tch-dots" aria-hidden><i /><i /><i /></span>
+                  {phase === 'streaming' ? 'Agent is thinking…' : 'Sending your message…'}
+                </div>
+              ) : null}
+            </>
           ) : (
             <div className="tch-welcome">
               <span className="tch-welcome__mark" aria-hidden>⌁</span>
@@ -346,7 +456,7 @@ export function ChatHomeScreen({
               rows={2}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
                   void send();
                 }
@@ -354,7 +464,7 @@ export function ChatHomeScreen({
             />
             <div className="tch-composer__foot">
               <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
-              <span className="tch-hint">⌘ Enter to send</span>
+              <span className="tch-hint">Enter to send · Shift+Enter for a new line</span>
               {phase === 'streaming' && port.interrupt ? (
                 <button type="button" className="tch-stop" onClick={() => void interrupt()}>
                   <span aria-hidden>■</span> Stop
@@ -465,6 +575,16 @@ function phaseLabel(phase: ComposerPhase): string {
     case 'stopped-continuable': return 'Stopped · continuable';
     default: return '';
   }
+}
+
+/** The transcript shows a pulse whenever work is pending but nothing visible is
+ *  arriving yet — a queued post, or a streaming turn whose assistant message
+ *  has produced no parts. Once parts render, the stream itself is the signal. */
+function showThinking(phase: ComposerPhase, detail: ChatThreadDetail): boolean {
+  if (phase === 'posting-root' || phase === 'configuring' || phase === 'posting-turn') return true;
+  if (phase !== 'streaming') return false;
+  const last = detail.turns[detail.turns.length - 1];
+  return !last || last.role !== 'assistant' || last.parts.length === 0;
 }
 
 function phaseForThreadState(state: ChatThreadSummary['state']): ComposerPhase {
