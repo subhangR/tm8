@@ -649,6 +649,9 @@ const ROWS: readonly KindConfig[] = [
        * half of that rule.
        */
       primaries: ['run', 'edit'],
+      // Git UI wave: tasks carry the git section (tracked PRs, provenance,
+      // gate honesty). A registry field, so the panel never asks the kind.
+      gitSection: true,
       statusPill: {
         source: 'workStatus',
         tones: {

@@ -195,6 +195,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     dueDate: z.string().nullable().optional(),
     assignees: z.array(ActorSummarySchema),
     acceptance: z.object({ total: z.number().int().nonnegative(), completed: z.number().int().nonnegative() }).strict(),
+    // 082's opt-in completion gate, additive + optional (Git UI wave).
+    completionGate: z.enum(['none', 'pr_merged']).optional(),
   }).strict(),
   z.object({
     kind: z.literal('channel'),

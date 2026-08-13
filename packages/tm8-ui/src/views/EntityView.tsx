@@ -75,6 +75,7 @@ import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
 import { debugSurfaceFor } from './debugSurface';
 import { gitSurfaceFor } from './gitSurface';
+import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { representedThreadMessageCount } from './message-thread';
 
@@ -654,6 +655,7 @@ export function EntityView(props: EntityViewProps) {
       ) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
+      taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
       graphSurface={
         detail
           ? graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
@@ -849,6 +851,7 @@ export function EntityView(props: EntityViewProps) {
                 liveness={data.livenessOf(aux.id)}
                 debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
                 gitSurface={gitSurfaceFor(data.seam, aux.id, data.livenessOf)}
+                taskGitSection={taskGitSectionFor(data.seam, data.detailOf(aux.id), (id) => setAux({ sort: 'entity', id: id as EntityId }))}
                 graphSurface={graphSurfaceFor(data.seam, aux.id, data.livenessOf, (id) =>
                   setAux({ sort: 'entity', id: id as EntityId }),
                 )}

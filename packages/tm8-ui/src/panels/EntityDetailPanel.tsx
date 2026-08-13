@@ -218,6 +218,8 @@ export interface EntityDetailPanelProps {
   debugSurface?: ReactNode;
   /** The GIT surface (worktree status/diff/verbs rail). Same contract as Debug. */
   gitSurface?: ReactNode;
+  /** The task detail's git section (tracked PRs/commits + gate verdict). */
+  taskGitSection?: ReactNode;
   /** The GRAPH surface (what the session is connected to). Same contract as Debug. */
   graphSurface?: ReactNode;
   /**
@@ -926,6 +928,7 @@ function PanelBody(
             : (acceptanceCriteria) => save.edit({ acceptanceCriteria })
         }
         criteriaUnavailableReason={saveRefusal}
+        gitSection={config.panel.gitSection ? props.taskGitSection : undefined}
       />
     );
   }
