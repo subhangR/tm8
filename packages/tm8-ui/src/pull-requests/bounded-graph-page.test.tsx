@@ -95,6 +95,48 @@ describe('PR chips survive a bounded graph page that dropped the PR node and its
     expect(index.get(sessionLive.id)?.map((f) => f.id)).toEqual([prTransplant.id]);
   });
 
+  it('and a session on the PR\'s BRANCH resolves it, with no task path at all', async () => {
+    // The fourth pass (107) matches `headRef == checkoutBranch`, which is how a
+    // worktree lane gets its chips without anyone running `link-pr`. It reads
+    // the branch off PR NODES — so on a page that dropped the PR node it had
+    // nothing to match, the same lottery again. The badge carries `headRef`,
+    // and this asserts the pass now seeds from it.
+    //
+    // Every other route to the session is severed here on purpose: no PR node,
+    // no `tracks` edge, no `working_on` edge, and the task's `workingActors`
+    // badge stripped. The branch match is the ONLY thing left that can answer.
+    const page = withoutTheLinkedPullRequest(await boundedGraphPage());
+    const BRANCH = 'tm8/abc12345';
+    const nodes = page.nodes.map((node): EntitySummary => {
+      if (node.id === taskGuideLines.id) {
+        const { workingActors: _severed, ...badges } = node.badges;
+        return {
+          ...node,
+          badges: {
+            ...badges,
+            pullRequests: (node.badges.pullRequests ?? []).map((pr) => ({ ...pr, headRef: BRANCH })),
+          },
+        };
+      }
+      if (node.id === sessionLive.id) {
+        return { ...node, state: { ...node.state, checkoutBranch: BRANCH } as EntitySummary['state'] };
+      }
+      return node;
+    });
+    const edges = page.edges.filter((e) => e.type !== 'working_on');
+
+    expect(indexLinkedPullRequests(nodes, edges).get(sessionLive.id)?.map((f) => f.id))
+      .toEqual([prTransplant.id]);
+
+    // And the match is the BRANCH, not a coincidence: a session parked on a
+    // different branch inherits nothing.
+    const elsewhere = nodes.map((node): EntitySummary =>
+      node.id === sessionLive.id
+        ? { ...node, state: { ...node.state, checkoutBranch: 'main' } as EntitySummary['state'] }
+        : node);
+    expect(indexLinkedPullRequests(elsewhere, edges).get(sessionLive.id)).toBeUndefined();
+  });
+
   it('renders the chip — the thing the user reported missing', async () => {
     const pruned = withoutTheLinkedPullRequest(await boundedGraphPage());
     const index = indexLinkedPullRequests(pruned.nodes, pruned.edges);

@@ -262,13 +262,29 @@ export function indexLinkedPullRequests(
   // outrank the passes above: `add` de-duplicates by PR id, so an association
   // already made through tracks/working_on/badges is simply confirmed, and
   // the server-side nudge addressee (pr_owning_session, 103) is untouched.
+  //
+  // SEEDED FROM BOTH SOURCES, because otherwise this pass keeps the very
+  // lottery the badge exists to close: a PR that never won a page seat has no
+  // node here to read a `headRef` off, so a session sitting on its branch would
+  // match nothing after a reload. The badge carries `headRef` for exactly this.
   const byHeadRef = new Map<string, LinkedPullRequestFacts[]>();
-  for (const node of nodes) {
-    const facts = pullRequestFactsOf(node);
-    if (facts === null || facts.headRef === null) continue;
+  const bucketed = new Set<string>();
+  const bucketByHeadRef = (facts: LinkedPullRequestFacts): void => {
+    // `headRef === null` is an unobserved branch, and absence is not a key.
+    if (facts.headRef === null || bucketed.has(facts.id)) return;
+    bucketed.add(facts.id);
     const bucket = byHeadRef.get(facts.headRef) ?? [];
     bucket.push(facts);
     byHeadRef.set(facts.headRef, bucket);
+  };
+  for (const node of nodes) {
+    const facts = pullRequestFactsOf(node);
+    if (facts !== null) bucketByHeadRef(facts);
+  }
+  // Second, so a PR node that IS on the page keeps seeding from its own live
+  // summary; `bucketed` makes the badge fill that gap rather than double it.
+  for (const node of nodes) {
+    for (const facts of badgePullRequestFactsOf(node)) bucketByHeadRef(facts);
   }
   if (byHeadRef.size > 0) {
     for (const node of nodes) {
