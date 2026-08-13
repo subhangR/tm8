@@ -25,6 +25,15 @@ export async function loadHumanMessageAuthorIds(
        from ranked group by anchor_id`,
     [anchorIds],
   );
-  for (const row of rows) out.set(row.anchor_id, { ids: row.author_ids, total: Number(row.total) });
+  for (const row of rows) {
+    // Querier is an external seam and several contract tests intentionally use
+    // broad fakes that return their fixture row for every SELECT. Validate the
+    // narrow aggregate shape here instead of trusting the compile-time generic.
+    if (typeof row.anchor_id !== 'string' || !Array.isArray(row.author_ids)) continue;
+    const ids = row.author_ids.filter((id): id is string => typeof id === 'string');
+    const total = Number(row.total);
+    if (!Number.isInteger(total) || total <= 0) continue;
+    out.set(row.anchor_id, { ids, total });
+  }
   return out;
 }
