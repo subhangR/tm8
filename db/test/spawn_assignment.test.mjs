@@ -13,7 +13,18 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWorld, cmid, expectFailure, json, literal, ok, rows, scalar, uuid } from './helpers.mjs';
+import {
+  OWNER_URL,
+  buildWorld,
+  cmid,
+  expectFailure,
+  json,
+  literal,
+  ok,
+  rows,
+  scalar,
+  uuid,
+} from './helpers.mjs';
 
 const w = buildWorld('spawnassign');
 
@@ -131,6 +142,41 @@ test('a spawn adds its teammate alongside an existing different assignee', () =>
     assignees(task).map((r) => r.assignee).sort(),
     [w.memberA, w.personaA].sort(),
     'both assignees must be present',
+  );
+});
+
+/**
+ * The second-order consequence, and the one that was costing something every
+ * day rather than merely looking wrong.
+ *
+ * `internal.w2_notify_anchor_watchers` (077:125) derives an anchor's watchers
+ * from its `assigned_to` edges under the reason `anchor_assignee`. With no
+ * assignment written by the spawn, a dispatched teammate was not a watcher of
+ * the task it had been dispatched to and heard nothing said on it. This asserts
+ * the fan-out through the edge 111 writes — not through one planted by hand.
+ */
+test('the spawn-made assignment makes the teammate a watcher of its own task', () => {
+  const task = newTask('teammate should hear this');
+  spawnOn([task], 'assigns and watches');
+
+  const messageId = json(
+    `select public.w2_post_message_batch(array[${uuid(task)}], 'a human says something',
+       null, '{}'::uuid[], '{}'::uuid[], null, ${uuid(w.memberA)},
+       ${literal(cmid('watch-post'))})`,
+    { claims: w.claimsA },
+  ).messageIds[0];
+
+  assert.deepEqual(
+    rows(
+      `select recipient_team_member_id::text as teammate,
+              payload ->> 'watchReason' as reason
+         from public.notifications
+        where payload ->> 'messageId' = ${literal(messageId)}
+          and recipient_team_member_id is not null`,
+      { url: OWNER_URL },
+    ),
+    [{ teammate: w.personaA, reason: 'anchor_assignee' }],
+    'the spawned teammate must be notified as an assignee of its own task',
   );
 });
 
