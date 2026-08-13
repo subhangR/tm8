@@ -91,6 +91,7 @@ import type {
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
+  ExecutionTerminalStartInput,
   WorkInput, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
@@ -140,9 +141,9 @@ export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
   z.enum(['none', 'space', 'explicit']);
-/** Mirrors 083's `work_sessions.session_kind` CHECK exactly. */
+/** Mirrors `work_sessions.session_kind`'s CHECK exactly — 083, widened by 101. */
 export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
-  z.enum(['agent', 'credential']);
+  z.enum(['agent', 'credential', 'shell']);
 export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
   z.enum(['active', 'merged', 'abandoned', 'deleted']);
 
@@ -358,7 +359,7 @@ export const EntityBadgesSchema: z.ZodType<EntityBadges> = z.lazy(() => z.object
   attention: z.object({
     pendingCount: z.number().int().positive(),
     totalPoints: z.number().int().positive(),
-    maxPoints: z.number().int().min(1).max(100),
+    maxPoints: z.number().int().min(1).max(101),
     latestReason: z.string().min(1).max(500),
     oldestRequestedAt: IsoTimestamp,
   }).strict().optional(),
@@ -449,7 +450,7 @@ export const EntityConnectionsQuerySchema: z.ZodType<EntityConnectionsQuery> = z
   sort: z.enum(['createdAt', 'updatedAt', 'type']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
   cursor: CursorSchema.optional(),
-  limit: z.number().int().min(1).max(100).optional(),
+  limit: z.number().int().min(1).max(101).optional(),
 }).strict();
 
 export const EntityConnectionsPageSchema = pageOf(EdgeViewSchema);
@@ -1061,7 +1062,7 @@ export const ServerConnectionSchema: z.ZodType<ServerConnection> = z.object({
   id: z.string().uuid(),
   name: ServerConnectionNameSchema,
   baseUrl: ServerConnectionBaseUrlSchema,
-  username: z.string().min(1).max(100).nullable().optional(),
+  username: z.string().min(1).max(101).nullable().optional(),
   createdAt: IsoTimestamp,
   updatedAt: IsoTimestamp,
 }).strict();
@@ -1071,7 +1072,7 @@ export const ServerConnectionCreateInputSchema: z.ZodType<ServerConnectionCreate
   clientMutationId: z.string().min(1),
   name: ServerConnectionNameSchema,
   baseUrl: ServerConnectionBaseUrlSchema,
-  username: z.string().min(1).max(100).nullable().optional(),
+  username: z.string().min(1).max(101).nullable().optional(),
 }).strict();
 
 export const ServerConnectionDeleteInputSchema: z.ZodType<ServerConnectionDeleteInput> = z.object({
@@ -1110,7 +1111,7 @@ export const IdentityProfileViewSchema: z.ZodType<IdentityProfileView> = z.objec
 // ---------------------------------------------------------------------------
 
 /** Mirrors the 002 check constraint: 1–100 chars after trim. Normalized lower-case server-side. */
-const AuthUsernameSchema = z.string().min(1).max(100).regex(/^\S+$/, {
+const AuthUsernameSchema = z.string().min(1).max(101).regex(/^\S+$/, {
   message: 'username must not contain whitespace',
 });
 
@@ -1139,7 +1140,7 @@ export const AuthLogoutInputSchema: z.ZodType<AuthLogoutInput> = z.object({
 export const AuthAccountViewSchema: z.ZodType<AuthAccountView> = z.object({
   accountId: z.string().uuid(),
   identityId: z.string().min(1).max(200),
-  username: z.string().min(1).max(100),
+  username: z.string().min(1).max(101),
   displayName: z.string().nullable(),
   isNodeAdmin: z.boolean(),
   isOwner: z.boolean(),
@@ -1413,7 +1414,7 @@ export const AttentionRequestSchema: z.ZodType<AttentionRequest> = z.object({
   spaceId: EntityIdSchema,
   entityId: EntityIdSchema,
   reason: z.string().min(1).max(500),
-  points: z.number().int().min(1).max(100),
+  points: z.number().int().min(1).max(101),
   status: AttentionRequestStatusSchema,
   version: z.number().int().positive(),
   requestedBy: ActorSummarySchema,
@@ -1430,7 +1431,7 @@ export const AttentionRequestListQuerySchema: z.ZodType<AttentionRequestListQuer
   spaceId: EntityIdSchema,
   entityId: EntityIdSchema.optional(),
   status: AttentionRequestStatusSchema.optional(),
-  minPoints: z.number().int().min(1).max(100).optional(),
+  minPoints: z.number().int().min(1).max(101).optional(),
   limit: z.number().int().positive().max(200).optional(),
   cursor: z.string().optional(),
 }).strict();
@@ -1439,7 +1440,7 @@ export const CreateAttentionRequestInputSchema: z.ZodType<CreateAttentionRequest
   ...commandContextShape,
   clientMutationId: z.string().min(1),
   reason: z.string().trim().min(1).max(500),
-  points: z.number().int().min(1).max(100),
+  points: z.number().int().min(1).max(101),
 }).strict();
 
 export const UpdateAttentionRequestInputSchema: z.ZodType<UpdateAttentionRequestInput> = z.object({
@@ -1447,7 +1448,7 @@ export const UpdateAttentionRequestInputSchema: z.ZodType<UpdateAttentionRequest
   clientMutationId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   reason: z.string().trim().min(1).max(500).optional(),
-  points: z.number().int().min(1).max(100).optional(),
+  points: z.number().int().min(1).max(101).optional(),
   status: AttentionRequestStatusSchema.optional(),
   resolutionNote: z.string().trim().max(1000).optional(),
 }).strict().refine(
@@ -2050,6 +2051,27 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
 }).strict();
 
 /**
+ * execution.terminal.start — a vanilla shell session (101).
+ *
+ * `.strict()` is the security boundary here, not a tidiness preference. The
+ * interface carries no command/argv/flags field, and strict parsing is what
+ * makes that absence enforceable at the wire rather than merely true of the
+ * type: a body carrying `command` is REFUSED, not silently ignored, so a later
+ * handler edit that starts reading `input.command` cannot quietly become a
+ * remote-code-execution door.
+ */
+export const ExecutionTerminalStartInputSchema: z.ZodType<ExecutionTerminalStartInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  spaceId: SpawnUuidSchema,
+  projectId: SpawnUuidSchema.nullable().optional(),
+  confirmUntrusted: z.literal(true).optional(),
+  title: z.string().max(200).optional(),
+  cols: z.number().int().positive().max(1000).optional(),
+  rows: z.number().int().positive().max(1000).optional(),
+}).strict();
+
+/**
  * execution.dispatch — hand an entity to the space's dispatcher (§4.3).
  *
  * Three fields and no launch configuration is the whole design: choosing the
@@ -2320,7 +2342,7 @@ export const MessageDeliveryStatusSchema = z.enum([
 
 export const MessageDeliveryQuerySchema: z.ZodType<MessageDeliveryQuery> = z.object({
   cursor: CursorSchema.optional(),
-  limit: z.number().int().min(1).max(100).optional(),
+  limit: z.number().int().min(1).max(101).optional(),
 }).strict();
 
 export const MessageDeliveryRecordSchema: z.ZodType<MessageDeliveryRecord> = z.object({
@@ -2370,7 +2392,7 @@ export const HandoffListQuerySchema: z.ZodType<HandoffListQuery> = z.object({
   deliveryStatus: uniqueArray(HandoffDeliveryStatusSchema).optional(),
   recordStatus: uniqueArray(HandoffRecordStatusSchema).optional(),
   cursor: CursorSchema.optional(),
-  limit: z.number().int().min(1).max(100).optional(),
+  limit: z.number().int().min(1).max(101).optional(),
 }).strict();
 
 export const WithdrawHandoffInputSchema: z.ZodType<WithdrawHandoffInput> = z.object({
@@ -2410,7 +2432,7 @@ export const EntityFeedQuerySchema: z.ZodType<EntityFeedQuery> = z.object({
   order: z.enum(['newest', 'oldest']).optional(),
   around: z.string().regex(/^(message|activity):[^:]+$/).optional() as z.ZodType<`message:${string}` | `activity:${string}` | undefined>,
   cursor: CursorSchema.optional(),
-  limit: z.number().int().min(1).max(100).optional(),
+  limit: z.number().int().min(1).max(101).optional(),
 }).strict().superRefine((value, context) => {
   if (value.around !== undefined && value.cursor !== undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: 'around and cursor are mutually exclusive' });
@@ -2515,7 +2537,7 @@ export const ToolDiscoveryPolicySchema: z.ZodType<ToolDiscoveryPolicy> = z.objec
 
 export const FeedPolicySchema: z.ZodType<FeedPolicy> = z.object({
   scope: z.enum(['direct_v1', 'session_chat_v1', 'channel_threads_v1', 'thread_v1', 'task_discussion_v1']),
-  pageSize: z.number().int().min(1).max(100),
+  pageSize: z.number().int().min(1).max(101),
   bodyExcerptBytes: z.number().int().min(0).max(4096),
 }).strict();
 
@@ -2678,7 +2700,7 @@ export const InboxListQuerySchema: z.ZodType<InboxListQuery> = z.object({
   spaceId: SpaceIdSchema.optional(),
   unread: z.boolean().optional(),
   cursor: CursorSchema.optional(),
-  limit: z.number().int().min(1).max(100).optional(),
+  limit: z.number().int().min(1).max(101).optional(),
 }).strict();
 
 export const InboxMarkReadInputSchema: z.ZodType<InboxMarkReadInput> = z.object({

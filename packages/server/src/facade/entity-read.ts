@@ -26,6 +26,7 @@
  * All of it is plain SELECT through RLS. Nothing in this file writes.
  */
 import type {
+  WorkSessionKind,
   AcceptanceCriterion,
   ActorSummary,
   EntityBadges,
@@ -1218,7 +1219,7 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // the pre-082 behaviour instead of being told they are all agents by
         // a server that never looked. `.strict()` refuses an explicit
         // `undefined` key, hence the spread rather than a ternary value.
-        ...(row.ws_session_kind ? { sessionKind: row.ws_session_kind as 'agent' | 'credential' } : {}),
+        ...(row.ws_session_kind ? { sessionKind: row.ws_session_kind as WorkSessionKind } : {}),
       };
     case 'collection':
       return {

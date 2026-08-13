@@ -105,6 +105,7 @@ export function useEntityVerbs(options: EntityVerbsOptions): EntityVerbsHandle {
     return config.editFields.map((field) => ({
       target: field.target,
       source: field.source,
+      readFrom: field.readFrom,
       label: field.label,
       required: field.required,
       placeholder: field.placeholder,
@@ -156,9 +157,23 @@ export function useEntityVerbs(options: EntityVerbsOptions): EntityVerbsHandle {
   const openEdit = useCallback(() => {
     if (!detail) return;
     const content = (detail.content ?? {}) as Record<string, unknown>;
+    /**
+     * `state` IS A SECOND READ SOURCE, and only because the server has two.
+     *
+     * A task's `dueDate` is patched as `content.dueDate` and projected onto
+     * `state.dueDate` — `contentOf` does not carry it (`entity-read.ts:1502`).
+     * Seeding that field from `content` alone hands the dialog a blank box for
+     * a task that HAS a due date, and because an empty date field is an
+     * explicit `null` (the clear), opening the dialog and pressing Save with
+     * nothing touched would delete it. The field says which side it reads from;
+     * nothing here guesses.
+     */
+    const state = (detail.state ?? {}) as unknown as Record<string, unknown>;
     const seed: Record<string, string> = {};
     for (const field of editFields) {
-      const raw = field.target === 'title' ? detail.title : content[field.source ?? ''];
+      const raw = field.target === 'title'
+        ? detail.title
+        : (field.readFrom === 'state' ? state : content)[field.source ?? ''];
       seed[fieldKey(field)] = draftValueFor(field, raw);
     }
     edit.begin(seed);
