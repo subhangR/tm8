@@ -180,3 +180,21 @@ describe('sessions inherit their tasks\' PRs (working_on second pass)', () => {
     expect(index.get('ws-1')).toBeUndefined();
   });
 });
+
+describe('sessions resolve from task badges when the working_on edge missed the graph page', () => {
+  it('badges.workingActors[].actor.via.sessionId carries the PRs without any working_on edge', () => {
+    const pr = pullRequest({ state: 'merged', ciStatus: 'failing' });
+    const workingTask = {
+      ...task,
+      badges: {
+        workingActors: [{
+          actor: { ...ACTOR, via: { sessionId: 'ws-badge-1' } },
+          task,
+          startedAt: '2026-08-13T00:00:00.000Z',
+        }],
+      },
+    } as EntitySummary;
+    const index = indexLinkedPullRequests([workingTask, pr], [tracks(workingTask, pr)]);
+    expect(index.get('ws-badge-1')?.[0]).toMatchObject({ id: 'pr-1', lifecycle: 'merged', ciStatus: 'failing' });
+  });
+});
