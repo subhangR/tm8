@@ -176,6 +176,7 @@ export function ChatHomeScreen({
         rootMessageId: root.threadRootId,
         teammateId,
         model: selectedModel.model,
+        clientMutationId: newMutationId('chat-config'),
       });
       if (
         configured.threadRootId !== root.threadRootId ||

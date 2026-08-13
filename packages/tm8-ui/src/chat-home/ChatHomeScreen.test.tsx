@@ -63,6 +63,7 @@ describe('Chat Home', () => {
     });
     expect(controls.configs[0]).toMatchObject({
       model: 'gpt-5.6-sol',
+      clientMutationId: 'chat-config:test',
     });
     expect(controls.configs[0]?.rootMessageId).toMatch(/^019f/);
     expect(controls.posts).toHaveLength(0);

@@ -103,6 +103,7 @@ export interface ChatConfigureInput {
   rootMessageId: EntityId;
   teammateId: EntityId;
   model: string;
+  clientMutationId: string;
 }
 
 export interface ChatPostInput {
