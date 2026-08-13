@@ -803,3 +803,56 @@ describe('the fixture seam models the dispatcher saga rather than stubbing it', 
     expect(second.dispatcherSessionId).not.toBe(first.dispatcherSessionId);
   });
 });
+
+/**
+ * OBLIGATION 4 — the WORKING DIRECTORY default must survive a late project read.
+ *
+ * `projects` is derived from the gate's `linkedProjects`, which starts empty and
+ * is filled by a later read. A sheet mounted before that read sees no projects,
+ * and the `useState` initializer that picks the default target runs exactly once
+ * — so without a re-seed the sheet latches to scratch, the rows appear a moment
+ * later, and every launch the operator does not hand-click goes to a server temp
+ * directory instead of the repository. Silent, because a projectless spawn is a
+ * legitimate request the server honours by minting scratch.
+ */
+describe('OBLIGATION 4 — a late project read must still select the default', () => {
+  const sheet = (projects: typeof LAUNCH_PROJECTS) => (
+    <div className="cv2-root">
+      <LaunchSheet
+        subjectId={'task-1' as EntityId}
+        fromChip="◔ Run ▸"
+        fromCaption="task pre-associated"
+        teammates={LAUNCH_TEAMMATES}
+        projects={projects}
+        profiles={LAUNCH_PROFILES}
+        capacity={LAUNCH_CAPACITY}
+        onLaunch={() => {}}
+        onCancel={() => {}}
+      />
+    </div>
+  );
+
+  const checked = (view: ReturnType<typeof render>, name: RegExp) =>
+    view.getByRole('radio', { name }).getAttribute('aria-checked');
+
+  it('selects the default project when the list arrives after mount', () => {
+    const view = render(sheet([]));
+    // Nothing linked yet, so scratch is the only honest answer at this moment.
+    expect(checked(view, /scratch/i)).toBe('true');
+
+    view.rerender(sheet(LAUNCH_PROJECTS));
+
+    expect(checked(view, /tm8-ui/)).toBe('true');
+    expect(checked(view, /scratch/i)).toBe('false');
+  });
+
+  it('leaves an explicit scratch choice alone when the list arrives after it', () => {
+    const view = render(sheet([]));
+    fireEvent.click(view.getByRole('radio', { name: /scratch/i }));
+
+    view.rerender(sheet(LAUNCH_PROJECTS));
+
+    expect(checked(view, /scratch/i)).toBe('true');
+    expect(checked(view, /tm8-ui/)).toBe('false');
+  });
+});
