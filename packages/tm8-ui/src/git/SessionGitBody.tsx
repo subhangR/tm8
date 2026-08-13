@@ -7,6 +7,7 @@ import type {
 import type { Seam } from '../data/seam';
 import { DiffView, Pill } from '../kit';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
+import { SessionGitFacts } from './SessionGitFacts';
 import './session-git.css';
 
 /**
@@ -199,6 +200,10 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
           <p className="pn-git__note">{reason.cause}</p>
           {reason.remedy ? <p className="pn-git__remedy">{reason.remedy}</p> : null}
         </div>
+        {/* The checkout is unavailable; the GRAPH is not. Commits this session
+            recorded, PRs its task tracks, and its lane entity render below the
+            reason — the refusal covers the verbs, not the history. */}
+        <SessionGitFacts seam={seam} sessionId={sessionId} />
       </div>
     );
   }
@@ -757,6 +762,9 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
           )
         ) : null}
       </div>
+
+      {/* -- graph facts: commits, PRs, lane entity --------------------------- */}
+      <SessionGitFacts seam={seam} sessionId={sessionId} />
     </div>
   );
 }

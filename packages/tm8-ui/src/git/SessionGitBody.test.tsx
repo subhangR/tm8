@@ -12,9 +12,9 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import type { EntityId, SessionGitMergeResult } from '@tm8/contract';
+import type { EdgeView, EntityId, EntitySummary, SessionGitMergeResult } from '@tm8/contract';
 import { createFixtureSeam } from '../data/fixtures/seam-fixture.js';
-import { sessionLive, sessionStale } from '../fixtures/index.js';
+import { commitFoundation, forge, prTransplant, sessionLive, sessionStale, taskGuideLines } from '../fixtures/index.js';
 import type { Seam } from '../data/seam.js';
 import { SessionGitBody } from './SessionGitBody.js';
 
@@ -44,6 +44,42 @@ describe('status header', () => {
     expect(empty.textContent).toContain('no isolated worktree');
     expect(empty.textContent).toContain('workdir mode');
     // No dead action buttons behind an unavailable rail.
+    expect(screen.queryByTestId('session-git-actions')).toBeNull();
+  });
+
+  it('no worktree hides the VERBS, not the graph: commits and PRs still render below the reason', async () => {
+    // Script the graph half: this scratch session recorded a commit and works
+    // a task that tracks a PR. The checkout half (gitStatus) still answers
+    // no_worktree through the untouched fixture.
+    const base = createFixtureSeam();
+    const seam: Seam = {
+      ...base,
+      async connections(id, opts) {
+        const mk = (eid: string, type: string, source: EntitySummary, target: EntitySummary): EdgeView => ({
+          id: eid, type, source, target, props: {},
+          createdBy: forge, createdAt: '2026-08-13T00:00:00Z', updatedAt: '2026-08-13T00:00:00Z',
+        });
+        const edges: Record<string, EdgeView[]> = {
+          [sessionStale.id]: [
+            mk('e-ci', 'created_in', commitFoundation, sessionStale),
+            mk('e-wo', 'working_on', sessionStale, taskGuideLines),
+          ],
+          [taskGuideLines.id]: [mk('e-tr', 'tracks', taskGuideLines, prTransplant)],
+        };
+        const rows = (edges[id] ?? []).filter(
+          (e) => !opts?.types || opts.types.length === 0 || opts.types.includes(e.type),
+        );
+        return { items: rows, nextCursor: null };
+      },
+    };
+    mount(seam, sessionStale.id as EntityId);
+    // The reason card is STILL there — the refusal covers the verbs…
+    const empty = await screen.findByTestId('session-git-unavailable');
+    expect(empty.textContent).toContain('no isolated worktree');
+    // …and the graph facts render below it, chips consumed from Lane B.
+    const facts = await screen.findByTestId('session-git-facts');
+    expect(screen.getByTestId('session-git-commits').textContent).toContain('9b1c2d3e4f');
+    expect(facts.contains(screen.getByTestId('linked-pr-chips'))).toBe(true);
     expect(screen.queryByTestId('session-git-actions')).toBeNull();
   });
 });

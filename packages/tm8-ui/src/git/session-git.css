@@ -279,3 +279,66 @@
   user-select: none;
 }
 .pn-git__more[open] .pn-git__more-summary { opacity: 1; }
+
+/* -- graph facts: commits, PRs, lane entity (renders with OR without a
+      worktree — the graph half of the rail) ------------------------------- */
+.pn-git__facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding-top: var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+}
+.pn-git__facts-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+}
+.pn-git__facts-row--commits {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+.pn-git__facts-label {
+  font-size: var(--pn-fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+.pn-git__lane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+}
+.pn-git__commit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+.pn-git__commit-list li {
+  display: flex;
+  gap: var(--pn-space-2);
+  align-items: baseline;
+  min-width: 0;
+}
+.pn-git__commit-sha {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  flex-shrink: 0;
+}
+.pn-git__commit-message {
+  font-size: var(--pn-fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
