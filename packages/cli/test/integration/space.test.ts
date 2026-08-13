@@ -142,7 +142,13 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(137); // +1: projects.files.read, the viewer half. MEASURED off /health (routes, not catalog rows).
+    // 137 -> 142 (2026-08-12), and FIVE of those are not mine. This pin was
+    // already red on main before this branch existed — measured against the
+    // #157 run, where it reads 141 against a pinned 137, so four routes had
+    // landed without it moving. `execution.terminal.start` (101) is the fifth.
+    // Re-pinned to the MEASURED value rather than 137+1, which would have been
+    // a number no tree ever produced.
+    expect(health.operations).toBe(144); // MEASURED off /health (routes, not catalog rows).
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

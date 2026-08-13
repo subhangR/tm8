@@ -182,6 +182,21 @@ export interface EntityListPanelProps {
   searchInputRef?: React.Ref<HTMLInputElement>;
   onSelect?: (id: string) => void;
   onAction?: (ref: ActionRef, entityId: string) => void;
+  /**
+   * Which of the header verbs this host can actually PERFORM.
+   *
+   * Same mechanism `EntityDetailPanel` already uses (`chrome.tsx`): a verb
+   * absent from the list is handed `onAction: undefined`, so it renders its
+   * honest not-wired refusal instead of an enabled button whose click the
+   * host's switch silently drops. Absent ⇒ every declared verb is wired, the
+   * pre-existing behaviour.
+   *
+   * This became load-bearing when the sessions header grew a SECOND verb (101).
+   * Before that the header was all-or-nothing, so `onAction` alone said enough;
+   * with `Terminal` wired and `Launch session ▸` not yet, one prop cannot
+   * answer for both.
+   */
+  wiredActions?: readonly ActionRef[];
   /** Session-row close command; separate from generic header/list actions. */
   onTerminate?: (entityId: string) => void;
   onCreate?: () => void;
@@ -279,7 +294,7 @@ export interface EntityListPanelProps {
   assignableActors?: readonly ActorSummary[];
 
   /**
-   * Curated-set membership (registry `list.membership`, migration 100) — the
+   * Curated-set membership (registry `list.membership`, migration 101) — the
    * three injected sources behind the expanded row's Collections picker and
    * this panel's collection LENS. Same split as assignment: the registry
    * names the edge and the set kind, the host hydrates the sets and executes
@@ -418,7 +433,14 @@ export function EntityListPanel(props: EntityListPanelProps) {
         onMode={setMode}
       />
 
-      <HeaderActions config={config} ctx={props.ctx} onCreate={props.onCreate} createSlot={props.createSlot} onAction={props.onAction} />
+      <HeaderActions
+        config={config}
+        ctx={props.ctx}
+        onCreate={props.onCreate}
+        createSlot={props.createSlot}
+        onAction={props.onAction}
+        {...(props.wiredActions ? { wiredActions: props.wiredActions } : {})}
+      />
 
       <SearchRow
         config={config}
@@ -960,17 +982,30 @@ function HeaderActions({
   onCreate,
   createSlot,
   onAction,
+  wiredActions,
 }: {
   config: KindConfig;
   ctx: ActionContext;
   onCreate?: () => void;
   createSlot?: React.ReactNode;
   onAction?: (ref: ActionRef, entityId: string) => void;
+  wiredActions?: readonly ActionRef[];
 }) {
-  const { quickCreate, quickLaunch } = config.list;
+  const { quickCreate, quickLaunch, quickStart } = config.list;
+  // Per-verb, not per-header. `chrome.tsx`'s exact expression: an unwired verb
+  // is handed `undefined` and renders refused, rather than the header deciding
+  // for all of its verbs at once.
+  const dispatcherFor = (ref: ActionRef): typeof onAction =>
+    wiredActions && !wiredActions.includes(ref) ? undefined : onAction;
   const showCreate = Boolean(quickCreate && (createSlot || onCreate));
+  // `onAction`, NOT `dispatcherFor(...)`: a host with no dispatcher at all
+  // still has nothing to draw, but a host that has one draws every declared
+  // verb — refused where it cannot perform it. Hiding an unwired verb is the
+  // failure mode this panel spent D64 removing, because a control nobody can
+  // see cannot be reported as missing.
   const showLaunch = Boolean(quickLaunch && onAction);
-  if (!showCreate && !showLaunch) return null;
+  const showStart = Boolean(quickStart && onAction);
+  if (!showCreate && !showLaunch && !showStart) return null;
 
   return (
     <div className="lp__actions">
@@ -985,8 +1020,57 @@ function HeaderActions({
           ＋ New
         </button>
       ) : null}
-      {showLaunch && quickLaunch ? <QuickLaunch ref_={quickLaunch} ctx={ctx} onAction={onAction} /> : null}
+      {showLaunch && quickLaunch ? (
+        <QuickLaunch ref_={quickLaunch} ctx={ctx} onAction={dispatcherFor(quickLaunch)} />
+      ) : null}
+      {/* Beside `Launch session ▸`, in the same slot (user ruling 2026-08-12).
+          It is `QuickStart`, not a second `QuickLaunch`: the launch verb's
+          label carries a `▸` because it EXPANDS a config, and wearing that
+          glyph while committing on click would promise a card that never
+          opens. */}
+      {showStart && quickStart ? (
+        <QuickStart ref_={quickStart} ctx={ctx} onAction={dispatcherFor(quickStart)} />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * A header verb that COMMITS on click — the counterpart to {@link QuickLaunch},
+ * which expands.
+ *
+ * Same three-state honesty as every other control (R5 #9): unwired renders
+ * disabled-with-reason rather than enabled-inert, a refused availability
+ * renders its own reason, and only a wired-and-available verb is a live button.
+ */
+function QuickStart({
+  ref_,
+  ctx,
+  onAction,
+}: {
+  ref_: ActionRef;
+  ctx: ActionContext;
+  onAction?: (ref: ActionRef, entityId: string) => void;
+}) {
+  const def = resolveAction(ref_);
+  if (!onAction) return <DisabledAction reason={NOT_WIRED_REASON}>{def.label}</DisabledAction>;
+  const availability = def.availability(ctx);
+  if (availability.kind === 'disabled') {
+    return (
+      <DisabledIconControl label={def.label} reason={toReason(availability.reason)}>
+        {def.label}
+      </DisabledIconControl>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="lp__quick"
+      data-testid="list-quick-start"
+      onClick={() => onAction?.(ref_, ctx.entityId ?? '')}
+    >
+      {`${def.icon} ${def.label}`}
+    </button>
   );
 }
 
@@ -2391,6 +2475,9 @@ function Tile({
     const state = row.state as unknown as Record<string, unknown>;
     const recordedStatus = typeof state.status === 'string' ? state.status : 'idle';
     const agentTool = typeof state.agentTool === 'string' ? state.agentTool : null;
+    // Passed through so the tile can tell a vanilla terminal from an agent
+    // whose tool was never recorded (101). Absent stays absent — see the prop.
+    const sessionKind = typeof state.sessionKind === 'string' ? state.sessionKind : null;
     const model = typeof state.model === 'string' ? state.model : null;
     const live = verdict === 'live';
     return (
@@ -2398,6 +2485,7 @@ function Tile({
         id={row.id}
         title={row.title || 'Session'}
         agentTool={agentTool}
+        sessionKind={sessionKind}
         model={model}
         status={recordedStatus}
         attention={attention}

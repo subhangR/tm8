@@ -11,6 +11,7 @@ export function MaestroSessionTile({
   id,
   title,
   agentTool,
+  sessionKind,
   model,
   status,
   attention,
@@ -32,6 +33,17 @@ export function MaestroSessionTile({
   id: string;
   title: string;
   agentTool: string | null;
+  /**
+   * The row's `sessionKind`, when the server sent one (101).
+   *
+   * Read ONLY to tell a vanilla terminal from an agent. Absent — a pre-083
+   * node, or a payload cached before the column shipped — keeps the pre-100
+   * rendering exactly, which is why this branches on `=== 'shell'` rather than
+   * on `agentTool` being null. Those two are not the same question: a session
+   * row that never recorded a tool is an AGENT whose tool is unknown, and
+   * drawing it as a terminal would be a new lie in place of the old one.
+   */
+  sessionKind?: string | null;
   model: string | null;
   status: string;
   attention: boolean;
@@ -89,6 +101,7 @@ export function MaestroSessionTile({
         <span className="pn-st__title lp__title" title={`${title} · ${id}`}>
           <AgentTile
             tool={agentTool}
+            shell={sessionKind === 'shell'}
             live={!archived && live}
             streaming={!archived && live && streaming}
             title={statusTitle ?? status}
@@ -172,10 +185,15 @@ export function MaestroSessionTile({
   );
 }
 
-function AgentTile({ tool, live, streaming, title }: { tool: string | null; live: boolean; streaming: boolean; title: string }) {
-  const normalized = tool === 'claude-code' ? 'claude' : (tool || 'agent').toLowerCase();
+function AgentTile({ tool, shell, live, streaming, title }: { tool: string | null; shell?: boolean; live: boolean; streaming: boolean; title: string }) {
+  // A vanilla terminal is not an agent whose tool we failed to record, and the
+  // fallback below would have called it one — `(tool || 'agent')`, glyph and
+  // aria-label alike. It gets its own mark instead.
+  const normalized = shell ? 'shell' : tool === 'claude-code' ? 'claude' : (tool || 'agent').toLowerCase();
   const className = `pn-agent${live ? ' pn-agent--live' : ''}${streaming ? ' pn-agent--streaming' : ''}`;
-  const label = normalized === 'claude'
+  const label = normalized === 'shell'
+    ? '▮'
+    : normalized === 'claude'
     ? '✳'
     : normalized === 'codex'
       ? '✦'
@@ -184,7 +202,7 @@ function AgentTile({ tool, live, streaming, title }: { tool: string | null; live
         : normalized === 'hermes'
           ? '✣'
           : '✦';
-  return <span className={className} data-agent-kind={normalized} aria-label={tool || 'agent'} title={title}><span className="pn-agent__mark" aria-hidden>{label}</span></span>;
+  return <span className={className} data-agent-kind={normalized} aria-label={shell ? 'terminal' : tool || 'agent'} title={title}><span className="pn-agent__mark" aria-hidden>{label}</span></span>;
 }
 
 function SessionIcon({ name, size = 13, flipped = false }: { name: 'chevron' | 'check' | 'close' | 'copy' | 'expand'; size?: number; flipped?: boolean }) {
