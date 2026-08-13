@@ -15,6 +15,7 @@ import type {
 
 import type { PickedFile } from '../files-explorer/picker';
 import { filesFromInput } from '../files-explorer/picker';
+import { broadWorkingDirReason, broadWorkingDirWarning } from './working-dir-risk';
 
 import './projects.css';
 
@@ -387,6 +388,18 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
     setBrowserOpen(false);
   };
 
+  /**
+   * `workingDir` is only ever set from the browser, so a listing has normally
+   * been seen by the time either of these matters; the regex is the fallback
+   * for a restored/typed value, not the primary source.
+   */
+  const separatorFor = (path: string): '/' | '\\' =>
+    listing?.separator ?? (/^[A-Za-z]:[\\/]/.test(path) ? '\\' : '/');
+  /** The consequence at the moment of the click, in the browser. */
+  const browsingBroad = listing ? broadWorkingDirReason(listing.path, listing.separator) : null;
+  /** The same consequence, kept visible on the selection until submit. */
+  const selectedBroad = workingDir ? broadWorkingDirReason(workingDir, separatorFor(workingDir)) : null;
+
   const cleanFolderName = newFolderName.trim();
   const validFolderName = cleanFolderName.length > 0
     && cleanFolderName !== '.'
@@ -521,6 +534,9 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
                   ))}
                 </div>
                 <div className="project-browser__path" title={listing.path}>{listing.path}</div>
+                {browsingBroad && browserMode === 'workingDir' ? (
+                  <p className="project-onboard__warning" role="alert">{broadWorkingDirWarning(browsingBroad)}</p>
+                ) : null}
                 <div className="project-browser__actions">
                   <button type="button" className="project-onboard__button project-onboard__button--primary" onClick={useCurrent}>Use this folder</button>
                   {listing.parentPath ? (
@@ -637,6 +653,9 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
                       <button type="button" className="project-onboard__button" onClick={() => openBrowser('workingDir')}>Browse folders</button>
                     </div>
                     {ensureWorkingDir ? <small>This folder will be created when you submit.</small> : null}
+                    {selectedBroad ? (
+                      <p className="project-onboard__warning" role="alert">{broadWorkingDirWarning(selectedBroad)}</p>
+                    ) : null}
                   </div>
                 ) : null}
 
