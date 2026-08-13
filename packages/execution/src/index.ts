@@ -58,6 +58,10 @@ export type {
 } from './pty/types.js';
 
 export * from './spawn/index.js';
+// Structured, non-PTY chat runtime. Deliberately a sibling of SpawnService:
+// terminal work sessions and hot message-thread agents have different honest
+// lifecycle and output contracts.
+export * from './runtime/index.js';
 export * from './worktree/index.js';
 // The vendor-login (Tier B credential) block. Its own barrel rather than part
 // of `spawn/`, so that importing a login primitive is a deliberate act and a
