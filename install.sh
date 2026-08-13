@@ -529,6 +529,17 @@ dim "server $TM8_ENV_SERVER_PORT · pg $TM8_ENV_PG_PORT · database $TM8_ENV_DAT
 dim "checkout $TM8_ENV_CHECKOUT"
 (( DRY_RUN )) && printf '      %s--dry-run: nothing will be changed%s\n' "$YEL" "$OFF"
 
+# A system slot installs from /opt/tm8/<slot>, which is NOT the tree this script
+# was invoked from, and nothing here clones it. Checked before phase 1 so the run
+# stops on a one-line message instead of `cd: /opt/tm8/prod: No such file or
+# directory` at phase 5, with Postgres already installed by then.
+if [[ ! -d "$TM8_ENV_CHECKOUT" ]]; then
+  die "no checkout at $TM8_ENV_CHECKOUT.
+      The $SLOT slot installs from there, not from the directory you ran this in.
+      Create it first, then re-run:
+        git clone <this repo> $TM8_ENV_CHECKOUT"
+fi
+
 # --- PHASE 1: prerequisites --------------------------------------------------
 phase "Prerequisites"
 
@@ -709,8 +720,15 @@ fi
 
 hba_trusts_loopback() {
   [[ -n "$hba_path" && -r "$hba_path" ]] || return 2      # cannot tell
-  # Only `host`/`hostssl`/`hostnossl` lines for a loopback CIDR with method trust.
-  grep -Eq '^[[:space:]]*host(ssl|nossl)?[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128|samehost)[[:space:]]+trust([[:space:]]|$)' "$hba_path"
+  # pg_hba is FIRST MATCH WINS, so the presence of a trust line proves nothing:
+  # it has to be the first rule matching a loopback host connection. A trust line
+  # sitting below the distribution's default `host all all 127.0.0.1/32
+  # scram-sha-256` never fires, phase 4 dies with `fe_sendauth: no password
+  # supplied`, and every re-run still reports "already trusts loopback".
+  local first
+  first="$(grep -E '^[[:space:]]*host(ssl|nossl)?[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128|samehost)[[:space:]]+' "$hba_path" | head -n 1)"
+  [[ -n "$first" ]] || return 1
+  [[ "$first" =~ [[:space:]]trust([[:space:]]|$) ]]
 }
 
 want_hba=0
@@ -739,7 +757,10 @@ else
            || warn "restart the cluster yourself for listen_addresses to take effect" ;;
     esac
     if [[ -n "$hba_path" ]]; then
-      act_sh "printf '\n# tm8: loopback trust. tm8_app and tm8_delivery_worker are created by\n# migrations 001/015 with LOGIN and no password, and the delivery path must\n# AUTHENTICATE as tm8_delivery_worker rather than SET ROLE to it. Safe only\n# because listen_addresses is 127.0.0.1.\nhost all all 127.0.0.1/32 trust\nhost all all ::1/128 trust\n' >> '$hba_path'"
+      # Prepended, never appended: pg_hba takes the FIRST matching rule, so below
+      # the distribution's default scram-sha-256 lines these two would be dead
+      # config. Rewritten through the original path so mode and owner survive.
+      act_sh "printf '# tm8: loopback trust. tm8_app and tm8_delivery_worker are created by\n# migrations 001/015 with LOGIN and no password, and the delivery path must\n# AUTHENTICATE as tm8_delivery_worker rather than SET ROLE to it. Safe only\n# because listen_addresses is 127.0.0.1.\n# These sit at the top because pg_hba is first match wins.\nhost all all 127.0.0.1/32 trust\nhost all all ::1/128 trust\n\n' | cat - '$hba_path' > '$hba_path.tm8-new' && cat '$hba_path.tm8-new' > '$hba_path' && rm -f '$hba_path.tm8-new'"
       as_root systemctl reload "postgresql@$TM8_ENV_PG_MAJOR-$TM8_ENV_PG_CLUSTER" 2>/dev/null \
         || act "$PSQL" "${SU_URL:-postgres://$TM8_ENV_SUPERUSER@127.0.0.1:$TM8_ENV_PG_PORT/postgres}" -qc 'select pg_reload_conf()' >/dev/null 2>&1 \
         || warn "could not reload the cluster — reload it for pg_hba to take effect"
@@ -859,6 +880,27 @@ if [[ -e "$TM8_ENV_ENVFILE" ]]; then
 else
   envdir="$(dirname "$TM8_ENV_ENVFILE")"
   if [[ "$LAYOUT" == system ]]; then
+    # The env file installs as 0640 root:<run-user> and the data dirs are chowned
+    # to it, but nothing has ever created that account. On a clean host the first
+    # install dies right here with `install: invalid group 'tm8'` — after Postgres
+    # is already installed and migrated. Create it: a system account with nologin,
+    # which is exactly what the rendered unit expects to run as.
+    if (( DRY_RUN )); then
+      getent passwd "$TM8_ENV_RUN_USER" >/dev/null \
+        && dim "run user $TM8_ENV_RUN_USER present" \
+        || dim "(dry-run) would create the system account $TM8_ENV_RUN_USER"
+    else
+      getent group "$TM8_ENV_RUN_USER" >/dev/null \
+        || as_root groupadd --system "$TM8_ENV_RUN_USER" \
+        || { need_root_hint "groupadd --system $TM8_ENV_RUN_USER"
+             die "cannot create group $TM8_ENV_RUN_USER"; }
+      getent passwd "$TM8_ENV_RUN_USER" >/dev/null \
+        || as_root useradd --system --gid "$TM8_ENV_RUN_USER" \
+             --home-dir "$TM8_ENV_CHECKOUT" --shell /usr/sbin/nologin "$TM8_ENV_RUN_USER" \
+        || { need_root_hint "useradd --system --gid $TM8_ENV_RUN_USER --home-dir $TM8_ENV_CHECKOUT --shell /usr/sbin/nologin $TM8_ENV_RUN_USER"
+             die "cannot create user $TM8_ENV_RUN_USER"; }
+      ok "run user $TM8_ENV_RUN_USER present"
+    fi
     as_root mkdir -p "$envdir" || need_root_hint "mkdir -p $envdir"
     if (( DRY_RUN )); then
       dim "(dry-run) would write $TM8_ENV_ENVFILE"
