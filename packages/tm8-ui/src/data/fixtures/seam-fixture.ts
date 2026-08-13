@@ -1070,6 +1070,9 @@ export function createFixtureSeam(): FixtureSeam {
       eventSubs.add(cb);
       return () => eventSubs.delete(cb);
     },
+    onChatTurn() {
+      return () => undefined;
+    },
     onConnection(cb) {
       connectionSubs.add(cb);
       return () => connectionSubs.delete(cb);

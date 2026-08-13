@@ -14,6 +14,7 @@ import { FakeSocket, fakeSocketPool } from './test-support';
 
 interface Recorder extends SocketHandlers {
   events: unknown[];
+  chatTurns: unknown[];
   refusals: unknown[];
   malformed: unknown[];
   opens: number;
@@ -23,12 +24,14 @@ interface Recorder extends SocketHandlers {
 function handlers(): Recorder {
   const r: Recorder = {
     events: [],
+    chatTurns: [],
     refusals: [],
     malformed: [],
     opens: 0,
     closes: 0,
     onOpen() { r.opens += 1; },
     onEvent(e) { r.events.push(e); },
+    onChatTurn(frame) { r.chatTurns.push(frame); },
     onRefused(a) { r.refusals.push(a); },
     onClose() { r.closes += 1; },
     onMalformed(raw) { r.malformed.push(raw); },
@@ -116,6 +119,21 @@ describe('socket: inbound frame discrimination', () => {
     expect(h.events).toEqual([]);
   });
 
+  it('routes C3 chat turn frames without requiring a workspace spaceId', () => {
+    const { ws, h } = connected();
+    const frame = {
+      type: 'chat.turn.delta',
+      threadRootId: 'root-1',
+      messageId: 'message-1',
+      seq: 4,
+      part: { kind: 'text', text: 'durable delta' },
+    };
+    ws.deliver(frame);
+    expect(h.chatTurns).toEqual([frame]);
+    expect(h.events).toEqual([]);
+    expect(h.malformed).toEqual([]);
+  });
+
   it('a refusal with no spaceId keeps the key absent rather than undefined', () => {
     const { ws, h } = connected();
     ws.deliver({ type: 'control.refused', frame: 'resume', reason: 'malformed' });
@@ -159,6 +177,12 @@ describe('socket: parseFrame in isolation', () => {
     expect(parseFrame({ noType: 1 }).kind).toBe('malformed');
     expect(parseFrame({ type: 'control.refused', frame: 'subscribe', reason: 'bogus' }).kind).toBe('malformed');
     expect(parseFrame({ type: 'presence.changed' }).kind).toBe('presence');
+    expect(parseFrame({
+      type: 'chat.turn.done',
+      threadRootId: 'r',
+      messageId: 'm',
+      usage: {},
+    }).kind).toBe('chat-turn');
     expect(parseFrame({ type: 'x', spaceId: 's', seq: 1 }).kind).toBe('event');
   });
 
