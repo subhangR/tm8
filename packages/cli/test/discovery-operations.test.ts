@@ -58,9 +58,7 @@ import { createOutput } from '../src/output.js';
 // public, deliberately commandless: the CLI already runs these verbs locally
 // (session-git.ts), and one action must not have two names.
 // 150 -> 152 (2026-08-12): projects.file.history + projects.file.blame (GET reads, with CLI commands).
-// 159 -> 161 (2026-08-13, first-run claim): auth.claim + auth.claim.status,
-// both public, both with CLI commands. MEASURED.
-const EXPECTED_ROWS = 161;
+const EXPECTED_ROWS = 163; // +2 114: spaces.members.updateRole, auth.invite.resolve — MEASURED
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -126,7 +124,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 157 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 159 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -165,14 +163,14 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('152 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('157 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 157, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 159 /* +2 (118): spaces.members.updateRole, auth.invite.resolve */, composite: 1, internal: 1, reserved: 2 });
   });
 });
 

@@ -303,10 +303,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // credentials.* add four mounted operations.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    // 156 -> 158 (2026-08-13, first-run claim): auth.claim + auth.claim.status.
-    expect(SURFACE).toHaveLength(158);
-    expect(rows).toHaveLength(158);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(158);
+    expect(SURFACE).toHaveLength(160);
+    expect(rows).toHaveLength(160);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(160);
   });
 
   /**
@@ -513,7 +512,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // one gives 108 and a red suite. Count the .sql files.
     // 107 -> 108 on 2026-08-13: 117 adds the unified Messages menu view after
     // 116 landed during this PR's green CI run. Re-measured: 108 SQL files.
-    expect(server.appliedMigrations.length).toBe(108);
+    // 108 -> 109 on 2026-08-13: 118, the member roles + invite roles writer.
+    // FOURTH renumber across these two lanes (114 -> 117 -> 118 here) as 115,
+    // 116 and then 117 landed while they were in review. Same rule every time:
+    // take the next number ABOVE the highest already-applied file, because the
+    // assertion below requires applied order to equal sorted order and only a
+    // live deployment can falsify it.
+    // MEASURED: `ls db/migrations/*.sql | wc -l` = 109.
+    expect(server.appliedMigrations.length).toBe(109);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -763,6 +769,10 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'spaces.create',
   'spaces.defaultChannel.set',
   'spaces.interactionProfile.setDefault',
+  // 114: the sweep supplies a SYNTHETIC `:memberId` path param, and the handler
+  // checks it is a uuid before it can reach SQL. Handler-reached, not a :166
+  // gate rejection — the body (`{role: …}`) satisfies its schema fine.
+  'spaces.members.updateRole',
   'spaces.menu.update',
   'spaces.taskAxes.create',
   'spaces.taskAxes.update',

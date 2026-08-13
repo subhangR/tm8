@@ -59,8 +59,16 @@ describe('launch Interaction Profile hydration', () => {
     );
 
     await waitFor(() => expect(result.current.ready).toBe(true));
-    expect(result.current.members).toHaveLength(1);
-    expect(result.current.viewerActor?.id).toBe(result.current.members[0]?.id);
+    // TWO members since 114 added `memberNoor` to the fixture dataset: one
+    // owner and one plain member, the smallest population in which the members
+    // table's promote, demote, owner-lock and last-owner-floor states are all
+    // observable at once.
+    expect(result.current.members).toHaveLength(2);
+    // Asserted by MEMBERSHIP, not by index. `members[0]` happened to be the
+    // viewer while the fixture had exactly one row, and an index assertion on
+    // a list whose order this hook does not promise would go green or red on
+    // an unrelated reordering.
+    expect(result.current.members.map((m) => m.id)).toContain(result.current.viewerActor?.id);
   });
 
   it('an unreadable display identity never turns membership into a boot gate', async () => {
@@ -71,7 +79,10 @@ describe('launch Interaction Profile hydration', () => {
     );
 
     await waitFor(() => expect(result.current.ready).toBe(true));
-    expect(result.current.members).toHaveLength(1);
+    // Membership survives an unreadable identity — see the note above on why
+    // this is 2, and note that the COUNT is the point here: a failed
+    // `identity()` must not silently shrink the roster.
+    expect(result.current.members).toHaveLength(2);
     expect(result.current.viewerActor).toBeNull();
   });
 });

@@ -1,18 +1,24 @@
 /**
  * auth.* — local accounts (Identity v2 Stage 1, doc 4 §6).
  *
- * Six operations, and the seam is deliberately thin: every authorization
+ * Seven operations, and the seam is deliberately thin: every authorization
  * decision except the scrypt comparison lives inside the SECURITY DEFINER
  * RPCs (`ensure_account`'s F1 node-admin gate, `revoke_auth_session`'s
  * self-or-admin gate, `resolve_auth_session`'s revocation/expiry/status
  * checks, and 116's `claim_node` single-use token burn). The handlers bind the
  * right claims and translate shapes.
  *
- * THREE OF THE SIX ARE CLAIM-FREE, and that is a property to preserve rather
- * than an omission to tidy up: `auth.login`, `auth.claim` and
- * `auth.claim.status` are reachable on a node where no credential exists yet,
- * which is the bootstrap hole every other operation is spared from needing.
+ * FOUR OF THE SEVEN ARE CLAIM-FREE, and that is a property to preserve rather
+ * than an omission to tidy up: `auth.login`, `auth.claim`,
+ * `auth.claim.status` and `auth.invite.resolve` are reachable on a node where
+ * the caller has no credential — the bootstrap hole every other operation is
+ * spared from needing. The first three serve first-run; the fourth lets an
+ * invited person see what they are joining before they have an account.
  * See docs/identity/FIRST-RUN-CLAIM-DESIGN.md.
+ *
+ * This count is load-bearing and goes stale silently: it read "Four" on the
+ * members branch while five were registered, and "Six" here after the merge
+ * union made it seven. If you add an operation below, change this line.
  *
  * These commands sit OUTSIDE the idempotency ledger on purpose: a session row
  * is not a graph mutation, so there is no `clientMutationId` and no replay
@@ -32,6 +38,8 @@ import type {
   AuthSessionGetResult,
   AuthSignupInput,
   AuthSignupResult,
+  InvitePreview,
+  ResolveInviteInput,
 } from '@tm8/contract';
 
 import { clearSessionCookie, sessionCookie } from '../../../http/session-cookie.js';
@@ -227,6 +235,35 @@ async function profileDisplayName(
   return rows[0]?.display_name ?? null;
 }
 
+/**
+ * `auth.invite.resolve` — what a join code lets you join, before the holder is
+ * anybody on this node (118).
+ *
+ * CLAIM-FREE, and that is the requirement rather than an oversight. A join link
+ * is opened by someone with no account, or with one and no membership in the
+ * space the code names, so every claim-bound path correctly answers with
+ * nothing. `claimsFor` REFUSES an anonymous caller outright (context.ts:72), so
+ * this handler must not call it — it passes `{}` exactly as `loginWithPassword`
+ * does, for exactly the same reason: the caller has no identity until they
+ * answer, and the code is the only thing they are presenting.
+ *
+ * It does not fork the identity path. There is still one `claimsFor` and one
+ * resolver; this is a handler that declines to bind claims, which is what
+ * 007's existing claim-free holes already are.
+ *
+ * WHAT MAY BE DISCLOSED IS DECIDED IN SQL (`public.preview_invite`), so one
+ * rule serves every transport. This handler neither widens it nor narrows it.
+ * The short version: an unresolvable code returns `{status:'unknown'}` and
+ * nothing else; a dead code names the space (so the holder can ask the right
+ * person for a fresh one) but never the inviter.
+ */
+function authInviteResolve(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const body = ctx.body as ResolveInviteInput;
+    return deps.db.rpc<InvitePreview>({ requestId: ctx.requestId }, 'preview_invite', [body.code]);
+  };
+}
+
 /** The complete auth seam — one registration, one honest group. */
 /**
  * `auth.claim` — the first-run ceremony (design D1/D2).
@@ -319,5 +356,6 @@ export function registerW2AuthHandlers(registry: HandlerRegistry, deps: FacadeDe
     'auth.session.get': authSessionGet(deps),
     'auth.claim': authClaim(deps),
     'auth.claim.status': authClaimStatus(deps),
+    'auth.invite.resolve': authInviteResolve(deps),
   });
 }

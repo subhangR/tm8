@@ -348,9 +348,32 @@ function renderInvite(row: unknown): string {
   return [
     field(row, 'id') ?? '?',
     field(row, 'code') === undefined ? undefined : `code ${field(row, 'code')}`,
+    field(row, 'role') === undefined ? undefined : `joins as ${field(row, 'role')}`,
     uses === undefined && maxUses === undefined ? undefined : `uses ${uses ?? '?'}/${maxUses ?? '?'}`,
     `expires ${field(row, 'expiresAt') ?? 'never'}`,
     field(row, 'revoked') === 'true' ? 'REVOKED' : undefined,
+  ]
+    .filter((p): p is string => p !== undefined)
+    .join('  ');
+}
+
+/**
+ * The preview's shape CHANGES with its status, and the renderer says so rather
+ * than printing empty columns: a dead code carries no inviter and no space id
+ * by rule (118), so a line reading `invitedBy —` would misreport a deliberate
+ * refusal as missing data.
+ */
+function renderInvitePreview(dto: unknown): string {
+  const status = field(dto, 'status') ?? 'unknown';
+  if (status === 'unknown') return 'unknown  this code does not resolve to anything on this Server';
+  const space = field(dto, 'spaceName');
+  if (status !== 'valid') return `${status}  ${space ?? ''}`.trimEnd();
+  return [
+    'valid',
+    space === undefined ? undefined : `space ${space}`,
+    `join as ${field(dto, 'role') ?? '?'}`,
+    field(dto, 'invitedBy') === undefined ? undefined : `invited by ${field(dto, 'invitedBy')}`,
+    `expires ${field(dto, 'expiresAt') ?? 'never'}`,
   ]
     .filter((p): p is string => p !== undefined)
     .join('  ');
@@ -570,6 +593,69 @@ async function spaceMemberList(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `space member role <member-id> --role <role>` — the space-role writer (118).
+ *
+ * The member id is an ARGUMENT and the space comes from context or `--space`,
+ * mirroring `invite revoke`, because both address a row INSIDE a space and the
+ * server's route carries the pair. Consent is required for the same reason
+ * `invite revoke` requires it: this changes what another person may do.
+ */
+async function spaceMemberRole(cmd: CommandContext): Promise<ExitCode> {
+  const memberId = requireArg('space member role', cmd.args[0], 'a <member-id>');
+  noExtraArgs('space member role', cmd.args, 1);
+  requireConsent('space member role', cmd);
+  const spaceId = requireSpace(cmd.ctx);
+
+  // The vocabulary is asserted here as well as on the server, so a typo costs a
+  // usage error naming the three words rather than a round trip and a 400.
+  const role = cmd.options.value('role');
+  if (role !== 'owner' && role !== 'admin' && role !== 'member') {
+    throw new CliError(
+      `--role expects owner|admin|member, got ${role === undefined ? 'nothing' : JSON.stringify(role)}`,
+      EXIT_USAGE,
+      { hint: 'only an owner may grant or revoke `owner`, and a Space must keep at least one' },
+    );
+  }
+
+  const body = mutationBody(cmd);
+  body.role = role;
+
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.members.updateRole', {
+    params: { spaceId, memberId },
+    body,
+  });
+  cmd.out.data(data, fallback);
+  return EXIT_OK;
+}
+
+/**
+ * `space invite resolve <code>` — what a code lets you join, before you join.
+ *
+ * Takes NO space: the code resolves to one. It is also the only read in this
+ * file that answers without membership, which is why it is useful from a shell
+ * that has not authenticated at all.
+ *
+ * The code rides in the BODY, not a path parameter, because `auth.invite.resolve`
+ * is a POST-with-`kind: 'read'` on purpose — a bearer capability in a URL is a
+ * bearer capability in an access log.
+ */
+async function spaceInviteResolve(cmd: CommandContext): Promise<ExitCode> {
+  // §7.4 FIRST, argument second. This is a READ, and the mutation-id refusal is
+  // a property of the VERB, not of a well-formed invocation — the sweep in
+  // `space.test.ts` passes `--mutation-id` with no code at all, and an argument
+  // error raised first would hide the refusal it is checking for.
+  refuseMutationId('space invite resolve', cmd.options.value('mutation-id'));
+  const code = requireArg('space invite resolve', cmd.args[0], 'a <code>');
+  noExtraArgs('space invite resolve', cmd.args, 1);
+
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'auth.invite.resolve', {
+    body: { code },
+  });
+  cmd.out.data(data, renderInvitePreview);
+  return EXIT_OK;
+}
+
 async function spaceInviteList(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('space invite list', cmd.options.value('mutation-id'));
   noExtraArgs('space invite list', cmd.args, 1);
@@ -592,6 +678,10 @@ async function spaceInviteCreate(cmd: CommandContext): Promise<ExitCode> {
   if (maxUses !== undefined) body.maxUses = maxUses;
   const expiresAt = noneAsNull(cmd.options.value('expires-at'));
   if (expiresAt !== undefined) body.expiresAt = expiresAt;
+  // Absent means 'member' — decided by the server, not defaulted here, so the
+  // CLI cannot drift from what every pre-114 invite already meant.
+  const role = cmd.options.value('role');
+  if (role !== undefined) body.role = role;
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.invites.create', {
     params: { spaceId },
@@ -840,7 +930,9 @@ export const SPACE_COMMANDS: CommandModule[] = [
     run: spaceProjection('space settings get', 'spaces.settings', renderSettings),
   },
   { path: ['space', 'member', 'list'], run: spaceMemberList },
+  { path: ['space', 'member', 'role'], run: spaceMemberRole },
   { path: ['space', 'invite', 'list'], run: spaceInviteList },
+  { path: ['space', 'invite', 'resolve'], run: spaceInviteResolve },
   { path: ['space', 'invite', 'create'], run: spaceInviteCreate },
   { path: ['space', 'invite', 'revoke'], run: spaceInviteRevoke },
   { path: ['space', 'invite', 'redeem'], run: spaceInviteRedeem },

@@ -74,24 +74,49 @@ export const MENU_GROUP_CAP_REASON = (used: number, max: number): UnavailableRea
 // ---------------------------------------------------------------------------
 
 /**
- * `PatchEntityInput` is `{expectedVersion, title?, content?}` and a member's
- * role lives in `EntityState`, not in `content`. There is no shape to send.
+ * ROLE CHANGE IS NO LONGER A GAP. It used to read "Changing a role has no
+ * executor in this build" — true when written: `PatchEntityInput` is
+ * `{expectedVersion, title?, content?}` and a member's role lives in
+ * `EntityState`, not in `content`. Migration 114 added `set_member_role` and
+ * the `spaces.members.updateRole` operation, and seam Amendment 11 carries it,
+ * so `MembersSection` performs a real write.
+ *
+ * The two entries below are NOT the old gap under a new name. They are the
+ * two cases where the person at the keyboard may not do the thing — the same
+ * two SQL enforces — stated before the click rather than returned as a 42501.
  */
-export const ROLE_CHANGE_UNAVAILABLE = reason(
-  'Changing a role has no executor in this build',
-  'PatchEntityInput carries title and content only; role lives in the member entity’s state, which no seam command writes.',
+export const ROLE_CHANGE_NOT_ADMIN = reason(
+  'you can’t change roles in this space',
+  'changing a member’s role needs admin or owner here; ask someone who has it.',
+);
+
+export const ROLE_CHANGE_NEEDS_OWNER = reason(
+  'only an owner can grant or revoke owner',
+  'an admin who could mint an owner could mint themselves a superior — so ownership moves only by an owner’s hand.',
 );
 
 /**
- * A RULING MADE ALONE, flagged for ratification or reversal (see HANDOVER §2).
- * `seam.commands.deleteEntity` exists and would accept a member id. It is NOT
- * wired, because "delete the member entity" and "remove a member from the
- * space" are not the same act, and wiring the first to a control labelled the
- * second would invent a semantic on a destructive path.
+ * STILL REFUSED, and 109's investigation upgraded the reason from a ruling to
+ * a measured fact.
+ *
+ * The old text said `deleteEntity` exists and would accept a member id, and
+ * that wiring it would invent a semantic on a destructive path. Both still
+ * true, and now there is a harder reason underneath: `entities.created_by`
+ * references `entities(id)` with NO on-delete clause
+ * (`001_core_graph.sql:338`), so **Postgres already refuses** to delete the
+ * member row of anyone who has authored a single entity — it refuses with a
+ * bare 23503, which is not an answer a person can act on.
+ *
+ * The correct shape is a SOFT removal (`members.removed_at`) that keeps
+ * attribution and revokes access. That is its own change: 57 `from
+ * public.members` predicates across 23 migrations currently mean "is a member"
+ * by the row's mere existence, and six of them are RLS policies. Doing half of
+ * it leaves a removed member still reading the space, which is worse than not
+ * having the button.
  */
 export const MEMBER_REMOVE_UNAVAILABLE = reason(
   'Removing a member has no executor in this build',
-  'deleteEntity exists but deleting the member ENTITY is not the same act as revoking space membership — the seam has no membership verb, so this control stays honest rather than guessing.',
+  'a member row is the attribution target of everything they authored, so it cannot be deleted — removal needs a soft-removal column and an audit of every membership predicate in the schema (migration 118 header). Demote them to member in the meantime.',
 );
 
 /** The oracle's own locked control (T2-1 L54): "you can't remove yourself". */
@@ -100,9 +125,13 @@ export const MEMBER_REMOVE_SELF = reason(
   'transfer ownership first, from Danger zone',
 );
 
+/**
+ * Kept, with its meaning narrowed by 114: an owner's role IS editable — by an
+ * owner. This is the lock a non-owner sees.
+ */
 export const OWNER_ROLE_LOCKED = reason(
-  'the owner’s role is not editable here',
-  'ownership moves by transfer, not by reassignment',
+  'the owner’s role is not yours to change',
+  'only an owner can grant or revoke owner, and a space always keeps at least one',
 );
 
 // ---------------------------------------------------------------------------
@@ -110,34 +139,61 @@ export const OWNER_ROLE_LOCKED = reason(
 // ---------------------------------------------------------------------------
 
 /**
- * Zero seam surface AND zero contract DTO. Searched both on 2026-07-29: no
- * invite type, no invite command, no invite read. So the invite LIST renders
- * an honest absence rather than specimen rows dressed as data — a list of
- * plausible-looking invite codes would be the worst thing on this screen.
+ * THE INVITE FAMILY IS NO LONGER A GAP, and the old entries said the opposite
+ * as loudly as this file knows how: "Zero seam surface AND zero contract DTO.
+ * Searched both on 2026-07-29: no invite type, no invite command, no invite
+ * read." That was true of the SEAM and false of the SERVER — `create_invite`,
+ * `w2_revoke_invite` and `redeem_invite` had been in `007_rpc_catalog.sql`
+ * since W1, with `spaces.invites.*` operations in the catalog. The capability
+ * existed; the seam had not carried it, and this file could not tell the
+ * difference from where it was standing.
+ *
+ * That is the reusable lesson and it is why this comment replaces the entries
+ * rather than deleting them: **"the seam cannot" and "the node cannot" are
+ * different facts, and only one of them is a missing capability.** The reason
+ * text said the second when it could only observe the first.
+ *
+ * `InvitesSection` now reads, creates, copies and revokes for real (seam
+ * Amendment 11, migration 118 for the role column). One refusal survives, and
+ * it is genuinely a refusal rather than a gap: see below.
  */
-export const INVITES_UNREADABLE = reason(
-  'No invite list exists to read',
-  'the seam has no invites read and @tm8/contract defines no invite DTO — this is a missing capability, not a missing wire.',
+
+/**
+ * The only invite act this surface still cannot perform, and it is a REFUSAL
+ * rather than a gap — the operation exists and is deliberately not reachable
+ * from here.
+ *
+ * `auth.invite.resolve` and `spaces.invites.redeem` both exist, so an invite
+ * CAN be redeemed. But redemption joins the CURRENT viewer, and the current
+ * viewer is already a member of the space they are looking at the settings of.
+ * A redeem control on this screen could only ever act on the person who least
+ * needs it. Redemption belongs on the join landing, where the person holding
+ * the code is not yet anybody here.
+ */
+/**
+ * The two invite acts a non-admin cannot perform. Same shape and same reason
+ * as the role locks: `create_invite` and `w2_revoke_invite` both call
+ * `internal.require_space_admin`, so this states before the click what SQL
+ * would answer after it.
+ */
+export const INVITE_CREATE_NOT_ADMIN = reason(
+  'you can’t create invitations for this space',
+  'minting a join code needs admin or owner here; ask someone who has it.',
 );
 
-export const INVITE_CREATE_UNAVAILABLE = reason(
-  'Creating an invite link has no executor in this build',
-  'no invite command exists in seam.commands and no invite DTO exists in the contract.',
+export const INVITE_REVOKE_NOT_ADMIN = reason(
+  'you can’t revoke this invitation',
+  'revoking a join code needs admin or owner in this space.',
 );
 
-export const INVITE_COPY_UNAVAILABLE = reason(
-  'There is no link to copy',
-  'invite links are not readable in this build',
+export const INVITE_REDEEM_LANDING_UNWIRED = reason(
+  'Joining from this card has no executor yet',
+  'the verbs exist — `auth.invite.resolve` reads a code before you join and `spaces.invites.redeem` performs the join — but no /join route mounts this card against them yet. Redeem from the CLI in the meantime: `tm8 space invite redeem <code>`.',
 );
 
-export const INVITE_REVOKE_UNAVAILABLE = reason(
-  'Revoking an invite has no executor in this build',
-  'no invite command exists in seam.commands',
-);
-
-export const INVITE_REDEEM_UNAVAILABLE = reason(
-  'Joining through an invite has no executor in this build',
-  'redemption is an unauthenticated act against a node; nothing in this seam performs it.',
+export const INVITE_REDEEM_NOT_HERE = reason(
+  'this is not where a code is redeemed',
+  'redemption joins whoever is signed in, and you are already a member of this space — a join link opens its own landing.',
 );
 
 // ---------------------------------------------------------------------------
@@ -176,15 +232,15 @@ export const ALL_SETTINGS_REASONS: readonly UnavailableReason[] = [
   MENU_RELOAD_UNAVAILABLE,
   MENU_NO_FREE_VIEW_REF,
   MENU_NO_FREE_KIND_REF,
-  ROLE_CHANGE_UNAVAILABLE,
+  ROLE_CHANGE_NOT_ADMIN,
+  ROLE_CHANGE_NEEDS_OWNER,
   MEMBER_REMOVE_UNAVAILABLE,
   MEMBER_REMOVE_SELF,
   OWNER_ROLE_LOCKED,
-  INVITES_UNREADABLE,
-  INVITE_CREATE_UNAVAILABLE,
-  INVITE_COPY_UNAVAILABLE,
-  INVITE_REVOKE_UNAVAILABLE,
-  INVITE_REDEEM_UNAVAILABLE,
+  INVITE_CREATE_NOT_ADMIN,
+  INVITE_REVOKE_NOT_ADMIN,
+  INVITE_REDEEM_NOT_HERE,
+  INVITE_REDEEM_LANDING_UNWIRED,
   SPACE_EDIT_UNAVAILABLE,
   AXES_UNREADABLE,
   DANGER_ZONE_UNAVAILABLE,

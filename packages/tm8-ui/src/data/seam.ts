@@ -95,6 +95,12 @@
  * without being this client.
  */
 import type {
+  CreateInviteInput,
+  InvitePreview,
+  InviteRedemption,
+  RedeemInviteInput,
+  SpaceInviteView,
+  UpdateMemberRoleInput,
   ActivityItem,
   ArtifactPreviewSession,
   ArtifactsPreviewStartInput,
@@ -394,6 +400,19 @@ export interface Seam {
   menu(spaceId: SpaceId): Promise<MenuConfig | null>;
   /** Launch-default provenance and other member-authorized space settings. */
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
+  /**
+   * Amendment 11 — the one read on this seam that answers BEFORE the caller is
+   * anybody (migration 118, `spaces.invites.preview`).
+   *
+   * A join link is opened by someone with no account, or with one and no
+   * membership in the space the code names — so every other read here correctly
+   * returns nothing for them. It sits beside the reads rather than under
+   * `commands` because it writes nothing; it is listed apart in the doc because
+   * "unauthenticated read" is a property no other member of this interface has,
+   * and a caller who does not notice would place it behind the auth gate where
+   * it is useless.
+   */
+  previewInvite(code: string): Promise<InvitePreview>;
   /** Both list panels + palette consume this one read (FE gate list item 4). */
   query(input: CollectionQuery): Promise<CollectionResult>;
   /**
@@ -725,6 +744,39 @@ export interface Seam {
      * should validate first so users see a message, not a constraint error.
      */
     updateProfile(input: IdentityProfileUpdateInput): Promise<IdentityProfileView>;
+    /**
+     * Amendment 11 — MEMBERSHIP GETS ITS VERBS (migration 118).
+     *
+     * `settings-space/reasons.ts` has said since 2026-07-29 that "the seam has
+     * no membership verb at all", and every role and invite control on the
+     * settings surface has rendered disabled-with-reason because of it. These
+     * four close exactly that gap and nothing wider.
+     *
+     * `setMemberRole` addresses the member by the (space, member) PAIR because
+     * the operation does: a member id alone would authorize against a space the
+     * row is not in. Every rule — admin to change anything, owner to touch the
+     * owner role, never leave a space without one — lives in SQL, so this seam
+     * carries no client-side authorization and cannot drift from the server's.
+     */
+    setMemberRole(
+      spaceId: SpaceId,
+      memberId: EntityId,
+      input: UpdateMemberRoleInput,
+    ): Promise<CommandResult>;
+    /**
+     * Mint a join code. `role` is what redemption confers and may be `admin` or
+     * `member` — never `owner`: a code travels out of band, and a bearer
+     * capability that could confer ownership is a different and much larger
+     * thing than an invitation.
+     */
+    createInvite(spaceId: SpaceId, input: CreateInviteInput): Promise<SpaceInviteView>;
+    /** Kill a live code. The row survives, revoked, so the list stays truthful. */
+    revokeInvite(spaceId: SpaceId, inviteId: string, ctx?: CommandContext): Promise<SpaceInviteView>;
+    /**
+     * Redeem a code as the CURRENT viewer. Distinct from `previewInvite` below
+     * in the way that matters: this one requires you to be somebody.
+     */
+    redeemInvite(input: RedeemInviteInput): Promise<InviteRedemption>;
     markRead(notificationId: string): Promise<void>;
     upsertReadMark(anchorId: EntityId, lastReadAt: string): Promise<void>;
     /**

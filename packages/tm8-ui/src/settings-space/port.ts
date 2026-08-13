@@ -16,22 +16,39 @@
  * `createFixtureSeam()` and the assertions are on what comes BACK, not on what
  * was called.
  *
- * READS ONLY — WITH ONE EXCEPTION, and the exception carries its proof. Every
- * SPACE write this surface draws — role change, member removal, invite
- * create/revoke/redeem, space rename, menu save — has no executor anywhere in
- * `seam.commands`; they live in `reasons.ts` as disabled-with-reason, and the
- * port deliberately exposes no method for them so a future component cannot
- * quietly acquire one. `updateProfile` is the exception because its executor
- * EXISTS: `identity.profile.update` (contract catalog v1, seam Amendment 4)
- * writes the viewer's OWN profile row and nothing else — the op names no
- * subject, so this port still cannot touch another person's anything.
+ * WHAT THIS PORT MAY WRITE, AND WHY THE LIST GREW (109 / seam Amendment 11).
+ *
+ * It used to be reads plus `updateProfile` alone, and the header said so at
+ * length: role change, member removal and the whole invite family had no
+ * executor anywhere in `seam.commands`, so they lived in `reasons.ts` as
+ * disabled-with-reason and the port deliberately exposed no method for them.
+ *
+ * Four of those now have executors, and the port exposes exactly those four:
+ * `setMemberRole`, `createInvite`, `revokeInvite` and the invite READ. Each is
+ * a contract v1 operation backed by a SECURITY DEFINER RPC that carries its own
+ * authorization — this file adds none and can therefore not disagree with the
+ * server about who may do what.
+ *
+ * MEMBER REMOVAL IS STILL ABSENT, and its absence is now a different fact than
+ * it was. It is not that nobody wrote the verb: `entities.created_by` references
+ * `entities(id)` with no on-delete clause, so Postgres REFUSES to delete the
+ * member row of anyone who has authored anything, and the correct shape — a
+ * soft removal that keeps attribution and revokes access — needs every
+ * membership predicate in the schema audited. `MEMBER_REMOVE_UNAVAILABLE` says
+ * so. The port still exposes no method for it, for the original reason: a
+ * component that cannot reach a verb cannot quietly acquire one.
  */
 import type {
+  CommandResult,
+  CreateInviteInput,
+  EntityId,
   EntitySummary,
   IdentityProfileUpdateInput,
   IdentityProfileView,
   MenuConfig,
   SpaceId,
+  SpaceInviteView,
+  SpaceMemberRole,
   SpaceSummary,
 } from '@tm8/contract';
 import type { IdentityView, Seam } from '../data/seam';
@@ -97,6 +114,38 @@ export function memberRoles(): string[] {
   return Object.keys(row?.chip.tones ?? {});
 }
 
+/**
+ * The roles an INVITE may confer — every role except the owner word.
+ *
+ * Derived rather than written as `['admin', 'member']`, and §15.2 is the
+ * immediate reason: the least-privileged role and the member KIND are the same
+ * string, so a literal `'member'` anywhere in this lane is indistinguishable
+ * from a kind-literal violation to the guard in `no-kind-literals.test.ts` —
+ * and to any reader. It is also the more honest expression of 114 R4, which is
+ * not "admin and member" but "anything except the owner": if the role
+ * vocabulary ever gains a fourth word, an invite should be able to confer it
+ * and a hard-coded pair would silently refuse.
+ */
+export function inviteRoles(): string[] {
+  const owner = ownerRoleRef();
+  return memberRoles().filter((role) => role !== owner);
+}
+
+/**
+ * The roles that can administer a space — every role except the least
+ * privileged one.
+ *
+ * Same derivation `defaultInviteRole` already relies on (the registry lists
+ * roles most-privileged first, so the last entry is the plain one), and the
+ * same reason for deriving it. This mirrors `internal.is_space_admin`, which
+ * tests `role in ('owner','admin')` — but SQL is the authority and this is
+ * only what the UI shows before the click.
+ */
+export function adminRoles(): string[] {
+  const roles = memberRoles();
+  return roles.slice(0, Math.max(0, roles.length - 1));
+}
+
 /** The least-privileged representable role — the sane default for an invite. */
 export function defaultInviteRole(): string {
   // Index arithmetic, not `.at(-1)`: this package's tsc lib target predates it
@@ -121,10 +170,28 @@ export interface SettingsPort {
    */
   loadMenu(): Promise<ResolvedMenu>;
   /**
-   * The one write (see the header). Writes the VIEWER's own profile; the
-   * mutation id is minted here so components stay declarative about fields.
+   * Writes the VIEWER's own profile; the mutation id is minted here so
+   * components stay declarative about fields.
    */
   updateProfile(input: Omit<IdentityProfileUpdateInput, 'clientMutationId'>): Promise<IdentityProfileView>;
+
+  /** Outstanding and revoked invitations, newest first. Space-admin only. */
+  loadInvites(): Promise<SpaceInviteView[]>;
+
+  /**
+   * Change one member's role in THIS space (118).
+   *
+   * Takes no space id: the port is already bound to one, and letting a caller
+   * name a different space would be the exact confusion `set_member_role`'s
+   * two-column predicate exists to prevent.
+   */
+  setMemberRole(memberId: EntityId, role: SpaceMemberRole): Promise<CommandResult>;
+
+  /** Mint a join code. `role` is what redemption confers; never `owner`. */
+  createInvite(input: Omit<CreateInviteInput, 'clientMutationId' | 'actorId'>): Promise<SpaceInviteView>;
+
+  /** Kill a live code. The row survives, revoked, so the list stays truthful. */
+  revokeInvite(inviteId: string): Promise<SpaceInviteView>;
 }
 
 let profileMutationSeq = 0;
@@ -134,6 +201,22 @@ let profileMutationSeq = 0;
 function newProfileMutationId(): string {
   profileMutationSeq += 1;
   return `profile_${profileMutationSeq.toString(36)}_${Date.now().toString(36)}`;
+}
+
+let mutationSeq = 0;
+
+/**
+ * The same shape for the membership writes, with the ACT in the prefix.
+ *
+ * The prefix is not decoration. `internal.ledger_replay` keys on the mutation
+ * id alone and the operation label cannot distinguish two calls to the same
+ * operation against different resources (031's own note), so a prefix that
+ * names the act keeps a replayed id legible in the ledger to whoever is
+ * reading it later.
+ */
+function newMutationId(prefix: string): string {
+  mutationSeq += 1;
+  return `${prefix}_${mutationSeq.toString(36)}_${Date.now().toString(36)}`;
 }
 
 export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort {
@@ -154,6 +237,37 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort
 
     updateProfile(input) {
       return seam.commands.updateProfile({ ...input, clientMutationId: newProfileMutationId() });
+    },
+
+    /**
+     * Invites ride `spaces.settings`, which already carries them, rather than
+     * `spaces.invites.list`: the settings read is one round trip the shell
+     * makes anyway, and the two answer from the same rows. If this ever needs
+     * paging, that is the moment to reach for the dedicated list op.
+     */
+    async loadInvites() {
+      const settings = await seam.spaceSettings(spaceId);
+      return settings.invites;
+    },
+
+    setMemberRole(memberId, role) {
+      return seam.commands.setMemberRole(spaceId, memberId, {
+        role,
+        clientMutationId: newMutationId('role'),
+      });
+    },
+
+    createInvite(input) {
+      return seam.commands.createInvite(spaceId, {
+        ...input,
+        clientMutationId: newMutationId('invite'),
+      });
+    },
+
+    revokeInvite(inviteId) {
+      return seam.commands.revokeInvite(spaceId, inviteId, {
+        clientMutationId: newMutationId('revoke'),
+      });
     },
 
     async loadMenu() {

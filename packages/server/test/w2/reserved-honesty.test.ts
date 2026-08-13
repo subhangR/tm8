@@ -130,15 +130,13 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // gitStatus/gitDiff (GET reads), gitCheckpoint/gitRollback/gitCommit/
     // gitMerge (POST commands).
     // 157 -> 158 (2026-08-13, forge write): tracking.pr.merge, one POST command.
-    // 159 -> 161 (2026-08-13, first-run claim): auth.claim (POST command) +
-    // auth.claim.status (GET read), both v1, both HTTP.
-    expect(OPERATIONS).toHaveLength(161); // merge union 2026-08-13: chat.threads.start joins tracking.pr.merge, MEASURED
-    expect(V1_OPERATIONS).toHaveLength(159);
+    expect(OPERATIONS).toHaveLength(163); // 114: spaces.members.updateRole + auth.invite.resolve, MEASURED
+    expect(V1_OPERATIONS).toHaveLength(161);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(160);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(162);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
@@ -150,7 +148,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // execution.transcript moved it to 125; projects.branches.list moves it to 126.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(158);
+    )).toHaveLength(160);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

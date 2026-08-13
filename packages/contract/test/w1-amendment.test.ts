@@ -82,12 +82,8 @@ describe('W1 adopted catalog target', () => {
     // guarded write door to the forge.
     // 158 -> 159 (2026-08-13, merge union): chat.threads.start — MEASURED on
     // the merged tree; both sides moved this pin independently.
-    // 159 -> 161 (2026-08-13, first-run claim): auth.claim (POST command) +
-    // auth.claim.status (GET read). MEASURED on this branch. A sibling lane is
-    // landing spaces.members.updateRole + auth.invite.resolve concurrently;
-    // whoever merges second re-measures rather than guessing 163.
-    expect(OPERATIONS).toHaveLength(161);
-    expect(V1_OPERATIONS).toHaveLength(159);
+    expect(OPERATIONS).toHaveLength(163);
+    expect(V1_OPERATIONS).toHaveLength(161);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -103,15 +99,16 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    // +1 GET / +1 POST 2026-08-13 (first-run claim): auth.claim.status is a GET
-    // read, auth.claim a POST command. They share the /v2/auth/claim path —
-    // method-distinct rows on one path, as artifacts.publish already does.
-    }).toEqual({ GET: 59, POST: 74, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
+    // MEASURED on the #204+#209 union: auth.claim.status (GET read) and
+    // auth.claim (POST command) join auth.invite.resolve (POST-with-kind-read,
+    // so an invite code never reaches a URL) and spaces.members.updateRole
+    // (PATCH). GET 58->59, POST 73->75, PATCH 10->11.
+    }).toEqual({ GET: 59, POST: 75, PATCH: 11, DELETE: 10, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 62 /* +1: auth.claim.status */, command: 98 /* +1: auth.claim */, stream: 1 });
+    }).toEqual({ read: 63 /* +1 109: auth.invite.resolve */, command: 99 /* +1 109: spaces.members.updateRole; +1 2026-08-13: tracking.pr.merge */, stream: 1 });
   });
 });
 

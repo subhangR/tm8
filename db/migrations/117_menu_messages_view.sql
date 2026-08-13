@@ -1,4 +1,4 @@
--- 117 — the Messages view takes the second Home row, and Inbox rejoins it
+-- 118 — the Messages view takes the second Home row, and Inbox rejoins it
 -- (Messages/Inbox landing, 2026-08-13).
 --
 -- NUMBERED 117 after 116 landed during this PR's green CI run. Migration

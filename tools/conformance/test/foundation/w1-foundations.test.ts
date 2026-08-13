@@ -49,25 +49,23 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows —
       // gitStatus/gitDiff (GET/read), gitCheckpoint/gitRollback/gitCommit/
       // gitMerge (POST/command).
-      // 2026-08-13 (first-run claim): auth.claim (POST command) +
-      // auth.claim.status (GET read).
-      total: 161,
-      v1: 159,
+      total: 163,
+      v1: 161,
       reserved: 2,
-      http: 160,
+      http: 162,
       ws: 1,
-      registerableV1Http: 158,
-      methods: { GET: 59, POST: 74, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 },
-      kinds: { read: 62, command: 98, stream: 1 },
-      uniqueNames: 161,
-      uniqueBindings: 161,
+      registerableV1Http: 160,
+      methods: { GET: 59, POST: 75, PATCH: 11, DELETE: 10, PUT: 7, WS: 1 },
+      kinds: { read: 63, command: 99, stream: 1 },
+      uniqueNames: 163,
+      uniqueBindings: 163,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(160);
+    expect(manifest.routes.http).toHaveLength(162);
     expect(manifest.routes.ws).toEqual([{
       operation: 'events.subscribe',
       method: 'WS',
@@ -121,7 +119,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // distance from the FROZEN W1 boundary, not from what is mounted today.
       // 111 -> 113 (2026-08-12): collections.addItem/removeItem.
       // 113 -> 119 (2026-08-12, Git UI landing): the six execution.git* rows.
-      unimplementedV1Http: 128,
+      unimplementedV1Http: 130,
     });
   });
 
@@ -173,7 +171,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(161);
+    expect(manifest.help.operations).toHaveLength(163);
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -362,7 +360,8 @@ describe('W2.C01 current mounted registry inventory', () => {
     expect(handlers.all).toHaveLength(158);
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
-      .toBe('4ba44854bc8bdb33499d79f5fe61a0fddd3545cc27fe527d1e9a29825b8664c3');
+      // Re-measured at 114 (spaces.members.updateRole, auth.invite.resolve).
+      .toBe('c07e7d26ad7a844c5abd835f57ad302957e2d625deb285652a6cab4fb0884ddd');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
@@ -370,8 +369,10 @@ describe('W2.C01 current mounted registry inventory', () => {
     // bodies bind.
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, merge union): chat.threads.start binds its body.
-    // 90 -> 91: auth.claim binds a body; auth.claim.status is a read.
-    expect(inputSchemas.bound).toHaveLength(91);
+    // +2 (114): UpdateMemberRoleInput binds spaces.members.updateRole, and
+    // ResolveInviteInput binds auth.invite.resolve — the latter claim-free, so
+    // strictness is the only control on that body.
+    expect(inputSchemas.bound).toHaveLength(93);
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -388,7 +389,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     const registerableV1Http = OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
     );
-    expect(registerableV1Http).toHaveLength(158);
+    expect(registerableV1Http).toHaveLength(160);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);

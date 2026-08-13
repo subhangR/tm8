@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:52f86f3711ca9d9ae92dcede746e0bfcfcdaee84a6f170d4713abb2ce1065894",
+  "catalogDigest": "sha256:4f48f15d8ac03dfcc5fce979ba12b627d2fe1af7ebd8028c397c0631eb7ed3ce",
   "catalog": {
-    "total": 161,
-    "v1": 159,
+    "total": 163,
+    "v1": 161,
     "reserved": 2,
-    "http": 160,
+    "http": 162,
     "ws": 1,
-    "registerableV1Http": 158,
+    "registerableV1Http": 160,
     "methods": {
       "GET": 59,
-      "POST": 74,
-      "PATCH": 10,
+      "POST": 75,
+      "PATCH": 11,
       "DELETE": 10,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 62,
-      "command": 98,
+      "read": 63,
+      "command": 99,
       "stream": 1
     },
-    "uniqueNames": 161,
-    "uniqueBindings": 161
+    "uniqueNames": 163,
+    "uniqueBindings": 163
   },
   "reservedOperations": [
     "search.query",
@@ -295,6 +295,13 @@
         "operation": "spaces.members.list",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/members",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.members.updateRole",
+        "method": "PATCH",
+        "path": "/v2/spaces/:spaceId/members/:memberId",
         "status": "registered",
         "source": "server-router"
       },
@@ -1265,6 +1272,13 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.invite.resolve",
+        "method": "POST",
+        "path": "/v2/auth/invite/resolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "auth.claim",
         "method": "POST",
         "path": "/v2/auth/claim",
@@ -1531,7 +1545,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 130
+    "unimplementedV1Http": 132
   },
   "schemas": {
     "additive": {
@@ -1918,6 +1932,24 @@
           "spaces",
           "members",
           "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.members.updateRole",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.members.updateRole",
+        "intentTags": [
+          "spaces",
+          "members",
+          "update",
+          "role"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -4239,6 +4271,23 @@
           "auth",
           "session",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.invite.resolve",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.invite.resolve",
+        "intentTags": [
+          "auth",
+          "invite",
+          "resolve"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

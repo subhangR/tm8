@@ -29,11 +29,19 @@ export {
 } from './types';
 
 /* ── individual frames, mountable on their own ────────────────────────────── */
-export { MembersSection, ROLES_LEGEND, VIEWER_ROLE_FOOTNOTE, shortAge, type MembersSectionProps } from './MembersSection';
+export {
+  MembersSection,
+  ROLES_LEGEND,
+  ROLE_RULES_NOTE,
+  VIEWER_ROLE_FOOTNOTE,
+  shortAge,
+  type MembersSectionProps,
+} from './MembersSection';
 export {
   InvitesPanel,
   RedeemLanding,
   REDEEM_DEAD_WORD,
+  joinUrlFor,
   type InvitesPanelProps,
   type RedeemLandingProps,
 } from './InviteFrames';
@@ -71,7 +79,13 @@ export {
   type MenuDraft,
 } from './menu-edit';
 
-/** The GAP ledger — every act this surface draws that no seam can perform. */
+/**
+ * The REFUSAL ledger. It used to be the GAP ledger — "every act this surface
+ * draws that no seam can perform" — and 109 changed what most of it means:
+ * roles and the whole invite family are wired now, so what remains is either a
+ * genuine missing capability (member removal) or a rule that a particular
+ * viewer does not satisfy (the not-admin locks).
+ */
 export { ALL_SETTINGS_REASONS } from './reasons';
 
 /** DEV-ONLY review surface — every frame, both themes. Never product. */

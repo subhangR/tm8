@@ -23,6 +23,12 @@
  * 1-second tick from FIXTURE_NOW per mutation; ids and seqs are counters.
  */
 import {
+  type CreateInviteInput,
+  type InvitePreview,
+  type InviteRedemption,
+  type RedeemInviteInput,
+  type SpaceInviteView,
+  type UpdateMemberRoleInput,
   bindPath,
   CollabError,
   FILE_MAX_SIZE_BYTES_DEFAULT,
@@ -138,6 +144,7 @@ import {
   fixtureDetails,
   fixtureHandoffsBySession,
   fixtureSummaries,
+  noor,
   sessionCredentialLogin,
   sessionLive,
   sessionStale,
@@ -765,6 +772,33 @@ export function createFixtureSeam(): FixtureSeam {
 
   // -- internals -------------------------------------------------------------
 
+  /**
+   * The invite list, mutable — 109. Seeded EMPTY on purpose: a fixture that
+   * shipped a plausible-looking `inv_…` code would put a credential-shaped
+   * string in front of every demo reader, and the interesting states (created,
+   * revoked, exhausted) are all reachable in two clicks from empty.
+   */
+  const invites: SpaceInviteView[] = [];
+  let inviteSeq = 0;
+
+  /** Mirrors the node's shape (`'inv_' + 32 hex`) without pretending to be one. */
+  function newInviteCode(): string {
+    inviteSeq += 1;
+    return `inv_fixture${String(inviteSeq).padStart(24, '0')}`;
+  }
+
+  /** The role a member summary carries, read structurally like the settings port does. */
+  function roleOfSummary(s: EntitySummary): string | null {
+    const state = s.state as { role?: unknown };
+    return typeof state?.role === 'string' ? state.role : null;
+  }
+
+  function membersOfSpace(spaceId: SpaceId): EntitySummary[] {
+    return [...summaries.values()].filter(
+      (s) => s.kind === 'member' && s.spaceId === spaceId && !s.deletedAt,
+    );
+  }
+
   function requireSummary(id: EntityId): EntitySummary {
     const s = summaries.get(id);
     if (!s) throw new CollabError('not_found', `entity ${id} not found`);
@@ -1137,8 +1171,22 @@ export function createFixtureSeam(): FixtureSeam {
       if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
       return clone({
         space: spaceSummary,
-        members: [{ actor: viewerActor, role: 'owner', joinedAt: FIXTURE_NOW }],
-        invites: [],
+        // TWO ROWS, and the viewer's is keyed on `viewerActor.id` — NOT on the
+        // member ENTITY's id. `useGateData` resolves the viewer by matching
+        // `identity().memberships[].memberId` against these actors, so a row
+        // carrying the entity id (`ent-member-ada`) instead of the actor id
+        // (`act-ada`) resolves the viewer to null and every viewer-scoped
+        // filter chip in the shell goes quiet. The two id spaces are a real
+        // inconsistency in this fixture and predate 109; unifying them is not
+        // this change's job, and stepping on it silently would have been.
+        //
+        // The second row is the fixture's own `noor`, which is what
+        // `spaceSummary.memberCount: 2` has always claimed.
+        members: [
+          { actor: viewerActor, role: 'owner' as const, joinedAt: FIXTURE_NOW },
+          { actor: clone(noor), role: 'member' as const, joinedAt: FIXTURE_NOW },
+        ],
+        invites,
         taskAxes: [],
         menu: {
           schemaVersion: 1,
@@ -1150,6 +1198,32 @@ export function createFixtureSeam(): FixtureSeam {
         settingsRevision: 1,
       });
     },
+    /**
+     * Amendment 11 mirror. Answers WITHOUT consulting the viewer, exactly like
+     * the node's claim-free RPC, and reproduces its disclosure rule rather
+     * than a friendlier one: an unresolvable code returns `{status:'unknown'}`
+     * and nothing else, and a dead code names the space but never the inviter.
+     * A fixture that leaked more than the node would let a join screen look
+     * correct here and refuse to render against a real server.
+     */
+    async previewInvite(code: string): Promise<InvitePreview> {
+      const invite = invites.find((i) => i.code === code);
+      if (!invite) return { status: 'unknown' };
+      if (invite.revoked) return { status: 'revoked', spaceName: spaceSummary.name };
+      if (invite.expiresAt !== null && invite.expiresAt < tick()) {
+        return { status: 'expired', spaceName: spaceSummary.name };
+      }
+      if (invite.uses >= invite.maxUses) return { status: 'exhausted', spaceName: spaceSummary.name };
+      return {
+        status: 'valid',
+        spaceId: FIXTURE_SPACE_ID,
+        spaceName: spaceSummary.name,
+        role: invite.role,
+        invitedBy: identityView.displayName,
+        expiresAt: invite.expiresAt,
+      };
+    },
+
     /**
      * Counted from the fixture dataset and the fixture's OWN read marks, so
      * the demo rail behaves like the real one: opening a row clears its unseen
@@ -2030,6 +2104,98 @@ export function createFixtureSeam(): FixtureSeam {
           globalId: identityView.globalId,
         });
       },
+      /**
+       * Amendment 11 mirror — and it reproduces ALL FOUR of 109's rules, not
+       * just the happy path. That is the fixture's standing discipline (see
+       * `updateProfile` above, which enforces the `globalId` check constraint):
+       * a screen that only ever meets the fixture must meet the same refusals
+       * it will meet on a node, or the refusal states are drawn from
+       * imagination and are wrong in exactly the places that matter.
+       */
+      async setMemberRole(
+        spaceId: SpaceId,
+        memberId: EntityId,
+        input: UpdateMemberRoleInput,
+      ): Promise<CommandResult> {
+        const target = requireSummary(memberId);
+        if (target.kind !== 'member' || target.spaceId !== spaceId) {
+          throw new CollabError('not_found', `member ${memberId} not found in this space`);
+        }
+        const previous = roleOfSummary(target);
+        // R1 — the viewer must be an admin of this space.
+        const viewer = membersOfSpace(spaceId).find((m) => m.id === viewerActor.id)
+          ?? membersOfSpace(spaceId).find((m) => roleOfSummary(m) === 'owner');
+        const viewerRole = viewer ? roleOfSummary(viewer) : null;
+        if (viewerRole !== 'owner' && viewerRole !== 'admin') {
+          throw new CollabError('forbidden', 'space admin required');
+        }
+        // R2 — only an owner may grant or revoke the owner role.
+        if ((input.role === 'owner' || previous === 'owner') && viewerRole !== 'owner') {
+          throw new CollabError('forbidden', 'only an owner may grant or revoke the owner role');
+        }
+        if (previous === input.role) return commandResult(target);
+        // R3 — the last owner cannot be demoted.
+        if (previous === 'owner' && input.role !== 'owner') {
+          const owners = membersOfSpace(spaceId).filter((m) => roleOfSummary(m) === 'owner');
+          if (owners.length <= 1) {
+            throw new CollabError('forbidden',
+              'a space must keep at least one owner: promote a successor first');
+          }
+        }
+        (target.state as { role?: string }).role = input.role;
+        touch(target);
+        emit(spaceId, { type: 'entity.upsert', entity: clone(target) }, input);
+        return commandResult(target);
+      },
+
+      async createInvite(spaceId: SpaceId, input: CreateInviteInput): Promise<SpaceInviteView> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        // R4, mirrored: an invite may confer admin or member, never owner. The
+        // TYPE already excludes it, and this is the runtime half — a caller
+        // reaching here from untyped JSON meets the same refusal a node gives.
+        const role = input.role ?? 'member';
+        if (role !== 'admin' && role !== 'member') {
+          throw new CollabError('invalid_input',
+            "role must be 'admin' or 'member': an invite cannot confer ownership");
+        }
+        const invite: SpaceInviteView = {
+          id: `inv-fixture-${invites.length + 1}`,
+          code: newInviteCode(),
+          role,
+          maxUses: input.maxUses ?? 1,
+          uses: 0,
+          expiresAt: input.expiresAt ?? null,
+          revoked: false,
+        };
+        invites.unshift(invite);
+        return clone(invite);
+      },
+
+      /** Revoking KEEPS the row. A list that forgot it could not stay truthful. */
+      async revokeInvite(spaceId: SpaceId, inviteId: string): Promise<SpaceInviteView> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        const invite = invites.find((i) => i.id === inviteId);
+        if (!invite) throw new CollabError('not_found', `invite ${inviteId} not found`);
+        invite.revoked = true;
+        return clone(invite);
+      },
+
+      /**
+       * The viewer is already a member of the fixture space, so this answers
+       * `joined: false` — which is the node's own answer for an existing
+       * member and NOT a stub. A fixture cannot mint a second human.
+       */
+      async redeemInvite(input: RedeemInviteInput): Promise<InviteRedemption> {
+        const invite = invites.find((i) => i.code === input.code);
+        if (!invite) throw new CollabError('not_found', 'invite not found');
+        if (invite.revoked) throw new CollabError('forbidden', 'invite was revoked');
+        return { spaceId: FIXTURE_SPACE_ID, memberId: viewerActor.id, joined: false };
+      },
+
       async patchTask(id, input: PatchTaskInput) {
         const s = requireSummary(id);
         // A work session is a title-ONLY door here, mirroring what the node
