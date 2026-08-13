@@ -76,6 +76,7 @@ import { WsAdmissionController } from './http/ws-admission.js';
 import {
   ChatOrchestrator,
   ChatTurnPublisher,
+  composeChatBootstrap,
   type AgentRuntime,
   type ResolveChatLaunchConfig,
 } from './chat/index.js';
@@ -86,10 +87,21 @@ export interface ChatBootstrapOptions {
   readonly onError?: (error: unknown) => void;
 }
 
+/**
+ * Factory form: bootstrap owns db/dataDir construction, so a production
+ * caller cannot build the chat block up front. main() passes
+ * `composeChatBootstrap`; the factory runs only once a database exists.
+ */
+export type ChatBootstrapFactory = (ctx: {
+  db: Db;
+  dataDir: string;
+  baseUrl: string;
+}) => ChatBootstrapOptions;
+
 export interface BootstrapOptions {
   readonly config?: ServerConfig;
-  /** Provider runtime is injected by the execution lane; absent stays 501. */
-  readonly chat?: ChatBootstrapOptions;
+  /** Provider runtime block or factory; absent stays 501. */
+  readonly chat?: ChatBootstrapOptions | ChatBootstrapFactory;
   /**
    * Start the R26 scheduler and its periodic jobs.
    *
@@ -233,13 +245,21 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // mounted when a presence source exists — see registerEventHandlers.
   const presence = new InMemoryPresenceStore();
   const subscriptions = new SubscriptionRegistry();
-  const chat = db && opts.chat
+  // Factory callers get the composed context; block callers pass through
+  // unchanged (every test harness injects the block form directly).
+  const chatBlock: ChatBootstrapOptions | undefined =
+    db && opts.chat
+      ? typeof opts.chat === 'function'
+        ? opts.chat({ db, dataDir, baseUrl: `http://127.0.0.1:${config.port}` })
+        : opts.chat
+      : undefined;
+  const chat = db && chatBlock
     ? new ChatOrchestrator({
         db,
-        runtime: opts.chat.runtime,
+        runtime: chatBlock.runtime,
         publisher: new ChatTurnPublisher(subscriptions, (await owner!()).identityId),
-        resolveLaunchConfig: opts.chat.resolveLaunchConfig,
-        ...(opts.chat.onError ? { onError: opts.chat.onError } : {}),
+        resolveLaunchConfig: chatBlock.resolveLaunchConfig,
+        ...(chatBlock.onError ? { onError: chatBlock.onError } : {}),
       })
     : undefined;
 
@@ -813,6 +833,10 @@ export async function main(): Promise<void> {
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
     const { server, url, db, delivery, preview, scheduler } = await bootstrap({
       startBackgroundJobs: true,
+      // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
+      // launch-config resolver. Without this line the chat ships dead — the
+      // orchestrator only exists when a runtime is injected (see compose.ts).
+      chat: composeChatBootstrap,
     });
     const { registry, router } = server;
     console.log(`tm8-server listening on ${url}`);
