@@ -1167,6 +1167,13 @@ const ROWS: readonly KindConfig[] = [
         COLLECTIONS_BLOCK,
       ],
     },
+    // The create door for a `file` is an UPLOAD, not a placeholder row. The
+    // generic immediate-create flow commits an entity titled "Untitled file"
+    // with no blob behind it: it lists in the browser, offers a Download link
+    // and 404s when that link is followed, because `files.download` joins onto
+    // `public.files` and finds nothing. Three such orphans exist in the
+    // production space, all created by pressing this very button.
+    createForm: 'file-upload',
     palette: { createLabel: 'Upload file' },
   },
 

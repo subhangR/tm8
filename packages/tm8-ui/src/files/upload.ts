@@ -18,7 +18,7 @@
  * lane's settled idiom for the same question (`model.ts`) and which is what the
  * caller wanted anyway — a row, not a discriminant.
  */
-import type { EntityId, FileUploadGrant, SpaceId } from '@tm8/contract';
+import type { CommandResult, EntityId, FileUploadGrant, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { rowFromEntity } from './model';
 
@@ -30,6 +30,15 @@ export interface UploadedFile {
   mime: string;
   sizeBytes: number;
   maxSizeBytes: number;
+  /**
+   * The completion's own `CommandResult`, carried rather than discarded.
+   *
+   * A caller that creates an entity this way must reconcile it into the store,
+   * and the only alternative was fabricating `{patches: []}` — which tells the
+   * store nothing, and then leaves the caller selecting an id the store has
+   * never been told about.
+   */
+  result: CommandResult;
 }
 
 export interface FileUploadTask {
@@ -124,6 +133,7 @@ export function createFileUploadTask({
         mime: row.mime,
         sizeBytes: row.sizeBytes ?? file.size,
         maxSizeBytes: grant.maxSizeBytes,
+        result: response,
       };
     } catch (error) {
       await abortGrant();

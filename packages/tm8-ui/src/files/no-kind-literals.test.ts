@@ -57,8 +57,19 @@ function stripComments(text: string): string {
  * The carve is deliberately the WHOLE attribute, not the word: a bare `'file'`
  * anywhere else in this lane still fails, which is the rule that matters.
  */
+/**
+ * `type="file"` on an `<input>` is an HTML attribute, not the `file` KIND, and
+ * this guard has always said so. The imperative form is the same fact written
+ * differently — `pick.ts` builds its input with `document.createElement`
+ * because a detached element cannot open a picker in Safari — so it is masked
+ * the same way. Both forms are narrow: only the literal `file` immediately
+ * after a `type` attribute or a `.type` assignment, never a bare `'file'`
+ * anywhere else in the lane.
+ */
 function stripHtmlInputType(text: string): string {
-  return text.replace(/type=(["'])file\1/g, 'type=INPUT_TYPE');
+  return text
+    .replace(/type=(["'])file\1/g, 'type=INPUT_TYPE')
+    .replace(/\.type\s*=\s*(["'])file\1/g, '.type = INPUT_TYPE');
 }
 
 const ownedFiles = walk(HERE);

@@ -28,6 +28,7 @@ import { ZodError } from 'zod';
 import type { DbClaims } from '../../../db/types.js';
 import type { Querier } from '../../../db/types.js';
 import type { W2BlobStore } from '../../../files/w2-blob-store.js';
+import { buildDeterministicZip } from '../../../files/zip.js';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
 import { raw } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, requireParam, requireUuidParam } from '../../context.js';
@@ -173,97 +174,9 @@ function zipFilename(name: string, revisionNumber: number): string {
   return `${base}-r${revisionNumber}.zip`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Deterministic zip writer (design §9.6). Entries in manifest order, no
-// directory entries, all timestamps fixed to 1980-01-01, external attrs 0644,
-// STORED (no compression) as the one frozen choice, no extra fields, no
-// comment. Consequence: the zip's SHA-256 is a pure function of the bundle, so
-// "export is deterministic" is a byte-equality test rather than a claim.
-// ─────────────────────────────────────────────────────────────────────────────
-
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = (c & 1) !== 0 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
-  }
-  return table;
-})();
-
-function crc32(buf: Buffer): number {
-  let c = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) c = (CRC_TABLE[(c ^ buf[i]!) & 0xff]! ^ (c >>> 8)) >>> 0;
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-const DOS_DATE_1980 = 0x0021; // 1980-01-01: ((0)<<9)|(1<<5)|1
-const DOS_TIME_ZERO = 0x0000;
-const UTF8_NAME_FLAG = 0x0800; // general-purpose bit 11: filename is UTF-8
-// The frozen external-attributes choice of §9.6: unix mode 0644 in the high
-// word. Fixed, not derived, so every export of a revision is byte-identical.
-const EXTERNAL_ATTRS_0644 = (0o644 << 16) >>> 0;
-
-function buildDeterministicZip(files: ReadonlyArray<{ path: string; bytes: Buffer }>): Buffer {
-  const local: Buffer[] = [];
-  const central: Buffer[] = [];
-  let offset = 0;
-
-  for (const file of files) {
-    const name = Buffer.from(file.path, 'utf8');
-    const crc = crc32(file.bytes);
-    const size = file.bytes.length;
-
-    const lfh = Buffer.alloc(30);
-    lfh.writeUInt32LE(0x04034b50, 0);       // local file header signature
-    lfh.writeUInt16LE(20, 4);               // version needed to extract (2.0)
-    lfh.writeUInt16LE(UTF8_NAME_FLAG, 6);   // general purpose bit flag
-    lfh.writeUInt16LE(0, 8);                // compression method: STORED
-    lfh.writeUInt16LE(DOS_TIME_ZERO, 10);
-    lfh.writeUInt16LE(DOS_DATE_1980, 12);
-    lfh.writeUInt32LE(crc, 14);
-    lfh.writeUInt32LE(size, 18);            // compressed size == size (STORED)
-    lfh.writeUInt32LE(size, 22);            // uncompressed size
-    lfh.writeUInt16LE(name.length, 26);
-    lfh.writeUInt16LE(0, 28);               // extra field length
-    local.push(lfh, name, file.bytes);
-
-    const cdh = Buffer.alloc(46);
-    cdh.writeUInt32LE(0x02014b50, 0);       // central directory header signature
-    cdh.writeUInt16LE((3 << 8) | 20, 4);    // version made by: unix (3), 2.0
-    cdh.writeUInt16LE(20, 6);               // version needed to extract
-    cdh.writeUInt16LE(UTF8_NAME_FLAG, 8);
-    cdh.writeUInt16LE(0, 10);               // compression method: STORED
-    cdh.writeUInt16LE(DOS_TIME_ZERO, 12);
-    cdh.writeUInt16LE(DOS_DATE_1980, 14);
-    cdh.writeUInt32LE(crc, 16);
-    cdh.writeUInt32LE(size, 20);
-    cdh.writeUInt32LE(size, 24);
-    cdh.writeUInt16LE(name.length, 28);
-    cdh.writeUInt16LE(0, 30);               // extra field length
-    cdh.writeUInt16LE(0, 32);               // file comment length
-    cdh.writeUInt16LE(0, 34);               // disk number start
-    cdh.writeUInt16LE(0, 36);               // internal file attributes
-    cdh.writeUInt32LE(EXTERNAL_ATTRS_0644, 38);
-    cdh.writeUInt32LE(offset, 42);          // relative offset of local header
-    central.push(cdh, name);
-
-    offset += lfh.length + name.length + size;
-  }
-
-  const localBuf = Buffer.concat(local);
-  const centralBuf = Buffer.concat(central);
-  const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(0x06054b50, 0);        // end of central directory signature
-  eocd.writeUInt16LE(0, 4);                 // number of this disk
-  eocd.writeUInt16LE(0, 6);                 // disk with the central directory
-  eocd.writeUInt16LE(files.length, 8);      // entries on this disk
-  eocd.writeUInt16LE(files.length, 10);     // total entries
-  eocd.writeUInt32LE(centralBuf.length, 12);
-  eocd.writeUInt32LE(localBuf.length, 16);  // offset of central directory
-  eocd.writeUInt16LE(0, 20);                // comment length
-  return Buffer.concat([localBuf, centralBuf, eocd]);
-}
+// The deterministic zip writer moved to `files/zip.ts` when folder download
+// became a second caller (design §9.6 choices unchanged; this service's
+// byte-equality test is the guard that the lift changed nothing).
 
 export class W2ArtifactsService {
   private readonly now: () => Date;

@@ -21,6 +21,7 @@ export function registerW2ProjectFilesHandlers(
   registry.registerAll({
     'projects.files.list': service.listFiles,
     'projects.files.read': service.readFile,
+    'projects.files.archive': service.archiveFiles,
     'projects.files.attach': service.attachFile,
   });
 }

@@ -558,6 +558,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                 immediate={leftCreateFlow}
                 spaceId={data.spaceId}
                 commands={data.seam.commands}
+                files={data.seam.files}
                 onCreated={(id, result) => {
                   data.reconcileCommand(result);
                   nav.push?.(id);
@@ -690,6 +691,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                 immediate={rightCreateFlow}
                 spaceId={data.spaceId}
                 commands={data.seam.commands}
+                files={data.seam.files}
                 onCreated={(id, result) => {
                   data.reconcileCommand(result);
                   nav.push?.(id);

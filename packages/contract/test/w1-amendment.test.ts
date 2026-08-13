@@ -78,8 +78,8 @@ describe('W1 adopted catalog target', () => {
     // 150 -> 152 (2026-08-12, Git UI landing): projects.file.history + projects.file.blame (GET reads) — FileInspector's two survey reads.
     // 152 -> 155 (2026-08-12, Git UI landing): execution.gitCherryPick/gitBranch/gitStash (POST commands) — Tier 2 completion on the session rail.
     // 155 -> 156 (2026-08-13, merge): execution.terminal.start joins from main (#161).
-    expect(OPERATIONS).toHaveLength(156);
-    expect(V1_OPERATIONS).toHaveLength(154);
+    expect(OPERATIONS).toHaveLength(157);
+    expect(V1_OPERATIONS).toHaveLength(155);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -95,12 +95,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 57, POST: 71, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 58, POST: 71, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 60, command: 95, stream: 1 });
+    }).toEqual({ read: 61, command: 95, stream: 1 });
   });
 });
 

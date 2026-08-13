@@ -43,6 +43,36 @@ function stubPort(overrides?: Partial<FilesExplorerPort>): FilesExplorerPort {
   };
 }
 
+
+/**
+ * A folder-import task double. `subscribe`/`progress` are part of the task
+ * contract now (the screen reports measured counts, not a spinner), so a
+ * double that omits them is not a smaller double — it is a different type,
+ * and the screen would throw on it exactly as it would on a real seam that
+ * lied about its shape.
+ */
+function importTaskDouble(
+  outcome: { projectName: string; fileCount: number; replacedCount: number; merged: boolean },
+  overrides: { result?: Promise<never> } = {},
+) {
+  const progress = {
+    phase: 'uploading' as const,
+    filesDone: 0,
+    filesTotal: outcome.fileCount,
+    bytesDone: 0,
+    bytesTotal: 0,
+  };
+  return {
+    result: overrides.result ?? Promise.resolve(outcome),
+    cancel: () => {},
+    subscribe: (listener: (p: typeof progress) => void) => {
+      listener(progress);
+      return () => {};
+    },
+    progress: () => progress,
+  };
+}
+
 describe('honest states — every void says why', () => {
   it('renders the measured empty, not a silent blank', async () => {
     render(
@@ -192,8 +222,7 @@ describe('verbs — real when the port carries them, disabled-with-reason when n
         _files: ReadonlyArray<{ file: File; relativePath: string }>,
         _rootName: string,
       ) => ({
-        result: Promise.resolve({ projectName: 'proj', fileCount: 2, replacedCount: 2, merged: true }),
-        cancel: () => {},
+        ...importTaskDouble({ projectName: 'proj', fileCount: 2, replacedCount: 2, merged: true }),
       }),
     );
     const onNotice = vi.fn();
@@ -231,10 +260,7 @@ describe('verbs — real when the port carries them, disabled-with-reason when n
       },
       upload: undefined,
       importFolder: {
-        start: () => ({
-          result: Promise.resolve({ projectName: 'proj', fileCount: 1, replacedCount: 0, merged: false }),
-          cancel: () => {},
-        }),
+        start: () => importTaskDouble({ projectName: 'proj', fileCount: 1, replacedCount: 0, merged: false }),
       },
     });
     render(<FilesExplorerScreen port={port} />);

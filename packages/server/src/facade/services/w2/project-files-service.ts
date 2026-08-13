@@ -9,16 +9,20 @@ import {
 
 import type { DbClaims } from '../../../db/types.js';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
+import { rawStream } from '../../../http/types.js';
 import type { W2BlobStore } from '../../../files/w2-blob-store.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { toCommandResult, type RpcCommandResult } from '../../handlers/entities.js';
 import {
   listProjectFiles,
+  planProjectArchive,
+  projectArchiveEntries,
   projectFileStream,
   readProjectFile,
   resolveProjectFile,
 } from './project-files.js';
+import { createZipStream } from '../../../files/zip.js';
 
 /** Matches files.uploadInit — the slot this service opens is the same slot. */
 const UPLOAD_TTL_MS = 15 * 60 * 1_000;
@@ -56,7 +60,11 @@ interface CompleteRpcResult extends RpcCommandResult {
  * and was it withheld" is the evidence a security review needs.
  */
 export interface ProjectFileAuditEvent {
-  readonly op: 'projects.files.list' | 'projects.files.read' | 'projects.files.attach';
+  readonly op:
+    | 'projects.files.list'
+    | 'projects.files.read'
+    | 'projects.files.attach'
+    | 'projects.files.archive';
   readonly projectId: string;
   readonly path: string | null;
   readonly identityId: string | null;
@@ -77,6 +85,20 @@ export interface W2ProjectFilesServiceOptions {
 
 function defaultAudit(event: ProjectFileAuditEvent): void {
   console.info(`[tm8] project-files audit ${JSON.stringify(event)}`);
+}
+
+/**
+ * `<folder>.zip`, sanitised the same way `files.ts` sanitises a stored blob's
+ * name: an ASCII fallback for legacy parsers plus RFC 5987 UTF-8 for the rest.
+ * Always `attachment` — an archive has no inline meaning.
+ */
+function archiveDisposition(rootName: string): string {
+  const clean = rootName.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 120) || 'folder';
+  const ascii = clean.replace(/[^\x20-\x7e]/g, '_').replace(/["\\/]/g, '_') || 'folder';
+  const encoded = encodeURIComponent(`${clean}.zip`).replace(/['()*]/g, (value) =>
+    `%${value.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${ascii}.zip"; filename*=UTF-8''${encoded}`;
 }
 
 function tokenHash(token: string): string {
@@ -174,6 +196,46 @@ export class W2ProjectFilesService {
       const { workingDir } = await this.project(ctx, projectId, false);
       const file = await readProjectFile(workingDir, path);
       return { projectId, ...file };
+    });
+  };
+
+  /**
+   * A whole subtree as one zip.
+   *
+   * WHY THIS DOES NOT BREAK THE §4.4 CONTENT-TYPE POSTURE, which forbids
+   * handing a project's disk to the browser as a document on the app origin:
+   * an archive is not a document and cannot be rendered as one. It is
+   * `application/zip`, `Content-Disposition: attachment` unconditionally, and
+   * `nosniff` — there is no browser context in which those bytes execute or
+   * display. The posture exists to stop an HTML or SVG file off a project disk
+   * getting a document context; a zip of that same file gets none.
+   *
+   * The PLAN is built before the response starts (see `planProjectArchive`),
+   * because after `writeHead` a refusal can only be a severed connection.
+   */
+  readonly archiveFiles: OperationHandler = async (ctx) => {
+    const projectId = requireUuidParam(ctx, 'projectId');
+    const path = ctx.query.get('path');
+    return this.audited(ctx, 'projects.files.archive', projectId, path, async () => {
+      const { workingDir } = await this.project(ctx, projectId, false);
+      const plan = await planProjectArchive(workingDir, path ?? undefined);
+      const stream = createZipStream(projectArchiveEntries(plan, plan.rootPath));
+      return rawStream(200, {
+        'content-type': 'application/zip',
+        // Unconditional attachment: see the posture note above.
+        'content-disposition': archiveDisposition(plan.rootName),
+        'x-content-type-options': 'nosniff',
+        // Counts a client can show without re-walking. `excluded` being
+        // visible in a header is deliberate: a UI that never opens the archive
+        // can still say "3 paths were withheld".
+        'x-tm8-archive-entries': String(plan.entries.length),
+        'x-tm8-archive-bytes': String(plan.totalBytes),
+        'x-tm8-archive-excluded': String(plan.excluded.length),
+        // The length is NOT known: STORED framing adds per-entry overhead and
+        // a late exclusion can add a manifest entry. Declaring a guess would
+        // be worse than declaring nothing, so the response is chunked.
+        'cache-control': 'private, no-store',
+      }, stream);
     });
   };
 

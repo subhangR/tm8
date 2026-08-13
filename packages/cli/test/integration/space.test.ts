@@ -148,7 +148,10 @@ describe('the node itself', () => {
     // landed without it moving. `execution.terminal.start` (101) is the fifth.
     // Re-pinned to the MEASURED value rather than 137+1, which would have been
     // a number no tree ever produced.
-    expect(health.operations).toBe(144); // MEASURED off /health (routes, not catalog rows).
+    // 150 -> 151 (2026-08-12): projects.files.archive. Measured off a live
+    // /health in CI, not derived — these two are the only pins in the tree that
+    // a local run cannot reach, because they need a running server.
+    expect(health.operations).toBe(156); // MEASURED off /health (routes, not catalog rows).
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });
