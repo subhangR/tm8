@@ -49,16 +49,18 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows —
       // gitStatus/gitDiff (GET/read), gitCheckpoint/gitRollback/gitCommit/
       // gitMerge (POST/command).
-      total: 159,
-      v1: 157,
+      // 2026-08-13 (first-run claim): auth.claim (POST command) +
+      // auth.claim.status (GET read).
+      total: 161,
+      v1: 159,
       reserved: 2,
-      http: 158,
+      http: 160,
       ws: 1,
-      registerableV1Http: 156,
-      methods: { GET: 58, POST: 73, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 },
-      kinds: { read: 61, command: 97, stream: 1 },
-      uniqueNames: 159,
-      uniqueBindings: 159,
+      registerableV1Http: 158,
+      methods: { GET: 59, POST: 74, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 },
+      kinds: { read: 62, command: 98, stream: 1 },
+      uniqueNames: 161,
+      uniqueBindings: 161,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
@@ -92,7 +94,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.serverRegistries.inputSchemas.bound).toHaveLength(36);
     expect(manifest.serverRegistries.inputSchemas.unboundCommands).toHaveLength(13);
     // 147 current registerable v1 HTTP ops minus the 28 W1-implemented.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(128);
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(130);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -368,7 +370,8 @@ describe('W2.C01 current mounted registry inventory', () => {
     // bodies bind.
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, merge union): chat.threads.start binds its body.
-    expect(inputSchemas.bound).toHaveLength(90);
+    // 90 -> 91: auth.claim binds a body; auth.claim.status is a read.
+    expect(inputSchemas.bound).toHaveLength(91);
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',

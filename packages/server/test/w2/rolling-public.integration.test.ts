@@ -448,7 +448,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 122 -> 123: projects.files.read (the viewer half).
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registry.size).toBe(139); // merge union 2026-08-13: + chat.threads.start, MEASURED
+    // 139 -> 141 (2026-08-13, first-run claim): auth.claim + auth.claim.status.
+    expect(registry.size).toBe(141); // merge union 2026-08-13: + chat.threads.start, MEASURED
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
