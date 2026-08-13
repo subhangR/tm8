@@ -21,12 +21,14 @@
  * only the gate supplies. The law is structural rather than remembered.
  */
 import { createContext, useContext } from 'react';
+import type { NodeClaim } from './session';
 import type { AuthSessionState } from './useAuthSession';
 
 /** The subset of the session the frames dispatch through. */
 export type AuthActions = Pick<
   AuthSessionState,
   | 'createAccount'
+  | 'claimNode'
   | 'signIn'
   | 'signOut'
   | 'failure'
@@ -34,7 +36,19 @@ export type AuthActions = Pick<
   | 'clearFailure'
   | 'account'
   | 'accounts'
->;
+> & {
+  /**
+   * What the NODE says about itself, or null if it has not answered.
+   *
+   * The first-run card needs this to know which act it is performing: on an
+   * unclaimed node it claims (`auth.claim`, authorized by a setup token), on a
+   * claimed one it provisions (`auth.signup`, authorized by node admin). Those
+   * are different operations with different authorization, and a card that
+   * guessed between them from a browser-local account list is precisely the
+   * defect this lane removed from the gate.
+   */
+  nodeClaim: NodeClaim | null;
+};
 
 export const AuthActionsContext = createContext<AuthActions | null>(null);
 export const AuthSessionContext = createContext<AuthSessionState | null>(null);

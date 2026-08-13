@@ -103,12 +103,15 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 58, POST: 73 /* +1 2026-08-13: tracking.pr.merge */, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
+    // +1 GET / +1 POST 2026-08-13 (first-run claim): auth.claim.status is a GET
+    // read, auth.claim a POST command. They share the /v2/auth/claim path —
+    // method-distinct rows on one path, as artifacts.publish already does.
+    }).toEqual({ GET: 59, POST: 74, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 61, command: 97 /* +1 2026-08-13: tracking.pr.merge */, stream: 1 });
+    }).toEqual({ read: 62 /* +1: auth.claim.status */, command: 98 /* +1: auth.claim */, stream: 1 });
   });
 });
 

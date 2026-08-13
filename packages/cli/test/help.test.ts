@@ -116,7 +116,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     // 139 -> 141 (2026-08-12): collection add/remove (public, with commands).
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows
     // (public, commandless — reachable via their noun shard).
-    expect(wanted).toHaveLength(156);
+    expect(wanted).toHaveLength(158);
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 

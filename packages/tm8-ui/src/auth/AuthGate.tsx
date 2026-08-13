@@ -21,28 +21,35 @@
  * cannot render an enabled verb it has no executor for, because the enabled
  * branch requires a value that only the gate provides.
  */
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AuthFlow } from './AuthFlow';
 import { useAuthSession } from './useAuthSession';
 import { AuthActionsContext, AuthSessionContext, type AuthActions } from './gate-context';
-import { readKnownAccountsHere } from './session';
-import { canUseLoopbackAutoOwner, readActiveServerId } from '../servers/server-key';
+import { fetchNodeClaim, readCachedNodeClaim, type NodeClaim } from './session';
 import type { AuthFrameId, AuthIdentity } from './types';
 
 /**
- * Account creation without an existing bearer is authorized only through the
- * server's loopback auto-owner arm. A named server always rides the relay, and
- * a page served from a non-loopback host reaches even its "local" node as a
- * remote caller. Offering first-run signup in either case promises an action
- * the server must refuse.
+ * Which signed-out frame to render — THE NODE'S ANSWER, not this browser's
+ * guess.
+ *
+ * THE DEFECT THIS REPLACED. The previous version discriminated on
+ * `readKnownAccountsHere().length` plus `canUseLoopbackAutoOwner`. Neither is a
+ * fact about the node, and the pair failed in both directions: a fresh browser
+ * profile against a populated node opened on "create the first account" and
+ * the signup 409'd, while a browser holding a stale entry for a re-provisioned
+ * node was pinned to the sign-in card forever. Worse, off loopback it ALWAYS
+ * chose sign-in — honest at the time, because signup there really would have
+ * been refused, but a dead end: the node had no credential and no way to get
+ * one. That dead end is the bug this whole lane exists to close.
+ *
+ * `claim` is null when the node has not answered yet OR could not be reached.
+ * Both resolve to the sign-in card, and the distinction is deliberate: an
+ * unreachable node must NOT be rendered as unclaimed, because offering a
+ * ceremony that cannot succeed is exactly the false promise being removed.
  */
-export function defaultSignedOutFrame(
-  knownAccountCount: number,
-  serverId: string,
-  hostname: string,
-): '1a' | '1d' {
-  if (knownAccountCount > 0) return '1d';
-  return canUseLoopbackAutoOwner(serverId, hostname) ? '1a' : '1d';
+export function defaultSignedOutFrame(claim: NodeClaim | null): '1a' | '1d' {
+  if (!claim) return '1d';
+  return claim.claimed ? '1d' : '1a';
 }
 
 export interface AuthGateProps {
@@ -55,10 +62,11 @@ export interface AuthGateProps {
   resolveIdentity?: () => Promise<AuthIdentity | null>;
   /** Fires on each transition into the signed-in state. */
   onSignedIn?: (handle: string) => void;
-  /**
-   * Which frame the flow opens on when signed out. By default only a loopback
-   * local node with no known account opens on `1a`; remote and relayed nodes
-   * open on `1d`, because unauthenticated signup there is not authorized.
+   /**
+   * Which frame the flow opens on when signed out. By default the NODE decides
+   * (`auth.claim.status`): an unclaimed node opens on `1a`, a claimed one on
+   * `1d`. Supplying this overrides the node, which is what the review board
+   * wants and what a live gate almost never does.
    */
   initialFrame?: AuthFrameId;
   /**
@@ -77,6 +85,44 @@ export function AuthGate({
 }: AuthGateProps) {
   const session = useAuthSession({ resolveIdentity });
 
+  // Initialised SYNCHRONOUSLY from the per-server cache, for the same reason
+  // the stored pass is (`useAuthSession`'s docblock): a first paint that shows
+  // the wrong card and corrects itself is the flash this module already went
+  // to some trouble to eliminate. The cache is never an authorization input —
+  // the server refuses a claim on a claimed node — so a stale entry costs one
+  // wrong paint and can grant nothing.
+  const [nodeClaim, setNodeClaim] = useState<NodeClaim | null>(() => readCachedNodeClaim());
+  // Distinct from `nodeClaim === null`, and the distinction is the whole point:
+  // "not asked yet" and "asked, could not reach the node" must render
+  // differently. See the render guard below.
+  const [claimSettled, setClaimSettled] = useState(false);
+
+  // Asked only while signed OUT. A signed-in viewer has already answered the
+  // question this read exists to ask, and firing it anyway would put a
+  // credential-free request on every authenticated page load.
+  useEffect(() => {
+    if (session.status === 'signed-in') return;
+    let live = true;
+    // Re-read the cache FIRST, synchronously within the effect. Claiming and
+    // switching servers both change the answer, and the in-memory copy from
+    // the initialiser is stale across either. Without this, signing out right
+    // after a claim leaves the gate offering the claim card for a node it just
+    // watched get claimed.
+    const cached = readCachedNodeClaim();
+    if (cached) setNodeClaim(cached);
+    void fetchNodeClaim().then((claim) => {
+      if (!live) return;
+      // A null answer means the node could not be asked. Keep the last known
+      // value rather than overwriting it with "unknown": an unreachable node
+      // must not demote a claimed node into offering a claim ceremony.
+      if (claim) setNodeClaim(claim);
+      setClaimSettled(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [session.status]);
+
   useEffect(() => {
     if (session.status === 'signed-in' && session.handle) onSignedIn?.(session.handle);
   }, [session.status, session.handle, onSignedIn]);
@@ -84,6 +130,8 @@ export function AuthGate({
   const actions = useMemo<AuthActions>(
     () => ({
       createAccount: session.createAccount,
+      claimNode: session.claimNode,
+      nodeClaim,
       signIn: session.signIn,
       signOut: session.signOut,
       clearFailure: session.clearFailure,
@@ -94,6 +142,8 @@ export function AuthGate({
     }),
     [
       session.createAccount,
+      session.claimNode,
+      nodeClaim,
       session.signIn,
       session.signOut,
       session.clearFailure,
@@ -122,18 +172,35 @@ export function AuthGate({
   // Signed out. `children` is not rendered at all — not hidden, not mounted
   // behind an overlay. A gate that mounted the app underneath would run its
   // effects, open its sockets and fire its reads for a viewer who is not in.
-  // A known account always means sign-in. With none known, first-account
-  // creation is truthful only on the local loopback path; remote and relayed
-  // callers start at sign-in and ask their operator for provisioning.
-  const frame = initialFrame ?? defaultSignedOutFrame(
-    readKnownAccountsHere().length,
-    readActiveServerId(),
-    globalThis.location?.hostname ?? '',
-  );
+  // A COLD BROWSER RENDERS NOTHING UNTIL THE NODE ANSWERS, and that beats the
+  // alternative. The frame choice cannot be synchronous on a browser with no
+  // cached answer, so the options are a brief blank or painting the sign-in
+  // card and swapping it for the claim card a round trip later. The second is
+  // the flash this module already went to some trouble to eliminate, and it is
+  // worse here than a blank: it shows a viewer a credential prompt for an
+  // account that does not exist, which is the exact false promise this lane
+  // removes. A warm browser has the cached answer and never reaches this.
+  //
+  // `claimSettled` bounds it: an unreachable node settles with a null answer
+  // and falls through to the sign-in card with the transport error, rather
+  // than blanking forever.
+  if (!initialFrame && !nodeClaim && !claimSettled) return null;
+
+  // Which card to show is the NODE's answer (`auth.claim.status`), not this
+  // browser's inference — see `defaultSignedOutFrame`.
+  const frame = initialFrame ?? defaultSignedOutFrame(nodeClaim);
 
   return (
     <AuthActionsContext.Provider value={actions}>
       <AuthFlow
+        // KEYED ON THE DECISION. `initialFrame` seeds AuthFlow's internal
+        // frame state and is read once at mount, so a claim answer that lands
+        // after the flow is already on screen would be silently ignored — the
+        // gate would compute `1d` and keep rendering `1a`. Measured: sign out
+        // immediately after claiming and the claim card came back, for a node
+        // that had just been claimed. Remounting on a changed decision is the
+        // cheap fix; the flow holds no state worth preserving across one.
+        key={frame}
         frame={undefined}
         initialFrame={frame}
         identity={session.serverIdentity}

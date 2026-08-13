@@ -168,7 +168,7 @@ describe('/health is a cache-invalidation EPOCH, never a per-operation claim', (
     const rows = discovery(l).filter((r) => r.availability !== 'unavailable');
     // Knowing 28 handlers exist tells you nothing about WHICH 28.
     expect(rows.every((r) => r.availability === 'unknown')).toBe(true);
-    expect(rows).toHaveLength(157);
+    expect(rows).toHaveLength(159);
   });
 
   it('the implementation epoch key is distinctly prefixed and cannot read as a capabilityEpoch', () => {

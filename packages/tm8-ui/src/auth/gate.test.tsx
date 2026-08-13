@@ -32,6 +32,7 @@ import {
   useAuthSession,
 } from './index';
 import { defaultSignedOutFrame } from './AuthGate';
+import { NODE_CLAIM_CACHE_KEY } from './session';
 
 function installStorage(): void {
   // The realSeamFlag.test.ts pattern — LOAD-BEARING under this runner, whose
@@ -70,7 +71,16 @@ interface FakeAuthServer {
   sessions: Map<string, string>;
   /** Every request the gate made, for negative assertions. */
   requests: Array<{ method: string; path: string }>;
+  /**
+   * The node's live claim token, or null once burned. A node is CLAIMED when
+   * any account exists — the same rule `public.node_is_claimed()` applies, so
+   * the fake and the real server agree on the one fact the gate branches on.
+   */
+  claimToken: string | null;
 }
+
+/** What the boot log would have printed. */
+export const FAKE_CLAIM_TOKEN = 'tm8c_test-claim-token';
 
 function accountView(a: FakeAccount) {
   return {
@@ -102,7 +112,12 @@ function refusal(status: number, code: string, message: string): Response {
  * green a test that measured nothing.
  */
 function installFakeAuthServer(): FakeAuthServer {
-  const server: FakeAuthServer = { accounts: new Map(), sessions: new Map(), requests: [] };
+  const server: FakeAuthServer = {
+    accounts: new Map(),
+    sessions: new Map(),
+    requests: [],
+    claimToken: FAKE_CLAIM_TOKEN,
+  };
   let minted = 0;
 
   const impl = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -113,6 +128,59 @@ function installFakeAuthServer(): FakeAuthServer {
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
     const auth = (init?.headers as Record<string, string> | undefined)?.authorization ?? '';
     const bearer = auth.replace(/^Bearer\s+/i, '');
+
+    // `auth.claim.status` — claim-free, and the gate asks it before it can
+    // know who anybody is. Claimed === any account exists.
+    if (method === 'GET' && path === '/v2/auth/claim') {
+      const claimed = server.accounts.size > 0;
+      return json(200, {
+        data: { claimed, mode: 'single', signupPath: claimed ? 'admin' : 'claim' },
+      });
+    }
+
+    // `auth.claim` — the token is the authorization. Single-use: burned here,
+    // so a second claim with the same token is refused exactly as the real
+    // `claim_node` refuses it.
+    if (method === 'POST' && path === '/v2/auth/claim') {
+      if (!server.claimToken || String(body.token ?? '') !== server.claimToken) {
+        return refusal(401, 'unauthenticated', 'invalid or already-used claim token');
+      }
+      if (server.accounts.size > 0) {
+        return refusal(403, 'forbidden', 'this node is already claimed');
+      }
+      server.claimToken = null;
+      const username = String(body.username ?? '');
+      const account: FakeAccount = {
+        username,
+        password: String(body.password ?? ''),
+        displayName: typeof body.displayName === 'string' ? body.displayName : null,
+        accountId: `acct_${username}`,
+        identityId: `id_${username}`,
+      };
+      server.accounts.set(username, account);
+      // MUST follow the login route's token shape: the logout route resolves a
+      // named session by `token.startsWith('tm8s_' + sessionId + '.')`, so a
+      // claim-minted token in any other shape is unrevokable — which showed up
+      // as the blocked-storage test finding an orphaned session it could not
+      // clean up.
+      minted += 1;
+      const sessionId = `sess_${minted}`;
+      const token = `tm8s_${sessionId}.secret${minted}`;
+      server.sessions.set(token, username);
+      return json(200, {
+        data: {
+          token,
+          account: accountView(account),
+          session: {
+            sessionId,
+            kind: 'browser',
+            actingAsTeamMemberId: null,
+            label: 'first-run claim',
+            expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          },
+        },
+      });
+    }
 
     if (method === 'POST' && path === '/v2/auth/signup') {
       const username = String(body.username ?? '');
@@ -217,6 +285,13 @@ const DISPLAY_ACTOR = {
 };
 
 async function createAccountThroughTheUI(name = NAME, password = PASSWORD) {
+  // On an unclaimed node the first-run card performs `auth.claim`, and the
+  // token is the authorization. Filled only when the field is on screen so
+  // this helper still drives the plain signup card where that is what renders.
+  const tokenField = screen.queryByLabelText('SETUP TOKEN');
+  if (tokenField) {
+    fireEvent.change(tokenField, { target: { value: FAKE_CLAIM_TOKEN } });
+  }
   fireEvent.change(screen.getByLabelText('YOUR NAME'), { target: { value: name } });
   fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: password } });
   // "Create account" — first run or another, the label promises no role
@@ -241,6 +316,16 @@ let server: FakeAuthServer;
 beforeEach(() => {
   installStorage();
   server = installFakeAuthServer();
+  // A WARM BROWSER — one that has seen this node before. The gate reads the
+  // per-server claim cache synchronously so the first paint is already
+  // correct; without this seed every test below would be measuring the cold
+  // round trip rather than the auth loop it is actually about. The cold path
+  // has its own tests ("a cold browser…" below), which is where that
+  // behaviour belongs.
+  localStorage.setItem(
+    NODE_CLAIM_CACHE_KEY,
+    JSON.stringify({ local: { claimed: false, mode: 'single', signupPath: 'claim' } }),
+  );
 });
 afterEach(() => {
   cleanup();
@@ -259,11 +344,32 @@ describe('leg 1 — unauthenticated, the app is NOT on screen', () => {
     expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a');
   });
 
-  it('opens remote and relayed fresh browsers on sign-in, never on an unauthorized signup promise', () => {
-    expect(defaultSignedOutFrame(0, 'local', 'tm8-server.tail28ac62.ts.net')).toBe('1d');
-    expect(defaultSignedOutFrame(0, 'staging', 'localhost')).toBe('1d');
-    expect(defaultSignedOutFrame(0, 'local', '127.0.0.1')).toBe('1a');
-    expect(defaultSignedOutFrame(0, 'local', 'worktree.localhost')).toBe('1a');
+
+  /**
+   * THIS TEST USED TO ASSERT THE DEAD END. Its previous form pinned
+   * `defaultSignedOutFrame(0, 'local', 'tm8-server.tail…')` to `1d` — a remote
+   * fresh browser was sent to a sign-in card for a node that had no credential
+   * and no way to get one. That was honest about `auth.signup` being refused
+   * and silent about there being no way forward at all.
+   *
+   * The frame now follows the NODE, not the hostname: an unclaimed node offers
+   * the claim card wherever the browser is, because the claim token authorizes
+   * the act without loopback.
+   */
+  it('follows the node, not the hostname — an unclaimed node offers the claim card anywhere', () => {
+    expect(defaultSignedOutFrame({ claimed: false, mode: 'single', signupPath: 'claim' })).toBe('1a');
+    expect(defaultSignedOutFrame({ claimed: false, mode: 'multi', signupPath: 'claim' })).toBe('1a');
+    expect(defaultSignedOutFrame({ claimed: true, mode: 'single', signupPath: 'admin' })).toBe('1d');
+    expect(defaultSignedOutFrame({ claimed: true, mode: 'multi', signupPath: 'invite' })).toBe('1d');
+  });
+
+  /**
+   * An unreachable node is NOT an unclaimed one. Rendering the claim ceremony
+   * for a node that never answered would promise an act that cannot succeed —
+   * the same class of lie the old hostname rule told, pointed the other way.
+   */
+  it('never reads an unanswered node as unclaimed', () => {
+    expect(defaultSignedOutFrame(null)).toBe('1d');
   });
 
   it('does not offer create-another-account on a relayed server', () => {
@@ -331,6 +437,9 @@ describe('leg 2 — create an account, and the app renders', () => {
 
   it('refuses a password shorter than the 8 characters the server enforces', async () => {
     render(<AuthGate>{APP}</AuthGate>);
+    // The token first: without it the act is refused for a DIFFERENT reason
+    // (no capability), and this test is about the password floor.
+    fireEvent.change(screen.getByLabelText('SETUP TOKEN'), { target: { value: FAKE_CLAIM_TOKEN } });
     fireEvent.change(screen.getByLabelText('YOUR NAME'), { target: { value: NAME } });
     fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: 'short' } });
     fireEvent.click(screen.getByRole('button', { name: /create (owner )?account/i }));
@@ -664,6 +773,13 @@ describe('blocked storage is refused out loud, never failed silently', () => {
       },
     });
     render(<AuthGate>{APP}</AuthGate>);
+    // BLOCKED STORAGE IS ALSO A COLD BROWSER: there is no cached claim answer
+    // to read, so the gate renders nothing until the node replies. Awaiting
+    // the card is the point of the test, not a workaround for it — a viewer
+    // whose storage is blocked must still be told, and telling them requires
+    // the card to arrive.
+    await screen.findByLabelText('SETUP TOKEN');
+    fireEvent.change(screen.getByLabelText('SETUP TOKEN'), { target: { value: FAKE_CLAIM_TOKEN } });
     fireEvent.change(screen.getByLabelText('YOUR NAME'), { target: { value: NAME } });
     fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: PASSWORD } });
     fireEvent.click(screen.getByRole('button', { name: /create (owner )?account/i }));

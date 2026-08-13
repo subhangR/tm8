@@ -26,8 +26,25 @@ import { useAuthActions } from './gate-context';
 import { failureCopy } from './failures';
 import { handleFrom } from './session';
 import { CLAIM, FIRST_SPACE, NAME_STEP, SERVER } from './specimen';
-import { CREATE_OWNER, CREATE_SPACE, NAME_SERVER } from './reasons';
+import { CLAIM_TOKEN_REQUIRED, CREATE_OWNER, CREATE_SPACE, NAME_SERVER } from './reasons';
 import type { FrameProps } from './types';
+
+/**
+ * The `?claim=` token the server printed in its boot link.
+ *
+ * A URL is a poor place for a secret and this is the one deliberate exception:
+ * a click-to-claim link cannot work without it, the token is single-use, and
+ * it is burned the moment the ceremony completes. Read once at mount rather
+ * than watched — the field is the state after that, so a viewer editing it is
+ * not fighting the URL.
+ */
+function readClaimTokenFromUrl(): string {
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? '').get('claim')?.trim() ?? '';
+  } catch {
+    return '';
+  }
+}
 
 /**
  * 1a — Claim, step 1 · you. Oracle L33–L47.
@@ -63,6 +80,11 @@ export function FrameClaim(props: FrameProps) {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
+  // Prefilled from `?claim=` so the printed link is one click. It stays an
+  // EDITABLE field rather than a hidden value: an operator who copied the
+  // token out of `<dataDir>/setup-token` has no link to click, and a hidden
+  // field would leave them with a card they cannot complete.
+  const [token, setToken] = useState(() => readClaimTokenFromUrl());
   const handle = handleFrom(name);
   const failure = actions?.failure;
   // "Another" is a different moment from "first run", and the card says so:
@@ -70,7 +92,20 @@ export function FrameClaim(props: FrameProps) {
   // time through.
   const another = (actions?.accounts.length ?? 0) > 0;
 
-  const submit = () => void actions?.createAccount(name, password);
+  // WHICH ACT THIS CARD PERFORMS IS THE NODE'S ANSWER, not an inference.
+  //
+  // Unclaimed: `auth.claim`, authorized by the setup token — the path that
+  // works from a device that is not the server, and the one that closes the
+  // dead end this card used to walk people into. Claimed: `auth.signup`,
+  // authorized by node admin, which is the pre-existing "create another
+  // account" act and is unchanged.
+  //
+  // A node that has not answered is treated as CLAIMED, so an unreachable
+  // node never renders a ceremony that cannot succeed.
+  const unclaimed = actions?.nodeClaim?.claimed === false;
+  const submit = unclaimed
+    ? () => void actions?.claimNode(token, name, password)
+    : () => void actions?.createAccount(name, password);
 
   return (
     <AuthStage meta={SERVER.unclaimedMeta}>
@@ -96,6 +131,18 @@ export function FrameClaim(props: FrameProps) {
 
         {actions ? (
           <>
+            {unclaimed ? (
+              <AuthField
+                label="SETUP TOKEN"
+                value={token}
+                onChange={setToken}
+                hint={
+                  token
+                    ? 'from this node\u2019s boot log \u2014 single-use, burned when you claim'
+                    : 'paste the tm8c_\u2026 token printed at first boot, or read it from <dataDir>/setup-token on the server'
+                }
+              />
+            ) : null}
             <AuthField
               label="YOUR NAME"
               value={name}
@@ -120,9 +167,18 @@ export function FrameClaim(props: FrameProps) {
                 </button>
               }
             />
-            <AuthAction onClick={submit}>
-              {actions.busy ? CLAIM.actionBusy : another ? CLAIM.anotherAction : CLAIM.gateAction}
-            </AuthAction>
+            {!unclaimed || token.trim() ? (
+              <AuthAction onClick={submit}>
+                {actions.busy ? CLAIM.actionBusy : another ? CLAIM.anotherAction : CLAIM.gateAction}
+              </AuthAction>
+            ) : (
+              // Disabled-with-reason, per the module's own honesty law: an
+              // enabled button here would promise an act the server must
+              // refuse, which is the precise defect this lane closes.
+              <AuthAction reason={CLAIM_TOKEN_REQUIRED}>
+                {another ? CLAIM.anotherAction : CLAIM.gateAction}
+              </AuthAction>
+            )}
           </>
         ) : (
           <>

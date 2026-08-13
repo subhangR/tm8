@@ -14,6 +14,7 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthSessionContext } from './gate-context';
 import {
+  claimNodeOnServer,
   createServerAccount,
   readActiveAccount,
   readKnownAccountsHere,
@@ -57,6 +58,13 @@ export interface AuthSessionState {
   busy: boolean;
 
   createAccount(name: string, password: string): Promise<boolean>;
+  /**
+   * `auth.claim` — first-run only. Separate from `createAccount` because it is
+   * a different act with a different authorization: the claim token, not a
+   * node-admin session. Collapsing them would make the 1a card unable to tell
+   * a viewer which one it is actually performing.
+   */
+  claimNode(token: string, name: string, password: string): Promise<boolean>;
   signIn(handle: string, password: string): Promise<boolean>;
   signOut(): void;
   clearFailure(): void;
@@ -197,6 +205,25 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
     [refresh],
   );
 
+  const claimNode = useCallback(
+    async (token: string, name: string, password: string) => {
+      setBusy(true);
+      setFailure(null);
+      try {
+        const result = await claimNodeOnServer(token, name, password);
+        if (!result.ok) {
+          setFailure(result.failure);
+          return false;
+        }
+        refresh();
+        return true;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refresh],
+  );
+
   const signIn = useCallback(
     async (handle: string, password: string) => {
       setBusy(true);
@@ -236,6 +263,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       failure,
       busy,
       createAccount,
+      claimNode,
       signIn,
       signOut,
       clearFailure,
@@ -248,6 +276,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       failure,
       busy,
       createAccount,
+      claimNode,
       signIn,
       signOut,
       clearFailure,

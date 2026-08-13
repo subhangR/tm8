@@ -49,6 +49,19 @@ export const CREATE_OWNER: UnavailableReason = {
   remedy: 'this surface renders outside the auth gate and has no executor — inside the gate this verb performs auth.signup and auth.login for real',
 };
 
+/**
+ * 1a — the claim button with no token in the field.
+ *
+ * NOT a missing operation: `auth.claim` exists and works. The act is refused
+ * because the CALLER has not supplied the capability that authorizes it, and
+ * saying so is the difference between a card that teaches and one that fails
+ * at the server with a 28000.
+ */
+export const CLAIM_TOKEN_REQUIRED: UnavailableReason = {
+  cause: 'A setup token is required to claim this node',
+  remedy: 'the tm8c_… token is printed in the server’s boot log at first start and written to <dataDir>/setup-token — paste it above, or open the claim link the server printed',
+};
+
 /** 1b — name the server / pick its tile. */
 export const NAME_SERVER: UnavailableReason = {
   cause: 'Naming this server isn’t connected',
@@ -196,6 +209,7 @@ export const SERVER_GROUPED_RAIL: UnavailableReason = {
 
 /** Every reason above, for the sweep tests and the handover's GAPS table. */
 export const ALL_AUTH_REASONS: readonly UnavailableReason[] = [
+  CLAIM_TOKEN_REQUIRED,
   CREATE_OWNER,
   NAME_SERVER,
   CREATE_SPACE,
