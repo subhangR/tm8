@@ -45,6 +45,7 @@ import type { Querier } from '../db/types.js';
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
 import { loadUnreadCounts } from '../facade/entity-read.js';
+import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from '../facade/message-author-projection.js';
 import {
   loadLinkedPullRequestBadges,
   projectForgeFacts,
@@ -471,6 +472,8 @@ export class PgEntityProjector implements EntityProjector {
     const rows = await q.query<SummaryRow>(SUMMARY_SQL, [unique]);
     if (rows.length === 0) return out;
 
+    const humanMessageAuthors = await loadHumanMessageAuthorIds(q, unique);
+
     // Actors referenced by the summaries themselves (`createdBy`, message
     // authors, assignees) may not be in `ids` — resolve them in a second pass
     // over the same query rather than a different one.
@@ -478,6 +481,9 @@ export class PgEntityProjector implements EntityProjector {
     for (const r of rows) {
       actorIds.add(r.created_by);
       if (r.msg_author_id !== null) actorIds.add(r.msg_author_id);
+    }
+    for (const authors of humanMessageAuthors.values()) {
+      for (const id of authors.ids) actorIds.add(id);
     }
 
     const edges = await q.query<{ src_id: string; dst_id: string; type: string }>(EDGE_SQL, [unique]);
@@ -585,7 +591,7 @@ export class PgEntityProjector implements EntityProjector {
         r.id,
         this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], memberIds.get(r.id) ?? [],
           viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts, containsCounts,
-          pullRequests.get(r.id)),
+          pullRequests.get(r.id), humanMessageAuthors.get(r.id)),
       );
     }
     return out;
@@ -658,6 +664,7 @@ export class PgEntityProjector implements EntityProjector {
     unreadCounts: ReadonlyMap<string, number>,
     containsCounts: ReadonlyMap<string, number>,
     pullRequests: LinkedPullRequestBadges | undefined,
+    humanMessageAuthors: HumanMessageAuthorIds | undefined,
   ): EntitySummary {
     const counters: EntityCounters = {
       likes: r.likes ?? 0,
@@ -702,6 +709,14 @@ export class PgEntityProjector implements EntityProjector {
       badges: {
         ...(r.visibility === 'restricted' ? { restricted: true } : {}),
         ...(attention ? { attention } : {}),
+        ...(humanMessageAuthors
+          ? {
+              humanMessageAuthors: {
+                actors: humanMessageAuthors.ids.map((id) => actors.get(id) ?? this.unknownActor(id)),
+                total: humanMessageAuthors.total,
+              },
+            }
+          : {}),
         ...(pullRequests && pullRequests.items.length > 0
           ? {
               pullRequests: pullRequests.items,

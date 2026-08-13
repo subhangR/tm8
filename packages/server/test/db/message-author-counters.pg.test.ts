@@ -1,7 +1,8 @@
-/** 109 — human/agent message counters, including pre-migration backfill. */
+/** 112 — human/agent message counters, including pre-migration backfill. */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
+import { loadHumanMessageAuthorIds } from '../../src/facade/message-author-projection.js';
 
 interface Fixture {
   space: string;
@@ -53,10 +54,10 @@ async function addMessage(author: string, position: number): Promise<string> {
 }
 
 beforeAll(async () => {
-  database = await createW1ScratchDatabase('messages_109');
+  database = await createW1ScratchDatabase('messages_112');
   const files = migrationFiles();
-  const cut = files.findIndex((file) => file.startsWith('109_'));
-  if (cut === -1) throw new Error('109 migration not found');
+  const cut = files.findIndex((file) => file.startsWith('112_'));
+  if (cut === -1) throw new Error('112 migration not found');
   database.apply(files.slice(0, cut));
 
   fixture = await asOwner(async (client) => {
@@ -90,9 +91,18 @@ beforeAll(async () => {
 
 afterAll(async () => database?.destroy());
 
-describe('109 — message author counters', () => {
+describe('112 — message author counters', () => {
   it('backfills the two author kinds while retaining the compatibility total', async () => {
     expect(await counters()).toEqual({ messages: 2, human: 1, agent: 1 });
+  });
+
+  it('projects only actual human authors for the avatar stack', async () => {
+    const authors = await asOwner(async (client) => loadHumanMessageAuthorIds({
+      query: async <R>(sql: string, params: readonly unknown[] = []) =>
+        (await client.query(sql, [...params])).rows as R[],
+      rpc: async () => { throw new Error('not used'); },
+    }, [fixture.task]));
+    expect(authors.get(fixture.task)).toEqual({ ids: [fixture.member], total: 1 });
   });
 
   it('increments and decrements each split through the message trigger', async () => {

@@ -491,7 +491,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // count moves by one while the highest FILENAME jumps by three, and the
     // two numbers are not each other. Re-measured on THIS tree, not
     // incremented: `ls db/migrations/*.sql | wc -l` = 104.
-    expect(server.appliedMigrations.length).toBe(104);
+    // 104 -> 105 on 2026-08-13: 112 adds the human/agent message counters.
+    // It follows landed 111 and avoids the already-claimed 109/110 slots.
+    // Re-measured on this rebased tree: `ls db/migrations/*.sql | wc -l` = 105.
+    expect(server.appliedMigrations.length).toBe(105);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

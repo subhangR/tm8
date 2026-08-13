@@ -18,7 +18,7 @@ export interface TileCountBadge {
   count: number;
   /** Singular noun for the title; the renderer pluralises. */
   label: string;
-  /** Human messages receive the visual attention treatment requested by 109. */
+  /** Human messages receive the visual attention treatment requested by 112. */
   emphasis?: 'human';
 }
 

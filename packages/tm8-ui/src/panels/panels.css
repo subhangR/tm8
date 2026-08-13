@@ -2990,4 +2990,11 @@
    start where the title text starts, not at the tile edge (user screenshot,
    2026-08-13) — the rule itself was lost to a branch hop in #185/#187 and the
    unstyled div rendered flush left. */
-.cv2-root .pn-st__badges { padding: 0 10px 6px 35px; }
+.cv2-root .pn-st__badges {
+  min-width: 0;
+  padding: 0 10px 6px 35px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}

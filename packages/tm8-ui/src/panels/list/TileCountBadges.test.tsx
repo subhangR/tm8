@@ -7,6 +7,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { EntityCounters } from '@tm8/contract';
+import { ada, noor } from '../../fixtures/actors.js';
 import { TileCountBadges, hasTileCounts } from './TileCountBadges.js';
 
 function counters(overrides: Partial<EntityCounters> = {}): EntityCounters {
@@ -63,6 +64,17 @@ describe('TileCountBadges', () => {
   it('keeps the legacy neutral total only when a server has not projected the split', () => {
     render(<TileCountBadges counters={counters({ messages: 5 })} />);
     expect(screen.getByTestId('tile-count-badges').querySelector('[data-count-kind="message"]')?.textContent).toBe('5');
+  });
+
+  it('shows actual human authors in a compact stack with honest overflow', () => {
+    render(<TileCountBadges
+      counters={counters({ messages: 7, humanMessages: 7, agentMessages: 0 })}
+      humanAuthors={{ actors: [ada, noor], total: 5 }}
+    />);
+    const human = screen.getByTestId('tile-count-badges').querySelector('[data-count-kind="human-message"]');
+    expect(human?.querySelectorAll('.kit-avatar')).toHaveLength(2);
+    expect(human?.querySelector('.kit-avatarstack__more')?.textContent).toBe('+3');
+    expect(human?.textContent?.endsWith('7')).toBe(true);
   });
 
   it('drops only the zero rows, keeping the rest', () => {

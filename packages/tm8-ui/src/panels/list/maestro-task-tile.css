@@ -279,6 +279,10 @@
 .cv2-root .pn-tt__badges {
   min-width: 0;
   padding: 0 8px 5px 45px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
 }
 .cv2-root .pn-tt .pn-av-group {
   display: inline-flex;

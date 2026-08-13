@@ -79,7 +79,7 @@ export interface EntityCounters {
   stars: number;
   points: number;
   messages: number;
-  /** Author-kind split (109); optional while older counter events replay. */
+  /** Author-kind split (112); optional while older counter events replay. */
   humanMessages?: number;
   agentMessages?: number;
   /**
@@ -257,6 +257,8 @@ export interface CustomEntityState { kind: CustomEntityKind; fields: Record<stri
 export type EntityState = CoreEntityState | CustomEntityState;
 
 export interface EntityBadges {
+  /** Up to three most-recent distinct human message authors and the unique total. */
+  humanMessageAuthors?: { actors: ActorSummary[]; total: number };
   /** Derived from unresolved rows in `attention_requests`; never stored on the entity. */
   attention?: EntityAttentionSummary;
   blocked?: { unresolvedHardDependencyCount: number; waitingOn: EntitySummary[] };

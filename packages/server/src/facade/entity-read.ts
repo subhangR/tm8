@@ -51,6 +51,7 @@ import {
   projectForgeFacts,
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
+import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message-author-projection.js';
 
 // ---------------------------------------------------------------------------
 // Row shape
@@ -1124,6 +1125,7 @@ export interface AssemblyContext {
   actors: Map<string, ActorSummary>;
   relations: EntityRelations;
   viewerReactions: Map<string, EntityCounters['viewerReaction']>;
+  humanMessageAuthors?: Map<string, HumanMessageAuthorIds>;
   /** Per-viewer unread message counts, per anchor. Absent key means zero. */
   unreadCounts?: Map<string, number>;
   /**
@@ -1366,6 +1368,14 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
 
 function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
   const badges: EntityBadges = {};
+
+  const humanAuthors = ctx.humanMessageAuthors?.get(row.id);
+  if (humanAuthors && humanAuthors.total > 0) {
+    badges.humanMessageAuthors = {
+      actors: humanAuthors.ids.map((id) => actorOf(ctx.actors, id)),
+      total: humanAuthors.total,
+    };
+  }
 
   const attention = ctx.relations.attention?.get(row.id);
   if (attention) badges.attention = attention;
@@ -1771,6 +1781,7 @@ export async function assembleSummaries(
   // THE SAME loader the events projector calls — see its header for why this
   // is one function and not two twins.
   const pullRequests = await loadLinkedPullRequestBadges(q, rows);
+  const humanMessageAuthors = await loadHumanMessageAuthorIds(q, ids);
 
   // Dependency targets are referenced by the blocked badge and are usually NOT
   // in the page being rendered, so they are fetched explicitly.
@@ -1796,6 +1807,7 @@ export async function assembleSummaries(
   for (const list of relations.pulls.values()) actorIds.push(...list.map((p) => p.actorId));
   for (const list of relations.workingOn.values()) actorIds.push(...list.map((w) => w.actorId));
   for (const completion of relations.completedBy.values()) actorIds.push(completion.actorId);
+  for (const authors of humanMessageAuthors.values()) actorIds.push(...authors.ids);
 
   const actors = await loadActors(q, actorIds);
 
@@ -1811,7 +1823,7 @@ export async function assembleSummaries(
 
   // Pass 2: the real thing, with relations and the summaries the badges need.
   const ctx: AssemblyContext = {
-    actors, relations, viewerReactions, unreadCounts, related, pullRequests,
+    actors, relations, viewerReactions, unreadCounts, related, pullRequests, humanMessageAuthors,
   };
   return rows.map((r) => toEntitySummary(r, ctx));
 }

@@ -1,4 +1,4 @@
--- 109 — split message tile counts by human and agent author.
+-- 112 — split message tile counts by human and agent author.
 --
 -- `messages` remains the compatibility total used by existing feed hydration.
 -- Tiles consume the two additive counters below so they never need to fetch an
