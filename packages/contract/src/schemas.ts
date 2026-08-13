@@ -66,9 +66,11 @@ import type {
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
-  ProjectBranch, ProjectBranchTopology,
+  CommitSessionAttribution,
+  ProjectBlameHunk, ProjectBranch, ProjectBranchTopology,
   ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
-  ProjectFileAttachInput, ProjectFileEntry, ProjectFileListing, ProjectFileReadResult,
+  ProjectFileAttachInput, ProjectFileBlame, ProjectFileEntry, ProjectFileHistory,
+  ProjectFileListing, ProjectFileReadResult, ProjectFileRevision, ProjectRevisionDiff,
   ProjectFolderUploadAbortInput, ProjectFolderUploadCompleteInput,
   ProjectFolderUploadEntry, ProjectFolderUploadFileGrant, ProjectFolderUploadGrant,
   ProjectFolderUploadInitInput, ProjectFolderUploadResult,
@@ -1884,6 +1886,63 @@ export const ProjectBranchTopologySchema: z.ZodType<ProjectBranchTopology> = z.o
   branches: z.array(ProjectBranchSchema),
   truncated: z.boolean(),
   staleAfterDays: z.number().int().positive(),
+}).strict();
+
+export const CommitSessionAttributionSchema: z.ZodType<CommitSessionAttribution> = z.object({
+  commitEntityId: z.string().min(1),
+  sessionId: z.string().min(1),
+  sessionTitle: z.string(),
+  agentTool: z.string().nullable(),
+  teamMemberId: z.string().nullable(),
+  teamMemberName: z.string().nullable(),
+}).strict();
+
+export const ProjectFileRevisionSchema: z.ZodType<ProjectFileRevision> = z.object({
+  oid: z.string().min(1),
+  author: z.string(),
+  authorEmail: z.string(),
+  committedAt: z.string(),
+  subject: z.string(),
+  additions: z.number().int().nonnegative().nullable(),
+  deletions: z.number().int().nonnegative().nullable(),
+  path: z.string().min(1),
+  session: CommitSessionAttributionSchema.nullable(),
+}).strict();
+
+export const ProjectRevisionDiffSchema: z.ZodType<ProjectRevisionDiff> = z.object({
+  oid: z.string().min(1),
+  diff: z.string(),
+  truncated: z.boolean(),
+}).strict();
+
+export const ProjectFileHistorySchema: z.ZodType<ProjectFileHistory> = z.object({
+  projectId: ProjectIdSchema,
+  workingDir: z.string().min(1),
+  path: z.string().min(1),
+  revisions: z.array(ProjectFileRevisionSchema),
+  truncated: z.boolean(),
+  diff: ProjectRevisionDiffSchema.nullable(),
+}).strict();
+
+export const ProjectBlameHunkSchema: z.ZodType<ProjectBlameHunk> = z.object({
+  oid: z.string().min(1),
+  startLine: z.number().int().positive(),
+  lineCount: z.number().int().positive(),
+  author: z.string(),
+  committedAt: z.string(),
+  summary: z.string(),
+  uncommitted: z.boolean(),
+  session: CommitSessionAttributionSchema.nullable(),
+}).strict();
+
+export const ProjectFileBlameSchema: z.ZodType<ProjectFileBlame> = z.object({
+  projectId: ProjectIdSchema,
+  workingDir: z.string().min(1),
+  path: z.string().min(1),
+  hunks: z.array(ProjectBlameHunkSchema),
+  blamedLines: z.number().int().nonnegative(),
+  totalLines: z.number().int().nonnegative(),
+  truncated: z.boolean(),
 }).strict();
 
 export const ProjectDirectoryEntrySchema: z.ZodType<ProjectDirectoryEntry> = z.object({

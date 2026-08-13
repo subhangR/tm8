@@ -59,6 +59,17 @@
  * caller churn. Filed by the branch-topology-ui lane for dual re-consensus
  * recording alongside the catalog row it consumes (PR #74).
  *
+ * Amendment 8 (2026-08-09, Tier 1 file reads): reads gain `projectFileHistory`
+ * and `projectFileBlame` — the contract's `projects.file.history` and
+ * `projects.file.blame` (GET /v2/projects/:projectId/file-history|blame,
+ * catalog v1). READS over one path in a linked project's working directory:
+ * revisions (rename-following, optional selected-revision patch via
+ * `diffOid`) and working-tree blame hunks, each joined to the `created_in`
+ * session provenance — `session: null` means NO tm8 session recorded, and the
+ * UI must say so rather than guess. Contract-shaped and additive, zero caller
+ * churn. Filed by the tier1-file-history-blame lane for dual re-consensus
+ * recording alongside the catalog rows it consumes.
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -132,6 +143,8 @@ import type {
   PatchTaskInput,
   PostMessageInput,
   ProjectBranchTopology,
+  ProjectFileBlame,
+  ProjectFileHistory,
   ProjectCreateInput,
   ProjectDirectoryListing,
   ProjectFileAttachInput,
@@ -296,6 +309,20 @@ export interface BranchTopologyOpts {
   limit?: number;
 }
 
+/** `projectFileHistory` options — bounded server-side (default 100 revisions). */
+export interface FileHistoryOpts {
+  /** Max revisions returned; the DTO's `truncated` says when this cut the walk. */
+  maxRevisions?: number;
+  /** Full 40-hex oid: also answer that revision's patch (`diff`), byte-capped. */
+  diffOid?: string;
+}
+
+/** `projectFileBlame` options — bounded server-side (default 2000 lines). */
+export interface FileBlameOpts {
+  /** Max lines blamed; `totalLines - blamedLines` is what a cut holds back. */
+  maxLines?: number;
+}
+
 /** `gitDiff` options — bounded server-side (`maxBytes` caps at 1 MiB). */
 export interface GitDiffOpts {
   /** Unified-diff byte cap; server default 256 KiB, max 1 MiB. */
@@ -374,6 +401,19 @@ export interface Seam {
    * read are SKIPPED with a reason, never silently omitted.
    */
   projectContention(projectId: string): Promise<ContentionReport>;
+  /**
+   * The revisions of one path in a linked project's working directory
+   * (Amendment 8) — argv-only git server-side, rename-following, each
+   * revision carrying its `created_in` session attribution or null. The same
+   * `invalid_input`-is-a-project-fact rule as `projectBranches` applies.
+   */
+  projectFileHistory(projectId: string, path: string, opts?: FileHistoryOpts): Promise<ProjectFileHistory>;
+  /**
+   * Working-tree blame of one path (Amendment 8): hunks with commit oid and
+   * the session provenance join. `session: null` means no tm8 session
+   * recorded — consumers must render that as a named absence, never guess.
+   */
+  projectFileBlame(projectId: string, path: string, opts?: FileBlameOpts): Promise<ProjectFileBlame>;
   /**
    * Node-local onboarding is optional because fixture seams have no filesystem.
    * The real seam exposes the complete contract-backed saga surface; its

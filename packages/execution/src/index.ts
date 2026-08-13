@@ -73,6 +73,19 @@ export {
   type BranchTopologyEntry,
   type BranchTopologyOptions,
 } from './git/branch-topology.js';
+export {
+  readFileBlame,
+  readFileHistory,
+  readFileRevisionDiff,
+  UNCOMMITTED_OID,
+  type RevisionDiffResult,
+  type BlameHunk,
+  type FileBlameOptions,
+  type FileBlameResult,
+  type FileHistoryOptions,
+  type FileHistoryResult,
+  type FileRevision,
+} from './git/file-history.js';
 
 // Agent transcript digest — reads the agent's OWN native JSONL (claude
 // ~/.claude/projects, codex ~/.codex/sessions) and normalizes both dialects to

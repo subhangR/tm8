@@ -82,6 +82,8 @@ import {
   type CredentialsStatusView,
   type ContentionReport,
   type ProjectBranchTopology,
+  type ProjectFileBlame,
+  type ProjectFileHistory,
   type ProjectResource,
   type ReactionInput,
   type ExecutionGitCheckpointInput,
@@ -162,6 +164,77 @@ const FIXTURE_PROJECTS: readonly ProjectResource[] = [
 const clone = <T>(x: T): T => structuredClone(x);
 
 const FIXTURE_BASE_MS = Date.parse(FIXTURE_NOW);
+
+// -- Tier 1 file reads (Amendment 8) -----------------------------------------
+// The SAME file the contention fixture flags as overlapping, so the git
+// screens narrate one story. Attribution is deliberately mixed: a joined
+// session, a plain non-tm8 commit (session: null), and an uncommitted hunk —
+// the three states the blame overlay must distinguish honestly.
+const FIXTURE_FILE_PATH = 'packages/server/src/facade/handlers/projects.ts';
+const OID_A = 'a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1';
+const OID_B = 'b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2';
+const OID_C = 'c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3';
+const ZERO_OID = '0'.repeat(40);
+
+const ATTR_LIVE = {
+  commitEntityId: 'fx-commit-a',
+  sessionId: sessionLive.id,
+  sessionTitle: sessionLive.title,
+  agentTool: 'claude-code',
+  teamMemberId: 'tm-forge',
+  teamMemberName: 'forge',
+};
+const ATTR_STALE = {
+  commitEntityId: 'fx-commit-c',
+  sessionId: sessionStale.id,
+  sessionTitle: sessionStale.title,
+  agentTool: 'claude-code',
+  teamMemberId: 'tm-scout',
+  teamMemberName: 'scout',
+};
+
+const FIXTURE_FILE_REVISIONS: ProjectFileHistory['revisions'] = [
+  {
+    oid: OID_A,
+    author: 'forge',
+    authorEmail: 'forge@fixture',
+    committedAt: FIXTURE_NOW,
+    subject: 'feat(projects): register the branches read',
+    additions: 41,
+    deletions: 3,
+    path: FIXTURE_FILE_PATH,
+    session: ATTR_LIVE,
+  },
+  {
+    oid: OID_B,
+    author: 'ada',
+    authorEmail: 'ada@example.com',
+    committedAt: new Date(FIXTURE_BASE_MS - 86_400_000).toISOString(),
+    subject: 'chore: manual hotfix outside tm8',
+    additions: 2,
+    deletions: 2,
+    path: FIXTURE_FILE_PATH,
+    session: null,
+  },
+  {
+    oid: OID_C,
+    author: 'scout',
+    authorEmail: 'scout@fixture',
+    committedAt: new Date(FIXTURE_BASE_MS - 3 * 86_400_000).toISOString(),
+    subject: 'feat(projects): first cut of the handlers',
+    additions: 120,
+    deletions: 0,
+    path: 'packages/server/src/facade/handlers/projects-old.ts',
+    session: ATTR_STALE,
+  },
+];
+
+const FIXTURE_FILE_BLAME_HUNKS: ProjectFileBlame['hunks'] = [
+  { oid: OID_A, startLine: 1, lineCount: 12, author: 'forge', committedAt: FIXTURE_NOW, summary: 'feat(projects): register the branches read', uncommitted: false, session: ATTR_LIVE },
+  { oid: OID_B, startLine: 13, lineCount: 4, author: 'ada', committedAt: new Date(FIXTURE_BASE_MS - 86_400_000).toISOString(), summary: 'chore: manual hotfix outside tm8', uncommitted: false, session: null },
+  { oid: ZERO_OID, startLine: 17, lineCount: 3, author: 'not yet committed', committedAt: '', summary: '', uncommitted: true, session: null },
+  { oid: OID_C, startLine: 20, lineCount: 21, author: 'scout', committedAt: new Date(FIXTURE_BASE_MS - 3 * 86_400_000).toISOString(), summary: 'feat(projects): first cut of the handlers', uncommitted: false, session: ATTR_STALE },
+];
 
 const CAPS_FULL: EntityDetail['capabilities'] = {
   canEdit: true, canDelete: true, canAddChild: true, canLink: true,
@@ -1224,6 +1297,69 @@ export function createFixtureSeam(): FixtureSeam {
           },
         ],
       });
+    },
+    /**
+     * Tier 1 file reads (Amendment 8), deterministic and HONOURING their
+     * arguments: maxRevisions/maxLines really cut and really set `truncated`,
+     * diffOid really selects, an unknown path really refuses — a fixture that
+     * echoes its inputs would let a component test pass against behaviour the
+     * real server does not have.
+     */
+    async projectFileHistory(projectId, path, opts): Promise<ProjectFileHistory> {
+      if (projectId !== FIXTURE_BRANCH_TOPOLOGY.projectId) {
+        throw new CollabError('not_found', `project ${projectId} not found`);
+      }
+      if (path !== FIXTURE_FILE_PATH) {
+        // Real git answers an empty history for a never-committed path.
+        return { projectId, workingDir: '/fixture/tm8-ui', path, revisions: [], truncated: false, diff: null };
+      }
+      let revisions = clone(FIXTURE_FILE_REVISIONS) as ProjectFileHistory['revisions'];
+      let truncated = false;
+      if (opts?.maxRevisions !== undefined && opts.maxRevisions < revisions.length) {
+        revisions = revisions.slice(0, opts.maxRevisions);
+        truncated = true;
+      }
+      let diff: ProjectFileHistory['diff'] = null;
+      if (opts?.diffOid !== undefined) {
+        if (!/^[0-9a-f]{40}$/.test(opts.diffOid)) {
+          throw new CollabError('invalid_input', `not a full commit oid: ${opts.diffOid}`);
+        }
+        // An oid outside the walk answers an empty patch, like git diff-tree.
+        const known = FIXTURE_FILE_REVISIONS.some((r) => r.oid === opts.diffOid);
+        diff = { oid: opts.diffOid, diff: known ? SAMPLE_DIFF : '', truncated: false };
+      }
+      return { projectId, workingDir: '/fixture/tm8-ui', path, revisions, truncated, diff };
+    },
+    async projectFileBlame(projectId, path, opts): Promise<ProjectFileBlame> {
+      if (projectId !== FIXTURE_BRANCH_TOPOLOGY.projectId) {
+        throw new CollabError('not_found', `project ${projectId} not found`);
+      }
+      if (path !== FIXTURE_FILE_PATH) {
+        throw new CollabError('invalid_input', `no such path in the working tree: ${path}`);
+      }
+      const all = clone(FIXTURE_FILE_BLAME_HUNKS) as ProjectFileBlame['hunks'];
+      const totalLines = all.reduce((n, h) => n + h.lineCount, 0);
+      let hunks = all;
+      let blamedLines = totalLines;
+      if (opts?.maxLines !== undefined && opts.maxLines < totalLines) {
+        hunks = [];
+        let budget = opts.maxLines;
+        for (const h of all) {
+          if (budget <= 0) break;
+          if (h.lineCount <= budget) { hunks.push(h); budget -= h.lineCount; }
+          else { hunks.push({ ...h, lineCount: budget }); budget = 0; }
+        }
+        blamedLines = opts.maxLines;
+      }
+      return {
+        projectId,
+        workingDir: '/fixture/tm8-ui',
+        path,
+        hunks,
+        blamedLines,
+        totalLines,
+        truncated: blamedLines < totalLines,
+      };
     },
     async projectBranches(projectId, opts): Promise<ProjectBranchTopology> {
       if (projectId !== FIXTURE_BRANCH_TOPOLOGY.projectId) {

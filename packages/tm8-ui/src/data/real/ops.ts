@@ -86,6 +86,8 @@ import {
   type PatchTaskInput,
   type PostMessageInput,
   type ProjectBranchTopology,
+  type ProjectFileBlame,
+  type ProjectFileHistory,
   type ProjectCreateInput,
   type ProjectDirectoryListing,
   type ProjectFileAttachInput,
@@ -122,7 +124,7 @@ import {
   type WorkInput,
 } from '@tm8/contract';
 import type { HttpClient, QueryParams } from './http';
-import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
 
 /**
  * `GET /v2/spaces/:spaceId/events` response (server `DurableEventPage`,
@@ -430,6 +432,19 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
     projectContention(projectId: string): Promise<ContentionReport> {
       return http.call<ContentionReport>('projects.contention', { params: { projectId } });
+    },
+    /** Tier 1 file reads — seam Amendment 8. */
+    projectFileHistory(projectId: string, path: string, opts?: FileHistoryOpts): Promise<ProjectFileHistory> {
+      return http.call<ProjectFileHistory>('projects.file.history', {
+        params: { projectId },
+        query: { path, maxRevisions: opts?.maxRevisions, diffOid: opts?.diffOid },
+      });
+    },
+    projectFileBlame(projectId: string, path: string, opts?: FileBlameOpts): Promise<ProjectFileBlame> {
+      return http.call<ProjectFileBlame>('projects.file.blame', {
+        params: { projectId },
+        query: { path, maxLines: opts?.maxLines },
+      });
     },
     gitStatus(workSessionId: EntityId): Promise<SessionGitStatus> {
       return http.call<SessionGitStatus>('execution.gitStatus', { params: { workSessionId } });
