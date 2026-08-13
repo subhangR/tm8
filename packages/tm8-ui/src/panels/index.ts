@@ -24,6 +24,7 @@ export {
   EntityDetailPanel,
   type DetailReasons,
   type EntityDetailPanelProps,
+  type MergePrSources,
 } from './EntityDetailPanel';
 export { PANEL_TABS, type PanelHost, type PanelTab } from './detail/chrome';
 export {

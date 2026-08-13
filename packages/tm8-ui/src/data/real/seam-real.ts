@@ -385,6 +385,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       gitCherryPick: (id, input) => ops.gitCherryPick(id, input),
       gitBranch: (id, input) => ops.gitBranch(id, input),
       gitStash: (id, input) => ops.gitStash(id, input),
+      mergePullRequest: (id, input) => ops.mergePullRequest(id, input),
     },
 
     // -- credentials ---------------------------------------------------------

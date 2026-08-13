@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { allKinds, resolveAction } from '../domain';
+import { REASONS, allKinds, deferredActions, resolveAction } from '../domain';
 import { PANEL_PRIMARY_ACTIONS } from './usePanelPrimaries';
 import { ENTITY_VERB_ACTIONS } from './useEntityVerbs';
 
@@ -147,6 +147,20 @@ describe('panel primaries are wired at every mount site', () => {
     expect(unwired).toEqual([]);
   });
 
+  /**
+   * B10, and the SECOND verb to need this guard. `merge-pr` stopped being a
+   * deferral when `tracking.pr.merge` shipped, so its availability no longer
+   * refuses on its own — a host that forgets the executor now draws a live
+   * `Merge…` whose confirm cannot commit. That is precisely the enabled-inert
+   * shape this file was written about, one verb later.
+   */
+  it('every mount passes merge sources, so Merge… can commit its confirm', () => {
+    const unwired = panelMounts()
+      .filter((mount) => !/\bmergePr=/.test(mount.props))
+      .map((mount) => mount.file);
+    expect(unwired).toEqual([]);
+  });
+
   it('a host that declares wiredActions declares them beside onAction', () => {
     // Narrowing the dispatcher without naming the narrowing would silently
     // disable verbs the host CAN perform — the opposite failure, equally quiet.
@@ -208,11 +222,36 @@ describe('the dispatcher and the registry agree', () => {
    * disabled-with-reason. This names the ones relying on that, so the day one
    * gets an executor nobody has to rediscover the set by clicking.
    */
+  /**
+   * B10 — THE INVERSION, kept rather than deleted because the deletion would
+   * lose the record of what changed.
+   *
+   * `merge-pr` used to be the example this file named: a DEFERRED primary
+   * whose own `availability()` refused in every context, carrying authored
+   * copy that said this node only had the read-only tracker. `tracking.pr.merge`
+   * made that precondition false, so the deferral was retired and the reason
+   * string deleted. Asserting the ABSENCE is the point — a reason that outlives
+   * the gap it described is this package asserting a limitation the seam has
+   * since filled, and nothing else in the build would notice.
+   */
+  it('B10: Merge… is live and its deferral reason is gone', () => {
+    const merge = resolveAction('merge-pr');
+    // Live on a real entity: the only gate left is op availability, which an
+    // empty context does not refuse.
+    expect(merge.availability({ spaceId: 'probe', entityId: 'probe-entity' }).kind).toBe('available');
+    // It opens a confirm rather than dispatching — the ellipsis is a promise.
+    expect(merge.flow).toBe('merge-pr');
+    expect(merge.label.endsWith('…')).toBe(true);
+    // The retired copy, gone from the reason table entirely.
+    expect(Object.keys(REASONS)).not.toContain('mergePrDeferred');
+    expect(deferredActions().map((def) => def.ref)).not.toContain('merge-pr');
+  });
+
   it('records which primaries survive only on the wiredActions refusal', () => {
-    // A DEFERRED primary (merge-pr, the B10 forge-write gap) is not relying
-    // on the narrowing: its own availability() refuses with a named reason in
-    // every context, which is the §10.7 disabled-with-reason home — probed
-    // here the same way deferredActions() probes it.
+    // A DEFERRED primary is not relying on the narrowing: its own
+    // availability() refuses with a named reason in every context, which is
+    // the §10.7 disabled-with-reason home — probed here the same way
+    // deferredActions() probes it.
     const alwaysRefused = (ref: (typeof PANEL_PRIMARY_ACTIONS)[number]) =>
       resolveAction(ref).availability({ spaceId: 'probe' }).kind === 'disabled'
       && resolveAction(ref).availability({
@@ -228,7 +267,11 @@ describe('the dispatcher and the registry agree', () => {
       (ref) =>
         !PANEL_PRIMARY_ACTIONS.includes(ref)
         && !ENTITY_VERB_ACTIONS.includes(ref)
-        && resolveAction(ref).flow !== 'launch'
+        // ANY flow verb has an executor — its surface. Written as `!== 'launch'`
+        // until B10 added a second flow, at which point the equality was itself
+        // the action-id literal §15.2 keeps out, and `merge-pr` would have been
+        // reported as unwired while being wired through its confirm.
+        && resolveAction(ref).flow == null
         && !alwaysRefused(ref),
     );
     // EMPTY TODAY, and it took two dispatchers to get here: `terminate` from

@@ -6,6 +6,7 @@ import type {
   EntityDetail,
   HandoffView,
   MessageView,
+  TrackingPrMergeResult,
   WorkSessionInteractionProfileProjection,
 } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
@@ -55,7 +56,8 @@ import { WorkSessionContent } from './bodies/WorkSessionContent';
 import { AttachmentStrip } from '../files/AttachmentStrip';
 import { attachedFiles } from '../files/model';
 import type { AttachmentsPort } from '../files/port';
-import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
+import { LinkedPullRequestChips, pullRequestFactsOf, type LinkedPullRequestFacts } from '../pull-requests';
+import { MergePullRequestFlow } from './pull-requests/MergePullRequestFlow';
 
 /**
  * EntityDetailPanel — one of the two universal primitives (L3).
@@ -146,6 +148,25 @@ export interface DetailReasons {
   shareUnavailable: string;
   /** §10.7 — handoffs.withdraw is not in the stamped seam. */
   withdrawUnavailable: string;
+}
+
+/**
+ * What the merge confirm needs from its host. Three fields, and two of them
+ * are optional BECAUSE THEY ARE OFTEN GENUINELY UNKNOWN — the flow's copy
+ * changes to say so rather than printing a placeholder.
+ */
+export interface MergePrSources {
+  /** Commits the merge through the seam. */
+  onMerge: (entityId: string, input: { headSha?: string }) => Promise<TrackingPrMergeResult>;
+  /**
+   * The head the viewer was shown, if this host has one. NO CLIENT READ
+   * PROJECTS A PR'S HEAD SHA TODAY (the column is stored but never surfaced),
+   * so absent is the honest normal case: the flow then omits `headSha` and the
+   * server pins the head it stored — the row the human reviewed.
+   */
+  headShaFor?: (entityId: string) => string | null;
+  /** The viewer's GitHub login, for attribution. Null ⇒ not known here. */
+  githubLogin?: string | null;
 }
 
 export interface EntityDetailPanelProps {
@@ -340,6 +361,17 @@ export interface EntityDetailPanelProps {
    * working Run. Absent ⇒ Run falls back to the disabled-with-reason path.
    */
   launch?: LaunchSources | null;
+  /**
+   * THE FORGE WRITE DOOR for `Merge…` (B10), shaped like `launch`: the verb
+   * carries `flow: 'merge-pr'` in registry data, so it expands the confirm and
+   * the confirm commits. Absent ⇒ Merge falls back to the disabled-with-reason
+   * path, exactly as Run does without launch sources.
+   *
+   * A HOST WIRES THIS FOR EVERY KIND; the flow renders only when the subject
+   * actually reads as a pull request, which `pullRequestFactsOf` decides from
+   * the row's own shape. No kind literal enters this file (§15.2).
+   */
+  mergePr?: MergePrSources | null;
   onOpenEntity?: (id: string) => void;
   onRetry?: () => void;
 }
@@ -499,6 +531,19 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   const alwaysDark = isTerminal;
 
   /**
+   * WHAT THE MERGE CONFIRM WOULD NAME — `repo#n`, or null when this row does
+   * not read as a pull request at all.
+   *
+   * Read through `pullRequestFactsOf`, which decides from the row's own SHAPE
+   * and answers null for everything else. That is what keeps the merge flow
+   * out of this file's knowledge of kinds (§15.2): the panel never asks what
+   * the entity is, only whether a PR reader could make sense of it.
+   */
+  const mergeSubject = pullRequestFactsOf(detail);
+  /** A const, so the guard below narrows inside the commit callback too. */
+  const mergePr = props.mergePr;
+
+  /**
    * THE CONTROL STRIP — ONE ROW, UNDER THE TABS.
    *
    * USER RULING 2026-08-05, on the task panel, verbatim: "the top part is
@@ -641,9 +686,23 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                  the expand would render an empty teammate select over an
                  un-committable Launch — a config that cannot configure is a
                  worse answer than the honest "not wired here" refusal. */
-              onFlow={props.launch ? setFlowRef : undefined}
+              /* Wired when the host can serve AT LEAST ONE flow. Without any,
+                 the expand would open an empty card — and a config that cannot
+                 configure is a worse answer than the honest "not wired here"
+                 refusal. Which surface opens is decided below, by the verb. */
+              onFlow={props.launch || mergePr ? setFlowRef : undefined}
               flowSurface={
-                flowRef && props.launch ? (
+                flowRef && resolveAction(flowRef).flow === 'merge-pr' && mergePr && mergeSubject ? (
+                  <MergePullRequestFlow
+                    key={flowRef}
+                    pr={mergeSubject}
+                    headSha={mergePr.headShaFor?.(detail.id) ?? null}
+                    githubLogin={mergePr.githubLogin ?? null}
+                    onMerge={(input) => mergePr.onMerge(detail.id, input)}
+                    onDismiss={() => setFlowRef(null)}
+                    boundsRef={actionBarRef}
+                  />
+                ) : flowRef && resolveAction(flowRef).flow === 'launch' && props.launch ? (
                   <LaunchQuickConfig
                     subject={detail}
                     /* The mode is the VERB's, read off the registry — so

@@ -130,6 +130,8 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
+  type TrackingPrMergeInput,
+  type TrackingPrMergeResult,
   type WorkInput,
 } from '@tm8/contract';
 import type { HttpClient, QueryParams } from './http';
@@ -525,6 +527,20 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     gitStash(workSessionId: EntityId, input: ExecutionGitStashInput): Promise<SessionGitStashResult> {
       return http.call<SessionGitStashResult>('execution.gitStash', {
         params: { workSessionId },
+        body: input,
+      });
+    },
+
+    /**
+     * The forge write door. `POST /v2/tracking/pr/:id/merge` — note the param is
+     * `id`, the PULL REQUEST entity, not a work session: this verb never touches
+     * a checkout. Every refusal arrives as a normal error code with
+     * `details.reason`; `toCollabError` already carries both to the caller, so
+     * nothing is interpreted here.
+     */
+    mergePullRequest(id: EntityId, input: TrackingPrMergeInput): Promise<TrackingPrMergeResult> {
+      return http.call<TrackingPrMergeResult>('tracking.pr.merge', {
+        params: { id },
         body: input,
       });
     },

@@ -198,6 +198,8 @@ import type {
   SpaceKindCounts,
   SpaceSettingsView,
   SpaceSummary,
+  TrackingPrMergeInput,
+  TrackingPrMergeResult,
   WorkInput,
   WorkSessionStatus,
   WorkStatus,
@@ -796,6 +798,36 @@ export interface Seam {
     gitCherryPick(id: EntityId, input: ExecutionGitCherryPickInput): Promise<SessionGitCherryPickResult>;
     gitBranch(id: EntityId, input: ExecutionGitBranchInput): Promise<SessionGitBranchResult>;
     gitStash(id: EntityId, input: ExecutionGitStashInput): Promise<SessionGitStashResult>;
+    /**
+     * Amendment 11 (2026-08-13, B10 forge write): `tracking.pr.merge` — land a
+     * tracked PR ON THE FORGE, as the acting member's own GitHub credential.
+     *
+     * THE COUNTERPART TO `gitMerge`'S DELIBERATE EXCLUSION, and the reason that
+     * exclusion was safe: the rail refuses session-branch → base because
+     * "landing on base goes through a PR", and until #184 there was no door for
+     * the PR half either. `merge-pr` has therefore sat in the action registry
+     * DEFERRED, carrying the authored reason "this node only has the read-only
+     * tracker". That precondition is now false; this is what retires it.
+     *
+     * IT REFUSES FROM OBSERVED FACTS, BEFORE ANY NETWORK — state `open`,
+     * mergeable not `dirty`, CI not `failing`, and a stored member credential.
+     * The server guards on the STORED row rather than a fresh read on purpose:
+     * the stored row is what the human REVIEWED. That makes the refusal
+     * vocabulary (`details.reason`: not_open | conflicted | ci_red |
+     * no_github_credential | forge_blocked | head_moved) part of THIS seam's
+     * contract, not an implementation detail — callers render it verbatim.
+     *
+     * `headSha` is NOT a version guard: it is the observed head to merge, and
+     * omitting it lets the server pin the head it stored. Either way a branch
+     * that moved after review answers `head_moved` instead of merging commits
+     * nobody looked at — so callers should pin what the user was SHOWN.
+     *
+     * Success returns the forge's own `mergeSha`. It does NOT flip the PR's
+     * lifecycle here: `merged` arrives through the observer loop as a
+     * `git.pr_state_changed` fact. A caller that repaints the chip optimistically
+     * is asserting an outcome the forge has not confirmed.
+     */
+    mergePullRequest(id: EntityId, input: TrackingPrMergeInput): Promise<TrackingPrMergeResult>;
   };
 
   /**
@@ -846,10 +878,26 @@ export interface Seam {
  * attachment: setConnection / setLiveness / triggerResync). Lets the gate
  * screen demo the honesty states and the hydration-replay path on demand.
  */
+/**
+ * Every outcome `commands.mergePullRequest` can produce, as one word a test
+ * can name. The first group is the op's OBSERVED-FACT vocabulary
+ * (`details.reason`); the second is its tail — codes that carry no `reason`,
+ * so a caller that keys off `reason` alone renders an empty refusal for them;
+ * and `not_implemented` is the 501 an older node answers, which is a state to
+ * render, not an error to log.
+ */
+export type FixturePrMergeGuard =
+  | 'available'
+  | 'not_open' | 'conflicted' | 'ci_red' | 'no_github_credential'
+  | 'forge_blocked' | 'head_moved'
+  | 'not_found' | 'unauthorized' | 'rate_limited' | 'upstream_unavailable'
+  | 'not_implemented';
+
 export interface FixtureControls {
   setConnection(state: ConnectionState): void;
   setLiveness(spaceId: SpaceId, liveEntityIds: string[], nodeBootId?: string): void;
   triggerResync(spaceId: SpaceId): void;
+  setPrMergeGuard(guard: FixturePrMergeGuard): void;
 }
 
 export interface FixtureSeam extends Seam {

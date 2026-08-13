@@ -29,6 +29,7 @@ import type { Seam, SessionLiveness } from '../data/seam';
 import { GraphView, type GraphTimelineStep } from './GraphView';
 import { debugSurfaceFor } from '../views/debugSurface';
 import { gitSurfaceFor } from '../views/gitSurface';
+import { mergePrPortFor } from '../views/mergePrPort';
 import { taskGitSectionFor } from '../views/taskGitSection';
 import { graphSurfaceFor } from '../views/graphSurface';
 import { attachmentsFor } from '../files/port';
@@ -171,6 +172,10 @@ export function GraphScreen(props: GraphScreenProps) {
       wiredActions={primaries.wiredActions}
       membershipAuthoring={membership.authoringFor(detail)}
       launch={props.launch}
+      // `data.seam` is optional on this narrow port, so the helper answers
+      // null for a host without one and the confirm renders its not-wired
+      // refusal instead of a live Confirm merge.
+      mergePr={mergePrPortFor(data.seam)}
       pinned={false}
       // Same refusal shape as EntityView: the panel HAS a permanent slot here,
       // so the pin verb is refused with the true reason, never hidden (L6).
