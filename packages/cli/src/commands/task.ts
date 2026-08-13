@@ -37,6 +37,7 @@ import {
   type ExitCode,
 } from '../exit.js';
 import { resolveMutationId } from '../mutation.js';
+import { ApiError } from '../errors.js';
 import { requireSpace } from '../context.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import {
@@ -111,10 +112,71 @@ async function taskComplete(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * Claim this session as the LINKER of the artifact a link command touched —
+ * best effort, separate request, never fatal (the same law `entity create`'s
+ * session claim follows: a derived edge must never take down the operation
+ * that caused it).
+ *
+ * WHY THIS EXISTS: the forge watcher resolves a PR's OWNING SESSION through
+ * `created_in` on the pull_request entity first. `link_pull_request` records
+ * the acting MEMBER but not the acting SESSION, so without this claim a PR
+ * linked by an agent has no owning session and a CI-failure nudge has no
+ * addressee — found live by the Tier 3 E2E rig, not by any mock.
+ *
+ * ROUTING POLICY, chosen not accidental: this edge makes the LINKER outrank a
+ * branch-coding session (`created_in` beats `in_worktree` in
+ * `pr_owning_session`'s confidence order). The linker declared interest in
+ * the PR as a tracked object; the coder may be one of several sessions on
+ * the branch. Liveness still outranks both.
+ */
+async function claimLinkedArtifactSession(
+  cmd: CommandContext,
+  data: unknown,
+  artifactKind: 'pull_request' | 'commit',
+): Promise<void> {
+  const sessionId = cmd.ctx.sessionId;
+  if (sessionId === undefined) return;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return;
+
+  const patches = (data as { patches?: unknown } | null)?.patches;
+  if (!Array.isArray(patches)) return;
+  const artifact = patches.find(
+    (p): p is { id: string; kind: string } =>
+      typeof p === 'object' && p !== null &&
+      (p as { kind?: unknown }).kind === artifactKind &&
+      typeof (p as { id?: unknown }).id === 'string',
+  );
+  if (artifact === undefined) return;
+
+  try {
+    await clientFor(cmd.ctx).invoke('edges.create', {
+      body: {
+        srcId: artifact.id,
+        dstId: sessionId,
+        type: 'created_in',
+        clientMutationId: resolveMutationId(undefined),
+      },
+    });
+  } catch (err) {
+    // `not_found` on the session is the benign cross-database answer (env
+    // leakage into a harness, or --server pointing elsewhere): no edge is the
+    // correct outcome. `conflict` means an earlier link already claimed a
+    // birth session — also correct, first claim wins. Anything else is a
+    // claim that should have landed, so it is warned, never raised.
+    if (err instanceof ApiError && (err.code === 'not_found' || err.code === 'conflict')) return;
+    cmd.out.warn(
+      `note: could not record this session as the linker of ${artifact.id} ` +
+        `(${err instanceof Error ? err.message : String(err)}). The link itself landed.`,
+    );
+  }
+}
+
 /** `link-pr` and `link-commit` differ only in the operation they bind. */
 function linker(
   operation: 'entities.commands.linkPr' | 'entities.commands.linkCommit',
 ): (cmd: CommandContext) => Promise<ExitCode> {
+  const artifactKind = operation === 'entities.commands.linkPr' ? 'pull_request' : 'commit';
   return async (cmd) => {
     assertKnownOptions(cmd, ['project', 'mutation-id']);
     const id = requireArg(cmd, 0, '<task-id>');
@@ -130,6 +192,8 @@ function linker(
       params: { id },
       body: withActor(cmd, body),
     });
+    // After the link has landed, never before it — see claimLinkedArtifactSession.
+    await claimLinkedArtifactSession(cmd, data, artifactKind);
     cmd.out.data(data, renderCommandResult);
     return EXIT_OK;
   };

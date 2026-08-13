@@ -58,6 +58,8 @@ let server: Server;
 let baseUrl: string;
 let seen: Seen[] = [];
 let reply: { status: number; body: unknown } = { status: 200, body: { data: {}, requestId: 'req_t' } };
+/** Optional per-request override, keyed by 0-based request index; falls back to `reply`. */
+let replyFor: ((n: number) => { status: number; body: unknown }) | undefined;
 let scratchHome: string;
 
 beforeAll(async () => {
@@ -73,9 +75,10 @@ beforeAll(async () => {
         query: url.search,
         body: raw ? (JSON.parse(raw) as unknown) : undefined,
       });
+      const chosen = replyFor ? replyFor(seen.length - 1) : reply;
       res.setHeader('content-type', 'application/json');
-      res.statusCode = reply.status;
-      res.end(JSON.stringify(reply.body));
+      res.statusCode = chosen.status;
+      res.end(JSON.stringify(chosen.body));
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -97,6 +100,7 @@ const ACTOR = '77777777-7777-7777-8777-777777777777';
 beforeEach(() => {
   seen = [];
   reply = { status: 200, body: { data: {}, requestId: 'req_t' } };
+  replyFor = undefined;
   ledger.clear();
   scratchHome ??= mkdtempSync(join(tmpdir(), 'tm8-w4-g3-task-'));
   process.env.TM8_BASE_URL = baseUrl;
@@ -563,5 +567,69 @@ describe('`task import-issue` — one-way import over entities.create', () => {
     const body = (seen[0] as Seen).body as Record<string, unknown>;
     expect(body.title).toBe('o/r#8');
     expect((body.content as { description: string }).description).toContain('closed at import');
+  });
+});
+
+
+// ── the linker's session claim ──────────────────────────────────────────────
+//
+// The forge watcher resolves a PR's owning session through `created_in` on the
+// pull_request entity FIRST — and `link_pull_request` records the member, not
+// the session. Without this claim, a PR linked by an agent has no owning
+// session and a CI-failure nudge has no addressee. Found by the live E2E rig.
+
+describe('`task link-pr` claims the linking session, best effort', () => {
+  const SESSION = '88888888-8888-7888-8888-888888888888';
+  const PR_ENTITY = '99999999-9999-7999-8999-999999999999';
+
+  afterEach(() => {
+    delete process.env.TM8_SESSION_ID;
+  });
+
+  it('creates a created_in edge from the linked PR entity to this session', async () => {
+    process.env.TM8_SESSION_ID = SESSION;
+    reply = {
+      status: 200,
+      body: {
+        data: { patches: [{ id: TASK, kind: 'task' }, { id: PR_ENTITY, kind: 'pull_request' }] },
+        requestId: 'req_t',
+      },
+    };
+    const r = await drive(['task', 'link-pr', TASK, 'https://github.com/o/r/pull/7']);
+    expect(r.code).toBe(0);
+    expect(seen).toHaveLength(2);
+    const second = seen[1] as Seen;
+    expect(second.pathname).toBe(bindPath('edges.create', {}));
+    expect(second.body).toMatchObject({ srcId: PR_ENTITY, dstId: SESSION, type: 'created_in' });
+    expect(r.stderr).toBe('');
+  });
+
+  it('does nothing without a session, and never fails the link on a claim error', async () => {
+    reply = {
+      status: 200,
+      body: { data: { patches: [{ id: PR_ENTITY, kind: 'pull_request' }] }, requestId: 'req_t' },
+    };
+    const r1 = await drive(['task', 'link-pr', TASK, 'https://github.com/o/r/pull/7']);
+    expect(r1.code).toBe(0);
+    expect(seen).toHaveLength(1);
+
+    // A 404 on the claim is the benign cross-database answer: silent, exit 0.
+    seen = [];
+    process.env.TM8_SESSION_ID = SESSION;
+    const linkReply = {
+      status: 200,
+      body: { data: { patches: [{ id: PR_ENTITY, kind: 'pull_request' }] }, requestId: 'req_t' },
+    };
+    replyFor = (n) => (n === 0
+      ? linkReply
+      : {
+          status: 404,
+          body: { error: { code: 'not_found', message: 'no session', requestId: 'req_t', retryable: false } },
+        });
+    const r2 = await drive(['task', 'link-pr', TASK, 'https://github.com/o/r/pull/7']);
+    replyFor = undefined;
+    expect(r2.code).toBe(0);
+    expect(r2.stderr).toBe('');
+    expect(seen).toHaveLength(2);
   });
 });
