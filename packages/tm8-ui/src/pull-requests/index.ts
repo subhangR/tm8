@@ -1,5 +1,6 @@
 export { LinkedPullRequestChips } from './LinkedPullRequestChips';
 export {
+  badgePullRequestFactsOf,
   chipsForPullRequest,
   indexLinkedPullRequests,
   pullRequestFactsOf,
