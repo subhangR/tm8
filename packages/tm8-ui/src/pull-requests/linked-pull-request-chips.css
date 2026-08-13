@@ -41,3 +41,36 @@
 .cv2-root .pr-chips--detail {
   padding-top: 5px;
 }
+
+/* -- icon vocabulary (2026-08-13 ruling): lifecycle is the icon's colour -- */
+.cv2-root .pr-chips__icon { flex-shrink: 0; display: block; }
+.cv2-root .pr-chips__icon path { fill: currentColor; }
+.cv2-root .pr-chips__icon--open { color: var(--pn-run); }
+.cv2-root .pr-chips__icon--merged { color: var(--pn-pr-merged); }
+.cv2-root .pr-chips__icon--closed { color: var(--pn-block); }
+.cv2-root .pr-chips__icon--draft { color: var(--pn-idle); }
+.cv2-root .pr-chips__ref { display: inline-flex; align-items: center; gap: 3px; }
+.cv2-root .pr-chips__number {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+.cv2-root a.pr-chips__ref:hover .pr-chips__number { color: var(--pn-brand); }
+.cv2-root .pr-chips__ci {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+.cv2-root .pr-chips__ci--ci-green { color: var(--pn-run); }
+.cv2-root .pr-chips__ci--ci-red { color: var(--pn-block); }
+.cv2-root .pr-chips__conflict {
+  color: var(--pn-block);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
