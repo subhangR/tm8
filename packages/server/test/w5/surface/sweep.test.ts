@@ -507,8 +507,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // already-applied one breaks the invariant on a live deployment while a
     // fresh test database, which always applies in sorted order, never notices.
     // Taking the next number ABOVE the highest applied file is the whole rule.
-    // Re-measured: `ls db/migrations/*.sql | wc -l` = 107.
-    expect(server.appliedMigrations.length).toBe(108);
+    // MEASURED with `ls db/migrations/*.sql | wc -l` = 107. Note the trap: a
+    // bare `git ls-tree db/migrations/ | wc -l` returns 107 for main alone,
+    // because the directory holds a non-.sql entry — counting that and adding
+    // one gives 108 and a red suite. Count the .sql files.
+    expect(server.appliedMigrations.length).toBe(107);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
