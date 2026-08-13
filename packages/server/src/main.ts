@@ -58,6 +58,7 @@ import { createArtifactPreviewServer } from './http/artifact-preview.js';
 import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
 import type { IdentityResolver, RequestIdentity } from './http/types.js';
 import { autoOwnerResolver } from './http/security.js';
+import { announceNodeClaim } from './identity/node-claim-boot.js';
 import { createStaticHandler } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
@@ -828,6 +829,26 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     for (const problem of worktrees.errors) {
       console.log(`  worktree reconciliation could not finish: ${problem.message}`);
     }
+  }
+
+  // LAST, and after the listener is up, so the printed URL is one the reader
+  // can actually click. A node with no credential on it cannot be signed into
+  // at all, and its own output is the only channel to the person who just
+  // installed it — see identity/node-claim-boot.ts.
+  if (db) {
+    await announceNodeClaim({
+      db,
+      dataDir,
+      // The bind address is loopback by S1, so behind a proxy or a tailnet the
+      // server's own url is one the claimant cannot open. TM8_PUBLIC_ORIGIN is
+      // how an operator says where the node actually answers.
+      url: config.publicOrigin ?? url,
+      nodeMode: config.nodeMode ?? 'single',
+      // The claim ceremony credentials the EXISTING owner row, so the row has
+      // to exist before the token is advertised. `owner` is the same memoised
+      // loopback bootstrap every other path uses.
+      ensureOwner: () => owner!(),
+    });
   }
 
   return { server, subscriptions, events, url, db, delivery, preview, scheduler };

@@ -87,6 +87,41 @@ export interface ServerConfig {
    */
   readonly disableAutoOwner?: boolean;
   /**
+   * How this node admits people (`TM8_NODE_MODE`, design D4). Default `single`.
+   *
+   * `single` — a loopback caller with no credential resolves as the owner, so
+   * the operator never sees a gate on the server's own machine. `multi` — the
+   * auto-owner arm is off and everyone signs in, everywhere.
+   *
+   * IT IS CONFIG, AND DELIBERATELY NOT A GRAPH ROW. The mode gates a security
+   * arm, and before a node is claimed "node admin" means anyone who can reach
+   * loopback — precisely the population the mode exists to constrain. A row
+   * would make the switch writable over the network by exactly the party it is
+   * meant to bound. Converting a node is an env edit and a restart; no
+   * operation writes this, and `tm8 node mode` only reads it.
+   *
+   * `multi` IMPLIES `disableAutoOwner`. The combination "multi + auto-owner
+   * live" is refused in `loadConfig` rather than left to convention, because a
+   * multiplayer node that still auto-authenticates its loopback caller is the
+   * silent version of the bug this whole design closes.
+   */
+  readonly nodeMode?: 'single' | 'multi';
+  /**
+   * The origin this node is actually reachable at from a browser
+   * (`TM8_PUBLIC_ORIGIN`), when that differs from its bind address.
+   *
+   * Exists for exactly one reason: the first-run claim link. S1 keeps the bind
+   * loopback, so behind nginx or a tailnet the server's own `url` is
+   * `http://127.0.0.1:<port>` — a link the off-box claimant cannot open, which
+   * defeats the entire point of a ceremony designed to run from another device.
+   * The design specified this and the first implementation shipped without it.
+   *
+   * Display only. It never widens who is trusted, and nothing authorizes
+   * against it — an operator who sets it wrong prints an unreachable link, not
+   * an insecure one.
+   */
+  readonly publicOrigin?: string;
+  /**
    * Upper bound on the Postgres pool (`TM8_DB_POOL_MAX`). Default 8.
    *
    * This number IS the node's read concurrency: the pool queues past it and
@@ -274,6 +309,36 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     throw new ConfigError(`TM8_DB_POOL_MAX must be an integer between 1 and 1000, got ${JSON.stringify(dbPoolMaxRaw)}`);
   }
 
+  // An unrecognised value REFUSES rather than falling back to `single`. A typo
+  // (`TM8_NODE_MODE=multiplayer`) silently defaulting to the permissive mode is
+  // exactly how a node ends up auto-authenticating everyone who reaches
+  // loopback while its operator believes it is locked down.
+  const nodeModeRaw = env.TM8_NODE_MODE?.trim().toLowerCase();
+  if (nodeModeRaw !== undefined && nodeModeRaw !== '' && nodeModeRaw !== 'single' && nodeModeRaw !== 'multi') {
+    throw new ConfigError(
+      `TM8_NODE_MODE must be "single" or "multi", got ${JSON.stringify(env.TM8_NODE_MODE)}`,
+    );
+  }
+  const nodeMode: 'single' | 'multi' = nodeModeRaw === 'multi' ? 'multi' : 'single';
+
+  // Validated at load rather than at print time: a malformed origin should stop
+  // the operator now, not silently produce a broken claim link on the one boot
+  // where it matters.
+  const publicOriginRaw = env.TM8_PUBLIC_ORIGIN?.trim();
+  let publicOrigin: string | undefined;
+  if (publicOriginRaw) {
+    let parsed: URL;
+    try {
+      parsed = new URL(publicOriginRaw);
+    } catch {
+      throw new ConfigError(`TM8_PUBLIC_ORIGIN must be a valid URL, got ${JSON.stringify(publicOriginRaw)}`);
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new ConfigError(`TM8_PUBLIC_ORIGIN must be http(s), got ${JSON.stringify(publicOriginRaw)}`);
+    }
+    publicOrigin = parsed.origin;
+  }
+
   const livekit = resolveLiveKit(env);
 
   const extraAllowedHostnames = (env.TM8_ALLOWED_HOSTNAMES ?? '')
@@ -344,7 +409,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     launchBootstrap: env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
-    disableAutoOwner: envBoolean(env.TM8_DISABLE_AUTO_OWNER, 'TM8_DISABLE_AUTO_OWNER', false),
+    nodeMode,
+    ...(publicOrigin ? { publicOrigin } : {}),
+    // `multi` implies the kill switch. The explicit env var still wins when it
+    // asks for MORE restriction (a hardened single-player node), and can never
+    // ask for less: `||` here means no combination of the two can produce a
+    // multiplayer node with a live auto-owner arm.
+    disableAutoOwner:
+      nodeMode === 'multi'
+      || envBoolean(env.TM8_DISABLE_AUTO_OWNER, 'TM8_DISABLE_AUTO_OWNER', false),
     dbPoolMax,
     ...(livekit ? { livekit } : {}),
   };

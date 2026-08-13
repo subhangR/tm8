@@ -1252,6 +1252,77 @@ export interface AuthSessionGetResult {
   session: AuthSessionView | null;
 }
 
+/**
+ * How this node is configured to admit people (`TM8_NODE_MODE`, design D4).
+ *
+ * `single` — a loopback caller with no credential is resolved as the owner, so
+ * the operator sees no gate on the server's own machine. `multi` — the
+ * auto-owner arm is off and everyone signs in, everywhere.
+ *
+ * It is CONFIG, never a graph row: the mode gates a security arm, and before a
+ * node is claimed "node admin" means anyone who reaches loopback — precisely
+ * the population the mode exists to constrain. Converting is an env edit and a
+ * restart, which is why no operation writes this.
+ */
+export type NodeModeView = 'single' | 'multi';
+
+/**
+ * How account #1 may be created on THIS node, right now. `claim` while
+ * unclaimed; `invite` once claimed (an invite code authorizes its bearer);
+ * `admin` when only a node admin may provision (`auth.signup`).
+ */
+export type NodeSignupPath = 'claim' | 'invite' | 'admin';
+
+/**
+ * `auth.claim.status` — the bootstrap read, and the ONLY question a browser
+ * can ask before it knows who anybody is.
+ *
+ * ANONYMOUS-READABLE BY DESIGN. It tells the person who just installed the node
+ * the single thing they need, and tells an attacker nothing they could not
+ * learn by attempting a claim. Requiring identity would make the gate unable to
+ * choose a frame without already being signed in — the bootstrap circularity
+ * this whole surface exists to break. It deliberately does NOT report whether a
+ * live claim token exists: that is a fact about the operator's filesystem, and
+ * reporting it would tell a stranger whether a claim is currently winnable.
+ */
+export interface AuthClaimStatusResult {
+  /** True once any active account has a credential. See `public.node_is_claimed()`. */
+  claimed: boolean;
+  mode: NodeModeView;
+  signupPath: NodeSignupPath;
+}
+
+/**
+ * `auth.claim` — the first-run ceremony. The TOKEN is the authorization, which
+ * is what lets it work from a phone, over a tailnet, or through a reverse
+ * proxy, none of which are loopback.
+ *
+ * It sets a credential on the EXISTING owner account rather than creating one:
+ * `identity_id` is preserved, so every row the auto-owner created before the
+ * claim becomes the claimant's, permanently and correctly (design D2).
+ *
+ * Claiming SIGNS YOU IN — the result is `auth.login`'s shape, not a bare
+ * acknowledgement. A ceremony that ends at a sign-in card asking you to re-type
+ * what you just chose is a seam the person has to notice.
+ */
+export interface AuthClaimInput {
+  /** The `tm8c_…` plaintext from the boot log or `<dataDir>/setup-token`. */
+  token: string;
+  username: string;
+  password: string;
+  displayName?: string;
+  email?: string;
+  /** Defaults to `browser`. `agent` is refused — agent tokens are minted at spawn. */
+  kind?: 'browser' | 'cli';
+}
+
+export interface AuthClaimResult {
+  /** `tm8s_<sessionId>.<secret>` — returned exactly once, never recoverable. */
+  token: string;
+  account: AuthAccountView;
+  session: AuthSessionView;
+}
+
 // ---------------------------------------------------------------------------
 // credentials.* — Tier B per-member vendor credentials (sub-doc 11 §D).
 //

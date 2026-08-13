@@ -1,11 +1,18 @@
 /**
  * auth.* — local accounts (Identity v2 Stage 1, doc 4 §6).
  *
- * Four operations, and the seam is deliberately thin: every authorization
- * decision except the scrypt comparison lives inside 007's SECURITY DEFINER
+ * Six operations, and the seam is deliberately thin: every authorization
+ * decision except the scrypt comparison lives inside the SECURITY DEFINER
  * RPCs (`ensure_account`'s F1 node-admin gate, `revoke_auth_session`'s
  * self-or-admin gate, `resolve_auth_session`'s revocation/expiry/status
- * checks). The handlers bind the right claims and translate shapes.
+ * checks, and 116's `claim_node` single-use token burn). The handlers bind the
+ * right claims and translate shapes.
+ *
+ * THREE OF THE SIX ARE CLAIM-FREE, and that is a property to preserve rather
+ * than an omission to tidy up: `auth.login`, `auth.claim` and
+ * `auth.claim.status` are reachable on a node where no credential exists yet,
+ * which is the bootstrap hole every other operation is spared from needing.
+ * See docs/identity/FIRST-RUN-CLAIM-DESIGN.md.
  *
  * These commands sit OUTSIDE the idempotency ledger on purpose: a session row
  * is not a graph mutation, so there is no `clientMutationId` and no replay
@@ -15,6 +22,9 @@
 import { CollabError } from '@tm8/contract';
 import type {
   AuthAccountView,
+  AuthClaimInput,
+  AuthClaimResult,
+  AuthClaimStatusResult,
   AuthLoginInput,
   AuthLoginResult,
   AuthLogoutInput,
@@ -30,7 +40,9 @@ import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
 import {
+  claimNode,
   loginWithPassword,
+  nodeIsClaimed,
   resolveBearerIdentity,
   signupAccount,
   type AccountRowJson,
@@ -216,11 +228,96 @@ async function profileDisplayName(
 }
 
 /** The complete auth seam — one registration, one honest group. */
+/**
+ * `auth.claim` — the first-run ceremony (design D1/D2).
+ *
+ * CLAIM-FREE, and it must stay that way: it is the operation that exists
+ * because there is no credential on the node yet. `claimsFor` is deliberately
+ * NOT called — every guard lives in `claim_node`, under one lock, where the
+ * token check, the single-use burn and the re-assertion that the node is still
+ * unclaimed cannot be separated by a race.
+ *
+ * REFUSAL SHAPES, and why they are not all the same. A wrong or already-burned
+ * token is `unauthenticated`, with the same words for both — the reason
+ * `auth.login` refuses to distinguish an unknown username from a wrong
+ * password. A token presented against an already-CLAIMED node is `forbidden`,
+ * because `claim_node` re-asserts the node's state before it burns anything
+ * and that guard order is what makes a leaked token inert. Saying so leaks
+ * nothing: `auth.claim.status` publishes `claimed` to anonymous callers by
+ * design, so this is a fact the caller can already read — and it is far more
+ * actionable than a generic credential refusal.
+ */
+function authClaim(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const body = ctx.body as AuthClaimInput;
+    const issued = await claimNode(
+      deps.db,
+      {
+        token: body.token,
+        username: body.username,
+        password: body.password,
+        displayName: body.displayName ?? null,
+        email: body.email ?? null,
+        ...(body.kind ? { kind: body.kind } : {}),
+      },
+      ctx.requestId,
+    );
+    const result: AuthClaimResult = {
+      token: issued.token,
+      account: issued.account,
+      session: issued.session,
+    };
+    // Claiming signs you in, so a browser claim carries the same Secure,
+    // HttpOnly carrier a browser login does — otherwise the ceremony would end
+    // with a session the app's WebSockets cannot authenticate.
+    if ((body.kind ?? 'browser') !== 'browser') return result;
+    return json(result, {
+      headers: {
+        'cache-control': 'no-store',
+        'set-cookie': sessionCookie(issued.token, issued.session.expiresAt),
+      },
+    });
+  };
+}
+
+/**
+ * `auth.claim.status` — the bootstrap read, answerable with no credential.
+ *
+ * This is the operation that lets the UI gate stop guessing. It previously
+ * decided between "create the first account" and "sign in" from a
+ * BROWSER-LOCAL list, which is not a fact about the node: a fresh browser
+ * profile against a populated node offered a signup that then conflicted, and
+ * a stale entry pinned a browser to the sign-in card forever.
+ *
+ * `signupPath` reports what this node will actually accept right now, so the
+ * gate renders a truth rather than an inference.
+ */
+function authClaimStatus(deps: FacadeDeps): OperationHandler {
+  return async () => {
+    const claimed = await nodeIsClaimed(deps.db);
+    const mode = deps.config.nodeMode ?? 'single';
+    const result: AuthClaimStatusResult = {
+      claimed,
+      mode,
+      // Unclaimed: the claim token is the only way in. Claimed: an invite
+      // authorizes its bearer once that lane lands; until then a node admin
+      // provisioning through `auth.signup` is the honest answer, and saying
+      // `invite` before the operation exists would be the lie this whole
+      // surface was written to remove.
+      signupPath: claimed ? 'admin' : 'claim',
+    };
+    return result;
+  };
+}
+
+/** The complete auth seam — one registration, one honest group. */
 export function registerW2AuthHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
   registry.registerAll({
     'auth.signup': authSignup(deps),
     'auth.login': authLogin(deps),
     'auth.logout': authLogout(deps),
     'auth.session.get': authSessionGet(deps),
+    'auth.claim': authClaim(deps),
+    'auth.claim.status': authClaimStatus(deps),
   });
 }

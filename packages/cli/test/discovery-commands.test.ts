@@ -137,7 +137,9 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // catalog does not model; ZERO new catalog rows.
     // 143 -> 144 (2026-08-13, forge write): `pr merge` — the one catalog
     // row this tranche adds carries its own command.
-    expect(COMMAND_PATHS).toHaveLength(144);
+    // 144 -> 146 (2026-08-13, first-run claim): `auth claim` and
+    // `auth claim status` each carry a command path.
+    expect(COMMAND_PATHS).toHaveLength(146);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

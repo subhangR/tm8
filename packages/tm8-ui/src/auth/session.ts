@@ -380,3 +380,125 @@ export function resetLocalAuth(): void {
   }
   notify();
 }
+
+/* ── the node's own claim state (first-run) ─────────────────────────────── */
+
+/**
+ * WHY THIS EXISTS AT ALL. The gate used to choose between "create the first
+ * account" and "sign in" from `readKnownAccountsHere()` — a BROWSER-LOCAL
+ * list. That is not a fact about the node, and it was wrong in both
+ * directions: a fresh browser profile against a populated node offered a
+ * signup that then conflicted, and a stale entry pinned a browser to the
+ * sign-in card forever. `auth.claim.status` is the node answering for itself.
+ */
+export interface NodeClaim {
+  claimed: boolean;
+  mode: 'single' | 'multi';
+  signupPath: 'claim' | 'invite' | 'admin';
+}
+
+/** Per-server, so switching servers cannot show one node's state for another. */
+export const NODE_CLAIM_CACHE_KEY = 'tm8ui.auth.nodeclaim.v1';
+
+type ClaimCache = Record<string, NodeClaim>;
+
+function readClaimCache(): ClaimCache {
+  try {
+    const raw = window.localStorage.getItem(NODE_CLAIM_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as ClaimCache) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The LAST KNOWN answer, synchronously.
+ *
+ * This is a cache and is treated as one: it exists so a reload paints the
+ * right frame immediately instead of blanking while the node is asked, and the
+ * live answer overwrites it as soon as it lands. It is never the basis for a
+ * refusal — the SERVER refuses a claim on a claimed node, not this record —
+ * so a stale or forged cache entry costs a wrong frame for one paint and
+ * cannot authorize anything.
+ */
+export function readCachedNodeClaim(): NodeClaim | null {
+  return readClaimCache()[readActiveServerId()] ?? null;
+}
+
+function writeCachedNodeClaim(serverId: string, claim: NodeClaim): void {
+  try {
+    const cache = readClaimCache();
+    cache[serverId] = claim;
+    window.localStorage.setItem(NODE_CLAIM_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // A browser that refuses storage still works; it just re-asks every load.
+  }
+}
+
+/**
+ * Ask the active server whether it has been claimed. Claim-free — this is the
+ * one question a caller can ask before it knows who anybody is.
+ *
+ * Returns null when the node could not be asked. The caller must NOT read that
+ * as "unclaimed": offering a claim ceremony to someone whose node is merely
+ * unreachable promises an act that cannot succeed.
+ */
+export async function fetchNodeClaim(): Promise<NodeClaim | null> {
+  const { client, serverId } = clientForActiveServer();
+  try {
+    const result = await client.call<NodeClaim>('auth.claim.status');
+    writeCachedNodeClaim(serverId, result);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `auth.claim` — the first-run ceremony, and the reason the sign-in card is no
+ * longer a dead end on a node nobody can reach over loopback.
+ *
+ * The token is the authorization, so this works from a phone or through a
+ * reverse proxy. Claiming signs you in, so the pass is stored exactly as
+ * `signInToServer` stores one.
+ */
+export async function claimNodeOnServer(
+  token: string,
+  name: string,
+  password: string,
+): Promise<AuthResult<GateAccount>> {
+  const handle = handleFrom(name);
+  if (!handle) return { ok: false, failure: { kind: 'name-required' } };
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { ok: false, failure: { kind: 'password-too-short', min: MIN_PASSWORD_LENGTH } };
+  }
+
+  const { client, serverId } = clientForActiveServer();
+  try {
+    const claimed = await client.call<AuthLoginResult>('auth.claim', {
+      body: { token: token.trim(), username: handle, password, displayName: name.trim(), kind: 'browser' },
+    });
+    // The node is claimed now by definition — record it before storing the
+    // pass so a storage failure still leaves the gate showing sign-in rather
+    // than re-offering a ceremony whose token is already burned.
+    //
+    // `mode` and `signupPath` are RE-READ from the server rather than assumed.
+    // An earlier revision hardcoded `single`/`admin` here, which meant a
+    // successful claim on a MULTI node wrote `single` into the cache — the
+    // gate guessing again, which is the exact habit this module was rewritten
+    // to break. A failed refresh leaves the previous cached values rather than
+    // inventing new ones; `claimed` is the only field this act actually knows.
+    const refreshed = await fetchNodeClaim().catch(() => null);
+    if (!refreshed) {
+      const prior = readCachedNodeClaim();
+      writeCachedNodeClaim(serverId, {
+        claimed: true,
+        mode: prior?.mode ?? 'single',
+        signupPath: prior?.signupPath ?? 'admin',
+      });
+    }
+    return storePass(serverId, claimed);
+  } catch (err) {
+    return { ok: false, failure: failureFrom(err, 'login') };
+  }
+}

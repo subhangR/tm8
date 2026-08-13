@@ -151,7 +151,7 @@ describe('the node itself', () => {
     // 150 -> 151 (2026-08-12): projects.files.archive. Measured off a live
     // /health in CI, not derived — these two are the only pins in the tree that
     // a local run cannot reach, because they need a running server.
-    expect(health.operations).toBe(158) /* 157→158 2026-08-13: #188 chat route */; // MEASURED off /health; +1 2026-08-13 tracking.pr.merge.
+    expect(health.operations).toBe(160) /* 157→158 2026-08-13: #188 chat route */; // MEASURED off /health; +1 2026-08-13 tracking.pr.merge.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

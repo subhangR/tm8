@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:10936f405460bfb1c5b613d83e36981de053cc6f99911c8380695829cd4db353",
+  "catalogDigest": "sha256:52f86f3711ca9d9ae92dcede746e0bfcfcdaee84a6f170d4713abb2ce1065894",
   "catalog": {
-    "total": 159,
-    "v1": 157,
+    "total": 161,
+    "v1": 159,
     "reserved": 2,
-    "http": 158,
+    "http": 160,
     "ws": 1,
-    "registerableV1Http": 156,
+    "registerableV1Http": 158,
     "methods": {
-      "GET": 58,
-      "POST": 73,
+      "GET": 59,
+      "POST": 74,
       "PATCH": 10,
       "DELETE": 10,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 61,
-      "command": 97,
+      "read": 62,
+      "command": 98,
       "stream": 1
     },
-    "uniqueNames": 159,
-    "uniqueBindings": 159
+    "uniqueNames": 161,
+    "uniqueBindings": 161
   },
   "reservedOperations": [
     "search.query",
@@ -1265,6 +1265,20 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.claim",
+        "method": "POST",
+        "path": "/v2/auth/claim",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.claim.status",
+        "method": "GET",
+        "path": "/v2/auth/claim",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "credentials.status",
         "method": "GET",
         "path": "/v2/identity/credentials",
@@ -1517,7 +1531,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 128
+    "unimplementedV1Http": 130
   },
   "schemas": {
     "additive": {
@@ -4225,6 +4239,39 @@
           "auth",
           "session",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.claim",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.claim",
+        "intentTags": [
+          "auth",
+          "claim"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.claim.status",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.claim.status",
+        "intentTags": [
+          "auth",
+          "claim",
+          "status"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

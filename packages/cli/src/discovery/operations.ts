@@ -227,6 +227,33 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['whoami', 'session', 'token', 'me'],
   },
+  // ── first-run node claim (docs/identity/FIRST-RUN-CLAIM-DESIGN.md) ───────
+  'auth.claim': {
+    cmd: ['auth', 'claim'],
+    syn: 'tm8 auth claim --token <tm8c_…> --username <username> --password <password> [--display-name <name>] [--email <email>]',
+    sum: 'Claim an unclaimed Server: set the first credential on its owner account and sign in',
+    authz: 'server',
+    input: 'bound',
+    tags: ['claim', 'first-run', 'setup', 'bootstrap', 'owner', 'install', 'onboard'],
+    notes: [
+      'the one-time tm8c_… token is printed at first boot and written to <dataDir>/setup-token — the token is the authorization, so this works from a machine that is not the Server',
+      'it sets a credential on the EXISTING owner account rather than creating one, so everything the node already recorded stays attributed to you',
+      'refused once any account on the node has a password: a claim token is inert on a claimed node',
+      'the password travels in the request body — a real deployment needs TLS before using this',
+    ],
+  },
+  'auth.claim.status': {
+    cmd: ['auth', 'claim', 'status'],
+    syn: 'tm8 auth claim status',
+    sum: 'Report whether this Server has been claimed, its node mode, and how an account can be created on it',
+    authz: 'server',
+    input: 'none',
+    tags: ['claim', 'first-run', 'setup', 'status', 'mode', 'single-player', 'multiplayer'],
+    notes: [
+      'answers without any credential, on purpose: it is the one question a caller can ask before it knows who anybody is',
+      'it never reports whether a live claim token exists — that is a fact about the operator\'s filesystem, not about the node',
+    ],
+  },
   // ── credentials (Tier B per-member vendor credentials) ───────────────────
   //
   // ALL FOUR HAVE NO CLI COMMAND, AND THE REASON IS NOT THAT THEY ARE FORBIDDEN
@@ -1966,8 +1993,10 @@ function exposureFor(operation: OperationName): Exposure {
  * fails on any mismatch. Change the contract and that test tells you the new
  * value to paste here.
  */
+// 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
+// to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
-  'sha256:10936f405460bfb1c5b613d83e36981de053cc6f99911c8380695829cd4db353';
+  'sha256:52f86f3711ca9d9ae92dcede746e0bfcfcdaee84a6f170d4713abb2ce1065894';
 
 export const GRAMMAR_VERSION = '2';
 

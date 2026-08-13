@@ -30,7 +30,8 @@ import type {
   AcceptanceCriterion, ActionDiscoveryResult, ActivateInteractionProfileInput,
   AmendmentErrorReason,
   ActivityItem, ActorSummary, AddMessageAttachmentsInput,
-  AuthAccountView, AuthLoginInput, AuthLoginResult, AuthLogoutInput,
+  AuthAccountView, AuthClaimInput, AuthClaimResult, AuthClaimStatusResult,
+  AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthSessionGetResult, AuthSessionView, AuthSignupInput,
   AuthSignupResult, ChannelTab, ChatThreadSummary, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
@@ -1338,6 +1339,38 @@ export const AuthSessionGetResultSchema: z.ZodType<AuthSessionGetResult> = z.obj
   authKind: z.enum(['bearer', 'auto-owner']),
   account: AuthAccountViewSchema,
   session: AuthSessionViewSchema.nullable(),
+}).strict();
+
+/**
+ * The claim token as it travels: `tm8c_<secret>`, mirroring `tm8s_` for
+ * sessions. The prefix is asserted here so a caller pasting a SESSION token
+ * into the claim field is refused by the schema with a shape error rather than
+ * by the database with an opaque `28000` — the two are easy to confuse and
+ * both start `tm8`.
+ */
+const NodeClaimTokenSchema = z.string().min(8).max(200).regex(/^tm8c_[A-Za-z0-9_-]+$/, {
+  message: 'claim token must look like tm8c_…',
+});
+
+export const AuthClaimInputSchema: z.ZodType<AuthClaimInput> = z.object({
+  token: NodeClaimTokenSchema,
+  username: AuthUsernameSchema,
+  password: AuthPasswordSchema,
+  displayName: z.string().min(1).max(200).optional(),
+  email: z.string().min(3).max(320).optional(),
+  kind: z.enum(['browser', 'cli']).optional(),
+}).strict();
+
+export const AuthClaimResultSchema: z.ZodType<AuthClaimResult> = z.object({
+  token: z.string().min(1),
+  account: AuthAccountViewSchema,
+  session: AuthSessionViewSchema,
+}).strict();
+
+export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.object({
+  claimed: z.boolean(),
+  mode: z.enum(['single', 'multi']),
+  signupPath: z.enum(['claim', 'invite', 'admin']),
 }).strict();
 
 // ---------------------------------------------------------------------------

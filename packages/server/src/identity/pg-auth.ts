@@ -393,3 +393,121 @@ export async function signupAccount(
   }
   return account;
 }
+
+/* ── first-run node claim (docs/identity/FIRST-RUN-CLAIM-DESIGN.md) ──────── */
+
+/**
+ * The claim token's wire prefix, mirroring `tm8s_` for sessions.
+ *
+ * Distinct on purpose: the two are easy to confuse, both start `tm8`, and a
+ * person pasting a session token into the claim field should be told so by the
+ * shape rather than by an opaque refusal from the database.
+ */
+export const CLAIM_TOKEN_PREFIX = 'tm8c_';
+
+/** 32 random bytes, base64url — the same generator the session secret uses. */
+export function generateClaimToken(): string {
+  return `${CLAIM_TOKEN_PREFIX}${generateSecret()}`;
+}
+
+/**
+ * Whether any active account on this node has a credential.
+ *
+ * CLAIM-FREE: a caller deciding whether to claim has no identity yet. This is
+ * the read behind `auth.claim.status` and the guard the minting path consults.
+ */
+export async function nodeIsClaimed(db: Db): Promise<boolean> {
+  const claimed = await db.rpc<boolean | null>({}, 'node_is_claimed', []);
+  return claimed === true;
+}
+
+/**
+ * Mint and record a claim token, hash only.
+ *
+ * Returns the PLAINTEXT to its one caller (the boot path), which prints it and
+ * writes it to `<dataDir>/setup-token`. It is never returned over HTTP and
+ * never stored: `node_claim_tokens` holds the sha256 alone, so a database dump
+ * of an unclaimed node is not a way to claim it.
+ *
+ * The RPC refuses once the node is claimed, and burns any prior live token, so
+ * exactly one claim URL is valid at a time.
+ */
+export async function issueNodeClaimToken(db: Db): Promise<string> {
+  const token = generateClaimToken();
+  await db.rpc({}, 'issue_node_claim_token', [hashToken(token.slice(CLAIM_TOKEN_PREFIX.length))]);
+  return token;
+}
+
+/**
+ * Is this exact plaintext still a live claim token?
+ *
+ * The boot path asks before minting, so an ordinary restart REPRINTS the token
+ * it already issued. Minting unconditionally burned the previous one, which
+ * quietly broke the design's own no-expiry promise: an operator who saved the
+ * first boot's URL and restarted before claiming found a dead link and no
+ * indication why.
+ */
+export async function claimTokenIsLive(db: Db, token: string): Promise<boolean> {
+  if (!token.startsWith(CLAIM_TOKEN_PREFIX)) return false;
+  const live = await db.rpc<boolean | null>({}, 'node_claim_token_is_live', [
+    hashToken(token.slice(CLAIM_TOKEN_PREFIX.length)),
+  ]);
+  return live === true;
+}
+
+export interface ClaimNodeInput {
+  token: string;
+  username: string;
+  password: string;
+  displayName?: string | null;
+  email?: string | null;
+  kind?: 'browser' | 'cli';
+}
+
+/**
+ * The claim ceremony: set the first credential on the node's EXISTING owner
+ * account, then sign in.
+ *
+ * CLAIM-FREE — the token is the authorization, which is exactly what lets this
+ * run from a device that is not the server. Every guard that matters
+ * (token validity, single-use, and the re-assertion that the node is still
+ * unclaimed) is inside `claim_node`, under one lock, so two concurrent claims
+ * serialize rather than racing.
+ *
+ * The session is minted by delegating to `loginWithPassword` with the
+ * credential just set, rather than by minting one here. That is deliberate:
+ * session issuance, TTL selection, the profile read and the disabled-account
+ * check are all non-trivial and already proven on the login path, and a second
+ * copy of them would be a second place for them to drift. It costs one extra
+ * scrypt verification — on a once-per-node ceremony.
+ */
+export async function claimNode(
+  db: Db,
+  input: ClaimNodeInput,
+  requestId?: string,
+): Promise<IssuedLogin> {
+  if (!input.token.startsWith(CLAIM_TOKEN_PREFIX)) {
+    throw new CollabError('unauthenticated', 'invalid or already-used claim token');
+  }
+  const passwordHash = await hasher.hash(input.password);
+
+  await db.rpc<AccountRowJson | null>({}, 'claim_node', [
+    hashToken(input.token.slice(CLAIM_TOKEN_PREFIX.length)),
+    input.username,
+    hasher.algorithm,
+    passwordHash,
+    input.displayName ?? null,
+    input.email ?? null,
+  ]);
+
+  return loginWithPassword(
+    db,
+    {
+      username: input.username,
+      password: input.password,
+      ...(input.kind ? { kind: input.kind } : {}),
+      label: 'first-run claim',
+    },
+    requestId,
+  );
+}

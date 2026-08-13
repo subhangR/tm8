@@ -82,8 +82,12 @@ describe('W1 adopted catalog target', () => {
     // guarded write door to the forge.
     // 158 -> 159 (2026-08-13, merge union): chat.threads.start — MEASURED on
     // the merged tree; both sides moved this pin independently.
-    expect(OPERATIONS).toHaveLength(159);
-    expect(V1_OPERATIONS).toHaveLength(157);
+    // 159 -> 161 (2026-08-13, first-run claim): auth.claim (POST command) +
+    // auth.claim.status (GET read). MEASURED on this branch. A sibling lane is
+    // landing spaces.members.updateRole + auth.invite.resolve concurrently;
+    // whoever merges second re-measures rather than guessing 163.
+    expect(OPERATIONS).toHaveLength(161);
+    expect(V1_OPERATIONS).toHaveLength(159);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -99,12 +103,15 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 58, POST: 73 /* +1 2026-08-13: tracking.pr.merge */, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
+    // +1 GET / +1 POST 2026-08-13 (first-run claim): auth.claim.status is a GET
+    // read, auth.claim a POST command. They share the /v2/auth/claim path —
+    // method-distinct rows on one path, as artifacts.publish already does.
+    }).toEqual({ GET: 59, POST: 74, PATCH: 10, DELETE: 10, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 61, command: 97 /* +1 2026-08-13: tracking.pr.merge */, stream: 1 });
+    }).toEqual({ read: 62 /* +1: auth.claim.status */, command: 98 /* +1: auth.claim */, stream: 1 });
   });
 });
 

@@ -1,7 +1,7 @@
 /**
  * `tm8 auth …` — local accounts (Identity v2 Stage 1).
  *
- * Four commands over the four `auth.*` operations. Three properties are
+ * Six commands over the six `auth.*` operations. Three properties are
  * load-bearing:
  *
  *  - NO SPACE, NO ACTOR. Authentication is authorized against the SERVER;
@@ -21,6 +21,8 @@
  *    rather than ignored.
  */
 import type {
+  AuthClaimResult,
+  AuthClaimStatusResult,
   AuthLoginResult,
   AuthLogoutResult,
   AuthSessionGetResult,
@@ -220,9 +222,118 @@ async function authSession(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `tm8 auth claim` — the first-run ceremony from a shell.
+ *
+ * The browser path is the one most people take, but this exists because a
+ * headless install has no browser and because an operator scripting a
+ * provision should not have to drive a web form. It stores the resulting pass
+ * exactly like `auth login` does: claiming signs you in, and a ceremony that
+ * left the shell unauthenticated would just make the next command fail.
+ */
+async function authClaim(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('auth claim', cmd.options.value('mutation-id'));
+  const usage =
+    'usage: tm8 auth claim --token <tm8c_…> --username <username> --password <password> [--display-name <name>] [--email <email>]';
+  if (cmd.args.length > 0) throw new CliError(usage, EXIT_USAGE);
+
+  const token = cmd.options.value('token');
+  const username = cmd.options.value('username');
+  if (!token || !username) throw new CliError(usage, EXIT_USAGE);
+
+  const body: Record<string, unknown> = {
+    token,
+    username,
+    password: requirePassword(cmd, usage),
+    kind: cmd.options.value('kind') ?? 'cli',
+  };
+  const displayName = cmd.options.value('display-name');
+  if (displayName !== undefined) body.displayName = displayName;
+  const email = cmd.options.value('email');
+  if (email !== undefined) body.email = email;
+
+  const data = await observedInvoke<AuthClaimResult>(clientFor(cmd.ctx), 'auth.claim', { body });
+
+  let storedTo: string | undefined;
+  let storeFailure: string | undefined;
+  if (!cmd.options.bool('print-token')) {
+    const store = credentialStoreFor();
+    if (store) {
+      const origin = credentialOrigin(cmd.ctx.baseUrl.value);
+      try {
+        store.set(origin, data.token, {
+          username: data.account.username,
+          expiresAt: data.session.expiresAt,
+        });
+        storedTo = `${origin} (${store.kind})`;
+      } catch (err) {
+        storeFailure = err instanceof Error ? err.message : String(err);
+      }
+    }
+  }
+
+  cmd.out.data(data, (result) => {
+    const lines = [
+      `claimed this Server as ${renderAccount(result.account)}`,
+      'the claim token is now burned — this node cannot be claimed again',
+    ];
+    if (storedTo) {
+      lines.push(`credential stored for ${storedTo}`);
+    } else {
+      if (storeFailure) lines.push(`warning: could not store the credential (${storeFailure})`);
+      lines.push('', '# Shown exactly once:', `export TM8_AGENT_TOKEN=${result.token}`);
+    }
+    return lines.join('\n');
+  });
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 auth claim status` — is this Server claimed, and how does anyone get an
+ * account on it. Answers without a credential, which is the whole point: it is
+ * the question you ask BEFORE you can authenticate.
+ */
+async function authClaimStatus(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('auth claim status', cmd.options.value('mutation-id'));
+  if (cmd.args.length > 0) throw new CliError('usage: tm8 auth claim status', EXIT_USAGE);
+
+  const data = await observedInvoke<AuthClaimStatusResult>(
+    clientFor(cmd.ctx),
+    'auth.claim.status',
+  );
+  cmd.out.data(data, (result) => {
+    const lines = [
+      `node: ${result.claimed ? 'claimed' : 'UNCLAIMED'} · mode ${result.mode}`,
+    ];
+    if (!result.claimed) {
+      lines.push(
+        'no account here has a password yet, so nobody can sign in',
+        'claim it with the tm8c_… token from the Server\'s boot log or <dataDir>/setup-token:',
+        '  tm8 auth claim --token <tm8c_…> --username <you> --password <password>',
+      );
+    } else if (result.signupPath === 'admin') {
+      lines.push('new accounts are provisioned by a node admin: tm8 auth signup <username> --password <password>');
+    } else if (result.signupPath === 'invite') {
+      lines.push('new accounts are created by redeeming a space invite');
+    }
+    return lines.join('\n');
+  });
+  return EXIT_OK;
+}
+
 export const AUTH_COMMANDS: CommandModule[] = [
   { path: ['auth', 'signup'], run: authSignup },
   { path: ['auth', 'login'], run: authLogin },
   { path: ['auth', 'logout'], run: authLogout },
   { path: ['auth', 'session'], run: authSession },
+  // Order here is irrelevant — `findCommand` is an exact Map lookup on the
+  // joined path. What keeps `tm8 auth claim status` from parsing as `auth
+  // claim` with a stray positional is `splitCommandPath` (args.ts:412), which
+  // longest-matches against the closed registry before dispatch ever happens.
+  //
+  // `auth claim status` is THREE segments, which is exactly
+  // `MAX_COMMAND_PATH_DEPTH` (args.ts:402). It fits; a four-segment sibling
+  // would not, and would fail as an unknown command rather than warn.
+  { path: ['auth', 'claim'], run: authClaim },
+  { path: ['auth', 'claim', 'status'], run: authClaimStatus },
 ];

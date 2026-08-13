@@ -22,12 +22,15 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {135/133/134/132}: the four credentials.* rows.
         // -> {137/135/136/134}: projects.files.list/attach.
         // -> {138/136/137/135} (2026-08-09, merge): execution.dispatch.
-        total: 159,
-        v1: 157,
+        // -> {161/159/160/158} (2026-08-13, first-run claim): auth.claim (POST
+        // command) + auth.claim.status (GET read). Both v1, both HTTP, both
+        // mounted, so every axis except reserved and ws moves by two.
+        total: 161,
+        v1: 159,
         reserved: 2,
-        http: 158,
+        http: 160,
         ws: 1,
-        registerableV1Http: 156,
+        registerableV1Http: 158,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
