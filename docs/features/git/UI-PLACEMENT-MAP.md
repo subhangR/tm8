@@ -339,3 +339,32 @@ parent task thread.
 **Suggested landing order** (scoping opinion only): server op family + entity-read fix →
 session Git rail → PR chips → TaskGitSection → Git view + migration 089 → FileInspector
 (#127) → tier-2 verbs (#128) → observer loops/nudges (#130).
+
+---
+
+## 6. Postscript — the stack landed (2026-08-13)
+
+This map was measured on `origin/main` @ `e36e6a4` (2026-08-12); everything above is that
+snapshot. The §5 landing order was then followed exactly by a fresh PR stack, all merged to
+main (verified `merge-base --is-ancestor` against `origin/main` @ `863bca8c`,
+2026-08-13):
+
+| PR | Merge commit | Delivered |
+|---|---|---|
+| #167 | `a491d8a9` | six `execution.git*` server ops + `entity-read serves pull_request state` fix (§0's precondition, §4.7.3) |
+| #168 | `844dfe62` | session Git rail — fifth chip via `views/gitSurface.tsx` on all five panel hosts (§4.1) |
+| #169 | `0f8a960a` | `LinkedPullRequestChips` on tiles + detail (§4.3) |
+| #170 | `58ba6291` | TaskGitSection (§4.2) |
+| #172 | `67082008` | ProjectGitScreen at `#/s/{space}/git` + Tracking menu row (§4.4) |
+| #173 | `8557c54f` | FileInspector — file history, blame, `created_in` SessionAttribution (§4.4) |
+| #174 | `97cf12b6` | tier-2 verbs (cherry-pick / branch / stash) behind a disclosure (§4.1) |
+| #175 | `b8a65b5d` | forge observer loops (§4.5 nudges) |
+
+The stranded PRs this map catalogued (#121, #127, #128, #129, #130, #131) are closed as
+superseded. Catalog now carries `execution.gitStatus/gitDiff/gitCommit/gitCheckpoint/`
+`gitRollback/gitMerge/gitCherryPick/gitBranch/gitStash`, `projects.file.history`,
+`projects.file.blame`, `projects.contention`. Stale-on-arrival sections: §0's "no server
+catalog op" gap and §2's "CLI-local only" mutations are closed; §4.7 items 1–3 exist.
+Still true: no forge WRITE client (`tracking/github.ts` remains read-only, so §4.3 B10
+Merge renders disabled-with-reason), no checkpoint timeline (C15), no `task import-issue`
+on main (§4.5 B5). This document stays as the record of why each surface sits where it does.
