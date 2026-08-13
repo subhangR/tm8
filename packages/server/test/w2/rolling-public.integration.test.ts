@@ -784,7 +784,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 143/141 -> 149/147 (2026-08-12, Git UI landing): the six execution.git*
     // rows, all mounted.
     expect(health).toMatchObject({ ok: true, operations: 162, implemented: 160 });
-    expect(harness.production.server.registry.size).toBe(158);
+    expect(harness.production.server.registry.size).toBe(160);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -804,7 +804,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(158);
+    expect(registered.size + residual.length).toBe(160);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

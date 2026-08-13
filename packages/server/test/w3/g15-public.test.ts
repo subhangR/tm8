@@ -76,13 +76,13 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows,
     // all mounted.
     expect(OPERATIONS).toHaveLength(163);
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(160);
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(162);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
       operations: 162,
-      implemented: 158,
+      implemented: 160,
     });
   });
 

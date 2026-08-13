@@ -303,9 +303,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // credentials.* add four mounted operations.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(SURFACE).toHaveLength(158);
-    expect(rows).toHaveLength(158);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(158);
+    expect(SURFACE).toHaveLength(160);
+    expect(rows).toHaveLength(160);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(160);
   });
 
   /**
