@@ -271,6 +271,10 @@ const GIT_NET_NEW_OPERATIONS = [
   'execution.gitRollback',
   'execution.gitCommit',
   'execution.gitMerge',
+  // 2026-08-13 (merge reconciliation): the two FileInspector survey reads
+  // mount from the projects registration seam.
+  'projects.file.history',
+  'projects.file.blame',
 ] as const;
 
 /**
@@ -587,7 +591,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
     // 80 -> 84 (2026-08-12, Git UI landing): the four execution.git* command
     // bodies bind (gitStatus/gitDiff are GETs and bind nothing).
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(84);
+    // +1 (2026-08-13, merge): execution.terminal.start binds its body.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(85);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -738,8 +743,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 141/139 -> 143/141 (2026-08-12): collections.addItem/removeItem, mounted.
     // 143/141 -> 149/147 (2026-08-12, Git UI landing): the six execution.git*
     // rows, all mounted.
-    expect(health).toMatchObject({ ok: true, operations: 151, implemented: 149 });
-    expect(harness.production.server.registry.size).toBe(149);
+    expect(health).toMatchObject({ ok: true, operations: 152, implemented: 150 });
+    expect(harness.production.server.registry.size).toBe(150);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -759,7 +764,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(149);
+    expect(registered.size + residual.length).toBe(150);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

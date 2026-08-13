@@ -144,7 +144,7 @@ function ledgerVerdictFor(probe: ObservedAvailability): 'unavailable' | 'availab
 // ── /health, re-measured ───────────────────────────────────────────────────
 
 describe('the node, measured rather than reported', () => {
-  it('answers /health outside the envelope, with 151 mounted HTTP routes', async () => {
+  it('answers /health outside the envelope, with 152 mounted HTTP routes', async () => {
     const health = await server.health();
     measured['health'] = health;
     expect(health.ok).toBe(true);
@@ -152,7 +152,7 @@ describe('the node, measured rather than reported', () => {
     // upgrade path and is not a mounted HTTP route.
     // Already red at 141 before the collections membership rows landed; 143 is
     // MEASURED off /health on the merged tree (routes, not catalog rows).
-    expect(health.operations).toBe(151);
+    expect(health.operations).toBe(152);
     // `implemented` is `registry.size` — REGISTERED handlers, not behaviourally
     // implemented ones. No expected number is asserted here on purpose: it moves
     // as composition tranches land, and pinning it would turn another wave's
