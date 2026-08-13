@@ -51,6 +51,27 @@ export function createChatHomePortFromSeam(
 
   const listCache = new Map<EntityId, ChatThreadListItem>();
   const listSpaceCache = new Map<EntityId, SpaceId | string>();
+  /** The last space this port listed — the self-heal refresh needs a scope. */
+  let lastSpaceId: SpaceId | string | null = null;
+
+  /**
+   * Post-ship fix (2026-08-13, "This chat thread is not present in the latest
+   * space-wide read" hit live): the cache is a COALESCER, not an authority.
+   * A thread that exists on the server but missed the last home read — a
+   * just-created chat, a re-created port, another tab's new thread — must not
+   * make the surface unreadable. On a miss, refresh ONCE from the bridge and
+   * only then fail with the honest message.
+   */
+  const resolveItem = async (rootMessageId: EntityId): Promise<ChatThreadListItem> => {
+    const cached = listCache.get(rootMessageId);
+    if (cached) return cached;
+    if (lastSpaceId !== null && bridge.listThreads) {
+      await listThreads(lastSpaceId);
+      const refreshed = listCache.get(rootMessageId);
+      if (refreshed) return refreshed;
+    }
+    throw new Error('This chat thread is not present in the latest space-wide read.');
+  };
 
   const listTeammates: ChatHomePort['listTeammates'] = async (spaceId) => {
     const result = await seam.query({
@@ -67,6 +88,7 @@ export function createChatHomePortFromSeam(
   };
 
   const listThreads: ChatHomePort['listThreads'] = async (spaceId) => {
+    lastSpaceId = spaceId;
     if (!bridge.listThreads) return [];
     const items = await bridge.listThreads(spaceId);
     for (const item of items) {
@@ -99,8 +121,7 @@ export function createChatHomePortFromSeam(
     listThreads,
     listTeammates,
     async readThread(rootMessageId) {
-      const item = listCache.get(rootMessageId);
-      if (!item) throw new Error('This chat thread is not present in the latest space-wide read.');
+      const item = await resolveItem(rootMessageId);
       const [rootDetail, replies, teammates] = await Promise.all([
         seam.entity(rootMessageId),
         seam.messages(item.anchorId, { rootMessageId, limit: 100 }),
@@ -150,16 +171,39 @@ export function createChatHomePortFromSeam(
           anchorIds: [input.anchorId],
           body: input.body,
         });
-        return { threadRootId: messageIdFrom(result) };
+        const threadRootId = messageIdFrom(result);
+        // Seed the caches from what THIS port just wrote, so the immediate
+        // configure -> read -> post sequence never races the next home read.
+        // teammateId/model are provisional until configure() fills them.
+        listCache.set(threadRootId, {
+          rootMessageId: threadRootId,
+          anchorId: input.anchorId,
+          teammateId: '' as EntityId,
+          model: '',
+          createdAt: new Date().toISOString(),
+          lastReplyAt: null,
+          title: input.body,
+        });
+        listSpaceCache.set(threadRootId, input.spaceId);
+        lastSpaceId = input.spaceId;
+        return { threadRootId };
       },
       async configure(input) {
         if (!bridge.configureThread) throw new Error(START_UNAVAILABLE);
-        return bridge.configureThread(input);
+        const result = await bridge.configureThread(input);
+        const seeded = listCache.get(input.rootMessageId);
+        if (seeded) {
+          listCache.set(input.rootMessageId, {
+            ...seeded,
+            teammateId: input.teammateId,
+            model: input.model,
+          });
+        }
+        return result;
       },
     },
     async postTurn(input) {
-      const item = listCache.get(input.threadRootId);
-      if (!item) throw new Error('This chat thread is not present in the latest space-wide read.');
+      const item = await resolveItem(input.threadRootId);
       const result = await seam.commands.postMessage({
         clientMutationId: input.clientMutationId,
         anchorIds: [item.anchorId],
