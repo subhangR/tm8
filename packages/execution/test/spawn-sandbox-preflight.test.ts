@@ -88,6 +88,19 @@ describe('codex sandbox preflight', () => {
     return path;
   }
 
+  /**
+   * A do-nothing `claude` for the claude-code paths: `assertAgentRuntime`
+   * checks the binary EXISTS before any probe logic runs, and a CI runner has
+   * no real claude — without this shim the claude tests die on binary
+   * resolution and say nothing about the probe behaviour they pin.
+   */
+  async function installClaude(): Promise<string> {
+    const path = join(binDir, 'claude');
+    await writeFile(path, '#!/bin/sh\nexec /bin/true\n', 'utf8');
+    await chmod(path, 0o755);
+    return path;
+  }
+
   function makeService(env: NodeJS.ProcessEnv): { service: SpawnService; graph: FakeGraph } {
     const graph = new FakeGraph({ workingDir: projectDir, model: 'gpt-5.6-sol' });
     const service = new SpawnService({
@@ -230,8 +243,10 @@ describe('codex sandbox preflight', () => {
     });
 
     it('never probes for claude-code, whose permission modes are in-agent', async () => {
-      // No codex stub installed at all: if the claude path probed, this would
-      // fail on a missing binary instead of spawning.
+      // No CODEX stub installed at all: if the claude path probed, this would
+      // fail on a missing codex binary instead of spawning. The claude shim
+      // only satisfies binary resolution (see installClaude).
+      await installClaude();
       const graph = new FakeGraph({ workingDir: projectDir, model: 'claude-opus-5' });
       const service = new SpawnService({
         graph,

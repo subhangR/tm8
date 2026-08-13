@@ -55,11 +55,16 @@ describe('composing from a v2 manifest', () => {
   });
 
   it('carries task IDS ONLY — bodies come from the bounded assignment fetch', () => {
-    const { task, metadata } = composePrompt(readManifest(V2));
+    const { system, task, metadata } = composePrompt(readManifest(V2));
     expect(metadata.taskCount).toBe(2);
     expect(task).toContain('<task id="tsk_01HZTASKONE" />');
     expect(task).toContain('<task id="tsk_01HZTASKTWO" />');
-    expect(task).toMatch(/Fetch the bounded assignment snapshot/);
+    // 2026-08-13: the snapshot rule MOVED into the worker-bootstrap control
+    // block (system half); the task prompt carries its own fetch note. The
+    // intent this test pins — bodies are fetched, never inlined — is asserted
+    // where each half actually says it, not against remembered prose.
+    expect(system).toMatch(/Fetch the bounded assignment snapshot/);
+    expect(task).toMatch(/fetch each assigned task with `tm8 entity context/);
     expect(task).not.toContain('<description>');
   });
 

@@ -1,5 +1,5 @@
 /** GitHub's DB-gated spawn delivery and the negative no-fallback property. */
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -47,6 +47,7 @@ function gitHubPort(seen: GraphAuth[]): GitHubCredentialPort {
 
 describe('member GitHub credential injection', () => {
   let dataDir: string;
+  let binDir: string;
   let projectDir: string;
   let graph: FakeGraph;
   let pty: PtyHostService;
@@ -55,6 +56,12 @@ describe('member GitHub credential injection', () => {
   beforeEach(async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'tm8-github-inject-'));
     projectDir = await mkdtemp(join(tmpdir(), 'tm8-github-project-'));
+    // `assertAgentRuntime` requires the agent binary to EXIST before any
+    // credential logic runs; a CI runner has no real `claude`, and this suite
+    // is about env injection, not binary presence — so a do-nothing shim.
+    binDir = await mkdtemp(join(tmpdir(), 'tm8-github-bin-'));
+    await writeFile(join(binDir, 'claude'), '#!/bin/sh\nexec /bin/true\n', 'utf8');
+    await chmod(join(binDir, 'claude'), 0o755);
     graph = new FakeGraph({ workingDir: projectDir });
     pty = new PtyHostService();
     logs = [];
@@ -65,6 +72,7 @@ describe('member GitHub credential injection', () => {
     pty.shutdownAll();
     await rm(dataDir, { recursive: true, force: true });
     await rm(projectDir, { recursive: true, force: true });
+    await rm(binDir, { recursive: true, force: true });
   });
 
   function service(seen: GraphAuth[]): SpawnService {
@@ -77,7 +85,7 @@ describe('member GitHub credential injection', () => {
       baseUrl: 'http://127.0.0.1:4610',
       dataDir,
       env: {
-        PATH: process.env.PATH,
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
         HOME: `${dataDir}/node-home`,
         GH_TOKEN: `ghp_${'N'.repeat(36)}`,
         GITHUB_TOKEN: `ghp_${'M'.repeat(36)}`,
