@@ -79,6 +79,15 @@ export interface EntityCounters {
   stars: number;
   points: number;
   messages: number;
+  /**
+   * Attached docs / held memories (108), ADDITIVE and OPTIONAL: a rolling
+   * node that predates the columns omits them and a client renders NOTHING —
+   * absence is not zero, it is "this server never counted". Zero also
+   * renders nothing on a tile: a count badge exists to say something is
+   * there. Trigger-owned like every counter; RPCs never write them.
+   */
+  docs?: number;
+  memories?: number;
   /** Server-computed from the caller's reaction edge — always present (DEV-10). */
   viewerReaction: 'like' | 'dislike' | 'star' | null;
 }

@@ -1565,6 +1565,11 @@
 .cv2-root .pn-st__tag { flex: 0 0 auto; padding: 2px 6px; color: var(--pn-ink-3); background: var(--pn-active); border-radius: var(--pn-r-xs); font-family: var(--pn-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .cv2-root .pn-st__tag--done { color: var(--pn-run); background: var(--pn-run-soft); }
 .cv2-root .pn-st__tag--attention { color: var(--pn-wait); background: var(--pn-wait-soft); }
+/* Tile count badges (108): glyph+count for docs/memories/messages, beside the
+   PR chips in the badge sub-row. Zero/absent counts render no badge at all. */
+.cv2-root .pn-st__counts { display: inline-flex; align-items: center; gap: var(--pn-space-2); flex: 0 0 auto; }
+.cv2-root .pn-st__count { display: inline-flex; align-items: center; gap: 3px; color: var(--pn-ink-3); font-family: var(--pn-mono); font-size: 10px; line-height: 1; }
+.cv2-root .pn-st__count svg { flex: 0 0 auto; }
 .cv2-root .pn-st__statusglyph { width: 16px; height: 16px; flex: 0 0 auto; }
 .cv2-root .pn-st__actions {
   position: absolute;

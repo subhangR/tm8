@@ -65,6 +65,8 @@ export const ENTITY_COLUMNS = `
   coalesce(ec.stars, 0)    as stars,
   coalesce(ec.points, 0)   as points,
   coalesce(ec.messages, 0) as messages,
+  coalesce(ec.docs, 0)     as docs,
+  coalesce(ec.memories, 0) as memories,
   t.title as task_title, t.description as task_description, t.axes as task_axes,
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
   t.completion_gate,
@@ -181,6 +183,9 @@ export interface EntityRow {
   stars: number;
   points: number;
   messages: number;
+  /** Link counters (108); optional keeps legacy row fixtures source-compatible. */
+  docs?: number;
+  memories?: number;
   task_title: string | null;
   task_description: string | null;
   task_axes: Record<string, string> | null;
@@ -1541,6 +1546,11 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
       stars: row.stars,
       points: row.points,
       messages: row.messages,
+      // 108, spread-when-known: a legacy row fixture without the columns
+      // omits the keys, which is the contract's "never counted" claim —
+      // an invented 0 would be a different (wrong) claim.
+      ...(row.docs === undefined ? {} : { docs: row.docs }),
+      ...(row.memories === undefined ? {} : { memories: row.memories }),
       viewerReaction: ctx.viewerReactions.get(row.id) ?? null,
     },
     state: stateOf(row, ctx),

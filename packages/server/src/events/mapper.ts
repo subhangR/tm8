@@ -611,6 +611,12 @@ export class WorkspaceEventMapper {
           stars: Number(p['stars'] ?? 0),
           points: Number(p['points'] ?? 0),
           messages: Number(p['messages'] ?? 0),
+          // 108's link counters, SPREAD-WHEN-PRESENT rather than defaulted:
+          // the durable log replays payloads captured BEFORE the columns
+          // existed, and inventing 0 for those would turn "never counted"
+          // into a claim of emptiness. The contract marks both optional.
+          ...(p['docs'] === undefined ? {} : { docs: Number(p['docs'] ?? 0) }),
+          ...(p['memories'] === undefined ? {} : { memories: Number(p['memories'] ?? 0) }),
           // Viewer-scoped and absent from the counters row. `null` is the
           // contract's "no reaction from this viewer", which is the correct
           // answer whenever we have not resolved one.

@@ -62,6 +62,7 @@ import { MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
+import { TileCountBadges, hasTileCounts } from './list/TileCountBadges';
 import { routeMessagePulse, type PulseSegment } from './list/message-pulse';
 import type { MessagePulse } from './list/useMessagePulses';
 import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
@@ -2516,8 +2517,13 @@ export function Tile({
         tasks={props.linkedTasksOf?.(row.id) ?? []}
         lane={lane !== null ? <SessionLaneLine lane={lane} /> : undefined}
         badges={
-          linkedPullRequests.length > 0 ? (
-            <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
+          linkedPullRequests.length > 0 || hasTileCounts(row.counters) ? (
+            <>
+              {linkedPullRequests.length > 0 ? (
+                <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
+              ) : null}
+              <TileCountBadges counters={row.counters} />
+            </>
           ) : undefined
         }
         childCount={childCount}
@@ -2555,8 +2561,13 @@ export function Tile({
         assignees={controlFacts.assignees}
         creator={controlFacts.creator}
         badges={
-          linkedPullRequests.length > 0 ? (
-            <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
+          linkedPullRequests.length > 0 || hasTileCounts(row.counters) ? (
+            <>
+              {linkedPullRequests.length > 0 ? (
+                <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
+              ) : null}
+              <TileCountBadges counters={row.counters} />
+            </>
           ) : undefined
         }
         actions={[
