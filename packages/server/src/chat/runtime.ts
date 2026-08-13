@@ -62,6 +62,12 @@ export interface ChatLaunchConfig {
 export interface ChatLaunchConfigInput {
   readonly rootMessageId: string;
   readonly requesterIdentityId: string;
+  /**
+   * R9 truthful replay: the SERVER-RESOLVED tm8.auth_kind recorded by
+   * start_chat_thread (106). Null (pre-106 rows) means the resolver omits the
+   * claim and the C5 mint keeps failing closed — never defaulted, never forged.
+   */
+  readonly requesterAuthKind: string | null;
   readonly teammateId: string;
   readonly model: string;
   readonly provider: string;

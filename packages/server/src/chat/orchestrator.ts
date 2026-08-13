@@ -22,6 +22,8 @@ interface ClaimedTurn {
   readonly body: string;
   readonly anchorId: string;
   readonly requesterIdentityId: string;
+  /** R9: server-resolved auth kind recorded at the human-gated thread start; null on pre-106 rows. */
+  readonly requesterAuthKind?: string | null;
   readonly teammateId: string;
   readonly model: string;
   readonly provider: string;
@@ -217,6 +219,7 @@ export class ChatOrchestrator {
     const launch = await this.options.resolveLaunchConfig({
       rootMessageId: turn.rootMessageId,
       requesterIdentityId: turn.requesterIdentityId,
+      requesterAuthKind: turn.requesterAuthKind ?? null,
       teammateId: turn.teammateId,
       model: turn.model,
       provider: turn.provider,

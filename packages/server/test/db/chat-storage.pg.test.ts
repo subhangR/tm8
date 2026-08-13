@@ -278,4 +278,61 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
       model: 'gpt-5.6-sol',
     });
   });
+
+  it('R9: records the resolved auth kind once, replays it to the mint, and fails closed without it', async () => {
+    // The mint inherits a human ACCOUNT's authority (105), which the chat
+    // fixture does not otherwise need — seed one for identityA.
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.accounts(identity_id, username, display_name, is_node_admin, is_owner)
+         values ($1, 'chat-owner-a', 'Chat A', false, true)
+         on conflict do nothing`,
+        [fixture.identityA],
+      );
+    });
+
+    // (1) The binding row holds the literal that was SERVER-RESOLVED at the
+    // human-gated start — never asserted later. ('agent' could not have
+    // written it: the configure test above already saw that arm refuse 42501.)
+    const bound = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{ requester_auth_kind: string | null }>(
+        `select requester_auth_kind from public.chat_threads where root_message_id = $1`,
+        [rootMessageId],
+      )).rows[0]!;
+    });
+    expect(bound.requester_auth_kind).toBe('browser');
+
+    // (2) The claim read carries the recorded literal to the orchestrator.
+    const claimed = await asIdentity(fixture.identityA, 'browser', async (client) => (
+      await client.query<{ result: { requesterAuthKind?: string } | null }>(
+        `select public.claim_next_chat_turn($1) result`,
+        [rootMessageId],
+      )
+    ).rows[0]!.result);
+    if (claimed) expect(claimed.requesterAuthKind).toBe('browser');
+
+    // (3) The C5 mint accepts the truthful replay...
+    const minted = await asIdentity(fixture.identityA, 'browser', async (client) => (
+      await client.query<{ result: { id: string; runtime_member_id: string | null } }>(
+        `select public.issue_agent_runtime_session($1,$2,$3,$4,$5) result`,
+        [rootMessageId, fixture.teammateId, 'a'.repeat(64), new Date(Date.now() + 60_000).toISOString(), 'r9'],
+      )
+    ).rows[0]!.result);
+    expect(minted.runtime_member_id).not.toBeNull();
+
+    // ...and FAILS CLOSED when no auth kind is bound — the exact live-measured
+    // composition failure this column exists to fix (advisor R9, condition 3b).
+    await expect(
+      database.transaction(async (client) => {
+        await client.query('set local role tm8_app');
+        await client.query(`select set_config('tm8.identity_id',$1,true)`, [fixture.identityA]);
+        await client.query(
+          `select public.issue_agent_runtime_session($1,$2,$3,$4,$5)`,
+          [rootMessageId, fixture.teammateId, 'b'.repeat(64), new Date(Date.now() + 60_000).toISOString(), 'r9-closed'],
+        );
+      }),
+    ).rejects.toMatchObject({ code: '42501' });
+  });
 });

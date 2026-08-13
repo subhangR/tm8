@@ -37,10 +37,6 @@ export const TM8_CHAT_ALLOWED_TOOLS: readonly string[] = [
   'mcp__tm8__tm8_messages',
 ];
 
-function claims(identityId: string): DbClaims {
-  return { identityId };
-}
-
 /**
  * The server chat port and the execution chat port were written by two lanes
  * against the same C1 contract and differ in exactly one declared spot: the
@@ -110,7 +106,15 @@ export function createChatLaunchConfigResolver(
         `chat v1 runs claude-code models only; '${input.model}' launches via ${input.agentTool}`,
       );
     }
-    const minted = await issueAgentRuntimeSession(options.db, claims(input.requesterIdentityId), {
+    // R9 truthful replay: the auth kind was SERVER-RESOLVED at the human-gated
+    // start_chat_thread write (106) and is replayed verbatim. When it is null
+    // (pre-106 thread) we deliberately omit the claim so 105's guard keeps
+    // failing closed — asserting a kind here would forge the one provenance
+    // fact 082/R11 makes unforgeable.
+    const mintClaims: DbClaims = input.requesterAuthKind
+      ? { identityId: input.requesterIdentityId, authKind: input.requesterAuthKind }
+      : { identityId: input.requesterIdentityId };
+    const minted = await issueAgentRuntimeSession(options.db, mintClaims, {
       threadRootId: input.rootMessageId,
       teamMemberId: input.teammateId,
     });
