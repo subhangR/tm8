@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { join, parse, resolve } from 'node:path';
 
 import { runGit } from '@tm8/execution';
 import {
@@ -169,6 +169,62 @@ describe('W2.G06 projects and association correction facade', () => {
       await expect(ensureProjectWorkingDirectory(join(root, 'missing', 'deep'), [root]))
         .rejects.toMatchObject({ code: 'not_found' });
     } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults the browse scope to the OS filesystem root, not the home directory', async () => {
+    const previous = process.env.TM8_PROJECT_ROOTS;
+    delete process.env.TM8_PROJECT_ROOTS;
+    try {
+      const listing = await listProjectDirectories();
+      expect(ProjectDirectoryListingSchema.safeParse(listing).success).toBe(true);
+
+      // OS-generic assertion of "this is a filesystem root": `/` on POSIX and
+      // `C:\`-shaped on Windows both satisfy `parse(root).root === root`, and
+      // the home directory satisfies it on neither.
+      expect(listing.roots.length).toBeGreaterThan(0);
+      for (const root of listing.roots) expect(parse(root).root).toBe(root);
+
+      // Browsing opens at the top, and there is nothing above the top.
+      expect(listing.roots).toContain(listing.path);
+      expect(listing.parentPath).toBeNull();
+
+      // The regression itself: the root of the volume that holds the home
+      // directory used to be refused as 'outside TM8_PROJECT_ROOTS', which is
+      // what made every folder outside home unreachable.
+      const osRoot = parse(homedir()).root;
+      const atRoot = await listProjectDirectories(osRoot);
+      expect(atRoot.path).toBe(await realpath(osRoot));
+
+      // ...and the picker no longer dead-ends at home with no way up.
+      const homeCanonical = await realpath(homedir());
+      if (homeCanonical !== atRoot.path) {
+        expect((await listProjectDirectories(homeCanonical)).parentPath).not.toBeNull();
+      }
+    } finally {
+      if (previous === undefined) delete process.env.TM8_PROJECT_ROOTS;
+      else process.env.TM8_PROJECT_ROOTS = previous;
+    }
+  });
+
+  it('still honours TM8_PROJECT_ROOTS when a deployment narrows the browse scope', async () => {
+    const previous = process.env.TM8_PROJECT_ROOTS;
+    const scratch = await realpath(await mkdtemp(join(tmpdir(), 'tm8-narrowed-roots-')));
+    process.env.TM8_PROJECT_ROOTS = scratch;
+    try {
+      await mkdir(join(scratch, 'inside'));
+      const listing = await listProjectDirectories();
+      expect(listing.roots).toEqual([scratch]);
+      expect(listing.path).toBe(scratch);
+      expect(listing.parentPath).toBeNull();
+
+      // The configured window still refuses the OS root it sits under.
+      await expect(listProjectDirectories(parse(scratch).root))
+        .rejects.toMatchObject({ code: 'forbidden' });
+    } finally {
+      if (previous === undefined) delete process.env.TM8_PROJECT_ROOTS;
+      else process.env.TM8_PROJECT_ROOTS = previous;
       await rm(scratch, { recursive: true, force: true });
     }
   });

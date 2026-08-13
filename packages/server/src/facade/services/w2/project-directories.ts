@@ -1,15 +1,47 @@
+import { existsSync } from 'node:fs';
 import { mkdir, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 
 import { CollabError, type ProjectDirectoryListing } from '@tm8/contract';
 
 /** A picker should stay responsive even when opened on a very wide directory. */
 export const MAX_PROJECT_DIRECTORIES = 500;
 
+/**
+ * The OS's own filesystem root(s) — the browse scope when the deployment has
+ * not narrowed it with `TM8_PROJECT_ROOTS`.
+ *
+ * Defaulting to the home directory made every folder outside it unreachable:
+ * a project living in `/opt`, `/srv` or another user's tree could not be
+ * picked at all, and the picker offered no way up because `parentPath` goes
+ * null at the root. The default is now the top of the filesystem, so browsing
+ * starts where the OS starts and everything the OS lets this process read is
+ * reachable. Narrowing stays available — and is the right move for a shared
+ * node — by setting `TM8_PROJECT_ROOTS`.
+ *
+ * POSIX has exactly one root and `/` spans every mount. Windows has no single
+ * root: each volume is its own tree, so the drive holding the home directory
+ * is joined by every other drive letter that currently answers. A drive that
+ * is absent or has no media simply never appears.
+ */
+function osFilesystemRoots(): string[] {
+  if (process.platform !== 'win32') return ['/'];
+  const roots = new Set<string>();
+  const homeVolume = parse(homedir()).root;
+  if (homeVolume) roots.add(homeVolume);
+  for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+    const drive = `${letter}:${sep}`;
+    if (existsSync(drive)) roots.add(drive);
+  }
+  // A Windows host that names no volume at all would otherwise leave the
+  // picker with no root to open on; the home directory is always a real one.
+  return roots.size > 0 ? [...roots] : [homedir()];
+}
+
 function configuredRoots(raw = process.env.TM8_PROJECT_ROOTS): string[] {
   const roots = raw?.split(delimiter).map((value) => value.trim()).filter(Boolean) ?? [];
-  return roots.length > 0 ? roots : [homedir()];
+  return roots.length > 0 ? roots : osFilesystemRoots();
 }
 
 export function containedBy(root: string, candidate: string): boolean {
