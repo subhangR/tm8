@@ -844,6 +844,29 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
+   * The session's lane fact (107) — NOT write-once, unlike the native id
+   * above: a checkout legitimately changes branches, and the function bumps
+   * `entities.version` only when the stored value actually changed, so a
+   * refresh that re-measures the same branch is a no-op to every consumer.
+   */
+  async recordCheckoutBranch(
+    auth: GraphAuth,
+    sessionId: string,
+    branch: string | null,
+  ): Promise<boolean> {
+    const changed = await this.db.rpc<boolean>(
+      this.claims(auth),
+      'public.execution_record_checkout_branch',
+      [
+        sessionId,
+        branch,
+        null, // p_actor_id — derived from claims
+      ],
+    );
+    return changed === true;
+  }
+
+  /**
    * Non-terminal work sessions recorded against `nodeId` — the ghost candidates
    * startup reconciliation retires.
    *

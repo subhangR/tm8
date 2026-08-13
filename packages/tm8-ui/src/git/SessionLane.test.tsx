@@ -1,0 +1,70 @@
+// @vitest-environment jsdom
+/**
+ * The ONE lane line (107) — the honesty rules as unit truths:
+ *   · no branch fact ⇒ NO claim (null, and the component renders nothing);
+ *   · the mode badge maps workdir facts to the ruled vocabulary
+ *     (project ⇒ 'shared' — the word IS the honesty);
+ *   · a pre-107 summary (neither field) renders nothing rather than a guess.
+ */
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import { SessionLaneLine, sessionLaneOf } from './SessionLane.js';
+
+const base = {
+  kind: 'work_session',
+  status: 'running',
+  agentTool: 'claude-code',
+  model: null,
+  shareMode: 'none',
+  startedAt: null,
+  exitedAt: null,
+};
+
+describe('sessionLaneOf', () => {
+  it('reads the worktree lane: branch + attributable mode', () => {
+    expect(sessionLaneOf({ ...base, checkoutBranch: 'tm8/ab12cd34', workdirMode: 'worktree' }))
+      .toEqual({ branch: 'tm8/ab12cd34', mode: 'worktree' });
+  });
+
+  it("maps 'project' to 'shared' — the badge word carries the honesty", () => {
+    expect(sessionLaneOf({ ...base, checkoutBranch: 'main', workdirMode: 'project' }))
+      .toEqual({ branch: 'main', mode: 'shared' });
+  });
+
+  it('renders NO claim for a null branch, whatever the mode says', () => {
+    expect(sessionLaneOf({ ...base, checkoutBranch: null, workdirMode: 'scratch' })).toBeNull();
+    expect(sessionLaneOf({ ...base, checkoutBranch: null, workdirMode: 'project' })).toBeNull();
+  });
+
+  it('renders NO claim for a pre-107 summary that has neither field', () => {
+    expect(sessionLaneOf(base)).toBeNull();
+  });
+
+  it('answers a branch with no badge when only the branch fact arrived', () => {
+    expect(sessionLaneOf({ ...base, checkoutBranch: 'main' })).toEqual({ branch: 'main', mode: null });
+  });
+
+  it('reads nothing from a non-session state', () => {
+    expect(sessionLaneOf({ kind: 'task', workStatus: 'open' })).toBeNull();
+    expect(sessionLaneOf(null)).toBeNull();
+  });
+});
+
+describe('SessionLaneLine', () => {
+  it('draws the branch glyph, the name and the mode badge', () => {
+    render(<SessionLaneLine lane={{ branch: 'tm8/ab12cd34', mode: 'worktree' }} />);
+    const line = screen.getByTestId('session-lane-line');
+    expect(line.textContent).toContain('tm8/ab12cd34');
+    expect(line.textContent).toContain('worktree');
+  });
+
+  it('a shared checkout names its honesty in the badge title', () => {
+    render(<SessionLaneLine lane={{ branch: 'main', mode: 'shared' }} />);
+    expect(screen.getByText('shared').getAttribute('title')).toContain('not exclusively');
+  });
+
+  it('renders NOTHING for null — honest absence draws no placeholder', () => {
+    const { container } = render(<SessionLaneLine lane={null} />);
+    expect(container.innerHTML).toBe('');
+  });
+});

@@ -267,7 +267,7 @@ function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): Entity
           stale: fetchedAt === null,
           // 103: entity_content carries the whole pull_requests row, so the two
           // forge facts arrive here with no query change.
-          ...projectForgeFacts(content.ci_status, content.mergeable_state),
+          ...projectForgeFacts(content.ci_status, content.mergeable_state, content.head_ref),
         },
       };
     }

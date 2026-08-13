@@ -520,6 +520,19 @@ export interface GraphPort {
     sessionId: string,
     nativeSessionId: string,
   ): Promise<boolean>;
+  /**
+   * `public.execution_record_checkout_branch` (107) — the session's lane
+   * fact. NOT write-once (a checkout legitimately changes branches; the fact
+   * is refreshed opportunistically), and NEVER load-bearing for the launch:
+   * callers fire-and-log, because a session that cannot report its branch is
+   * degraded, not broken. `null` records a MEASURED absence (no repo,
+   * detached HEAD). Resolves whether the stored value actually changed.
+   */
+  recordCheckoutBranch(
+    auth: GraphAuth,
+    sessionId: string,
+    branch: string | null,
+  ): Promise<boolean>;
   /** `public.record_execution_command` — the ledger row for prompt/terminate. */
   recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown>;
   /**

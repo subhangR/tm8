@@ -97,7 +97,7 @@ import type {
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
-  WorkInput, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -149,6 +149,9 @@ export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
 /** Mirrors `work_sessions.session_kind`'s CHECK exactly — 083, widened by 101. */
 export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
   z.enum(['agent', 'credential', 'shell']);
+/** Mirrors `work_sessions.workdir_mode`'s CHECK exactly — 001, widened by 015. */
+export const WorkSessionWorkdirModeSchema: z.ZodType<WorkSessionWorkdirMode> =
+  z.enum(['project', 'worktree', 'scratch']);
 export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
   z.enum(['active', 'merged', 'abandoned', 'deleted']);
 
@@ -255,6 +258,9 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // land", and `unknown` means GitHub SAID it was still computing the merge —
     // never merely that we have not looked.
     mergeState: z.enum(['clean', 'conflicted', 'unknown']).nullable().optional(),
+    // The PR's source branch (103 head_ref) — the mechanical association key
+    // for session lane facts (107). Same honesty law: null = never observed.
+    headRef: z.string().nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('commit'),
@@ -286,6 +292,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // read that absence as `agent` so a frozen server keeps today's behaviour.
     // Clients filter with `!== 'credential'`; see the DTO note in contract.ts.
     sessionKind: WorkSessionKindSchema.optional(),
+    // The lane facts (107), additive: absent = a pre-107 node, no claim;
+    // explicit null checkoutBranch = measured absence (no repo/detached HEAD).
+    checkoutBranch: z.string().nullable().optional(),
+    workdirMode: WorkSessionWorkdirModeSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),

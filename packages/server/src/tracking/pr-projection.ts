@@ -67,17 +67,24 @@ export function projectMergeState(stored: unknown): MergeState | null {
 /**
  * The optional half of a `pull_request` EntityState. Spread into the projection.
  *
- * Both keys are always present (as `null` when there is no verdict) rather than
+ * All keys are always present (as `null` when there is no verdict) rather than
  * conditionally omitted: the contract marks them `.nullable().optional()`, and
  * an explicit null is the difference between "this node has no verdict" and
  * "this node is too old to know the field exists".
+ *
+ * `headRef` (103's `head_ref`, projected by 107) rides with the verdicts and
+ * under the same law — `null` means the observer never told us. It is the
+ * mechanical PR↔session association key: a summary that carries it lets a
+ * client match it against a session's `checkoutBranch` without a second read.
  */
 export function projectForgeFacts(
   ciStatus: unknown,
   mergeableState: unknown,
-): Pick<PullRequestState, 'ciStatus' | 'mergeState'> {
+  headRef?: unknown,
+): Pick<PullRequestState, 'ciStatus' | 'mergeState' | 'headRef'> {
   return {
     ciStatus: projectCiStatus(ciStatus),
     mergeState: projectMergeState(mergeableState),
+    headRef: typeof headRef === 'string' && headRef !== '' ? headRef : null,
   };
 }

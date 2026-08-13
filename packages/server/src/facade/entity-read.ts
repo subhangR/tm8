@@ -84,6 +84,7 @@ export const ENTITY_COLUMNS = `
   ws.model as ws_model, ws.share_mode as ws_share_mode, ws.started_at as ws_started_at,
   ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
   ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
+  ws.checkout_branch as ws_checkout_branch, ws.workdir_mode as ws_workdir_mode,
   wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
   wsp.template_version as ws_pin_template_version,
   wsp.resolved_snapshot as ws_pin_resolved_snapshot,
@@ -113,8 +114,8 @@ export const ENTITY_COLUMNS = `
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
   pr.title as pr_title, pr.repo as pr_repo, pr.number as pr_number,
   pr.state as pr_state, pr.ci_status as pr_ci_status,
-  pr.mergeable_state as pr_mergeable_state, pr.url as pr_url,
-  pr.fetched_at as pr_fetched_at,
+  pr.mergeable_state as pr_mergeable_state, pr.head_ref as pr_head_ref,
+  pr.url as pr_url, pr.fetched_at as pr_fetched_at,
   art.name as artifact_name, art.description as artifact_description,
   arev.revision_number as artifact_revision_number,
   arev.entrypoint_path as artifact_entrypoint,
@@ -222,6 +223,9 @@ export interface EntityRow {
   ws_project_id: string | null;
   ws_transcript_doc_id: string | null;
   ws_session_kind: string | null;
+  /** Lane facts (107); optional keeps legacy row fixtures source-compatible. */
+  ws_checkout_branch?: string | null;
+  ws_workdir_mode?: string | null;
   ws_pin_revision: number | null;
   ws_pin_template_key: string | null;
   ws_pin_template_version: number | null;
@@ -278,6 +282,7 @@ export interface EntityRow {
   pr_state?: string | null;
   pr_ci_status?: string | null;
   pr_mergeable_state?: string | null;
+  pr_head_ref?: string | null;
   pr_url?: string | null;
   pr_fetched_at?: Date | string | null;
   artifact_name: string | null;
@@ -1220,6 +1225,17 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // a server that never looked. `.strict()` refuses an explicit
         // `undefined` key, hence the spread rather than a ternary value.
         ...(row.ws_session_kind ? { sessionKind: row.ws_session_kind as WorkSessionKind } : {}),
+        // The lane facts (107). `checkoutBranch` is nullable-and-present:
+        // an explicit null is "measured absence / never captured — render no
+        // claim", while a missing KEY would mean "server too old to know the
+        // field exists". `workdirMode` is projected only when the column
+        // holds one of its three CHECK values — the enum is the contract.
+        checkoutBranch: row.ws_checkout_branch ?? null,
+        ...(row.ws_workdir_mode === 'project' ||
+        row.ws_workdir_mode === 'worktree' ||
+        row.ws_workdir_mode === 'scratch'
+          ? { workdirMode: row.ws_workdir_mode }
+          : {}),
       };
     case 'collection':
       return {
@@ -1316,7 +1332,7 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // `stale` is "the mirror is older than the upstream". Never fetched ⇒
         // definitionally stale — same ruling as the projector twin.
         stale: fetched === null,
-        ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state),
+        ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       };
     }
     default:
@@ -1680,7 +1696,7 @@ export function contentOf(row: EntityRow): EntityContent {
         ...(row.pr_url ? { url: row.pr_url } : {}),
         fetchedAt: isoOrNull(fetched),
         stale: fetched === null,
-        ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state),
+        ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       };
     }
     default:

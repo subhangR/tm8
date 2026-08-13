@@ -72,17 +72,27 @@ describe('mergeState narrows GitHub eight words to the contract three', () => {
   });
 });
 
-describe('the projected pair', () => {
-  it('always carries both keys, explicitly null when unknown', () => {
+describe('the projected facts', () => {
+  it('always carries every key, explicitly null when unknown', () => {
     // Explicit null, not omission: it distinguishes "this node has no verdict"
-    // from "this node is too old to know the field exists".
-    expect(projectForgeFacts(null, null)).toEqual({ ciStatus: null, mergeState: null });
+    // from "this node is too old to know the field exists". headRef (107)
+    // joins the pair under the same law.
+    expect(projectForgeFacts(null, null)).toEqual({
+      ciStatus: null,
+      mergeState: null,
+      headRef: null,
+    });
   });
 
   it('carries a real verdict through', () => {
-    expect(projectForgeFacts('failing', 'dirty')).toEqual({
+    expect(projectForgeFacts('failing', 'dirty', 'feat/session-lane-facts')).toEqual({
       ciStatus: 'failing',
       mergeState: 'conflicted',
+      headRef: 'feat/session-lane-facts',
     });
+  });
+
+  it('drops an empty-string headRef to null — an empty branch name is no claim', () => {
+    expect(projectForgeFacts(null, null, '').headRef).toBeNull();
   });
 });

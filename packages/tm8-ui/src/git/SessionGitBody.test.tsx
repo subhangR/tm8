@@ -82,6 +82,34 @@ describe('status header', () => {
     expect(facts.contains(screen.getByTestId('linked-pr-chips'))).toBe(true);
     expect(screen.queryByTestId('session-git-actions')).toBeNull();
   });
+
+  it('the LANE LINE (107) renders atop an unavailable tab from the summary fact alone', async () => {
+    // A shared-checkout session: no worktree, but the summary carries the
+    // branch fact and the workdir mode — the tab must say `⎇ main · shared`
+    // above the reason card instead of nothing.
+    const base = createFixtureSeam();
+    const seam: Seam = {
+      ...base,
+      async entity(id) {
+        const detail = await base.entity(id);
+        return {
+          ...detail,
+          state: { ...detail.state, checkoutBranch: 'main', workdirMode: 'project' },
+        } as typeof detail;
+      },
+    };
+    mount(seam, sessionStale.id as EntityId);
+    await screen.findByTestId('session-git-unavailable');
+    const lane = await screen.findByTestId('session-lane-line');
+    expect(lane.textContent).toContain('main');
+    expect(lane.textContent).toContain('shared');
+  });
+
+  it('no lane fact renders NO lane line — honest absence, no placeholder', async () => {
+    mount(createFixtureSeam(), sessionStale.id as EntityId);
+    await screen.findByTestId('session-git-unavailable');
+    expect(screen.queryByTestId('session-lane-line')).toBeNull();
+  });
 });
 
 describe('FLOW A spine: checkpoint → rollback → diff reflects it', () => {

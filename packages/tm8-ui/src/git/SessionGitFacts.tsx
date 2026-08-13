@@ -7,6 +7,7 @@ import {
   pullRequestFactsOf,
   type LinkedPullRequestFacts,
 } from '../pull-requests';
+import { SessionLaneModeBadge, type SessionLaneFacts } from './SessionLane';
 import './session-git.css';
 
 /**
@@ -42,6 +43,13 @@ const TASK_FANOUT_CAP = 5;
 export interface SessionGitFactsProps {
   seam: Seam;
   sessionId: EntityId;
+  /**
+   * The session's lane FACTS (107), passed by the host so this block does
+   * not re-read the entity: the fact-based branch and the mode badge unify
+   * with the worktree-entity row below — the entity link stays when the
+   * `in_worktree` edge exists, the branch/mode honesty comes from the fact.
+   */
+  lane?: SessionLaneFacts | null;
 }
 
 interface CommitRow {
@@ -88,7 +96,7 @@ function laneRowOf(row: EntitySummary): LaneRow | null {
   };
 }
 
-export function SessionGitFacts({ seam, sessionId }: SessionGitFactsProps) {
+export function SessionGitFacts({ seam, sessionId, lane: laneFacts }: SessionGitFactsProps) {
   const [state, setState] = useState<State>({ phase: 'loading' });
 
   const load = useCallback(async () => {
@@ -167,10 +175,15 @@ export function SessionGitFacts({ seam, sessionId }: SessionGitFactsProps) {
       {lane !== null ? (
         <div className="pn-git__facts-row" data-testid="session-git-lane">
           <span className="pn-git__facts-label">Lane</span>
+          {/* Fact-based branch first (107) — the summary fact refreshes when
+              the branch is renamed while an edge-snapshot title can lag; the
+              worktree ENTITY keeps the row (its title carries the link, its
+              status its lifecycle). */}
           <span className="pn-git__lane-title" title={lane.title}>
             <span aria-hidden className="pn-git__branch-glyph">⎇</span>
-            {lane.branch ?? lane.title}
+            {laneFacts?.branch ?? lane.branch ?? lane.title}
           </span>
+          <SessionLaneModeBadge mode={laneFacts?.mode ?? null} />
           {lane.status !== null ? <Pill tone={lane.status === 'active' ? 'run' : 'idle'}>{lane.status}</Pill> : null}
         </div>
       ) : null}

@@ -32,6 +32,7 @@ import {
   withAgentResume,
   type ResolvedLaunchConfig,
 } from './manifest.js';
+import { detectCheckoutBranch } from './checkout-branch.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { probeCodexSandbox } from './sandbox-probe.js';
 import {
@@ -421,6 +422,27 @@ export class SpawnService {
   }
 
   /**
+   * Record the session's lane fact (107) — NEVER load-bearing for a launch.
+   * A session that cannot report its branch is degraded, not broken, so this
+   * logs and returns instead of throwing; the row simply keeps NULL and the
+   * lane line renders no claim.
+   */
+  private async captureCheckoutBranch(
+    auth: GraphAuth,
+    sessionId: string,
+    branch: string | null,
+  ): Promise<void> {
+    try {
+      await this.graph.recordCheckoutBranch(auth, sessionId, branch);
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not record the checkout branch fact', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
    * Decide what a launch is allowed to do when the node cannot actually give it
    * the sandbox its posture asks for. Returns whether `buildAgentCommand` must
    * drop `--sandbox`; throws when the launch may not proceed at all.
@@ -689,6 +711,16 @@ export class SpawnService {
         ? await this.provisionWorktreeFor(auth, request, context, workdir.baseRef)
         : null;
 
+    // The lane fact (107). Worktree mode knows its branch without a probe —
+    // provisioning just created it. Project mode asks the SHARED checkout what
+    // it has right now; a non-repo or detached HEAD answers null, which is
+    // recorded as "no claim". Scratch has no repo by construction.
+    const checkoutBranch = worktree
+      ? worktree.branch
+      : workdir.mode === 'project'
+        ? await detectCheckoutBranch(workdir.path)
+        : null;
+
     const resolvedProfile = await this.graph.resolveInteractionProfile(auth, {
       spaceId: request.spaceId,
       teamMemberId: request.teamMemberId,
@@ -782,6 +814,13 @@ export class SpawnService {
           worktreeId: worktree.worktreeId,
           state: 'ready',
         });
+      }
+
+      // The lane fact needs the row, so this is the earliest it can land —
+      // recorded before the PTY exists so even a session that dies in its
+      // boot window already answers "what branch was I on".
+      if (checkoutBranch !== null) {
+        await this.captureCheckoutBranch(auth, sessionId, checkoutBranch);
       }
 
       // The pre-minted Claude id is graph truth from the moment the session
@@ -1099,6 +1138,13 @@ export class SpawnService {
 
       await this.graph.transition(auth, { sessionId, status: 'running' });
 
+      // The lane fact (107) for a project terminal: the SHARED checkout's
+      // current branch. A scratch terminal has no repo — nothing to probe,
+      // and NULL already says so. Best-effort like every lane-fact write.
+      if (context.project) {
+        await this.captureCheckoutBranch(auth, sessionId, await detectCheckoutBranch(cwd));
+      }
+
       return {
         sessionId,
         shell: launched.shell,
@@ -1337,6 +1383,24 @@ export class SpawnService {
           `work session ${sessionId} has no related team member and cannot receive a session-bound credential`,
           'conflict',
           { sessionId },
+        );
+      }
+
+      // Refresh the lane fact (107): a shared checkout may have changed
+      // branches since the last run, and a lane branch may have been renamed.
+      // Worktree sessions probe their own checkout (the stored workdir_path);
+      // scratch sessions have nothing to probe and keep NULL.
+      const branchProbePath =
+        info.workdirMode === 'worktree'
+          ? info.workdirPath
+          : info.workdirMode === 'project'
+            ? cwd
+            : null;
+      if (branchProbePath !== null) {
+        await this.captureCheckoutBranch(
+          auth,
+          sessionId,
+          await detectCheckoutBranch(branchProbePath),
         );
       }
       const agentToken = await this.graph.issueWorkSessionAgentToken(

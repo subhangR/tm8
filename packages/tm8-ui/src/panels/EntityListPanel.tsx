@@ -61,6 +61,7 @@ import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges'
 import { MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
+import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
 import { routeMessagePulse, type PulseSegment } from './list/message-pulse';
 import type { MessagePulse } from './list/useMessagePulses';
 import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
@@ -2493,6 +2494,9 @@ export function Tile({
     const sessionKind = typeof state.sessionKind === 'string' ? state.sessionKind : null;
     const model = typeof state.model === 'string' ? state.model : null;
     const live = verdict === 'live';
+    // The lane facts ride the summary state (107) — no edge read needed, so
+    // the badge cannot flicker when the bounded graph page misses an edge.
+    const lane = sessionLaneOf(row.state);
     return (
       <MaestroSessionTile
         id={row.id}
@@ -2510,6 +2514,7 @@ export function Tile({
         statusTone={statusTone}
         statusTitle={statusTitle}
         tasks={props.linkedTasksOf?.(row.id) ?? []}
+        lane={lane !== null ? <SessionLaneLine lane={lane} /> : undefined}
         badges={
           linkedPullRequests.length > 0 ? (
             <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
