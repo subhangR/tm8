@@ -59,6 +59,7 @@ import { useDismissable } from './useDismissable';
 import { EntityControlStrip, RowAction, type ControlHost } from './controls/EntityControls';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
 import { MaestroTaskTile } from './list/MaestroTaskTile';
+import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { routeMessagePulse, type PulseSegment } from './list/message-pulse';
 import type { MessagePulse } from './list/useMessagePulses';
@@ -150,6 +151,8 @@ export interface EntityListPanelProps {
   onNeedDetail?: (entityId: string) => void;
   /** Real `working_on` targets for session tiles, projected by the shell. */
   linkedTasksOf?: (id: string) => readonly EntitySummary[];
+  /** Tracked PR facts from the graph/entity projection, live by entity id. */
+  linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
 
   selectedId?: string | null;
   /** True at the 200/220px floors: metas drop, badges abbreviate. */
@@ -2470,6 +2473,7 @@ function Tile({
   const done = row.deletedAt != null;
   const controlExpanded = controlCard && (detailsExpanded || flowRef !== null);
   const controlFacts = controlCard ? factsForControlCard(row) : null;
+  const linkedPullRequests = controlCard ? (props.linkedPullRequestsOf?.(row.id) ?? []) : [];
 
   if (sessionTree) {
     const state = row.state as unknown as Record<string, unknown>;
@@ -2531,6 +2535,11 @@ function Tile({
         }}
         assignees={controlFacts.assignees}
         creator={controlFacts.creator}
+        badges={
+          linkedPullRequests.length > 0 ? (
+            <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
+          ) : undefined
+        }
         actions={(list.rowActions ?? []).map((ref) => (
           <RowAction
             key={ref}
