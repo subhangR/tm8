@@ -471,8 +471,12 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // This is that re-measurement: `ls db/migrations/*.sql | wc -l` = 94.
     // Keeping either branch's 93 would have been the previous-plus-one error
     // the comment above warns against, arrived at by two correct measurements.
-    // Re-measured on the TM8 Chat tree: 99 files through 104.
-    expect(server.appliedMigrations.length).toBe(99);
+    // Re-measured on the TM8 Chat tree: 99 files through 104 (L2 branch).
+    // Re-measured AT THE INTEGRATION MERGE 2026-08-13: L3's agent_runtime
+    // migration renumbered 104 -> 105 joins L2's 104, so the union is 100.
+    // `ls db/migrations/*.sql | wc -l` = 100 on integrate/tm8-chat — same
+    // two-correct-measurements-still-stale class as the 92 -> 94 note above.
+    expect(server.appliedMigrations.length).toBe(100);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
