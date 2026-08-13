@@ -11,7 +11,7 @@ const valueAfter = (flag) => {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : undefined;
 };
-const nativeSessionId = valueAfter('--session-id');
+const nativeSessionId = valueAfter('--session-id') ?? valueAfter('--resume');
 
 if (process.env.TM8_FAKE_ARGV_FILE) {
   writeFileSync(
@@ -64,7 +64,16 @@ process.on('SIGINT', () => {
     result: 'Request interrupted by user',
     terminal_reason: 'aborted_streaming',
     usage: { input_tokens: 0, output_tokens: 0 },
-    total_cost_usd: 0.001,
+    modelUsage: {
+      'fake-model': {
+        inputTokens: 532,
+        outputTokens: 17,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        costUSD: 999,
+      },
+    },
+    total_cost_usd: 0.000617,
   });
   // Real Claude drains for a short period after its terminal result, during
   // which stdin can misleadingly accept a write, then exits cleanly.
@@ -152,7 +161,13 @@ input.on('line', (line) => {
       subtype: 'error_during_execution',
       is_error: true,
       result: 'synthetic provider failure',
-      usage: { input_tokens: 3, output_tokens: 1 },
+      usage: { input_tokens: 0, output_tokens: 0 },
+      modelUsage: {
+        'fake-model': {
+          inputTokens: 3,
+          outputTokens: 1,
+        },
+      },
     });
     return;
   }
@@ -161,13 +176,23 @@ input.on('line', (line) => {
     type: 'result',
     subtype: 'success',
     is_error: false,
-    usage: {
-      input_tokens: 11,
-      output_tokens: 5,
-      cache_creation_input_tokens: 2,
-      cache_read_input_tokens: 7,
+    // These zeroes reproduce the misleading top-level abort shape. The
+    // adapter must take tokens from modelUsage and cost from total_cost_usd.
+    usage: { input_tokens: 0, output_tokens: 0 },
+    modelUsage: {
+      'fake-model': {
+        inputTokens: 11,
+        outputTokens: 5,
+        cacheCreationInputTokens: 2,
+        cacheReadInputTokens: 7,
+        costUSD: 999,
+      },
     },
   };
   if (text !== 'no-cost') result.total_cost_usd = 0;
+  if (text === 'cost-only') {
+    delete result.modelUsage;
+    result.total_cost_usd = 0.25;
+  }
   send(result);
 });

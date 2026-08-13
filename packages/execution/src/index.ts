@@ -1,4 +1,4 @@
-// @tm8/execution — server-side PTY host (the ONLY spawn path, AM-1/T-D21).
+// @tm8/execution — server-side agent execution primitives.
 //
 // LIFTED from old maestro's maestro-server/src (PtyHostService, OutputBuffer,
 // TerminalStateMirror) with the operational scars preserved verbatim:

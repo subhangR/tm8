@@ -21,7 +21,10 @@ import {
 } from './types.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const DEFAULT_BOOT_SETTLEMENT_MS = 50;
+// Match SpawnService's measured early-death window. This cannot mean "Claude
+// initialized" (stream-json init is turn-framed and only follows input); it
+// catches missing binaries and wrappers that die immediately after spawning.
+const DEFAULT_BOOT_SETTLEMENT_MS = 150;
 const DEFAULT_CLOSE_GRACE_MS = 1_000;
 const MAX_STDERR_CHARS = 16_384;
 
@@ -44,6 +47,12 @@ interface ThreadState {
   interruptRequested: boolean;
   booting: boolean;
   closed: boolean;
+}
+
+interface InterruptedThread {
+  readonly nativeSessionId: string;
+  readonly cwd: string;
+  readonly model: string;
 }
 
 export interface ClaudeHeadlessAdapterOptions {
@@ -76,6 +85,12 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
   private readonly closeGraceMs: number;
   private readonly onThreadExit: ClaudeHeadlessAdapterOptions['onThreadExit'];
   private readonly threads = new Map<string, ThreadState>();
+  /**
+   * Same-process consistency hints for R8. The orchestrator's durable binding
+   * is the resume authority, so absence after a node restart never blocks a
+   * caller-authorized post-interrupt resume.
+   */
+  private readonly interruptedThreads = new Map<string, InterruptedThread>();
 
   constructor(options: ClaudeHeadlessAdapterOptions = {}) {
     this.command = options.command ?? 'claude';
@@ -98,13 +113,41 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     if (this.threads.has(input.threadId)) {
       throw new AgentRuntimeError(`agent thread '${input.threadId}' is already running`, 'thread_exists');
     }
+    const interrupted = this.interruptedThreads.get(input.threadId);
+    if (input.resume === 'post_interrupt') {
+      if (
+        interrupted &&
+        (interrupted.nativeSessionId !== input.nativeSessionId ||
+          interrupted.cwd !== input.cwd ||
+          interrupted.model !== input.model)
+      ) {
+        throw new AgentRuntimeError(
+          `agent thread '${input.threadId}' resume config does not match its interrupted runtime`,
+          'resume_mismatch',
+        );
+      }
+    } else if (interrupted) {
+      throw new AgentRuntimeError(
+        `agent thread '${input.threadId}' must resume its interrupted native session`,
+        'resume_required',
+      );
+    }
 
-    const args = this.buildArgs(input);
-    const childEnv: NodeJS.ProcessEnv = { ...this.env, ...input.env };
+    // Own an immutable snapshot. Retaining a caller-owned object would let a
+    // later `input.threadId = ...` make exit cleanup delete the wrong registry
+    // key and leave a live-looking ghost behind.
+    const config: StartAgentThreadInput = {
+      ...input,
+      allowedTools: [...input.allowedTools],
+      ...(input.env ? { env: { ...input.env } } : {}),
+    };
+
+    const args = this.buildArgs(config);
+    const childEnv: NodeJS.ProcessEnv = { ...this.env, ...config.env };
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawnChild(this.command, args, {
-        cwd: input.cwd,
+        cwd: config.cwd,
         env: childEnv,
         shell: false,
         windowsHide: true,
@@ -120,7 +163,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     });
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     const state: ThreadState = {
-      input,
+      input: config,
       child,
       lines,
       exited,
@@ -132,7 +175,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       booting: true,
       closed: false,
     };
-    this.threads.set(input.threadId, state);
+    this.threads.set(config.threadId, state);
 
     lines.on('line', (line) => this.handleLine(state, line));
     child.stderr.on('data', (chunk: Buffer | string) => this.captureStderr(state, chunk));
@@ -142,16 +185,17 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     try {
       await this.awaitBoot(state);
       state.booting = false;
+      if (config.resume === 'post_interrupt') this.interruptedThreads.delete(config.threadId);
     } catch (error) {
       state.booting = false;
-      this.threads.delete(input.threadId);
+      this.threads.delete(config.threadId);
       lines.close();
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
       if (error instanceof AgentRuntimeError) throw error;
       throw this.spawnError(error);
     }
 
-    return { threadId: input.threadId, nativeSessionId: input.nativeSessionId };
+    return { threadId: config.threadId, nativeSessionId: config.nativeSessionId };
   }
 
   sendTurn(threadId: string, input: AgentTurnInput): AsyncIterable<TurnItem> {
@@ -206,7 +250,10 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
 
   async close(threadId: string): Promise<void> {
     const state = this.threads.get(threadId);
-    if (!state || state.closed) return;
+    if (!state || state.closed) {
+      this.interruptedThreads.delete(threadId);
+      return;
+    }
     state.closeRequested = true;
     if (!state.child.stdin.destroyed) state.child.stdin.end();
 
@@ -229,6 +276,10 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
 
   activeThreadIds(): string[] {
     return [...this.threads.keys()];
+  }
+
+  canResumeInterruptedThread(threadId: string): boolean {
+    return this.interruptedThreads.has(threadId);
   }
 
   private requireThread(threadId: string): ThreadState {
@@ -257,6 +308,9 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     if (!Array.isArray(input.allowedTools) || input.allowedTools.length === 0) {
       throw new AgentRuntimeError('allowedTools must name at least one pre-authorized TM8 tool', 'invalid_input');
     }
+    if (input.resume !== undefined && input.resume !== 'post_interrupt') {
+      throw new AgentRuntimeError("resume must be 'post_interrupt' when provided", 'invalid_input');
+    }
     const tools = new Set<string>();
     for (const tool of input.allowedTools) {
       this.assertText(tool, 'allowedTools entry');
@@ -270,8 +324,11 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
         throw new AgentRuntimeError('HOME cannot be overridden for a headless Claude thread', 'invalid_input');
       }
       this.assertText(key, 'environment key');
-      if (value.includes('\0')) {
-        throw new AgentRuntimeError(`environment value '${key}' contains a NUL byte`, 'invalid_input');
+      if (typeof value !== 'string' || value.includes('\0')) {
+        throw new AgentRuntimeError(
+          `environment value '${key}' must be a string without NUL bytes`,
+          'invalid_input',
+        );
       }
     }
   }
@@ -303,7 +360,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       '',
       '--allowed-tools',
       ...input.allowedTools,
-      '--session-id',
+      input.resume === 'post_interrupt' ? '--resume' : '--session-id',
       input.nativeSessionId,
       '--system-prompt',
       input.systemPrompt,
@@ -473,13 +530,15 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
   }
 
   private mapUsage(event: JsonObject): UsageTurnItem | null {
-    const source = objectField(event, 'usage') ?? {};
+    const modelUsage = objectField(event, 'modelUsage');
     const usage: UsageTurnItem = { kind: 'usage' };
-    copyNumber(source, usage, 'input_tokens');
-    copyNumber(source, usage, 'output_tokens');
-    copyNumber(source, usage, 'cache_creation_input_tokens');
-    copyNumber(source, usage, 'cache_read_input_tokens');
-    copyNumber(event, usage, 'total_cost_usd');
+    if (modelUsage) {
+      copyModelUsageSum(modelUsage, usage, 'inputTokens', 'input_tokens');
+      copyModelUsageSum(modelUsage, usage, 'outputTokens', 'output_tokens');
+      copyModelUsageSum(modelUsage, usage, 'cacheCreationInputTokens', 'cache_creation_input_tokens');
+      copyModelUsageSum(modelUsage, usage, 'cacheReadInputTokens', 'cache_read_input_tokens');
+    }
+    copyResultCost(event, usage);
     return Object.keys(usage).length > 1 ? usage : null;
   }
 
@@ -518,12 +577,19 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     state.lines.close();
     this.threads.delete(state.input.threadId);
 
-    const reason: AgentThreadExit['reason'] = state.closeRequested
-      ? 'closed'
-      : state.interruptRequested
-        ? 'interrupted'
+    const reason: AgentThreadExit['reason'] = state.interruptRequested
+      ? 'interrupted'
+      : state.closeRequested
+        ? 'closed'
         : 'crashed';
     const expected = reason !== 'crashed';
+    if (reason === 'interrupted') {
+      this.interruptedThreads.set(state.input.threadId, {
+        nativeSessionId: state.input.nativeSessionId,
+        cwd: state.input.cwd,
+        model: state.input.model,
+      });
+    }
     if (state.active) {
       if (reason === 'closed' || reason === 'interrupted') {
         this.finishActiveTurn(state, reason);
@@ -616,11 +682,35 @@ function stringField(object: JsonObject, key: string): string | null {
   return typeof value === 'string' ? value : null;
 }
 
-function copyNumber(
-  source: JsonObject,
+function copyModelUsageSum(
+  models: JsonObject,
   target: UsageTurnItem,
-  key: 'input_tokens' | 'output_tokens' | 'cache_creation_input_tokens' | 'cache_read_input_tokens' | 'total_cost_usd',
+  sourceKey:
+    | 'inputTokens'
+    | 'outputTokens'
+    | 'cacheCreationInputTokens'
+    | 'cacheReadInputTokens',
+  targetKey:
+    | 'input_tokens'
+    | 'output_tokens'
+    | 'cache_creation_input_tokens'
+    | 'cache_read_input_tokens',
 ): void {
-  const value = source[key];
-  if (typeof value === 'number' && Number.isFinite(value)) Object.assign(target, { [key]: value });
+  let reported = false;
+  let total = 0;
+  for (const raw of Object.values(models)) {
+    if (!isObject(raw)) continue;
+    const value = raw[sourceKey];
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    reported = true;
+    total += value;
+  }
+  if (reported) Object.assign(target, { [targetKey]: total });
+}
+
+function copyResultCost(result: JsonObject, target: UsageTurnItem): void {
+  const value = result['total_cost_usd'];
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    target.total_cost_usd = value;
+  }
 }

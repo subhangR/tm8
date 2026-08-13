@@ -90,6 +90,12 @@ export interface StartAgentThreadInput {
   /** Closed, pre-authorized TM8 MCP tool set. */
   allowedTools: readonly string[];
   /**
+   * Narrow D8/R8 exception authorized by the orchestrator's durable thread
+   * binding after an interrupt. There is no general v1 resume mode and the
+   * runtime never respawns eagerly.
+   */
+  resume?: 'post_interrupt';
+  /**
    * Per-thread additions such as CLAUDE_CONFIG_DIR or MCP auth material.
    * HOME is expressly forbidden: Claude subscription auth uses the keychain.
    */
@@ -142,6 +148,8 @@ export class AgentRuntimeError extends Error {
       | 'thread_not_found'
       | 'turn_in_progress'
       | 'thread_closing'
+      | 'resume_required'
+      | 'resume_mismatch'
       | 'spawn_failed'
       | 'close_failed',
   ) {

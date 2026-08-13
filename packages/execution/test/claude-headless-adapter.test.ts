@@ -179,12 +179,14 @@ describe('ClaudeHeadlessAdapter', () => {
 
     const first = await collect(runtime.sendTurn(thread.threadId, { text: 'first' }));
     const second = await collect(runtime.sendTurn(thread.threadId, { text: 'no-cost' }));
+    const costOnly = await collect(runtime.sendTurn(thread.threadId, { text: 'cost-only' }));
     expect(first).toContainEqual({ kind: 'text', text: 'echo:first:1' });
     expect(second).toContainEqual({ kind: 'text', text: 'echo:no-cost:2' });
     const usage = second.find((item) => item.kind === 'usage');
     expect(usage).toBeDefined();
     expect(usage).not.toHaveProperty('total_cost_usd');
     expect(second.at(-1)).toEqual({ kind: 'done', reason: 'success' });
+    expect(costOnly).toContainEqual({ kind: 'usage', total_cost_usd: 0.25 });
   });
 
   it('rejects an overlapping turn synchronously, outside the C1 stream', async () => {
@@ -224,7 +226,14 @@ describe('ClaudeHeadlessAdapter', () => {
         args: { entityId: 'probe-1' },
         state: 'error',
       },
-      { kind: 'usage', input_tokens: 0, output_tokens: 0, total_cost_usd: 0.001 },
+      {
+        kind: 'usage',
+        input_tokens: 532,
+        output_tokens: 17,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        total_cost_usd: 0.000617,
+      },
       { kind: 'done', reason: 'interrupted' },
     ]);
     // The terminal result arrives before Claude's clean process exit. This is
@@ -237,6 +246,50 @@ describe('ClaudeHeadlessAdapter', () => {
       expected: true,
       exit_code: 0,
     });
+    expect(runtime.canResumeInterruptedThread(thread.threadId)).toBe(true);
+    await expect(runtime.startThread(thread)).rejects.toMatchObject<Partial<AgentRuntimeError>>({
+      code: 'resume_required',
+    });
+    await expect(
+      runtime.startThread({
+        ...thread,
+        cwd: join(root, 'wrong-cwd'),
+        resume: 'post_interrupt',
+      }),
+    ).rejects.toMatchObject<Partial<AgentRuntimeError>>({ code: 'resume_mismatch' });
+
+    const argvFile = join(root, 'resume-argv.json');
+    await runtime.startThread({
+      ...thread,
+      resume: 'post_interrupt',
+      env: { TM8_FAKE_ARGV_FILE: argvFile },
+    });
+    const recorded = JSON.parse(await readFile(argvFile, 'utf8')) as { args: string[] };
+    expect(recorded.args).toContain('--resume');
+    expect(recorded.args).not.toContain('--session-id');
+    expect(runtime.canResumeInterruptedThread(thread.threadId)).toBe(false);
+    await expect(
+      collect(runtime.sendTurn(thread.threadId, { text: 'resumed' })),
+    ).resolves.toContainEqual({ kind: 'text', text: 'echo:resumed:1' });
+  });
+
+  it('honors durable orchestrator resume authority after an adapter restart', async () => {
+    const argvFile = join(root, 'restart-resume-argv.json');
+    const runtime = adapter();
+    const thread = input({
+      resume: 'post_interrupt',
+      env: { TM8_FAKE_ARGV_FILE: argvFile },
+    });
+
+    // This adapter has no in-memory interrupted tombstone. The durable caller
+    // is authoritative after a node restart, so the vendor lookup decides.
+    await runtime.startThread(thread);
+    const recorded = JSON.parse(await readFile(argvFile, 'utf8')) as { args: string[] };
+    expect(recorded.args).toContain('--resume');
+    expect(recorded.args).not.toContain('--session-id');
+    await expect(
+      collect(runtime.sendTurn(thread.threadId, { text: 'after-node-restart' })),
+    ).resolves.toContainEqual({ kind: 'text', text: 'echo:after-node-restart:1' });
   });
 
   it('turns a mid-turn process crash into error + exactly one done and evicts it', async () => {
