@@ -58,7 +58,7 @@ import { createOutput } from '../src/output.js';
 // public, deliberately commandless: the CLI already runs these verbs locally
 // (session-git.ts), and one action must not have two names.
 // 150 -> 152 (2026-08-12): projects.file.history + projects.file.blame (GET reads, with CLI commands).
-const EXPECTED_ROWS = 157;
+const EXPECTED_ROWS = 158; // +1 2026-08-13: tracking.pr.merge
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -170,7 +170,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 153, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 154, composite: 1, internal: 1, reserved: 2 });
   });
 });
 

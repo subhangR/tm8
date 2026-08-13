@@ -8,6 +8,7 @@ import {
 } from '../commands.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { W2EntitiesCommandsTrackingService } from '../../services/w2/entities-commands-tracking.js';
+import { W2TrackingWriteService } from '../../services/w2/tracking-write.js';
 
 /** The integration worker's single registration seam for W2.G02. */
 export function registerW2EntitiesCommandsTrackingHandlers(
@@ -40,5 +41,7 @@ export function registerW2EntitiesCommandsTrackingHandlers(
     'entities.commands.linkPr': service.linkPr,
     'entities.commands.linkCommit': service.linkCommit,
     'tracking.refresh': async (ctx) => json(await service.refreshTracking(ctx), { status: 202 }),
+    // The forge write door — guards + member credential live in the service.
+    'tracking.pr.merge': new W2TrackingWriteService(deps).mergePr,
   });
 }

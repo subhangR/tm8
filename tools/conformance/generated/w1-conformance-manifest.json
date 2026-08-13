@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:aefbae3bc972822d6f082bfe5a9d4046c2f4913d1a558de7bbb3b75644e307b3",
+  "catalogDigest": "sha256:dceade5e3a670bbdb7356f1500685343f33bdbafc4a41e162e4810a889c25b28",
   "catalog": {
-    "total": 157,
-    "v1": 155,
+    "total": 158,
+    "v1": 156,
     "reserved": 2,
-    "http": 156,
+    "http": 157,
     "ws": 1,
-    "registerableV1Http": 154,
+    "registerableV1Http": 155,
     "methods": {
       "GET": 58,
-      "POST": 71,
+      "POST": 72,
       "PATCH": 10,
       "DELETE": 10,
       "PUT": 7,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 61,
-      "command": 95,
+      "command": 96,
       "stream": 1
     },
-    "uniqueNames": 157,
-    "uniqueBindings": 157
+    "uniqueNames": 158,
+    "uniqueBindings": 158
   },
   "reservedOperations": [
     "search.query",
@@ -533,6 +533,13 @@
         "operation": "tracking.refresh",
         "method": "POST",
         "path": "/v2/tracking/refresh",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tracking.pr.merge",
+        "method": "POST",
+        "path": "/v2/tracking/pr/:id/merge",
         "status": "registered",
         "source": "server-router"
       },
@@ -1503,7 +1510,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 126
+    "unimplementedV1Http": 127
   },
   "schemas": {
     "additive": {
@@ -2462,6 +2469,23 @@
           "refresh"
         ],
         "inputSchemaRef": "TrackingRefreshInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tracking.pr.merge",
+        "noun": "tracking",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tracking.pr.merge",
+        "intentTags": [
+          "tracking",
+          "pr",
+          "merge"
+        ],
+        "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,

@@ -1398,6 +1398,29 @@ export interface WorkInput extends CommandContext { status: WorkStatus; startedA
 export interface TrackingRefreshInput extends CommandContext { entityIds?: EntityId[] }
 
 /**
+ * POST /v2/tracking/pr/:id/merge — merge the PR a `pull_request` entity
+ * mirrors, ON THE FORGE, as the acting member. The server refuses before any
+ * network unless the OBSERVED facts allow it: state `open`, mergeable not
+ * `dirty`, `ci_status` not `failing`, and a stored member GitHub credential
+ * for the actor. `expectedHeadSha` defaults to the stored head so a branch
+ * that moved after review answers `head_moved` instead of merging blind.
+ */
+export interface TrackingPrMergeInput extends CommandContext {
+  clientMutationId: string;
+  /** Not a version guard: the OBSERVED head to merge, GitHub-refused if the branch moved past it. */
+  headSha?: string;
+  commitTitle?: string;
+}
+export interface TrackingPrMergeResult {
+  entityId: EntityId;
+  repo: string;
+  number: number;
+  merged: true;
+  /** The merge commit the forge created. */
+  mergeSha: string;
+}
+
+/**
  * POST /v2/entities/:id/commands/link-pr (DEV-3): creates/upserts the
  * pull_request entity for `url` and the `tracks` edge atomically.
  */
