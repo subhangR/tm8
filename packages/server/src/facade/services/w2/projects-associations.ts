@@ -341,11 +341,29 @@ export class W2ProjectsAssociationsService {
 
   readonly listProjectDirectories = async (ctx: RequestContext) => {
     const owner = await this.deps.owner();
-    // Browsing is available to every authenticated local user. Filesystem
-    // exposure is bounded by TM8_PROJECT_ROOTS (the OS user's home by default),
-    // canonical-path containment, symlink exclusion, and OS read permissions.
-    // Node-admin remains required for creating a missing directory below.
-    claimsFor(owner, ctx);
+    const claims = claimsFor(owner, ctx);
+    // NODE-ADMIN ONLY, and it is the create rule that decides this rather than
+    // a fresh judgement about listings: `createProject` below refuses every
+    // non-admin on BOTH branches, so a non-admin who browses can never act on
+    // what they find. Browsing was the odd one out — the one filesystem verb
+    // open to any authenticated user — and that was survivable only while a
+    // node had a single account.
+    //
+    // It stopped being survivable once space roles became writable and
+    // invite-bound signup made ordinary members routine and numerous: the
+    // default browse scope is the OS filesystem root (see
+    // `project-directories.ts`), and `project-files.ts` shares the same
+    // `canonicalRoots`/`requireAllowed`, so the scope governs reading file
+    // CONTENTS too. The secret filter there is a denylist, and a denylist over
+    // one home directory is a different proposition from a denylist over the
+    // whole filesystem: it fails open on whatever nobody thought to list.
+    //
+    // What remains for non-admins is unchanged and is the honest surface for
+    // them: the files of a project an admin already linked, read through
+    // `projects.files.list` and scoped to that project's working directory.
+    if (claims.nodeAdmin !== true) {
+      throw new CollabError('forbidden', 'node-admin access is required to browse node directories');
+    }
     return listProjectDirectories(ctx.query.get('path') ?? undefined);
   };
 

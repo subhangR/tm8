@@ -181,6 +181,23 @@
   font: 10.5px/1.45 var(--pn-ui);
 }
 
+/*
+ * A broad working directory is ALLOWED, so this must not read as a refusal the
+ * way `__error` does — it is the consequence stated before the click, in the
+ * caution ramp (`--pn-wait`, the amber the status pills already use for stale)
+ * rather than the block ramp. NOT `--pn-warn`: that token does not exist, which
+ * is why the one other reference to it in the tree carries a fallback.
+ */
+.project-onboard__warning {
+  margin: 0;
+  padding: 9px 11px;
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+  border: 1px solid color-mix(in srgb, var(--pn-wait) 35%, transparent);
+  border-radius: var(--pn-r-sm);
+  font: 10.5px/1.45 var(--pn-ui);
+}
+
 .project-onboard__footer {
   justify-content: flex-end;
   padding-top: 4px;

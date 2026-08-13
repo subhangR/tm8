@@ -1,5 +1,5 @@
 -- =============================================================================
--- 112 — a chat thread answers every human member of its Space, not only the
+-- 115 (authored as 111; renumbered as main landed 111 and 112, and in-flight branches hold 113/114) — a chat thread answers every human member of its Space, not only the
 -- human who configured it.
 --
 -- 104 queued a turn only when the reply author was `configured_by_member_id`.

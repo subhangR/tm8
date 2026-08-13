@@ -491,13 +491,15 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // count moves by one while the highest FILENAME jumps by three, and the
     // two numbers are not each other. Re-measured on THIS tree, not
     // incremented: `ls db/migrations/*.sql | wc -l` = 104.
-    // 104 -> 105 on 2026-08-13, the same day again: 112 (chat turns queue for
-    // every human member of the Space). This one was authored as 111, and 111
-    // landed on main first while it was in review — the rename to 112 IS the
-    // conflict resolution, and it is why the note above and this one both say
-    // 111. Re-measured on THIS tree, not incremented:
-    // `ls db/migrations/*.sql | wc -l` = 105.
-    expect(server.appliedMigrations.length).toBe(105);
+    // 104 -> 105 on 2026-08-13: 112 adds the human/agent message counters.
+    // It follows landed 111 and avoids the already-claimed 109/110 slots.
+    // Re-measured on this rebased tree: `ls db/migrations/*.sql | wc -l` = 105.
+    // 105 -> 106 on 2026-08-13, the same day again: 115 (chat turns queue for
+    // every human member of the Space). Authored as 111, renumbered as main
+    // landed 111 and 112 while it was in review, and 113/114 are claimed on
+    // branches that have not landed (node_claim, member roles). Re-measured on
+    // THIS tree, not incremented: `ls db/migrations/*.sql | wc -l` = 106.
+    expect(server.appliedMigrations.length).toBe(106);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

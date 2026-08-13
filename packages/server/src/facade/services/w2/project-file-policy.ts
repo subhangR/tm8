@@ -87,7 +87,7 @@ let canonicalDataDir: { raw: string; resolved: string | null } | undefined;
 /**
  * The node's own data directory — credential store, grant keys, session
  * manifests, blobs — is denied ALWAYS, independent of how roots are
- * configured: `TM8_PROJECT_ROOTS` defaults to the whole home directory, which
+ * configured: `TM8_PROJECT_ROOTS` defaults to the whole filesystem, which
  * contains it. The ONE exception is `<dataDir>/worktrees`: tm8 itself
  * materializes agent worktrees there and links them as projects, so that
  * subtree is legitimate project ground.

@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { join, parse, resolve } from 'node:path';
 
 import { runGit } from '@tm8/execution';
 import {
@@ -173,7 +173,66 @@ describe('W2.G06 projects and association correction facade', () => {
     }
   });
 
-  it('allows authenticated non-admin users to browse, but not create, local directories', async () => {
+  it('defaults the browse scope to the OS filesystem root, not the home directory', async () => {
+    const previous = process.env.TM8_PROJECT_ROOTS;
+    delete process.env.TM8_PROJECT_ROOTS;
+    try {
+      const listing = await listProjectDirectories();
+      expect(ProjectDirectoryListingSchema.safeParse(listing).success).toBe(true);
+
+      // OS-generic assertion of "this is a filesystem root": `/` on POSIX and
+      // `C:\`-shaped on Windows both satisfy `parse(root).root === root`, and
+      // the home directory satisfies it on neither.
+      expect(listing.roots.length).toBeGreaterThan(0);
+      for (const root of listing.roots) expect(parse(root).root).toBe(root);
+
+      // The SCOPE is the filesystem root but the picker OPENS on home: `/` is
+      // one click away in the roots rail, while "register a project at /" is
+      // not two clicks from the start. See `defaultStartPath`.
+      const homeCanonical = await realpath(homedir());
+      expect(listing.path).toBe(homeCanonical);
+
+      // The regression itself: the root of the volume that holds the home
+      // directory used to be refused as 'outside TM8_PROJECT_ROOTS', which is
+      // what made every folder outside home unreachable.
+      const osRoot = parse(homedir()).root;
+      const atRoot = await listProjectDirectories(osRoot);
+      expect(atRoot.path).toBe(await realpath(osRoot));
+      expect(atRoot.parentPath).toBeNull();
+
+      // ...and the picker no longer dead-ends at home with no way up, which is
+      // what makes opening on home safe to prefer.
+      if (homeCanonical !== atRoot.path) {
+        expect(listing.parentPath).not.toBeNull();
+      }
+    } finally {
+      if (previous === undefined) delete process.env.TM8_PROJECT_ROOTS;
+      else process.env.TM8_PROJECT_ROOTS = previous;
+    }
+  });
+
+  it('still honours TM8_PROJECT_ROOTS when a deployment narrows the browse scope', async () => {
+    const previous = process.env.TM8_PROJECT_ROOTS;
+    const scratch = await realpath(await mkdtemp(join(tmpdir(), 'tm8-narrowed-roots-')));
+    process.env.TM8_PROJECT_ROOTS = scratch;
+    try {
+      await mkdir(join(scratch, 'inside'));
+      const listing = await listProjectDirectories();
+      expect(listing.roots).toEqual([scratch]);
+      expect(listing.path).toBe(scratch);
+      expect(listing.parentPath).toBeNull();
+
+      // The configured window still refuses the OS root it sits under.
+      await expect(listProjectDirectories(parse(scratch).root))
+        .rejects.toMatchObject({ code: 'forbidden' });
+    } finally {
+      if (previous === undefined) delete process.env.TM8_PROJECT_ROOTS;
+      else process.env.TM8_PROJECT_ROOTS = previous;
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses authenticated non-admin users both browsing and creating local directories', async () => {
     const registry = registered(new FakeDb());
     const identity = {
       kind: 'bearer' as const,
@@ -181,8 +240,23 @@ describe('W2.G06 projects and association correction facade', () => {
       token: 'test-token',
       nodeAdmin: false,
     };
-    const listing = await handler(registry, 'projects.directories.list')(
+
+    // Browsing used to be open to any authenticated user — the one filesystem
+    // verb that was. That was survivable while a node had a single account; it
+    // is not once space roles are writable and invite-bound signup makes
+    // ordinary members routine, because the default browse scope is the OS
+    // filesystem root and `project-files.ts` shares the same roots to read
+    // file CONTENTS. A non-admin cannot create a project from what they find
+    // (below), so browsing bought them nothing anyway.
+    await expect(handler(registry, 'projects.directories.list')(
       request('projects.directories.list', { identity }),
+    )).rejects.toMatchObject({ code: 'forbidden' });
+
+    // The node admin still browses, so the picker itself is not broken.
+    const listing = await handler(registry, 'projects.directories.list')(
+      request('projects.directories.list', {
+        identity: { ...identity, nodeAdmin: true },
+      }),
     );
     expect(ProjectDirectoryListingSchema.safeParse(listing).success).toBe(true);
 

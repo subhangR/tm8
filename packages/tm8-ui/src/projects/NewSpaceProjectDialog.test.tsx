@@ -210,6 +210,63 @@ describe('Create Space — a project from a node-local folder', () => {
     }));
   });
 
+  it('names the consequence when browsing lands on the filesystem root, and keeps it on the selection', async () => {
+    // The picker OPENS on home, but `/` is one click away in the roots rail
+    // and up the parent chain, so an admin can still land here. Choosing it is
+    // allowed — they may mean it — but it exposes every readable file under
+    // that path to every member of the space through the file browser, so it
+    // must not be silent. The default stops the common case; this stops the
+    // determined one.
+    const p = port({
+      directories: vi.fn().mockResolvedValue({
+        roots: ['/'],
+        path: '/',
+        parentPath: null,
+        separator: '/',
+        directories: [{ name: 'srv', path: '/srv' }],
+        truncated: false,
+      }),
+    });
+    const view = render(
+      <NewSpaceProjectDialog open nodeLabel="local node" port={p} onDismiss={() => {}} onCreated={() => {}} />,
+    );
+
+    fireEvent.change(view.getByLabelText('Space name'), { target: { value: 'Studio' } });
+    addProject(view);
+    fireEvent.click(view.getByRole('button', { name: 'Browse folders' }));
+    await waitFor(() => expect(p.directories).toHaveBeenCalled());
+
+    const warned = await view.findAllByRole('alert');
+    expect(warned.some((el) => /root of the whole filesystem/.test(el.textContent ?? ''))).toBe(true);
+    expect(warned.some((el) => /every member of this space will be able to read/i.test(el.textContent ?? '')))
+      .toBe(true);
+
+    // Taking it anyway is permitted, and the warning follows the selection out
+    // of the browser rather than vanishing with the dialog that raised it.
+    fireEvent.click(view.getByRole('button', { name: 'Use this folder' }));
+    await waitFor(() => {
+      const alerts = view.getAllByRole('alert');
+      expect(alerts.some((el) => /root of the whole filesystem/.test(el.textContent ?? ''))).toBe(true);
+    });
+  });
+
+  it('stays quiet for an ordinary project folder', async () => {
+    const p = port();
+    const view = render(
+      <NewSpaceProjectDialog open nodeLabel="local node" port={p} onDismiss={() => {}} onCreated={() => {}} />,
+    );
+    fireEvent.change(view.getByLabelText('Space name'), { target: { value: 'Studio' } });
+    addProject(view);
+    fireEvent.click(view.getByRole('button', { name: 'Browse folders' }));
+    await waitFor(() => expect(p.directories).toHaveBeenCalled());
+
+    // `/srv/projects` is broad-ish but it is not a home directory and not the
+    // root; warning here would be the noise that teaches admins to click
+    // through the warning that matters.
+    expect(view.queryAllByRole('alert').some((el) => /able to read files under it/.test(el.textContent ?? '')))
+      .toBe(false);
+  });
+
   it('can replay the same mutation ids after a staged failure', async () => {
     const ids = newOnboardingMutationIds('retry');
     const createMemory = vi.fn()
