@@ -1,8 +1,24 @@
+import { useMemo } from 'react';
+import type { EntityId } from '@tm8/contract';
 import { Markdown } from '../kit';
+import { EntityChip, type ChatEntityResolver } from './EntityChip';
+import { extractEntityRefs } from './entity-refs';
 import { projectTurnParts } from './turn-model';
 import type { ChatTurnPart, ChatUsage } from './types';
 
-export function TurnParts({ parts }: { parts: readonly ChatTurnPart[] }) {
+export interface TurnPartsProps {
+  parts: readonly ChatTurnPart[];
+  /** Opens the entity detail panel; absent renders chips as inert badges. */
+  onOpenEntity?: ((id: EntityId) => void) | undefined;
+  /** Lazily resolves title/kind for bare-id references. */
+  resolveEntity?: ChatEntityResolver | undefined;
+  /** Ids that must never chip — this thread's own messages. A chip pointing at
+   *  a message already on screen is noise; a message from another session or
+   *  thread stays a useful pointer. */
+  suppressEntityIds?: ReadonlySet<string> | undefined;
+}
+
+export function TurnParts({ parts, onOpenEntity, resolveEntity, suppressEntityIds }: TurnPartsProps) {
   return (
     <div className="tch-parts">
       {projectTurnParts(parts).map((part) => {
@@ -26,28 +42,13 @@ export function TurnParts({ parts }: { parts: readonly ChatTurnPart[] }) {
         }
         if (part.kind === 'tool') {
           return (
-            <article
-              className="tch-tool"
-              data-state={part.state}
-              data-testid="chat-tool-card"
+            <ToolCard
               key={`${part.toolCallId}:${part.seq}`}
-            >
-              <header className="tch-tool__head">
-                <span aria-hidden className="tch-tool__mark">⌁</span>
-                <code>{part.name}</code>
-                <span className="tch-tool__state">{toolStateLabel(part.state)}</span>
-              </header>
-              <details className="tch-tool__detail">
-                <summary>Input</summary>
-                <pre>{formatPayload(part.args)}</pre>
-              </details>
-              {part.result !== undefined ? (
-                <details className="tch-tool__detail" data-error={part.resultIsError || undefined}>
-                  <summary>{part.resultIsError ? 'Error result' : 'Result'}</summary>
-                  <pre>{formatPayload(part.result)}</pre>
-                </details>
-              ) : null}
-            </article>
+              part={part}
+              onOpenEntity={onOpenEntity}
+              resolveEntity={resolveEntity}
+              suppressEntityIds={suppressEntityIds}
+            />
           );
         }
         if (part.kind === 'usage') {
@@ -61,6 +62,58 @@ export function TurnParts({ parts }: { parts: readonly ChatTurnPart[] }) {
         );
       })}
     </div>
+  );
+}
+
+function ToolCard({
+  part,
+  onOpenEntity,
+  resolveEntity,
+  suppressEntityIds,
+}: {
+  part: Extract<ReturnType<typeof projectTurnParts>[number], { kind: 'tool' }>;
+  onOpenEntity?: ((id: EntityId) => void) | undefined;
+  resolveEntity?: ChatEntityResolver | undefined;
+  suppressEntityIds?: ReadonlySet<string> | undefined;
+}) {
+  // The payload walk (with JSON.parse of embedded blobs) must not re-run on
+  // every streamed frame of unrelated turns.
+  const entityRefs = useMemo(
+    () =>
+      extractEntityRefs(part.args, part.result).filter(
+        (ref) => !suppressEntityIds?.has(ref.id),
+      ),
+    [part.args, part.result, suppressEntityIds],
+  );
+  return (
+    <article className="tch-tool" data-state={part.state} data-testid="chat-tool-card">
+      <header className="tch-tool__head">
+        <span aria-hidden className="tch-tool__mark">⌁</span>
+        <code>{part.name}</code>
+        <span className="tch-tool__state">{toolStateLabel(part.state)}</span>
+      </header>
+      <details className="tch-tool__detail">
+        <summary>Input</summary>
+        <pre>{formatPayload(part.args)}</pre>
+      </details>
+      {part.result !== undefined ? (
+        <details className="tch-tool__detail" data-error={part.resultIsError || undefined}>
+          <summary>{part.resultIsError ? 'Error result' : 'Result'}</summary>
+          <pre>{formatPayload(part.result)}</pre>
+        </details>
+      ) : null}
+      {entityRefs.length > 0 ? (
+        <div
+          className="tch-tool__entities"
+          data-testid="chat-tool-entities"
+          aria-label="Entities referenced by this tool call"
+        >
+          {entityRefs.map((ref) => (
+            <EntityChip key={ref.id} refInfo={ref} resolve={resolveEntity} onOpen={onOpenEntity} />
+          ))}
+        </div>
+      ) : null}
+    </article>
   );
 }
 

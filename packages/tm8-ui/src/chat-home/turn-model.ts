@@ -86,6 +86,10 @@ export function mergeChatTurnFrame(
   let index = turns.findIndex((turn) => turn.messageId === frame.messageId);
 
   if (index < 0) {
+    // A done for a message we never saw a delta or snapshot row for carries
+    // nothing worth rendering — fabricating an empty assistant turn would put
+    // a blank bubble with a made-up timestamp in the transcript.
+    if (frame.type === 'chat.turn.done') return detail;
     turns.push(emptyAssistantTurn(frame.messageId));
     index = turns.length - 1;
   }
@@ -125,6 +129,34 @@ export function mergeChatTurnFrame(
     summary: { ...detail.summary, state: 'idle' },
     turns,
   };
+}
+
+/**
+ * Reconcile a fresh snapshot with what is already on screen, monotonically:
+ * a read that captured its snapshot before parts were durable but resolved
+ * after them must never make visible content disappear. Chat is append-only,
+ * so unioning turns and parts (by message id / seq) is always safe.
+ */
+export function reconcileDetails(
+  current: ChatThreadDetail | null,
+  next: ChatThreadDetail,
+): ChatThreadDetail {
+  if (!current || current.summary.rootId !== next.summary.rootId) return next;
+  const nextIds = new Set(next.turns.map((turn) => turn.messageId));
+  const turns = next.turns.map((turn) => {
+    const existing = current.turns.find((candidate) => candidate.messageId === turn.messageId);
+    if (!existing) return turn;
+    const seqs = new Set(turn.parts.map((part) => part.seq));
+    const extra = existing.parts.filter((part) => !seqs.has(part.seq));
+    if (extra.length === 0 && (turn.body || !existing.body)) return turn;
+    return {
+      ...turn,
+      body: turn.body || existing.body,
+      parts: [...turn.parts, ...extra].sort((a, b) => a.seq - b.seq),
+    };
+  });
+  const missing = current.turns.filter((turn) => !nextIds.has(turn.messageId));
+  return missing.length === 0 ? { ...next, turns } : { ...next, turns: [...turns, ...missing] };
 }
 
 function emptyAssistantTurn(messageId: EntityId): ChatTurn {

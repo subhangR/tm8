@@ -1,4 +1,5 @@
 import type { ActorSummary, EntityId } from '@tm8/contract';
+import { mergeChatTurnFrame } from './turn-model';
 import type {
   ChatHomePort,
   ChatConfigureInput,
@@ -71,7 +72,20 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
           seq: 2,
           kind: 'tool_result',
           toolCallId: 'tool-1',
-          content: { tasks: 7, blocked: 1 },
+          content: {
+            tasks: 7,
+            blocked: 1,
+            // A tm8_* tool result carrying real graph entities: one with the
+            // full id/kind/title shape and one bare id a chip resolves lazily.
+            items: [
+              {
+                id: '019f0000-0000-7000-8000-000000000021',
+                kind: 'task',
+                title: 'Unblock the storage lane',
+              },
+            ],
+            blockerId: '019f0000-0000-7000-8000-000000000022',
+          },
         },
         {
           seq: 3,
@@ -296,6 +310,12 @@ export function createChatHomeFixturePort(
       posts,
       interrupts,
       emit(frame) {
+        // Server truth: every part is appended durably BEFORE its frame
+        // publishes, so a snapshot read always contains what earlier frames
+        // carried. The fixture must model that or replay-pruning cannot be
+        // exercised honestly.
+        const stored = details.get(frame.threadRootId);
+        if (stored) details.set(frame.threadRootId, mergeChatTurnFrame(stored, frame));
         for (const listener of listeners) listener(frame);
       },
     },
