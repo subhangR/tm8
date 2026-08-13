@@ -24,6 +24,7 @@ import { gitSurfaceFor } from './gitSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { attachmentsFor } from '../files/port';
+import { useMembershipSurface } from './membershipSurface';
 import { representedThreadMessageCount } from './message-thread';
 
 const FEED_KEY = 'feed';
@@ -107,6 +108,15 @@ export function ChannelView({
     [data.seam, data.spaceId],
   );
 
+  /* COLLECTION MEMBERSHIP — the one shared composer (see `membershipSurface`),
+     so the entity beside a channel feed can be curated like anywhere else. */
+  const membership = useMembershipSurface({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    refetchDetail: (id) => data.refetchDetail(id),
+    ...(onNotice ? { onNotice } : {}),
+  });
+
   const detail = data.detailOf(channelId);
   const content = channelContent(detail);
   /* Threads are REGISTRY DATA on the kind row, never a kind literal here.
@@ -166,6 +176,7 @@ export function ChannelView({
       ctx={{ spaceId: data.spaceId, entityId: selectedId }}
       onAction={primaries.forEntity(selectedId)}
       wiredActions={primaries.wiredActions}
+      membershipAuthoring={membership.authoringFor(selectedDetail)}
       launch={launchPort}
       pinned={false}
       pinRefusal="Pinning lives in the Workspace — this channel keeps the entity beside its feed already"
@@ -181,6 +192,7 @@ export function ChannelView({
       livenessOf={data.livenessOf}
       messages={selectedMessages}
       connections={data.connectionsOf(selectedId)}
+      linkedPullRequestsOf={data.linkedPullRequestsOf}
       onPostMessage={(body) => data.postMessage({
         clientMutationId: `entity-post:${selectedId}:${Date.now()}`,
         anchorIds: [selectedId],

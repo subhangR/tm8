@@ -253,3 +253,34 @@ describe('the expanded row’s Collections picker', () => {
     ).toBe(true);
   });
 });
+
+describe('the COLLAPSED tile’s add-to-collection (user ruling 2026-08-13)', () => {
+  const row = tasks[0]!;
+
+  it('offers the same set menu from the collapsed action cluster, no expand needed', () => {
+    // The reported gap: the only row-level add lived on the EXPANDED strip,
+    // so a collapsed tile had no membership affordance at all.
+    const onMembership = vi.fn();
+    render(
+      <div className="cv2-root">
+        <EntityListPanel
+          kind="task"
+          rowsFor={() => [row]}
+          ctx={ctx}
+          capabilitiesOf={() => CAPS_FULL}
+          membershipSets={sets}
+          connectionsOf={() => connectionsWith(row, [])}
+          onMembership={onMembership}
+        />
+      </div>,
+    );
+    // Deliberately NOT expanding any row first.
+    expect(document.querySelectorAll('.lp__rowdetail')).toHaveLength(0);
+    fireEvent.click(screen.getByTestId('row-membership-trigger'));
+    const option = screen
+      .getAllByTestId('row-membership-option')
+      .find((node) => node.getAttribute('data-set') === collectionEmpty.id)!;
+    fireEvent.click(option);
+    expect(onMembership).toHaveBeenCalledWith(row.id, collectionEmpty.id, true);
+  });
+});
