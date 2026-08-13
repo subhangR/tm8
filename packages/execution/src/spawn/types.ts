@@ -290,6 +290,65 @@ export interface CreateWorkSessionResult {
   replayed: boolean;
 }
 
+// --- vanilla terminals (101) -------------------------------------------------
+
+/**
+ * What `SpawnService.startShell` needs, and the shape is the argument.
+ *
+ * Set this beside {@link SpawnRequest} and read the difference: no
+ * `teamMemberId`, no `mode`, no `model`, no `agentTool`, no
+ * `interactionProfileId`, no `memoryIds`, no `promptExtra`, no `taskIds`, no
+ * `parentSessionId`, no `workdir`. Every one of those is agent configuration,
+ * and a vanilla terminal has no agent to configure. They are ABSENT rather than
+ * optional-and-ignored, so there is no field for a later edit to start reading.
+ */
+export interface ShellSessionRequest {
+  spaceId: string;
+  /** Null ⇒ a projectless terminal in a server-owned scratch directory. */
+  projectId: string | null;
+  /** Explicit consent for an untrusted project, as spawn's carrier is. */
+  confirmUntrusted?: boolean;
+  title?: string | null;
+  clientMutationId?: string | null;
+  cols?: number;
+  rows?: number;
+}
+
+/**
+ * The project read a vanilla terminal needs — and ONLY that.
+ *
+ * Deliberately not `loadSpawnContext`, which also reads the persona, its
+ * ancestor skill chain, and the memory working set across three more queries.
+ * None of that exists for a shell session, and calling the big loader with a
+ * synthetic team member id to get one field back would be the exact "pretend it
+ * is an agent" shape this feature exists to avoid.
+ */
+export interface ShellSessionContext {
+  project: ProjectContext | null;
+}
+
+export interface StartShellSessionResult {
+  sessionId: string;
+  /** The RPC's raw CommandResult, forwarded to the client untouched. */
+  commandResult: unknown;
+  /** True when the command ledger returned an earlier start result. */
+  replayed: boolean;
+}
+
+/** What `startShell` answers with once the PTY is live. */
+export interface ShellSessionResult {
+  sessionId: string;
+  /** The resolved login shell. */
+  shell: string;
+  /** The exact line the PTY ran. */
+  command: string;
+  cwd: string;
+  envVarNames: string[];
+  /** True when a live PTY already existed and was reattached to. */
+  reused: boolean;
+  commandResult: unknown;
+}
+
 export interface ResolvedInteractionProfileContext {
   profileId: string | null;
   profileVersion: number | null;
@@ -373,6 +432,24 @@ export interface GraphPort {
   loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext>;
   /** `public.execution_spawn` — work_session row + `working_on` edges, one tx. */
   createWorkSession(auth: GraphAuth, input: CreateWorkSessionInput): Promise<CreateWorkSessionResult>;
+  /** The project read behind a vanilla terminal. See {@link ShellSessionContext}. */
+  loadShellContext(
+    auth: GraphAuth,
+    input: { spaceId: string; projectId: string | null },
+  ): Promise<ShellSessionContext>;
+  /** `public.start_shell_session` (101) — the `session_kind='shell'` row. */
+  createShellSession(
+    auth: GraphAuth,
+    input: ShellSessionRequest & {
+      nodeId: string | null;
+      /**
+       * The project's recorded `working_dir`, already re-validated by the
+       * caller. NULL for a projectless terminal, whose directory is named for
+       * a session id that does not exist yet — see the migration.
+       */
+      workdirPath: string | null;
+    },
+  ): Promise<StartShellSessionResult>;
   /** Resolve the immutable profile selection before launch. */
   resolveInteractionProfile(
     auth: GraphAuth,

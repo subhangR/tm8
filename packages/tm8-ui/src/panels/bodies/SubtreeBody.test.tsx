@@ -128,7 +128,14 @@ describe('the composed metadata grid', () => {
     const { getByTestId } = renderBody();
     const grid = getByTestId('subtree-grid');
     expect(grid.textContent).toContain(taskUuidTitle.id);
-    // `dueDate` has no registry control, so the grid is still its only home.
+    /*
+     * `dueDate` is EDITABLE now (the task's `editFields` dialog) and the grid
+     * is still where it is READ. Not a contradiction: suppression is keyed on
+     * `valueControls`/`assignControl` — the controls mounted PERSISTENTLY in
+     * the strip above this body, which would otherwise be drawn twice on one
+     * screen. A dialog is modal and absent the rest of the time, so removing
+     * the row would leave the due date visible nowhere.
+     */
     expect(grid.textContent).toMatch(/Due/);
   });
 

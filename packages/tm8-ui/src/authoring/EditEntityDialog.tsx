@@ -34,14 +34,19 @@ import { loopScheduleProblem, nextLoopRunAt } from '../loops/schedule';
 export interface DialogField {
   target: 'title' | 'content';
   source?: string;
+  /** Where the CURRENT value is read from, when it is not where it is written. */
+  readFrom?: 'content' | 'state';
   label: string;
   required?: boolean;
   placeholder?: string;
   multiline?: boolean;
   /** Resolved by the HOST from `grammar` — this lane may not name a kind. */
   normalize?: (raw: string) => string;
-  valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule';
+  valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule' | 'date';
 }
+
+/** `YYYY-MM-DD` — the wire shape of a `date` field, and of `<input type="date">`. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * The draft key for a field.
@@ -89,6 +94,21 @@ export function editsFrom(
 function valueForWire(field: DialogField, value: string): unknown {
   if (field.valueType === 'nullable-text') return value.trim() === '' ? null : value.trim();
   if (field.valueType === 'json-object') return JSON.parse(value) as Record<string, unknown>;
+  /**
+   * AN EMPTIED DATE IS `null`, AND NOTHING ELSE WILL CLEAR IT.
+   *
+   * The obvious "send only what changed" patch cannot express this: the
+   * server's `update_task_content` COALESCEs an absent `dueDate` to the stored
+   * value and only treats an EXPLICIT `null` as a clear
+   * (`handlers/entities.ts:682-685`). Omitting the key on an emptied field
+   * would therefore round-trip as success and leave the old date in place —
+   * the user clears the box, presses Save, and the date comes back.
+   *
+   * `''` is not an option either: the column is a `date`, so an empty string is
+   * an invalid input rather than an empty value the way `channels.topic`'s
+   * `not null default ''` makes it one.
+   */
+  if (field.valueType === 'date') return value.trim() === '' ? null : value.trim();
   return value;
 }
 
@@ -97,12 +117,26 @@ export function draftValueFor(field: DialogField, raw: unknown): string {
   if (field.valueType === 'json-object') {
     return isRecord(raw) ? JSON.stringify(raw, null, 2) : '{}';
   }
+  /**
+   * `<input type="date">` shows a BLANK box for anything that is not exactly
+   * `YYYY-MM-DD`, silently. A stored value the control cannot represent would
+   * therefore read as "no due date" and the next Save would clear it for real.
+   * Truncating a timestamp to its date part keeps the day the user was looking
+   * at; anything else falls back to empty, which is at least the same answer
+   * the control would have drawn anyway.
+   */
+  if (field.valueType === 'date') {
+    if (typeof raw !== 'string') return '';
+    const day = raw.slice(0, 10);
+    return DATE_ONLY.test(day) ? day : '';
+  }
   return typeof raw === 'string' ? raw : '';
 }
 
 /** A field-level refusal stated before the command spends a round trip. */
 export function fieldProblem(field: DialogField, value: string): string | null {
   if (field.valueType === 'schedule') return loopScheduleProblem(value);
+  if (field.valueType === 'date') return dateProblem(field, value);
   if (field.valueType !== 'json-object') return null;
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -114,6 +148,28 @@ export function fieldProblem(field: DialogField, value: string): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A calendar day the SERVER would also accept, checked here rather than there.
+ *
+ * Empty is not a problem — it is the clear (`valueForWire`). A browser's own
+ * date picker cannot produce anything else, so this guard is for the two ways
+ * around it: a form autofilled by an extension, and `2026-02-30`, which is
+ * shaped like a date and is not one. Postgres refuses that second one as an
+ * opaque `invariant_violation`, which is the same failure #42 was filed for.
+ *
+ * The round-trip through `Date` is what rejects it: `Date.UTC` normalises
+ * February 30th to March 2nd, so a day that survives re-rendering is real.
+ */
+function dateProblem(field: DialogField, value: string): string | null {
+  const day = value.trim();
+  if (day === '') return null;
+  const refusal = `${field.label} must be a calendar date (YYYY-MM-DD).`;
+  if (!DATE_ONLY.test(day)) return refusal;
+  const [year, month, date] = day.split('-').map(Number) as [number, number, number];
+  const normalized = new Date(Date.UTC(year, month - 1, date));
+  return normalized.toISOString().slice(0, 10) === day ? null : refusal;
 }
 
 /** The fields whose `required` promise the draft does not keep. */
@@ -219,6 +275,15 @@ export function EditEntityDialog({
                 <input
                   ref={index === 0 ? (el) => { firstField.current = el; } : undefined}
                   className="au-dialog__input"
+                  /*
+                   * THE NATIVE PICKER, and it earns its place by being the only
+                   * control that cannot produce a value the column refuses: it
+                   * emits `YYYY-MM-DD` or nothing, in the viewer's own locale
+                   * and calendar, with no timezone in it to shift. A text box
+                   * would hand the shape problem to the user, and a JS calendar
+                   * would hand it to us.
+                   */
+                  type={field.valueType === 'date' ? 'date' : 'text'}
                   value={value}
                   placeholder={field.placeholder}
                   disabled={saving}

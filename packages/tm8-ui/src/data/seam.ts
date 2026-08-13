@@ -118,6 +118,7 @@ import type {
   ExecutionDispatchInput,
   ExecutionDispatchResult,
   ExecutionSpawnInput,
+  ExecutionTerminalStartInput,
   ExecutionResumeInput,
   ExecutionTerminateInput,
   FileUploadAbortInput,
@@ -673,6 +674,21 @@ export interface Seam {
      */
     previewArtifact(id: EntityId, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
     spawn(input: ExecutionSpawnInput): Promise<CommandResult>;
+    /**
+     * `execution.terminal.start` — a VANILLA TERMINAL (101): a shell session
+     * with no agent attached.
+     *
+     * NOT A VARIANT OF `spawn` WITH THE AGENT FIELDS LEFT NULL, and the input
+     * type is what enforces that: it has no `teamMemberId`, no `model`, no
+     * `agentTool` and no `mode` to leave null. A seam method taking
+     * `ExecutionSpawnInput` with those omitted would be one optional-field edit
+     * away from a terminal that quietly spawns an agent.
+     *
+     * Returns a `CommandResult` like `spawn` does, because it creates exactly
+     * the same thing — a `work_session` entity — and every store that
+     * reconciles a spawn's patches must reconcile this one's identically.
+     */
+    startTerminal(input: ExecutionTerminalStartInput): Promise<CommandResult>;
     /**
      * `execution.dispatch` — hand a subject to the space's resident dispatcher
      * and let IT choose the teammate and the memories (DESIGN §4.3, D2/D4).
