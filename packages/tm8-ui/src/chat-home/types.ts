@@ -97,6 +97,13 @@ export interface ChatRootInput {
   anchorId: EntityId;
   body: string;
   clientMutationId: string;
+  /**
+   * Files staged on the composer, already uploaded against `anchorId` — this
+   * carries their entity ids onto the message (R4: chat surfaces stage chips).
+   * Optional because a port older than the rich-input adoption simply never
+   * sends any, and a message with none is the ordinary case.
+   */
+  attachmentIds?: EntityId[];
 }
 
 export interface ChatConfigureInput {
@@ -110,6 +117,8 @@ export interface ChatPostInput {
   threadRootId: EntityId;
   body: string;
   clientMutationId: string;
+  /** Same contract as `ChatRootInput.attachmentIds` — every turn may carry files. */
+  attachmentIds?: EntityId[];
 }
 
 export interface ChatStartResult {
