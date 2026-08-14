@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ChannelTab,
   CollectionResult,
@@ -18,6 +18,7 @@ import { mergePrPortFor } from './mergePrPort';
 import { usePanelPrimaries } from './usePanelPrimaries';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
+import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import type { GateData } from './useGateData';
 import './channel-view.css';
 import { debugSurfaceFor } from './debugSurface';
@@ -29,6 +30,27 @@ import { useMembershipSurface } from './membershipSurface';
 import { representedThreadMessageCount } from './message-thread';
 
 const FEED_KEY = 'feed';
+
+/* The detail aside on THIS screen is the same reading column the entity screen
+   opens beside a document, so it carries the same floor and the same default —
+   two surfaces showing the same `EntityDetailPanel` at two different widths is
+   the drift this primitive exists to stop. `CHV_FEED_MIN` is the feed's own
+   floor, already declared as `min-width` on `.chv-main`; it is restated here
+   because the drag has to clamp against it. */
+const CHV_ASIDE_MIN = 320;
+const CHV_ASIDE_DEFAULT = 440;
+const CHV_FEED_MIN = 420;
+/**
+ * What the aside costs BEYOND its own width: the 8px separator track plus the
+ * 1px `border-left` it paints. Nothing in this package sets `box-sizing:
+ * border-box` globally, so that border ADDS to the declared width.
+ *
+ * This matters more here than on the entity screen: `.chv-main` carries a real
+ * `min-width: 420px`, so an aside dragged to a max that forgot these 9px does
+ * not merely crowd the feed — the row cannot honour both and OVERFLOWS, which
+ * clips. (Reported by review of PR #213.)
+ */
+const CHV_ASIDE_CHROME = 8 + 1;
 
 export interface ChannelViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -101,6 +123,26 @@ export function ChannelView({
     [channelId],
   );
   const [detailMode, setDetailMode] = useState<DetailMode>('aside');
+
+  /*
+   * THE ASIDE IS DRAGGABLE, clamped against the feed's floor.
+   *
+   * Same split as the entity screen: `asidePref.width` is what the viewer asked
+   * for and survives a narrow window, `asideWidth` is what currently fits. The
+   * key is not per-channel — the width is a reading preference about the panel,
+   * and re-asking it in every channel would be the same question forty times.
+   */
+  const splitRef = useRef<HTMLDivElement | null>(null);
+  const splitWidth = useElementWidth(splitRef);
+  const asidePref = usePanelWidth('channel.aside', CHV_ASIDE_DEFAULT, CHV_ASIDE_MIN);
+  /* The window stands in for the split until the observer fires — see the
+     entity screen's `outerWidth` for why the current width is the one fallback
+     that must NOT be used here. */
+  const outerWidth = splitWidth > 0
+    ? splitWidth
+    : (typeof window === 'undefined' ? 0 : window.innerWidth);
+  const asideMax = Math.max(CHV_ASIDE_MIN, outerWidth - CHV_FEED_MIN - CHV_ASIDE_CHROME);
+  const asideWidth = Math.min(Math.max(CHV_ASIDE_MIN, asidePref.width), Math.max(CHV_ASIDE_MIN, asideMax));
 
   /* ATTACHMENTS — the entity opened beside a channel feed is a full entity, so
      it gets the same uploader the Tasks view gives it. */
@@ -230,7 +272,14 @@ export function ChannelView({
 
   return (
     <div className="chv-root" data-testid="channel-view" data-channel={channelId} data-mode={selectedId ? 'aside' : 'feed'}>
-      <div className="chv-split">
+      {/* The solved width reaches the stylesheet as a custom property, so the
+          CSS keeps owning the floor and the border while this file owns the
+          arithmetic — the same trade the entity screen and the workspace make. */}
+      <div
+        className="chv-split"
+        ref={splitRef}
+        style={{ '--chv-aside': `${asideWidth}px` } as React.CSSProperties}
+      >
         <section className="chv-main" aria-label={detail ? `${detail.title} channel` : 'Channel'}>
           <ChannelHeader detail={detail} />
 
@@ -315,7 +364,20 @@ export function ChannelView({
         </section>
 
         {selectedId ? (
-          <aside className="chv-aside" aria-label="Entity details">{entityPanel}</aside>
+          <PanelResizer
+            side="right"
+            label="Entity details"
+            controls="channel-view-aside"
+            width={asideWidth}
+            minWidth={CHV_ASIDE_MIN}
+            maxWidth={asideMax}
+            onResize={asidePref.setWidth}
+            onReset={asidePref.reset}
+          />
+        ) : null}
+
+        {selectedId ? (
+          <aside className="chv-aside" id="channel-view-aside" aria-label="Entity details">{entityPanel}</aside>
         ) : null}
       </div>
     </div>

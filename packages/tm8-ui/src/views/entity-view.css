@@ -22,12 +22,21 @@
 }
 
 /* --- LEFT: the list rail --------------------------------------------------
-   Fixed rather than flexible: this column's job is to stay put while the
-   centre changes under it, and a list that resizes every time a longer
-   document opens is a list you stop trusting to be in the same place. */
+   Not flexible, but no longer FIXED either: the column's job is to stay put
+   while the centre changes under it — a list that resizes itself every time a
+   longer document opens is a list you stop trusting to be in the same place —
+   and that is exactly why the only thing allowed to move it is the viewer.
+
+   `--ev-list` is SOLVED IN `EntityView` and handed down (the same trade
+   `WorkspaceGrid` makes with `--ws-left`), because the drag has to clamp the
+   width against the centre's floor and a literal in a stylesheet cannot be
+   clamped against. The `var(…, 320px)` fallback keeps the pre-measurement
+   frame and any host that mounts the section without the custom property at
+   the width this rail has always had. */
 .cv2-root .ev-list {
+  position: relative;
   flex: none;
-  width: 320px;
+  width: var(--ev-list, 320px);
   /* A flex item defaults to `min-width: auto`, which lets a wide tile's
      min-content width push the rail past its declared width. Pinned so the
      rail cannot be widened by its own contents.
@@ -41,9 +50,70 @@
   border-right: 1px solid var(--pn-line);
   background: var(--pn-surface);
 }
-.cv2-root .ev-list > * {
+/* The PANEL fills the rail; the collapse control and the collapsed spine are
+   chrome and keep their own size. Naming the exceptions rather than the target
+   is deliberate — `EntityListPanel` renders whatever element it likes, and a
+   rule that depended on that would break the next time it changed. */
+.cv2-root .ev-list > *:not(.ev-list__toggle):not(.ev-list__spine) {
   flex: 1;
   min-height: 0;
+}
+
+/* --- COLLAPSE / SHOW ------------------------------------------------------
+   The control is a real button in the flow, not a hover-only affordance: a
+   rail you can only reopen by finding an invisible hotspot is a rail people
+   report as lost. Floating over the panel's own head keeps it out of the
+   list's search row without asking `EntityListPanel` for a slot it does not
+   have. */
+.cv2-root .ev-list__toggle {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cv2-root .ev-list__toggle:hover {
+  color: var(--pn-ink);
+  background: var(--pn-hover);
+}
+.cv2-root .ev-list__toggle--floating {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+}
+
+/* Collapsed: a STRIP, never a disappearance. The spine repeats the kind's own
+   label so the strip says what reopening it would bring back. */
+.cv2-root .ev-list--collapsed {
+  /* No width here: `--ev-list` already carries the collapsed value, and a
+     second literal is a second thing to keep in step with the constant. */
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  overflow: hidden;
+}
+.cv2-root .ev-list__spine {
+  flex: none;
+  writing-mode: vertical-rl;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 100%;
 }
 
 /* --- BOARD LAYOUT: one region, not three ----------------------------------
@@ -85,8 +155,8 @@
    in it (a related entity, a thread, a set of backlinks) is the same content. */
 .cv2-root .ev-aux {
   flex: none;
-  width: 420px;
-  min-width: 320px;
+  width: var(--ev-aux, 420px);
+  min-width: var(--ev-aux-min, 320px);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -150,22 +220,29 @@
 }
 
 /* --- narrow ---------------------------------------------------------------
-   Both side columns drop to their floors before the CENTRE gives up any
-   width, because the centre is the subject of the screen. Below 1240 with an
-   aux column open there is not enough room for three, and the aux — the
-   region the viewer opened last and can reopen with one click — is the one
-   that yields. It is HIDDEN, not narrowed to something unreadable. */
-@media (max-width: 1400px) {
-  .cv2-root .ev-aux { width: 360px; }
-}
-@media (max-width: 1240px) {
-  .cv2-root .ev-list { width: 260px; }
-  .cv2-root .ev-aux { width: 320px; }
-}
+   Both side columns drop to their floors before the CENTRE gives up any width,
+   because the centre is the subject of the screen.
+
+   THE STEP-DOWN LADDER THAT USED TO LIVE HERE IS GONE, and its removal is the
+   point of this change rather than a side effect. Three `@media` rules used to
+   restate 360/260/320 as literals, which meant a width the viewer dragged was
+   silently overwritten the moment the window crossed a breakpoint — the
+   control appeared to work and then undid itself. `EntityView` now solves both
+   columns against a MEASURED root (`useElementWidth`) and the centre's floor,
+   so narrowing shrinks them to exactly their floors with no breakpoint
+   involved. That is the same law the workspace's geometry solver states:
+   breakpoints are DERIVED by measurement, never asserted in a stylesheet.
+
+   ONE RULE SURVIVES, and only because it is not a width. Below 1040 with an
+   aux column open there is genuinely not enough room for three columns above
+   their floors, and the list — reachable again in one click from the strip, or
+   from the rail — is the one that yields. It is HIDDEN, not narrowed to
+   something unreadable. Scoped to the three-column layout: on the board the
+   list is the SUBJECT, so yielding it would leave the screen with nothing the
+   user came for. */
 @media (max-width: 1040px) {
-  .cv2-root .ev-root[data-aux='none'] .ev-list { width: 260px; }
-  /* Scoped to the three-column layout: on the board the list is the SUBJECT,
-     so yielding it to the aux column would leave the screen with nothing the
-     user came for. There the aux column is the one that gets narrow. */
   .cv2-root .ev-root[data-layout='columns']:not([data-aux='none']) .ev-list { display: none; }
+  .cv2-root .ev-root[data-layout='columns']:not([data-aux='none']) .kit-resizer[data-side='left'] {
+    display: none;
+  }
 }

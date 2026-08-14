@@ -52,10 +52,22 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // This is the fail-closed path running for real at the gate, not a stub:
     // createFixtureSeam resolves menu() as null (C-4), so the rail the reviewer
     // sees IS the shipped default constant.
-    const { container } = renderGate();
+    //
+    // THE RAIL NOW OPENS COLLAPSED, so the group labels arrive first as the
+    // dividers' accessible names rather than as `.shell-rail__header` text.
+    // Both halves are asserted, because both are the shipped default reaching
+    // the screen: the collapsed rail must still SAY what its groups are, and
+    // expanding must draw the same labels as headers.
+    const { container, getByRole } = renderGate();
     await waitFor(() =>
-      expect(container.querySelectorAll('.shell-rail__header').length).toBeGreaterThan(0),
+      expect(container.querySelectorAll('.shell-rail__divider').length).toBeGreaterThan(0),
     );
+    const dividerLabels = [...container.querySelectorAll('.shell-rail__divider')]
+      .map((n) => n.getAttribute('aria-label'));
+    expect(dividerLabels).toContain('Workspace');
+    expect(dividerLabels).toContain('Settings');
+
+    fireEvent.click(getByRole('button', { name: 'Expand menu rail' }));
     const labels = [...container.querySelectorAll('.shell-rail__header')].map((n) => n.textContent);
     expect(labels).toContain('Workspace');
     expect(labels).toContain('Settings');

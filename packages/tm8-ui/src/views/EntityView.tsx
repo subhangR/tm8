@@ -40,6 +40,7 @@ import {
   type PanelTab,
 } from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
+import { PanelResizer, useElementWidth, usePanelFlag, usePanelWidth } from '../kit';
 import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
 import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
 import { getKind } from '../domain/registry';
@@ -137,6 +138,58 @@ type AuxTarget =
 /** The tabs that stay INSIDE the centre panel. The other two go right. */
 const AUX_TABS = new Set<PanelTab>(['discussion', 'connections']);
 
+/* ---------------------------------------------------------------------------
+ * THE THREE REGIONS ARE NOW DRAGGABLE, AND THEIR FLOORS ARE THE LAW
+ *
+ * The widths below were literals in `entity-view.css` with a media-query ladder
+ * stepping them down. That ladder is what the user reported as the bug: the
+ * workspace's identical three-region layout has resizable side columns, so a
+ * detail screen that refuses the same gesture reads as a broken control. The
+ * literals move here because the DRAG has to clamp against them and a number
+ * that lives in a stylesheet cannot be clamped against — CSS is now handed the
+ * solved widths as custom properties instead, the same trade `WorkspaceGrid`
+ * already makes with `--ws-left`.
+ *
+ * `EV_CENTER_MIN` is what makes the drag honest. The centre is the SUBJECT of
+ * this screen (the 2026-07-31 ruling), so it is the one region a resize is
+ * never allowed to eat; every max width below is derived from the measured root
+ * minus this floor, never from a breakpoint.
+ * ------------------------------------------------------------------------- */
+
+/** The list rail is a navigator: wide enough to read a title, never a column. */
+export const EV_LIST_MIN = 220;
+export const EV_LIST_DEFAULT = 320;
+/** Same reading width the workspace's stacked panel uses — same content. */
+export const EV_AUX_MIN = 320;
+export const EV_AUX_DEFAULT = 420;
+/** The subject's floor. Nothing outbids the centre (D63's rule, one level up). */
+export const EV_CENTER_MIN = 420;
+/** Collapsed, the rail keeps a strip — a hidden panel with no way back is a trap. */
+export const EV_LIST_COLLAPSED = 34;
+
+/**
+ * THE CHROME BETWEEN THE COLUMNS IS PART OF THE BUDGET.
+ *
+ * A separator is 8px of real, occupied row (`.kit-resizer`), and each side
+ * column paints a 1px hairline that ADDS to its width — no stylesheet in this
+ * package sets `box-sizing: border-box` globally, so `.ev-list` and `.ev-aux`
+ * are content-box and `width: 320px` occupies 321.
+ *
+ * Omitting these was a real arithmetic bug, not a rounding quibble: dragging to
+ * `End` handed the centre `outer − EV_CENTER_MIN` of room that the chrome had
+ * already spent, leaving 411px with one side column and 402px with both —
+ * under the 420px floor this file declares. It is the WLT `Σb` term, which the
+ * workspace's own solver takes as a parameter for exactly this reason.
+ * (Reported by review of PR #213.)
+ */
+export const EV_RESIZER = 8;
+export const EV_PANEL_BORDER = 1;
+/** What one side column costs BEYOND its own width. */
+const SIDE_CHROME = EV_RESIZER + EV_PANEL_BORDER;
+
+const clampWidth = (want: number, min: number, max: number): number =>
+  Math.min(Math.max(min, want), Math.max(min, max));
+
 export function EntityView(props: EntityViewProps) {
   const { data, kind, reasons } = props;
 
@@ -225,6 +278,57 @@ export function EntityView(props: EntityViewProps) {
    * panel's body is — without a board spec the mode has nothing to draw.
    */
   const boardMode = mode === 'board' && config.list.board != null;
+
+  /*
+   * THE COLUMN GEOMETRY — stored preference, measured clamp.
+   *
+   * Two numbers per column, deliberately: `listPref.width` is what the viewer
+   * ASKED for and outlives a narrow window, while `listWidth` below it is what
+   * currently FITS. Clamping on write instead would let one narrow window
+   * silently overwrite a preference the viewer set on a wide one.
+   *
+   * The widths are keyed per kind, not per screen instance. Someone who wants a
+   * wide list for Tasks and a narrow one for Docs gets both, and the choice
+   * survives a reload the way the theme does.
+   */
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const rootWidth = useElementWidth(rootRef);
+  const listPref = usePanelWidth(`entity.${kind}.list`, EV_LIST_DEFAULT, EV_LIST_MIN);
+  const auxPref = usePanelWidth('entity.aux', EV_AUX_DEFAULT, EV_AUX_MIN);
+  const [listCollapsed, setListCollapsed] = usePanelFlag(`entity.${kind}.list-collapsed`, false);
+
+  /* On the board the list IS the screen — it takes the whole width and there is
+     no centre to protect, so neither the drag nor the collapse applies. */
+  const listResizable = !boardMode && !listCollapsed;
+  /*
+   * BEFORE THE FIRST MEASUREMENT, THE WINDOW STANDS IN FOR THE ROOT.
+   *
+   * `rootWidth` is 0 until the observer fires (and stays 0 in environments with
+   * no ResizeObserver at all). Falling back to the CURRENT width would be worse
+   * than useless: it makes `maxWidth === width`, so the column can be narrowed
+   * and never widened — a separator that only works one way. The window is a
+   * genuine upper bound on any element inside it, so it is a loose but HONEST
+   * ceiling for the one frame before the real number lands.
+   */
+  const outerWidth = rootWidth > 0
+    ? rootWidth
+    : (typeof window === 'undefined' ? 0 : window.innerWidth);
+  /* Every term the centre does NOT get: the other column's width, and the
+     separator + hairline each side column costs on top of it. The list keeps
+     its chrome while collapsed — the strip still has a border and the separator
+     is still mounted — so `SIDE_CHROME` is unconditional on that side. */
+  const auxRoom = aux ? auxPref.width + SIDE_CHROME : 0;
+  const listRoom = listCollapsed ? EV_LIST_COLLAPSED : EV_LIST_MIN;
+  const listMax = Math.max(EV_LIST_MIN, outerWidth - EV_CENTER_MIN - SIDE_CHROME - auxRoom);
+  const listWidth = listCollapsed
+    ? EV_LIST_COLLAPSED
+    : clampWidth(listPref.width, EV_LIST_MIN, listMax);
+  const auxMax = Math.max(
+    EV_AUX_MIN,
+    outerWidth - EV_CENTER_MIN - SIDE_CHROME - listRoom - SIDE_CHROME,
+  );
+  const auxWidth = clampWidth(auxPref.width, EV_AUX_MIN, auxMax);
+
   /* Stable identity so the feed hook's effects do not re-run every render. */
   const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
 
@@ -666,11 +770,22 @@ export function EntityView(props: EntityViewProps) {
   return (
     <div
       className="ev-root"
+      ref={rootRef}
       data-testid="entity-view"
       data-kind={kind}
       data-mode={selectedId ? 'detail' : 'list'}
       data-aux={aux ? aux.sort : 'none'}
       data-layout={boardMode ? 'board' : 'columns'}
+      data-list-collapsed={listCollapsed && !boardMode ? true : undefined}
+      /* The solved widths reach the stylesheet as custom properties rather than
+         as inline widths on each column, so the CSS keeps owning the floors and
+         the borders while this file owns the arithmetic. */
+      style={{
+        '--ev-list': `${listWidth}px`,
+        '--ev-aux': `${auxWidth}px`,
+        '--ev-list-min': `${EV_LIST_MIN}px`,
+        '--ev-aux-min': `${EV_AUX_MIN}px`,
+      } as React.CSSProperties}
     >
       {/* AT THE VIEW ROOT, NOT INSIDE THE PANEL. The dialog is `position:
           fixed` over a scrim, so nesting it in the panel's own overflow
@@ -711,7 +826,47 @@ export function EntityView(props: EntityViewProps) {
         composer={memoryMarks.composer}
         targetTitle={marksHost?.title ?? 'this memory'}
       />
-      <section className="ev-list" aria-label={`${config.labelPlural} list`}>
+      {/* COLLAPSED, THE RAIL IS A STRIP, NOT A DISAPPEARANCE (L6). The list is
+          how you change the subject of this screen; hiding it with no visible
+          way back would strand a viewer who collapsed it by accident. The strip
+          carries the reopen control and the kind's own label, so it says what
+          bringing it back would bring back. */}
+      {listCollapsed && !boardMode ? (
+        <section
+          className="ev-list ev-list--collapsed"
+          id="entity-view-list"
+          aria-label={`${config.labelPlural} list, collapsed`}
+        >
+          <button
+            type="button"
+            className="ev-list__toggle"
+            data-testid="entity-view-list-expand"
+            aria-expanded={false}
+            title={`Show the ${config.labelPlural.toLowerCase()} list`}
+            aria-label={`Show the ${config.labelPlural.toLowerCase()} list`}
+            onClick={() => setListCollapsed(false)}
+          >
+            <span aria-hidden>»</span>
+          </button>
+          <span className="ev-list__spine" aria-hidden>{config.labelPlural}</span>
+        </section>
+      ) : (
+      <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
+        {/* NOT OFFERED ON THE BOARD: there the list is the subject of the
+            screen, so collapsing it would leave nothing behind. */}
+        {boardMode ? null : (
+          <button
+            type="button"
+            className="ev-list__toggle ev-list__toggle--floating"
+            data-testid="entity-view-list-collapse"
+            aria-expanded
+            title={`Hide the ${config.labelPlural.toLowerCase()} list`}
+            aria-label={`Hide the ${config.labelPlural.toLowerCase()} list`}
+            onClick={() => setListCollapsed(true)}
+          >
+            <span aria-hidden>«</span>
+          </button>
+        )}
         <EntityListPanel
           kind={kind}
           rowsFor={data.rowsFor(kind)}
@@ -769,6 +924,24 @@ export function EntityView(props: EntityViewProps) {
           wiredActions={sessionStart.wiredActions}
         />
       </section>
+      )}
+
+      {/* The rail's drag handle. It stays MOUNTED while the rail is collapsed
+          and refuses instead (`disabled`), because a control that vanishes and
+          reappears under the cursor is how a resize gesture gets lost. */}
+      {boardMode ? null : (
+        <PanelResizer
+          side="left"
+          label={`${config.labelPlural} list`}
+          controls="entity-view-list"
+          width={listWidth}
+          minWidth={EV_LIST_MIN}
+          maxWidth={listMax}
+          disabled={!listResizable}
+          onResize={listPref.setWidth}
+          onReset={listPref.reset}
+        />
+      )}
 
       {/* NOT RENDERED ON THE BOARD. The board took this width; a centre that
           is only display:none would still mount the open entity's panel — its
@@ -791,7 +964,20 @@ export function EntityView(props: EntityViewProps) {
       )}
 
       {aux ? (
-        <aside className="ev-aux" aria-label="Related" data-testid="entity-view-aux">
+        <PanelResizer
+          side="right"
+          label="Related"
+          controls="entity-view-aux"
+          width={auxWidth}
+          minWidth={EV_AUX_MIN}
+          maxWidth={auxMax}
+          onResize={auxPref.setWidth}
+          onReset={auxPref.reset}
+        />
+      ) : null}
+
+      {aux ? (
+        <aside className="ev-aux" id="entity-view-aux" aria-label="Related" data-testid="entity-view-aux">
           <div className="ev-aux__head">
             <span className="ev-aux__crumb">{auxCrumb(aux, auxDetail?.title)}</span>
             <span className="ev-aux__spacer" />
