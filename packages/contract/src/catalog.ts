@@ -350,7 +350,8 @@ export const OPERATIONS = [
 
   // What the agent SAID — the third face of a session, after `execution.launch`
   // (told) and `execution.journal` (did). The bytes are the agent's OWN native
-  // transcript on the node's disk (`~/.claude/projects/**`, `~/.codex/sessions/**`),
+  // transcript under the config home selected at spawn (CLAUDE_CONFIG_DIR or
+  // CODEX_HOME, with the node defaults used only when no credential is injected),
   // NOT the database and NOT the PTY ring: PTY bytes are ANSI repaints a
   // coordinator cannot read, and the journal records tm8 CLI calls and holds no
   // model output at all. Keyed by work_session id for the same reason

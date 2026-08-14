@@ -3436,6 +3436,8 @@ export interface SessionTranscriptPage {
     | 'no_transcript_file'
     | 'unreadable'
     | null;
+  /** Exact bounded set of candidate files/directories checked when unavailable. */
+  searchedPaths: string[];
   /** Which transcript dialect was parsed. Null when unavailable. */
   agentTool: 'claude-code' | 'codex' | null;
   /** Oldest-first. The NEWEST `last` entries, so a tail reads in order. */

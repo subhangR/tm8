@@ -1663,7 +1663,8 @@ export function createFixtureSeam(): FixtureSeam {
         return clone({
           sessionId: workSessionId,
           available: false,
-          unavailableReason: 'no_transcript_file',
+        unavailableReason: 'no_transcript_file',
+        searchedPaths: [],
           agentTool: null,
           entries: [],
           stats: null,
@@ -1699,7 +1700,8 @@ export function createFixtureSeam(): FixtureSeam {
       return clone({
         sessionId: workSessionId,
         available: true,
-        unavailableReason: null,
+      unavailableReason: null,
+      searchedPaths: [],
         agentTool: 'claude-code',
         entries: entries.slice(-last),
         stats: {

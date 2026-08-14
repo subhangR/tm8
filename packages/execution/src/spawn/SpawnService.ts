@@ -34,6 +34,7 @@ import {
 } from './manifest.js';
 import { detectCheckoutBranch } from './checkout-branch.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
+import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { probeCodexSandbox } from './sandbox-probe.js';
 import {
   agentCredentialProviderFor,
@@ -946,7 +947,11 @@ export class SpawnService {
       await this.graph.recordManifest(auth, sessionId, manifest, envVarNames, {
         system: envelope.system,
         task,
-      });
+      }, launch.agentTool === 'claude-code'
+        ? env.CLAUDE_CONFIG_DIR ?? join(env.HOME ?? homedir(), '.claude')
+        : launch.agentTool === 'codex'
+          ? env.CODEX_HOME ?? join(env.HOME ?? homedir(), '.codex')
+          : null);
 
       if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
 
@@ -1286,11 +1291,23 @@ export class SpawnService {
     // the scan never runs twice.
     let nativeSessionId = info.nativeSessionId;
     if (!nativeSessionId && launch.agentTool === 'codex') {
-      nativeSessionId = await resolveCodexNativeSessionId({
-        home: this.env.HOME ?? homedir(),
-        tm8SessionId: sessionId,
-        cwd,
-      });
+      const configDirs = [...new Set([
+        ...(info.agentConfigDir ? [info.agentConfigDir] : []),
+        ...await knownAgentConfigDirs({
+          agentTool: launch.agentTool,
+          dataDir: this.dataDir,
+          home: this.env.HOME ?? homedir(),
+        }),
+      ])];
+      for (const configDir of configDirs) {
+        nativeSessionId = await resolveCodexNativeSessionId({
+          home: this.env.HOME ?? homedir(),
+          configDir,
+          tm8SessionId: sessionId,
+          cwd,
+        });
+        if (nativeSessionId) break;
+      }
       if (nativeSessionId) {
         // Write-once refusing this id means the row already names a DIFFERENT
         // conversation — two rollouts claiming one session. Resuming on the id

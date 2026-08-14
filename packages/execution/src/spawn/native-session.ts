@@ -102,6 +102,7 @@ export function extractCodexRolloutIdentity(
  */
 export async function resolveCodexNativeSessionId(opts: {
   home: string;
+  configDir?: string | null;
   tm8SessionId: string;
   cwd?: string | null;
 }): Promise<string | null> {
@@ -119,10 +120,12 @@ export async function resolveCodexNativeSessionId(opts: {
  */
 export async function resolveCodexRollout(opts: {
   home: string;
+  /** The exact CODEX_HOME used by the child. Historical callers may omit it. */
+  configDir?: string | null;
   tm8SessionId: string;
   cwd?: string | null;
 }): Promise<CodexRollout | null> {
-  const root = join(opts.home, '.codex', 'sessions');
+  const root = join(opts.configDir ?? join(opts.home, '.codex'), 'sessions');
   let entries: string[];
   try {
     entries = await readdir(root, { recursive: true });

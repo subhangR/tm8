@@ -46,6 +46,12 @@ async function writeCodex(home: string, name: string, lines: unknown[]): Promise
   await writeFile(join(dir, name), lines.map((l) => JSON.stringify(l)).join('\n'));
 }
 
+async function writeCodexConfigDir(configDir: string, name: string, lines: unknown[]): Promise<void> {
+  const dir = join(configDir, 'sessions', '2026', '08', '07');
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, name), lines.map((l) => JSON.stringify(l)).join('\n'));
+}
+
 const claudeUser = (at: string, text: string) => ({
   type: 'user',
   timestamp: at,
@@ -136,6 +142,9 @@ describe('readSessionTranscript — honesty contract', () => {
     });
     expect(page.available).toBe(false);
     expect(page.unavailableReason).toBe('no_transcript_file');
+    expect(page.searchedPaths).toEqual([
+      join(home, '.claude', 'projects', encodeClaudeProjectDir(CWD), 'never-written.jsonl'),
+    ]);
   });
 
   it('separates a file it CANNOT read from a file that is not there', async () => {
@@ -403,6 +412,22 @@ describe('readSessionTranscript — codex', () => {
     expect(page.available).toBe(true);
     expect(page.agentTool).toBe('codex');
     expect(page.entries.map((e) => e.text)).toContain('on it');
+  });
+
+  it('reads a rollout from the CODEX_HOME recorded at spawn', async () => {
+    const home = await makeHome();
+    const configDir = join(home, 'credentials', 'id_member', 'openai');
+    await writeCodexConfigDir(configDir, 'rollout-member.jsonl', [
+      meta('native-member'),
+      userTurn('2026-08-07T10:00:01.000Z', 'task <tm8_session_id>s1</tm8_session_id>'),
+      assistantTurn('2026-08-07T10:00:02.000Z', 'member codex transcript'),
+    ]);
+    const page = await readSessionTranscript({
+      sessionId: 's1', agentTool: 'codex', nativeSessionId: null, cwd: CWD, home,
+      agentConfigDir: configDir,
+    });
+    expect(page.available).toBe(true);
+    expect(page.entries.map((entry) => entry.text)).toContain('member codex transcript');
   });
 
   it('refuses a rollout that only MENTIONS the id in tool output', async () => {

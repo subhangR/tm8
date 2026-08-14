@@ -26,6 +26,7 @@ import {
   PromptSettlementWaiter,
   resolveSkills,
   readSessionTranscript,
+  knownAgentConfigDirs,
   type CreateWorkSessionInput,
   type ShellSessionContext,
   type ShellSessionRequest,
@@ -655,6 +656,7 @@ export class DbGraphPort implements GraphPort {
     manifest: Tm8Manifest,
     envVarNames: string[],
     prompts: { system: string; task: string },
+    agentConfigDir: string | null,
   ): Promise<void> {
     await this.db.rpc(this.claims(auth), 'public.record_session_manifest', [
       sessionId,
@@ -662,6 +664,7 @@ export class DbGraphPort implements GraphPort {
       envVarNames,
       prompts.system,
       prompts.task,
+      agentConfigDir,
     ]);
   }
 
@@ -699,10 +702,11 @@ export class DbGraphPort implements GraphPort {
         title: string;
         status: string;
         native_session_id: string | null;
+        agent_config_dir: string | null;
       }>(
         `select ws.entity_id, e.space_id, ws.project_id, ws.workdir_mode,
                 ws.workdir_path, ws.mode, ws.model, ws.agent_tool, ws.title,
-                ws.status, ws.native_session_id
+                ws.status, ws.native_session_id, ws.agent_config_dir
            from public.work_sessions ws
            join public.entities e on e.id = ws.entity_id
           where ws.entity_id = $1 and e.deleted_at is null`,
@@ -736,6 +740,7 @@ export class DbGraphPort implements GraphPort {
         title: row.title,
         status: row.status as WorkSessionStatus,
         nativeSessionId: row.native_session_id,
+        agentConfigDir: row.agent_config_dir,
       };
     });
   }
@@ -2326,9 +2331,11 @@ function registerHandlers(
       workdir_path: string | null;
       workdir_mode: string | null;
       agent_tool: string | null;
+      agent_config_dir: string | null;
     }>(
       claims,
-      `select ws.native_session_id, ws.workdir_path, ws.workdir_mode, ws.agent_tool
+      `select ws.native_session_id, ws.workdir_path, ws.workdir_mode, ws.agent_tool,
+              ws.agent_config_dir
          from public.entities e
          join public.work_sessions ws on ws.entity_id = e.id
         where e.id = $1 and e.kind = 'work_session' and e.deleted_at is null`,
@@ -2355,6 +2362,11 @@ function registerHandlers(
           ? null
           : resolvePath(dataDir, 'scratch', sessionId)
         : session.workdir_path;
+    const fallbackAgentConfigDirs = await knownAgentConfigDirs({
+      agentTool: session.agent_tool,
+      ...(dataDir ? { dataDir } : {}),
+      home: process.env.HOME ?? homedir(),
+    });
 
     // `files=1` also scans the WHOLE transcript for Edit/Write tool calls —
     // "what did this session change", answerable without a worktree, labelled
@@ -2368,6 +2380,8 @@ function registerHandlers(
         nativeSessionId: session.native_session_id,
         cwd,
         home: process.env.HOME ?? homedir(),
+        agentConfigDir: session.agent_config_dir,
+        fallbackAgentConfigDirs,
         last,
         includeFileChanges,
       }),
