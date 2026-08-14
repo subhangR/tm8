@@ -16,6 +16,17 @@ export interface RouterTarget {
   getHash(): string;
   setHash(hash: string, opts?: { replace?: boolean }): void;
   subscribe(cb: (hash: string) => void): () => void;
+  /**
+   * How many entries are behind this one, so a caller can tell a COLD ENTRY
+   * (someone arrived here by pasting a link — depth 1, nothing to go back to)
+   * from a walk that reached the same address.
+   *
+   * That distinction is R15, and it cannot be derived from the hash: the two
+   * cases produce identical addresses and opposite meanings for the back
+   * affordance. Optional so a bare `RouterTarget` still satisfies the shape;
+   * both real implementations provide it.
+   */
+  historyDepth?(): number;
 }
 
 export function createBrowserTarget(win: Window = window): RouterTarget {
@@ -35,6 +46,7 @@ export function createBrowserTarget(win: Window = window): RouterTarget {
       win.addEventListener('hashchange', handler);
       return () => win.removeEventListener('hashchange', handler);
     },
+    historyDepth: () => win.history.length,
   };
 }
 
@@ -73,6 +85,7 @@ export function createMemoryTarget(initial = '#/'): MemoryTarget {
         listeners.delete(cb);
       };
     },
+    historyDepth: () => target.entries.length,
     canGoBack: () => target.index > 0,
     canGoForward: () => target.index < target.entries.length - 1,
     back: () => {

@@ -20,11 +20,12 @@ import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
 import { screenKeyOf, screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget, MAX_HASH_LENGTH, type MemoryTarget } from '../routes';
+import type { EntityId } from '@tm8/contract';
 import { FIXTURE_SPACE_ID } from '../fixtures';
 
 const SPACE = FIXTURE_SPACE_ID;
 /** A task the fixture dataset really holds, so the seeded screen has content. */
-const TASK = 'task-4f8c2a9e';
+const TASK = 'task-4f8c2a9e' as EntityId;
 
 /**
  * The `last-place-gate.test.tsx` storage double — load-bearing under this
@@ -140,6 +141,89 @@ describe('screen → URL', () => {
     await waitFor(() => b.getByTestId('entity-view'));
     expect(b.queryByTestId('workspace-grid')).toBeNull();
     b.unmount();
+  });
+});
+
+describe('the entity a screen has open is part of the address', () => {
+  it('drilling in writes e/{id}?origin=, and pushes', async () => {
+    /* Before the mount this state lived only in `screenStackStore`: the address
+       bar said `k/tasks` however deep you had drilled, so it could not be
+       copied to share what was on screen and a reload came back to the list. */
+    const target = createMemoryTarget(`#/s/${SPACE}/k/tasks`);
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('entity-view'));
+    const before = target.entries.length;
+
+    await act(async () => {
+      screenStackStore.getState().open(screenKeyOf.kind('task'), TASK);
+    });
+    await settle();
+
+    expect(target.getHash()).toBe(`#/s/${SPACE}/e/${TASK}?origin=tasks`);
+    expect(target.entries.length).toBe(before + 1);
+    view.unmount();
+  });
+
+  it('does not rewrite the address it just arrived at', async () => {
+    /* The seed and this sync are the same loop run in both directions, so an
+       inexact fixed point would have them pushing history at each other. */
+    const hash = `#/s/${SPACE}/e/${TASK}?origin=tasks`;
+    const target = createMemoryTarget(hash);
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('entity-view'));
+    await settle();
+    expect(target.getHash()).toBe(hash);
+    expect(target.entries.length).toBe(1);
+    view.unmount();
+  });
+});
+
+describe('R15 — a cold entry steps UP, and up is a replace', () => {
+  it('does not trap a pasted link in a two-item loop', async () => {
+    /* Depth 1: nothing is behind this entry, so `‹` cannot mean back and can
+       only mean up. If up PUSHED, back would return to the entity and there
+       would be no way out — on the exact path a shared link creates. */
+    const target = createMemoryTarget(`#/s/${SPACE}/e/${TASK}?origin=tasks`);
+    expect(target.entries.length).toBe(1);
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('entity-view'));
+    await settle();
+
+    /* The store the Esc handler drives — up, one rung. */
+    await act(async () => {
+      screenStackStore.getState().pop(screenKeyOf.kind('task'));
+    });
+    await settle();
+
+    expect(target.getHash()).toBe(`#/s/${SPACE}/k/tasks`);
+    /* REPLACED, NOT PUSHED. The whole assertion. */
+    expect(target.entries.length).toBe(1);
+    expect(target.canGoBack()).toBe(false);
+    view.unmount();
+  });
+
+  it('spends the concession once — the next step up is an ordinary push', async () => {
+    const target = createMemoryTarget(`#/s/${SPACE}/e/${TASK}?origin=tasks`);
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('entity-view'));
+    await act(async () => {
+      screenStackStore.getState().pop(screenKeyOf.kind('task'));
+    });
+    await settle();
+    const afterUp = target.entries.length;
+
+    await act(async () => {
+      screenStackStore.getState().open(screenKeyOf.kind('task'), TASK);
+    });
+    await settle();
+    await act(async () => {
+      screenStackStore.getState().pop(screenKeyOf.kind('task'));
+    });
+    await settle();
+
+    /* Two real navigations once a history exists, not two more replaces. */
+    expect(target.entries.length).toBe(afterUp + 2);
+    view.unmount();
   });
 });
 

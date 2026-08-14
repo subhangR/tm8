@@ -24,7 +24,7 @@ import {
 } from '../shell';
 import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
-import { screenKeyOf, screenStackStore } from '../stores/screenStackStore';
+import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
 import { attachRouter, navStore, useNavStore } from '../stores/navStore';
 import { createBrowserTarget, type RouterTarget } from '../routes';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
@@ -164,6 +164,26 @@ function isUnbuiltViewRef(ref: string): boolean {
  * sees, and it names the target rather than drawing a screen that was never
  * asked for.
  */
+/**
+ * Do these two routes name THE SAME PLACE?
+ *
+ * Deliberately not a deep equality. The screen→URL sync compares what it would
+ * write against what the address already says, and the two are built by
+ * different code paths (`parse` vs `routeViewOf`), so the fields they can
+ * legitimately disagree about are exactly the ones that must NOT trigger a
+ * write: `q`, which only a pasted URL ever carries, and `mode`, which
+ * `routeViewOf` echoes back from the target it was handed. Comparing those too
+ * would make the loop rewrite the address on arrival — dropping a viewer's
+ * filter and re-asserting a collection mode nothing asked it to assert, which
+ * is the ruling R22 must stay free to change.
+ */
+function sameDestination(a: NavView, b: NavView): boolean {
+  if (a.view !== b.view) return false;
+  if (a.view === 'entity' && b.view === 'entity') return a.entityId === b.entityId;
+  if (a.view === 'kind' && b.view === 'kind') return a.slug === b.slug;
+  return true;
+}
+
 function UnroutedTargetCard({ target }: { target: MenuTarget | null }) {
   const described = target === null ? 'null' : JSON.stringify(target);
   useEffect(() => {
@@ -386,6 +406,8 @@ export function GateApp(props: GateAppProps = {}) {
    * ORDERING ACCIDENT, which is the class of bug this lane exists to remove.
    */
   const [bootRoute, setBootRoute] = useState<BootRoute>('pending');
+  /** R15's fact — see the step-up sync below, which is the only reader. */
+  const coldEntry = useRef(false);
   /* The notice sink, read through a ref so remounting the router is not coupled
      to the identity of a callback that changes on every render. */
   const noticeSink = useRef(notices.push);
@@ -418,6 +440,13 @@ export function GateApp(props: GateAppProps = {}) {
       },
     });
     setBootRoute(addressable ? 'addressable' : 'none');
+    /* R15's fact, read at the only moment it is true. A depth of 1 means this
+       entry IS the whole history — the viewer got here by pasting, not by
+       walking — so the first step up must replace rather than push. A target
+       that cannot report depth is treated as a walk, which is the safe side:
+       an unnecessary push costs one back press, a wrong replace loses an entry
+       nobody can get back. */
+    coldEntry.current = addressable && (target.historyDepth?.() ?? 2) <= 1;
     return detach;
   }, [nodeKey, routerTarget]);
 
@@ -481,6 +510,60 @@ export function GateApp(props: GateAppProps = {}) {
     if (landing.target.type !== 'kind') return;
     screenStackStore.getState().open(screenKeyOf.kind(landing.target.ref), landing.openEntity);
   }, [navView, navSpaceId]);
+
+  /**
+   * THE OTHER DIRECTION: THE ENTITY A SCREEN HAS OPEN BECOMES PART OF THE
+   * ADDRESS.
+   *
+   * Without this the mount is half a feature. `screenStackStore` holds what a
+   * kind screen is showing and nothing ever put it in the URL, so drilling into
+   * a task left the address saying `k/tasks`: the address bar could not be
+   * copied to share what was on screen, and a reload came back to the list.
+   * `routeViewOf`'s `openEntity` parameter exists for exactly this and had no
+   * caller — "what makes an open entity shareable at all", in its own words.
+   *
+   * IT IS THE SAME LOOP AS THE SEED ABOVE, RUN BACKWARDS, so it has to be
+   * idempotent or the two would push history at each other forever.
+   * `sameDestination` is the fixed point: the seed reopens what the address
+   * already named, this sees no change, and neither writes.
+   *
+   * `q` SURVIVES BY BEING LEFT ALONE. `routeViewOf` always emits `q: null`, so
+   * comparing only the destination means a filtered collection keeps its filter
+   * while an entity is open on top of it. Same for `mode`, deliberately: this
+   * never re-asserts one, which is what keeps R22 open.
+   */
+  const openOnScreen = useScreenStackStore((s) =>
+    activeTarget?.type === 'kind' ? topOf(s, screenKeyOf.kind(activeTarget.ref)) : null,
+  );
+  /**
+   * R15 — A COLD ENTRY'S FIRST STEP UP IS A REPLACE, NEVER A PUSH.
+   *
+   * Land on a pasted `e/{id}` and there is nothing behind you: history depth is
+   * 1, so the back affordance cannot mean BACK and can only mean UP. If up
+   * pushed, back would return to the entity and the viewer would be trapped
+   * in a two-item loop with no exit — on the EXACT entry path a shared link
+   * creates, which is the one path this whole lane is for.
+   *
+   * Depth comes from the transport because the two cases are indistinguishable
+   * from the address: arriving at `k/tasks` by pasting and by walking up from
+   * an entity produce the same string and opposite meanings for `‹`.
+   *
+   * Spent ONCE. After the first step the viewer has a real history and every
+   * later navigation is an ordinary push. Declared with the mount, which is the
+   * only moment the fact is readable.
+   */
+  useEffect(() => {
+    if (!activeTarget || activeTarget.type !== 'kind') return;
+    const next = routeViewOf(activeTarget, openOnScreen);
+    if (!next || sameDestination(navView, next)) return;
+    const steppingUp = navView.view === 'entity' && next.view !== 'entity';
+    if (steppingUp && coldEntry.current) {
+      coldEntry.current = false;
+      navStore.setState((s) => ({ view: next, history: 'replace', revision: s.revision + 1 }));
+      return;
+    }
+    navStore.getState().navigate(next);
+  }, [activeTarget, openOnScreen, navView]);
 
   /**
    * THE LINK'S SPACE OUTRANKS THE REMEMBERED SPACE.
