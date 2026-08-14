@@ -4,6 +4,12 @@ export interface WrongNodeRefusalProps {
   onOpenAvailableSpace?: () => void;
 }
 
+/**
+ * A held option for a future API that safely establishes node identity.
+ * Today's link-arrival path combines this with non-membership because a viewer
+ * arriving by address may be probing. The existing boot-restore card serves a
+ * viewer who already knew the Space and may retain the node's specific words.
+ */
 export function WrongNodeRefusal({ onOpenAvailableSpace }: WrongNodeRefusalProps) {
   return (
     <LinkRefusalCard

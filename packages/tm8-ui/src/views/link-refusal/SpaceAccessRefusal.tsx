@@ -6,7 +6,11 @@ export interface SpaceAccessRefusalProps {
 
 /**
  * The privacy-preserving shared state for wrong-node and non-member failures.
- * Use this whenever the API deliberately does not distinguish those cases.
+ * Use this on link arrival whenever the API deliberately does not distinguish
+ * those cases. The viewer arrived by address and may be probing: saying “not a
+ * member” would confirm that the Space exists. An ordinary boot restore is a
+ * different audience — that viewer already knew the Space — so GateApp's boot
+ * card may honestly retain the node's specific refusal.
  */
 export function SpaceAccessRefusal({ onOpenAvailableSpace }: SpaceAccessRefusalProps) {
   return (

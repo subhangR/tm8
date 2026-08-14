@@ -7,7 +7,7 @@ import { emptyPanels } from '../routes/types';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import './copy-link.css';
 
-export type CopyLinkCopier = (url: string) => void;
+export type CopyLinkCopier = (url: string) => void | Promise<void>;
 
 export interface CopyLinkControlProps {
   spaceId: SpaceId;
@@ -25,6 +25,12 @@ export interface CopyLinkControlProps {
  * Build the share URL from the route authorities, with deliberately empty
  * panel state. A shared link names the space and destination, not the sender's
  * open/pinned panel arrangement.
+ *
+ * M2 — server identity: the link names the origin that served the viewer.
+ * Space links are meaningful only on that node, and the route grammar has no
+ * node segment yet, so guessing another configured server would create a link
+ * whose authority and destination disagree. Links are intentionally not
+ * portable between nodes until the route contract gains node identity.
  */
 export function copyLinkUrl({
   spaceId,
@@ -59,6 +65,7 @@ export function CopyLinkControl({
   label = 'Copy link',
 }: CopyLinkControlProps) {
   const [copied, setCopied] = useState(false);
+  const [manualCopy, setManualCopy] = useState(false);
   const url = copyLinkUrl({ spaceId, target, openEntity, ...(appBaseUrl ? { appBaseUrl } : {}) });
 
   if (!url) {
@@ -79,9 +86,9 @@ export function CopyLinkControl({
     typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function'
       ? navigator.clipboard
       : null;
-  const copier = onCopy ?? (clipboard ? (value: string) => void clipboard.writeText(value) : null);
+  const hasCopier = Boolean(onCopy || clipboard);
 
-  if (!copier) {
+  if (!hasCopier || manualCopy) {
     return (
       <label className="copy-link copy-link--manual">
         <span className="copy-link__instruction">Clipboard unavailable — copy this link manually</span>
@@ -101,9 +108,32 @@ export function CopyLinkControl({
       type="button"
       className="copy-link copy-link__button"
       aria-label={label}
-      onClick={() => {
-        copier(url);
-        setCopied(true);
+      onClick={async () => {
+        setCopied(false);
+
+        try {
+          if (onCopy) {
+            await onCopy(url);
+            setCopied(true);
+            return;
+          }
+        } catch {
+          // A rejecting host bridge is not proof that the platform clipboard
+          // is unavailable; continue down the refusal ladder.
+        }
+
+        try {
+          if (clipboard) {
+            await clipboard.writeText(url);
+            setCopied(true);
+            return;
+          }
+        } catch {
+          // A clipboard can be structurally present but reject at runtime
+          // (notably outside a secure context). Never report that as copied.
+        }
+
+        setManualCopy(true);
       }}
     >
       <span aria-hidden>↗</span>
