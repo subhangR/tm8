@@ -1,0 +1,109 @@
+/*
+ * THE MOBILE FRAME — structure only.
+ *
+ * Regions and their floors. No screen styling lives here; Phase 3's screens
+ * bring their own and compose into these slots.
+ *
+ * §14 — every colour resolves through a `--pn-*` token. The package-level
+ * `hex-ban.test.ts` scans this file.
+ *
+ * L4 — every shrinkable track has a floor. The content row is `1fr`, whose
+ * implicit `auto` minimum is the floor; the banned spelling is `minmax(0, 1fr)`,
+ * which collapses the region to zero and makes the screen simply vanish. That
+ * has broken this app three separate times and it will not happen here.
+ */
+
+/*
+ * SAFE-AREA TOKENS (§3.6 — nothing in this codebase handles insets today).
+ *
+ * Declared on the frame rather than in `tokens.css` because the frame is the
+ * only consumer that exists. They are TOKENS and not inline values so §7.3's
+ * drop notice can sit above the tab bar and inside the inset by composing
+ * against the same numbers rather than re-deriving them.
+ *
+ * `env()` resolves to 0 wherever there is no notch or home indicator, so this
+ * is inert on every device that does not need it.
+ */
+.mobile-frame {
+  --mobile-safe-top: env(safe-area-inset-top, 0px);
+  --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-safe-left: env(safe-area-inset-left, 0px);
+  --mobile-safe-right: env(safe-area-inset-right, 0px);
+
+  /* Chrome floors. Touch targets, not desktop ones. */
+  --mobile-header-min: 44px;
+  --mobile-tabbar-min: 49px;
+
+  /*
+   * `100dvh`, NOT `100vh`. On iOS Safari `100vh` is the height the viewport
+   * has with the URL bar HIDDEN, so a `100vh` shell is taller than the screen
+   * whenever the bar is showing — which is most of the time — and the tab bar
+   * ends up underneath it.
+   */
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+  position: relative;
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  padding-left: var(--mobile-safe-left);
+  padding-right: var(--mobile-safe-right);
+}
+
+.mobile-frame__header {
+  min-height: var(--mobile-header-min);
+  padding-top: var(--mobile-safe-top);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+/*
+ * The one scrolling surface. `min-height: 0` is required on a grid child that
+ * scrolls — without it the row floors at its content height and the whole
+ * frame scrolls instead, taking the tab bar off-screen. This is the floored
+ * spelling of the fix, not the banned `minmax(0, 1fr)` on the track.
+ */
+.mobile-frame__content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-frame__tabbar {
+  min-height: var(--mobile-tabbar-min);
+  padding-bottom: var(--mobile-safe-bottom);
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+/*
+ * Notices sit ABOVE the tab bar and inside the bottom inset (§7.3). A screen
+ * cannot place these for itself because a screen does not know where the tab
+ * bar is — which is exactly why this is a frame region.
+ */
+.mobile-frame__notices {
+  position: absolute;
+  left: var(--mobile-safe-left);
+  right: var(--mobile-safe-right);
+  bottom: calc(var(--mobile-safe-bottom) + var(--mobile-tabbar-min));
+  z-index: 20;
+  pointer-events: none;
+}
+
+.mobile-frame__notices > * {
+  pointer-events: auto;
+}
+
+/*
+ * The sheet host covers the whole frame, TAB BAR INCLUDED. Sheets are the
+ * mobile answer to the desktop pin and the desktop hover-card, and a sheet
+ * that stopped short of the tab bar would read as a panel rather than a modal
+ * surface.
+ */
+.mobile-frame__sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+}
