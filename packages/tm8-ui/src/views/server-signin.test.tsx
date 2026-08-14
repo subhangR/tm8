@@ -214,6 +214,13 @@ beforeEach(() => {
   installStorage();
   server = installFakeAuthServer();
   resetNav();
+  /* The URL is state now, and jsdom keeps ONE `window.location` per file. A
+     case that navigates leaves its address behind and the next case boots from
+     it, because an addressable hash at boot deliberately outranks last-place
+     (R3) — so `resetNav()` alone stopped being a reset the day the router was
+     mounted. Same class as the localStorage doubles these files already carry,
+     one global later. */
+  window.location.hash = '';
 });
 afterEach(() => {
   cleanup();
