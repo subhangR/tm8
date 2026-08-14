@@ -22,6 +22,16 @@ import { screenKeyOf, screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget, MAX_HASH_LENGTH, type MemoryTarget } from '../routes';
 import type { EntityId } from '@tm8/contract';
 import { FIXTURE_SPACE_ID } from '../fixtures';
+import { LOCAL_SERVER, type UiServer } from '../servers';
+
+/** A second Server, so the switch is a real one. Shape from server-signin.test.tsx. */
+const STAGING: UiServer = {
+  id: 'staging',
+  label: 'staging · box',
+  baseUrl: 'https://box.example:8888',
+  routeBaseUrl: '/v2/server-connections/staging/proxy',
+  reachability: 'ok',
+};
 
 const SPACE = FIXTURE_SPACE_ID;
 /** A task the fixture dataset really holds, so the seeded screen has content. */
@@ -320,6 +330,42 @@ describe('R3 — an addressable hash at boot OUTRANKS last-place', () => {
     const b = mount(cold);
     await waitFor(() => b.getByTestId('entity-view'));
     b.unmount();
+  });
+});
+
+describe('a Server switch does not carry the old Server’s address', () => {
+  it('resets the address to the unaddressable form', async () => {
+    /* Switching Server re-keys GateApp, so the router detaches and a fresh one
+       mounts AND READS THE ADDRESS — which still names a Space on the Server
+       just left. That hash is addressable, so R3 honours it, the boot refuses
+       last-place, and the reconciliation then tells the viewer "that link
+       points at another Space" about a link nobody clicked.
+
+       Space ids are not portable across Servers: named Servers are same-origin
+       relay routes, so the same hash resolves against whichever Server is
+       active — the ambiguity ruling M2 exists to settle. Until it does, the
+       honest reset is "this boot carried no route". */
+    const target = createMemoryTarget(`#/s/${SPACE}/k/tasks`);
+    const switched: string[] = [];
+    const view = render(
+      <GateApp
+        routerTarget={target}
+        activeServer={LOCAL_SERVER}
+        servers={[LOCAL_SERVER, STAGING]}
+        onSelectServer={(id) => switched.push(id)}
+      />,
+    );
+    await waitFor(() => view.getByTestId('entity-view'));
+    await settle();
+    expect(target.getHash()).toBe(`#/s/${SPACE}/k/tasks`);
+
+    fireEvent.click(view.getByRole('button', { name: /^staging · box,/ }));
+
+    /* The switch really happened — otherwise this would assert the reset of a
+       button that did nothing. */
+    expect(switched).toEqual(['staging']);
+    expect(target.getHash()).toBe('#/');
+    view.unmount();
   });
 });
 
