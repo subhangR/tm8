@@ -795,7 +795,32 @@ export function GateApp(props: GateAppProps = {}) {
       close: (id) => actions.close(id),
       pin: (id) => actions.pin(id),
       unpin: (id) => actions.unpin(id),
-      promote: (id) => actions.promote(id),
+      /**
+       * PROMOTE IS REFUSED WHILE Z4 HAS NO HOST, AND REFUSING IS THE FIX.
+       *
+       * `navStore.promote` clears the id from stack AND pins and sets
+       * `{view:'entity', entityId, origin:null}` — from the workspace there is
+       * no `origin` to carry. So the panel was destroyed and the screen was
+       * replaced by the unrecognised card, in one click, with no way back to
+       * either. It is a real regression on this branch: the write is old, but
+       * making `navStore` authoritative (68dc93fd) made it visible, and no test
+       * covered it.
+       *
+       * Doing the state change and drawing an honest card instead would still
+       * destroy the panel, so the guard has to be here, before the store. Said
+       * out loud rather than swallowed: a control that silently does nothing is
+       * the failure mode this codebase keeps removing. It comes back the moment
+       * the M1 host exists, and nothing here presumes what that host looks like.
+       */
+      promote: (_id) => {
+        noticeSink.current({
+          id: 'z4-unbuilt',
+          tone: 'warn',
+          title: 'Full view isn’t built yet',
+          body: 'The panel stays where it is. Opening an entity on its own screen is coming; nothing was lost.',
+          ttlMs: NOTICE_TTL_MS,
+        });
+      },
       applyNormalization: (next) => actions.applyNormalization(next),
       surfaceOf: (id) => contentSurface[id] ?? null,
       setContentSurface: (id, surface) => actions.setContentSurface(id, surface),
@@ -1411,6 +1436,40 @@ export function GateApp(props: GateAppProps = {}) {
                 })
               }
             />
+          ) : data.ready && navView.view === 'entity' ? (
+            /* `e/{id}` IS A SPECIFIED ROUTE WITH NO HOST YET — NOT AN
+               UNRECOGNISED ONE, AND THE DIFFERENCE IS THE WHOLE POINT OF THIS
+               ARM.
+
+               Ruling M1 (2026-08-14): `e/{id}` means the Z4 entity FULL VIEW.
+               That host does not exist anywhere in this tree, and no lane owns
+               building it yet. Until it does, the route can be parsed, carried
+               and shared but not drawn.
+
+               `landingOfRoute` returns null for the no-`origin` form — resolving
+               it needs the entity's KIND, which is a read, so a pure mapping
+               cannot do it — and null lands on the unrecognised card below.
+               That card says "this build has no screen for that", which about a
+               frozen, specified route is simply false: the route is right and
+               the screen is missing. This is the unbuilt-view idiom instead,
+               which is the honest sentence and the one the reader can act on.
+
+               IT IS ALSO WHAT PROMOTE USED TO DESTROY THE SCREEN WITH.
+               `navStore.promote` writes `{view:'entity', origin:null}` and, from
+               the workspace, has no `origin` to carry — so one click on Z4
+               removed the panel AND replaced the whole screen with the loud
+               unrecognised card. Phase 1 did not introduce that write; it made
+               an already-latent one visible by making the store authoritative.
+               The port refuses the promote now (see `nav.promote`), and this arm
+               is the safety net for the same route arriving from a pasted link,
+               where there is no port to refuse it. */
+            <div className="ev-root" data-testid="entity-full-view-unbuilt">
+              <p className="evt-empty" style={{ margin: 24 }}>
+                The full view for a single entity isn’t built yet. This link is a real
+                address and it has been kept — there is just no screen behind it in this
+                build. Open the entity from its collection in the meantime.
+              </p>
+            </div>
           ) : data.ready ? (
             /* NOTHING MATCHED, AND THAT IS NOW SAYABLE. Everything the chain
                above understands has its own arm; reaching here means the target
