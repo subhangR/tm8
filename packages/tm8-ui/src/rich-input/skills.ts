@@ -53,13 +53,30 @@ export async function loadSkillTriggerOptions({
   port: SkillReadPort;
   spaceId: SpaceId;
 }): Promise<SkillTriggerOption[]> {
-  const result = await port.query({
-    spaceId,
-    kinds: ['skill'],
-    sort: 'activityAt_desc',
-    limit: 100,
-  });
-  return result.page.items
+  /*
+   * PAGED TO EXHAUSTION, not one page. A single page of 100 silently
+   * truncates a larger catalog, and the picker then says "No matching
+   * skills" about a skill that exists — a lie the prefix filter turns into
+   * a bug report. Skills are small rows and real spaces hold few, so the
+   * loop almost never runs twice; the ceiling below is a runaway guard, and
+   * hitting it drops the OLDEST-activity tail (the sort makes that choice
+   * rather than leaving it to row order).
+   */
+  const MAX_SKILLS = 500;
+  const items = [];
+  let cursor: CollectionQuery['cursor'];
+  do {
+    const result = await port.query({
+      spaceId,
+      kinds: ['skill'],
+      sort: 'activityAt_desc',
+      limit: 100,
+      ...(cursor !== undefined ? { cursor } : {}),
+    });
+    items.push(...result.page.items);
+    cursor = result.page.nextCursor ?? undefined;
+  } while (cursor !== undefined && items.length < MAX_SKILLS);
+  return items
     .map<SkillTriggerOption>((entity) => {
       const description = entity.state.kind === 'skill' ? entity.state.description : undefined;
       return {
