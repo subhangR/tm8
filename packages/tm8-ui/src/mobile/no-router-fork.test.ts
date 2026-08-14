@@ -85,6 +85,28 @@ function walk(dir: string): string[] {
 
 const isShipped = (f: string) => /\.tsx?$/.test(f) && !/\.(test|spec)\.tsx?$/.test(f);
 
+/**
+ * Comments are stripped BEFORE scanning, exactly as `panels/no-branching.test.ts`
+ * strips them for the kind-literal ban, and for the identical reason: the
+ * docblocks in this shell QUOTE THE VERY THINGS THEY FORBID in order to explain
+ * why they are forbidden. `useShellKind.ts` documents the jsdom hash-leak trap
+ * by writing out the reset line the next author must add — which is the single
+ * most useful sentence in that file, and a law that bans it would be trading
+ * real documentation for no extra safety, since a comment cannot navigate.
+ *
+ * FOUND THE HONEST WAY: this rule was added because the scan CAUGHT THAT
+ * DOCBLOCK. The law worked; the scope was wrong.
+ *
+ * Line comments are matched only when they START the line (`^\s*//`), never
+ * mid-line — a mid-line rule would eat the `//` in any URL and silently delete
+ * live code from the scan, which is how a strip step turns into a hole.
+ */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+}
+
+const readCode = (file: string) => stripComments(readFileSync(file, 'utf8'));
+
 const allSource = walk(SRC).filter(isShipped);
 
 /** Shipped files in the directory THIS TEST LIVES IN. Leg 1's anchor. */
@@ -150,7 +172,7 @@ describe('§4.3 — the shell forks and the router does not', () => {
     const outside = allSource.filter((f) => !mobileFiles.includes(f));
     const dead: string[] = [];
     for (const { pattern, why } of FORBIDDEN) {
-      const live = outside.some((f) => pattern.test(readFileSync(f, 'utf8')));
+      const live = outside.some((f) => pattern.test(readCode(f)));
       if (!live) dead.push(`${pattern} (${why})`);
     }
     expect(
@@ -172,7 +194,7 @@ describe('§4.3 — the shell forks and the router does not', () => {
   it('no mobile-shell file owns the address or the history', () => {
     const violations: string[] = [];
     for (const file of mobileFiles) {
-      const text = readFileSync(file, 'utf8');
+      const text = readCode(file);
       for (const { pattern, why } of FORBIDDEN) {
         if (pattern.test(text)) violations.push(`${relative(SRC, file)} — ${why}`);
       }
