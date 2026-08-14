@@ -686,7 +686,25 @@ export function GateApp(props: GateAppProps = {}) {
     navStore.getState().applyNormalization({ stack: [], pinned: [] });
     navStore.getState().setSession(null);
     screenStackStore.getState().clearAll();
-    navStore.getState().navigate({ view: 'workspace' });
+    /* REPLACE, NOT `navigate`, AND THE MOUNT IS WHAT MAKES IT MATTER.
+       This was `navigate({view:'workspace'})`, which is a PUSH. That was inert
+       while nothing mirrored the store to the URL; with the router mounted it
+       writes a history entry for the space you are LEAVING — `#/s/{old}/workspace`
+       — because the store still holds the old space id at this instant and only
+       learns the new one afterwards. Back would then land the viewer in a space
+       they had left, on a screen they never visited: this is the INTERIM state
+       the restore effect replaces a frame later, not a destination.
+
+       `setSpace`'s own docblock already rules this exact case ("choosing a space
+       is not a navigation WITHIN a space, and it must not leave a back-button
+       entry that returns you to a space you have already left"). The reset half
+       simply had not been brought under it, because until now it could not be
+       observed. */
+    navStore.setState((s) => ({
+      view: { view: 'workspace' },
+      history: 'replace',
+      revision: s.revision + 1,
+    }));
   }, []);
   const projectOnboardingPort = useMemo<ProjectOnboardingPort | null>(() => {
     const setup = data.seam.projectSetup;

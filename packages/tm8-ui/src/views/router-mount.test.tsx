@@ -299,6 +299,19 @@ describe('R3 — an addressable hash at boot OUTRANKS last-place', () => {
   });
 });
 
+/*
+ * NOT COVERED HERE, AND SAID RATHER THAN LEFT LOOKING COVERED: the space-switch
+ * reset's history discipline. `leaveSpaceContext` now writes its interim
+ * workspace view as a REPLACE instead of a push (it used to leave a back entry
+ * for the space you were leaving, because the store still holds the old space
+ * id at that instant). The fixture node serves exactly ONE space, so neither
+ * the tab bar's switch nor the rail's server switch is reachable from this
+ * harness, and every "equivalent" I could drive by hand would assert the
+ * transitions that were ALREADY replaces while missing the view write that
+ * changed. A test that exercises the wrong line and passes is worse than a
+ * stated gap. It needs a multi-space seam, which belongs with whoever adds one.
+ */
+
 describe('an over-cap link says what it dropped', () => {
   it('surfaces the overflow notice rather than truncating in silence', async () => {
     /* R4-7: the 2048-char cap drops whole params in a ruled tier order, and a
