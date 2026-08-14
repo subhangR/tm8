@@ -345,6 +345,20 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     spaceId: data.spaceId,
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
+    /*
+     * THE VANILLA TERMINAL TAKES THE SAME WORKING DIRECTORY A LAUNCH WOULD.
+     *
+     * `projectId` is optional on SessionStartHost and neither caller passed it,
+     * so it arrived `undefined`, `projectId ?? null` sent null, and
+     * `execution.terminal.start` minted a scratch directory — for EVERY terminal,
+     * in every Space, however many trusted projects were linked. Not a default
+     * anyone chose: the prop was simply never wired, so no arrangement of
+     * projects could change the outcome.
+     *
+     * Same rule the launch sheet uses, so the terminal and a launched session
+     * open in the same place rather than disagreeing.
+     */
+    projectId: data.launch.projects.find((p) => p.selectedByDefault && p.trusted)?.id ?? null,
     onOpen: openEntity,
     onError: (_verb, error) => {
       props.onNotice({
