@@ -41,7 +41,10 @@ describe('usePanelEngine viewport/authored normalization split (R13)', () => {
   });
 
   it('applies an over-cap settle exactly once and preserves its demotion notice', async () => {
-    const applyNormalization = vi.fn();
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    const applyNormalization = vi.fn(() => {
+      window.history.replaceState(null, '', '#/settled');
+    });
     const onNotice = vi.fn();
     const nav = navFor({ stack: [], pinned: ids(5) }, applyNormalization);
 
@@ -50,9 +53,11 @@ describe('usePanelEngine viewport/authored normalization split (R13)', () => {
     );
 
     await waitFor(() => expect(applyNormalization).toHaveBeenCalledTimes(1));
+    expect(replaceState).toHaveBeenCalledTimes(1);
     expect(applyNormalization).toHaveBeenCalledWith({ stack: ids(2), pinned: ids(5).slice(2) });
     expect(onNotice).toHaveBeenCalledTimes(1);
     expect(result.current.visible).toEqual({ stack: ids(2), pinned: ids(5).slice(2) });
+    replaceState.mockRestore();
   });
 
   it('narrow → wide → narrow keeps the hash byte-identical and never notices', () => {
