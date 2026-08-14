@@ -78,9 +78,26 @@ export function PanelResizer(props: PanelResizerProps) {
       aria-label={`Resize ${label} panel`}
       aria-orientation="vertical"
       aria-controls={controls}
-      aria-valuemin={Math.round(minWidth)}
-      aria-valuemax={Math.round(Math.max(minWidth, maxWidth))}
-      aria-valuenow={Math.round(width)}
+      /*
+       * THE RANGE EXISTS ONLY WHILE THE SEPARATOR IS A CONTROL.
+       *
+       * Disabled, the caller has no obligation to keep `width` inside
+       * [min, max] — and `EntityView` genuinely does not: a collapsed list rail
+       * is 34px wide against a 220px floor, so publishing the range anyway
+       * announced `valuenow=34, valuemin=220`, a value outside its own bounds.
+       * ARIA has no reading for that, and "34" is not even the number a
+       * screen-reader user wants: the rail is not 34px narrow, it is CLOSED.
+       *
+       * A `role="separator"` without `aria-valuenow` is the spec's own static
+       * divider — exactly what a non-resizable divider IS — so dropping the
+       * three attributes states the truth rather than a contradiction. The
+       * element stays in the tree and stays visible on purpose: it is the
+       * pointer target that must not move out from under a cursor.
+       * (Reported by review of PR #213.)
+       */
+      aria-valuemin={interactive ? Math.round(minWidth) : undefined}
+      aria-valuemax={interactive ? Math.round(Math.max(minWidth, maxWidth)) : undefined}
+      aria-valuenow={interactive ? Math.round(width) : undefined}
       aria-disabled={!interactive || undefined}
       tabIndex={interactive ? 0 : -1}
       data-side={side}
@@ -172,6 +189,34 @@ export interface PanelWidth {
 }
 
 /**
+ * THE KEY CAN CHANGE UNDER A LIVE HOOK, AND THAT IS THE HARD PART.
+ *
+ * A `useState` initializer runs ONCE per mount. `EntityView` keys these hooks
+ * by kind (`entity.task.list`, `entity.doc.list`) and the shell switches kinds
+ * by changing a PROP on a component it keeps mounted — so a Tasks→Docs switch
+ * moves the key without remounting anything. Read-on-mount alone therefore
+ * serves Docs whatever Tasks had, and the first resize afterwards WRITES that
+ * inherited number under the Docs key: the preference does not just display
+ * wrong, it is overwritten. (Reported by review of PR #213; reproduced with
+ * stored Tasks 500 / Docs 260 coming back as 500 for Docs.)
+ *
+ * The fix is the standard adjust-state-during-render pattern rather than an
+ * effect: the value used for THIS render is re-read immediately, so the stale
+ * width is never painted. An effect would paint the previous kind's width for
+ * one frame — which is exactly the flash the width solver exists to avoid.
+ */
+function useKeyedState<T>(storageKey: string, load: (key: string) => T): [T, (next: T) => void] {
+  const [entry, setEntry] = useState<{ key: string; value: T }>(() => ({
+    key: storageKey,
+    value: load(storageKey),
+  }));
+  const current = entry.key === storageKey ? entry : { key: storageKey, value: load(storageKey) };
+  if (entry.key !== storageKey) setEntry(current);
+  const set = useCallback((next: T) => setEntry({ key: storageKey, value: next }), [storageKey]);
+  return [current.value, set];
+}
+
+/**
  * The stored width is deliberately NOT clamped to the current viewport here.
  *
  * Clamping on write is how a preference dies: narrow the window once, and the
@@ -181,11 +226,15 @@ export interface PanelWidth {
  */
 export function usePanelWidth(key: string, fallback: number, minWidth: number): PanelWidth {
   const storageKey = `${WIDTH_PREFIX}${key}`;
-  const [width, setState] = useState<number>(() => {
-    if (typeof window === 'undefined') return fallback;
-    const stored = readNumber(storageKey);
-    return stored === null ? fallback : Math.max(minWidth, stored);
-  });
+  const load = useCallback(
+    (target: string) => {
+      if (typeof window === 'undefined') return fallback;
+      const stored = readNumber(target);
+      return stored === null ? fallback : Math.max(minWidth, stored);
+    },
+    [fallback, minWidth],
+  );
+  const [width, setState] = useKeyedState<number>(storageKey, load);
 
   const setWidth = useCallback(
     (next: number) => {
@@ -193,13 +242,13 @@ export function usePanelWidth(key: string, fallback: number, minWidth: number): 
       setState(floored);
       write(storageKey, String(floored));
     },
-    [storageKey, minWidth],
+    [storageKey, minWidth, setState],
   );
 
   const reset = useCallback(() => {
     setState(fallback);
     write(storageKey, String(fallback));
-  }, [storageKey, fallback]);
+  }, [storageKey, fallback, setState]);
 
   return { width, setWidth, reset };
 }
@@ -217,20 +266,31 @@ export function usePanelFlag(
   fallback: boolean,
 ): [boolean, (next: boolean | ((current: boolean) => boolean)) => void] {
   const storageKey = `${FLAG_PREFIX}${key}`;
-  const [flag, setState] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return fallback;
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      return raw === null ? fallback : raw === '1';
-    } catch {
-      return fallback;
-    }
-  });
+  /* Key-aware for the same reason `usePanelWidth` is — see `useKeyedState`.
+     The collapse flag is keyed per kind too, so read-on-mount alone let a
+     collapsed Tasks rail collapse Docs and then persist it there. */
+  const load = useCallback(
+    (target: string) => {
+      if (typeof window === 'undefined') return fallback;
+      try {
+        const raw = window.localStorage.getItem(target);
+        return raw === null ? fallback : raw === '1';
+      } catch {
+        return fallback;
+      }
+    },
+    [fallback],
+  );
+  const [flag, setState] = useKeyedState<boolean>(storageKey, load);
 
   /* The updater is resolved against a REF rather than inside `setState`'s own
      updater, because that updater must stay pure — React may call it twice —
      and writing to storage from it would do the write twice. The ref also
-     makes two toggles in one frame land correctly. */
+     makes two toggles in one frame land correctly.
+
+     It is assigned from `flag`, which `useKeyedState` has already re-read for
+     the CURRENT key — so a toggle immediately after a kind switch flips the new
+     kind's value, not the departed kind's. */
   const latest = useRef(flag);
   latest.current = flag;
 
@@ -241,7 +301,7 @@ export function usePanelFlag(
       setState(resolved);
       write(storageKey, resolved ? '1' : '0');
     },
-    [storageKey],
+    [storageKey, setState],
   );
 
   return [flag, set];

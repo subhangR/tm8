@@ -40,6 +40,17 @@ const FEED_KEY = 'feed';
 const CHV_ASIDE_MIN = 320;
 const CHV_ASIDE_DEFAULT = 440;
 const CHV_FEED_MIN = 420;
+/**
+ * What the aside costs BEYOND its own width: the 8px separator track plus the
+ * 1px `border-left` it paints. Nothing in this package sets `box-sizing:
+ * border-box` globally, so that border ADDS to the declared width.
+ *
+ * This matters more here than on the entity screen: `.chv-main` carries a real
+ * `min-width: 420px`, so an aside dragged to a max that forgot these 9px does
+ * not merely crowd the feed — the row cannot honour both and OVERFLOWS, which
+ * clips. (Reported by review of PR #213.)
+ */
+const CHV_ASIDE_CHROME = 8 + 1;
 
 export interface ChannelViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -130,7 +141,7 @@ export function ChannelView({
   const outerWidth = splitWidth > 0
     ? splitWidth
     : (typeof window === 'undefined' ? 0 : window.innerWidth);
-  const asideMax = Math.max(CHV_ASIDE_MIN, outerWidth - CHV_FEED_MIN);
+  const asideMax = Math.max(CHV_ASIDE_MIN, outerWidth - CHV_FEED_MIN - CHV_ASIDE_CHROME);
   const asideWidth = Math.min(Math.max(CHV_ASIDE_MIN, asidePref.width), Math.max(CHV_ASIDE_MIN, asideMax));
 
   /* ATTACHMENTS — the entity opened beside a channel feed is a full entity, so

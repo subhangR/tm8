@@ -24,7 +24,13 @@ import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
-import { EV_LIST_DEFAULT, EV_LIST_MIN } from './EntityView';
+import {
+  EV_CENTER_MIN,
+  EV_LIST_DEFAULT,
+  EV_LIST_MIN,
+  EV_PANEL_BORDER,
+  EV_RESIZER,
+} from './EntityView';
 
 beforeEach(() => {
   const map = new Map<string, string>();
@@ -144,6 +150,107 @@ describe('the entity detail screen collapses its list rail', () => {
     const second = await openTasksScreen();
     expect(second.getByTestId('entity-view-list-expand')).toBeTruthy();
     second.unmount();
+  });
+});
+
+/**
+ * THE THREE DEFECTS PR #213's REVIEW FOUND. Each test is named for the failure
+ * rather than for the fix, because the failure is the thing that must not come
+ * back.
+ */
+describe('regressions found reviewing PR #213', () => {
+  /**
+   * The shell switches kinds by changing a PROP on an `EntityView` it keeps
+   * mounted — the `useEffect([kind])` resetting `aux` and `detailTab` is proof
+   * the component was always expected to survive that. A `useState` initializer
+   * runs once per MOUNT, so both persistence hooks served the departed kind's
+   * value under the arriving kind's key, and the next interaction wrote it
+   * there. The preference did not merely display wrong; it was overwritten.
+   */
+  it('does not leak one kind’s width into another across an in-place switch', async () => {
+    window.localStorage.setItem('tm8ui.panel-width.entity.task.list', '500');
+    window.localStorage.setItem('tm8ui.panel-width.entity.doc.list', '260');
+
+    const view = await openTasksScreen();
+    expect(listWidthOf(view)).toBe('500px');
+
+    // Same mounted component, different `kind` prop — no remount anywhere.
+    fireEvent.click(within(view.getByTestId('menu-rail')).getByRole('button', { name: /^Docs/ }));
+    await waitFor(() => expect(view.getByTestId('entity-view').dataset.kind).toBe('doc'));
+    expect(listWidthOf(view)).toBe('260px');
+
+    // And the write path follows the key too: resizing Docs must not touch Tasks.
+    fireEvent.keyDown(view.getByTestId('panel-resizer-left'), { key: 'ArrowRight' });
+    await waitFor(() => expect(listWidthOf(view)).toBe('276px'));
+    expect(window.localStorage.getItem('tm8ui.panel-width.entity.doc.list')).toBe('276');
+    expect(window.localStorage.getItem('tm8ui.panel-width.entity.task.list')).toBe('500');
+
+    view.unmount();
+  });
+
+  it('does not leak one kind’s COLLAPSE into another', async () => {
+    window.localStorage.setItem('tm8ui.panel-flag.entity.task.list-collapsed', '1');
+
+    const view = await openTasksScreen();
+    expect(view.getByTestId('entity-view-list-expand')).toBeTruthy();
+
+    fireEvent.click(within(view.getByTestId('menu-rail')).getByRole('button', { name: /^Docs/ }));
+    await waitFor(() => expect(view.getByTestId('entity-view').dataset.kind).toBe('doc'));
+    // Docs has no stored flag, so it takes the default — open.
+    expect(view.getByTestId('entity-view-list-collapse')).toBeTruthy();
+    expect(window.localStorage.getItem('tm8ui.panel-flag.entity.doc.list-collapsed')).toBeNull();
+
+    view.unmount();
+  });
+
+  /**
+   * `End` is "as wide as this column may be", and the answer has to leave the
+   * centre its declared floor. The first version subtracted only the other
+   * column's WIDTH, forgetting that each separator occupies 8px of real row and
+   * each side column's 1px hairline adds to its width (nothing here sets
+   * `box-sizing: border-box` globally). The centre was handed 411px against a
+   * 420px floor with one side column, 402px with both.
+   */
+  it('leaves the centre its whole floor at maximum drag, chrome included', async () => {
+    const view = await openTasksScreen();
+    const separator = view.getByTestId('panel-resizer-left');
+
+    fireEvent.keyDown(separator, { key: 'End' });
+    await waitFor(() => expect(listWidthOf(view)).not.toBe(`${EV_LIST_DEFAULT}px`));
+
+    // jsdom has no layout, so the ROOT is the window — the same number the
+    // component falls back to. That makes the arithmetic assertable here even
+    // though the boxes are all 0×0.
+    const list = Number(listWidthOf(view).replace('px', ''));
+    const chrome = EV_RESIZER + EV_PANEL_BORDER;
+    expect(list).toBe(window.innerWidth - EV_CENTER_MIN - chrome);
+    // Stated as the property rather than the arithmetic, so this still reads
+    // as the LAW if the constants move.
+    expect(window.innerWidth - list - chrome).toBeGreaterThanOrEqual(EV_CENTER_MIN);
+
+    view.unmount();
+  });
+
+  /**
+   * A collapsed rail is 34px against a 220px floor, so publishing the range
+   * anyway announced `valuenow=34, valuemin=220` — a value outside its own
+   * bounds, which ARIA has no reading for. A `separator` without `valuenow` is
+   * the spec's static divider, which is what a disabled one is.
+   */
+  it('publishes no ARIA range while the separator is disabled', async () => {
+    const view = await openTasksScreen();
+    const separator = view.getByTestId('panel-resizer-left');
+    expect(separator.getAttribute('aria-valuenow')).toBe(String(EV_LIST_DEFAULT));
+
+    fireEvent.click(view.getByTestId('entity-view-list-collapse'));
+    await waitFor(() => view.getByTestId('entity-view-list-expand'));
+
+    expect(separator.getAttribute('aria-disabled')).toBe('true');
+    expect(separator.getAttribute('aria-valuenow')).toBeNull();
+    expect(separator.getAttribute('aria-valuemin')).toBeNull();
+    expect(separator.getAttribute('aria-valuemax')).toBeNull();
+
+    view.unmount();
   });
 });
 

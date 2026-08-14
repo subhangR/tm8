@@ -167,6 +167,26 @@ export const EV_CENTER_MIN = 420;
 /** Collapsed, the rail keeps a strip — a hidden panel with no way back is a trap. */
 export const EV_LIST_COLLAPSED = 34;
 
+/**
+ * THE CHROME BETWEEN THE COLUMNS IS PART OF THE BUDGET.
+ *
+ * A separator is 8px of real, occupied row (`.kit-resizer`), and each side
+ * column paints a 1px hairline that ADDS to its width — no stylesheet in this
+ * package sets `box-sizing: border-box` globally, so `.ev-list` and `.ev-aux`
+ * are content-box and `width: 320px` occupies 321.
+ *
+ * Omitting these was a real arithmetic bug, not a rounding quibble: dragging to
+ * `End` handed the centre `outer − EV_CENTER_MIN` of room that the chrome had
+ * already spent, leaving 411px with one side column and 402px with both —
+ * under the 420px floor this file declares. It is the WLT `Σb` term, which the
+ * workspace's own solver takes as a parameter for exactly this reason.
+ * (Reported by review of PR #213.)
+ */
+export const EV_RESIZER = 8;
+export const EV_PANEL_BORDER = 1;
+/** What one side column costs BEYOND its own width. */
+const SIDE_CHROME = EV_RESIZER + EV_PANEL_BORDER;
+
 const clampWidth = (want: number, min: number, max: number): number =>
   Math.min(Math.max(min, want), Math.max(min, max));
 
@@ -293,14 +313,19 @@ export function EntityView(props: EntityViewProps) {
   const outerWidth = rootWidth > 0
     ? rootWidth
     : (typeof window === 'undefined' ? 0 : window.innerWidth);
-  const auxRoom = aux ? auxPref.width : 0;
-  const listMax = Math.max(EV_LIST_MIN, outerWidth - EV_CENTER_MIN - auxRoom);
+  /* Every term the centre does NOT get: the other column's width, and the
+     separator + hairline each side column costs on top of it. The list keeps
+     its chrome while collapsed — the strip still has a border and the separator
+     is still mounted — so `SIDE_CHROME` is unconditional on that side. */
+  const auxRoom = aux ? auxPref.width + SIDE_CHROME : 0;
+  const listRoom = listCollapsed ? EV_LIST_COLLAPSED : EV_LIST_MIN;
+  const listMax = Math.max(EV_LIST_MIN, outerWidth - EV_CENTER_MIN - SIDE_CHROME - auxRoom);
   const listWidth = listCollapsed
     ? EV_LIST_COLLAPSED
     : clampWidth(listPref.width, EV_LIST_MIN, listMax);
   const auxMax = Math.max(
     EV_AUX_MIN,
-    outerWidth - EV_CENTER_MIN - (listCollapsed ? EV_LIST_COLLAPSED : EV_LIST_MIN),
+    outerWidth - EV_CENTER_MIN - SIDE_CHROME - listRoom - SIDE_CHROME,
   );
   const auxWidth = clampWidth(auxPref.width, EV_AUX_MIN, auxMax);
 
