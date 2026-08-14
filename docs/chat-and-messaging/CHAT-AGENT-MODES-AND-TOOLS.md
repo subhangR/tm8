@@ -102,9 +102,11 @@ authority for MCP calls. Provider-native calls are constrained by the exact
 | `repo_bash` | `command`, optional timeout | capped stdout/stderr and exit status |
 
 Write/edit/multi-edit are real edits in the chat clone. Claude Code uses its
-native `Edit` and `Write` tools instead of these fallback aliases. There is no
-propose-patch or diff-card intermediate. `repo_bash` is represented in policy
-even when a headless deployment keeps it at `ask` or `deny`.
+native `Edit` and `Write` tools instead of the matching single-file fallback
+aliases; `repo_multi_edit` remains exposed in Build because Claude has no
+atomic native equivalent. There is no propose-patch or diff-card intermediate.
+`repo_bash` is represented in policy even when a headless deployment keeps it
+at `ask` or `deny`.
 
 ### Sessions and graph artifacts
 

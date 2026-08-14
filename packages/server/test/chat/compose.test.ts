@@ -67,6 +67,7 @@ describe('chat launch composition', () => {
     expect(chatAllowedTools('build')).not.toContain('Bash');
     expect(chatAllowedTools('build')).not.toContain('mcp__tm8__repo_edit');
     expect(chatAllowedTools('build')).not.toContain('mcp__tm8__repo_bash');
+    expect(chatAllowedTools('build')).toContain('mcp__tm8__repo_multi_edit');
     expect(chatAllowedTools('orchestrate')).toContain('mcp__tm8__session_followup');
     expect(chatAllowedTools('orchestrate')).not.toContain('mcp__tm8__repo_read_file');
     expect(chatProviderToolPolicy('orchestrate').availableTools).toEqual([]);

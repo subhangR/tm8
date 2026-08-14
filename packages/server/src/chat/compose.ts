@@ -35,7 +35,7 @@ const execFileAsync = promisify(execFile);
 
 const CLAUDE_NATIVE_REPLACEMENTS = new Set([
   'repo_read_file', 'repo_glob', 'repo_grep',
-  'repo_write', 'repo_edit', 'repo_multi_edit', 'repo_bash',
+  'repo_write', 'repo_edit', 'repo_bash',
   'web_fetch', 'web_search',
 ]);
 
@@ -50,8 +50,10 @@ export interface ChatProviderToolPolicy {
  * Provider-facing policy for the Claude Code runtime.
  *
  * Claude's built-ins are the primary repo/web implementation. The matching MCP
- * tools remain registered as provider-neutral fallbacks, but showing both
- * surfaces to Claude wastes context and produces inconsistent behavior.
+ * tools remain registered as provider-neutral fallbacks, but showing exact
+ * duplicates to Claude wastes context and produces inconsistent behavior.
+ * `repo_multi_edit` stays visible in Build because Claude has no atomic native
+ * equivalent.
  * `Bash` is visible in code modes so Claude's own read-only classifier can use
  * it; it is deliberately not pre-approved. The adapter's `dontAsk` mode denies
  * every Bash call that would otherwise require an interactive approval.
