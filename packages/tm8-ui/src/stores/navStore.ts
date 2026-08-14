@@ -394,14 +394,13 @@ export function attachRouter(target: RouterTarget, opts: RouterSyncOptions = {})
         // REASONS — the drift class A1c found in the terminal surfaces, in
         // this file, written by me. A reworded REASONS entry must change this
         // notice too, and composition is what guarantees it does.
+        // `graph` left the deferred set on 2026-08-14 (its screen shipped), so
+        // the fork this composed across is gone and only the leaderboard
+        // remains. Still COMPOSED rather than restated, for the same reason.
         notice({
           kind: 'deferred-feature',
           feature: redirected.deferredFeature,
-          text: `${
-            redirected.deferredFeature === 'graph'
-              ? REASONS.graphDeferred
-              : REASONS.leaderboardDeferred
-          } You’ve landed on Home.`,
+          text: `${REASONS.leaderboardDeferred} You’ve landed on Home.`,
         });
       }
     }

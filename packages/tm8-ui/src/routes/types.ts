@@ -43,7 +43,25 @@ export type NavView =
   | { view: 'entity'; entityId: EntityId; origin: Origin | null }
   | { view: 'channels' }
   | { view: 'channel'; channelId: EntityId; msg: EntityId | null }
-  | { view: 'settings'; section: 'projects' | 'menu' | null };
+  | { view: 'settings'; section: 'projects' | 'menu' | null }
+  /*
+   * The four screens that rendered from the rail with NO route line, added by
+   * the 2026-08-14 amendment to WLT §2.1/§2.2.
+   *
+   * These were not new features and this was not a widening of the app's
+   * surface: `graph`, `files`, `git` and `messages` have been live
+   * `MenuViewRef` members in `@tm8/contract` and live branches in `GateApp`'s
+   * render switch. What they lacked was addressability — so their screens
+   * could not be reloaded into, shared, or reached with the back button, and a
+   * viewer sitting on the Graph had a URL claiming they were somewhere else.
+   *
+   * WLT §2.3 froze `ViewRef` as a "CLOSED v1 union" of six. The contract enum
+   * already carried ten. The spec was the stale artefact here, not the code.
+   */
+  | { view: 'graph' }
+  | { view: 'files' }
+  | { view: 'git' }
+  | { view: 'messages' };
 
 /** The panel-engine state the URL mirrors (LLD §11: the URL owns all of it). */
 export interface PanelState {

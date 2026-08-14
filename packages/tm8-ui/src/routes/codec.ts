@@ -243,6 +243,18 @@ function parseTarget(
       return { view: 'workspace' };
     case 'channels':
       return { view: 'channels' };
+    /* The 2026-08-14 amendment — four screens that had no route. Flat segments
+       with no parameters of their own; each is a whole-centre screen (the D65
+       posture) so there is no sub-state to encode beyond the shared panel
+       params every route already carries. */
+    case 'graph':
+      return { view: 'graph' };
+    case 'files':
+      return { view: 'files' };
+    case 'git':
+      return { view: 'git' };
+    case 'messages':
+      return { view: 'messages' };
     case 'settings': {
       const section = rest[1];
       if (section === 'projects' || section === 'menu') return { view: 'settings', section };
@@ -300,6 +312,14 @@ function pathOf(route: Route): string {
       return `${base}/workspace`;
     case 'channels':
       return `${base}/channels`;
+    case 'graph':
+      return `${base}/graph`;
+    case 'files':
+      return `${base}/files`;
+    case 'git':
+      return `${base}/git`;
+    case 'messages':
+      return `${base}/messages`;
     case 'channel':
       return `${base}/channel/${enc(t.channelId)}`;
     case 'kind':

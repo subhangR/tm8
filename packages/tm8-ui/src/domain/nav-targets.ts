@@ -1,0 +1,255 @@
+/**
+ * nav-targets — the ONE mapping between the shell's `MenuTarget` vocabulary and
+ * the route codec's `NavView` vocabulary.
+ *
+ * WHY THIS FILE EXISTS. The app has had two independent names for "where you
+ * are" since the route codec was written, and nothing ever joined them:
+ *
+ *   - `MenuTarget` (`shell/MenuRail.tsx`) — what the rail emits and what
+ *     `GateApp`'s render switch consumes. This is the vocabulary that decides
+ *     what is on screen.
+ *   - `NavView` (`routes/types.ts`) — what the URL encodes, one member per
+ *     WLT §2.2 route line. This is the vocabulary that decides what the address
+ *     bar says.
+ *
+ * They do not align, and the mismatches are not cosmetic:
+ *
+ *   - `dashboard` (rail) is `home` (route). A name difference only.
+ *   - The rail's `{type:'entity'}` means A CHANNEL — `GateApp` renders
+ *     `ChannelView` for it. The route's `{view:'entity'}` means an entity
+ *     DETAIL panel. Mapping one onto the other by its tag is wrong in both
+ *     directions, and that is exactly the misroute class this codebase has
+ *     already been bitten by twice (the voice-room misroute, and channels
+ *     falling through to the workspace).
+ *   - `graph`, `files`, `git` and `messages` are `MenuViewRef` members with no
+ *     route line at all.
+ *   - The entity a kind screen has open lives in `screenStackStore`, which has
+ *     no `MenuTarget` representation whatsoever. A route that names an entity
+ *     therefore sets TWO pieces of state, only one of which is a target — see
+ *     `Landing`.
+ *
+ * WHY IT LIVES IN `domain/`. It has to say `'channel'` out loud to map the
+ * channels route onto the channel-kind screen, and `panels/no-branching.test.ts`
+ * bans quoted kind literals everywhere except `domain/` and `fixtures/`. That
+ * ban is the reason this is a domain concern rather than a routing one, and it
+ * is the right home anyway: WLT §2.1 says ONE registry drives routes, `origin`
+ * validation, palette generation and the menu config. Slugs are resolved
+ * through `kindOfSlug`/`slugOfKind` here rather than written down twice.
+ *
+ * PURE AND TOTAL. No store reads, no React. Every function is total over its
+ * input union, and `nav-targets.test.ts` asserts exhaustiveness in BOTH
+ * directions — a new `MenuViewRef` or a new `NavView` member fails a test
+ * rather than silently falling through to the workspace.
+ */
+import type { EntityId, MenuViewRef } from '@tm8/contract';
+import type { NavView } from '../routes/types';
+/* Type-only, and deliberately so: `shell/` already imports `domain/`, so a
+   value import here would close a cycle. `import type` is erased entirely. */
+import type { MenuTarget } from '../shell';
+import { kindOfSlug, slugOfKind } from './registry';
+
+/**
+ * The kind whose collection screen IS the Channels destination.
+ *
+ * NOT a second channels screen. `#/s/{space}/channels` and the rail's Channels
+ * row both land on the `channel`-kind `EntityView` — the tree of channels with
+ * the channel view beside it (`GateApp`'s own comment: "CHANNELS is a contract
+ * VIEW ref but IS the channel EntityView"). `registry.ts` moved `channel` to
+ * `strategy: 'collection'` on 2026-08-01 and WLT §2.1 has not caught up; the
+ * code is the truth and the spec amendment follows it.
+ */
+const CHANNEL_KIND = 'channel';
+
+/**
+ * `MenuViewRef` → the `NavView` tag that addresses it.
+ *
+ * Total over the closed `MenuViewRef` enum by construction: `Record<MenuViewRef, …>`
+ * makes a missing row a type error, which is the whole point of writing it as a
+ * table instead of a switch.
+ *
+ * `channels` is deliberately absent from the value side — it is not a view of
+ * its own but an alias for the channel collection, resolved in `landingOfRoute`
+ * and `routeViewOf` so that both directions agree. Everything else is either a
+ * one-to-one route line or one of the four refs that had no route until the
+ * §2.1/§2.2 amendment.
+ */
+export const VIEW_REF_ROUTE = {
+  dashboard: 'home',
+  feed: 'feed',
+  inbox: 'inbox',
+  workspace: 'workspace',
+  settings: 'settings',
+  /* Added by the 2026-08-14 amendment. These four rendered from the rail with
+     no route line, so their screens could not be reloaded, shared, or reached
+     by the back button. The contract's `MenuViewRef` already carried all four;
+     it was WLT §2.3's "CLOSED v1 union" of six that was stale. */
+  graph: 'graph',
+  files: 'files',
+  git: 'git',
+  messages: 'messages',
+  /* Alias, not a view — see CHANNEL_KIND. Present so the record stays total
+     over MenuViewRef; `routeViewOf` never emits it. */
+  channels: 'channels',
+} as const satisfies Record<MenuViewRef, string>;
+
+/** Reverse of `VIEW_REF_ROUTE`, minus the `channels` alias. */
+const ROUTE_VIEW_REF: Partial<Record<string, MenuViewRef>> = Object.fromEntries(
+  (Object.entries(VIEW_REF_ROUTE) as [MenuViewRef, string][])
+    .filter(([ref]) => ref !== 'channels')
+    .map(([ref, view]) => [view, ref]),
+);
+
+/**
+ * What a route asks the shell to do.
+ *
+ * TWO fields because a route can name two things at once, and this is the shape
+ * the requirement is actually about: `#/s/{s}/e/{id}?origin=tasks` means "the
+ * Tasks screen, with THAT entity open". The target is the screen; `openEntity`
+ * is what `screenStackStore` gets seeded with. Collapsing them into one value
+ * is what made `MenuTarget` unable to express a shared entity link.
+ */
+export interface Landing {
+  /** The screen to show. */
+  target: MenuTarget;
+  /** Entity to seed onto that screen's stack, or `null` for a bare screen. */
+  openEntity: EntityId | null;
+}
+
+/**
+ * Route → shell. Total over `NavView`.
+ *
+ * Returns `null` ONLY for a route whose slug names no registered kind — an
+ * unresolvable link, which the caller must surface as a refusal rather than
+ * quietly substituting a default. Silently landing somewhere else is the
+ * failure this whole lane exists to remove.
+ */
+export function landingOfRoute(view: NavView): Landing | null {
+  switch (view.view) {
+    case 'home':
+    case 'feed':
+    case 'inbox':
+    case 'workspace':
+      return { target: { type: 'view', ref: refOfRouteView(view.view) }, openEntity: null };
+
+    case 'settings':
+      /* §2.2 carries `section` (`projects` | `menu`); `MenuTarget` has no slot
+         for it. The section is read from the route directly by the settings
+         shell rather than smuggled through the target — noting it here because
+         the asymmetry is real and easy to mistake for a bug. */
+      return { target: { type: 'view', ref: 'settings' }, openEntity: null };
+
+    case 'graph':
+    case 'files':
+    case 'git':
+    case 'messages':
+      return { target: { type: 'view', ref: refOfRouteView(view.view) }, openEntity: null };
+
+    case 'channels':
+      /* The alias resolving to the real screen. */
+      return { target: { type: 'kind', ref: CHANNEL_KIND }, openEntity: null };
+
+    case 'kind': {
+      const kind = kindOfSlug(view.slug);
+      if (!kind) return null;
+      return {
+        target: { type: 'kind', ref: kind, ...(view.mode ? { mode: view.mode } : {}) },
+        openEntity: null,
+      };
+    }
+
+    case 'channel':
+      /* The rail's `entity` target means a channel, and ONLY a channel. Carrying
+         the kind explicitly is what stops `GateApp`'s `type === 'entity'` branch
+         from rendering a message feed for something that has none. */
+      return {
+        target: { type: 'entity', ref: view.channelId, kind: CHANNEL_KIND },
+        openEntity: null,
+      };
+
+    case 'entity': {
+      /* THE SHARED-LINK CASE. The screen comes from `origin`; the entity is
+         seeded onto that screen's stack. With no `origin` the caller applies the
+         §2.2 canonical-reload rule against the registry strategy — it needs the
+         entity's kind, which is a read, so it cannot be resolved here. */
+      if (!view.origin) return null;
+      const kind = kindOfSlug(view.origin.slug);
+      if (!kind) return null;
+      return {
+        target: {
+          type: 'kind',
+          ref: kind,
+          ...(view.origin.mode ? { mode: view.origin.mode } : {}),
+        },
+        openEntity: view.entityId,
+      };
+    }
+  }
+}
+
+/**
+ * Shell → route. Total over `MenuTarget`.
+ *
+ * `openEntity` promotes a kind screen to the `e/{id}?origin=` form, which is
+ * what makes an open entity shareable at all.
+ *
+ * Returns `null` for a target naming a kind with no slug — the `special` and
+ * `anchored` strategies (`voice_channel`, `message`) have no `k/` view by
+ * design (WLT §2.1), so there is genuinely no route to emit and the caller must
+ * leave the URL alone rather than invent one.
+ */
+export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = null): NavView | null {
+  switch (target.type) {
+    case 'view': {
+      if (target.ref === 'channels') {
+        /* Normalized to the collection it actually is, so the URL a viewer sees
+           and the URL they share are the same string. */
+        const slug = slugOfKind(CHANNEL_KIND);
+        return slug ? { view: 'kind', slug, mode: null, q: null } : null;
+      }
+      const view = VIEW_REF_ROUTE[target.ref];
+      switch (view) {
+        case 'home':
+        case 'feed':
+        case 'inbox':
+        case 'workspace':
+        case 'graph':
+        case 'files':
+        case 'git':
+        case 'messages':
+          return { view };
+        case 'settings':
+          return { view: 'settings', section: null };
+        default:
+          return null;
+      }
+    }
+
+    case 'kind': {
+      const slug = slugOfKind(target.ref);
+      if (!slug) return null;
+      const mode = target.mode ?? null;
+      if (openEntity) {
+        return { view: 'entity', entityId: openEntity, origin: { slug, mode } };
+      }
+      return { view: 'kind', slug, mode, q: null };
+    }
+
+    case 'entity':
+      /* A channel target is the channel route. Any other entity target would be
+         a misroute at the source; the rail only ever emits channels here, and
+         the voice-room guard in `GateApp` depends on that staying true. */
+      return target.kind === CHANNEL_KIND
+        ? { view: 'channel', channelId: target.ref as EntityId, msg: null }
+        : null;
+  }
+}
+
+/** `MenuViewRef` for a simple route tag. Internal; the table is the authority. */
+function refOfRouteView(view: string): MenuViewRef {
+  const ref = ROUTE_VIEW_REF[view];
+  /* Unreachable while the table and `NavView` agree, which is what the
+     exhaustiveness test enforces. Throwing beats returning a default: a wrong
+     screen that renders is the bug class this file exists to prevent. */
+  if (!ref) throw new Error(`nav-targets: no MenuViewRef for route view '${view}'`);
+  return ref;
+}
