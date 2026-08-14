@@ -188,6 +188,25 @@ const W1_TABLE_COLUMNS: Record<(typeof W1_TABLES)[number], readonly string[]> = 
   ],
 };
 
+/**
+ * ⚠ POSITION-PINNED FIXTURE. Suites built on this assert CHAIN POSITION 015,
+ * not present system behaviour. READ THIS BEFORE "CLEANING" ANY TEST THAT USES
+ * IT: a later migration's removal never reaches these suites, so an assertion
+ * about a feature the system no longer has is CORRECT here, not stale.
+ * (R15 / R15b, 2026-08-07.)
+ *
+ * Greenness cannot classify a suite. After a removal, a green pg suite is
+ * EITHER pinned below the change (leave it) OR full-chain and passing vacuously
+ * (fix it) — opposite edits, and only this `.apply(...)` argument tells them
+ * apart. Reference counts and grep hits are non-evidence for that question.
+ *
+ * Worked example, measured: `083` removed the wake budget, and the budget
+ * assertions in this file stayed correct because `015` still creates
+ * `session_wake_budgets`. The sibling pin is `explicitG04Migrations()` in
+ * `w2-messages-handoffs.pg.test.ts` (019), where deleting the budget references
+ * turned a correct test RED. The full-chain suite where 083's removal IS proved
+ * is `w2-execution.pg.test.ts`, which applies `migrationFiles()` whole.
+ */
 function w1MigrationFiles(): string[] {
   const files = migrationFiles();
   const tail = files.indexOf('015_w1_foundations.sql');
@@ -759,6 +778,28 @@ describe.sequential('W1 additive migration foundations', () => {
     })).rejects.toMatchObject({ code: '23514' });
   });
 
+  /**
+   * ⚠ THE WAKE CAP IS REMOVED — by migration `083`. This test asserts CHAIN
+   * POSITION 015, not current behaviour. DO NOT DELETE IT, and DO NOT CITE IT AS
+   * EVIDENCE THAT THE CAP EXISTS.
+   *
+   * `w1MigrationFiles()` slices the chain at `015_w1_foundations.sql` and pins
+   * that position with `expect(tail).toBe(14)`, so every scratch database in
+   * this file stops there. At 015 `public.session_wake_budgets`, its trigger,
+   * `public.reset_session_wake_budget_for_member_reply`,
+   * `internal.w1_refresh_wake_budget_cleanup_eligibility`, the
+   * `pair_budget_version` column and `budgetsDeleted` all exist, and every
+   * assertion below is a TRUE STATEMENT ABOUT WHAT 015 CREATES. 083 drops them
+   * 68 files later, and 015 must keep applying cleanly forever because the chain
+   * replays from 001.
+   *
+   * The rule, so this does not get relitigated: A FULL-CHAIN SUITE ASSERTS
+   * PRESENT SYSTEM BEHAVIOUR; A POSITION-PINNED SUITE ASSERTS THAT POSITION.
+   * The cap's removal reaches the former — `test/db/w2-execution.pg.test.ts`,
+   * which applies `migrationFiles()` whole, lost five cases to it — and does not
+   * reach this file at all. Deleting these assertions would make a migration
+   * rehearsal lie about the migration it rehearses.
+   */
   it('serializes concurrent B2 reservations, caps the fifth wake, and serializes a Member reset', async () => {
     b2Graph = await current.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');

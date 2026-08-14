@@ -1,7 +1,12 @@
 /**
  * W2 G11 — execution and session lifecycle. B1 (`execution.prompt` is
- * Server-internal-only) and B2 (one durable unordered pair budget), at the
- * server API boundary.
+ * Server-internal-only) and the internal delivery path, at the server API
+ * boundary.
+ *
+ * B2 — the durable unordered pair budget — WAS the second subject here and is
+ * REMOVED by migration 083. Its cases are deleted rather than relaxed: a test
+ * whose subject no longer exists has nothing left to fail on, and a green with
+ * no subject occupies the slot a real test would need.
  *
  * THE ORACLE THIS FILE EXISTS TO BE
  *
@@ -110,7 +115,7 @@ class RecordingDb implements Db {
 class RecordingPty {
   readonly deliveries: Array<{ sessionId: string; content: string; mode: string }> = [];
   bytes = 0;
-  /** Flipped only by the B2 refusal case; every B1 negative runs against TRUE. */
+  /** Flipped only by the no-live-terminal refusal case; every B1 negative runs against TRUE. */
   live = true;
 
   hasSession(): boolean {
@@ -146,46 +151,26 @@ function fakePromptSettlement(): { awaitOutcome: () => Promise<{ outcome: 'deliv
 const CONFIG = { host: '127.0.0.1', port: 4610 } as unknown as ServerConfig;
 
 /**
- * A stand-in for the three RPCs that behaves like 015 §7 — including the wake
- * count and its refusal at four — but keeps that state OUTSIDE the service, in
- * this object, exactly as Postgres keeps it outside the process.
+ * A stand-in for the three RPCs, holding its rows OUTSIDE the service — in this
+ * object, exactly as Postgres keeps them outside the process.
  *
- * That placement is the assertion. If `W2ExecutionDeliveryService` ever grew a
- * counter of its own, a service rebuilt over this same port would hand out a
- * fresh allowance and `restarting the service does not mint a fresh allowance`
- * below would fail. This is the cheap, no-database half of the durability
- * proof; the executable process-restart proof is in
- * `test/db/w2-execution.pg.test.ts` and destroys the connection pool too.
+ * It USED to carry the wake counter and refuse the fifth reservation, because
+ * that is what 015 §7 did. 083 removed the budget, so it counts nothing: a fake
+ * that still refused at four would be modelling a database that no longer
+ * exists, and every test standing on it would be green about a fiction.
  */
 class FakeDeliveryRpc implements W2DeliveryRpcPort {
   readonly calls: string[] = [];
-  /** The durable counter, deliberately owned by the "database", not the service. */
-  wakes = 0;
   private readonly rows = new Map<string, StoredDelivery>();
 
   async reserve(lease: DeliveryPrincipalLease, attemptNo: number): Promise<StoredDelivery> {
     this.calls.push('reserve');
-    if (this.wakes >= 4) {
-      const refused: StoredDelivery = {
-        deliveryId: lease.deliveryId,
-        messageId: lease.messageId,
-        targetWorkSessionId: lease.targetWorkSessionId,
-        status: 'failed_permanent',
-        attemptNo,
-        pairBudgetVersion: this.wakes,
-        failureReason: 'automated_wake_limit',
-      };
-      this.rows.set(lease.deliveryId, refused);
-      return refused;
-    }
-    this.wakes += 1;
     const row: StoredDelivery = {
       deliveryId: lease.deliveryId,
       messageId: lease.messageId,
       targetWorkSessionId: lease.targetWorkSessionId,
       status: 'pending',
       attemptNo,
-      pairBudgetVersion: this.wakes,
       failureReason: null,
     };
     this.rows.set(lease.deliveryId, row);
@@ -195,9 +180,6 @@ class FakeDeliveryRpc implements W2DeliveryRpcPort {
   async claim(lease: DeliveryPrincipalLease): Promise<StoredDelivery> {
     this.calls.push('claim');
     const row = this.rows.get(lease.deliveryId)!;
-    if (row.pairBudgetVersion !== lease.pairBudgetVersion) {
-      throw new Error('delivery reservation not found');
-    }
     const claimed = { ...row, status: 'dispatching' as const };
     this.rows.set(lease.deliveryId, claimed);
     return claimed;
@@ -459,14 +441,12 @@ describe('B1 — the internal delivery seam still works', () => {
   });
 });
 
-// --- B2, without a database --------------------------------------------------
+// --- the delivery path, without a database -----------------------------------
 
 /**
- * The fast half of B2. It cannot prove DURABILITY — only Postgres and a real
- * process teardown can, and `test/db/w2-execution.pg.test.ts` does — but it can
- * prove the two things that make durability possible, in under a millisecond:
- * that the whole path is routed through the RPC port, and that the service
- * itself remembers nothing between lives.
+ * The fast half: the whole delivery path is routed through the RPC port, in
+ * under a millisecond. It never proved anything a database has to prove, and
+ * since 083 it no longer has a budget to prove anything about either.
  *
  * The first test here is the one that matters most, and it is the one this
  * suite did not have when it first went green. `promptInternal` was proved
@@ -477,7 +457,7 @@ describe('B1 — the internal delivery seam still works', () => {
  * component's wiring are different tests, and only the second one finds a seam
  * that does not fit.
  */
-describe('B2 — the delivery path, over a fake RPC port', () => {
+describe('the delivery path, over a fake RPC port', () => {
   function service(pty: RecordingPty, rpc = new FakeDeliveryRpc()) {
     return {
       rpc,
@@ -519,36 +499,10 @@ describe('B2 — the delivery path, over a fake RPC port', () => {
     expect(rpc.statusOf(result.deliveryId!)).toBe('delivered');
   });
 
-  it('holds NO wake state: a rebuilt service does not mint a fresh allowance', async () => {
-    const rpc = new FakeDeliveryRpc();
-    const first = new W2ExecutionDeliveryService({
-      rpc,
-      pty: new RecordingPty() as never,
-      promptSettlement: fakePromptSettlement(),
-    });
-    for (const message of ['m1', 'm2']) {
-      expect((await deliver(first, message, IDS.session, 'x')).outcome).toBe('delivered');
-    }
-    expect(rpc.wakes).toBe(2);
-
-    // A new service over the same durable state — the in-process analogue of a
-    // restart. Two wakes remain, not four.
-    const ptyAfter = new RecordingPty();
-    const second = new W2ExecutionDeliveryService({
-      rpc,
-      pty: ptyAfter as never,
-      promptSettlement: fakePromptSettlement(),
-    });
-    expect((await deliver(second, 'm3', IDS.session, 'x')).outcome).toBe('delivered');
-    expect((await deliver(second, 'm4', IDS.session, 'x')).outcome).toBe('delivered');
-    expect(rpc.wakes).toBe(4);
-
-    const fifth = await deliver(second, 'm5', IDS.session, 'x');
-    expect(fifth).toMatchObject({ reserved: false, outcome: null });
-    // The refusal costs nothing: no claim, no settle, no bytes.
-    expect(ptyAfter.deliveries).toHaveLength(2);
-    expect(rpc.calls.filter((c) => c === 'claim')).toHaveLength(4);
-  });
+  // DELETED with 083: `holds NO wake state: a rebuilt service does not mint a
+  // fresh allowance`. Its whole subject was the durable four-wake budget — two
+  // wakes before a rebuild, two after, the fifth refused. There is no budget to
+  // hold state about, so there is nothing left for it to assert.
 
   it('a refusal settles failed_retryable and writes no bytes', async () => {
     const pty = new RecordingPty();

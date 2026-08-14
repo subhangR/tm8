@@ -582,7 +582,7 @@ describe.sequential('W2.NULL-PRINCIPAL — a NULL identity_id in the command led
     });
 
     // -------------------------------------------------------------------------
-    // THE ONE THAT IS NOT GATED.
+    // THE ONE THAT WAS NOT GATED — AND IS NOW GONE FROM THE SCHEMA.
     //
     // Found by asking, of every live function that calls internal.ledger_record,
     // whether an identity-requiring helper appears in its source BEFORE that
@@ -592,125 +592,54 @@ describe.sequential('W2.NULL-PRINCIPAL — a NULL identity_id in the command led
     // two of those (w2_complete_file_upload, w2_abort_file_upload) call
     // internal.w2_file_slot_for_identity (022:82) first, which itself does
     // require_space_member — so they ARE gated and the tool merely did not know
-    // the helper. That leaves one.
+    // the helper. That left exactly one:
     //
-    // public.reset_session_wake_budget_for_member_reply (015:1497) is granted to
-    // tm8_app (015:2178). Its FIRST branch — reply message not found, or its
-    // author is not a member entity — returns internal.ledger_record(...)
-    // DIRECTLY. internal.require_space_member is not reached until the line
-    // AFTER that return. So an identity-less caller passing any unknown uuid
-    // takes the ungated branch, records, and COMMITS.
+    //   public.reset_session_wake_budget_for_member_reply (015:1497), granted to
+    //   tm8_app at 015:2178. Its FIRST branch — reply message not found, or its
+    //   author not a member entity — returned internal.ledger_record(...)
+    //   DIRECTLY, with internal.require_space_member on the line AFTER. An
+    //   identity-less caller passing any unknown uuid took that branch, recorded,
+    //   and COMMITTED a NULL-principal ledger row. Measured here, not argued.
+    //
+    // THE MOVEMENT, because the movement is the finding:
+    //   PRE-033  — an unbound caller RECORDED a NULL-principal row and REPLAYED it.
+    //   POST-033 — the record still succeeded; the replay was refused 23514 by the
+    //              principal pin.
+    //   POST-037 — the caller was refused 28000 at an identity gate placed AHEAD
+    //              of the early return, so it never reached the ledger.
+    //   POST-083 — THE FUNCTION IS DROPPED. The wake budget it reset no longer
+    //              exists, so neither does the RPC, its grant to tm8_app, or the
+    //              branch. Two tests here drove that function to prove 037's gate;
+    //              they are DELETED rather than repointed at some other RPC,
+    //              because the gate is a property of THAT function's shape and a
+    //              substitute would be a new test wearing an old test's name.
+    //
+    // WHAT STILL HOLDS THE LINE. Removal is a stronger closure than a gate — the
+    // ungated call site is not refused, it is absent, and the enumeration above
+    // now finds ZERO ungated ledger_record callers rather than one. The outcome
+    // claim survives unweakened in the next test, which counts NULL-principal
+    // rows over the whole ledger after every probe in this block has run; and 033
+    // still stops any NULL-principal row being SERVED, whatever path produced it
+    // (CASE 5 in section 4, against a seeded row, is the only way to reach that
+    // half now that the application surface cannot mint one).
     // -------------------------------------------------------------------------
-    it('POST-037 CLOSED: the formerly ungated path now refuses an unbound caller', async () => {
-      const cmid = 'nullprin-ungated-wake-budget';
-      const outcome = await attempt(() =>
-        database.transaction(async (client) => {
-          await client.query('set local role tm8_app');
-          await client.query(
-            `select set_config('tm8.identity_id', '', true),
-                    set_config('tm8.actor_id', '', true),
-                    set_config('tm8.node_admin', 'false', true),
-                    set_config('tm8.request_id', 'nullprin-ungated', true)`,
-          );
-          // Control: the caller genuinely has no identity, so a row it records
-          // genuinely carries NULL rather than something that merely looks like it.
-          const bound = await client.query<{ bound: string | null }>(
-            `select internal.identity_id() bound`,
-          );
-          expect(bound.rows[0]!.bound, 'caller was NOT unbound — this probe is vacuous').toBeNull();
-          const result = await client.query<{ value: unknown }>(
-            `select public.reset_session_wake_budget_for_member_reply(
-                      '00000000-0000-4000-8000-0000000000ff'::uuid, $1) value`,
-            [cmid],
-          );
-          return result.rows[0]!.value;
-        }),
-      );
 
-      // 037 put an identity gate ahead of the early return, so the branch that
-      // used to record now refuses. 28000 is the unauthenticated code.
-      expect(
-        outcome.ok,
-        `the formerly ungated branch STILL commits a NULL-principal row: ${describeOutcome(outcome)}`,
-      ).toBe(false);
-      if (outcome.ok) return;
-      expect(outcome.code).toBe('28000');
-
-      // AND THE LEDGER IS UNCHANGED — the refusal wrote nothing.
-      expect(
-        await recordedIdentity(cmid),
-        'the refusal still left a ledger row behind',
-      ).toBeUndefined();
-    });
-
-    // THE COUNT, MEASURED. This is the reachability answer in one number. It is
-    // 1 — the ungated path above — and NOT 0. Every other unbound attempt in this
-    // describe block rolled back and contributed nothing, which is what makes
-    // this count attributable to that one path rather than to the probes at large.
+    // THE COUNT, MEASURED. This is the reachability answer in one number, and it
+    // is 0. Every unbound attempt in this describe block rolled back and
+    // contributed nothing, which is what makes the count attributable to the
+    // surface rather than to the probes at large.
     it('ZERO NULL-principal rows arise through the application surface', async () => {
       const rows = await ownerRows<{ client_mutation_id: string; operation: string }>(
         `select client_mutation_id, operation from public.command_ledger
           where identity_id is null order by client_mutation_id`,
       );
       // Pre-037 this was exactly one — 'nullprin-ungated-wake-budget', recorded
-      // through the ungated branch by a caller with no identity. It is now zero.
+      // through the ungated branch by a caller with no identity. 037 gated that
+      // branch and 083 deleted the function outright; it is zero.
       expect(
         rows.map((row) => row.client_mutation_id),
         'an unbound application caller still COMMITS a NULL-principal ledger row',
       ).toEqual([]);
-    });
-
-    // BOTH HALVES ARE NOW CLOSED, AND BY TWO INDEPENDENT GUARDS.
-    //
-    // The full history of this one call, because the movement is the finding:
-    //   PRE-033  — an unbound caller RECORDED a NULL-principal row and REPLAYED it.
-    //   POST-033 — the record still succeeded; the replay was refused 23514 by the
-    //              principal pin, which handled the NULL-vs-NULL cell explicitly
-    //              rather than inheriting `is distinct from` semantics.
-    //   POST-037 — the caller is now refused 28000 at an identity gate placed
-    //              AHEAD of the early return, so it never reaches the ledger at all.
-    //
-    // The two guards are independent and both still matter. 037 stops the row
-    // being written through THIS path; 033 stops any NULL-principal row being
-    // served, whatever path produced it. CASE 5 in section 4 still exercises the
-    // second half against a seeded row, which is the only way to reach it now that
-    // the application surface cannot mint one — so if a NULL row ever arises by
-    // some route this file has not found, it is still unreplayable.
-    it('POST-037: refused at the identity gate, before the ledger is reached', async () => {
-      const cmid = 'nullprin-ungated-wake-budget';
-      const outcome = await attempt(() =>
-        database.transaction(async (client) => {
-          await client.query('set local role tm8_app');
-          await client.query(
-            `select set_config('tm8.identity_id', '', true),
-                    set_config('tm8.actor_id', '', true),
-                    set_config('tm8.node_admin', 'false', true),
-                    set_config('tm8.request_id', 'nullprin-ungated-replay', true)`,
-          );
-          const result = await client.query<{ value: unknown }>(
-            `select public.reset_session_wake_budget_for_member_reply(
-                      '00000000-0000-4000-8000-0000000000ff'::uuid, $1) value`,
-            [cmid],
-          );
-          return result.rows[0]!.value;
-        }),
-      );
-      expect(
-        outcome.ok,
-        `an unbound caller was still served by this path: ${describeOutcome(outcome)}`,
-      ).toBe(false);
-      if (outcome.ok) return;
-      // 28000, not 23514: the identity gate fires FIRST now, so the principal pin
-      // is never reached on this path. That ordering is the point — the caller is
-      // stopped before the ledger, not after it.
-      expect(outcome.code).toBe('28000');
-
-      // Nothing was written, and nothing was left behind.
-      const rows = await ownerRows<{ count: string }>(
-        `select count(*) count from public.command_ledger where client_mutation_id = $1`,
-        [cmid],
-      );
-      expect(rows[0]!.count).toBe('0');
     });
   });
 

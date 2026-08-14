@@ -185,24 +185,58 @@ const REQUIRED_MIGRATIONS = [
 const APPLIED_MIGRATIONS: readonly string[] = migrationFiles();
 
 /**
- * Top-level objects a migration file declares, as `schema.name`.
+ * Every top-level mention of an object in one migration file, IN TEXT ORDER,
+ * as `schema.name` plus whether that mention creates it or drops it.
  *
  * Anchored at line start so `create ...` inside an indented dollar-quoted
  * function body is not mistaken for a declaration. Presence only, never
  * signature: 020:31 drops `public.undo_command(text, uuid)` and recreates the
  * name with a different signature, and that is not a truncated chain.
+ *
+ * DROPS ARE READ, NOT ASSUMED AWAY. A migration is allowed to REMOVE something
+ * an earlier one declared — 083 drops `public.session_wake_budgets`, its reset
+ * RPC, its eligibility refresh and its trigger function, because the wake
+ * budget is gone. Before that this parser only ever saw `create`, so "declared
+ * anywhere in the chain" and "present at the end of the chain" were the same
+ * set and the difference never had to be named. They are not the same set, and
+ * the honest expectation is the one the chain's own text states LAST.
+ *
+ * Deriving the removals from the text keeps both sides of this comparison
+ * MECHANICALLY INDEPENDENT, which is the whole reason the file replaced the
+ * check above. A hand-listed exception array would have made the expectation
+ * partly hand-written — the exact defect this instrument exists to catch.
+ */
+interface ObjectMention {
+  readonly object: string;
+  readonly present: boolean;
+  readonly at: number;
+}
+
+function objectMentions(sql: string): ObjectMention[] {
+  const patterns: Array<[RegExp, boolean]> = [
+    [/^create\s+table\s+(?:if\s+not\s+exists\s+)?([a-z_]+)\.([a-z0-9_]+)/gim, true],
+    [/^create\s+(?:or\s+replace\s+)?(?:materialized\s+)?view\s+([a-z_]+)\.([a-z0-9_]+)/gim, true],
+    [/^create\s+(?:or\s+replace\s+)?function\s+([a-z_]+)\.([a-z0-9_]+)/gim, true],
+    [
+      /^drop\s+(?:table|(?:materialized\s+)?view|function)\s+(?:if\s+exists\s+)?([a-z_]+)\.([a-z0-9_]+)/gim,
+      false,
+    ],
+  ];
+  const mentions: ObjectMention[] = [];
+  for (const [pattern, present] of patterns) {
+    for (const match of sql.matchAll(pattern)) {
+      mentions.push({ object: `${match[1]}.${match[2]}`, present, at: match.index });
+    }
+  }
+  return mentions.sort((a, b) => a.at - b.at);
+}
+
+/**
+ * Top-level objects a migration file DECLARES, as `schema.name`. Drop-only
+ * mentions are not declarations.
  */
 function declaredObjects(sql: string): string[] {
-  const patterns = [
-    /^create\s+table\s+(?:if\s+not\s+exists\s+)?([a-z_]+)\.([a-z0-9_]+)/gim,
-    /^create\s+(?:or\s+replace\s+)?(?:materialized\s+)?view\s+([a-z_]+)\.([a-z0-9_]+)/gim,
-    /^create\s+(?:or\s+replace\s+)?function\s+([a-z_]+)\.([a-z0-9_]+)/gim,
-  ];
-  const found = new Set<string>();
-  for (const pattern of patterns) {
-    for (const match of sql.matchAll(pattern)) found.add(`${match[1]}.${match[2]}`);
-  }
-  return [...found];
+  return [...new Set(objectMentions(sql).filter((m) => m.present).map((m) => m.object))];
 }
 
 const OWNER_IDENTITY = 'w2-sec1b-owner';
@@ -343,7 +377,34 @@ describe.sequential('W2.SEC-1b ledger_replay principal pin', () => {
   // 0. FIXTURE INTEGRITY — structural, never an exact count.
   // ---------------------------------------------------------------------------
   describe('fixture', () => {
-    /** Every object the chain's FILE TEXT declares but the DATABASE does not have. */
+    /**
+     * Objects the chain declares and then DELIBERATELY REMOVES — those whose
+     * LAST top-level mention across the whole chain, in official order, is a
+     * `drop` rather than a `create`.
+     *
+     * Order matters on both axes and both are load-bearing. `020` drops
+     * `public.undo_command` and recreates it under a different signature
+     * further down the SAME file, so text order inside a file counts; `083`
+     * drops what `015` and `037` created, so file order counts.
+     */
+    const REMOVED_BY_CHAIN: ReadonlySet<string> = (() => {
+      const state = new Map<string, boolean>();
+      for (const file of APPLIED_MIGRATIONS) {
+        for (const mention of objectMentions(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'))) {
+          state.set(mention.object, mention.present);
+        }
+      }
+      return new Set([...state].filter(([, present]) => !present).map(([object]) => object));
+    })();
+
+    /**
+     * Every object the chain's FILE TEXT declares — and does not later drop —
+     * but the DATABASE does not have.
+     *
+     * Attribution stays PER FILE, not per object: an object created in 031 and
+     * `create or replace`d in 040 is reported against both, which is what lets
+     * the red half below name the migration whose objects went missing.
+     */
     function missingFromCatalog(present: ReadonlySet<string>): {
       missing: string[];
       expectedCount: number;
@@ -352,6 +413,7 @@ describe.sequential('W2.SEC-1b ledger_replay principal pin', () => {
       let expectedCount = 0;
       for (const file of APPLIED_MIGRATIONS) {
         for (const object of declaredObjects(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'))) {
+          if (REMOVED_BY_CHAIN.has(object)) continue;
           expectedCount += 1;
           if (!present.has(object)) missing.push(`${file} -> ${object}`);
         }

@@ -22,10 +22,50 @@ import {
 // every `it` in the file. Precedent: test/integration/inbox.test.ts:39.
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
+/**
+ * ⚠ THIS SUITE IS PINNED AT CHAIN POSITION 019 — it applies 001-019 and stops.
+ *
+ * So the WAKE BUDGET IS STILL LIVE in every scratch database this file builds,
+ * even though migration `083` removed it from the system. That is why
+ * `asDelivery` binds `tm8.delivery_pair_budget_version`, and why reserve/claim/
+ * settle thread `pair_budget_version` through: at 019 those are required, and
+ * `claim_session_message_delivery` raises `delivery reservation not found` when
+ * the version does not match. MEASURED, not assumed — removing the binding and
+ * passing `null` here turns that test red with exactly that message.
+ *
+ * DO NOT "clean up" the budget references below, and do not read them as
+ * evidence that the cap still exists. The rule: A FULL-CHAIN SUITE ASSERTS
+ * PRESENT SYSTEM BEHAVIOUR; A POSITION-PINNED SUITE ASSERTS THAT POSITION.
+ * `test/db/w2-execution.pg.test.ts` applies `migrationFiles()` whole and is
+ * where the cap's removal is proved; `test/db/w1-foundations.test.ts` carries
+ * the same fence at position 015.
+ */
 const REQUIRED_G04_SLICE = Array.from({ length: 19 }, (_, index) =>
   `${String(index + 1).padStart(3, '0')}_`,
 );
 
+/**
+ * ⚠ POSITION-PINNED FIXTURE. Suites built on this assert CHAIN POSITION 019,
+ * not present system behaviour. READ THIS BEFORE "CLEANING" ANY TEST THAT USES
+ * IT: a later migration's removal never reaches these suites, so an assertion
+ * about a feature the system no longer has is CORRECT here, not stale.
+ * (R15 / R15b, 2026-08-07.)
+ *
+ * Greenness cannot classify a suite. After a removal, a green pg suite is
+ * EITHER pinned below the change (leave it) OR full-chain and passing vacuously
+ * (fix it) — opposite edits, and only this returned file list tells them apart.
+ * Reference counts and grep hits are non-evidence for that question.
+ *
+ * THIS ONE HAS BEEN PROVED THE HARD WAY. `083` removed the wake budget; the
+ * budget references in this file were "cleaned" on the theory that they were
+ * stale, and the suite went RED with `delivery reservation not found`, because
+ * at position 019 `claim_session_message_delivery` genuinely compares
+ * `pair_budget_version`. Reverted. The sibling pin is `w1MigrationFiles()`
+ * (015, three byte-identical copies); the full-chain suite where 083's removal
+ * IS proved is `w2-execution.pg.test.ts`.
+ *
+ * EXPORTED, so the blast radius of a careless edit is not only this file.
+ */
 export function explicitG04Migrations(): string[] {
   const files = migrationFiles();
   return REQUIRED_G04_SLICE.map((prefix) => {

@@ -20,6 +20,23 @@ const DELIVERY_FUNCTIONS = [
   'settle_session_message_delivery',
 ] as const;
 
+/**
+ * ⚠ POSITION-PINNED FIXTURE. Suites built on this assert CHAIN POSITION 015,
+ * not present system behaviour. READ THIS BEFORE "CLEANING" ANY TEST THAT USES
+ * IT: a later migration's removal never reaches these suites, so an assertion
+ * about a feature the system no longer has is CORRECT here, not stale.
+ * (R15 / R15b, 2026-08-07.)
+ *
+ * Greenness cannot classify a suite. After a removal, a green pg suite is
+ * EITHER pinned below the change (leave it) OR full-chain and passing vacuously
+ * (fix it) — opposite edits, and only this `.apply(...)`/copy argument tells
+ * them apart. Reference counts and grep hits are non-evidence for that question.
+ *
+ * THIS IS ONE OF THREE BYTE-IDENTICAL COPIES of this pin —
+ * `w1-foundations.test.ts` and `w2-migration-order.pg.test.ts` hold the others,
+ * and each is fenced separately because a cleanup lane reaches whichever file it
+ * happened to open. Editing one does not warn the next reader about the rest.
+ */
 function w1MigrationFiles(): string[] {
   const files = migrationFiles();
   const tail = files.indexOf('015_w1_foundations.sql');
