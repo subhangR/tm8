@@ -161,11 +161,24 @@ class FakeDeliveryRpc implements W2DeliveryRpcPort {
   readonly calls: string[] = [];
   /** The durable counter, deliberately owned by the "database", not the service. */
   wakes = 0;
+  /**
+   * Message ids this "database" reserves as already-settled.
+   *
+   * Used to be a `wakes >= 4` cap standing in for `automated_wake_limit`.
+   * Migration `120` removed that refusal from the schema, so a fake that still
+   * produced it would be modelling a database that no longer exists. The TS
+   * behaviour under test never depended on WHICH refusal it was — the service
+   * returns null for ANY non-pending reservation and stops there — so the
+   * trigger moved to a reason the schema still writes (`session_not_live`,
+   * an exited or failed target) and the coverage is unchanged.
+   */
+  readonly refuse = new Set<string>();
+
   private readonly rows = new Map<string, StoredDelivery>();
 
   async reserve(lease: DeliveryPrincipalLease, attemptNo: number): Promise<StoredDelivery> {
     this.calls.push('reserve');
-    if (this.wakes >= 4) {
+    if (this.refuse.has(lease.messageId)) {
       const refused: StoredDelivery = {
         deliveryId: lease.deliveryId,
         messageId: lease.messageId,
@@ -173,7 +186,7 @@ class FakeDeliveryRpc implements W2DeliveryRpcPort {
         status: 'failed_permanent',
         attemptNo,
         pairBudgetVersion: this.wakes,
-        failureReason: 'automated_wake_limit',
+        failureReason: 'session_not_live',
       };
       this.rows.set(lease.deliveryId, refused);
       return refused;
@@ -519,7 +532,7 @@ describe('B2 — the delivery path, over a fake RPC port', () => {
     expect(rpc.statusOf(result.deliveryId!)).toBe('delivered');
   });
 
-  it('holds NO wake state: a rebuilt service does not mint a fresh allowance', async () => {
+  it('holds NO wake state: the counter lives in the database and the service never caps', async () => {
     const rpc = new FakeDeliveryRpc();
     const first = new W2ExecutionDeliveryService({
       rpc,
@@ -532,22 +545,31 @@ describe('B2 — the delivery path, over a fake RPC port', () => {
     expect(rpc.wakes).toBe(2);
 
     // A new service over the same durable state — the in-process analogue of a
-    // restart. Two wakes remain, not four.
+    // restart. The count continues; it is not this object's to reset.
     const ptyAfter = new RecordingPty();
     const second = new W2ExecutionDeliveryService({
       rpc,
       pty: ptyAfter as never,
       promptSettlement: fakePromptSettlement(),
     });
-    expect((await deliver(second, 'm3', IDS.session, 'x')).outcome).toBe('delivered');
-    expect((await deliver(second, 'm4', IDS.session, 'x')).outcome).toBe('delivered');
-    expect(rpc.wakes).toBe(4);
+    for (const message of ['m3', 'm4', 'm5', 'm6']) {
+      expect((await deliver(second, message, IDS.session, 'x')).outcome).toBe('delivered');
+    }
+    // Straight past four. Since 120 nothing in this seam or under it caps a
+    // pair, and a process-local counter reappearing here would show as a
+    // refusal on the fifth.
+    expect(rpc.wakes).toBe(6);
+    expect(ptyAfter.deliveries).toHaveLength(4);
 
-    const fifth = await deliver(second, 'm5', IDS.session, 'x');
-    expect(fifth).toMatchObject({ reserved: false, outcome: null });
-    // The refusal costs nothing: no claim, no settle, no bytes.
-    expect(ptyAfter.deliveries).toHaveLength(2);
-    expect(rpc.calls.filter((c) => c === 'claim')).toHaveLength(4);
+    // What the service must STILL do with a reservation the database settled
+    // itself: return null and stop — no claim, no settle, no bytes. This is
+    // the branch `automated_wake_limit` used to be the headline example of;
+    // `session_not_live` is now the one that reaches it.
+    rpc.refuse.add('m7');
+    const refused = await deliver(second, 'm7', IDS.session, 'x');
+    expect(refused).toMatchObject({ reserved: false, outcome: null });
+    expect(ptyAfter.deliveries).toHaveLength(4);
+    expect(rpc.calls.filter((c) => c === 'claim')).toHaveLength(6);
   });
 
   it('a refusal settles failed_retryable and writes no bytes', async () => {

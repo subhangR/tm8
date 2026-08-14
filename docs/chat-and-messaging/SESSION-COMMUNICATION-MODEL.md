@@ -219,6 +219,28 @@ This separates “the persona executing the process” from “the Teammates res
 
 ## 8. Direct live delivery
 
+> ### ➕ WHICH SESSIONS A MESSAGE REACHES — amended 2026-08-14 by migration `121`
+>
+> §8 was written for the case its first line names: a message **anchored on a work session**. `public.w2_record_session_message_routes` has since grown the full list, and it is now four classes, not one:
+>
+> | class | target | source recorded on the route |
+> |---|---|---|
+> | **anchor** (072) | the anchor itself, when it is a `work_session` | the conversation anchor |
+> | **reply** (076) | `authored_from(parent)` — the session being answered | the reply's anchor |
+> | **mention** (099) | work sessions the caller names (`pokeSessionIds`) | the conversation anchor |
+> | **task** (121) | live work sessions with a `working_on` edge to the message's **task** anchor | the task, and the message on it |
+>
+> The task class is what makes `tm8 message send --to <task-id>` reach anybody. Before `121` a message on a task produced **zero** routes: durable, counted, and silent — the one address everyone working a task shares was the one address that did not route.
+>
+> Its narrowings, each deliberate:
+>
+> * **`working_on`, not `assigned_to`.** A wake has to reach a *process*; `working_on` hangs off a work session and names one, `assigned_to` hangs off a Teammate and names a person. An assignee with no live session gets the ordinary inbox notification it already got.
+> * **Live sessions only** (`spawning`/`running`/`idle`). A task accumulates every session that ever touched it; unfiltered, each message would reserve a delivery per dead session, each settling `session_not_live` with its own fallback.
+> * **Never the authoring session** — §5 item 5, which already anticipated task anchors, applied at the routing layer because here the self-hit is the common case rather than the corner.
+> * **Yields to the other three classes**, so one batch never wakes one session twice.
+>
+> Delivery itself is unchanged: task routes are dispatched by the same loop, over the same reserve/claim/settle RPCs, with the same fallback union, as every other session copy. `addressingKind` is `anchored_message`, which is an existing value.
+
 ### 8.1 Public semantics
 
 After a work-session-anchored message commits:
@@ -364,6 +386,20 @@ When a work session responds:
 4. `--notify-source live` may additionally attempt delivery to the parent's Server-derived `authored_from` session when live; the replying client never supplies a hidden destination;
 5. a message is never delivered into the same work session that authored it, regardless of whether its anchor is that session, a task, or any other entity;
 6. non-live or non-delivered live-wake attempts use the normal fallback union.
+
+> ### ⚠ THE CAP DESCRIBED BELOW WAS REMOVED — 2026-08-14, by migration `120`
+>
+> Everything from here to the end of §10 describes the **agent wake budget**, and the *cap* half of it no longer exists. `120_remove_agent_wake_budget.sql` deleted the `automated_wake_limit` refusal from `public.reserve_session_message_delivery` and dropped `check(consecutive_agent_wakes between 0 and 4)`. **A session may now wake another session as many times as the work needs.** The adopted text is kept verbatim below because it is the record of what was adopted; read it as history, not as behaviour.
+>
+> What is still true, and is load-bearing:
+>
+> * `session_wake_budgets` still exists, is still created-or-locked per unordered pair, and still increments `consecutive_agent_wakes` and `version` in the same transaction that reserves the delivery. `version` is the optimistic pin threaded through reserve → claim → settle and asserted by `internal.require_delivery_principal`; it did not become optional when the cap went away.
+> * `consecutive_agent_wakes` is now **telemetry** — unbounded, governs nothing, still the number to read when a loop is suspected.
+> * `reset_session_wake_budget_for_member_reply` still resets the counter and still bumps `version`. It no longer unblocks anything, because nothing is blocked.
+> * `automated_wake_limit` remains a valid `failure_reason` in the contract and the UI reason map: rows written before `120` still carry it and must still render. Nothing writes it any more.
+> * The self-delivery rule (item 5 above) is **not** part of the cap and did not go with it. A session is still never handed its own message.
+>
+> §14.2 acceptance case 26 and §13 amendment 13 are historical for the same reason.
 
 This produces a durable conversation thread without making an agent ping-pong loop the default. Every Teammate-authored live delivery is bounded—including a new top-level `message send`, an ordinary reply, and an explicit source-session wake. The budget is universal per unordered source/target work-session pair; a new message or thread root cannot obtain a fresh allowance. At most four consecutive Teammate-authored live reservations are allowed. A Member-authored reply resets a pair only when immutable parent/delivery provenance identifies exactly one source/target work-session pair; the Server derives that pair and locks its row in the same transaction. A top-level or ambiguous Member message has no pair-reset effect and cannot name a reset pair in client input.
 

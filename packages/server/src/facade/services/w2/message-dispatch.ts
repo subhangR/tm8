@@ -123,10 +123,14 @@ export async function dispatchSessionMessages(options: DispatchOptions): Promise
       });
 
     try {
-      // Rendered twice on purpose: the budget must be checked against the real
+      // Rendered twice on purpose: the size must be checked against the real
       // envelope, but the real envelope needs a delivery id that only exists
-      // after reserving — and reserving a message that cannot fit would burn a
-      // budget slot on something that will never be written.
+      // after reserving — and reserving a message that cannot fit would write a
+      // durable reservation for something that will never reach a terminal.
+      //
+      // `rollingControlMaxBytes` is NOT the wake budget and did not go with it
+      // (migration 120). It is the target session's own interaction-profile
+      // prompt policy: one envelope's ceiling, not a count of deliveries.
       const preview = render(PREVIEW_DELIVERY_ID);
       if (utf8Bytes(preview) > route.rollingControlMaxBytes) continue;
       const reservation = await delivery.reserve({

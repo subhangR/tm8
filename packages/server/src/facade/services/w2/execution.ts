@@ -16,15 +16,29 @@
  * blocklist of caller shapes: the positive half is unforgeable, so the negative
  * half does not have to enumerate anything.
  *
- * B2 — one durable unordered pair budget per Teammate-authored live delivery.
+ * B2 — one durable unordered pair record per Teammate-authored live delivery.
  * Nothing in this file counts wakes. That is deliberate and it is the whole
- * design: `public.reserve_session_message_delivery` (015 §7) derives the pair
- * with `least()/greatest()`, takes `for update` on the pair row, refuses the
- * fifth consecutive attempt as `failed_permanent`/`automated_wake_limit`, and
- * bumps `version`. A process-local counter here would be a SECOND budget that
- * a restart resets — which is precisely what "DURABLE" forbids. So this file's
- * B2 responsibility is narrow and total: hold NO wake state, and route every
- * reservation through the RPC so the count survives this process.
+ * design: `public.reserve_session_message_delivery` derives the pair with
+ * `least()/greatest()`, takes `for update` on the pair row, increments
+ * `consecutive_agent_wakes` and bumps `version`. A process-local counter here
+ * would be a SECOND copy of that state that a restart resets — which is
+ * precisely what "DURABLE" forbids. So this file's B2 responsibility is narrow
+ * and total: hold NO wake state, and route every reservation through the RPC so
+ * the count survives this process.
+ *
+ * THE CAP THIS PARAGRAPH USED TO DESCRIBE IS GONE — migration `120`, 2026-08-14.
+ * Until then the same RPC refused the fifth consecutive attempt on a pair as
+ * `failed_permanent`/`automated_wake_limit`, and that refusal was the reason
+ * the count existed. `120` deleted the refusal branch and dropped the 0..4
+ * check; a session may now wake another as many times as the work needs.
+ *
+ * What did NOT change, and is the reason none of the code below moved: the pair
+ * row is still created, still locked, and still versioned on every reservation,
+ * because `version` is the optimistic pin threaded through reserve → claim →
+ * settle and asserted by `internal.require_delivery_principal`. The count is
+ * now telemetry. `reserve()` still returns null for a non-pending reservation —
+ * that path is live, it is just reached by `session_not_live` now rather than
+ * by a budget refusal.
  *
  * WHY A SECOND DATABASE CONNECTION EXISTS IN THIS FILE.
  * `internal.require_delivery_principal` demands `session_user` or `role` be
@@ -593,9 +607,10 @@ export interface W2DeliveryReservationIntent extends MessageDeliveryReservationI
  * `refused` maps to `failed_retryable` rather than `failed_permanent`: the
  * refusals this path produces (no live terminal, a full delivery queue) are
  * conditions of the moment, and marking them permanent would suppress the
- * retry the message deserves. The ONE permanent refusal in this design is the
- * wake-limit one, and 015 writes it itself at reservation time — this server
- * never gets to decide it, which is the point.
+ * retry the message deserves. The permanent refusal in this design is the one
+ * SQL writes for itself at reservation time (`session_not_live`, for an exited
+ * or failed target) — this server never gets to decide it, which is the point.
+ * The wake-limit refusal used to be the other one; `120` removed it.
  */
 function settlementFor(outcome: W2DeliveryOutcome): {
   status: DeliverySettlementStatus;
@@ -672,13 +687,18 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
   }
 
   /**
-   * Reserve one attempt against the DURABLE pair budget.
+   * Reserve one attempt, charging the DURABLE pair record.
    *
-   * Returns `null` — never an error, never a byte — when 015 refuses. The
-   * refusal it produces is `failed_permanent`/`automated_wake_limit` on the
-   * fifth consecutive Teammate wake of the same unordered pair, and it arrives
-   * as a settled row rather than an exception because the reservation IS the
-   * record of the refusal.
+   * Returns `null` — never an error, never a byte — when SQL hands back a
+   * reservation it has already settled, which arrives as a settled row rather
+   * than an exception because the reservation IS the record of the refusal.
+   *
+   * Since `120` the only refusal that reaches here is
+   * `failed_permanent`/`session_not_live` for an exited or failed target; the
+   * `automated_wake_limit` one this branch was built for no longer exists. The
+   * branch is NOT dead and must not be narrowed to that single reason — it is
+   * the general "the database settled it, do not touch the terminal" guard, and
+   * every future reservation-time refusal arrives through it.
    */
   async reserve(intent: W2DeliveryReservationIntent): Promise<ReservedMessageDelivery | null> {
     const attemptNo = intent.attemptNo ?? 1;

@@ -523,7 +523,16 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // from 104 (its author's base) because 104 is already claimed by
     // chat_threads_and_message_parts — same rule as every entry above.
     // MEASURED: `ls db/migrations/*.sql | wc -l` = 110.
-    expect(server.appliedMigrations.length).toBe(110);
+    // 110 -> 112 on 2026-08-14: TWO files in one lane — 120 removes the agent
+    // wake budget's cap, 121 adds the task-anchor fan-out class to
+    // w2_record_session_message_routes. Kept as two because they are two
+    // concerns with two blast radii and each has to be revertible on its own,
+    // not because the lane needed two numbers. Both take numbers ABOVE 119, the
+    // highest applied file on main when this was written — the rule every entry
+    // above restates, and the one the sorted-order assertion below is the only
+    // thing that can catch on a live deployment.
+    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 112.
+    expect(server.appliedMigrations.length).toBe(112);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

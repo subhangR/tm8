@@ -634,6 +634,8 @@ Every outcome except `failed_retryable` is terminal. The same mutation/delivery 
 
 Every Teammate-authored live send/reply reserves against one durable **unordered work-session pair** budget:
 
+> **⚠ THE CAP BELOW WAS REMOVED — 2026-08-14, by migration `120`.** The `check(consecutive_agent_wakes between 0 and 4)` was dropped and the `automated_wake_limit` refusal deleted from `public.reserve_session_message_delivery`; a session may now wake another as many times as the work needs. The table, the pair lock and `version` all remain (`version` is the reserve → claim → settle pin), and the counter is now telemetry. `SESSION-COMMUNICATION-MODEL.md` §10 carries the full note. The design text below is kept as the record of what was adopted.
+
 ```sql
 session_wake_budgets(
   low_work_session_id, high_work_session_id,

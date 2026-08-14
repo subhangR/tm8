@@ -478,9 +478,31 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
     }
   }, 60_000);
 
-  // -- B2: the restart proof --------------------------------------------------
+  // -- B2 after 120: the counter is durable, and it no longer gates -----------
 
-  it('SURVIVES A PROCESS RESTART: a fresh process does not mint a fresh allowance', async () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * THIS TEST CHANGED SIDES — 2026-08-14, by migration `120`.
+   *
+   * It used to be the restart proof for the CAP: five and six were refused as
+   * `failed_permanent`/`automated_wake_limit`, and a restart at the limit did
+   * not hand out a fresh allowance. `120` removed that cap, so the refusal it
+   * asserted no longer exists and asserting it would pin behaviour the schema
+   * has deliberately dropped.
+   *
+   * What it still has to prove is the half that DID survive, and it is the
+   * half that is easy to lose by accident. `consecutive_agent_wakes` is still
+   * counted and `version` is still bumped, per pair, in the same transaction
+   * that reserves the delivery — because `version` is the optimistic pin
+   * threaded through reserve -> claim -> settle and asserted by
+   * `internal.require_delivery_principal`. A "cleanup" that stopped writing the
+   * pair row along with the cap would take the pin with it, and the failure
+   * would surface as claims that cannot find their reservation, not as a
+   * missing counter. So: a restart still shares one durable pair row, the count
+   * still continues across it, and it now walks straight past four.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  it('the pair counter is still durable across a restart — and no longer refuses at four', async () => {
     const source = await newSession(database, fx, 'G11 restart source');
     const target = await newSession(database, fx, 'G11 restart target');
     const messages: string[] = [];
@@ -504,38 +526,42 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
     try {
       expect(second.pty.bytes).toBe(0);
 
-      // A fresh allowance would let all four through. The budget continues, so
-      // exactly two remain.
+      // The count CONTINUES across the restart. A process-local counter would
+      // read 2 here instead of 4 — which is the property 120 had to preserve
+      // while removing the thing the count used to feed.
       expect((await deliver(second, messages[2]!, target, 'three')).outcome).toBe('delivered');
       expect((await deliver(second, messages[3]!, target, 'four')).outcome).toBe('delivered');
       expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 4 });
 
-      // The fifth is refused, and refused BEFORE any byte: `reserve` returns
-      // null, so nothing is minted, claimed or written.
-      const bytesAtLimit = second.pty.bytes;
-      const fifth = await deliver(second, messages[4]!, target, 'five');
-      expect(fifth).toEqual({ reserved: false, outcome: null });
-      expect(second.pty.bytes).toBe(bytesAtLimit);
-      expect(second.pty.deliveries).toHaveLength(2);
+      // THE FIFTH. This is the assertion 120 inverted. It delivers, it writes
+      // real bytes, and the counter walks past the boundary the dropped CHECK
+      // used to hold it at — proving both halves of the cap are gone, not just
+      // the branch. A chain that dropped the branch and kept
+      // `session_wake_budgets_consecutive_agent_wakes_check` would fail HERE,
+      // with a 23514 out of the UPDATE rather than a settled refusal.
+      const bytesAtFour = second.pty.bytes;
+      expect((await deliver(second, messages[4]!, target, 'five')).outcome).toBe('delivered');
+      expect(second.pty.bytes).toBeGreaterThan(bytesAtFour);
+      expect(second.pty.deliveries).toHaveLength(3);
+      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 5 });
 
-      const refused = (await database.query<{ status: string; failure_reason: string }>(
-        `select status, failure_reason from public.session_message_deliveries
-          where message_id = $1 and target_work_session_id = $2`,
-        [messages[4]!, target],
-      ))[0]!;
-      expect(refused).toEqual({
-        status: 'failed_permanent',
-        failure_reason: 'automated_wake_limit',
-      });
+      // And NO row anywhere in this pair's history was ever refused for the
+      // reason that no longer exists.
+      const refusals = await database.query<{ n: string }>(
+        `select count(*)::text n from public.session_message_deliveries
+          where failure_reason = 'automated_wake_limit'`,
+      );
+      expect(refusals[0]!.n).toBe('0');
 
-      // ── and once more, to close the loophole a restart-at-the-limit would be ──
+      // ── once more across a restart, well past the old ceiling ──
       await second.shutdown();
       const third = boot(deliveryUrl, [target]);
       try {
-        const afterRestartAtLimit = await deliver(third, messages[5]!, target, 'six');
-        expect(afterRestartAtLimit).toEqual({ reserved: false, outcome: null });
-        expect(third.pty.bytes).toBe(0);
-        expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 4 });
+        expect((await deliver(third, messages[5]!, target, 'six')).outcome).toBe('delivered');
+        expect(third.pty.bytes).toBeGreaterThan(0);
+        expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 6 });
+        // Still ONE row: unbounded wakes, not unbounded pairs.
+        expect(await budgetRowCount(source, target)).toBe(1);
       } finally {
         await third.shutdown();
       }
