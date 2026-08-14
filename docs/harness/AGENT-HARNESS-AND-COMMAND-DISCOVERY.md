@@ -718,6 +718,10 @@ A reply:
 - otherwise surfaces in the authoritative teammate inbox;
 - never creates a parallel “session inbox.”
 
+> **⚠ THE FIFTH-ATTEMPT REFUSAL BELOW WAS REMOVED — 2026-08-14, by migration `120`.** There is no cap on how often one session may wake another. The pair row, its lock and its `version` remain (that version is the reserve → claim → settle pin), and `consecutive_agent_wakes` is now telemetry. Nothing writes `automated_wake_limit` any more. See `SESSION-COMMUNICATION-MODEL.md` §10. Acceptance case **M10** below is historical for the same reason.
+>
+> **➕ AND A MESSAGE ON A TASK NOW ROUTES — migration `121`.** Live sessions with a `working_on` edge to a task anchor are delivered that message, so `message send --to <task-id>` reaches the sessions working the task instead of landing silently. See `SESSION-COMMUNICATION-MODEL.md` §8.
+
 Every Teammate-authored live reservation—top-level send, reply, or explicit source wake—uses the same durable unordered session-pair budget. The key contains no thread root. The row is locked before the delivery row. A Member-authored reply resets exactly one pair only when immutable parent/delivery provenance identifies it; top-level or ambiguous Member messages reset none and cannot supply a pair key. Each retry consumes another unit. On the fifth consecutive Teammate attempt, the Server records `failed_permanent` with `details.reason='automated_wake_limit'`, creates inbox fallback, and writes zero PTY bytes. Cleanup is allowed only after both sessions are terminal and no pending/dispatching delivery references the pair.
 
 ### 12.3 Participant routing

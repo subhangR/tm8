@@ -428,6 +428,13 @@ export class W2MessagesHandoffsService {
         input.actorId ?? null,
         input.clientMutationId,
       ]);
+      // FOUR target classes come back from here, not one: the anchor when it
+      // IS a work_session (072), the session being answered (076), the caller's
+      // explicit pokes (099), and — since 121 — every LIVE session with a
+      // `working_on` edge to a TASK this batch is anchored on. That last one is
+      // what makes `message send --to <task-id>` reach anybody; before it, a
+      // message on a task returned zero routes and woke nobody. The class is
+      // entirely inside the RPC, which is why nothing here changed for it.
       const routeResult = await q.rpc<SessionReplyRoute[]>('w2_record_session_message_routes', [
         result.messageIds,
         input.replyToMessageId ? anchorIds[0] : input.conversationAnchorId ?? null,
