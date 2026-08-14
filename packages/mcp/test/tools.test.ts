@@ -18,16 +18,23 @@ class RecordingTransport implements CatalogTransport {
   }
 }
 
-describe('hierarchical tool curation', () => {
-  it('publishes exactly the five ruled top-level tools', () => {
+describe('tool curation', () => {
+  it('publishes the five graph groups and the full direct surface', () => {
     expect(TM8_MCP_TOOLS.map((tool) => tool.name)).toEqual([...MCP_TOOL_NAMES]);
-    expect(MCP_TOOL_NAMES).toEqual([
+    expect(MCP_TOOL_NAMES.slice(0, 5)).toEqual([
       'tm8_overview',
       'tm8_read',
       'tm8_act',
       'tm8_delegate',
       'tm8_messages',
     ]);
+    expect(MCP_TOOL_NAMES).toContain('repo_read_file');
+    expect(MCP_TOOL_NAMES).toContain('session_transcript');
+    expect(MCP_TOOL_NAMES).toContain('doc_create');
+    expect(MCP_TOOL_NAMES).toContain('web_search');
+    expect(MCP_TOOL_NAMES).toContain('memory_search');
+    expect(MCP_TOOL_NAMES).toContain('git_diff');
+    expect(MCP_TOOL_NAMES).toContain('repo_multi_edit');
   });
 
   it('maps every next-level operation to the closed catalog without adding a row', () => {
@@ -79,7 +86,7 @@ describe('hierarchical tool curation', () => {
 
   it('mints a mutation id for operations whose frozen body requires one', async () => {
     const transport = new RecordingTransport();
-    await new Tm8ToolRouter(transport).call('tm8_messages', {
+    await new Tm8ToolRouter(transport, { mode: 'build' }).call('tm8_messages', {
       operation: 'messages.post',
       body: {
         anchorIds: ['019fa297-64e3-7000-8000-000000000001'],
@@ -95,7 +102,7 @@ describe('hierarchical tool curation', () => {
 
   it('refuses an operation outside the selected group before transport', async () => {
     const transport = new RecordingTransport();
-    const result = await new Tm8ToolRouter(transport).call('tm8_act', {
+    const result = await new Tm8ToolRouter(transport, { mode: 'build' }).call('tm8_act', {
       operation: 'credentials.status',
     });
 
@@ -113,7 +120,7 @@ describe('hierarchical tool curation', () => {
 
   it('searches the local hierarchy without exposing credential operations', async () => {
     const transport = new RecordingTransport();
-    const result = await new Tm8ToolRouter(transport).call('tm8_overview', { query: 'delegate work' });
+    const result = await new Tm8ToolRouter(transport, { mode: 'orchestrate' }).call('tm8_overview', { query: 'delegate work' });
     const matches = result.structuredContent.matches as Array<{ operation: string }>;
 
     expect(matches.some((match) => match.operation === 'execution.dispatch')).toBe(true);

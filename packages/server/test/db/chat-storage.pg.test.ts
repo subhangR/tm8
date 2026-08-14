@@ -115,13 +115,14 @@ async function post(
 async function configure(identityId: string, authKind: 'browser' | 'agent', mutationId: string) {
   return asIdentity(identityId, authKind, async (client) => (
     await client.query<{ result: Record<string, unknown> }>(
-      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8) result`,
+      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8,$9) result`,
       [
         rootMessageId,
         fixture.teammateId,
         'gpt-5.6-sol',
         'openai',
         'codex',
+        'ask',
         randomUUID(),
         `/tmp/tm8-chat-${rootMessageId}`,
         mutationId,
@@ -175,6 +176,7 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
         anchorId: fixture.anchorId,
         teammateId: fixture.teammateId,
         model: 'gpt-5.6-sol',
+        mode: 'ask',
         lastReplyAt: null,
       },
     });
@@ -235,6 +237,14 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
       )).rows[0]!.result;
       expect(replay).toEqual(first);
       await client.query(
+        `select public.append_chat_message_part($1,1,'tool_call',$2::jsonb)`,
+        [agentMessageId, JSON.stringify({ id: 'call-1', name: 'repo_read_file', args: { path: 'README.md' }, state: 'running' })],
+      );
+      await client.query(
+        `select public.append_chat_message_part($1,2,'tool_call',$2::jsonb)`,
+        [agentMessageId, JSON.stringify({ id: 'call-1', name: 'repo_read_file', args: { path: 'README.md' }, state: 'completed' })],
+      );
+      await client.query(
         `select public.complete_chat_turn($1,'completed','answer',$2::jsonb,null,null)`,
         [claimed.turnId, JSON.stringify({ input_tokens: 7 })],
       );
@@ -266,7 +276,25 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
     const projectedAgent = root.replies?.items.find((message) => message.id === agentMessageId);
     expect(projectedAgent?.parts).toMatchObject([
       { seq: 0, kind: 'usage', payload: { input_tokens: 7 } },
+      { seq: 1, kind: 'tool_call', payload: { id: 'call-1', name: 'repo_read_file', state: 'running' } },
+      { seq: 2, kind: 'tool_call', payload: { id: 'call-1', name: 'repo_read_file', state: 'completed' } },
     ]);
+
+    const audits = await database.query<{ verb: string; summary: Record<string, unknown> }>(
+      `select verb, summary from public.activity
+        where entity_id = $1 and verb = 'chat.tool_called'`,
+      [agentMessageId],
+    );
+    expect(audits).toEqual([{
+      verb: 'chat.tool_called',
+      summary: {
+        threadRootId: rootMessageId,
+        toolCallId: 'call-1',
+        tool: 'repo_read_file',
+        state: 'running',
+        mode: 'ask',
+      },
+    }]);
 
     const home = await spacesHome(deps)(
       context('spaces.home', { spaceId: fixture.spaceId }),
@@ -274,12 +302,13 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
     const summary = home.chatThreads?.find((thread) => thread.rootMessageId === rootMessageId);
     expect(Object.keys(summary ?? {}).sort()).toEqual([
       // + title/replyCount: PR188 review F4 — the list needs a readable row.
-      'anchorId', 'createdAt', 'lastReplyAt', 'model', 'replyCount', 'rootMessageId', 'teammateId', 'title',
+      'anchorId', 'createdAt', 'lastReplyAt', 'mode', 'model', 'replyCount', 'rootMessageId', 'teammateId', 'title',
     ]);
     expect(summary).toMatchObject({
       anchorId: fixture.anchorId,
       teammateId: fixture.teammateId,
       model: 'gpt-5.6-sol',
+      mode: 'ask',
     });
   });
 

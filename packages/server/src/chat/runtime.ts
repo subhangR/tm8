@@ -1,4 +1,5 @@
 import type { ChatTurnUsage } from '@tm8/contract';
+import type { ChatMode } from '@tm8/contract';
 
 /**
  * C1 runtime port. This intentionally mirrors packages/execution's chat lane
@@ -56,6 +57,8 @@ export interface ChatLaunchConfig {
   readonly systemPrompt: string;
   readonly mcpConfigPath: string;
   readonly allowedTools: readonly string[];
+  /** Thread-owned checkout, when the Space has exactly one linked project. */
+  readonly cwd?: string;
   readonly env?: Readonly<Record<string, string>>;
 }
 
@@ -72,6 +75,9 @@ export interface ChatLaunchConfigInput {
   readonly model: string;
   readonly provider: string;
   readonly agentTool: string;
+  readonly chatMode: ChatMode;
+  readonly spaceId: string;
+  readonly cwd: string;
   readonly mode: 'new' | 'resume-after-interrupt';
 }
 

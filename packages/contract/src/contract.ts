@@ -682,11 +682,14 @@ export interface MessageDonePart extends MessagePartBase {
 }
 
 /** One write-once runtime binding for a human-authored message-thread root. */
+export type ChatMode = 'ask' | 'plan' | 'build' | 'orchestrate';
+
 export interface ChatThreadSummary {
   rootMessageId: EntityId;
   anchorId: EntityId;
   teammateId: EntityId;
   model: string;
+  mode: ChatMode;
   createdAt: string;
   lastReplyAt: string | null;
   /**
@@ -703,6 +706,7 @@ export interface StartChatThreadInput {
   rootMessageId: EntityId;
   teammateId: EntityId;
   model: string;
+  mode: ChatMode;
   clientMutationId: string;
 }
 

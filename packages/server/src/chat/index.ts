@@ -2,6 +2,8 @@ export { ChatOrchestrator, type ChatOrchestratorOptions } from './orchestrator.j
 export {
   composeChatBootstrap,
   createChatLaunchConfigResolver,
+  chatAllowedTools,
+  chatSystemPrompt,
   wrapExecutionAgentRuntime,
   TM8_CHAT_ALLOWED_TOOLS,
   type ChatLaunchComposition,

@@ -532,7 +532,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // above restates, and the one the sorted-order assertion below is the only
     // thing that can catch on a live deployment.
     // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 112.
-    expect(server.appliedMigrations.length).toBe(112);
+    // 112 -> 113 on 2026-08-14: 122 persists chat mode and audits chat tool
+    // calls. Re-measured on this tree: `ls db/migrations/*.sql | wc -l` = 113.
+    expect(server.appliedMigrations.length).toBe(113);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

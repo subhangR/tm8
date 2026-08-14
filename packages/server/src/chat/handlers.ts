@@ -49,6 +49,7 @@ function startChatThread(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationH
       input.model,
       model.provider,
       model.agentTool,
+      input.mode,
       nativeSessionId,
       cwd,
       input.clientMutationId,

@@ -31,6 +31,8 @@ describe('Chat Home', () => {
     expect(within(view.getByTestId('chat-tool-card')).getByText('completed')).toBeTruthy();
     expect(view.getByTestId('chat-usage-card').textContent).toContain('$0.0073');
     expect((view.getByLabelText('Chat teammate') as HTMLSelectElement).disabled).toBe(true);
+    expect((view.getByLabelText('Chat mode') as HTMLSelectElement).disabled).toBe(true);
+    expect(view.getAllByText('plan').length).toBeGreaterThan(0);
     expect(view.getByText('pinned for this thread')).toBeTruthy();
   });
 
@@ -49,6 +51,7 @@ describe('Chat Home', () => {
     fireEvent.click(view.getByRole('button', { name: /new/i }));
     expect((view.getByLabelText('Chat teammate') as HTMLSelectElement).disabled).toBe(false);
     fireEvent.change(view.getByLabelText('Chat model'), { target: { value: 'gpt-5.6-sol' } });
+    fireEvent.change(view.getByLabelText('Chat mode'), { target: { value: 'build' } });
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Audit the release blockers.' },
     });
@@ -63,6 +66,7 @@ describe('Chat Home', () => {
     });
     expect(controls.configs[0]).toMatchObject({
       model: 'gpt-5.6-sol',
+      mode: 'build',
       clientMutationId: 'chat-config:test',
     });
     expect(controls.configs[0]?.rootMessageId).toMatch(/^019f/);

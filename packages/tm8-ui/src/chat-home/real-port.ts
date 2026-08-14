@@ -5,6 +5,7 @@ import type {
   MessageBatchResult,
   MessageView,
   SpaceId,
+  ChatMode,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { createChatHomeFixturePort } from './fixtures';
@@ -24,6 +25,7 @@ export interface ChatThreadListItem {
   anchorId: EntityId;
   teammateId: EntityId;
   model: string;
+  mode: ChatMode;
   createdAt: string;
   lastReplyAt: string | null;
   /** PR188 review F4: root body excerpt so rows are distinguishable. */
@@ -111,6 +113,7 @@ export function createChatHomePortFromSeam(
         teammateLabel: labels.get(item.teammateId) ?? 'Agent teammate',
         model: item.model,
         modelLabel: item.model,
+        mode: item.mode,
       },
       state: 'idle',
     }));
@@ -157,6 +160,7 @@ export function createChatHomePortFromSeam(
             teammateLabel,
             model: item.model,
             modelLabel: item.model,
+            mode: item.mode,
           },
           state: 'idle',
         },
@@ -184,6 +188,7 @@ export function createChatHomePortFromSeam(
           anchorId: input.anchorId,
           teammateId: '' as EntityId,
           model: '',
+          mode: 'ask',
           createdAt: new Date().toISOString(),
           lastReplyAt: null,
           title: input.body,
@@ -201,6 +206,7 @@ export function createChatHomePortFromSeam(
             ...seeded,
             teammateId: input.teammateId,
             model: input.model,
+            mode: input.mode,
           });
         }
         return result;

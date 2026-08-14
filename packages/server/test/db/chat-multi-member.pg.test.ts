@@ -133,13 +133,14 @@ beforeAll(async () => {
   rootMessageId = await post(fixture.identityA, 'root prompt from A', null);
   await asIdentity(fixture.identityA, async (client) => (
     await client.query<{ result: Record<string, unknown> }>(
-      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8) result`,
+      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8,$9) result`,
       [
         rootMessageId,
         fixture.teammateId,
         'claude-opus-5',
         'anthropic',
         'claude-code',
+        'orchestrate',
         randomUUID(),
         `/tmp/tm8-chat-${rootMessageId}`,
         `chat-config-${randomUUID()}`,
@@ -197,6 +198,7 @@ describe.sequential('TM8 Chat turns are queued for every human member of the thr
     // Authority stays frozen to the configuring human on every turn; the
     // requester fields are provenance, never a second set of claims.
     expect(drained.every((turn) => turn['requesterIdentityId'] === fixture.identityA)).toBe(true);
+    expect(drained.every((turn) => turn['chatMode'] === 'orchestrate')).toBe(true);
     expect(drained.map((turn) => turn['requestedByMemberId'])).toEqual([
       fixture.memberA,
       fixture.memberB,

@@ -875,6 +875,7 @@ export const ChatThreadSummarySchema: z.ZodType<ChatThreadSummary> = z.object({
   anchorId: EntityIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),
+  mode: z.enum(['ask', 'plan', 'build', 'orchestrate']),
   createdAt: IsoTimestamp,
   lastReplyAt: IsoTimestamp.nullable(),
   title: z.string().nullable().optional(),
@@ -885,6 +886,7 @@ export const StartChatThreadInputSchema: z.ZodType<StartChatThreadInput> = z.obj
   rootMessageId: EntityIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),
+  mode: z.enum(['ask', 'plan', 'build', 'orchestrate']),
   clientMutationId: z.string().min(1),
 }).strict();
 

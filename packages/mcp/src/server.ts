@@ -39,7 +39,7 @@ export class Tm8McpServer {
             capabilities: { tools: { listChanged: false } },
             serverInfo: MCP_SERVER_INFO,
             instructions:
-              'TM8 is hierarchical: start with tm8_overview, then call a group with {} before selecting its next-level operation.',
+              'TM8 combines hierarchical graph tools with direct repository, session, docs, web, memory and git tools. Every call is mode-gated.',
           });
         }
         case 'server/discover': {

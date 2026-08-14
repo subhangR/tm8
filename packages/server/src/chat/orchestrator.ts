@@ -37,6 +37,7 @@ interface ClaimedTurn {
   readonly model: string;
   readonly provider: string;
   readonly agentTool: string;
+  readonly chatMode: 'ask' | 'plan' | 'build' | 'orchestrate';
   readonly nativeSessionId: string;
   readonly cwd: string;
   readonly runtimeState: 'cold' | 'live' | 'stopped';
@@ -386,19 +387,23 @@ export class ChatOrchestrator {
       model: turn.model,
       provider: turn.provider,
       agentTool: turn.agentTool,
+      chatMode: turn.chatMode,
+      spaceId: turn.spaceId,
+      cwd: turn.cwd,
       mode,
     });
+    const runtimeCwd = launch.cwd ?? turn.cwd;
     const input: StartAgentThreadInput = {
       threadId: turn.rootMessageId,
       nativeSessionId: turn.nativeSessionId,
       model: turn.model,
-      cwd: turn.cwd,
+      cwd: runtimeCwd,
       systemPrompt: launch.systemPrompt,
       mcpConfigPath: launch.mcpConfigPath,
       allowedTools: launch.allowedTools,
       ...(launch.env ? { env: launch.env } : {}),
       ...(mode === 'resume-after-interrupt'
-        ? { resume: { nativeSessionId: turn.nativeSessionId, cwd: turn.cwd } }
+        ? { resume: { nativeSessionId: turn.nativeSessionId, cwd: runtimeCwd } }
         : {}),
     };
     const started = await this.options.runtime.startThread(input);
