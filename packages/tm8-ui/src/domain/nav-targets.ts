@@ -61,6 +61,28 @@ import { kindOfSlug, slugOfKind } from './registry';
 const CHANNEL_KIND = 'channel';
 
 /**
+ * The kind of a VOICE ROOM, which the rail also emits as an `entity` target.
+ *
+ * THE BUG THIS CONSTANT FIXES. `routeViewOf` used to return `null` for every
+ * `entity` target whose kind was not `channel`, on the assumption that channels
+ * were the only ones the rail produced. They are not — a dynamic rail group
+ * lists the space's live voice channels. So deriving the shell's active target
+ * from `navStore` (which needs every reachable target to HAVE a route) would
+ * have silently dropped the voice rooms entirely.
+ *
+ * `registry.ts:923` has emitted `#/s/{spaceId}/voice/{id}` all along; the codec
+ * simply could not parse it. The route existed in the registry and nowhere
+ * else, which is why nothing caught it until the two vocabularies were joined.
+ *
+ * The discrimination rule that matters: an `entity` MenuTarget means a channel
+ * OR a voice room, told apart BY KIND and never by its tag. `GateApp`'s
+ * voice-misroute guard depends on exactly that — its comment records the day a
+ * bare `type === 'entity'` test rendered a message feed for a room that has
+ * none, and "the feed would have looked empty rather than wrong."
+ */
+const VOICE_KIND = 'voice_channel';
+
+/**
  * `MenuViewRef` → the `NavView` tag that addresses it.
  *
  * Total over the closed `MenuViewRef` enum by construction: `Record<MenuViewRef, …>`
@@ -158,11 +180,19 @@ export function landingOfRoute(view: NavView): Landing | null {
     }
 
     case 'channel':
-      /* The rail's `entity` target means a channel, and ONLY a channel. Carrying
-         the kind explicitly is what stops `GateApp`'s `type === 'entity'` branch
-         from rendering a message feed for something that has none. */
+      /* Carrying the kind explicitly is what stops `GateApp`'s
+         `type === 'entity'` branch from rendering a message feed for something
+         that has none. */
       return {
         target: { type: 'entity', ref: view.channelId, kind: CHANNEL_KIND },
+        openEntity: null,
+      };
+
+    case 'voice':
+      /* Same target SHAPE as a channel, different kind — and the kind is the
+         whole discrimination. See VOICE_KIND. */
+      return {
+        target: { type: 'entity', ref: view.voiceChannelId, kind: VOICE_KIND },
         openEntity: null,
       };
 
@@ -235,12 +265,20 @@ export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = nu
     }
 
     case 'entity':
-      /* A channel target is the channel route. Any other entity target would be
-         a misroute at the source; the rail only ever emits channels here, and
-         the voice-room guard in `GateApp` depends on that staying true. */
-      return target.kind === CHANNEL_KIND
-        ? { view: 'channel', channelId: target.ref as EntityId, msg: null }
-        : null;
+      /* An `entity` target is a channel OR a voice room, discriminated BY KIND.
+         This used to return null for anything that was not a channel, which
+         would have deleted the voice rooms the moment the shell derived its
+         target from the store — see VOICE_KIND. Any OTHER kind arriving here is
+         still a genuine misroute at the source and still refuses, because
+         inventing a route for it would put an entity on a screen built for
+         something else. */
+      if (target.kind === CHANNEL_KIND) {
+        return { view: 'channel', channelId: target.ref as EntityId, msg: null };
+      }
+      if (target.kind === VOICE_KIND) {
+        return { view: 'voice', voiceChannelId: target.ref as EntityId };
+      }
+      return null;
   }
 }
 

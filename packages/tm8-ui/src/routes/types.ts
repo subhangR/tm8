@@ -61,7 +61,25 @@ export type NavView =
   | { view: 'graph' }
   | { view: 'files' }
   | { view: 'git' }
-  | { view: 'messages' };
+  | { view: 'messages' }
+  /*
+   * A VOICE ROOM. Added 2026-08-14 to close a latent break, not to add a
+   * feature.
+   *
+   * `domain/registry.ts:923` has emitted `#/s/{spaceId}/voice/{id}` since voice
+   * channels shipped, and this codec could not parse it — the registry has been
+   * handing out a link the app cannot read. The grammar always meant to carry
+   * this route; only the codec was missing.
+   *
+   * It surfaced when deriving the shell's active target from `navStore` was
+   * attempted: that requires EVERY reachable target to have a `NavView`, and
+   * the rail genuinely emits voice targets. Without this member the derivation
+   * silently drops the voice rooms.
+   *
+   * `voice_channel` keeps `strategy: 'special'` with `slug: null` — a room is
+   * not a feed and gets NO `k/` collection view. One room, one route.
+   */
+  | { view: 'voice'; voiceChannelId: EntityId };
 
 /** The panel-engine state the URL mirrors (LLD §11: the URL owns all of it). */
 export interface PanelState {

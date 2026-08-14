@@ -42,6 +42,7 @@ const ALL_ROUTE_VIEWS: NavView[] = [
   { view: 'kind', slug: 'tasks', mode: null, q: null },
   { view: 'entity', entityId: ENTITY, origin: { slug: 'tasks', mode: null } },
   { view: 'channel', channelId: ENTITY, msg: null },
+  { view: 'voice', voiceChannelId: ENTITY },
 ];
 
 describe('nav-targets — exhaustiveness', () => {
@@ -109,6 +110,37 @@ describe('nav-targets — round trips', () => {
     const landing = landingOfRoute(route as NavView);
     expect(landing?.target).toEqual({ type: 'kind', ref: 'task' });
     expect(landing?.openEntity).toBe(ENTITY);
+  });
+
+  it('round-trips a voice room, and does NOT confuse it with a channel', () => {
+    /* THE REGRESSION GUARD. `routeViewOf` once returned null for every entity
+       target that was not a channel, so deriving the shell's target from the
+       store would have silently deleted the voice rooms. The rail emits these
+       from a dynamic group over the space's live voice channels — they are
+       genuinely reachable, and `registry.ts` has emitted this exact route all
+       along while the codec could not parse it. */
+    const target: MenuTarget = { type: 'entity', ref: ENTITY, kind: 'voice_channel' };
+    const route = routeViewOf(target);
+    expect(route).toEqual({ view: 'voice', voiceChannelId: ENTITY });
+    expect(landingOfRoute(route as NavView)?.target).toEqual(target);
+
+    // Same target SHAPE as a channel; only the kind tells them apart. A tag-only
+    // test is what rendered a message feed for a room that has none.
+    const channel = routeViewOf({ type: 'entity', ref: ENTITY, kind: 'channel' });
+    expect(channel).not.toEqual(route);
+  });
+
+  it('keeps voice out of the collection vocabulary', () => {
+    // `voice_channel` is `special` with slug null: a room is not a feed, so it
+    // gets a route but never a `k/` view.
+    expect(slugOfKind('voice_channel')).toBeNull();
+    expect(routeViewOf({ type: 'kind', ref: 'voice_channel' })).toBeNull();
+  });
+
+  it('still refuses an entity target of some other kind', () => {
+    // Widening to voice must not have widened to everything: an arbitrary kind
+    // on an entity target is still a misroute at the source.
+    expect(routeViewOf({ type: 'entity', ref: ENTITY, kind: 'task' })).toBeNull();
   });
 
   it('round-trips a channel as the channel route, not the entity route', () => {
