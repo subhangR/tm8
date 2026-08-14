@@ -10,7 +10,7 @@
  * state and the URL, the panels own anatomy. This file is composition only.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
+import type { EntityId, EntitySummary, MenuViewRef, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
   MenuRail,
@@ -97,6 +97,86 @@ const LIVE_COUNT_KIND = 'work_session';
 
 /** The screen a viewer with no remembered place lands on. */
 const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
+
+/**
+ * WHAT THIS FILE ACTUALLY RENDERS FOR EACH `MenuViewRef`, written down.
+ *
+ * THE DEFECT THIS CLOSES. The render switch below is one order-dependent
+ * ternary chain, and it used to end `: data.ready ? <WorkspaceView/>`. That
+ * final arm was not a match on the workspace — it was EVERYTHING LEFT OVER. A
+ * target this file had no branch for did not throw, did not warn, and did not
+ * say so: it silently drew the workspace under whatever the rail was
+ * highlighting. That has shipped twice already (the voice-room misroute, and
+ * channels falling through), and both times the symptom was "I clicked a thing
+ * and got the workspace", which reads as a no-op rather than as a bug.
+ *
+ * WHY A TABLE AND NOT A SWITCH. `satisfies Record<MenuViewRef, …>` makes a ref
+ * ADDED to the contract a compile error here until someone says which of the
+ * three things it is. That is the same guard `domain/nav-targets.ts` uses, for
+ * the same reason: the failure mode being designed out is a new member falling
+ * through to a default, so the default has to stop existing.
+ *
+ *   'mounted'   — has its own branch above, which wins before the table is read
+ *   'unbuilt'   — no screen in this build; the honest card SAYS SO
+ *   'workspace' — the three-panel workspace, matched EXPLICITLY
+ *
+ * A ref NOT in this table is not a MenuViewRef at all — it came from storage
+ * (`last-place.ts` validates the shape, never the ref) or from a caller that
+ * invented one. It gets the unrecognised card, which is loud, not the unbuilt
+ * card, which would claim we simply have not built it yet.
+ */
+const VIEW_REF_SCREENS = {
+  dashboard: 'mounted',
+  inbox: 'mounted',
+  graph: 'mounted',
+  files: 'mounted',
+  settings: 'mounted',
+  git: 'mounted',
+  messages: 'mounted',
+  workspace: 'workspace',
+  /* The last genuinely unbuilt view ref. */
+  feed: 'unbuilt',
+  /* NOT unbuilt — an ALIAS. `domain/nav-targets.ts` resolves `channels` to the
+     `channel`-kind EntityView, which is mounted and always has been. This entry
+     records that the alias is not resolved on THIS path: the rail and the
+     palette emit the kind target directly, so a bare `{type:'view',
+     ref:'channels'}` only arrives when the palette finds no channel to open.
+     Classified `unbuilt` because that is what today's chain does with it, and
+     Phase 0.5 is a truth-telling change, not a behaviour change. Resolving the
+     alias here belongs to the router mount, which owns both directions. */
+  channels: 'unbuilt',
+} as const satisfies Record<MenuViewRef, 'mounted' | 'unbuilt' | 'workspace'>;
+
+/** `true` when this build has no screen for the ref and should say so. */
+function isUnbuiltViewRef(ref: string): boolean {
+  return VIEW_REF_SCREENS[ref as MenuViewRef] === 'unbuilt';
+}
+
+/**
+ * A target that reached the end of the render switch unmatched.
+ *
+ * LOUD IN DEV, HONEST IN PRODUCTION — the two halves of not lying about it.
+ * `console.error` fires once per mount (an effect, not a render) so a test can
+ * assert the shout and a developer cannot miss it; the card is what a user
+ * sees, and it names the target rather than drawing a screen that was never
+ * asked for.
+ */
+function UnroutedTargetCard({ target }: { target: MenuTarget | null }) {
+  const described = target === null ? 'null' : JSON.stringify(target);
+  useEffect(() => {
+    console.error(
+      `GateApp: no screen for target ${described}. The render switch fell through. ` +
+        'This is a routing defect — the workspace is NOT being drawn for it.',
+    );
+  }, [described]);
+  return (
+    <div className="ev-root" data-testid="unrouted-target">
+      <p className="evt-empty" style={{ margin: 24 }}>
+        {`This build has no screen for where you asked to go (${described}). That is a bug, not an empty screen — nothing is hidden behind this card. Pick a destination from the rail to carry on.`}
+      </p>
+    </div>
+  );
+}
 
 export interface GateAppProps {
   activeServer?: UiServer;
@@ -931,20 +1011,38 @@ export function GateApp(props: GateAppProps = {}) {
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&
-            activeTarget.ref !== 'workspace' ? (
+            (isUnbuiltViewRef(activeTarget.ref) ||
+              /* Mounted screens whose PORT this server did not serve. The
+                 screen exists; the capability behind it does not, on this node.
+                 They land here rather than on the unrecognised card because the
+                 ref is real and recognised — what is missing is the port, and
+                 the branches above already declined for exactly that reason. */
+              (activeTarget.ref === 'files' && !filesExplorerPort) ||
+              (activeTarget.ref === 'settings' && !settingsPort)) ? (
             /* Unbuilt view refs SAY SO — rendering the workspace under a
                highlighted Dashboard row was a silent lie about where you are
                (same audit, same class).
 
                `inbox` LEFT THIS SET on 2026-08-13: its screen was finished all
                along and is now mounted above, so the card no longer covers it.
-               `feed` is the last remaining member. */
+
+               THE TEST USED TO BE `ref !== 'workspace'`, which is a catch-all
+               wearing a whitelist's name: it absorbed every ref the chain had
+               not matched, including refs that do not exist. The set is now
+               ENUMERATED in `VIEW_REF_SCREENS`, so an unrecognised ref falls to
+               the loud card below instead of being told it is merely coming
+               soon. */
             <div className="ev-root" data-testid="unbuilt-view">
               <p className="evt-empty" style={{ margin: 24 }}>
                 {`${activeTarget.ref} isn’t built yet — its designed screen is coming. Nothing is hidden here; it does not exist in this build.`}
               </p>
             </div>
-          ) : data.ready ? (
+          ) : data.ready &&
+            activeTarget?.type === 'view' &&
+            activeTarget.ref === 'workspace' ? (
+            /* THE WORKSPACE, MATCHED EXPLICITLY. This was `: data.ready ?` — a
+               bare else that made the workspace the destination of every
+               mistake in this chain. See `VIEW_REF_SCREENS`. */
             <WorkspaceView
               data={data}
               viewerMemberId={viewerMemberId}
@@ -993,6 +1091,13 @@ export function GateApp(props: GateAppProps = {}) {
                 })
               }
             />
+          ) : data.ready ? (
+            /* NOTHING MATCHED, AND THAT IS NOW SAYABLE. Everything the chain
+               above understands has its own arm; reaching here means the target
+               is one this build has no screen for — `null`, or a shape that came
+               from storage or an inventing caller. It used to render the
+               workspace. See `VIEW_REF_SCREENS`. */
+            <UnroutedTargetCard target={activeTarget} />
           ) : data.authRequired ? (
             /* The active server answered the boot read with "authentication
                is required". That is not an unreachable node and not an empty
