@@ -47,6 +47,8 @@ beforeEach(() => {
   Object.defineProperty(window, 'localStorage', { configurable: true, value: store });
   resetNav();
   screenStackStore.getState().clearAll();
+  /* The URL is state now, and jsdom keeps one `window.location` per file. */
+  window.location.hash = '';
 });
 
 /** The composed gate is slow under jsdom; see render-switch-honesty.test.tsx. */
@@ -74,6 +76,13 @@ describe('the chosen layout survives a remount', () => {
        switch — every piece of useState in the tree ceases to exist, so only
        what reached storage can come back. */
     first.unmount();
+
+    /* AND THE ADDRESS GOES WITH IT, SO THIS STILL MEASURES STORAGE. The mode
+       click now also writes `?mode=board` into the URL, and an addressable hash
+       at boot outranks last-place (R3) — leave it and the remount would come
+       back as a board from the ADDRESS, which is a different guarantee from the
+       one in this test's name. Both are true and only one is under test here. */
+    window.location.hash = '';
 
     const second = render(<GateApp />);
     await waitFor(() => second.getByTestId('entity-view'));

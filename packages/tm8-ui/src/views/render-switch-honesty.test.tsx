@@ -53,6 +53,12 @@ beforeEach(() => {
   Object.defineProperty(window, 'localStorage', { configurable: true, value: store });
   resetNav();
   screenStackStore.getState().clearAll();
+  /* The URL is state now, and jsdom keeps ONE `window.location` per file. A
+     case that navigates leaves its address behind and the next case boots from
+     it, because an addressable hash at boot deliberately outranks last-place
+     (R3) — so `resetNav()` alone stopped being a reset the day the router was
+     mounted. Same class as the localStorage double above, one global later. */
+  window.location.hash = '';
 });
 
 afterEach(() => {
@@ -94,6 +100,14 @@ async function rememberTarget(target: unknown): Promise<void> {
   fireEvent.click(within(first.getByTestId('menu-rail')).getByRole('button', { name: /^Tasks/ }));
   await waitFor(() => first.getByTestId('entity-view'));
   first.unmount();
+
+  /* AND THE ADDRESS GOES WITH IT. That rail click now writes
+     `#/s/{space}/k/tasks`, and an addressable hash at boot deliberately
+     OUTRANKS last-place (R3) — so the caller's remount would land on Tasks from
+     the URL and never consult the doctored record this function exists to
+     plant. Every case in this file would then assert against a restore that
+     never ran. A real boot into a restore is a fresh document with no hash. */
+  window.location.hash = '';
 
   const [key, record] = lastPlaceEntry();
   const spaces = Object.keys(record.targets);

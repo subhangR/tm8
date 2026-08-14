@@ -561,7 +561,18 @@ export function GateApp(props: GateAppProps = {}) {
    */
   useEffect(() => {
     if (!activeTarget || activeTarget.type !== 'kind') return;
-    const next = routeViewOf(activeTarget, openOnScreen);
+    /* READ THE STORE, NOT THE RENDERED VALUE — and this is a correctness fix,
+       not a style choice. The seed effect above runs in the same pass as this
+       one and opens the entity the address named; `openOnScreen` is this
+       render's snapshot, so it is still null when this runs. Acting on it would
+       make the mount navigate AWAY from the route it had just landed on, and —
+       worse — spend R15's one-shot concession doing it, so the real step up
+       later would push and trap the viewer anyway.
+
+       `openOnScreen` stays in the deps because it is what WAKES this effect
+       when the stack changes; it is never what the effect acts on. */
+    const open = topOf(screenStackStore.getState(), screenKeyOf.kind(activeTarget.ref));
+    const next = routeViewOf(activeTarget, open);
     if (!next || sameDestination(navView, next)) return;
     const steppingUp = navView.view === 'entity' && next.view !== 'entity';
     if (steppingUp && coldEntry.current) {

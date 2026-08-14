@@ -325,12 +325,20 @@ describe('an over-cap link says what it dropped', () => {
     const view = mount(target);
     await waitFor(() => view.getByTestId('workspace-grid'));
     await settle();
+    /* Asserted against the notice HOST rather than by text query: the card's
+       title and body both legitimately mention the drop, so a text matcher
+       finds two elements and throws on the ambiguity rather than on the fact.
+       The host is the single place the app promises this appears. */
+    const host = await waitFor(() => {
+      const el = view.getByTestId('notice-host');
+      if (!/couldn’t be carried/i.test(el.textContent ?? '')) throw new Error('no notice yet');
+      return el;
+    });
     /* AND IT NAMES THE CLASS. R4-7's actual requirement: "some state wasn't
        carried" is a sentence a reader can do nothing with — it does not say
        whether they lost a filter they can retype or panels they cannot
        reconstruct. `DROP_CLASS_COPY` supplies the words. */
-    const notice = await waitFor(() => view.getByText(/couldn’t be carried/i));
-    expect(notice.textContent).toMatch(/open panels|pinned panels/i);
+    expect(host.textContent).toMatch(/open panels|pinned panels/i);
     view.unmount();
   });
 });
