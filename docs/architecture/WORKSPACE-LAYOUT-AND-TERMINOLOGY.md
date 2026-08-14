@@ -74,7 +74,7 @@ One registry drives routes, `origin` validation, palette generation, canonical c
 | **Messages** | `message` | — (no `k/` view) | **`anchored`** — canonical route = its containing channel/thread with a message anchor (`channel/{channelId}?msg={id}`); companion = that channel. If the parent is deleted/missing: `e/{messageId}` renders standalone with a tombstone banner and NO companion (left panel collapsed) — ruled, not fallthrough. |
 | Custom kinds | `c:{name}` | `c-{name}`, collision-checked at creation | `collection` |
 
-**Reserved words** (never kind slugs): `home feed inbox workspace settings channel e k`. **RULING N (2026-08-14):** the shipped registry is authoritative here, and this is a spec catch-up to code, not an expansion of the app surface. `channel` remains reserved while `channels` is not, which is why the collection slug is plural. `#/s/{s}/channels` normalizes to `#/s/{s}/k/channels` and is the channel-kind Entity View: the tree of channels with the channel view beside it; `#/s/{s}/channel/{id}` remains the single-channel route because the route builder deliberately retains the singular form. The `channels`, `files`, `git`, and `messages` flat view segments are not reserved kind slugs: `#/s/{s}/files` (the Files explorer) and `#/s/{s}/k/files` (the `file`-kind collection) are deliberately different paths, just as `#/s/{s}/channels` and `#/s/{s}/k/channels` are. `RESERVED_SLUGS` remains unchanged (`packages/tm8-ui/src/domain/registry.ts:48-56`); the collection row and singular route builder are shipped at `packages/tm8-ui/src/domain/registry.ts:863-865`, and the channel destination's Entity View identity is recorded in `packages/tm8-ui/src/views/GateApp.tsx:810-815` and `packages/tm8-ui/src/domain/nav-targets.ts:52-59`.
+**Reserved words** (never kind slugs): `home feed inbox workspace settings channel e k`. **RULING N (2026-08-14):** the shipped registry is authoritative here, and this is a spec catch-up to code, not an expansion of the app surface. `channel` remains reserved while `channels` is not, which is why the collection slug is plural. `#/s/{s}/channels` normalizes to `#/s/{s}/k/channels` and is the channel-kind Entity View: the tree of channels with the channel view beside it; `#/s/{s}/channel/{id}` remains the single-channel route because the route builder deliberately retains the singular form. **RULING N SUPERSEDES R7-6 on the canonical form:** R7-6 named `#/s/{s}/channels` "the canonical channel-list route", and it is no longer canonical — `#/s/{s}/k/channels` is, and `/channels` is an accepted alias the codec rewrites (`routeViewOf` in `packages/tm8-ui/src/domain/nav-targets.ts` emits `{view:'kind', slug:'channels'}` for a channels target and never `{view:'channels'}`, so the URL a viewer sees and the URL they share are one string). The §2.2 grammar block and the §2.3 view-registry row are corrected to match. This supersession is stated rather than silently edited because a frozen spec that contradicts itself in two places is worse than either version alone: the next reader cannot tell which one is live. The `channels`, `files`, `git`, and `messages` flat view segments are not reserved kind slugs: `#/s/{s}/files` (the Files explorer) and `#/s/{s}/k/files` (the `file`-kind collection) are deliberately different paths, just as `#/s/{s}/channels` and `#/s/{s}/k/channels` are. `RESERVED_SLUGS` remains unchanged (`packages/tm8-ui/src/domain/registry.ts:48-56`); the collection row and singular route builder are shipped at `packages/tm8-ui/src/domain/registry.ts:863-865`, and the channel destination's Entity View identity is recorded in `packages/tm8-ui/src/views/GateApp.tsx:810-815` and `packages/tm8-ui/src/domain/nav-targets.ts:52-59`.
 
 ### 2.2 Route grammar
 
@@ -83,7 +83,7 @@ One registry drives routes, `origin` validation, palette generation, canonical c
 #/s/{spaceId}/workspace        ?session={workSessionId} & p= & pin= & t= & contentSurface=
 #/s/{spaceId}/k/{slug}         ?mode=list|board|tree|feed|gallery|graph & q= & p= & pin= & t= & contentSurface=
 #/s/{spaceId}/e/{entityId}     ?origin={originSlug[.mode]} & p= & pin= & t= & contentSurface=
-#/s/{spaceId}/channels                                  ← canonical channel-list route (R7-6)
+#/s/{spaceId}/channels                                  ← ALIAS; normalizes to k/channels (RULING N supersedes R7-6)
 #/s/{spaceId}/graph
 #/s/{spaceId}/files
 #/s/{spaceId}/git
@@ -131,7 +131,7 @@ One registry drives routes, `origin` validation, palette generation, canonical c
   | `feed` | `#/s/{s}/feed` | yes | no | implemented |
   | `inbox` | `#/s/{s}/inbox` | yes | no | implemented |
   | `workspace` | `#/s/{s}/workspace` | yes | no | implemented |
-  | `channels` | `#/s/{s}/channels` (the canonical list route, §2.2) | yes | no | implemented |
+  | `channels` | `#/s/{s}/k/channels` (canonical; `#/s/{s}/channels` is an alias that normalizes to it — RULING N, §2.1/§2.2) | yes | no | implemented |
   | `graph` | `#/s/{s}/graph` | yes | no | implemented |
   | `files` | `#/s/{s}/files` | yes | no | implemented |
   | `git` | `#/s/{s}/git` | yes | no | implemented |
