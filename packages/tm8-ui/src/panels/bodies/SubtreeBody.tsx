@@ -4,6 +4,8 @@ import type { SessionLiveness } from '../../data/seam';
 import type { ContentBlockRef, KindConfig, StatusSource } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
 import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
+import type { FileUploadTask } from '../../files/upload';
+import { ProseField, type TriggerOption } from '../../rich-input';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 import { MemorySetBlock, type MemoryAuthoring } from './MemorySetBlock';
@@ -119,6 +121,19 @@ export interface SubtreeBodyProps {
    * never a live, clickable box wearing a refusal tooltip.
    */
   criteriaUnavailableReason?: string;
+  /**
+   * Skills the description's `/` can REFERENCE (R1). Absent ⇒ `/` types plain
+   * text, which is what it did before a host had a seam to read them from.
+   */
+  skillOptions?: readonly TriggerOption[];
+  /**
+   * Uploads a file against THIS task and writes its reference at the caret
+   * (R4). Bound by the host, so this lane never learns the anchor. Absent ⇒
+   * drop and paste in the description stay inert.
+   */
+  attach?: (file: File) => FileUploadTask;
+  /** An upload landed — the host refetches so the attachment strip updates. */
+  onAttached?: () => void;
 }
 
 export function SubtreeBody({
@@ -136,6 +151,9 @@ export function SubtreeBody({
   memoryAuthoring,
   membershipAuthoring,
   gitSection,
+  skillOptions,
+  attach,
+  onAttached,
 }: SubtreeBodyProps) {
   const children = [...detail.hierarchy.children.items];
   const childWork = children.filter((c) => !isRunKind(c));
@@ -183,6 +201,9 @@ export function SubtreeBody({
         draft={descriptionDraft}
         onChange={onDescriptionChange}
         unavailableReason={descriptionUnavailableReason}
+        skillOptions={skillOptions}
+        attach={attach}
+        onAttached={onAttached}
       />
       <AcceptanceSection
         detail={detail}
@@ -412,11 +433,17 @@ function DescriptionEditor({
   draft,
   onChange,
   unavailableReason,
+  skillOptions,
+  attach,
+  onAttached,
 }: {
   detail: EntityDetail;
   draft?: string;
   onChange?: (description: string) => void;
   unavailableReason?: string;
+  skillOptions?: readonly TriggerOption[];
+  attach?: (file: File) => FileUploadTask;
+  onAttached?: () => void;
 }) {
   const content = detail.content as unknown as Record<string, unknown>;
   const persisted =
@@ -463,19 +490,28 @@ function DescriptionEditor({
         />
       </div>
       {showEditor ? (
-        <textarea
-          ref={textarea}
-          className="sb-description__input"
-          aria-label="Description"
+        /* A task description reaches every agent that opens the task, so the
+           editor is the shared prose input: `/` references a skill and a
+           dropped or pasted file lands as a reference AT THE CARET (R4).
+           THE STANCE IS UNCHANGED — this is still plain markdown source in a
+           growing field, per the user ruling; what changed is what the field
+           can take in. */
+        <ProseField
           value={value}
+          onChange={(next) => {
+            setEditing(true);
+            onChange?.(next);
+          }}
+          label="Description"
+          className="sb-description__input"
+          rows={1}
           placeholder="Add a description…"
           readOnly={!onChange}
-          title={unavailableReason}
-          rows={1}
-          onChange={(event) => {
-            setEditing(true);
-            onChange?.(event.target.value);
-          }}
+          {...(unavailableReason ? { title: unavailableReason } : {})}
+          inputRef={(element) => { textarea.current = element; }}
+          {...(skillOptions ? { skillOptions } : {})}
+          {...(attach ? { attach } : {})}
+          {...(onAttached ? { onAttached } : {})}
         />
       ) : (
         <Markdown source={value} className="pn-prose" testId="task-description-view" />

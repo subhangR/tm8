@@ -1017,6 +1017,12 @@ function PanelBody(
         }
         criteriaUnavailableReason={saveRefusal}
         gitSection={config.panel.gitSection ? props.taskGitSection : undefined}
+        skillOptions={props.skillOptions}
+        /* Same binding as the Discussion composer and the doc editor: the
+           anchor is this entity, so a file inserted into the description is
+           also a listed attachment on the same record. */
+        attach={startUpload ? (file: File) => startUpload(file, detail.id) : undefined}
+        onAttached={props.onAttachmentUploaded}
       />
     );
   }

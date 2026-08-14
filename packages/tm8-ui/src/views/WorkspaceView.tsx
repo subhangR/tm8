@@ -390,6 +390,15 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           commands={data.seam.commands}
           onCreated={openEntity}
           onSaved={(saved) => props.data.refetchDetail(saved)}
+          skillOptions={data.skillOptions}
+          /* The dialog edits the panel's own subject, so a file inserted into
+             a multiline field attaches to that entity. */
+          attach={
+            detail && attachments
+              ? (file: File) => attachments.startUpload(file, detail.id)
+              : undefined
+          }
+          onAttached={() => detail && props.data.refetchDetail(detail.id)}
         >
           {(verbs) => {
             const panelActions = composePanelActions([

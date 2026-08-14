@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import type { EntityDetail, EntityId, SpaceId } from '@tm8/contract';
 import { EditEntityDialog, type AuthoringCommands } from '../authoring';
+import type { FileUploadTask } from '../files/upload';
+import type { TriggerOption } from '../rich-input';
 import { useEntityVerbs, type EntityVerbsHandle } from './useEntityVerbs';
 
 /**
@@ -28,6 +30,9 @@ export function EntityVerbs({
   commands,
   onCreated,
   onSaved,
+  skillOptions,
+  attach,
+  onAttached,
   children,
 }: {
   detail: EntityDetail | null | undefined;
@@ -35,6 +40,10 @@ export function EntityVerbs({
   commands: AuthoringCommands | null;
   onCreated?: (id: EntityId) => void;
   onSaved?: (id: EntityId) => void;
+  /** Passed straight through to the dialog — see `EditEntityDialog`. */
+  skillOptions?: readonly TriggerOption[];
+  attach?: (file: File) => FileUploadTask;
+  onAttached?: () => void;
   children: (verbs: EntityVerbsHandle) => ReactNode;
 }) {
   const verbs = useEntityVerbs({
@@ -46,7 +55,14 @@ export function EntityVerbs({
   });
   return (
     <>
-      <EditEntityDialog flow={verbs.edit} fields={verbs.editFields} title={verbs.editTitle} />
+      <EditEntityDialog
+        flow={verbs.edit}
+        fields={verbs.editFields}
+        title={verbs.editTitle}
+        skillOptions={skillOptions}
+        attach={attach}
+        onAttached={onAttached}
+      />
       {children(verbs)}
     </>
   );

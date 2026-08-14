@@ -686,6 +686,16 @@ export function EntityView(props: EntityViewProps) {
         flow={verbs.edit}
         fields={verbs.editFields}
         title={verbs.editTitle}
+        skillOptions={data.skillOptions}
+        /* The dialog edits the entity this view has open, so its multiline
+           fields upload against that entity's own id. Absent while nothing
+           is selected — an upload needs an anchor, and there is none. */
+        attach={
+          selectedId && attachments
+            ? (file: File) => attachments.startUpload(file, selectedId as EntityId)
+            : undefined
+        }
+        onAttached={() => selectedId && data.refetchDetail(selectedId)}
       />
       {/* The full launch sheet, overlaying this screen the same way it
           overlays the workspace centre (`.ls` is absolute against the view
@@ -713,10 +723,12 @@ export function EntityView(props: EntityViewProps) {
       <MemoryComposer
         composer={memoryWorkingSet.composer}
         holderLabel={memorySetHost?.title ?? 'this entity'}
+        skillOptions={data.skillOptions}
       />
       <MemoryMarkComposer
         composer={memoryMarks.composer}
         targetTitle={marksHost?.title ?? 'this memory'}
+        skillOptions={data.skillOptions}
       />
       <section className="ev-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel

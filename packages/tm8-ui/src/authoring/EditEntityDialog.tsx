@@ -1,4 +1,6 @@
 import { useEffect, useRef, type FormEvent, type MouseEvent } from 'react';
+import type { FileUploadTask } from '../files/upload';
+import { ProseField, type TriggerOption } from '../rich-input';
 import { RefusalCard } from './RefusalCard';
 import type { EntityEditHandle } from './useEntityEdit';
 import type { EntityEdits } from './commands';
@@ -185,6 +187,9 @@ export function EditEntityDialog({
   fields,
   title,
   submitLabel = 'Save',
+  skillOptions,
+  attach,
+  onAttached,
 }: {
   flow: EntityEditHandle;
   /** From the registry row, resolved by the host. Empty ⇒ nothing to draw. */
@@ -192,6 +197,16 @@ export function EditEntityDialog({
   /** "Edit channel" — built by the host from the registry `label`. */
   title: string;
   submitLabel?: string;
+  /** Skills `/` can reference inside a multiline field (R1). */
+  skillOptions?: readonly TriggerOption[];
+  /**
+   * Uploads a file against the entity BEING EDITED and writes its reference
+   * at the caret (R4). Bound by the host, so this lane never learns which
+   * entity it is writing to. Absent ⇒ drop and paste stay inert.
+   */
+  attach?: (file: File) => FileUploadTask;
+  /** An upload landed — the host refetches so the new attachment appears. */
+  onAttached?: () => void;
 }) {
   const saving = flow.state.phase === 'saving';
   const firstField = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -261,15 +276,25 @@ export function EditEntityDialog({
                 {field.required ? null : <em className="au-dialog__optional"> · optional</em>}
               </span>
               {field.multiline ? (
-                <textarea
-                  ref={index === 0 ? (el) => { firstField.current = el; } : undefined}
-                  className="au-dialog__input"
-                  rows={3}
+                /* THE MULTILINE FIELDS ARE THE ONES THAT REACH AGENT CONTEXT
+                   — a description is read by every agent that opens the
+                   entity — so they take the shared prose input: `/` to
+                   reference a skill, and drop/paste to insert a file at the
+                   caret. The one-line boxes below stay plain, per the ruling
+                   on title-shaped fields. */
+                <ProseField
                   value={value}
-                  placeholder={field.placeholder}
+                  onChange={(next) => flow.set(key, field.normalize ? field.normalize(next) : next)}
+                  label={field.label}
+                  className="au-dialog__input"
+                  testId={`edit-field-${key}`}
+                  rows={3}
                   disabled={saving}
-                  data-testid={`edit-field-${key}`}
-                  onChange={(e) => flow.set(key, field.normalize ? field.normalize(e.target.value) : e.target.value)}
+                  {...(field.placeholder ? { placeholder: field.placeholder } : {})}
+                  {...(index === 0 ? { inputRef: (el: HTMLTextAreaElement | null) => { firstField.current = el; } } : {})}
+                  {...(skillOptions ? { skillOptions } : {})}
+                  {...(attach ? { attach } : {})}
+                  {...(onAttached ? { onAttached } : {})}
                 />
               ) : (
                 <input

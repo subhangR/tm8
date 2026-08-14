@@ -43,3 +43,4 @@ export {
 } from './useRichInput';
 export { TriggerPopover } from './TriggerPopover';
 export { AttachmentChips } from './AttachmentChips';
+export { ProseField } from './ProseField';
