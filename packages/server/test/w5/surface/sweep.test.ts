@@ -518,8 +518,12 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // take the next number ABOVE the highest already-applied file, because the
     // assertion below requires applied order to equal sorted order and only a
     // live deployment can falsify it.
-    // MEASURED: `ls db/migrations/*.sql | wc -l` = 109.
-    expect(server.appliedMigrations.length).toBe(109);
+    // 109 -> 110 on 2026-08-14: 119, the work_sessions.agent_config_dir column
+    // and the sixth record_session_manifest argument that fills it. Renumbered
+    // from 104 (its author's base) because 104 is already claimed by
+    // chat_threads_and_message_parts — same rule as every entry above.
+    // MEASURED: `ls db/migrations/*.sql | wc -l` = 110.
+    expect(server.appliedMigrations.length).toBe(110);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
