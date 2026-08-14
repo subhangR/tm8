@@ -130,8 +130,13 @@
 
 .chv-pane { flex: 1; min-height: 0; }
 
+/* `--chv-aside` is solved in `ChannelView` against the MEASURED split width and
+   the feed's own floor, for the reason the entity screen states at length: a
+   width a viewer drags cannot be clamped against a literal that lives in a
+   stylesheet. The `min(440px, 42vw)` fallback is the width this aside has
+   always had, kept for the frame before the first measurement lands. */
 .chv-aside {
-  width: min(440px, 42vw);
+  width: var(--chv-aside, min(440px, 42vw));
   min-width: 320px;
   min-height: 0;
   flex: none;
@@ -207,8 +212,13 @@
 .chv-full__body { flex: 1; min-height: 0; }
 .chv-full__body > * { height: 100%; }
 
+/* No width step-down here any more: restating the aside's width at a
+   breakpoint would overwrite whatever the viewer dragged the moment the window
+   crossed it, which is the control appearing to work and then undoing itself.
+   The solver in `ChannelView` shrinks the aside to its floor by measurement
+   instead. The FLOORS still relax — that is a floor change, not a width. */
 @media (max-width: 900px) {
   .chv-main { min-width: 320px; }
-  .chv-aside { width: 42%; min-width: 300px; }
+  .chv-aside { min-width: 300px; }
   .chv-header__status { display: none; }
 }

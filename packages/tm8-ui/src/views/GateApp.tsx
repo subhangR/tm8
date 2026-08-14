@@ -34,7 +34,7 @@ import { getKind } from '../domain';
 import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
 import type { DispatchSelection, LaunchSelection } from './LaunchSheet';
 import type { DetailReasons } from '../panels';
-import { BootLoader, VectorIcon } from '../kit';
+import { BootLoader, VectorIcon, usePanelFlag } from '../kit';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import {
   authoredFromHollowReason,
@@ -165,7 +165,22 @@ export function GateApp(props: GateAppProps = {}) {
   // unpersisted useState seeded to light, so every reload discarded the
   // viewer's choice. The control's home is still the account menu (D1).
   const { theme, setTheme, toggle: toggleTheme } = useTheme();
-  const [menuCollapsed, setMenuCollapsed] = useState(false);
+  /**
+   * THE MENU RAIL STARTS COLLAPSED, and remembers what the viewer did next.
+   *
+   * Two halves, both asked for. The rail already rendered ICON-ONLY at 48px
+   * when collapsed — every view and kind row carries a vector icon precisely so
+   * that state is legible — but it opened expanded on every load and the choice
+   * to collapse it was unpersisted `useState`, so every reload threw it away.
+   * Collapsed-by-default gives the screen its 117px back; persistence is what
+   * makes the ⌘\ toggle and the footer control mean something beyond this tab.
+   *
+   * The solver reads this as `menuCollapsedByUser` and never re-expands a rail
+   * the viewer collapsed (geometry.ts §5.1 step 1) — so the default has to be a
+   * PREFERENCE rather than a solved state, which is why it lives here and not
+   * in the geometry module.
+   */
+  const [menuCollapsed, setMenuCollapsed] = usePanelFlag('menu-rail-collapsed', true);
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);

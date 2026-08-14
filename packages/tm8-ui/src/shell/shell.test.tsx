@@ -163,13 +163,31 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     );
   });
 
-  it('collapsed renders icons only — labels, leaves and headers all go', () => {
-    const { container, queryByText } = renderRail({ collapsed: true });
+  /**
+   * REWRITTEN, and the rename records what changed. This used to assert that
+   * LEAVES GO when the rail collapses, and that was survivable only while the
+   * rail opened expanded — collapsing was then a deliberate act by someone who
+   * knew what they were hiding. The rail now opens COLLAPSED, and the shipped
+   * default hangs eight destinations (Tasks, Sessions, Docs, Channels,
+   * Teammates, Memories, Artifacts, Loops) off one caret row: dropping leaves
+   * would make the first paint of the product unable to reach any of them.
+   *
+   * What a 48px rail has no room for is the WORD, not the row. So the law the
+   * assertions below hold is the one that was always meant: collapsed renders
+   * ICONS ONLY. Every label goes; nothing navigable goes with it.
+   */
+  it('collapsed renders icons only — labels and headers go, destinations do not', () => {
+    const { container, queryByText, getByRole } = renderRail({ collapsed: true });
+    // No WORDS anywhere: not on the row, not on the leaf.
     expect(queryByText('Tasks')).toBeNull();
-    expect(container.querySelectorAll('.shell-rail__leaf')).toHaveLength(0);
+    expect(container.querySelectorAll('.shell-rail__label')).toHaveLength(0);
     expect(container.querySelectorAll('.shell-rail__header')).toHaveLength(0);
     // Group headers degrade to dividers rather than vanishing.
     expect(container.querySelectorAll('.shell-rail__divider').length).toBeGreaterThan(0);
+    // The leaf is still THERE, still navigable, and still says what it is to
+    // assistive tech — an icon whose only name is a tooltip is not a control.
+    expect(container.querySelectorAll('.shell-rail__leaf').length).toBeGreaterThan(0);
+    expect(getByRole('button', { name: /^Tasks/ })).toBeTruthy();
   });
 
   it('collapsed corner marks render their NUMBERS — both of them (D31)', () => {

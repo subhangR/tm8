@@ -388,3 +388,47 @@
   aspect-ratio: 77 / 128;
   vertical-align: -0.22em;
 }
+
+/* --- PanelResizer — the side-column drag handle ---------------------------
+   An 8px hit target that PAINTS as a 1px hairline, so the column border and
+   the control are the same line rather than two rules a pixel apart. The
+   3px/brand state is shared by hover, focus and drag: a keyboard user gets the
+   same "this is what you are moving" feedback a pointer user gets.
+
+   `touch-action: none` is what makes the pointer events usable on a trackpad
+   and a touchscreen — without it the browser claims the horizontal gesture for
+   a scroll and the drag never reaches this element. */
+.cv2-root .kit-resizer {
+  position: relative;
+  flex: none;
+  width: 8px;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+  user-select: none;
+}
+.cv2-root .kit-resizer[aria-disabled='true'] {
+  cursor: default;
+}
+.cv2-root .kit-resizer__line {
+  width: 1px;
+  height: 100%;
+  background: var(--pn-line);
+  transition: width 100ms, background 100ms;
+}
+.cv2-root .kit-resizer:hover .kit-resizer__line,
+.cv2-root .kit-resizer:focus-visible .kit-resizer__line,
+.cv2-root .kit-resizer[data-resizing] .kit-resizer__line {
+  width: 3px;
+  background: var(--pn-brand);
+}
+.cv2-root .kit-resizer[aria-disabled='true']:hover .kit-resizer__line {
+  width: 1px;
+  background: var(--pn-line);
+}
+.cv2-root .kit-resizer:focus-visible {
+  outline: none;
+}

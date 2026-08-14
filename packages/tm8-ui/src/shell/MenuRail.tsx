@@ -482,10 +482,26 @@ export function MenuRail(props: MenuRailProps) {
                   </button>
 
                   {/* Leaves: pre-filtered Entity Views, one grammar across all
-                      groups (RULING E). Never rendered collapsed — a 48px rail
-                      has no room to say what a leaf is. */}
-                  {!collapsed &&
-                    open &&
+                      groups (RULING E).
+
+                      THEY NOW RENDER COLLAPSED TOO, AS ICONS. The old rule was
+                      "never rendered collapsed — a 48px rail has no room to say
+                      what a leaf is", and that was survivable only while the
+                      rail opened EXPANDED: collapsing was a deliberate, momentary
+                      act by someone who knew what they were hiding. It stops
+                      being survivable the moment the rail starts collapsed,
+                      because the shipped default hangs Tasks, Sessions, Docs,
+                      Channels, Teammates, Memories, Artifacts and Loops off ONE
+                      caret row — eight of the rail's destinations, unreachable
+                      on first paint, from a rail whose whole collapsed premise
+                      is "icons for everything".
+
+                      What the 48px rail genuinely has no room for is the WORD,
+                      not the row. So the leaf keeps its icon, takes the same
+                      composed `aria-label` its parent row uses collapsed, and
+                      loses only the guide line and the label — the same trade
+                      every other collapsed row already makes. */}
+                  {open &&
                     children.map((leaf) => {
                       const leafPresentation = present(leaf, presentKind);
                       if (!leafPresentation) return null;
@@ -497,12 +513,23 @@ export function MenuRail(props: MenuRailProps) {
                           type="button"
                           className={`shell-rail__leaf ${leafActive ? 'shell-rail__leaf--active' : ''}`}
                           aria-current={leafActive ? 'page' : undefined}
-                          title={countTitle(leafPresentation)}
+                          aria-label={collapsed ? collapsedLabel(leafPresentation) : undefined}
+                          title={collapsed ? collapsedLabel(leafPresentation) : countTitle(leafPresentation)}
                           onClick={() => onNavigate(leafTarget)}
                         >
-                          <span className="shell-rail__guide" aria-hidden="true" />
-                          <span className="shell-rail__label">{leafPresentation.label}</span>
-                          {leafPresentation.live !== undefined && (
+                          {/* The guide is the indent that says "this belongs to
+                              the row above". Collapsed there is no indent to
+                              draw it against, and an icon rail reads as one
+                              column — so the leaf shows its own icon instead. */}
+                          {collapsed ? (
+                            <span className="shell-rail__icon" aria-hidden="true">
+                              {leafPresentation.icon}
+                            </span>
+                          ) : (
+                            <span className="shell-rail__guide" aria-hidden="true" />
+                          )}
+                          {!collapsed && <span className="shell-rail__label">{leafPresentation.label}</span>}
+                          {!collapsed && leafPresentation.live !== undefined && (
                             <span className="shell-rail__live">
                               <span className="shell-rail__live-dot" aria-hidden="true" />
                               {leafPresentation.live}
@@ -513,7 +540,23 @@ export function MenuRail(props: MenuRailProps) {
                               <span className="shell-vh"> live</span>
                             </span>
                           )}
-                          <CountBadge presentation={leafPresentation} />
+                          {!collapsed && <CountBadge presentation={leafPresentation} />}
+                          {/* Collapsed, counts degrade to corner marks exactly
+                              as the parent row's do — aria-hidden, because the
+                              composed label above already carries the numbers. */}
+                          {collapsed && (leafPresentation.unseen ?? 0) > 0 && (
+                            <span
+                              className="shell-rail__badge-corner shell-rail__badge-corner--unseen"
+                              aria-hidden="true"
+                            >
+                              {leafPresentation.unseen}
+                            </span>
+                          )}
+                          {collapsed && leafPresentation.live !== undefined && (
+                            <span className="shell-rail__live-corner" aria-hidden="true">
+                              {leafPresentation.live}
+                            </span>
+                          )}
                         </button>
                       );
                     })}

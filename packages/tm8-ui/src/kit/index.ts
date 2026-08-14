@@ -35,3 +35,13 @@ export {
   CLOCK_TICK_MS, RELATIVE_WINDOW_MS,
   absTime, clockTime, dayLabel, dayStart, elapsed, parseInstant, relTime, shortDate, useNow, weekdayDate,
 } from './time';
+export {
+  PanelResizer,
+  RESIZE_STEP,
+  usePanelWidth,
+  usePanelFlag,
+  useElementWidth,
+  type PanelResizerProps,
+  type PanelWidth,
+  type ResizerSide,
+} from './PanelResizer';

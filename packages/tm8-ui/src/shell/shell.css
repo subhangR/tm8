@@ -477,6 +477,40 @@
 .cv2-root .shell-rail--collapsed .shell-rail__icon {
   font-size: 14px;
 }
+/* Collapsed, a LEAF is just a row one shade quieter. The 34px indent it
+   carries expanded exists to say "this belongs to the row above"; on a 48px
+   icon rail there is no indent to say it with, so the leaf takes the row's own
+   geometry and keeps only a slightly dimmer icon to mark the depth. Without
+   this it would keep its `padding-left: 34px` and paint its icon off the edge
+   of the rail. */
+.cv2-root .shell-rail--collapsed .shell-rail__leaf {
+  width: 40px;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  border-left: 0;
+  border-radius: 7px;
+}
+.cv2-root .shell-rail--collapsed .shell-rail__leaf .shell-rail__icon {
+  font-size: 12.5px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .shell-rail--collapsed .shell-rail__leaf--active {
+  background: var(--pn-active);
+}
+.cv2-root .shell-rail--collapsed .shell-rail__leaf--active .shell-rail__icon {
+  color: var(--pn-ink);
+}
+.cv2-root .shell-rail--collapsed .shell-rail__leaf--active::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--pn-brand);
+}
 .cv2-root .shell-rail__badge-corner {
   position: absolute;
   top: 4px;
