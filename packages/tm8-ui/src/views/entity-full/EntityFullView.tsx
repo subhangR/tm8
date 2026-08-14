@@ -70,6 +70,20 @@ import type { EntityFullPort } from './port';
  * STRUCTURALLY rather than by enforcement — `GateApp`'s route arms are an
  * exclusive ternary chain, so the workspace centre is not mounted while
  * `view === 'entity'`. Nothing checks it. Stated, not enforced; see the report.
+ *
+ * IT DOES NOT DECIDE THAT Z4 WINS. Whether `e/{id}` draws this host at all is
+ * the CALLER's decision, and deliberately so: there is an open ruling on whether
+ * an origin-BEARING `e/{id}?origin=tasks` should draw the kind screen with the
+ * panel while only the origin-LESS form draws Z4. Nothing here assumes the
+ * answer — this component draws when it is rendered and has no opinion about
+ * when that is — so either reading stays a one-line change at the mount seam
+ * rather than a rewrite of this file.
+ *
+ * IT HAS NO EFFECTS. Every value below is derived from props during render, so
+ * there is no mount race of the kind that made the router lane's screen-to-URL
+ * sync read a rendered snapshot while the effect filling it ran in the same pass
+ * — it navigated away from the route it had just landed on. Nothing here can:
+ * the resolution is asked for at render time and re-asked whenever it changes.
  */
 
 /** Where the viewer came from. Not inferable from the address — see above. */
