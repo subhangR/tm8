@@ -29,6 +29,8 @@ import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../s
 import { createBrowserTarget, type RouterTarget } from '../routes';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { CopyLinkControl } from '../share';
+import { useShellKind } from '../mobile';
+import { MobileShell } from './MobileShell';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
@@ -319,6 +321,7 @@ export function GateApp(props: GateAppProps = {}) {
    * FALLBACK consulted when nothing more authoritative said where to go, not
    * the authority itself. That distinction is what lets a shared link win.
    */
+  const { shell } = useShellKind();
   const navView = useNavStore((s) => s.view);
 
   /**
@@ -1280,6 +1283,44 @@ export function GateApp(props: GateAppProps = {}) {
     if (scope === 'kind') navigateTo({ type: 'kind', ref });
     setPaletteOpen(false);
   }, [channelEntities, navigateTo]);
+
+  /*
+   * THE SHELL FORK. Chosen by pointer type and width, never by user agent —
+   * `mobile/shell-for.ts` owns that predicate and is unit-tested away from the
+   * DOM.
+   *
+   * It forks HERE, above the chrome and BELOW everything that decides where you
+   * are. `navStore`, the codec and the browser history are already settled by
+   * this point and are shared by both branches, which is the whole of "the
+   * shell forks and the router does not": a link resolves to the same
+   * `activeTarget` on a phone as on a desktop, and only the arrangement differs.
+   *
+   * Placed after the router mount effect deliberately — a fork above it would
+   * give the two shells two mounts, and two mounts are two histories.
+   */
+  if (shell === 'mobile' && data.spaceId) {
+    return (
+      <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
+        <MobileShell
+          data={data}
+          spaceId={data.spaceId}
+          activeTarget={activeTarget}
+          navigateTo={navigateTo}
+          openEntity={openOnScreen}
+          serverBaseUrl={activeServer.routeBaseUrl}
+          reasons={reasons}
+          onNotice={notices.push}
+          nodeKey={nodeKey}
+          {...(viewerMemberId ? { viewerMemberId } : {})}
+          {...(channelEntities[0]?.id ? { chatAnchorId: channelEntities[0].id } : {})}
+          {...(data.spaces.find((sp) => sp.id === data.spaceId)?.name
+            ? { spaceLabel: data.spaces.find((sp) => sp.id === data.spaceId)?.name }
+            : {})}
+          notices={<NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
