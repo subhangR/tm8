@@ -14,6 +14,30 @@
  * phone and a laptop must not have a preference set on one silently apply to
  * the other, so this uses plain device storage rather than the per-server
  * storage in `App.tsx:17`, which is the wrong scope for it.
+ *
+ * ── READ THIS BEFORE YOU WRITE THE FIRST jsdom TEST FOR THIS HOOK ─────────
+ *
+ * There is deliberately no jsdom test here yet: everything decidable lives in
+ * `shell-for.ts` and is proved without a DOM. The moment you add one that
+ * RENDERS this hook inside anything that can navigate, you inherit a known
+ * trap, and it is written down here so you inherit the CAUSE rather than the
+ * symptom.
+ *
+ * RESET THE HASH BETWEEN CASES:
+ *
+ *     beforeEach(() => { window.location.hash = ''; resetNav(); });
+ *
+ * jsdom keeps ONE `window.location` per test FILE. Once the router is mounted
+ * the address is a LIVE INPUT, so a case that navigates LEAVES ITS ADDRESS
+ * BEHIND and the next case in that file boots from it. `resetNav()` alone
+ * stopped being a reset the day the router mounted.
+ *
+ * The failure does not look like one bug. It looks like a scatter of unrelated
+ * red across cases that never touched the address — the router-mount lane hit
+ * exactly this and it cost them eight failures that were ONE MISSING LINE, and
+ * it was misdiagnosed before it was found. If this file's tests ever go
+ * mysteriously and broadly red, THE FIRST HYPOTHESIS IS ONE LEAK, NOT MANY
+ * BUGS.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { asShellKind, shellFor, type PointerType, type ShellKind } from './shell-for';
