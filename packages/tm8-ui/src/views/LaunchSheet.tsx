@@ -145,6 +145,29 @@ export function LaunchSheet(props: LaunchSheetProps) {
     const project = projects.find((p) => p.selectedByDefault && p.trusted);
     return project ? { kind: 'project', projectId: project.id } : { kind: 'scratch' };
   });
+  /*
+   * WHY THE INITIALIZER ABOVE IS NOT ENOUGH.
+   *
+   * It runs once, at mount. `projects` is derived from the gate's
+   * `linkedProjects`, which starts as `[]` and is filled by a later read — so a
+   * sheet that opens before that read lands sees NO projects, falls to the
+   * scratch branch, and stays there. The rows appear a moment later and the
+   * default never does: `target` is already `scratch` and nothing recomputes it.
+   *
+   * The failure is silent and total. The operator sees their project listed,
+   * launches, and the session runs in a server temp directory instead of the
+   * repository — with no error, because a projectless spawn is a legitimate
+   * request that the server honours by minting scratch.
+   *
+   * Re-seed when the list arrives, and only while the operator has not chosen a
+   * target themselves — an explicit `scratch` click must survive a late read.
+   */
+  const [targetChosen, setTargetChosen] = useState(false);
+  useEffect(() => {
+    if (targetChosen) return;
+    const project = projects.find((p) => p.selectedByDefault && p.trusted);
+    if (project) setTarget({ kind: 'project', projectId: project.id });
+  }, [projects, targetChosen]);
   const [mode, setMode] = useState<LaunchMode>('worker');
   const [reasoningEffort, setReasoningEffort] = useState<NonNullable<LaunchConfig['reasoningEffort']>>('low');
   // `auto` — the same posture the node falls back to when nothing names one, so
@@ -537,7 +560,10 @@ export function LaunchSheet(props: LaunchSheetProps) {
             role="radio"
             aria-checked={target.kind === 'scratch'}
             className={`ls__row ${target.kind === 'scratch' ? 'ls__row--on' : ''}`}
-            onClick={() => setTarget({ kind: 'scratch' })}
+            onClick={() => {
+              setTargetChosen(true);
+              setTarget({ kind: 'scratch' });
+            }}
           >
             <span className="ls__glyph" aria-hidden="true">◌</span>
             <span className="ls__rowtext">
@@ -560,7 +586,14 @@ export function LaunchSheet(props: LaunchSheetProps) {
                 // L6/D28: untrusted is DISABLED WITH REASON and still
                 // focusable — the reason is unreachable if the control is not.
                 className={`ls__row ${on ? 'ls__row--on' : ''} ${p.trusted ? '' : 'ls__row--refused'}`}
-                onClick={(e) => (p.trusted ? setTarget({ kind: 'project', projectId: p.id }) : e.preventDefault())}
+                onClick={(e) => {
+                  if (!p.trusted) {
+                    e.preventDefault();
+                    return;
+                  }
+                  setTargetChosen(true);
+                  setTarget({ kind: 'project', projectId: p.id });
+                }}
                 title={p.trusted ? undefined : p.reason}
               >
                 <span className="ls__glyph" aria-hidden="true">⬒</span>
