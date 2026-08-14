@@ -274,6 +274,29 @@ export function GateApp(props: GateAppProps = {}) {
     restoredSpace.current = data.spaceId;
     setActiveTarget(readLastTarget(nodeKey, data.spaceId) ?? WORKSPACE_TARGET);
   }, [nodeKey, data.spaceId]);
+
+  /**
+   * LEAVING THIS (space, server) FOR ANOTHER — the one path.
+   *
+   * WHY IT IS ONE FUNCTION NOW. This exact four-line body was written out
+   * THREE times: the space tab bar's `onSelectSpace`, the rail's
+   * `onSelectServer`, and `NewSpaceProjectDialog`'s `onCreated`. Three copies
+   * of an invariant is three chances for the next context switch to be added
+   * with two of the four lines, and the failure it guards is silent: entity ids
+   * are SPACE-SCOPED while both stores are module-level, so a missed reset
+   * restores panels belonging to the space you just left. It does not throw. It
+   * shows you somebody else's rows.
+   *
+   * The interim workspace target is part of the reset and not an afterthought:
+   * the restore effect above replaces it once the new space id lands, so this
+   * is what is on screen for the frames in between.
+   */
+  const leaveSpaceContext = useCallback(() => {
+    navStore.getState().applyNormalization({ stack: [], pinned: [] });
+    navStore.getState().setSession(null);
+    screenStackStore.getState().clearAll();
+    setActiveTarget(WORKSPACE_TARGET);
+  }, []);
   const projectOnboardingPort = useMemo<ProjectOnboardingPort | null>(() => {
     const setup = data.seam.projectSetup;
     if (!setup) return null;
@@ -733,13 +756,7 @@ export function GateApp(props: GateAppProps = {}) {
           spaces={data.spaces}
           activeSpaceId={data.spaceId || null}
           onSelectSpace={(id: SpaceId) => {
-            navStore.getState().applyNormalization({ stack: [], pinned: [] });
-            navStore.getState().setSession(null);
-            /* Entity ids are SPACE-SCOPED and the screen stacks are module-level,
-               so they outlive this switch. Without this, a kind screen would
-               restore an entity belonging to the space just left. */
-            screenStackStore.getState().clearAll();
-            setActiveTarget({ type: 'view', ref: 'workspace' });
+            leaveSpaceContext();
             data.selectSpace(id);
           }}
           onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
@@ -772,13 +789,7 @@ export function GateApp(props: GateAppProps = {}) {
             servers={props.servers}
             activeServerId={activeServer.id}
             onSelectServer={(id) => {
-              navStore.getState().applyNormalization({ stack: [], pinned: [] });
-              navStore.getState().setSession(null);
-              /* Entity ids are SPACE-SCOPED and the screen stacks are module-level,
-                 so they outlive this switch. Without this, a kind screen would
-                 restore an entity belonging to the space just left. */
-              screenStackStore.getState().clearAll();
-              setActiveTarget({ type: 'view', ref: 'workspace' });
+              leaveSpaceContext();
               props.onSelectServer?.(id);
             }}
             onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
@@ -1206,10 +1217,10 @@ export function GateApp(props: GateAppProps = {}) {
             port={projectOnboardingPort}
             onDismiss={() => setNewSpaceOpen(false)}
             onCreated={(space) => {
-              navStore.getState().applyNormalization({ stack: [], pinned: [] });
-              navStore.getState().setSession(null);
-              screenStackStore.getState().clearAll();
-              setActiveTarget({ type: 'view', ref: 'workspace' });
+              /* A newly created Space is a context switch like any other — the
+                 brief that scoped this work named only the two switch handlers,
+                 and this third copy is exactly the drift the one path removes. */
+              leaveSpaceContext();
               data.acceptSpace(space);
               setNewSpaceOpen(false);
             }}
