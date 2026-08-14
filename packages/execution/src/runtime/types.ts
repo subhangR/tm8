@@ -87,7 +87,7 @@ export interface StartAgentThreadInput {
   systemPrompt: string;
   /** Absolute path to the per-thread strict MCP configuration. */
   mcpConfigPath: string;
-  /** Provider-native tools visible to the model. Empty means no built-ins. */
+  /** Provider-native tools visible to the model. Empty explicitly disallows Claude built-ins. */
   availableTools: readonly string[];
   /** Closed, pre-authorized provider-native and TM8 MCP tool set. */
   allowedTools: readonly string[];

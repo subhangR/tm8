@@ -40,7 +40,7 @@ const CLAUDE_NATIVE_REPLACEMENTS = new Set([
 ]);
 
 export interface ChatProviderToolPolicy {
-  /** Exact Claude built-ins supplied to `--tools`; an empty list hides all built-ins. */
+  /** Exact Claude built-ins supplied to `--tools`; an empty list is emitted as explicit denials. */
   readonly availableTools: readonly string[];
   /** Native and MCP calls pre-approved by `--allowed-tools`. */
   readonly allowedTools: readonly string[];

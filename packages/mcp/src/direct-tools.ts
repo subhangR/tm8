@@ -6,6 +6,7 @@ import { BlockList, isIP } from 'node:net';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { lstat, mkdir, open, realpath } from 'node:fs/promises';
+import { Worker } from 'node:worker_threads';
 import { glob as globFiles } from 'tinyglobby';
 import { Agent } from 'undici';
 
@@ -17,6 +18,38 @@ const execAsync = promisify(exec);
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_OUTPUT_BYTES = 256 * 1024;
 const MAX_GREP_SCAN_BYTES = 50 * 1024 * 1024;
+const MAX_GREP_FILE_MS = 1_000;
+const MAX_GREP_TOTAL_MS = 5_000;
+const MAX_GREP_LINE_CHARS = 16_384;
+const MAX_GREP_RESULT_CHARS = 4_096;
+
+const GREP_WORKER_SOURCE = String.raw`
+  const { parentPort, workerData } = require('node:worker_threads');
+  const expression = new RegExp(workerData.query);
+  parentPort.on('message', ({ text, limit }) => {
+    const matches = [];
+    let inputTruncated = false;
+    const lines = text.split('\n');
+    for (let index = 0; index < lines.length && matches.length < limit; index += 1) {
+      const line = lines[index];
+      const candidate = line.length > workerData.maxLineChars
+        ? line.slice(0, workerData.maxLineChars)
+        : line;
+      inputTruncated ||= candidate.length !== line.length;
+      expression.lastIndex = 0;
+      const match = expression.exec(candidate);
+      if (!match) continue;
+      const clean = line.replace(/\r$/, '');
+      matches.push({
+        line: index + 1,
+        column: (match.index || 0) + 1,
+        text: clean.slice(0, workerData.maxResultChars),
+        textTruncated: clean.length > workerData.maxResultChars,
+      });
+    }
+    parentPort.postMessage({ matches, inputTruncated });
+  });
+`;
 
 export interface DirectToolDefinition {
   name: DirectToolName;
@@ -153,8 +186,7 @@ async function repoGrep(args: Record<string, unknown>, context: DirectToolContex
   const root = await projectRoot(context);
   const glob = optionalString(args.glob, 'glob');
   if (glob) validateGlobPattern(glob, 'glob');
-  let expression: RegExp;
-  try { expression = new RegExp(query); }
+  try { new RegExp(query); }
   catch { throw new DirectToolError('invalid_input', 'query must be a valid JavaScript regular expression'); }
   const paths = (await globFiles(glob ?? '**/*', {
     cwd: root,
@@ -167,26 +199,78 @@ async function repoGrep(args: Record<string, unknown>, context: DirectToolContex
   let scannedBytes = 0;
   let scannedFiles = 0;
   let truncated = false;
-  for (const path of paths) {
-    if (matches.length >= limit || scannedBytes >= MAX_GREP_SCAN_BYTES) { truncated = true; break; }
-    const target = await confinedExistingPath(context, path);
-    let bytes: Buffer;
-    try { bytes = await readFileCapped(target); }
-    catch (error) {
-      if (error instanceof DirectToolError && error.code === 'payload_too_large') { truncated = true; continue; }
-      throw error;
-    }
-    scannedFiles += 1;
-    scannedBytes += bytes.byteLength;
-    if (bytes.includes(0)) continue;
-    for (const [lineIndex, text] of bytes.toString('utf8').split('\n').entries()) {
-      const match = expression.exec(text);
-      if (!match) continue;
-      matches.push({ path, line: lineIndex + 1, column: (match.index ?? 0) + 1, text: text.replace(/\r$/, '') });
+  const deadline = Date.now() + MAX_GREP_TOTAL_MS;
+  const worker = new Worker(GREP_WORKER_SOURCE, {
+    eval: true,
+    workerData: { query, maxLineChars: MAX_GREP_LINE_CHARS, maxResultChars: MAX_GREP_RESULT_CHARS },
+  });
+  try {
+    for (const path of paths) {
+      if (matches.length >= limit || scannedBytes >= MAX_GREP_SCAN_BYTES) { truncated = true; break; }
+      const target = await confinedExistingPath(context, path);
+      let bytes: Buffer;
+      try { bytes = await readFileCapped(target); }
+      catch (error) {
+        if (error instanceof DirectToolError && error.code === 'payload_too_large') { truncated = true; continue; }
+        throw error;
+      }
+      scannedFiles += 1;
+      scannedBytes += bytes.byteLength;
+      if (bytes.includes(0)) continue;
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) { truncated = true; break; }
+      const scanned = await grepWorkerFile(
+        worker,
+        bytes.toString('utf8'),
+        limit - matches.length,
+        Math.min(MAX_GREP_FILE_MS, remainingMs),
+      );
+      truncated ||= scanned.inputTruncated;
+      matches.push(...scanned.matches.map((match) => ({ path, ...match })));
       if (matches.length >= limit) { truncated = true; break; }
     }
+  } finally {
+    await worker.terminate();
   }
   return result('repo_grep', { query, ...(glob ? { glob } : {}), matches, scannedFiles, scannedBytes, truncated });
+}
+
+interface GrepWorkerResult {
+  matches: Array<{ line: number; column: number; text: string; textTruncated: boolean }>;
+  inputTruncated: boolean;
+}
+
+async function grepWorkerFile(
+  worker: Worker,
+  text: string,
+  limit: number,
+  timeoutMs: number,
+): Promise<GrepWorkerResult> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      worker.off('message', onMessage);
+      worker.off('error', onError);
+      worker.off('exit', onExit);
+    };
+    const onMessage = (value: GrepWorkerResult): void => { cleanup(); resolvePromise(value); };
+    const onError = (): void => {
+      cleanup();
+      rejectPromise(new DirectToolError('tool_failed', 'repo_grep worker failed'));
+    };
+    const onExit = (code: number): void => {
+      cleanup();
+      rejectPromise(new DirectToolError('tool_failed', `repo_grep worker exited before producing a result (${code})`));
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      rejectPromise(new DirectToolError('tool_timeout', 'repo_grep regular expression exceeded its execution budget', true));
+    }, timeoutMs);
+    worker.once('message', onMessage);
+    worker.once('error', onError);
+    worker.once('exit', onExit);
+    worker.postMessage({ text, limit });
+  });
 }
 
 async function repoWrite(args: Record<string, unknown>, context: DirectToolContext) {
@@ -345,7 +429,7 @@ async function artifactCreate(args: Record<string, unknown>, context: DirectTool
 
 async function webFetch(args: Record<string, unknown>, context: DirectToolContext) {
   const maxBytes = integer(args.maxBytes, 'maxBytes', 1024, 500_000) ?? 200_000;
-  const fetched = await fetchPublic(requiredString(args.url, 'url'), context.fetchImpl ?? fetch, maxBytes, true, context.fetchImpl === undefined);
+  const fetched = await fetchPublic(requiredString(args.url, 'url'), context.fetchImpl ?? fetch, maxBytes, true);
   return result('web_fetch', fetched);
 }
 
@@ -353,7 +437,7 @@ async function webSearch(args: Record<string, unknown>, context: DirectToolConte
   const query = requiredString(args.query, 'query');
   const limit = integer(args.limit, 'limit', 1, 10) ?? 5;
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-  const fetched = await fetchPublic(url, context.fetchImpl ?? fetch, 300_000, false, context.fetchImpl === undefined);
+  const fetched = await fetchPublic(url, context.fetchImpl ?? fetch, 300_000, false);
   const html = fetched.raw;
   const links = [...html.matchAll(/<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
   const results = links.slice(0, limit).map((match) => ({ url: searchResultUrl(match[1] ?? ''), title: htmlToText(match[2] ?? '') }));
@@ -667,20 +751,19 @@ async function fetchPublic(
   fetchImpl: typeof fetch,
   maxBytes: number,
   extract = true,
-  pinDns = false,
 ) {
   let url: URL;
   try { url = new URL(urlText); }
   catch { throw new DirectToolError('invalid_input', 'url must be a valid absolute HTTP(S) URL'); }
   for (let redirect = 0; redirect <= 4; redirect += 1) {
     const addresses = await validatePublicUrl(url);
-    const dispatcher = pinDns ? pinnedDispatcher(addresses) : undefined;
+    const dispatcher = pinnedDispatcher(addresses);
     try {
       const init = {
         redirect: 'manual' as const,
         signal: AbortSignal.timeout(15_000),
         headers: { 'user-agent': 'tm8-chat/1.0', accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.1' },
-        ...(dispatcher ? { dispatcher } : {}),
+        dispatcher,
       };
       const response = await fetchImpl(url, init as RequestInit);
       if (response.status >= 300 && response.status < 400) {
@@ -766,7 +849,8 @@ for (const [network, prefix] of [
 ] as const) NON_PUBLIC_IPV4.addSubnet(network, prefix, 'ipv4');
 for (const [network, prefix] of [
   ['::', 128], ['::1', 128], ['::ffff:0:0', 96], ['fc00::', 7], ['fe80::', 10],
-  ['fec0::', 10], ['ff00::', 8], ['2001:db8::', 32],
+  ['fec0::', 10], ['ff00::', 8], ['64:ff9b::', 96], ['64:ff9b:1::', 48],
+  ['2001::', 32], ['2001:db8::', 32], ['2002::', 16],
 ] as const) NON_PUBLIC_IPV6.addSubnet(network, prefix, 'ipv6');
 
 function privateAddress(address: string): boolean {

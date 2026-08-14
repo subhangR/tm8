@@ -77,6 +77,17 @@ describe('direct repository tools', () => {
     });
   });
 
+  it('terminates catastrophic fallback grep expressions instead of blocking the MCP process', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'tm8-mcp-'));
+    await writeFile(join(root, 'hostile.txt'), `${'a'.repeat(64)}!\n`, 'utf8');
+    const router = new Tm8ToolRouter(transport, { mode: 'ask', projectRoot: root });
+    const started = Date.now();
+    await expect(router.call('repo_grep', { query: '(a+)+$' })).resolves.toMatchObject({
+      isError: true, structuredContent: { error: { code: 'tool_timeout' } },
+    });
+    expect(Date.now() - started).toBeLessThan(3_000);
+  });
+
   it('returns a capped local git diff with an honest truncation flag', async () => {
     const root = await mkdtemp(join(tmpdir(), 'tm8-mcp-git-'));
     await execFileAsync('git', ['init', '-b', 'main'], { cwd: root });
@@ -124,9 +135,11 @@ describe('direct repository tools', () => {
 
   it('blocks reserved IPv4/IPv6 destinations and revalidates redirects', async () => {
     const called: string[] = [];
-    const fetchImpl = (async (input: URL | RequestInfo) => {
+    const dispatchers: unknown[] = [];
+    const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
       const url = String(input);
       called.push(url);
+      dispatchers.push((init as RequestInit & { dispatcher?: unknown } | undefined)?.dispatcher);
       if (url === 'https://93.184.216.34/start') {
         return new Response(null, { status: 302, headers: { location: 'http://127.0.0.1/secret' } });
       }
@@ -136,6 +149,8 @@ describe('direct repository tools', () => {
     for (const url of [
       'http://100.64.0.1/', 'http://198.18.0.1/', 'http://192.0.0.1/',
       'http://[::1]/', 'http://[fe80::1]/', 'http://[::ffff:169.254.169.254]/',
+      'http://[64:ff9b::7f00:1]/', 'http://[64:ff9b:1::a9fe:a9fe]/',
+      'http://[2002:7f00:1::]/', 'http://[2001:0:0:0:0:0:7f00:1]/',
     ]) {
       await expect(router.call('web_fetch', { url })).resolves.toMatchObject({
         isError: true, structuredContent: { error: { code: 'forbidden' } },
@@ -144,5 +159,6 @@ describe('direct repository tools', () => {
     const redirected = await router.call('web_fetch', { url: 'https://93.184.216.34/start' });
     expect(redirected).toMatchObject({ isError: true, structuredContent: { error: { code: 'forbidden' } } });
     expect(called).toEqual(['https://93.184.216.34/start']);
+    expect(dispatchers[0]).toBeDefined();
   });
 });

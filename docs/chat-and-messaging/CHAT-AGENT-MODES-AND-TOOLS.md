@@ -64,8 +64,9 @@ Research was refreshed on 2026-08-14 against primary product documentation:
 Decision: adapters map tm8 modes to provider-native tools first. For the
 current Claude Code adapter, Ask and Plan see
 `Read/Glob/Grep/Bash/WebFetch/WebSearch` plus `TodoWrite` as its scratchpad;
-Build additionally sees `Edit/Write`; Orchestrate sees no native
-code tools. The runtime always uses `dontAsk`. Read, search, fetch, and Build
+Build additionally sees `Edit/Write`; Orchestrate explicitly disallows every
+known Claude built-in because an empty `--tools` value is not a visibility
+restriction. The runtime always uses `dontAsk`. Read, search, fetch, and Build
 edits are pre-approved by the checkout-anchored `Edit(/**)` rule (which Claude
 also applies to `Write`); file reads, glob, and grep are scoped by the
 checkout-anchored `Read(/**)` rule. Bash is visible but not blanket-approved,
@@ -94,7 +95,7 @@ authority for MCP calls. Provider-native calls are constrained by the exact
 | --- | --- | --- |
 | `repo_read_file` | `path`, optional `offset`, `limit` | UTF-8 text, line/byte counts, truncation |
 | `repo_glob` | `pattern`, optional `limit` | sorted project-relative paths, truncation |
-| `repo_grep` | `query`, optional `glob`, `limit` | path/line/column/text matches, truncation |
+| `repo_grep` | `query`, optional `glob`, `limit` | path/line/column/text matches, truncation; regex execution is isolated behind per-file and total wall-clock budgets |
 | `repo_write` | `path`, `content` | changed flag and byte count |
 | `repo_edit` | `path`, `oldText`, `newText`, optional `replaceAll` | replacement count |
 | `repo_multi_edit` | ordered edits using the `repo_edit` shape | atomic preflight, rollback on write failure, per-file counts |
@@ -218,6 +219,9 @@ access-controlled transcript part. These events render in the transcript.
   no shell environment secrets are returned.
 - Web follows a small redirect cap, re-validates every destination and pins a
   validated address through connect.
+- Claude-native visibility and path rules are a versioned provider contract.
+  Adapter argument tests cover the exact flags, and deployment should pin or
+  smoke-test the Claude CLI before upgrading it.
 - Catalog errors retain their structured code/retryability. Mode and project
   refusals have distinct codes so the UI/model cannot mistake them for empty
   success.

@@ -27,6 +27,11 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 const DEFAULT_BOOT_SETTLEMENT_MS = 150;
 const DEFAULT_CLOSE_GRACE_MS = 1_000;
 const MAX_STDERR_CHARS = 16_384;
+const CLAUDE_BUILTIN_TOOLS = [
+  'Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebFetch', 'WebSearch',
+  'NotebookEdit', 'TodoWrite', 'Task', 'TaskOutput', 'AskUserQuestion',
+  'EnterPlanMode', 'ExitPlanMode', 'Skill',
+] as const;
 
 type JsonObject = Record<string, unknown>;
 
@@ -376,8 +381,9 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       '--strict-mcp-config',
       '--permission-mode',
       'dontAsk',
-      '--tools',
-      input.availableTools.join(','),
+      ...(input.availableTools.length > 0
+        ? ['--tools', input.availableTools.join(',')]
+        : ['--disallowed-tools', ...CLAUDE_BUILTIN_TOOLS]),
       '--allowed-tools',
       ...input.allowedTools,
       input.resume === 'post_interrupt' ? '--resume' : '--session-id',
