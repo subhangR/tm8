@@ -325,7 +325,12 @@ describe('an over-cap link says what it dropped', () => {
     const view = mount(target);
     await waitFor(() => view.getByTestId('workspace-grid'));
     await settle();
-    await waitFor(() => view.getByText(/dropped|too long|wasn’t carried|wasn't carried/i));
+    /* AND IT NAMES THE CLASS. R4-7's actual requirement: "some state wasn't
+       carried" is a sentence a reader can do nothing with — it does not say
+       whether they lost a filter they can retype or panels they cannot
+       reconstruct. `DROP_CLASS_COPY` supplies the words. */
+    const notice = await waitFor(() => view.getByText(/couldn’t be carried/i));
+    expect(notice.textContent).toMatch(/open panels|pinned panels/i);
     view.unmount();
   });
 });

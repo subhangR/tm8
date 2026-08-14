@@ -121,10 +121,44 @@ export const DROP_CLASS_COPY: Readonly<Record<DropClass, string>> = {
 /**
  * The ONE generalized notice (R4-7): class-naming, no raw IDs. The NoticeHost
  * renders a single line per settle no matter how many params were discarded.
+ *
+ * IT NEVER NAMED THE CLASS, WHICH IS THE ONE THING R4-7 REQUIRES OF IT. The
+ * sentence was a fixed string and `dropped` was accepted and ignored, so
+ * `DROP_CLASS_COPY` — the table sitting directly above, written for exactly
+ * this — had no reader at all. "Some state wasn't carried" is the sentence a
+ * reader can do nothing with: it does not say whether they lost a filter they
+ * can retype or three pinned panels they cannot reconstruct, which is the whole
+ * difference between an inconvenience and a link they should ask to be resent.
+ *
+ * COMPOSED FROM THE TABLE, never restated beside it. A reworded entry has to
+ * change this sentence too, and composition is what guarantees it does — the
+ * same rule `attachRouter` applies to `REASONS` for the deferred-feature
+ * notice, and the drift class this codebase keeps finding when it does not.
+ *
+ * Still ONE line for a whole settle, and still no raw ids: a viewer cannot act
+ * on `ent_01H8…` and printing one leaks identifiers into a surface built to be
+ * shared.
  */
 export function dropNoticeText(dropped: readonly DropClass[]): string | null {
   if (dropped.length === 0) return null;
-  return "Some state wasn't carried in this link — it was too long or malformed.";
+  /* Deduped and ordered by the table, not by arrival: the same class can be
+     dropped by more than one tier in one settle, and a sentence whose word
+     order depends on the drop order would read differently for the same loss. */
+  const named = (Object.keys(DROP_CLASS_COPY) as DropClass[])
+    .filter((cls) => dropped.includes(cls))
+    .map((cls) => DROP_CLASS_COPY[cls]);
+  if (named.length === 0) return null;
+  const list =
+    named.length === 1
+      ? named[0]
+      : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`;
+  /* CAUSE-NEUTRAL, DELIBERATELY. One function serves two callers: `parse`
+     discards params that were UNPARSEABLE, `build` drops them to respect the
+     2048 cap. The old sentence hedged across both with "too long or malformed",
+     and naming one cause here would make the notice confidently wrong half the
+     time. The CLASS is what R4-7 requires and what the reader can act on; the
+     cause is not knowable at this seam and is not claimed. */
+  return `Some of this link couldn’t be carried: ${list}.`;
 }
 
 export interface ParseOutcome {
