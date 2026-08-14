@@ -98,7 +98,13 @@ describe('CopyLinkControl', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
 
     const field = await screen.findByRole('textbox', { name: 'Share link' });
-    expect(field).toHaveValue('https://tm8.example/app/#/s/space%2Fa/workspace');
+    /* Plain `.value`, not `toHaveValue`: this suite does not load the jest-dom
+       matchers, so `toHaveValue` is not a matcher here — it is an unknown Chai
+       property, and asserting through it fails the test for a reason that has
+       nothing to do with the behaviour under test. */
+    expect((field as HTMLInputElement).value).toBe(
+      'https://tm8.example/app/#/s/space%2Fa/workspace',
+    );
     expect(screen.queryByText('Copied')).toBeNull();
     expect(screen.queryByText('Link copied')).toBeNull();
     await waitFor(() => expect(writeText).toHaveBeenCalledOnce());

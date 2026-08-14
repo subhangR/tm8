@@ -97,9 +97,17 @@ const isShipped = (f: string) => /\.tsx?$/.test(f) && !/\.(test|spec)\.tsx?$/.te
  * FOUND THE HONEST WAY: this rule was added because the scan CAUGHT THAT
  * DOCBLOCK. The law worked; the scope was wrong.
  *
- * Line comments are matched only when they START the line (`^\s*//`), never
- * mid-line — a mid-line rule would eat the `//` in any URL and silently delete
- * live code from the scan, which is how a strip step turns into a hole.
+ * Line comments are matched only when they START the line, anchored with
+ * caret-backslash-s-star before the slashes — never mid-line. A mid-line rule
+ * would eat the double slash in any URL and silently delete live code from the
+ * scan, which is how a strip step turns into a hole.
+ *
+ * The pattern is SPELLED OUT IN WORDS above rather than shown, deliberately:
+ * writing it inside a backtick in this docblock is what made the transformer
+ * read an unterminated regular expression and fail the whole file to PARSE —
+ * so the guard reported nothing at all, which is the one outcome worse than a
+ * false positive. A test that cannot be parsed cannot fail, and a guard that
+ * cannot fail is not a guard.
  */
 function stripComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
