@@ -15,6 +15,7 @@
  * L6 everywhere: an unavailable action is DISABLED WITH A REASON, never hidden
  * and never silently inert.
  */
+import type { EntityKind } from '@tm8/contract';
 import type {
   ActionAvailability,
   ActionContext,
@@ -97,6 +98,40 @@ function capabilityGate(
   if (!ctx.entityId) return disabled(REASONS.noEntity);
   if (ctx.capabilities == null) return disabled(REASONS.unknownCapabilities);
   return ctx.capabilities[flag] ? null : disabled(reason);
+}
+
+/**
+ * Kinds the facade answers `canDelete: false` for BY CONSTRUCTION, not by role.
+ *
+ * `capabilitiesOf` refuses `member`, and the overrides beside it refuse
+ * `work_session`, `project`, `message` and `interaction_profile` — none of them
+ * consulting who is asking. `cannotArchive` therefore reads as a permission the
+ * viewer could be granted when there is none to grant: an owner, a node admin
+ * and a member all get the same refusal, and a reader who believes the copy goes
+ * looking for the role that fixes it.
+ *
+ * D15 requires the MECHANISM, so each of these names what is actually true and,
+ * where one exists, the verb that does the job instead.
+ */
+const NEVER_ARCHIVABLE: Partial<Record<EntityKind, string>> = {
+  work_session:
+    'A session is not archivable — it is born from a spawn and ends by exiting. Terminate it instead.',
+  project: 'A project is not archivable — unlink it from this Space instead.',
+  member: 'A member is not archivable — leaving the Space is how that row goes away.',
+  message: 'A message is not archivable.',
+  interaction_profile: 'An interaction profile is not archivable.',
+};
+
+/**
+ * Structural gate (precedence 2.5): ahead of the capability read, because the
+ * answer does not depend on it — and is known before capabilities have loaded.
+ * Falls through when the kind is absent so `capabilityGate` keeps owning the
+ * no-entity and not-yet-loaded cases.
+ */
+function neverArchivableGate(ctx: ActionContext): ActionAvailability | null {
+  if (!ctx.entityId || !ctx.kind) return null;
+  const reason = NEVER_ARCHIVABLE[ctx.kind];
+  return reason ? disabled(reason) : null;
 }
 
 /** A verdict-gated session verb: only a `live` seam verdict permits it. */
@@ -222,7 +257,10 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
     'archive',
     'Archive',
     '▢',
-    (ctx) => opGate(ctx, 'entities.delete') ?? capabilityGate(ctx, 'canDelete', REASONS.cannotArchive) ?? AVAILABLE,
+    (ctx) => opGate(ctx, 'entities.delete')
+      ?? neverArchivableGate(ctx)
+      ?? capabilityGate(ctx, 'canDelete', REASONS.cannotArchive)
+      ?? AVAILABLE,
   ),
 
   restore: define(
