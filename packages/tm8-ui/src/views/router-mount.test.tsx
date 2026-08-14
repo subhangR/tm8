@@ -17,7 +17,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import { GateApp } from './GateApp';
-import { resetNav } from '../stores/navStore';
+import { navStore, resetNav } from '../stores/navStore';
 import { screenKeyOf, screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget, MAX_HASH_LENGTH, type MemoryTarget } from '../routes';
 import type { EntityId } from '@tm8/contract';
@@ -92,6 +92,30 @@ describe('URL → screen', () => {
     await waitFor(() =>
       expect(screenStackStore.getState().stacks[screenKeyOf.kind('task')]).toEqual([TASK]),
     );
+    view.unmount();
+  });
+
+  it('OPENS the session a ?session= link names', async () => {
+    /* `selectAutoOpenSession` was written, tested and never called, so a link
+       to a live session parsed cleanly, round-tripped faithfully, and landed
+       the recipient on an EMPTY workspace. The param meant nothing. */
+    const session = 'ws-forge-live' as EntityId;
+    const target = createMemoryTarget(`#/s/${SPACE}/workspace?session=${session}`);
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('workspace-grid'));
+    await waitFor(() => expect(navStore.getState().stack).toContain(session));
+    view.unmount();
+  });
+
+  it('lets a link that names its panels outrank the ?session= shorthand', async () => {
+    /* §2.2: `session` auto-opens ONLY when `p` and `pin` are both absent. An
+       explicit panel list is the sender being specific, and specificity wins. */
+    const session = 'ws-forge-live' as EntityId;
+    const target = createMemoryTarget(`#/s/${SPACE}/workspace?p=${TASK}&session=${session}`);
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('workspace-grid'));
+    await settle();
+    expect(navStore.getState().stack).toEqual([TASK]);
     view.unmount();
   });
 

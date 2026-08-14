@@ -25,7 +25,7 @@ import {
 import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
 import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
-import { attachRouter, navStore, useNavStore } from '../stores/navStore';
+import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../stores/navStore';
 import { createBrowserTarget, type RouterTarget } from '../routes';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { PromptsOverlay } from '../prompts';
@@ -582,6 +582,35 @@ export function GateApp(props: GateAppProps = {}) {
     }
     navStore.getState().navigate(next);
   }, [activeTarget, openOnScreen, navView]);
+
+  /**
+   * `?session={id}` — THE OTHER HALF OF THE GRAMMAR THAT HAD NO CONSUMER.
+   *
+   * `selectAutoOpenSession` was written, tested and never called by anything.
+   * So a link to a live session parsed cleanly, survived the round trip, and
+   * landed the recipient on an EMPTY WORKSPACE — the param was carried
+   * faithfully and meant nothing. Same shape as `attachRouter` itself: built,
+   * correct, unreached.
+   *
+   * The selector already carries the §2.2 rule — it auto-opens only when `p`
+   * and `pin` are both absent, so a link that names its panels explicitly wins
+   * over the shorthand.
+   *
+   * REPLACE, NOT `push()`. The store's `push` action is for a viewer opening
+   * something; this is hydration finishing the job the address asked for, and
+   * it must not manufacture a back entry the viewer never created. It settles
+   * in one pass: once the id is on the stack the centre is no longer empty, so
+   * the selector returns null and this cannot re-fire.
+   */
+  const autoOpenSession = useNavStore(selectAutoOpenSession);
+  useEffect(() => {
+    if (!autoOpenSession) return;
+    navStore.setState((s) => ({
+      stack: [...s.stack.filter((id) => id !== autoOpenSession), autoOpenSession],
+      history: 'replace',
+      revision: s.revision + 1,
+    }));
+  }, [autoOpenSession]);
 
   /**
    * THE LINK'S SPACE OUTRANKS THE REMEMBERED SPACE.
