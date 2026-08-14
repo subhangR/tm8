@@ -79,6 +79,7 @@ import { debugSurfaceFor } from './debugSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
+import { AuxEntityPanel } from './auxPanel';
 import { representedThreadMessageCount } from './message-thread';
 
 export interface EntityViewProps {
@@ -1027,43 +1028,27 @@ export function EntityView(props: EntityViewProps) {
           </div>
           <div className="ev-aux__body">
             {aux.sort === 'entity' ? (
-              <EntityDetailPanel
-                detail={auxDetail ?? null}
-                serverBaseUrl={props.serverBaseUrl}
-                loading={!auxDetail}
-                host="stack"
-                reasons={reasons}
-                ctx={{ ...ctx, entityId: aux.id }}
-                controls={controlHost}
-                onAction={primaries.forEntity(aux.id)}
-                wiredActions={primaries.wiredActions}
-                membershipAuthoring={membership.authoringFor(auxDetail)}
-                launch={launchPort}
-                mergePr={mergePrPortFor(data.seam)}
-                onRestore={() => rowLifecycle.archive('restore', aux.id)}
-                pinned={false}
-                pinRefusal="Pinning lives in the Workspace"
-                liveness={data.livenessOf(aux.id)}
-                debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
-                gitSurface={gitSurfaceFor(data.seam, aux.id, data.livenessOf)}
-                taskGitSection={taskGitSectionFor(data.seam, data.detailOf(aux.id), (id) => setAux({ sort: 'entity', id: id as EntityId }))}
-                graphSurface={graphSurfaceFor(data.seam, aux.id, data.livenessOf, (id) =>
-                  setAux({ sort: 'entity', id: id as EntityId }),
-                )}
-                livenessOf={data.livenessOf}
-                attachments={attachments}
-                onAttachmentUploaded={() => props.data.refetchDetail(aux.id)}
-                viewerMemberId={props.viewerMemberId}
-                messages={data.messagesOf(aux.id)}
-                connections={data.connectionsOf(aux.id)}
-                linkedPullRequests={data.linkedPullRequestsOf?.(aux.id) ?? []}
-                linkedPullRequestsOf={data.linkedPullRequestsOf}
-                commands={data.seam.commands}
-                onSaved={data.reconcileCommand}
-                // Drilling from the aux REPLACES the aux, it does not open a
-                // fourth column. Three regions is the ruling; a stack here
-                // would grow the screen sideways without anyone asking.
-                onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
+              /* The mount moved to `auxPanel.tsx` so a second host can render
+                 the SAME panel; the ports below are this screen's own, shared
+                 with the centre mount exactly as before. Drilling from the aux
+                 REPLACES the aux, it does not open a fourth column — three
+                 regions is the ruling, and that rule travels with the mount. */
+              <AuxEntityPanel
+                host={{
+                  data,
+                  reasons,
+                  ctx,
+                  controls: controlHost,
+                  primaries,
+                  membership,
+                  launchPort,
+                  rowLifecycle,
+                  attachments,
+                  serverBaseUrl: props.serverBaseUrl,
+                  viewerMemberId: props.viewerMemberId,
+                }}
+                entityId={aux.id}
+                onOpenEntity={(id) => setAux({ sort: 'entity', id })}
                 onClose={() => setAux(null)}
               />
             ) : detail && aux.tab === 'discussion' ? (
