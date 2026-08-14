@@ -29,7 +29,7 @@ import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
-import { allKinds, KindIcon, VIEW_ART } from '../domain';
+import { allKinds, KindIcon, VIEW_ART, landingOfRoute, routeViewOf } from '../domain';
 import { getKind } from '../domain';
 import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
 import type { DispatchSelection, LaunchSelection } from './LaunchSheet';
@@ -249,18 +249,69 @@ export function GateApp(props: GateAppProps = {}) {
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
-  const [activeTarget, setActiveTarget] = useState<MenuTarget | null>(WORKSPACE_TARGET);
+  /**
+   * WHICH SCREEN IS SHOWING — now DERIVED from `navStore`, not held here.
+   *
+   * IT USED TO BE A `useState` IN THIS COMPONENT, and that is the single fact
+   * that made the app unaddressable. The route codec, `attachRouter` and the
+   * whole `NavView` grammar have existed and been tested for a long time, but
+   * `navStore.view` had no readers and `navStore.navigate` had no callers: the
+   * store mirrored a field nothing rendered from. Mounting the router against
+   * that would have faithfully written a URL describing state no screen
+   * consults — the address bar would change while the page did not.
+   *
+   * So the store is now the single source of truth and this is a projection of
+   * it. `landingOfRoute` is total over `NavView`, so every route resolves to a
+   * screen; `null` means the route named something unresolvable, which the
+   * fallthrough card reports rather than silently drawing the workspace.
+   *
+   * `last-place` still works and is unchanged in spirit — but it is now a
+   * FALLBACK consulted when nothing more authoritative said where to go, not
+   * the authority itself. That distinction is what lets a shared link win.
+   */
+  const navView = useNavStore((s) => s.view);
 
   /**
-   * WHICH VIEW, remembered per (node, space) — the other half of the place a
-   * server round trip used to destroy. `setActiveTarget` still exists for the
-   * two switch handlers, which set an interim workspace target the restore
-   * below replaces; every USER navigation goes through this so there is no
-   * second write path that can forget.
+   * A remembered target that has NO ROUTE, kept so the switch can say so.
+   *
+   * THE REGRESSION THIS EXISTS TO PREVENT, which was caught by
+   * `render-switch-honesty.test.tsx` rather than by inspection. Deriving the
+   * screen from `navStore` means a target must become a `NavView` to be
+   * rendered at all — so the obvious restore path, `routeViewOf(remembered) ??
+   * {view:'workspace'}`, SILENTLY SWALLOWS a target it cannot map and draws the
+   * workspace. That is exactly the silent-wrong-screen failure Phase 0.5
+   * removed, reintroduced one layer further back.
+   *
+   * `last-place` validates the SHAPE of what it reads but never the ref, so a
+   * corrupt or stale record is a real source of these. It is held apart from
+   * the store deliberately: `NavView` has no member for "unrecognised", and
+   * inventing one would put an unroutable thing into the URL.
+   */
+  const [unroutableTarget, setUnroutableTarget] = useState<MenuTarget | null>(null);
+
+  const activeTarget = useMemo<MenuTarget | null>(
+    () => unroutableTarget ?? landingOfRoute(navView)?.target ?? null,
+    [unroutableTarget, navView],
+  );
+
+  /**
+   * EVERY user navigation goes through here, so there is no second write path
+   * that can forget to remember the place.
+   *
+   * A target with no route (`routeViewOf` returns null) is a misroute at the
+   * source and is refused rather than navigated to — see `nav-targets.ts`. It
+   * is not silently swallowed: refusing here is what keeps the store's view and
+   * the rendered screen from diverging.
    */
   const nodeKey = nodeKeyOf(activeServer.routeBaseUrl);
   const navigateTo = useCallback((target: MenuTarget) => {
-    setActiveTarget(target);
+    const view = routeViewOf(target);
+    if (!view) {
+      console.error('[nav] refusing a target with no route', target);
+      return;
+    }
+    setUnroutableTarget(null);
+    navStore.getState().navigate(view);
     if (data.spaceId) writeLastTarget(nodeKey, data.spaceId, target);
   }, [nodeKey, data.spaceId]);
 
@@ -272,7 +323,24 @@ export function GateApp(props: GateAppProps = {}) {
   useEffect(() => {
     if (!data.spaceId || restoredSpace.current === data.spaceId) return;
     restoredSpace.current = data.spaceId;
-    setActiveTarget(readLastTarget(nodeKey, data.spaceId) ?? WORKSPACE_TARGET);
+    /* The store learns the space here too. `hydrate` is the only other writer
+       and it only runs for a parsed hash, so without this the store's spaceId
+       stays empty on every boot that did not come from a URL — and the router
+       discards URLs built with no space. */
+    navStore.getState().setSpace(data.spaceId);
+    const remembered = readLastTarget(nodeKey, data.spaceId) ?? WORKSPACE_TARGET;
+    const view = routeViewOf(remembered);
+    if (!view) {
+      /* Unroutable: SAY SO rather than substituting the workspace. Storage is
+         the only place these come from, and a stale record must not quietly
+         put you somewhere you did not ask to be. */
+      setUnroutableTarget(remembered);
+      return;
+    }
+    setUnroutableTarget(null);
+    /* `replace`, not `push`: restoring where you already were is not a
+       navigation and must not leave a back-button entry. */
+    navStore.setState((s) => ({ view, history: 'replace', revision: s.revision + 1 }));
   }, [nodeKey, data.spaceId]);
 
   /**
@@ -295,7 +363,7 @@ export function GateApp(props: GateAppProps = {}) {
     navStore.getState().applyNormalization({ stack: [], pinned: [] });
     navStore.getState().setSession(null);
     screenStackStore.getState().clearAll();
-    setActiveTarget(WORKSPACE_TARGET);
+    navStore.getState().navigate({ view: 'workspace' });
   }, []);
   const projectOnboardingPort = useMemo<ProjectOnboardingPort | null>(() => {
     const setup = data.seam.projectSetup;
@@ -488,7 +556,7 @@ export function GateApp(props: GateAppProps = {}) {
   const graphLaunchPort = useLaunchPort(data, {
     onSpawn: async (input) => {
       const sessionId = await data.spawn(input);
-      setActiveTarget({ type: 'view', ref: 'workspace' });
+      navigateTo(WORKSPACE_TARGET);
       nav.push(sessionId);
     },
   });
@@ -829,7 +897,7 @@ export function GateApp(props: GateAppProps = {}) {
                  the feed launches for real instead of refusing. */
               onSpawn={async (input) => {
                 const sessionId = await data.spawn(input);
-                setActiveTarget({ type: 'view', ref: 'workspace' });
+                navigateTo(WORKSPACE_TARGET);
                 nav.push(sessionId);
               }}
             />
