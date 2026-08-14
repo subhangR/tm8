@@ -196,10 +196,14 @@ export function GraphScreen(props: GraphScreenProps) {
       // about the entity, in front of a user who can edit the same thing one
       // screen over.
       commands={data.seam?.commands}
-      onPostMessage={(body) => data.postMessage({
+      /* Spread whole, like the other three hosts: the graph carve-out may not
+         import upward for the option data, so `@` and `/` stay plain text
+         here — but a reply's attachments and mentions still reach the wire
+         when the composer manages to stage any. */
+      onPostMessage={(post) => data.postMessage({
         clientMutationId: `graph-post:${selectedId}:${Date.now()}`,
         anchorIds: [selectedId],
-        body,
+        ...post,
       })}
       streaming={data.activity[selectedId] ?? false}
       onPromote={() => setMode((m) => (m === 'aside' ? 'full' : 'aside'))}

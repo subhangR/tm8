@@ -170,6 +170,10 @@ export function createChatHomePortFromSeam(
           clientMutationId: input.clientMutationId,
           anchorIds: [input.anchorId],
           body: input.body,
+          /* Omitted rather than sent empty: the server validates the array
+             when it is present, and an empty one is a claim about files
+             nobody staged. */
+          ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
         });
         const threadRootId = messageIdFrom(result);
         // Seed the caches from what THIS port just wrote, so the immediate
@@ -209,6 +213,7 @@ export function createChatHomePortFromSeam(
         anchorIds: [item.anchorId],
         parentMessageId: input.threadRootId,
         body: input.body,
+        ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
       });
       return { messageId: messageIdFrom(result) };
     },

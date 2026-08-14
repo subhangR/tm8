@@ -157,3 +157,35 @@
   padding: 1px 7px;
   cursor: pointer;
 }
+
+/* ── the prose field (`ProseField`) ──────────────────────────────────────
+   A textarea, its popover, and one line beneath for what the uploads are
+   doing. The field itself carries NO styling of its own: the host passes its
+   own class down, so a dialog box still looks like a dialog box and a task
+   description still looks like a task description. */
+.ri-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ri-field__hint,
+.ri-field__why {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0 0;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+}
+
+.ri-field__hint { color: var(--pn-ink-4); }
+.ri-field__why { color: var(--pn-block); }
+
+.ri-field__why button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}

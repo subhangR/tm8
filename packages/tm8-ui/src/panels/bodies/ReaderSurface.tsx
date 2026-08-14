@@ -10,6 +10,7 @@ import {
   type DocCommands,
 } from '../../doc-edit';
 import type { MarkdownFileHref } from '../../kit';
+import type { TriggerOption } from '../../rich-input';
 import { ReaderBody } from './ReaderBody';
 
 /**
@@ -76,6 +77,13 @@ export interface ReaderSurfaceProps {
   attach?: DocAttach;
   /** An upload landed — the host refetches so the strip shows the new edge. */
   onAttached?: () => void;
+  /**
+   * Skills the source's `/` trigger can REFERENCE (R1 — a committed skill is
+   * a `tm8://skill/<id>` link in the body; nothing is invoked). Absent ⇒ `/`
+   * types plain text, which is what it did before the panel host had a seam
+   * to read them from.
+   */
+  skillOptions?: readonly TriggerOption[];
 }
 
 export function ReaderSurface(props: ReaderSurfaceProps) {
@@ -138,6 +146,7 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
           fileHref={props.fileHref}
           attach={props.attach}
           onAttached={props.onAttached}
+          skillOptions={props.skillOptions}
           onCollapse={save.dirty ? undefined : () => setEditing(false)}
           collapseRefusal={{
             cause: 'This document has unsaved changes',

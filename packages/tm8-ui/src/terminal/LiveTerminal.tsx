@@ -4,9 +4,9 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 
 import { isTerminalBlurChord, isTerminalPasteChord } from '../keyboard/contract';
-import { dataTransferHasFiles } from './clipboardImages.js';
+import { dataTransferHasFiles } from '../rich-input/clipboardFiles';
 import { dispatchClipboardData } from './clipboardPaste.js';
-import { uploadClipboardImage } from './clipboardUpload.js';
+import { uploadClipboardFile } from './clipboardUpload.js';
 import { copyToClipboardOrWarn } from './domUtils.js';
 import { notifyUser } from './notifications.js';
 import { ptyTransport } from './pty/ptyTransport.js';
@@ -361,7 +361,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     });
 
     /**
-     * Pasted images become PATHS in the prompt, never bytes.
+     * Pasted files become PATHS in the prompt, never bytes.
      *
      * A trailing space and NEVER a carriage return: the agent must see the
      * path as one more word the human is still composing, so they can add
@@ -372,9 +372,9 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
      * it — because two screenshots pasted together are usually "before" and
      * "after", and network timing must not reorder them.
      */
-    const injectImages = async (files: readonly File[]) => {
+    const injectFiles = async (files: readonly File[]) => {
       const results = await Promise.allSettled(
-        files.map((file) => uploadClipboardImage(file, sessionId)),
+        files.map((file) => uploadClipboardFile(file, sessionId)),
       );
       if (readOnlyRef.current) return;
 
@@ -386,8 +386,8 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         const reason = describeUploadFailure((failures[0] as PromiseRejectedResult).reason);
         notifyUser(
           failures.length === 1
-            ? `An image could not be pasted — ${reason}`
-            : `${failures.length} images could not be pasted — ${reason}`,
+            ? `A file could not be pasted — ${reason}`
+            : `${failures.length} files could not be pasted — ${reason}`,
           'warn',
         );
       }
@@ -397,7 +397,14 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       if (readOnlyRef.current) return;
       const result = dispatchClipboardData(event.clipboardData, {
         onText: (text) => term.paste(text),
-        onImages: (files) => void injectImages(files),
+        onFiles: (files) => void injectFiles(files),
+        /* STATED, never silent (R2): a refused paste that did nothing at all
+           reads as a broken terminal. The names are the user's own, so they
+           can see which of several files was the one nothing can read. */
+        onRefused: (files) => notifyUser(
+          `${files.map((file) => file.name || 'unnamed file').join(', ')} — not pasted; agents cannot read ${files.length === 1 ? 'this file type' : 'these file types'}.`,
+          'warn',
+        ),
       });
       if (result.handled) {
         event.preventDefault();
@@ -411,7 +418,14 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       if (readOnlyRef.current) return;
       const result = dispatchClipboardData(event.dataTransfer, {
         onText: (text) => term.paste(text),
-        onImages: (files) => void injectImages(files),
+        onFiles: (files) => void injectFiles(files),
+        /* STATED, never silent (R2): a refused paste that did nothing at all
+           reads as a broken terminal. The names are the user's own, so they
+           can see which of several files was the one nothing can read. */
+        onRefused: (files) => notifyUser(
+          `${files.map((file) => file.name || 'unnamed file').join(', ')} — not pasted; agents cannot read ${files.length === 1 ? 'this file type' : 'these file types'}.`,
+          'warn',
+        ),
       });
       if (result.handled) {
         event.preventDefault();

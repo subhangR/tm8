@@ -3,10 +3,28 @@
  *
  * When tm8 is used from a browser, the clipboard lives on the viewer's machine
  * and the agent process lives on this node. Every agent tool we support reads
- * images by *path*, so a pasted screenshot has to make the trip: take the
- * bytes, write them somewhere the agent can open, hand back an absolute path.
+ * files by *path*, so a pasted file has to make the trip: take the bytes,
+ * write them somewhere the agent can open, hand back an absolute path.
  * Injecting that short path (never base64) is what makes the bridge
  * agent-agnostic — Claude Code, Codex and a plain shell all read a file.
+ *
+ * WIDENED FROM IMAGES TO THE AGENT-READABLE SET (R2). This accepted four image
+ * types, which meant a terminal user could paste a screenshot and not a PDF,
+ * a CSV, or the log file they were being asked about — while the chat composer
+ * beside it took all four. The allowlist is now `isAgentReadableMime` from
+ * `@tm8/contract`, the SAME predicate the UI filters pastes with, imported
+ * rather than restated: two hand-kept copies of "what agents read" diverge on
+ * exactly the type nobody tested, which is why that file exists.
+ *
+ * WHAT STOPS THIS BEING AN ARBITRARY FILE WRITE, now that "the bytes must
+ * sniff as one of four images" is gone. It was never only the sniff: the
+ * directory is fixed and containment-checked, the filename is GENERATED (the
+ * client's name is never used, only its extension, and only after
+ * sanitisation), the size is capped while streaming, and the caller had to be
+ * able to see the session under RLS before anything reached here. What the
+ * byte inspection still does is catch a LIE: a declared type that disagrees
+ * with the content, and an executable declaring itself as text. Those two
+ * checks are kept and the rest of the format list is not re-encoded here.
  *
  * This is deliberately NOT the blob store. `W2BlobStore` is content-addressed,
  * extensionless and 0700/0600 because it holds space-scoped durable content
@@ -28,7 +46,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { CollabError } from '@tm8/contract';
+import { AGENT_READABLE_BARE_EXTENSIONS, CollabError, isAgentReadableMime } from '@tm8/contract';
 
 export const CLIPBOARD_IMAGE_MIME_TYPES = [
   'image/png',
@@ -39,12 +57,52 @@ export const CLIPBOARD_IMAGE_MIME_TYPES = [
 
 export type ClipboardImageMimeType = (typeof CLIPBOARD_IMAGE_MIME_TYPES)[number];
 
-const EXTENSION_BY_MIME: Record<ClipboardImageMimeType, string> = {
+/**
+ * Extensions for the types that arrive WITHOUT a usable filename. The client
+ * sends the original name when it has one (a dragged `notes.md` keeps `md`);
+ * this table is what a pasted screenshot — which has no name at all — gets.
+ * Deliberately short: an unknown type falls back to its own sanitised
+ * subtype, which is a worse extension than a curated one and a much better
+ * one than a wrong one.
+ */
+const EXTENSION_BY_MIME: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/gif': 'gif',
   'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+  'application/pdf': 'pdf',
+  'application/json': 'json',
+  'application/xml': 'xml',
+  'application/x-yaml': 'yaml',
+  'application/yaml': 'yaml',
+  'application/rtf': 'rtf',
+  'application/msword': 'doc',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/vnd.oasis.opendocument.text': 'odt',
+  'application/vnd.oasis.opendocument.spreadsheet': 'ods',
+  'application/vnd.oasis.opendocument.presentation': 'odp',
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+  'text/csv': 'csv',
+  'text/html': 'html',
+  'text/css': 'css',
 };
+
+/**
+ * A ZIP container is not one format. `.docx`, `.xlsx`, `.pptx` and every
+ * OpenDocument file are ZIPs, so `PK\x03\x04` cannot be refused outright and
+ * cannot be resolved to a type on its own — the DECLARED type is the only
+ * thing that separates a readable document from an archive of anything.
+ */
+const ZIP_CONTAINER_PREFIXES = [
+  'application/vnd.openxmlformats-officedocument.',
+  'application/vnd.oasis.opendocument.',
+];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_BUCKET_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -57,12 +115,53 @@ export const CLIPBOARD_RETENTION_DAYS_DEFAULT = 30;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
+ * What the leading bytes SAY this is, when they say anything at all.
+ *
+ * `mime` is set only for formats a signature identifies exactly. `family`
+ * carries the two answers that are about a shape rather than a type:
+ * `'zip'`, which is a container a readable document and an archive share, and
+ * `'executable'`, which nothing readable ever is.
+ *
+ * Most of the readable set has NO signature — a `.md`, a `.csv`, a `.py` are
+ * all just text — so "unidentified" is now the ordinary case and cannot be a
+ * refusal. See the header for what actually bounds this directory.
+ */
+export interface SniffedClipboardContent {
+  mime?: string;
+  family?: 'zip' | 'executable';
+}
+
+const ELF_SIGNATURE = Buffer.from([0x7f, 0x45, 0x4c, 0x46]);
+const ZIP_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+
+export function sniffClipboardContent(data: Buffer): SniffedClipboardContent {
+  const image = sniffImageMimeType(data);
+  if (image) return { mime: image };
+  if (data.length >= 5 && data.subarray(0, 5).toString('latin1') === '%PDF-') {
+    return { mime: 'application/pdf' };
+  }
+  if (data.length >= 4 && data.subarray(0, 4).equals(ZIP_SIGNATURE)) return { family: 'zip' };
+  if (data.length >= 4 && data.subarray(0, 4).equals(ELF_SIGNATURE)) return { family: 'executable' };
+  // `MZ` — a DOS/PE header. Two bytes is a weak signal on its own, so it is
+  // only read as an executable at the very start of the content.
+  if (data.length >= 2 && data[0] === 0x4d && data[1] === 0x5a) return { family: 'executable' };
+  // Mach-O, all four magics (32/64-bit, both byte orders).
+  if (data.length >= 4) {
+    const magic = data.readUInt32BE(0);
+    if (magic === 0xfeedface || magic === 0xfeedfacf || magic === 0xcefaedfe || magic === 0xcffaedfe) {
+      return { family: 'executable' };
+    }
+  }
+  return {};
+}
+
+/**
  * Identify an image by its leading bytes.
  *
- * A client is free to declare any Content-Type, so the declared type is a HINT
- * and the bytes are the truth. Anything we cannot positively identify as one of
- * the four accepted formats is refused — this is the guard that stops the
- * handoff directory from becoming a way to write arbitrary files onto the node.
+ * Kept exactly as it was, and still the strongest evidence available for the
+ * four formats it knows: a client is free to declare any Content-Type, so a
+ * declared type that DISAGREES with a signature is a lie the store refuses.
+ * What changed is its role — it is no longer the whole allowlist.
  */
 export function sniffImageMimeType(data: Buffer): ClipboardImageMimeType | null {
   if (data.length >= 8 && data.subarray(0, 8).equals(PNG_SIGNATURE)) return 'image/png';
@@ -91,8 +190,120 @@ function normalizeMimeType(value: string): string {
   return base === 'image/jpg' ? 'image/jpeg' : base;
 }
 
-function isAccepted(value: string): value is ClipboardImageMimeType {
-  return (CLIPBOARD_IMAGE_MIME_TYPES as readonly string[]).includes(value);
+/**
+ * The ONE allowlist, imported rather than restated (R2). `application/
+ * octet-stream` is called out because it is what a browser reports for every
+ * file it cannot type — a `.py`, a `.toml`, a `.log` — so it is not a refusal
+ * on its own; the filename decides those, below.
+ */
+function isAccepted(value: string): boolean {
+  return isAgentReadableMime(value);
+}
+
+const GENERIC_MIME_TYPES = new Set(['application/octet-stream', 'binary/octet-stream']);
+
+/**
+ * The extension to write, in the order the evidence deserves.
+ *
+ * THE CLIENT'S NAME IS NEVER THE FILENAME — only a candidate extension, and
+ * only if it survives `[a-z0-9]{1,8}`. That sanitisation is what makes using
+ * it safe at all: no separator, no dot, no traversal can pass it, and the
+ * base name is generated here regardless.
+ */
+function extensionFor(mime: string, filename: string | undefined): string {
+  const named = extensionOfName(filename);
+  if (named) return named;
+  const known = EXTENSION_BY_MIME[mime];
+  if (known) return known;
+  /* Last resort: the subtype itself, stripped of structured-syntax suffixes
+     (`application/ld+json` → `ld`) and of anything a path could use. An
+     agent opening `…-a1b2.plain` reads it fine; the extension is a courtesy
+     to the human reading the path, not a format declaration. */
+  const subtype = mime.split('/')[1]?.split('+')[0] ?? '';
+  const safe = subtype.replace(/[^a-z0-9]/g, '').slice(0, 8);
+  return safe === '' ? 'bin' : safe;
+}
+
+function extensionOfName(filename: string | undefined): string | null {
+  if (!filename) return null;
+  const dot = filename.lastIndexOf('.');
+  if (dot <= 0 || dot === filename.length - 1) return null;
+  const raw = filename.slice(dot + 1).toLowerCase();
+  return /^[a-z0-9]{1,8}$/.test(raw) ? raw : null;
+}
+
+/**
+ * WHAT THIS FILE IS, and whether we will take it — the whole acceptance rule,
+ * in one place so the refusals can be read against each other.
+ *
+ * The order is evidence-first, and each step exists for a case that actually
+ * happens:
+ *
+ *  1. An EXECUTABLE is refused whatever it claims to be. Nothing in the
+ *     readable set has these magics, so a match here is always a lie, and it
+ *     is the lie that matters most on a directory an agent process reads.
+ *  2. A SIGNATURE WINS over a declaration. A ZIP renamed `notes.txt` and
+ *     pasted as `text/plain` is refused as a mismatch rather than written
+ *     with a `.txt` an agent would then try to read as prose.
+ *  3. A ZIP is resolved BY ITS DECLARATION, because `.docx` and an archive of
+ *     anything share the signature exactly (see `ZIP_CONTAINER_PREFIXES`).
+ *  4. WITHOUT a signature — the ordinary case for text, which is most of the
+ *     set — the declared type governs, and `application/octet-stream` (what a
+ *     browser reports for every source and config file) falls through to the
+ *     filename's extension.
+ */
+function resolveMimeType(data: Buffer, input: ClipboardStoreInput): string {
+  const sniffed = sniffClipboardContent(data);
+  if (sniffed.family === 'executable') {
+    throw new CollabError('invalid_input', 'content is an executable; agents cannot read one');
+  }
+
+  const declared = input.declaredMimeType ? normalizeMimeType(input.declaredMimeType) : '';
+  const generic = declared === '' || GENERIC_MIME_TYPES.has(declared);
+
+  if (sniffed.mime) {
+    if (!generic && declared !== sniffed.mime) {
+      throw new CollabError(
+        'invalid_input',
+        `declared type ${declared} does not match content (${sniffed.mime})`,
+      );
+    }
+    return sniffed.mime;
+  }
+
+  if (sniffed.family === 'zip') {
+    const container = ZIP_CONTAINER_PREFIXES.some((prefix) => declared.startsWith(prefix));
+    if (!container) {
+      throw new CollabError(
+        'invalid_input',
+        declared === ''
+          ? 'content is an archive; agents cannot read one'
+          : `declared type ${declared} does not match content (an archive)`,
+      );
+    }
+    return declared;
+  }
+
+  if (!generic) {
+    if (!isAccepted(declared)) {
+      throw new CollabError(
+        'invalid_input',
+        `unsupported type: ${declared}. agents cannot read this file type`,
+      );
+    }
+    return declared;
+  }
+
+  /* No signature and no usable declaration: the NAME is the only evidence
+     left, and only the short curated list is trusted — an unknown extension
+     with no MIME stays refused rather than guessed at, the same rule the
+     contract's own bare-extension fallback states. */
+  const extension = extensionOfName(input.declaredFilename);
+  if (extension && AGENT_READABLE_BARE_EXTENSIONS.includes(extension)) return 'text/plain';
+  throw new CollabError(
+    'invalid_input',
+    'content type could not be established; agents cannot read an unidentified file',
+  );
 }
 
 /** Local date bucket (`YYYY-MM-DD`). Local, not UTC: it groups a human's day. */
@@ -115,16 +326,26 @@ export interface ClipboardStoreOptions {
 
 export interface ClipboardStoreInput {
   readonly data: Buffer;
-  /** Content-Type declared by the client. A hint; the bytes decide. */
+  /** Content-Type declared by the client. A hint; a signature overrides it. */
   readonly declaredMimeType?: string | undefined;
+  /**
+   * The name the file had on the viewer's machine, when it had one — a pasted
+   * screenshot does not. USED FOR ITS EXTENSION ONLY (see `extensionFor`), so
+   * a dragged `deploy.sh` keeps `sh` and stays legible to whoever reads the
+   * path out of the terminal. It is also the evidence that types a file the
+   * browser reported as `application/octet-stream`, which is what every
+   * source and config file arrives as.
+   */
+  readonly declaredFilename?: string | undefined;
   readonly spaceId: string;
 }
 
-export interface StoredClipboardImage {
+export interface StoredClipboardFile {
   /** Absolute path ON THIS NODE — the string written into the PTY. */
   readonly path: string;
   readonly filename: string;
-  readonly mimeType: ClipboardImageMimeType;
+  /** The type the store RESOLVED — a signature's answer, or the declared one. */
+  readonly mimeType: string;
   readonly bytes: number;
 }
 
@@ -150,7 +371,7 @@ export class ClipboardStore {
     this.retentionDays = days;
   }
 
-  async store(input: ClipboardStoreInput): Promise<StoredClipboardImage> {
+  async store(input: ClipboardStoreInput): Promise<StoredClipboardFile> {
     const { data } = input;
     if (!data || data.length === 0) {
       throw new CollabError('invalid_input', 'an image is required');
@@ -165,25 +386,7 @@ export class ClipboardStore {
       throw new CollabError('invalid_input', 'spaceId must be a uuid');
     }
 
-    const sniffed = sniffImageMimeType(data);
-    if (!sniffed) {
-      throw new CollabError('invalid_input', 'content is not a recognized image format');
-    }
-    if (input.declaredMimeType) {
-      const declared = normalizeMimeType(input.declaredMimeType);
-      if (!isAccepted(declared)) {
-        throw new CollabError(
-          'invalid_input',
-          `unsupported image type: ${declared}. allowed: ${CLIPBOARD_IMAGE_MIME_TYPES.join(', ')}`,
-        );
-      }
-      if (declared !== sniffed) {
-        throw new CollabError(
-          'invalid_input',
-          `declared type ${declared} does not match content (${sniffed})`,
-        );
-      }
-    }
+    const mimeType = resolveMimeType(data, input);
 
     const bucket = join(
       this.clipboardDir,
@@ -198,14 +401,15 @@ export class ClipboardStore {
     // the same user as the server" is a coincidence, not a design.
     await mkdir(bucket, { recursive: true, mode: 0o755 });
 
-    const filename = `${clipboardStamp()}-${randomBytes(2).toString('hex')}.${EXTENSION_BY_MIME[sniffed]}`;
+    const extension = extensionFor(mimeType, input.declaredFilename);
+    const filename = `${clipboardStamp()}-${randomBytes(2).toString('hex')}.${extension}`;
     const path = join(bucket, filename);
     // `wx` — never overwrite. The name carries 4 hex of entropy inside a
     // one-second window, so a collision means something is wrong and silently
     // replacing another paste would be the worse answer.
     await writeFile(path, data, { flag: 'wx', mode: 0o644 });
 
-    return { path, filename, mimeType: sniffed, bytes: data.length };
+    return { path, filename, mimeType, bytes: data.length };
   }
 
   /**

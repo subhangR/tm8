@@ -1,4 +1,5 @@
 import { useEffect, useRef, type FormEvent, type MouseEvent } from 'react';
+import { ProseField, type TriggerOption } from '../rich-input';
 import { MEMORY_FIELDS, MEMORY_MARK_COPY, markFields } from '../domain/memory';
 import type { MemoryMarkComposerHandle } from './useMemoryMarks';
 import type { MemoryComposerHandle } from './useMemoryWorkingSet';
@@ -25,10 +26,24 @@ import type { MemoryComposerHandle } from './useMemoryWorkingSet';
 export function MemoryComposer({
   composer,
   holderLabel,
+  skillOptions,
 }: {
   composer: MemoryComposerHandle;
   /** Whose set this lands in, so the form says where it is going. */
   holderLabel: string;
+  /**
+   * Skills `/` can REFERENCE (R1). A memory is injected verbatim into agent
+   * context at spawn (`--memory`), so a skill named in one reaches the agent
+   * the same way it reaches one named in a message body.
+   *
+   * NO `attach` HERE, AND THAT IS STRUCTURAL, NOT AN OVERSIGHT: this form
+   * authors an entity that DOES NOT EXIST YET (see the header — there is no
+   * version to pin and no id to upload against), so there is no anchor for a
+   * file to attach to. The primitive's answer to an anchorless surface is the
+   * same as to any absent capability: declare it absent, and paste and drop
+   * stay honestly inert.
+   */
+  skillOptions?: readonly TriggerOption[];
 }) {
   const firstField = useRef<HTMLTextAreaElement | null>(null);
 
@@ -87,14 +102,16 @@ export function MemoryComposer({
                 {field.label}
                 <em className="au-dialog__optional"> · {field.hint}</em>
               </span>
-              <textarea
-                ref={index === 0 ? (el) => { firstField.current = el; } : undefined}
-                className="au-dialog__input"
-                rows={2}
+              <ProseField
                 value={value}
+                onChange={(next) => composer.set(field.key, next)}
+                label={field.label}
+                className="au-dialog__input"
+                testId={`memory-field-${field.key}`}
+                rows={2}
                 disabled={composer.saving}
-                data-testid={`memory-field-${field.key}`}
-                onChange={(e) => composer.set(field.key, e.target.value)}
+                {...(index === 0 ? { inputRef: (el: HTMLTextAreaElement | null) => { firstField.current = el; } } : {})}
+                {...(skillOptions ? { skillOptions } : {})}
               />
               {empty ? (
                 <span className="au-dialog__missing" role="alert">
@@ -142,10 +159,14 @@ export function MemoryComposer({
 export function MemoryMarkComposer({
   composer,
   targetTitle,
+  skillOptions,
 }: {
   composer: MemoryMarkComposerHandle;
   /** The memory being marked, so the form never asks "which one?". */
   targetTitle: string;
+  /** Same contract as `MemoryComposer` — a mark authors a NEW memory, so it
+      is anchorless for the same reason and takes `/` for the same one. */
+  skillOptions?: readonly TriggerOption[];
 }) {
   const firstField = useRef<HTMLTextAreaElement | null>(null);
   const mark = composer.mark;
@@ -206,14 +227,16 @@ export function MemoryMarkComposer({
                 {field.label}
                 <em className="au-dialog__optional"> · {field.hint}</em>
               </span>
-              <textarea
-                ref={index === 0 ? (el) => { firstField.current = el; } : undefined}
-                className="au-dialog__input"
-                rows={2}
+              <ProseField
                 value={value}
+                onChange={(next) => composer.set(field.key, next)}
+                label={field.label}
+                className="au-dialog__input"
+                testId={`memory-mark-field-${field.key}`}
+                rows={2}
                 disabled={composer.saving}
-                data-testid={`memory-mark-field-${field.key}`}
-                onChange={(e) => composer.set(field.key, e.target.value)}
+                {...(index === 0 ? { inputRef: (el: HTMLTextAreaElement | null) => { firstField.current = el; } } : {})}
+                {...(skillOptions ? { skillOptions } : {})}
               />
               {empty ? (
                 <span className="au-dialog__missing" role="alert">

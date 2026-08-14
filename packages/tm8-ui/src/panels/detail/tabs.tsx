@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type {
   ActivityItem,
   Connections,
@@ -10,6 +10,16 @@ import type {
 } from '@tm8/contract';
 import { Avatar, Chip, Eyebrow, Markdown, type MarkdownComponents } from '../../kit';
 import { KindIcon, getKind } from '../../domain';
+import type { FileUploadTask } from '../../files/upload';
+import { ChooseFilesControl } from '../../files/ChooseFilesControl';
+import { DisabledIconControl } from '../honesty/DisabledWithReason';
+import {
+  AttachmentChips,
+  TriggerPopover,
+  skillReference,
+  useRichInput,
+  type TriggerOption,
+} from '../../rich-input';
 /* Module-deep into the chat lane's PURE half — `feed-model` is plain functions
    with no React and no DOM. A message body is a message body wherever it is
    drawn, so the Discussion tab shares the channel's source preparation instead
@@ -31,6 +41,24 @@ import { EmptyBody } from './PanelStates';
 // Discussion
 // ---------------------------------------------------------------------------
 
+/**
+ * WHAT A DISCUSSION REPLY CARRIES TO THE WIRE.
+ *
+ * The body was always the whole message this composer could express, which is
+ * why its placeholder advertised an `@` it did not have. `PostMessageInput`
+ * has accepted `mentionIds` and `attachmentIds` since the batch write landed;
+ * the tab simply never sent them. Widening the dispatcher (rather than adding
+ * side-channel props) keeps the message ONE object at every call site — the
+ * same shape the channel composer's `onPost` already takes.
+ */
+export interface DiscussionPostInput {
+  body: string;
+  /** Ids the `@` picker committed — members and team members only. */
+  mentionIds?: EntityId[];
+  /** Entity ids of finished uploads, staged order. */
+  attachmentIds?: EntityId[];
+}
+
 export function DiscussionTab({
   messages,
   provenanceHollowReason,
@@ -39,6 +67,9 @@ export function DiscussionTab({
   postDisabledReason,
   onPost,
   onOpenEntity,
+  attach,
+  mentionOptions,
+  skillOptions,
 }: {
   messages: readonly MessageView[];
   /** D7.3 copy for the hollow "from this session" chip. */
@@ -50,18 +81,36 @@ export function DiscussionTab({
   /** The dispatcher. ABSENT ⇒ the composer renders DISABLED with the true
       reason (Surface Audit 2026-07-29: it rendered enabled and wired to
       nothing — inviting an action it could not perform). R5 #9, structural. */
-  onPost?: (body: string) => Promise<void> | void;
+  onPost?: (input: DiscussionPostInput) => Promise<void> | void;
   /** Opens a mentioned entity. ABSENT ⇒ a mention stays marked-up TEXT, never
       a button that opens nothing. */
   onOpenEntity?: (id: EntityId) => void;
+  /**
+   * Starts one upload against THIS entity — the host binds the anchor, so the
+   * tab never learns which entity it is writing to. Absent ⇒ the attach
+   * control is drawn disabled-with-reason and paste/drop stay honestly inert.
+   */
+  attach?: (file: File) => FileUploadTask;
+  /**
+   * People `@` can mention. `undefined` ⇒ the capability is absent and `@`
+   * types plain text — which is what this composer had all along, while its
+   * placeholder said otherwise. An empty array is a measured zero.
+   */
+  mentionOptions?: readonly TriggerOption[];
+  /** Skills `/` can reference (R1). `undefined` ⇒ `/` types plain text. */
+  skillOptions?: readonly TriggerOption[];
 }) {
   const branches = discussionBranches(messages);
   return (
     <div className="pn-body" id="tabpanel-discussion" role="tabpanel" aria-labelledby="tab-discussion">
       {messages.length === 0 ? (
+        /* The invitation names only what is WIRED. It used to read "press /
+           and mention someone" on a surface that had neither sigil — the
+           defect this migration exists to end, and it would come straight
+           back if this sentence were a constant. */
         <EmptyBody
           glyph="❝"
-          sentence="No discussion yet — reply below, or press / and mention someone."
+          sentence={`No discussion yet — reply below${sigilInvitation(mentionOptions, skillOptions)}.`}
         />
       ) : (
         <ul className="pn-thread">
@@ -78,7 +127,14 @@ export function DiscussionTab({
           ))}
         </ul>
       )}
-      <Composer canPost={canPost} postDisabledReason={postDisabledReason} onPost={onPost} />
+      <Composer
+        canPost={canPost}
+        postDisabledReason={postDisabledReason}
+        onPost={onPost}
+        attach={attach}
+        mentionOptions={mentionOptions}
+        skillOptions={skillOptions}
+      />
     </div>
   );
 }
@@ -579,22 +635,58 @@ function relativeish(iso: string): string {
 }
 
 /**
- * The composer — a REAL control now (Surface Audit): controlled input,
- * Enter-or-click submit, in-flight disable, clear-on-success, error held
- * visibly. No dispatcher ⇒ disabled-with-reason, never enabled-inert.
+ * The clause the placeholder and the empty state both end with, built from
+ * what is DECLARED rather than from what a designer once hoped would be here.
+ * Returns `''` when neither sigil is live, so the invitation degrades to a
+ * plain "reply below" instead of naming a key that does nothing.
+ */
+function sigilInvitation(
+  mentionOptions: readonly TriggerOption[] | undefined,
+  skillOptions: readonly TriggerOption[] | undefined,
+): string {
+  const parts = [
+    mentionOptions ? '@ to mention' : null,
+    skillOptions ? '/ to reference a skill' : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length === 0 ? '' : ` — ${parts.join(' · ')}`;
+}
+
+/**
+ * THE DISCUSSION COMPOSER — the shared rich input, on the surface whose
+ * placeholder was the defect.
+ *
+ * It read "Reply — @ to mention" over a bare single-line `<input>` with no
+ * mention grammar behind it, beside an empty state that invited "press / and
+ * mention someone". Both sigils are real now (`useRichInput`'s trigger
+ * grammar), and both sentences are DERIVED from the declared options, so the
+ * advertisement cannot come apart from the capability again.
+ *
+ * ATTACHMENTS ARE CHIPS, NOT CARET INSERTS (R4): this is a chat surface —
+ * `attachmentIds` ride the message rather than being spliced into its body.
+ * The remaining behaviour is what the Surface Audit built: Enter-or-click
+ * submit, in-flight disable, clear-on-success, error held visibly, and no
+ * dispatcher ⇒ disabled-with-reason rather than enabled-inert.
  */
 function Composer({
   canPost,
   postDisabledReason,
   onPost,
+  attach,
+  mentionOptions,
+  skillOptions,
 }: {
   canPost?: boolean;
   postDisabledReason?: string;
-  onPost?: (body: string) => Promise<void> | void;
+  onPost?: (input: DiscussionPostInput) => Promise<void> | void;
+  attach?: (file: File) => FileUploadTask;
+  mentionOptions?: readonly TriggerOption[];
+  skillOptions?: readonly TriggerOption[];
 }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mentioned, setMentioned] = useState<readonly TriggerOption[]>([]);
+  const area = useRef<HTMLTextAreaElement | null>(null);
 
   const blocked = canPost === false || !onPost;
   const reason =
@@ -604,14 +696,65 @@ function Composer({
         ? 'Posting isn’t connected in this surface yet — the composer is real; its dispatcher is not wired here.'
         : undefined;
 
+  const rich = useRichInput({
+    value: text,
+    onChange: setText,
+    areaRef: area,
+    triggers: [
+      {
+        sigil: '@',
+        options: mentionOptions,
+        onSelect: (option) => {
+          /* The id is recorded beside the text, not parsed back out of it:
+             a display name is not a key, and two members may share one. */
+          setMentioned((current) => current.some((item) => item.id === option.id)
+            ? current
+            : [...current, option]);
+          return { insert: `@${option.display} ` };
+        },
+      },
+      {
+        sigil: '/',
+        options: skillOptions,
+        onSelect: (option) => ({ insert: skillReference(option.display, option.id) }),
+      },
+    ],
+    attachments: {
+      /* Withheld while the composer is blocked for the same reason Send is:
+         an upload that lands against a surface which cannot post leaves a
+         file attached to nothing the writer can send. */
+      start: blocked ? undefined : attach,
+      placement: { mode: 'chip' },
+    },
+    onKeyDown: (e) => {
+      // Shift+Enter is the newline. The single-line `<input>` this replaced
+      // had no such key, so nothing is taken away by honouring it.
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        void submit();
+      }
+    },
+  });
+  const attachments = rich.attachments!;
+
   const submit = async () => {
     const body = text.trim();
-    if (!body || blocked || busy || !onPost) return;
+    if (!body || blocked || busy || !onPost || attachments.blocked) return;
     setBusy(true);
     setError(null);
     try {
-      await onPost(body);
+      const attachmentIds = attachments.uploadedIds() as EntityId[];
+      const mentionIds = [...new Set(mentioned.map((option) => option.id))] as EntityId[];
+      await onPost({
+        body,
+        ...(mentionIds.length ? { mentionIds } : {}),
+        ...(attachmentIds.length ? { attachmentIds } : {}),
+      });
       setText('');
+      setMentioned([]);
+      // Forget the staged uploads WITHOUT cancelling them: their ids are
+      // riding the message that was just posted.
+      attachments.clear();
     } catch (e) {
       // The failure is the composer's fact — held HERE beside the text that
       // failed (T5-5's anti-toast law: a refusal never leaves the surface
@@ -622,6 +765,13 @@ function Composer({
     }
   };
 
+  /* An upload still in flight is a THIRD reason Send is unavailable, and it
+     is not the same as "not wired" — sending now would drop the file the
+     writer is watching upload. */
+  const sendReason = attachments.blocked
+    ? 'One or more attachments are not ready — wait for uploads to finish, retry failures, or remove them before sending.'
+    : reason;
+
   return (
     <div className="pn-composer">
       {error ? (
@@ -629,27 +779,60 @@ function Composer({
           {error}
         </p>
       ) : null}
-      <input
-        className="pn-composer__input"
-        placeholder="Reply — @ to mention"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            void submit();
-          }
-        }}
-        disabled={blocked || busy}
-        title={reason}
-        aria-label="Reply"
-      />
+      <AttachmentChips attachments={attachments} testId="pn-composer-attachments" />
+      {attach && !blocked ? (
+        <ChooseFilesControl
+          label="Attach a file"
+          title="attach a file — or drop or paste one into the reply"
+          className="pn-composer__attach"
+          inputClassName="pn-composer__file"
+          onChoose={attachments.addFiles}
+        />
+      ) : (
+        <DisabledIconControl
+          label="Attach a file"
+          glyph="＋"
+          reason={{
+            cause: 'Attaching isn’t wired on this surface',
+            remedy: blocked
+              ? 'the composer cannot post here, so an upload would land against a message you could not send'
+              : 'this panel was mounted without an attachment port',
+          }}
+        />
+      )}
+      <div className="ri-host">
+        <textarea
+          ref={area}
+          className="pn-composer__input"
+          rows={1}
+          placeholder={`Reply${sigilInvitation(mentionOptions, skillOptions)}`}
+          value={text}
+          disabled={blocked || busy}
+          title={reason}
+          aria-label="Reply"
+          {...rich.areaProps}
+        />
+        <TriggerPopover
+          popover={rich.popover}
+          label={rich.popover?.sigil === '/' ? 'Available skills' : 'People you can mention'}
+          renderOption={(option) => (
+            <>
+              <span className="ri-popover__name">
+                {`${rich.popover?.sigil ?? ''}${option.display}`}
+              </span>
+              {option.meta ? <span className="ri-popover__meta">{option.meta}</span> : null}
+            </>
+          )}
+          emptyText={rich.popover?.sigil === '/' ? 'No matching skills' : 'No matching people'}
+          testId="pn-composer-popover"
+        />
+      </div>
       <button
         type="button"
         className="pn-composer__send"
         aria-label="Send reply"
-        disabled={blocked || busy || text.trim().length === 0}
-        title={reason}
+        disabled={blocked || busy || attachments.blocked || text.trim().length === 0}
+        title={sendReason}
         onClick={() => void submit()}
       >
         {busy ? '…' : '↑'}

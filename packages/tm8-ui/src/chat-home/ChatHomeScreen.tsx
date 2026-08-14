@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import { Avatar, Timestamp } from '../kit';
+import { ChooseFilesControl } from '../files/ChooseFilesControl';
+import type { FileUploadTask } from '../files/upload';
+import { DisabledIconControl } from '../panels/honesty/DisabledWithReason';
+import {
+  AttachmentChips,
+  TriggerPopover,
+  skillReference,
+  useRichInput,
+  type TriggerOption,
+} from '../rich-input';
 import { mergeChatTurnFrame, reconcileDetails } from './turn-model';
 import type { ChatEntityResolver } from './EntityChip';
 import { TurnParts } from './TurnParts';
@@ -26,6 +36,28 @@ export interface ChatHomeScreenProps {
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   /** Lazily resolves title/kind for bare entity ids in tool payloads. */
   resolveEntity?: ChatEntityResolver | undefined;
+  /**
+   * Starts one upload against the anchor this chat writes to.
+   *
+   * TAKES THE ANCHOR RATHER THAN BEING BOUND TO IT — same signature as
+   * `AttachmentsPort.startUpload`, so a host assigns that verb with no
+   * adapter. The screen resolves its own anchor (bare Home falls back to the
+   * seeded default channel), and binding the port outside would mean the
+   * default lived in two places, free to disagree.
+   *
+   * UPLOADS START IMMEDIATELY, against the ANCHOR, not against the thread: a
+   * new conversation has no root message until Send, and holding a pasted
+   * file until then would mean the writer watches nothing happen. The anchor
+   * exists before the first word is typed.
+   *
+   * Absent ⇒ paste and drop stay inert and the attach control says why.
+   */
+  attach?: (file: File, anchorId: EntityId) => FileUploadTask;
+  /**
+   * Skills `/` can REFERENCE (R1 — the agent reads the link and decides;
+   * nothing is invoked). `undefined` ⇒ `/` types plain text.
+   */
+  skillOptions?: readonly TriggerOption[];
 }
 
 type ComposerPhase =
@@ -45,6 +77,8 @@ export function ChatHomeScreen({
   newMutationId = defaultMutationId,
   onOpenEntity,
   resolveEntity,
+  attach,
+  skillOptions,
 }: ChatHomeScreenProps) {
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [teammates, setTeammates] = useState<readonly ChatTeammateOption[]>([]);
@@ -308,11 +342,57 @@ export function ChatHomeScreen({
         ? 'No model is available from the launch catalog.'
         : null;
   const refusal = startUnavailable ?? selectionUnavailable;
-  const sendDisabled = busy || draft.trim() === '' || refusal !== null;
+
+  /**
+   * THE COMPOSER IS THE SHARED RICH INPUT (chip placement, R4).
+   *
+   * `/` references a skill; `@` is deliberately NOT declared here — the chat
+   * port carries `attachmentIds` and no `mentionIds`, and a picker that
+   * committed a name the wire would drop is the same defect this whole
+   * migration exists to end. Declaring it absent leaves `@` as plain text,
+   * which is honest and is what it already was.
+   */
+  const composer = useRef<HTMLTextAreaElement | null>(null);
+  const rich = useRichInput({
+    value: draft,
+    onChange: setDraft,
+    areaRef: composer,
+    triggers: [{
+      sigil: '/',
+      options: skillOptions,
+      onSelect: (option) => ({ insert: skillReference(option.display, option.id) }),
+    }],
+    attachments: {
+      start: attach ? (file: File) => attach(file, anchorId) : undefined,
+      placement: { mode: 'chip' },
+    },
+    onKeyDown: (event) => {
+      // `isComposing` guards an IME candidate window: Enter there commits the
+      // candidate, and sending on it would post a half-typed word.
+      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+        event.preventDefault();
+        void send();
+      }
+    },
+  });
+  const attachments = rich.attachments!;
+  /* Read at SEND time through a ref, not closed over: `send` is memoised on
+     the facts of the conversation, and the staged list changes with every
+     upload frame. Closing over it would either stale the ids or churn the
+     callback's identity on every render. */
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+
+  const sendDisabled = busy || draft.trim() === '' || refusal !== null || attachments.blocked;
 
   const send = useCallback(async () => {
     const body = draft.trim();
     if (body === '' || busy || refusal || teammateId === '' || !selectedModel) return;
+    const staged = attachmentsRef.current;
+    // An upload still in flight is not a reason to drop it: Send waits rather
+    // than posting a message whose file the writer is watching arrive.
+    if (staged.blocked) return;
+    const attachmentIds = staged.uploadedIds() as EntityId[];
     const continuingStoppedRoot =
       selectedRootId && phase === 'stopped-continuable' ? selectedRootId : null;
     setSubmitError(null);
@@ -327,10 +407,14 @@ export function ChatHomeScreen({
           threadRootId: selectedRootId,
           body,
           clientMutationId: newMutationId('chat-turn'),
+          ...(attachmentIds.length ? { attachmentIds } : {}),
         });
         // Clear only the draft we actually sent — if the user switched threads
         // and typed something new while the post was in flight, keep it.
         setDraft((current) => (current.trim() === body ? '' : current));
+        // Forget the chips WITHOUT cancelling their uploads: the ids are on
+        // the message that was just stored.
+        staged.clear();
         const posted = await loadDetail(selectedRootId);
         // The user may have switched threads while the post was in flight —
         // this thread's snapshot must never overwrite another thread's screen.
@@ -354,6 +438,7 @@ export function ChatHomeScreen({
         anchorId,
         body,
         clientMutationId: newMutationId('chat-root'),
+        ...(attachmentIds.length ? { attachmentIds } : {}),
       });
       setPhase('configuring');
       const configured = await port.startThread.configure({
@@ -370,6 +455,7 @@ export function ChatHomeScreen({
         throw new Error('The node returned a different thread configuration than the one selected.');
       }
       setDraft((current) => (current.trim() === body ? '' : current));
+      staged.clear();
       // The select effect owns loading the new thread — a second concurrent
       // read here would race it for setDetail/setPhase. `expecting` keeps the
       // pulse honest until the first frame arrives.
@@ -567,22 +653,71 @@ export function ChatHomeScreen({
             </p>
           ) : null}
           <div className="tch-composer">
-            <textarea
-              value={draft}
-              aria-label="Message the chat agent"
-              aria-describedby={refusal ? 'tch-compose-refusal' : undefined}
-              disabled={busy}
-              placeholder={newThread ? 'Ask anything about this space…' : 'Reply in this thread…'}
-              rows={2}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  void send();
+            <AttachmentChips attachments={attachments} testId="tch-attachments" />
+            <div className="ri-host">
+              <textarea
+                ref={composer}
+                value={draft}
+                aria-label="Message the chat agent"
+                aria-describedby={refusal ? 'tch-compose-refusal' : undefined}
+                disabled={busy}
+                placeholder={
+                  newThread ? 'Ask anything about this space…' : 'Reply in this thread…'
                 }
-              }}
-            />
+                rows={2}
+                {...rich.areaProps}
+              />
+              <TriggerPopover
+                popover={rich.popover}
+                label="Available skills"
+                renderOption={(option) => (
+                  <>
+                    <span className="ri-popover__name">{`/${option.display}`}</span>
+                    {option.meta ? <span className="ri-popover__meta">{option.meta}</span> : null}
+                  </>
+                )}
+                emptyText="No matching skills"
+                testId="tch-skill-picker"
+              />
+            </div>
             <div className="tch-composer__foot">
+              {attach ? (
+                <ChooseFilesControl
+                  label="Attach a file"
+                  title="attach a file — or drop or paste one into the message"
+                  className="tch-attach"
+                  inputClassName="tch-attach__input"
+                  onChoose={attachments.addFiles}
+                />
+              ) : (
+                <DisabledIconControl
+                  label="Attach a file"
+                  glyph="＋"
+                  reason={{
+                    cause: 'Uploading isn’t wired on this surface',
+                    remedy: 'this chat was mounted without an attachment port',
+                  }}
+                />
+              )}
+              {skillOptions ? (
+                <button
+                  type="button"
+                  className="tch-attach"
+                  aria-label="Reference a skill"
+                  title="reference a skill — the agent reads it and decides; nothing runs by itself"
+                  aria-haspopup="listbox"
+                  aria-expanded={rich.popover !== null}
+                  onClick={() => {
+                    // The button and the typed sigil must land in the SAME
+                    // state, or the picker has two behaviours and only one of
+                    // them filters.
+                    if (rich.popover) rich.popover.close();
+                    else rich.openTrigger('/');
+                  }}
+                >
+                  <span aria-hidden>/</span>
+                </button>
+              ) : null}
               <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
               <span className="tch-hint">Enter to send · Shift+Enter for a new line</span>
               {phase === 'streaming' && port.interrupt ? (
@@ -595,7 +730,12 @@ export function ChatHomeScreen({
                 className="tch-send"
                 aria-disabled={sendDisabled}
                 onClick={() => void send()}
-                title={refusal ?? undefined}
+                title={
+                  refusal
+                  ?? (attachments.blocked
+                    ? 'One or more attachments are not ready — wait for uploads to finish, retry failures, or remove them before sending.'
+                    : undefined)
+                }
               >
                 Send <span aria-hidden>↑</span>
               </button>

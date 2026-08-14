@@ -5,7 +5,7 @@
  * Two things are worth a test and the rest is plumbing:
  *
  *   1. A failed paste must be VISIBLE. The whole reason the notice sink
- *      exists is that an image which silently fails to arrive looks to the
+ *      exists is that a file which silently fails to arrive looks to the
  *      viewer exactly like an agent ignoring them — and the console-only
  *      fallback that preceded it made that indistinguishable in production.
  *   2. The upload must go to the NODE THAT OWNS THE PTY. A path minted on one
@@ -15,7 +15,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { uploadClipboardImage } from './clipboardUpload';
+import { uploadClipboardFile } from './clipboardUpload';
 import { notifyUser, registerNoticeSink } from './notifications';
 import { ptyTransport } from './pty/ptyTransport';
 
@@ -66,7 +66,7 @@ describe('terminal notices', () => {
   });
 });
 
-describe('uploadClipboardImage', () => {
+describe('uploadClipboardFile', () => {
   const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'image1.png', {
     type: 'image/png',
   });
@@ -79,7 +79,7 @@ describe('uploadClipboardImage', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await uploadClipboardImage(file, SESSION);
+    const result = await uploadClipboardFile(file, SESSION);
 
     expect(result.path).toBe('/data/clipboard/x.png');
     const [url, init] = fetchMock.mock.calls[0];
@@ -87,10 +87,30 @@ describe('uploadClipboardImage', () => {
     expect(init.method).toBe('POST');
     expect(init.headers['content-type']).toBe('image/png');
     expect(init.headers.authorization).toBe('Bearer pass-abc');
+    /* The name rides beside the bytes now: most of the agent-readable set has
+       no signature, so the extension is the server's only evidence of what a
+       `text/plain`-looking file actually is. */
+    expect(init.headers['x-tm8-filename']).toBe('image1.png');
+  });
+
+  it('omits a filename the header cannot carry safely', async () => {
+    ptyTransport.openSession(SESSION, '');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ path: '/x.png', filename: 'x.png', mimeType: 'image/png', bytes: 4 }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // A newline in a header value is a request-splitting primitive. The name
+    // is a convenience; the upload is correct without it.
+    const named = new File([new Uint8Array([0x89])], 'evil\r\nX-Injected: 1.png', { type: 'image/png' });
+    await uploadClipboardFile(named, SESSION);
+
+    expect(fetchMock.mock.calls[0][1].headers['x-tm8-filename']).toBeUndefined();
   });
 
   it('refuses when the terminal is not attached to a session', async () => {
-    await expect(uploadClipboardImage(file, SESSION)).rejects.toThrow(/not attached/);
+    await expect(uploadClipboardFile(file, SESSION)).rejects.toThrow(/not attached/);
   });
 
   it('surfaces the server message so the notice can name the reason', async () => {
@@ -104,6 +124,6 @@ describe('uploadClipboardImage', () => {
       }),
     );
 
-    await expect(uploadClipboardImage(file, SESSION)).rejects.toThrow(/exceeds the maximum size/);
+    await expect(uploadClipboardFile(file, SESSION)).rejects.toThrow(/exceeds the maximum size/);
   });
 });

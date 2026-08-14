@@ -37,6 +37,10 @@ const WEBP = Buffer.concat([
   Buffer.from('WEBP', 'latin1'),
 ]);
 
+const PDF = Buffer.from('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n', 'latin1');
+const ZIP = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
+const ELF = Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01]);
+
 async function scratch(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'tm8-clipboard-'));
 }
@@ -87,11 +91,105 @@ describe('ClipboardStore.store', () => {
     expect((await stat(join(path, '..'))).mode & 0o777).toBe(0o755);
   });
 
-  it('refuses content it cannot identify as an image', async () => {
+  /**
+   * THE WIDENING (R2) — the store took four image formats, so a terminal user
+   * could paste a screenshot but not the PDF, the CSV or the log file they
+   * were being asked about, while the chat composer beside them took all
+   * four. The allowlist is the contract's `isAgentReadableMime` now, and
+   * these pin both halves: what it accepts, and what it still refuses when
+   * the bytes and the declaration disagree.
+   */
+  it('takes a PDF, identified by its own signature', async () => {
+    const store = new ClipboardStore({ clipboardDir: await scratch() });
+    const result = await store.store({ data: PDF, spaceId: SPACE });
+    expect(result.mimeType).toBe('application/pdf');
+    expect(result.filename.endsWith('.pdf')).toBe(true);
+  });
+
+  it('takes text, which has no signature at all, on its declared type', async () => {
+    const store = new ClipboardStore({ clipboardDir: await scratch() });
+    const result = await store.store({
+      data: Buffer.from('id,name\n1,alex\n'),
+      declaredMimeType: 'text/csv',
+      spaceId: SPACE,
+    });
+    expect(result.mimeType).toBe('text/csv');
+    expect(result.filename.endsWith('.csv')).toBe(true);
+  });
+
+  it('types an octet-stream by its FILENAME — every source file arrives that way', async () => {
+    const store = new ClipboardStore({ clipboardDir: await scratch() });
+    const result = await store.store({
+      data: Buffer.from('print("hi")\n'),
+      declaredMimeType: 'application/octet-stream',
+      declaredFilename: 'deploy.py',
+      spaceId: SPACE,
+    });
+    expect(result.mimeType).toBe('text/plain');
+    // The EXTENSION is kept — a human reading the path out of the terminal
+    // can see what it is — while the base name is still generated here.
+    expect(result.filename.endsWith('.py')).toBe(true);
+    expect(result.filename).not.toContain('deploy');
+  });
+
+  it('refuses an archive: agents cannot read one', async () => {
+    const store = new ClipboardStore({ clipboardDir: await scratch() });
+    await expect(store.store({ data: ZIP, spaceId: SPACE })).rejects.toThrow(/archive/);
+  });
+
+  it('takes a .docx — the SAME signature, resolved by what it declares', async () => {
+    // `.docx`, `.xlsx` and every OpenDocument file are ZIP containers, so the
+    // signature alone cannot separate a readable document from an archive.
+    const store = new ClipboardStore({ clipboardDir: await scratch() });
+    const result = await store.store({
+      data: ZIP,
+      declaredMimeType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      spaceId: SPACE,
+    });
+    expect(result.filename.endsWith('.docx')).toBe(true);
+  });
+
+  it('refuses an executable whatever it claims to be', async () => {
     const store = new ClipboardStore({ clipboardDir: await scratch() });
     await expect(
-      store.store({ data: Buffer.from('not an image'), spaceId: SPACE }),
-    ).rejects.toThrow(/not a recognized image format/);
+      store.store({ data: ELF, declaredMimeType: 'text/plain', spaceId: SPACE }),
+    ).rejects.toThrow(/executable/);
+  });
+
+  it('refuses an archive wearing a text declaration', async () => {
+    // The signature wins: written as `.txt` an agent would read it as prose.
+    const store = new ClipboardStore({ clipboardDir: await scratch() });
+    await expect(
+      store.store({ data: ZIP, declaredMimeType: 'text/plain', spaceId: SPACE }),
+    ).rejects.toThrow(/does not match content/);
+  });
+
+  it('refuses a type outside the agent-readable set', async () => {
+    const store = new ClipboardStore({ clipboardDir: await scratch() });
+    await expect(
+      store.store({ data: Buffer.from('x'), declaredMimeType: 'application/zip', spaceId: SPACE }),
+    ).rejects.toThrow(/agents cannot read/);
+  });
+
+  it('refuses content nothing can type — no signature, no type, no name', async () => {
+    const store = new ClipboardStore({ clipboardDir: await scratch() });
+    await expect(
+      store.store({ data: Buffer.from([0x01, 0x02, 0x03]), spaceId: SPACE }),
+    ).rejects.toThrow(/could not be established/);
+  });
+
+  it('never lets a filename reach the path it writes', async () => {
+    const store = new ClipboardStore({ clipboardDir: await scratch() });
+    const result = await store.store({
+      data: PNG,
+      declaredFilename: '../../etc/passwd',
+      spaceId: SPACE,
+    });
+    // The name is a candidate EXTENSION and nothing else, and this one has
+    // none that survives `[a-z0-9]{1,8}`.
+    expect(result.filename.endsWith('.png')).toBe(true);
+    expect(result.path).not.toContain('..');
   });
 
   it('refuses a declared type that disagrees with the bytes', async () => {

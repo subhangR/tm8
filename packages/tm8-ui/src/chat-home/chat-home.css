@@ -423,7 +423,12 @@ button.tch-entity-chip:hover {
 }
 
 .tch-composer {
-  overflow: hidden;
+  /* VISIBLE, and that is a change with a reason: the skill picker pins above
+     the field (`.ri-host` + `.ri-popover`), and `hidden` clips an absolutely
+     positioned descendant. It was here to round the textarea's corners
+     against the card, and the textarea's background is transparent — so the
+     rounding it bought was already the card's own. */
+  overflow: visible;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-md);
   background: var(--pn-card);
@@ -453,6 +458,38 @@ button.tch-entity-chip:hover {
   align-items: center;
   min-height: 34px;
   padding: 3px 7px 6px 11px;
+}
+
+/* Chips and the paste refusal sit ABOVE the field, inside the composer card,
+   so an attachment reads as part of the message being written. */
+.tch-composer .ri-attachments { padding: 9px 11px 0; }
+
+/* The two sigil-and-file controls in the footer. Sized to the phase label
+   beside them rather than to the Send button, which is the primary. */
+.tch-attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: var(--pn-space-1);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: 12px var(--pn-ui);
+  cursor: pointer;
+}
+.tch-attach:hover { border-color: var(--pn-line-2); color: var(--pn-ink); }
+/* Reachable by its accessible name, invisible on screen — see
+   `files/ChooseFilesControl` for why the input is not `display: none`. */
+.tch-attach__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .tch-phase { color: var(--pn-wait); font: 9px var(--pn-mono); }
