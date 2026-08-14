@@ -479,11 +479,6 @@ const defaultIo: SourceIo = {
   },
 };
 
-/** Test seam: forget that stdin was read. Never called by the CLI itself. */
-export function resetStdinGuard(): void {
-  stdinConsumed = false;
-}
-
 export async function readTextSource(raw: string, io: SourceIo = defaultIo): Promise<string> {
   const spec = parseSource(raw);
   if (spec.kind === 'inline') return spec.value;
