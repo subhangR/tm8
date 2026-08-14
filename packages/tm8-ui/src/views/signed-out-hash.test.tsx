@@ -19,12 +19,27 @@
  * branch, breaks deep links for every signed-out recipient and breaks nothing
  * else — so nothing else would catch it.
  *
- * This test is deliberately written BEFORE the router mount. It passes today,
- * and its job is to keep passing.
+ * This test was written BEFORE the router mount. It passes today, and its job
+ * is to keep passing.
+ *
+ * THERE ARE TWO SIGNED-OUT SURFACES, AND THE LAW COVERS BOTH. `AuthGate` is one.
+ * The other is INSIDE `GateApp`: when a named server answers the boot read
+ * `unauthenticated`, `data.authRequired` renders `AuthFlow` in the centre with
+ * the whole shell — and the mounted router — around it. The structural argument
+ * that saves the first surface (children never mount) does NOT apply to the
+ * second, because there the app is running. So it is asserted rather than
+ * assumed, in the second describe below.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { CollabError } from '@tm8/contract';
 import { AuthGate } from '../auth';
+import { GateApp } from './GateApp';
+import { createFixtureSeam } from '../data';
+import type { Seam } from '../data/seam';
+import { createMemoryTarget } from '../routes';
+import { resetNav } from '../stores/navStore';
+import { screenStackStore } from '../stores/screenStackStore';
 
 /** A link of the exact shape §2.2 freezes for a shared entity. */
 const DEEP_LINK =
@@ -109,6 +124,68 @@ describe('the signed-out gate never writes the hash', () => {
     await waitFor(() => screen.getByTestId('auth-frame'));
     expect(screen.queryByTestId('the-app')).toBeNull();
     expect(window.location.hash).toBe(DEEP_LINK);
+    view.unmount();
+  });
+});
+
+/** The node lists nothing because it wants a pass first. */
+function seamDemandingAuth(): Seam {
+  return {
+    ...createFixtureSeam(),
+    spaces: async () => {
+      throw new CollabError('unauthenticated', 'sign in to this server');
+    },
+  };
+}
+
+describe('the SECOND signed-out surface never writes the hash either', () => {
+  beforeEach(() => {
+    resetNav();
+    screenStackStore.getState().clearAll();
+  });
+
+  it('keeps a deep link intact while the in-shell sign-in renders', async () => {
+    /* THE SURFACE THE STRUCTURAL ARGUMENT DOES NOT COVER. Here the app IS
+       running — rail, stores, effects and the mounted router — and only the
+       centre is a sign-in. Everything that makes the first surface safe by
+       construction is absent, so this is the one that has to be measured.
+
+       The memory target is the assertion instrument, not a convenience: it
+       records every write and distinguishes a push from a replace, so "the link
+       survived" cannot be confused with "the link was rewritten to the same
+       string by luck". */
+    const target = createMemoryTarget(DEEP_LINK);
+    const view = render(<GateApp seam={seamDemandingAuth()} routerTarget={target} />);
+
+    await waitFor(() => screen.getByTestId('auth-frame'));
+    /* Genuinely the IN-SHELL sign-in: the rail is still there. If this ever
+       became AuthGate's full-screen swap, the test would be measuring the
+       surface that is already covered above. */
+    expect(screen.getByTestId('menu-rail')).toBeTruthy();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    });
+
+    expect(target.getHash()).toBe(DEEP_LINK);
+    /* And no history was manufactured underneath them: after sign-in the back
+       button must not walk through entries the sign-in invented. */
+    expect(target.entries).toEqual([DEEP_LINK]);
+    view.unmount();
+  });
+
+  it('does not let the boot restore overwrite the link with last-place', async () => {
+    /* R3 AT ITS SHARPEST. A signed-out recipient is exactly who a shared link is
+       for, and the boot read that would normally supply a Space never answers
+       here — so anything that restores "where you were" on this path is writing
+       over a destination the viewer has not even reached yet. */
+    const target = createMemoryTarget(DEEP_LINK);
+    const view = render(<GateApp seam={seamDemandingAuth()} routerTarget={target} />);
+    await waitFor(() => screen.getByTestId('auth-frame'));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    });
+    expect(target.getHash()).toBe(DEEP_LINK);
     view.unmount();
   });
 });

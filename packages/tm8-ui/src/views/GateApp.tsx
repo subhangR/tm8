@@ -139,14 +139,21 @@ const VIEW_REF_SCREENS = {
   workspace: 'workspace',
   /* The last genuinely unbuilt view ref. */
   feed: 'unbuilt',
-  /* NOT unbuilt — an ALIAS. `domain/nav-targets.ts` resolves `channels` to the
-     `channel`-kind EntityView, which is mounted and always has been. This entry
-     records that the alias is not resolved on THIS path: the rail and the
-     palette emit the kind target directly, so a bare `{type:'view',
-     ref:'channels'}` only arrives when the palette finds no channel to open.
-     Classified `unbuilt` because that is what today's chain does with it, and
-     Phase 0.5 is a truth-telling change, not a behaviour change. Resolving the
-     alias here belongs to the router mount, which owns both directions. */
+  /* NOT unbuilt — an ALIAS, and as of the router mount this row is UNREACHABLE.
+     `domain/nav-targets.ts` resolves `channels` to the `channel`-kind
+     EntityView, which is mounted and always has been. Phase 0.5 classified it
+     `unbuilt` because that is what the chain did with it then, and left the
+     resolution to "the router mount, which owns both directions" — this is that
+     mount, and both directions now resolve it. `routeViewOf` turns the alias
+     into `k/channels` on the way out, so it never becomes an `unroutableTarget`;
+     `landingOfRoute` turns it into the kind target on the way back in, so it is
+     never what `activeTarget` derives to. Nothing can reach this row.
+
+     KEPT ANYWAY, and not as clutter: the table is `satisfies
+     Record<MenuViewRef, …>`, so every ref must be classified or the file does
+     not compile — which is the property that makes a NEW ref a build failure
+     rather than a silent fallthrough. Deleting an unreachable row would trade
+     that guarantee for tidiness. */
   channels: 'unbuilt',
 } as const satisfies Record<MenuViewRef, 'mounted' | 'unbuilt' | 'workspace'>;
 
@@ -663,6 +670,17 @@ export function GateApp(props: GateAppProps = {}) {
    * The interim workspace target is part of the reset and not an afterthought:
    * the restore effect above replaces it once the new space id lands, so this
    * is what is on screen for the frames in between.
+   *
+   * THERE IS NOW A FOURTH ENTRY POINT AND IT DOES NOT CALL THIS FUNCTION: a
+   * hash naming another Space. Not an oversight and not a fourth copy — the two
+   * paths share the INVARIANT ("no state from the old Space survives") and
+   * satisfy it by different mechanisms, because `hydrate` has already replaced
+   * navStore's panels with the ones the route named. Calling this there would
+   * reset away the very panels being navigated to, which is a worse bug than
+   * the one it would be guarding. The screen-stack half is identical and is
+   * done in the seeding effect above, next to the reason. Anyone adding a fifth
+   * switch should call this one; anyone adding a second URL-driven one should
+   * read that effect first.
    */
   const leaveSpaceContext = useCallback(() => {
     navStore.getState().applyNormalization({ stack: [], pinned: [] });
