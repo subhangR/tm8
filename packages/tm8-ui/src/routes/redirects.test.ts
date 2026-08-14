@@ -36,15 +36,23 @@ describe('the redirect table', () => {
   });
 
   it('sends deferred features to home AND reports the deferral (R7)', () => {
-    for (const [legacy, feature] of [
-      [`#/s/${S}/graph`, 'graph'],
-      [`#/s/${S}/leaderboard`, 'leaderboard'],
-    ] as const) {
+    for (const [legacy, feature] of [[`#/s/${S}/leaderboard`, 'leaderboard']] as const) {
       const outcome = redirect(legacy);
       expect(outcome?.hash).toBe(`#/s/${S}/home`);
       // Never a silent swallow: the notice is what makes the deferral honest.
       expect(outcome?.deferredFeature).toBe(feature);
     }
+  });
+
+  it('no longer defers graph — its screen shipped, so the route stands', () => {
+    // The mirror of the test above, and the reason it lost a row. `graph` was
+    // deferred when this table was written; `GraphScreen` has since been built
+    // and mounted, and the palette offers it as a live destination. Redirecting
+    // to Home with "Graph view isn't available yet" was the app lying about a
+    // screen one rail click away. A deferral notice must not outlive the
+    // deferral, so `graph` is a route now and NOT a redirect.
+    expect(redirect(`#/s/${S}/graph`)).toBeNull();
+    expect(parse(`#/s/${S}/graph`).route?.target).toEqual({ view: 'graph' });
   });
 
   it('leaves canonical routes alone', () => {
@@ -92,7 +100,6 @@ describe('redirect output is always parseable', () => {
       `#/s/${S}/docs`,
       `#/s/${S}/team`,
       `#/s/${S}/tracking`,
-      `#/s/${S}/graph`,
       `#/s/${S}/leaderboard`,
     ]) {
       const outcome = redirect(legacy);

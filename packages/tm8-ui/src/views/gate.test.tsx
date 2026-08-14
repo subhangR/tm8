@@ -28,6 +28,16 @@ const renderGate = () => {
   // asserts on a task panel that is no longer mounted. Resetting nav alone does
   // not undo it: the selection lives in storage, not in navStore.
   window.localStorage.clear();
+  // THE URL IS STATE NOW, AND jsdom KEEPS ONE `window.location` PER FILE.
+  //
+  // Exactly the same leak as the localStorage line above, in the one global
+  // that only started mattering when the router was mounted: a case that
+  // navigates leaves its address behind, and the NEXT case boots from it —
+  // because an addressable hash at boot deliberately OUTRANKS last-place (R3).
+  // So `resetNav()` alone stopped being a reset. Without this, the case after
+  // the Graph case boots onto the graph screen and never renders the workspace,
+  // which reads as seven unrelated failures rather than as one missing line.
+  window.location.hash = '';
   return render(<GateApp />);
 };
 

@@ -46,6 +46,13 @@ beforeEach(() => {
   Object.defineProperty(window, 'localStorage', { configurable: true, value: store });
   resetNav();
   screenStackStore.getState().clearAll();
+  /* The URL is state now, and jsdom keeps ONE `window.location` per file. This
+     file is the sharpest case: it MOUNTS TWICE ON PURPOSE to prove last-place
+     is honoured across a remount, and an addressable hash left by the first
+     mount deliberately OUTRANKS last-place (R3). Without this, the second
+     mount is reading the address rather than the memory, and the test would
+     pass or fail for a reason it was never written to measure. */
+  window.location.hash = '';
 });
 
 const mount = () => render(<GateApp />);
@@ -62,6 +69,16 @@ describe('a server round trip keeps your place', () => {
 
     // THE ROUND TRIP. Unmount is what `key={activeServer.id}` does on a switch.
     first.unmount();
+
+    // AND THE ADDRESS GOES WITH IT, OR THIS TEST STOPS MEASURING ITSELF.
+    //
+    // The router now writes `#/s/{space}/k/tasks` when that rail click lands,
+    // and an addressable hash at boot deliberately OUTRANKS last-place (R3). So
+    // the second mount would find the destination in the URL and never consult
+    // the memory at all — the assertion below would go green while the thing it
+    // exists to prove had stopped being exercised. A real server switch is a
+    // fresh document with no hash, which is what this restores.
+    window.location.hash = '';
 
     const second = mount();
     await waitFor(() => second.getByTestId('entity-view'));

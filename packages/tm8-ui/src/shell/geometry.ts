@@ -199,6 +199,8 @@ export interface NormalizeInput {
 export interface NormalizeResult {
   stack: EntityId[];
   pinned: EntityId[];
+  /** Predicate(s) that caused this settle; null when the input was already settled. */
+  cause: 'width' | 'max-pins' | 'both' | null;
   /** Ids demoted by THIS settle, oldest-first — the NoticeHost demotion notice reads these. */
   demoted: EntityId[];
   /**
@@ -232,16 +234,32 @@ export function normalize(input: NormalizeInput): NormalizeResult {
   const stack = [...input.stack];
   const pinned = [...input.pinned];
   const demoted: EntityId[] = [];
+  let widthCaused = false;
+  let maxPinsCaused = false;
 
   for (;;) {
     const tooNarrow = input.centerWidth < cMin(panelSlots({ stack, pinned }));
     const tooManyPins = pinned.length > MAX_PINNED;
     if (!tooNarrow && !tooManyPins) {
-      return { stack, pinned, demoted, exhausted: false };
+      const cause = widthCaused && maxPinsCaused
+        ? 'both'
+        : widthCaused
+          ? 'width'
+          : maxPinsCaused
+            ? 'max-pins'
+            : null;
+      return { stack, pinned, cause, demoted, exhausted: false };
     }
+    widthCaused ||= tooNarrow;
+    maxPinsCaused ||= tooManyPins;
     if (pinned.length === 0) {
       // C-3 exit state: nothing left to demote. The stack keeps its panel.
-      return { stack, pinned, demoted, exhausted: true };
+      const cause = widthCaused && maxPinsCaused
+        ? 'both'
+        : widthCaused
+          ? 'width'
+          : 'max-pins';
+      return { stack, pinned, cause, demoted, exhausted: true };
     }
     // Oldest pin (pin order is left-to-right) lands on the stack TOP.
     // `p` is encoded bottom→top (§6), so the top is the array's end.

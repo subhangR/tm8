@@ -68,6 +68,21 @@ export interface NavActions {
   /** First-render hydration (and every external hash change). */
   hydrate(route: Route): void;
   navigate(view: NavView): void;
+  /**
+   * The ACTIVE SPACE, when it was chosen by something other than the URL.
+   *
+   * `hydrate` sets `spaceId` from a parsed hash, which was the only writer for
+   * as long as `attachRouter` had no caller. But the space is also chosen by the
+   * boot read, the space tab bar, and space creation — none of which go through
+   * a hash. Without this the store's `spaceId` stays `''` for those paths and
+   * every URL the router would build is discarded (`writeNow` bails on an empty
+   * space), so navigation would silently stop being addressable.
+   *
+   * `replace` history, deliberately: choosing a space is not a navigation WITHIN
+   * a space, and it must not leave a back-button entry that returns you to a
+   * space you have already left.
+   */
+  setSpace(spaceId: SpaceId): void;
   /** Dedupes; an already-hosted id is RAISED to the stack top, never doubled. */
   push(id: EntityId): void;
   /** Esc: stack top only, never pins. */
@@ -142,6 +157,14 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
 
   navigate(view) {
     set((s) => ({ view, history: 'push', revision: s.revision + 1 }));
+  },
+
+  setSpace(spaceId) {
+    // Idempotent: re-selecting the space you are already in must not bump the
+    // revision, or the router would write an identical URL and the debounced
+    // replace loop would never settle.
+    if (get().spaceId === spaceId) return;
+    set((s) => ({ spaceId, history: 'replace', revision: s.revision + 1 }));
   },
 
   push(id) {
@@ -394,14 +417,13 @@ export function attachRouter(target: RouterTarget, opts: RouterSyncOptions = {})
         // REASONS — the drift class A1c found in the terminal surfaces, in
         // this file, written by me. A reworded REASONS entry must change this
         // notice too, and composition is what guarantees it does.
+        // `graph` left the deferred set on 2026-08-14 (its screen shipped), so
+        // the fork this composed across is gone and only the leaderboard
+        // remains. Still COMPOSED rather than restated, for the same reason.
         notice({
           kind: 'deferred-feature',
           feature: redirected.deferredFeature,
-          text: `${
-            redirected.deferredFeature === 'graph'
-              ? REASONS.graphDeferred
-              : REASONS.leaderboardDeferred
-          } You’ve landed on Home.`,
+          text: `${REASONS.leaderboardDeferred} You’ve landed on Home.`,
         });
       }
     }

@@ -174,6 +174,7 @@ describe('normalization — the demotion loop (LLD §5.3)', () => {
 
   it('demotes the OLDEST pin, and lands it on the stack TOP (array end, `p` is bottom→top)', () => {
     const result = normalize({ stack: [id(9)], pinned: [id(1), id(2)], centerWidth: 700 });
+    expect(result.cause).toBe('width');
     expect(result.demoted).toEqual([id(1)]);
     expect(result.pinned).toEqual([id(2)]);
     expect(result.stack).toEqual([id(9), id(1)]);
@@ -228,9 +229,15 @@ describe('normalization — the demotion loop (LLD §5.3)', () => {
 
   it('enforces MAX_PINNED even in a limitless center (hydration can deliver >3)', () => {
     const result = normalize({ stack: [], pinned: ids(5), centerWidth: 100_000 });
+    expect(result.cause).toBe('max-pins');
     expect(result.pinned).toEqual([id(3), id(4), id(5)]);
     expect(result.demoted).toEqual([id(1), id(2)]);
     expect(result.pinned.length).toBe(MAX_PINNED);
+  });
+
+  it('reports both when width and the authored pin cap drive the settle', () => {
+    const result = normalize({ stack: [id(9)], pinned: ids(5), centerWidth: 500 });
+    expect(result.cause).toBe('both');
   });
 
   it('C-3 EXIT STATE: pins exhausted and still under 320 ⇒ stop, never empty the stack', () => {

@@ -44,6 +44,21 @@ export interface SpaceTabBarProps {
    */
   accountSlot?: ReactNode;
   /**
+   * COPY LINK for whatever is currently on screen.
+   *
+   * The routing became addressable before there was any way for a person to
+   * GET an address — the app knew its own URL and offered it to nobody. This
+   * slot is that affordance, and it belongs in the bar rather than in a panel
+   * header because the thing being shared is THE PAGE, which is exactly what
+   * the bar names.
+   *
+   * A slot, not a rendered control, for the same reason as `accountSlot`: the
+   * bar has no business knowing how a link is built or what a clipboard
+   * refusal looks like. Left undefined the bar is unchanged, so every existing
+   * shell test and a bar rendered with no host keep working.
+   */
+  shareSlot?: ReactNode;
+  /**
    * Explains why onboarding is unavailable when the host has no project setup
    * port. The affordance remains focusable instead of vanishing (L6).
    */
@@ -125,6 +140,8 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
       <button type="button" className="shell-tabbar__palette" onClick={props.onOpenPalette}>
         / palette · ⌘K
       </button>
+
+      {props.shareSlot ?? null}
 
       {/* D1: no ◐ toggle here. Theme lives in the account menu. THAT MENU NOW
           EXISTS and arrives through `accountSlot` — which is the condition

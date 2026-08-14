@@ -7,7 +7,7 @@
  * live shell: take the measurement, feed it to the law, and hand the settled
  * result to the store.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { admitPin, normalize, type PinAdmission, type PoolFacts } from './geometry';
 import type { NavPort } from './nav-port';
@@ -64,6 +64,8 @@ export interface PanelEngineOptions {
 }
 
 export interface PanelEngine {
+  /** Settled render state. Width-only demotion never mutates the route-bearing nav state. */
+  visible: { stack: EntityId[]; pinned: EntityId[] };
   /**
    * Would pinning `id` be admitted? Call BEFORE `nav.pin` and render the
    * refusal on the pin control itself (L6) — never a silent no-op.
@@ -78,13 +80,24 @@ export interface PanelEngine {
 export function usePanelEngine(options: PanelEngineOptions): PanelEngine {
   const { nav, centerWidth, onNotice, pool } = options;
 
+  const settled = useMemo(
+    () => centerWidth === null
+      ? { stack: [...nav.stack], pinned: [...nav.pinned], cause: null, demoted: [] }
+      : normalize({ stack: nav.stack, pinned: nav.pinned, centerWidth }),
+    [centerWidth, nav.stack, nav.pinned],
+  );
+  const visible = useMemo(
+    () => ({ stack: settled.stack, pinned: settled.pinned }),
+    [settled.stack, settled.pinned],
+  );
+
   // The normalization loop. Runs on every width/state change, which is safe
   // because `applyNormalization` is idempotent and a no-op result writes no
   // history (A1a's contract).
   useEffect(() => {
     if (centerWidth === null) return; // not measured — never act on a guess
-    const settled = normalize({ stack: nav.stack, pinned: nav.pinned, centerWidth });
     if (settled.demoted.length === 0) return;
+    if (settled.cause === 'width') return;
 
     nav.applyNormalization({ stack: settled.stack, pinned: settled.pinned });
     const notice = demotionNotice(settled.demoted);
@@ -92,7 +105,7 @@ export function usePanelEngine(options: PanelEngineOptions): PanelEngine {
     // `nav` is a fresh object each render; the state it carries is the real
     // dependency, so we key on the ids and the width.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [centerWidth, nav.stack.join(','), nav.pinned.join(',')]);
+  }, [centerWidth, nav.stack.join(','), nav.pinned.join(','), settled.cause]);
 
   const canPin = useCallback(
     (id: EntityId, candidateTakesLease = false): PinAdmission =>
@@ -136,5 +149,5 @@ export function usePanelEngine(options: PanelEngineOptions): PanelEngine {
     nav.pop();
   }, [nav]);
 
-  return { canPin, requestPin, popStackTop };
+  return { visible, canPin, requestPin, popStackTop };
 }

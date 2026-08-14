@@ -9,11 +9,12 @@
  * The three lanes keep their authority: geometry sizes, navStore owns panel
  * state and the URL, the panels own anatomy. This file is composition only.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { EntityId, EntitySummary, MenuViewRef, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
   MenuRail,
+  NOTICE_TTL_MS,
   NoticeHost,
   SpaceTabBar,
   useNotices,
@@ -23,13 +24,18 @@ import {
 } from '../shell';
 import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
-import { screenStackStore } from '../stores/screenStackStore';
-import { navStore, useNavStore } from '../stores/navStore';
+import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
+import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../stores/navStore';
+import { createBrowserTarget, type RouterTarget } from '../routes';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
+import { CopyLinkControl } from '../share';
+import { useShellKind } from '../mobile';
+import { MobileShell } from './MobileShell';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
-import { allKinds, KindIcon, VIEW_ART } from '../domain';
+import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
+import type { NavView } from '../routes';
 import { getKind } from '../domain';
 import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
 import type { DispatchSelection, LaunchSelection } from './LaunchSheet';
@@ -60,7 +66,7 @@ import { InboxView } from './InboxView';
 import { MessagesView } from './MessagesView';
 import { CredentialsSection, credentialsPortFromSeam } from '../settings-credentials';
 import { nodeKeyOf } from '../data/launch-cache';
-import { readLastTarget, writeLastTarget } from './last-place';
+import { readLastSpace, readLastTarget, writeLastTarget } from './last-place';
 import {
   NewSpaceProjectDialog,
   ProjectBranchesSection,
@@ -98,6 +104,113 @@ const LIVE_COUNT_KIND = 'work_session';
 /** The screen a viewer with no remembered place lands on. */
 const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
 
+/**
+ * WHAT THIS FILE ACTUALLY RENDERS FOR EACH `MenuViewRef`, written down.
+ *
+ * THE DEFECT THIS CLOSES. The render switch below is one order-dependent
+ * ternary chain, and it used to end `: data.ready ? <WorkspaceView/>`. That
+ * final arm was not a match on the workspace — it was EVERYTHING LEFT OVER. A
+ * target this file had no branch for did not throw, did not warn, and did not
+ * say so: it silently drew the workspace under whatever the rail was
+ * highlighting. That has shipped twice already (the voice-room misroute, and
+ * channels falling through), and both times the symptom was "I clicked a thing
+ * and got the workspace", which reads as a no-op rather than as a bug.
+ *
+ * WHY A TABLE AND NOT A SWITCH. `satisfies Record<MenuViewRef, …>` makes a ref
+ * ADDED to the contract a compile error here until someone says which of the
+ * three things it is. That is the same guard `domain/nav-targets.ts` uses, for
+ * the same reason: the failure mode being designed out is a new member falling
+ * through to a default, so the default has to stop existing.
+ *
+ *   'mounted'   — has its own branch above, which wins before the table is read
+ *   'unbuilt'   — no screen in this build; the honest card SAYS SO
+ *   'workspace' — the three-panel workspace, matched EXPLICITLY
+ *
+ * A ref NOT in this table is not a MenuViewRef at all — it came from storage
+ * (`last-place.ts` validates the shape, never the ref) or from a caller that
+ * invented one. It gets the unrecognised card, which is loud, not the unbuilt
+ * card, which would claim we simply have not built it yet.
+ */
+const VIEW_REF_SCREENS = {
+  dashboard: 'mounted',
+  inbox: 'mounted',
+  graph: 'mounted',
+  files: 'mounted',
+  settings: 'mounted',
+  git: 'mounted',
+  messages: 'mounted',
+  workspace: 'workspace',
+  /* The last genuinely unbuilt view ref. */
+  feed: 'unbuilt',
+  /* NOT unbuilt — an ALIAS, and as of the router mount this row is UNREACHABLE.
+     `domain/nav-targets.ts` resolves `channels` to the `channel`-kind
+     EntityView, which is mounted and always has been. Phase 0.5 classified it
+     `unbuilt` because that is what the chain did with it then, and left the
+     resolution to "the router mount, which owns both directions" — this is that
+     mount, and both directions now resolve it. `routeViewOf` turns the alias
+     into `k/channels` on the way out, so it never becomes an `unroutableTarget`;
+     `landingOfRoute` turns it into the kind target on the way back in, so it is
+     never what `activeTarget` derives to. Nothing can reach this row.
+
+     KEPT ANYWAY, and not as clutter: the table is `satisfies
+     Record<MenuViewRef, …>`, so every ref must be classified or the file does
+     not compile — which is the property that makes a NEW ref a build failure
+     rather than a silent fallthrough. Deleting an unreachable row would trade
+     that guarantee for tidiness. */
+  channels: 'unbuilt',
+} as const satisfies Record<MenuViewRef, 'mounted' | 'unbuilt' | 'workspace'>;
+
+/** `true` when this build has no screen for the ref and should say so. */
+function isUnbuiltViewRef(ref: string): boolean {
+  return VIEW_REF_SCREENS[ref as MenuViewRef] === 'unbuilt';
+}
+
+/**
+ * A target that reached the end of the render switch unmatched.
+ *
+ * LOUD IN DEV, HONEST IN PRODUCTION — the two halves of not lying about it.
+ * `console.error` fires once per mount (an effect, not a render) so a test can
+ * assert the shout and a developer cannot miss it; the card is what a user
+ * sees, and it names the target rather than drawing a screen that was never
+ * asked for.
+ */
+/**
+ * Do these two routes name THE SAME PLACE?
+ *
+ * Deliberately not a deep equality. The screen→URL sync compares what it would
+ * write against what the address already says, and the two are built by
+ * different code paths (`parse` vs `routeViewOf`), so the fields they can
+ * legitimately disagree about are exactly the ones that must NOT trigger a
+ * write: `q`, which only a pasted URL ever carries, and `mode`, which
+ * `routeViewOf` echoes back from the target it was handed. Comparing those too
+ * would make the loop rewrite the address on arrival — dropping a viewer's
+ * filter and re-asserting a collection mode nothing asked it to assert, which
+ * is the ruling R22 must stay free to change.
+ */
+function sameDestination(a: NavView, b: NavView): boolean {
+  if (a.view !== b.view) return false;
+  if (a.view === 'entity' && b.view === 'entity') return a.entityId === b.entityId;
+  if (a.view === 'kind' && b.view === 'kind') return a.slug === b.slug;
+  return true;
+}
+
+function UnroutedTargetCard({ target }: { target: MenuTarget | null }) {
+  const described = target === null ? 'null' : JSON.stringify(target);
+  useEffect(() => {
+    console.error(
+      `GateApp: no screen for target ${described}. The render switch fell through. ` +
+        'This is a routing defect — the workspace is NOT being drawn for it.',
+    );
+  }, [described]);
+  return (
+    <div className="ev-root" data-testid="unrouted-target">
+      <p className="evt-empty" style={{ margin: 24 }}>
+        {`This build has no screen for where you asked to go (${described}). That is a bug, not an empty screen — nothing is hidden behind this card. Pick a destination from the rail to carry on.`}
+      </p>
+    </div>
+  );
+}
+
 export interface GateAppProps {
   activeServer?: UiServer;
   servers?: readonly UiServer[];
@@ -105,7 +218,26 @@ export interface GateAppProps {
   onAddServer?(input: AddServerInput): Promise<unknown>;
   /** Test injection port, forwarded to `useGateData` — see `GateOptions.seam`. */
   seam?: Seam;
+  /**
+   * Where the router reads and writes the address, defaulting to the real one.
+   *
+   * A port rather than a flag, so a test drives the SAME mount the browser gets
+   * — `createMemoryTarget` is a full history stack with back/forward, which is
+   * the only way to assert the history discipline at all. There is deliberately
+   * no way to switch the router OFF: an app that is addressable only sometimes
+   * is an app whose links work only sometimes.
+   */
+  routerTarget?: RouterTarget;
 }
+
+/**
+ * WHETHER THIS BOOT ARRIVED WITH AN ADDRESSABLE ROUTE — the R3 precedence fact,
+ * written down as a fact.
+ *
+ * `pending` only until the router has read the address once, which happens in a
+ * layout effect on the first commit.
+ */
+type BootRoute = 'pending' | 'addressable' | 'none';
 
 export function GateApp(props: GateAppProps = {}) {
   // null when this GateApp is not inside an <AuthGate> — the shell tests, and
@@ -184,20 +316,393 @@ export function GateApp(props: GateAppProps = {}) {
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
-  const [activeTarget, setActiveTarget] = useState<MenuTarget | null>(WORKSPACE_TARGET);
+  /**
+   * WHICH SCREEN IS SHOWING — now DERIVED from `navStore`, not held here.
+   *
+   * IT USED TO BE A `useState` IN THIS COMPONENT, and that is the single fact
+   * that made the app unaddressable. The route codec, `attachRouter` and the
+   * whole `NavView` grammar have existed and been tested for a long time, but
+   * `navStore.view` had no readers and `navStore.navigate` had no callers: the
+   * store mirrored a field nothing rendered from. Mounting the router against
+   * that would have faithfully written a URL describing state no screen
+   * consults — the address bar would change while the page did not.
+   *
+   * So the store is now the single source of truth and this is a projection of
+   * it. `landingOfRoute` is total over `NavView`, so every route resolves to a
+   * screen; `null` means the route named something unresolvable, which the
+   * fallthrough card reports rather than silently drawing the workspace.
+   *
+   * `last-place` still works and is unchanged in spirit — but it is now a
+   * FALLBACK consulted when nothing more authoritative said where to go, not
+   * the authority itself. That distinction is what lets a shared link win.
+   */
+  const { shell } = useShellKind();
+  const navView = useNavStore((s) => s.view);
 
   /**
-   * WHICH VIEW, remembered per (node, space) — the other half of the place a
-   * server round trip used to destroy. `setActiveTarget` still exists for the
-   * two switch handlers, which set an interim workspace target the restore
-   * below replaces; every USER navigation goes through this so there is no
-   * second write path that can forget.
+   * A remembered target that has NO ROUTE, kept so the switch can say so.
+   *
+   * THE REGRESSION THIS EXISTS TO PREVENT, which was caught by
+   * `render-switch-honesty.test.tsx` rather than by inspection. Deriving the
+   * screen from `navStore` means a target must become a `NavView` to be
+   * rendered at all — so the obvious restore path, `routeViewOf(remembered) ??
+   * {view:'workspace'}`, SILENTLY SWALLOWS a target it cannot map and draws the
+   * workspace. That is exactly the silent-wrong-screen failure Phase 0.5
+   * removed, reintroduced one layer further back.
+   *
+   * `last-place` validates the SHAPE of what it reads but never the ref, so a
+   * corrupt or stale record is a real source of these. It is held apart from
+   * the store deliberately: `NavView` has no member for "unrecognised", and
+   * inventing one would put an unroutable thing into the URL.
+   */
+  const [unroutableTarget, setUnroutableTarget] = useState<MenuTarget | null>(null);
+
+  const activeTarget = useMemo<MenuTarget | null>(
+    () => unroutableTarget ?? landingOfRoute(navView)?.target ?? null,
+    [unroutableTarget, navView],
+  );
+
+  /**
+   * EVERY user navigation goes through here, so there is no second write path
+   * that can forget to remember the place.
+   *
+   * A target with no route (`routeViewOf` returns null) is a misroute at the
+   * source and is refused rather than navigated to — see `nav-targets.ts`. It
+   * is not silently swallowed: refusing here is what keeps the store's view and
+   * the rendered screen from diverging.
    */
   const nodeKey = nodeKeyOf(activeServer.routeBaseUrl);
   const navigateTo = useCallback((target: MenuTarget) => {
-    setActiveTarget(target);
+    const view = routeViewOf(target);
+    if (!view) {
+      console.error('[nav] refusing a target with no route', target);
+      return;
+    }
+    setUnroutableTarget(null);
+    navStore.getState().navigate(view);
     if (data.spaceId) writeLastTarget(nodeKey, data.spaceId, target);
   }, [nodeKey, data.spaceId]);
+
+  /**
+   * Navigate to a destination expressed as a ROUTE rather than as a screen.
+   *
+   * Everything a viewer can click already holds a `MenuTarget`, but the
+   * keyboard holds route strings, so it needs the other direction. It still
+   * ends up in `navigateTo` — one user-navigation path, one place that
+   * remembers your place, one `push` entry — and it inherits that function's
+   * refusal for free. `null` in means the ref named nothing, which is REPORTED,
+   * never defaulted: a chord that quietly went Home instead of to the screen it
+   * promised would be the same silent-wrong-screen failure this lane exists to
+   * remove.
+   */
+  const navigateToRouteView = useCallback((view: NavView | null, ref: string) => {
+    const target = view ? landingOfRoute(view)?.target : null;
+    if (!target) {
+      console.error('[nav] no destination for keyboard ref', ref);
+      return;
+    }
+    navigateTo(target);
+  }, [navigateTo]);
+
+  /**
+   * THE ROUTER, MOUNTED. This is the line the whole lane exists for.
+   *
+   * `attachRouter` has been built and tested for a long time and had never had
+   * a non-test caller, so the app had no URL state at all: no shareable link,
+   * no reload-to-where-you-were, no back button. Everything below is wiring; it
+   * writes no routing logic of its own.
+   *
+   * BELOW THE AUTH GATE, STRUCTURALLY. `App.tsx` renders
+   * `<AuthGate><ConnectedGateApp/></AuthGate>` and `AuthGate` does not render
+   * children at all while signed out, so this effect cannot run for a viewer
+   * who is not in. That is what makes "login → page" need no capture-and-replay
+   * mechanism: the address bar is never touched, so the destination is still
+   * sitting there after sign-in. Mounted ABOVE the gate, the store→URL loop
+   * would rewrite a signed-out recipient's deep link before they could sign in
+   * — see `signed-out-hash.test.tsx`, which is the law, not a preference.
+   *
+   * PER ACTIVE SERVER, for free: `App.tsx` keys `GateApp` by `activeServer.id`,
+   * so a server switch remounts this component and therefore this effect.
+   *
+   * A LAYOUT EFFECT, and that is the R3 precedence guarantee rather than a
+   * performance choice. React runs every layout effect before any passive
+   * effect of the same commit, so the address is read and hydrated before ANY
+   * other effect in this tree observes the store. The alternative — a passive
+   * effect declared above the restore effect — would work today and would be an
+   * ORDERING ACCIDENT, which is the class of bug this lane exists to remove.
+   */
+  const [bootRoute, setBootRoute] = useState<BootRoute>('pending');
+  /** R15's fact — see the step-up sync below, which is the only reader. */
+  const coldEntry = useRef(false);
+  /* The notice sink, read through a ref so remounting the router is not coupled
+     to the identity of a callback that changes on every render. */
+  const noticeSink = useRef(notices.push);
+  noticeSink.current = notices.push;
+  const routerTarget = props.routerTarget;
+  /** The live transport, for the one caller that must write the address from
+      outside the sync loop — see `resetAddress`. */
+  const routerRef = useRef<RouterTarget | null>(null);
+  useLayoutEffect(() => {
+    const target = routerTarget ?? createBrowserTarget();
+    routerRef.current = target;
+    /* Latched from `onSpacePicker`, which `attachRouter` fires synchronously
+       during its own initial read when the hash carries no addressable space.
+       So this is settled by the time `attachRouter` returns. */
+    let addressable = true;
+    const detach = attachRouter(target, {
+      lastActiveSpaceId: readLastSpace(nodeKey) as SpaceId | null,
+      onNotice: (notice) => {
+        noticeSink.current({
+          id: `route:${notice.kind}`,
+          tone: notice.kind === 'dropped' ? 'warn' : 'info',
+          title: notice.kind === 'dropped' ? 'Part of that link was dropped' : 'Not built yet',
+          body: notice.text,
+          ttlMs: NOTICE_TTL_MS,
+        });
+      },
+      /* "THE HASH CARRIED NO ADDRESSABLE SPACE." There is no separate space
+         picker screen in this shell — `SpaceTabBar` is always mounted above the
+         centre and IS the picker. So the honest response is not to render
+         something; it is to record that this boot has no route, which is
+         exactly what lets last-place apply below. */
+      onSpacePicker: () => {
+        addressable = false;
+      },
+    });
+    setBootRoute(addressable ? 'addressable' : 'none');
+    /* R15's fact, read at the only moment it is true. A depth of 1 means this
+       entry IS the whole history — the viewer got here by pasting, not by
+       walking — so the first step up must replace rather than push. A target
+       that cannot report depth is treated as a walk, which is the safe side:
+       an unnecessary push costs one back press, a wrong replace loses an entry
+       nobody can get back. */
+    coldEntry.current = addressable && (target.historyDepth?.() ?? 2) <= 1;
+    return () => {
+      routerRef.current = null;
+      detach();
+    };
+  }, [nodeKey, routerTarget]);
+
+  /**
+   * THE ADDRESS OF A SPACE ON THE SERVER YOU JUST LEFT ADDRESSES NOTHING HERE.
+   *
+   * A REAL BUG THE MOUNT INTRODUCES, found while working T9's lifecycle
+   * clause rather than by a test. Switching Server re-keys `GateApp`, so the
+   * router detaches and a fresh one mounts and READS THE ADDRESS — which still
+   * names a Space on the Server just left. That hash is addressable, so R3
+   * honours it, the boot refuses to restore last-place, and the reconciliation
+   * then tells the viewer "that link points at another Space" about a link
+   * nobody clicked. Correct machinery, nonsense sentence.
+   *
+   * Space ids are not portable across Servers (`servers/server-key.ts`: named
+   * Servers are same-origin relay routes, so the same hash resolves against
+   * whichever Server is active). So the honest reset is to the unaddressable
+   * form: this boot carried no route, and last-place applies on the new node.
+   *
+   * Written LAST in the switch handler so it is the final address write —
+   * `leaveSpaceContext` above it schedules a debounced replace, and the
+   * remount's detach cancels that timer before it can fire.
+   *
+   * ONLY the Server switch. Changing Space WITHIN a node keeps the address
+   * meaningful and `setSpace` rewrites it correctly.
+   */
+  const resetAddress = useCallback(() => {
+    routerRef.current?.setHash('#/', { replace: true });
+  }, []);
+
+  /**
+   * SEED THE SCREEN STACK FROM THE ADDRESS — the landing algorithm's second
+   * half, and the part that makes `e/{id}?origin=tasks` mean what §2.2 says it
+   * means: "the Tasks screen, with THAT entity open".
+   *
+   * `landingOfRoute` returns both halves because a route names two things at
+   * once; the target drives the render switch above and `openEntity` belongs to
+   * `screenStackStore`, which has no `MenuTarget` representation at all.
+   *
+   * HYDRATING THIS STORE FROM THE ADDRESS BAR IS NOT A VIOLATION OF ITS
+   * "IN-MEMORY ONLY" RULING. That ruling forbids PERSISTING the stacks — a
+   * reload must not resurrect a selection out of storage — and the store's
+   * header comment says so while also naming this exact route grammar as the
+   * thing that would encode it properly. The address bar is not storage; it is
+   * the request, and reading the request is what hydration is.
+   *
+   * Keyed on the view rather than done once at mount, so back/forward and a
+   * pasted hash re-seed by the same path as the boot did.
+   *
+   * NOT THE LAST WORD ON WHAT `e/{id}` DRAWS. Ruling M1 (2026-08-14) says that
+   * route means the Z4 entity FULL VIEW, and no such host exists in this tree
+   * yet; `landingOfRoute`'s kind-screen-plus-seed is the shape that could be
+   * built today, not the shape the frozen spec asks for. Seeding the stack is
+   * right either way — an entity the address names has to be open somewhere —
+   * so nothing here asserts that the kind screen is the final destination.
+   *
+   * IT ALSO CARRIES THE SPACE RESET, and the order inside one effect is the
+   * point: a route naming a DIFFERENT space is a context switch, and the reset
+   * has to happen before the seed or it would wipe the entity it just seeded.
+   * Two effects would have made that an ordering accident.
+   */
+  const navSpaceId = useNavStore((s) => s.spaceId);
+  const routedSpace = useRef<string | null>(null);
+  useEffect(() => {
+    /* A URL-DRIVEN SPACE CHANGE IS THE FOURTH ENTRY POINT INTO THIS RESET.
+       Entity ids are space-scoped and both stores are module-level, so pasting
+       a hash that names another space would otherwise restore screens holding
+       entities from the space you just left — the exact failure the three
+       hand-written copies of this reset were collapsed to prevent.
+
+       ONLY the screen stacks, deliberately, and this is where the router path
+       and `leaveSpaceContext` legitimately differ. `hydrate` has ALREADY
+       replaced navStore's panels with the ones the route named, so clearing
+       them here would delete the `?p=`/`?pin=` the link asked for — it would
+       reset away the very thing being navigated to. The invariant both paths
+       share is "no state from the old space survives"; navStore satisfies it by
+       replacement here and by clearing there. */
+    if (navSpaceId && routedSpace.current !== null && routedSpace.current !== navSpaceId) {
+      screenStackStore.getState().clearAll();
+    }
+    if (navSpaceId) routedSpace.current = navSpaceId;
+
+    const landing = landingOfRoute(navView);
+    if (!landing?.openEntity) return;
+    /* Only a kind screen can host one today: `landingOfRoute` produces an
+       `openEntity` for the `entity` route alone, and that route's target is
+       always a kind. Narrowed rather than assumed. */
+    if (landing.target.type !== 'kind') return;
+    screenStackStore.getState().open(screenKeyOf.kind(landing.target.ref), landing.openEntity);
+  }, [navView, navSpaceId]);
+
+  /**
+   * THE OTHER DIRECTION: THE ENTITY A SCREEN HAS OPEN BECOMES PART OF THE
+   * ADDRESS.
+   *
+   * Without this the mount is half a feature. `screenStackStore` holds what a
+   * kind screen is showing and nothing ever put it in the URL, so drilling into
+   * a task left the address saying `k/tasks`: the address bar could not be
+   * copied to share what was on screen, and a reload came back to the list.
+   * `routeViewOf`'s `openEntity` parameter exists for exactly this and had no
+   * caller — "what makes an open entity shareable at all", in its own words.
+   *
+   * IT IS THE SAME LOOP AS THE SEED ABOVE, RUN BACKWARDS, so it has to be
+   * idempotent or the two would push history at each other forever.
+   * `sameDestination` is the fixed point: the seed reopens what the address
+   * already named, this sees no change, and neither writes.
+   *
+   * `q` SURVIVES BY BEING LEFT ALONE. `routeViewOf` always emits `q: null`, so
+   * comparing only the destination means a filtered collection keeps its filter
+   * while an entity is open on top of it. Same for `mode`, deliberately: this
+   * never re-asserts one, which is what keeps R22 open.
+   */
+  const openOnScreen = useScreenStackStore((s) =>
+    activeTarget?.type === 'kind' ? topOf(s, screenKeyOf.kind(activeTarget.ref)) : null,
+  );
+  /**
+   * R15 — A COLD ENTRY'S FIRST STEP UP IS A REPLACE, NEVER A PUSH.
+   *
+   * Land on a pasted `e/{id}` and there is nothing behind you: history depth is
+   * 1, so the back affordance cannot mean BACK and can only mean UP. If up
+   * pushed, back would return to the entity and the viewer would be trapped
+   * in a two-item loop with no exit — on the EXACT entry path a shared link
+   * creates, which is the one path this whole lane is for.
+   *
+   * Depth comes from the transport because the two cases are indistinguishable
+   * from the address: arriving at `k/tasks` by pasting and by walking up from
+   * an entity produce the same string and opposite meanings for `‹`.
+   *
+   * Spent ONCE. After the first step the viewer has a real history and every
+   * later navigation is an ordinary push. Declared with the mount, which is the
+   * only moment the fact is readable.
+   */
+  useEffect(() => {
+    if (!activeTarget || activeTarget.type !== 'kind') return;
+    /* READ THE STORE, NOT THE RENDERED VALUE — and this is a correctness fix,
+       not a style choice. The seed effect above runs in the same pass as this
+       one and opens the entity the address named; `openOnScreen` is this
+       render's snapshot, so it is still null when this runs. Acting on it would
+       make the mount navigate AWAY from the route it had just landed on, and —
+       worse — spend R15's one-shot concession doing it, so the real step up
+       later would push and trap the viewer anyway.
+
+       `openOnScreen` stays in the deps because it is what WAKES this effect
+       when the stack changes; it is never what the effect acts on. */
+    const open = topOf(screenStackStore.getState(), screenKeyOf.kind(activeTarget.ref));
+    const next = routeViewOf(activeTarget, open);
+    if (!next || sameDestination(navView, next)) return;
+    const steppingUp = navView.view === 'entity' && next.view !== 'entity';
+    if (steppingUp && coldEntry.current) {
+      coldEntry.current = false;
+      navStore.setState((s) => ({ view: next, history: 'replace', revision: s.revision + 1 }));
+      return;
+    }
+    navStore.getState().navigate(next);
+  }, [activeTarget, openOnScreen, navView]);
+
+  /**
+   * `?session={id}` — THE OTHER HALF OF THE GRAMMAR THAT HAD NO CONSUMER.
+   *
+   * `selectAutoOpenSession` was written, tested and never called by anything.
+   * So a link to a live session parsed cleanly, survived the round trip, and
+   * landed the recipient on an EMPTY WORKSPACE — the param was carried
+   * faithfully and meant nothing. Same shape as `attachRouter` itself: built,
+   * correct, unreached.
+   *
+   * The selector already carries the §2.2 rule — it auto-opens only when `p`
+   * and `pin` are both absent, so a link that names its panels explicitly wins
+   * over the shorthand.
+   *
+   * REPLACE, NOT `push()`. The store's `push` action is for a viewer opening
+   * something; this is hydration finishing the job the address asked for, and
+   * it must not manufacture a back entry the viewer never created. It settles
+   * in one pass: once the id is on the stack the centre is no longer empty, so
+   * the selector returns null and this cannot re-fire.
+   */
+  const autoOpenSession = useNavStore(selectAutoOpenSession);
+  useEffect(() => {
+    if (!autoOpenSession) return;
+    navStore.setState((s) => ({
+      stack: [...s.stack.filter((id) => id !== autoOpenSession), autoOpenSession],
+      history: 'replace',
+      revision: s.revision + 1,
+    }));
+  }, [autoOpenSession]);
+
+  /**
+   * THE LINK'S SPACE OUTRANKS THE REMEMBERED SPACE.
+   *
+   * `useGateData` picks the boot space from `last-space`, which is right for
+   * every boot that did not come from a URL and wrong for every boot that did:
+   * a link into Space B opened by someone whose last space was A would render
+   * A's content under B's address. The two have to be reconciled, and the
+   * address wins — that is what "share a link" means.
+   *
+   * A link naming a Space the node does not list for this viewer is NOT an
+   * error to swallow. It is said out loud and the boot demoted to `none`, which
+   * re-runs the restore below and lands them where they were. Silently showing
+   * them a different Space under that address is the failure this lane removes.
+   */
+  const spaceSettled = useRef(false);
+  useEffect(() => {
+    if (spaceSettled.current || bootRoute !== 'addressable') return;
+    const linkSpace = navStore.getState().spaceId;
+    if (!linkSpace || linkSpace === data.spaceId) {
+      spaceSettled.current = true;
+      return;
+    }
+    // Still booting: the space list is the only thing that can answer this.
+    if (data.spaces.length === 0) return;
+    spaceSettled.current = true;
+    if (data.spaces.some((space) => space.id === linkSpace)) {
+      data.selectSpace(linkSpace as SpaceId);
+      return;
+    }
+    noticeSink.current({
+      id: 'route:unknown-space',
+      tone: 'warn',
+      title: 'That link points at another Space',
+      body: 'This node does not list that Space for you, so it could not be opened. You are where you left off.',
+      ttlMs: NOTICE_TTL_MS,
+    });
+    setBootRoute('none');
+  }, [bootRoute, data.spaces, data.spaceId, data.selectSpace]);
 
   // Restore once per space. Deliberately NOT paired with a persisting effect:
   // an effect watching `activeTarget` would run in the same pass as this one,
@@ -205,10 +710,103 @@ export function GateApp(props: GateAppProps = {}) {
   // this just read.
   const restoredSpace = useRef<string | null>(null);
   useEffect(() => {
+    /* R3 — THE PRECEDENCE RULE, AND THE WHOLE POINT OF THE FEATURE.
+       An addressable hash present at boot OUTRANKS last-place FOR THAT BOOT.
+       This effect fires when `data.spaceId` lands ASYNCHRONOUSLY, which is
+       strictly after the router has synchronously hydrated the link — so
+       without this the link ARRIVES FIRST AND LOSES, and every shared link is
+       discarded by a restore nobody asked for. last-place applies only when the
+       address carried nothing addressable.
+
+       `restoredSpace` is claimed for the LINK's space rather than for the space
+       showing right now: the reconciliation above may still be switching to it,
+       and that switch must not re-enter here and restore over the link. */
+    if (bootRoute === 'pending') return;
+    if (bootRoute === 'addressable') {
+      restoredSpace.current = navStore.getState().spaceId;
+      return;
+    }
     if (!data.spaceId || restoredSpace.current === data.spaceId) return;
     restoredSpace.current = data.spaceId;
-    setActiveTarget(readLastTarget(nodeKey, data.spaceId) ?? WORKSPACE_TARGET);
-  }, [nodeKey, data.spaceId]);
+    /* The store learns the space here too. `hydrate` is the only other writer
+       and it only runs for a parsed hash, so without this the store's spaceId
+       stays empty on every boot that did not come from a URL — and the router
+       discards URLs built with no space. */
+    navStore.getState().setSpace(data.spaceId);
+    const remembered = readLastTarget(nodeKey, data.spaceId) ?? WORKSPACE_TARGET;
+    const view = routeViewOf(remembered);
+    if (!view) {
+      /* Unroutable: SAY SO rather than substituting the workspace. Storage is
+         the only place these come from, and a stale record must not quietly
+         put you somewhere you did not ask to be. */
+      setUnroutableTarget(remembered);
+      return;
+    }
+    setUnroutableTarget(null);
+    /* `replace`, not `push`: restoring where you already were is not a
+       navigation and must not leave a back-button entry. */
+    navStore.setState((s) => ({ view, history: 'replace', revision: s.revision + 1 }));
+    /* `bootRoute` IS A DEPENDENCY, and leaving it out was a real hole rather
+       than a lint nit. The ordinary path happens to work without it, because
+       this effect re-runs when `data.spaceId` lands and closes over whatever
+       `bootRoute` had become by then. The DEMOTION path does not: when the link
+       names a Space this node does not list, the reconciliation above flips
+       `addressable` → `none` and NOTHING ELSE CHANGES — so without this the
+       effect would never re-run and last-place would never restore, leaving the
+       viewer on a screen the refused link chose. */
+  }, [nodeKey, data.spaceId, bootRoute]);
+
+  /**
+   * LEAVING THIS (space, server) FOR ANOTHER — the one path.
+   *
+   * WHY IT IS ONE FUNCTION NOW. This exact four-line body was written out
+   * THREE times: the space tab bar's `onSelectSpace`, the rail's
+   * `onSelectServer`, and `NewSpaceProjectDialog`'s `onCreated`. Three copies
+   * of an invariant is three chances for the next context switch to be added
+   * with two of the four lines, and the failure it guards is silent: entity ids
+   * are SPACE-SCOPED while both stores are module-level, so a missed reset
+   * restores panels belonging to the space you just left. It does not throw. It
+   * shows you somebody else's rows.
+   *
+   * The interim workspace target is part of the reset and not an afterthought:
+   * the restore effect above replaces it once the new space id lands, so this
+   * is what is on screen for the frames in between.
+   *
+   * THERE IS NOW A FOURTH ENTRY POINT AND IT DOES NOT CALL THIS FUNCTION: a
+   * hash naming another Space. Not an oversight and not a fourth copy — the two
+   * paths share the INVARIANT ("no state from the old Space survives") and
+   * satisfy it by different mechanisms, because `hydrate` has already replaced
+   * navStore's panels with the ones the route named. Calling this there would
+   * reset away the very panels being navigated to, which is a worse bug than
+   * the one it would be guarding. The screen-stack half is identical and is
+   * done in the seeding effect above, next to the reason. Anyone adding a fifth
+   * switch should call this one; anyone adding a second URL-driven one should
+   * read that effect first.
+   */
+  const leaveSpaceContext = useCallback(() => {
+    navStore.getState().applyNormalization({ stack: [], pinned: [] });
+    navStore.getState().setSession(null);
+    screenStackStore.getState().clearAll();
+    /* REPLACE, NOT `navigate`, AND THE MOUNT IS WHAT MAKES IT MATTER.
+       This was `navigate({view:'workspace'})`, which is a PUSH. That was inert
+       while nothing mirrored the store to the URL; with the router mounted it
+       writes a history entry for the space you are LEAVING — `#/s/{old}/workspace`
+       — because the store still holds the old space id at this instant and only
+       learns the new one afterwards. Back would then land the viewer in a space
+       they had left, on a screen they never visited: this is the INTERIM state
+       the restore effect replaces a frame later, not a destination.
+
+       `setSpace`'s own docblock already rules this exact case ("choosing a space
+       is not a navigation WITHIN a space, and it must not leave a back-button
+       entry that returns you to a space you have already left"). The reset half
+       simply had not been brought under it, because until now it could not be
+       observed. */
+    navStore.setState((s) => ({
+      view: { view: 'workspace' },
+      history: 'replace',
+      revision: s.revision + 1,
+    }));
+  }, []);
   const projectOnboardingPort = useMemo<ProjectOnboardingPort | null>(() => {
     const setup = data.seam.projectSetup;
     if (!setup) return null;
@@ -400,7 +998,7 @@ export function GateApp(props: GateAppProps = {}) {
   const graphLaunchPort = useLaunchPort(data, {
     onSpawn: async (input) => {
       const sessionId = await data.spawn(input);
-      setActiveTarget({ type: 'view', ref: 'workspace' });
+      navigateTo(WORKSPACE_TARGET);
       nav.push(sessionId);
     },
   });
@@ -417,7 +1015,32 @@ export function GateApp(props: GateAppProps = {}) {
       close: (id) => actions.close(id),
       pin: (id) => actions.pin(id),
       unpin: (id) => actions.unpin(id),
-      promote: (id) => actions.promote(id),
+      /**
+       * PROMOTE IS REFUSED WHILE Z4 HAS NO HOST, AND REFUSING IS THE FIX.
+       *
+       * `navStore.promote` clears the id from stack AND pins and sets
+       * `{view:'entity', entityId, origin:null}` — from the workspace there is
+       * no `origin` to carry. So the panel was destroyed and the screen was
+       * replaced by the unrecognised card, in one click, with no way back to
+       * either. It is a real regression on this branch: the write is old, but
+       * making `navStore` authoritative (68dc93fd) made it visible, and no test
+       * covered it.
+       *
+       * Doing the state change and drawing an honest card instead would still
+       * destroy the panel, so the guard has to be here, before the store. Said
+       * out loud rather than swallowed: a control that silently does nothing is
+       * the failure mode this codebase keeps removing. It comes back the moment
+       * the M1 host exists, and nothing here presumes what that host looks like.
+       */
+      promote: (_id) => {
+        noticeSink.current({
+          id: 'z4-unbuilt',
+          tone: 'warn',
+          title: 'Full view isn’t built yet',
+          body: 'The panel stays where it is. Opening an entity on its own screen is coming; nothing was lost.',
+          ttlMs: NOTICE_TTL_MS,
+        });
+      },
       applyNormalization: (next) => actions.applyNormalization(next),
       surfaceOf: (id) => contentSurface[id] ?? null,
       setContentSurface: (id, surface) => actions.setContentSurface(id, surface),
@@ -434,15 +1057,34 @@ export function GateApp(props: GateAppProps = {}) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const keyboardRef = useRef<KeyboardController | null>(null);
-  const commandSink = useRef<(command: string) => void>(() => undefined);
+  /**
+   * THE SINK TAKES THE REF, AND THAT ONE ARGUMENT IS THE WHOLE BUG.
+   *
+   * `keyboard/contract.ts` declares nine `g` chords `guaranteed: true`
+   * (`g.home` … `g.settings`), and `controller.ts` has ALWAYS passed
+   * `binding.ref` as `onCommand`'s second argument. This sink was typed
+   * `(command) => void` and the controller was constructed with
+   * `onCommand: (command) => commandSink.current(command)`, so the ref was
+   * dropped at the boundary. Every one of the nine chords fired a `nav.view` or
+   * `nav.kind` command carrying a destination that nothing could receive, and
+   * none of them has ever worked.
+   */
+  const commandSink = useRef<(command: string, ref?: string) => void>(() => undefined);
   if (keyboardRef.current === null) {
     keyboardRef.current = createKeyboardController({
-      onCommand: (command) => commandSink.current(command),
+      onCommand: (command, ref) => commandSink.current(command, ref),
     });
   }
-  commandSink.current = (command: string) => {
+  commandSink.current = (command: string, ref?: string) => {
     if (command === 'palette.open') setPaletteOpen(true);
     if (command === 'menu.toggle') setMenuCollapsed((collapsed) => !collapsed);
+    /* THROUGH THE ROUTE VOCABULARY, NEVER BY HAND-ASSEMBLING A `MenuTarget`.
+       A chord's ref is a route view name or a kind SLUG — see `navViewOfName`
+       for the two mismatches that make the obvious spelling wrong. */
+    if (command === 'nav.view' && ref) navigateToRouteView(navViewOfName(ref), ref);
+    if (command === 'nav.kind' && ref) {
+      navigateToRouteView({ view: 'kind', slug: ref, mode: null, q: null }, ref);
+    }
   };
   useEffect(() => {
     const kb = keyboardRef.current;
@@ -657,6 +1299,44 @@ export function GateApp(props: GateAppProps = {}) {
     setPaletteOpen(false);
   }, [channelEntities, navigateTo]);
 
+  /*
+   * THE SHELL FORK. Chosen by pointer type and width, never by user agent —
+   * `mobile/shell-for.ts` owns that predicate and is unit-tested away from the
+   * DOM.
+   *
+   * It forks HERE, above the chrome and BELOW everything that decides where you
+   * are. `navStore`, the codec and the browser history are already settled by
+   * this point and are shared by both branches, which is the whole of "the
+   * shell forks and the router does not": a link resolves to the same
+   * `activeTarget` on a phone as on a desktop, and only the arrangement differs.
+   *
+   * Placed after the router mount effect deliberately — a fork above it would
+   * give the two shells two mounts, and two mounts are two histories.
+   */
+  if (shell === 'mobile' && data.spaceId) {
+    return (
+      <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
+        <MobileShell
+          data={data}
+          spaceId={data.spaceId}
+          activeTarget={activeTarget}
+          navigateTo={navigateTo}
+          openEntity={openOnScreen}
+          serverBaseUrl={activeServer.routeBaseUrl}
+          reasons={reasons}
+          onNotice={notices.push}
+          nodeKey={nodeKey}
+          {...(viewerMemberId ? { viewerMemberId } : {})}
+          {...(channelEntities[0]?.id ? { chatAnchorId: channelEntities[0].id } : {})}
+          {...(data.spaces.find((sp) => sp.id === data.spaceId)?.name
+            ? { spaceLabel: data.spaces.find((sp) => sp.id === data.spaceId)?.name }
+            : {})}
+          notices={<NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
       <div className="shell-root">
@@ -668,13 +1348,7 @@ export function GateApp(props: GateAppProps = {}) {
           spaces={data.spaces}
           activeSpaceId={data.spaceId || null}
           onSelectSpace={(id: SpaceId) => {
-            navStore.getState().applyNormalization({ stack: [], pinned: [] });
-            navStore.getState().setSession(null);
-            /* Entity ids are SPACE-SCOPED and the screen stacks are module-level,
-               so they outlive this switch. Without this, a kind screen would
-               restore an entity belonging to the space just left. */
-            screenStackStore.getState().clearAll();
-            setActiveTarget({ type: 'view', ref: 'workspace' });
+            leaveSpaceContext();
             data.selectSpace(id);
           }}
           onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
@@ -688,6 +1362,29 @@ export function GateApp(props: GateAppProps = {}) {
           // ACCOUNT. Undefined otherwise, so a GateApp rendered without an
           // AuthGate (every existing test) keeps the avatar fallback and its
           // behaviour is unchanged.
+          /* COPY LINK — the affordance that makes the routing usable by a
+             person. The app has been addressable since the router mounted and
+             offered its address to nobody; this is where a viewer gets it.
+
+             It names WHAT IS ON SCREEN: the active target, plus the entity open
+             on that screen if there is one, so a link to a task you are reading
+             reopens that task rather than the list it came from. `openOnScreen`
+             already existed for the reverse direction (drill in, address
+             updates) and is the same fact read the other way.
+
+             Rendered only with a Space, because a link with no Space addresses
+             nothing — `copyLinkUrl` would return null and the control would be
+             a button that cannot perform, which is the shape this codebase
+             refuses everywhere else. */
+          shareSlot={
+            data.spaceId ? (
+              <CopyLinkControl
+                spaceId={data.spaceId}
+                target={activeTarget ?? WORKSPACE_TARGET}
+                openEntity={openOnScreen}
+              />
+            ) : undefined
+          }
           accountSlot={
             authAccount && data.viewerActor ? (
               <AccountMenu actor={data.viewerActor} theme={theme} onThemeChange={setTheme} />
@@ -707,13 +1404,10 @@ export function GateApp(props: GateAppProps = {}) {
             servers={props.servers}
             activeServerId={activeServer.id}
             onSelectServer={(id) => {
-              navStore.getState().applyNormalization({ stack: [], pinned: [] });
-              navStore.getState().setSession(null);
-              /* Entity ids are SPACE-SCOPED and the screen stacks are module-level,
-                 so they outlive this switch. Without this, a kind screen would
-                 restore an entity belonging to the space just left. */
-              screenStackStore.getState().clearAll();
-              setActiveTarget({ type: 'view', ref: 'workspace' });
+              leaveSpaceContext();
+              /* See `resetAddress`: the remount reads the address, and a Space
+                 id from the Server you just left addresses nothing here. */
+              resetAddress();
               props.onSelectServer?.(id);
             }}
             onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
@@ -753,7 +1447,7 @@ export function GateApp(props: GateAppProps = {}) {
                  the feed launches for real instead of refusing. */
               onSpawn={async (input) => {
                 const sessionId = await data.spawn(input);
-                setActiveTarget({ type: 'view', ref: 'workspace' });
+                navigateTo(WORKSPACE_TARGET);
                 nav.push(sessionId);
               }}
             />
@@ -949,20 +1643,38 @@ export function GateApp(props: GateAppProps = {}) {
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&
-            activeTarget.ref !== 'workspace' ? (
+            (isUnbuiltViewRef(activeTarget.ref) ||
+              /* Mounted screens whose PORT this server did not serve. The
+                 screen exists; the capability behind it does not, on this node.
+                 They land here rather than on the unrecognised card because the
+                 ref is real and recognised — what is missing is the port, and
+                 the branches above already declined for exactly that reason. */
+              (activeTarget.ref === 'files' && !filesExplorerPort) ||
+              (activeTarget.ref === 'settings' && !settingsPort)) ? (
             /* Unbuilt view refs SAY SO — rendering the workspace under a
                highlighted Dashboard row was a silent lie about where you are
                (same audit, same class).
 
                `inbox` LEFT THIS SET on 2026-08-13: its screen was finished all
                along and is now mounted above, so the card no longer covers it.
-               `feed` is the last remaining member. */
+
+               THE TEST USED TO BE `ref !== 'workspace'`, which is a catch-all
+               wearing a whitelist's name: it absorbed every ref the chain had
+               not matched, including refs that do not exist. The set is now
+               ENUMERATED in `VIEW_REF_SCREENS`, so an unrecognised ref falls to
+               the loud card below instead of being told it is merely coming
+               soon. */
             <div className="ev-root" data-testid="unbuilt-view">
               <p className="evt-empty" style={{ margin: 24 }}>
                 {`${activeTarget.ref} isn’t built yet — its designed screen is coming. Nothing is hidden here; it does not exist in this build.`}
               </p>
             </div>
-          ) : data.ready ? (
+          ) : data.ready &&
+            activeTarget?.type === 'view' &&
+            activeTarget.ref === 'workspace' ? (
+            /* THE WORKSPACE, MATCHED EXPLICITLY. This was `: data.ready ?` — a
+               bare else that made the workspace the destination of every
+               mistake in this chain. See `VIEW_REF_SCREENS`. */
             <WorkspaceView
               data={data}
               viewerMemberId={viewerMemberId}
@@ -1011,6 +1723,47 @@ export function GateApp(props: GateAppProps = {}) {
                 })
               }
             />
+          ) : data.ready && navView.view === 'entity' ? (
+            /* `e/{id}` IS A SPECIFIED ROUTE WITH NO HOST YET — NOT AN
+               UNRECOGNISED ONE, AND THE DIFFERENCE IS THE WHOLE POINT OF THIS
+               ARM.
+
+               Ruling M1 (2026-08-14): `e/{id}` means the Z4 entity FULL VIEW.
+               That host does not exist anywhere in this tree, and no lane owns
+               building it yet. Until it does, the route can be parsed, carried
+               and shared but not drawn.
+
+               `landingOfRoute` returns null for the no-`origin` form — resolving
+               it needs the entity's KIND, which is a read, so a pure mapping
+               cannot do it — and null lands on the unrecognised card below.
+               That card says "this build has no screen for that", which about a
+               frozen, specified route is simply false: the route is right and
+               the screen is missing. This is the unbuilt-view idiom instead,
+               which is the honest sentence and the one the reader can act on.
+
+               IT IS ALSO WHAT PROMOTE USED TO DESTROY THE SCREEN WITH.
+               `navStore.promote` writes `{view:'entity', origin:null}` and, from
+               the workspace, has no `origin` to carry — so one click on Z4
+               removed the panel AND replaced the whole screen with the loud
+               unrecognised card. Phase 1 did not introduce that write; it made
+               an already-latent one visible by making the store authoritative.
+               The port refuses the promote now (see `nav.promote`), and this arm
+               is the safety net for the same route arriving from a pasted link,
+               where there is no port to refuse it. */
+            <div className="ev-root" data-testid="entity-full-view-unbuilt">
+              <p className="evt-empty" style={{ margin: 24 }}>
+                The full view for a single entity isn’t built yet. This link is a real
+                address and it has been kept — there is just no screen behind it in this
+                build. Open the entity from its collection in the meantime.
+              </p>
+            </div>
+          ) : data.ready ? (
+            /* NOTHING MATCHED, AND THAT IS NOW SAYABLE. Everything the chain
+               above understands has its own arm; reaching here means the target
+               is one this build has no screen for — `null`, or a shape that came
+               from storage or an inventing caller. It used to render the
+               workspace. See `VIEW_REF_SCREENS`. */
+            <UnroutedTargetCard target={activeTarget} />
           ) : data.authRequired ? (
             /* The active server answered the boot read with "authentication
                is required". That is not an unreachable node and not an empty
@@ -1119,10 +1872,10 @@ export function GateApp(props: GateAppProps = {}) {
             port={projectOnboardingPort}
             onDismiss={() => setNewSpaceOpen(false)}
             onCreated={(space) => {
-              navStore.getState().applyNormalization({ stack: [], pinned: [] });
-              navStore.getState().setSession(null);
-              screenStackStore.getState().clearAll();
-              setActiveTarget({ type: 'view', ref: 'workspace' });
+              /* A newly created Space is a context switch like any other — the
+                 brief that scoped this work named only the two switch handlers,
+                 and this third copy is exactly the drift the one path removes. */
+              leaveSpaceContext();
               data.acceptSpace(space);
               setNewSpaceOpen(false);
             }}
