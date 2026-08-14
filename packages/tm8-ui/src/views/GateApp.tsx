@@ -664,7 +664,15 @@ export function GateApp(props: GateAppProps = {}) {
     /* `replace`, not `push`: restoring where you already were is not a
        navigation and must not leave a back-button entry. */
     navStore.setState((s) => ({ view, history: 'replace', revision: s.revision + 1 }));
-  }, [nodeKey, data.spaceId]);
+    /* `bootRoute` IS A DEPENDENCY, and leaving it out was a real hole rather
+       than a lint nit. The ordinary path happens to work without it, because
+       this effect re-runs when `data.spaceId` lands and closes over whatever
+       `bootRoute` had become by then. The DEMOTION path does not: when the link
+       names a Space this node does not list, the reconciliation above flips
+       `addressable` → `none` and NOTHING ELSE CHANGES — so without this the
+       effect would never re-run and last-place would never restore, leaving the
+       viewer on a screen the refused link chose. */
+  }, [nodeKey, data.spaceId, bootRoute]);
 
   /**
    * LEAVING THIS (space, server) FOR ANOTHER — the one path.
