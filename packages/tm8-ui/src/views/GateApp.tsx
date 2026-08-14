@@ -9,11 +9,12 @@
  * The three lanes keep their authority: geometry sizes, navStore owns panel
  * state and the URL, the panels own anatomy. This file is composition only.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, EntitySummary, MenuViewRef, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
   MenuRail,
+  NOTICE_TTL_MS,
   NoticeHost,
   SpaceTabBar,
   useNotices,
@@ -23,8 +24,9 @@ import {
 } from '../shell';
 import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
-import { screenStackStore } from '../stores/screenStackStore';
-import { navStore, useNavStore } from '../stores/navStore';
+import { screenKeyOf, screenStackStore } from '../stores/screenStackStore';
+import { attachRouter, navStore, useNavStore } from '../stores/navStore';
+import { createBrowserTarget, type RouterTarget } from '../routes';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
@@ -61,7 +63,7 @@ import { InboxView } from './InboxView';
 import { MessagesView } from './MessagesView';
 import { CredentialsSection, credentialsPortFromSeam } from '../settings-credentials';
 import { nodeKeyOf } from '../data/launch-cache';
-import { readLastTarget, writeLastTarget } from './last-place';
+import { readLastSpace, readLastTarget, writeLastTarget } from './last-place';
 import {
   NewSpaceProjectDialog,
   ProjectBranchesSection,
@@ -186,7 +188,26 @@ export interface GateAppProps {
   onAddServer?(input: AddServerInput): Promise<unknown>;
   /** Test injection port, forwarded to `useGateData` — see `GateOptions.seam`. */
   seam?: Seam;
+  /**
+   * Where the router reads and writes the address, defaulting to the real one.
+   *
+   * A port rather than a flag, so a test drives the SAME mount the browser gets
+   * — `createMemoryTarget` is a full history stack with back/forward, which is
+   * the only way to assert the history discipline at all. There is deliberately
+   * no way to switch the router OFF: an app that is addressable only sometimes
+   * is an app whose links work only sometimes.
+   */
+  routerTarget?: RouterTarget;
 }
+
+/**
+ * WHETHER THIS BOOT ARRIVED WITH AN ADDRESSABLE ROUTE — the R3 precedence fact,
+ * written down as a fact.
+ *
+ * `pending` only until the router has read the address once, which happens in a
+ * layout effect on the first commit.
+ */
+type BootRoute = 'pending' | 'addressable' | 'none';
 
 export function GateApp(props: GateAppProps = {}) {
   // null when this GateApp is not inside an <AuthGate> — the shell tests, and
@@ -337,12 +358,191 @@ export function GateApp(props: GateAppProps = {}) {
     navigateTo(target);
   }, [navigateTo]);
 
+  /**
+   * THE ROUTER, MOUNTED. This is the line the whole lane exists for.
+   *
+   * `attachRouter` has been built and tested for a long time and had never had
+   * a non-test caller, so the app had no URL state at all: no shareable link,
+   * no reload-to-where-you-were, no back button. Everything below is wiring; it
+   * writes no routing logic of its own.
+   *
+   * BELOW THE AUTH GATE, STRUCTURALLY. `App.tsx` renders
+   * `<AuthGate><ConnectedGateApp/></AuthGate>` and `AuthGate` does not render
+   * children at all while signed out, so this effect cannot run for a viewer
+   * who is not in. That is what makes "login → page" need no capture-and-replay
+   * mechanism: the address bar is never touched, so the destination is still
+   * sitting there after sign-in. Mounted ABOVE the gate, the store→URL loop
+   * would rewrite a signed-out recipient's deep link before they could sign in
+   * — see `signed-out-hash.test.tsx`, which is the law, not a preference.
+   *
+   * PER ACTIVE SERVER, for free: `App.tsx` keys `GateApp` by `activeServer.id`,
+   * so a server switch remounts this component and therefore this effect.
+   *
+   * A LAYOUT EFFECT, and that is the R3 precedence guarantee rather than a
+   * performance choice. React runs every layout effect before any passive
+   * effect of the same commit, so the address is read and hydrated before ANY
+   * other effect in this tree observes the store. The alternative — a passive
+   * effect declared above the restore effect — would work today and would be an
+   * ORDERING ACCIDENT, which is the class of bug this lane exists to remove.
+   */
+  const [bootRoute, setBootRoute] = useState<BootRoute>('pending');
+  /* The notice sink, read through a ref so remounting the router is not coupled
+     to the identity of a callback that changes on every render. */
+  const noticeSink = useRef(notices.push);
+  noticeSink.current = notices.push;
+  const routerTarget = props.routerTarget;
+  useLayoutEffect(() => {
+    const target = routerTarget ?? createBrowserTarget();
+    /* Latched from `onSpacePicker`, which `attachRouter` fires synchronously
+       during its own initial read when the hash carries no addressable space.
+       So this is settled by the time `attachRouter` returns. */
+    let addressable = true;
+    const detach = attachRouter(target, {
+      lastActiveSpaceId: readLastSpace(nodeKey) as SpaceId | null,
+      onNotice: (notice) => {
+        noticeSink.current({
+          id: `route:${notice.kind}`,
+          tone: notice.kind === 'dropped' ? 'warn' : 'info',
+          title: notice.kind === 'dropped' ? 'Part of that link was dropped' : 'Not built yet',
+          body: notice.text,
+          ttlMs: NOTICE_TTL_MS,
+        });
+      },
+      /* "THE HASH CARRIED NO ADDRESSABLE SPACE." There is no separate space
+         picker screen in this shell — `SpaceTabBar` is always mounted above the
+         centre and IS the picker. So the honest response is not to render
+         something; it is to record that this boot has no route, which is
+         exactly what lets last-place apply below. */
+      onSpacePicker: () => {
+        addressable = false;
+      },
+    });
+    setBootRoute(addressable ? 'addressable' : 'none');
+    return detach;
+  }, [nodeKey, routerTarget]);
+
+  /**
+   * SEED THE SCREEN STACK FROM THE ADDRESS — the landing algorithm's second
+   * half, and the part that makes `e/{id}?origin=tasks` mean what §2.2 says it
+   * means: "the Tasks screen, with THAT entity open".
+   *
+   * `landingOfRoute` returns both halves because a route names two things at
+   * once; the target drives the render switch above and `openEntity` belongs to
+   * `screenStackStore`, which has no `MenuTarget` representation at all.
+   *
+   * HYDRATING THIS STORE FROM THE ADDRESS BAR IS NOT A VIOLATION OF ITS
+   * "IN-MEMORY ONLY" RULING. That ruling forbids PERSISTING the stacks — a
+   * reload must not resurrect a selection out of storage — and the store's
+   * header comment says so while also naming this exact route grammar as the
+   * thing that would encode it properly. The address bar is not storage; it is
+   * the request, and reading the request is what hydration is.
+   *
+   * Keyed on the view rather than done once at mount, so back/forward and a
+   * pasted hash re-seed by the same path as the boot did.
+   *
+   * NOT THE LAST WORD ON WHAT `e/{id}` DRAWS. Ruling M1 (2026-08-14) says that
+   * route means the Z4 entity FULL VIEW, and no such host exists in this tree
+   * yet; `landingOfRoute`'s kind-screen-plus-seed is the shape that could be
+   * built today, not the shape the frozen spec asks for. Seeding the stack is
+   * right either way — an entity the address names has to be open somewhere —
+   * so nothing here asserts that the kind screen is the final destination.
+   *
+   * IT ALSO CARRIES THE SPACE RESET, and the order inside one effect is the
+   * point: a route naming a DIFFERENT space is a context switch, and the reset
+   * has to happen before the seed or it would wipe the entity it just seeded.
+   * Two effects would have made that an ordering accident.
+   */
+  const navSpaceId = useNavStore((s) => s.spaceId);
+  const routedSpace = useRef<string | null>(null);
+  useEffect(() => {
+    /* A URL-DRIVEN SPACE CHANGE IS THE FOURTH ENTRY POINT INTO THIS RESET.
+       Entity ids are space-scoped and both stores are module-level, so pasting
+       a hash that names another space would otherwise restore screens holding
+       entities from the space you just left — the exact failure the three
+       hand-written copies of this reset were collapsed to prevent.
+
+       ONLY the screen stacks, deliberately, and this is where the router path
+       and `leaveSpaceContext` legitimately differ. `hydrate` has ALREADY
+       replaced navStore's panels with the ones the route named, so clearing
+       them here would delete the `?p=`/`?pin=` the link asked for — it would
+       reset away the very thing being navigated to. The invariant both paths
+       share is "no state from the old space survives"; navStore satisfies it by
+       replacement here and by clearing there. */
+    if (navSpaceId && routedSpace.current !== null && routedSpace.current !== navSpaceId) {
+      screenStackStore.getState().clearAll();
+    }
+    if (navSpaceId) routedSpace.current = navSpaceId;
+
+    const landing = landingOfRoute(navView);
+    if (!landing?.openEntity) return;
+    /* Only a kind screen can host one today: `landingOfRoute` produces an
+       `openEntity` for the `entity` route alone, and that route's target is
+       always a kind. Narrowed rather than assumed. */
+    if (landing.target.type !== 'kind') return;
+    screenStackStore.getState().open(screenKeyOf.kind(landing.target.ref), landing.openEntity);
+  }, [navView, navSpaceId]);
+
+  /**
+   * THE LINK'S SPACE OUTRANKS THE REMEMBERED SPACE.
+   *
+   * `useGateData` picks the boot space from `last-space`, which is right for
+   * every boot that did not come from a URL and wrong for every boot that did:
+   * a link into Space B opened by someone whose last space was A would render
+   * A's content under B's address. The two have to be reconciled, and the
+   * address wins — that is what "share a link" means.
+   *
+   * A link naming a Space the node does not list for this viewer is NOT an
+   * error to swallow. It is said out loud and the boot demoted to `none`, which
+   * re-runs the restore below and lands them where they were. Silently showing
+   * them a different Space under that address is the failure this lane removes.
+   */
+  const spaceSettled = useRef(false);
+  useEffect(() => {
+    if (spaceSettled.current || bootRoute !== 'addressable') return;
+    const linkSpace = navStore.getState().spaceId;
+    if (!linkSpace || linkSpace === data.spaceId) {
+      spaceSettled.current = true;
+      return;
+    }
+    // Still booting: the space list is the only thing that can answer this.
+    if (data.spaces.length === 0) return;
+    spaceSettled.current = true;
+    if (data.spaces.some((space) => space.id === linkSpace)) {
+      data.selectSpace(linkSpace as SpaceId);
+      return;
+    }
+    noticeSink.current({
+      id: 'route:unknown-space',
+      tone: 'warn',
+      title: 'That link points at another Space',
+      body: 'This node does not list that Space for you, so it could not be opened. You are where you left off.',
+      ttlMs: NOTICE_TTL_MS,
+    });
+    setBootRoute('none');
+  }, [bootRoute, data.spaces, data.spaceId, data.selectSpace]);
+
   // Restore once per space. Deliberately NOT paired with a persisting effect:
   // an effect watching `activeTarget` would run in the same pass as this one,
   // still holding the outgoing space's target, and overwrite the very record
   // this just read.
   const restoredSpace = useRef<string | null>(null);
   useEffect(() => {
+    /* R3 — THE PRECEDENCE RULE, AND THE WHOLE POINT OF THE FEATURE.
+       An addressable hash present at boot OUTRANKS last-place FOR THAT BOOT.
+       This effect fires when `data.spaceId` lands ASYNCHRONOUSLY, which is
+       strictly after the router has synchronously hydrated the link — so
+       without this the link ARRIVES FIRST AND LOSES, and every shared link is
+       discarded by a restore nobody asked for. last-place applies only when the
+       address carried nothing addressable.
+
+       `restoredSpace` is claimed for the LINK's space rather than for the space
+       showing right now: the reconciliation above may still be switching to it,
+       and that switch must not re-enter here and restore over the link. */
+    if (bootRoute === 'pending') return;
+    if (bootRoute === 'addressable') {
+      restoredSpace.current = navStore.getState().spaceId;
+      return;
+    }
     if (!data.spaceId || restoredSpace.current === data.spaceId) return;
     restoredSpace.current = data.spaceId;
     /* The store learns the space here too. `hydrate` is the only other writer
