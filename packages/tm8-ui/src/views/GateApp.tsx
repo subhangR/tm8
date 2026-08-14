@@ -420,8 +420,12 @@ export function GateApp(props: GateAppProps = {}) {
   const noticeSink = useRef(notices.push);
   noticeSink.current = notices.push;
   const routerTarget = props.routerTarget;
+  /** The live transport, for the one caller that must write the address from
+      outside the sync loop — see `resetAddress`. */
+  const routerRef = useRef<RouterTarget | null>(null);
   useLayoutEffect(() => {
     const target = routerTarget ?? createBrowserTarget();
+    routerRef.current = target;
     /* Latched from `onSpacePicker`, which `attachRouter` fires synchronously
        during its own initial read when the hash carries no addressable space.
        So this is settled by the time `attachRouter` returns. */
@@ -454,8 +458,38 @@ export function GateApp(props: GateAppProps = {}) {
        an unnecessary push costs one back press, a wrong replace loses an entry
        nobody can get back. */
     coldEntry.current = addressable && (target.historyDepth?.() ?? 2) <= 1;
-    return detach;
+    return () => {
+      routerRef.current = null;
+      detach();
+    };
   }, [nodeKey, routerTarget]);
+
+  /**
+   * THE ADDRESS OF A SPACE ON THE SERVER YOU JUST LEFT ADDRESSES NOTHING HERE.
+   *
+   * A REAL BUG THE MOUNT INTRODUCES, found while working T9's lifecycle
+   * clause rather than by a test. Switching Server re-keys `GateApp`, so the
+   * router detaches and a fresh one mounts and READS THE ADDRESS — which still
+   * names a Space on the Server just left. That hash is addressable, so R3
+   * honours it, the boot refuses to restore last-place, and the reconciliation
+   * then tells the viewer "that link points at another Space" about a link
+   * nobody clicked. Correct machinery, nonsense sentence.
+   *
+   * Space ids are not portable across Servers (`servers/server-key.ts`: named
+   * Servers are same-origin relay routes, so the same hash resolves against
+   * whichever Server is active). So the honest reset is to the unaddressable
+   * form: this boot carried no route, and last-place applies on the new node.
+   *
+   * Written LAST in the switch handler so it is the final address write —
+   * `leaveSpaceContext` above it schedules a debounced replace, and the
+   * remount's detach cancels that timer before it can fire.
+   *
+   * ONLY the Server switch. Changing Space WITHIN a node keeps the address
+   * meaningful and `setSpace` rewrites it correctly.
+   */
+  const resetAddress = useCallback(() => {
+    routerRef.current?.setHash('#/', { replace: true });
+  }, []);
 
   /**
    * SEED THE SCREEN STACK FROM THE ADDRESS — the landing algorithm's second
@@ -1291,6 +1325,9 @@ export function GateApp(props: GateAppProps = {}) {
             activeServerId={activeServer.id}
             onSelectServer={(id) => {
               leaveSpaceContext();
+              /* See `resetAddress`: the remount reads the address, and a Space
+                 id from the Server you just left addresses nothing here. */
+              resetAddress();
               props.onSelectServer?.(id);
             }}
             onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
