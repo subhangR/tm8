@@ -6,6 +6,7 @@ import { DisabledAction, DisabledIconControl } from '../panels/honesty/DisabledW
 import { extractImageFiles } from '../terminal/clipboardImages';
 import type { ChannelPostInput } from './feed-model';
 import type { ComposerMentionOption } from './channel-tags';
+import { postureOf, useSettledPosture } from './connection-posture';
 import {
   safeUploadReason,
   type ChatAttachmentUploadTask,
@@ -133,7 +134,15 @@ export function Composer({
   const fileInput = useRef<HTMLInputElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
 
-  const disconnected = connection?.phase === 'offline' || connection?.phase === 'polling';
+  /*
+   * `offline` and `polling` are DIFFERENT FACTS and no longer share a sentence
+   * or a Send decision — see `connection-posture.ts` for why the old shared
+   * copy ("nothing is reaching the node") was false for `polling` in both
+   * halves, and why a send succeeds under it.
+   */
+  const posture = useSettledPosture(postureOf(connection));
+  const offline = posture === 'offline';
+  const degraded = posture === 'degraded';
   /**
    * PREFIX, not substring. What the user typed after `@` is the start of a
    * name they are reaching for — matching mid-word (or against `meta`/`group`
@@ -316,7 +325,7 @@ export function Composer({
 
   const submit = async (): Promise<void> => {
     const body = text.trim();
-    if (!body || busy || !onPost || disconnected || uncertainSubmission) return;
+    if (!body || busy || !onPost || offline || uncertainSubmission) return;
     setBusy(true);
     setError(null);
     try {
@@ -739,7 +748,8 @@ export function Composer({
           }}
         />
         <SendControl
-          disconnected={disconnected}
+          offline={offline}
+          degraded={degraded}
           wired={Boolean(onPost)}
           busy={busy}
           empty={text.trim().length === 0}
@@ -770,7 +780,8 @@ function MentionFace({ option }: { option: ComposerMentionOption }) {
 }
 
 function SendControl({
-  disconnected,
+  offline,
+  degraded,
   wired,
   busy,
   empty,
@@ -778,7 +789,8 @@ function SendControl({
   attachmentBlocked,
   onClick,
 }: {
-  disconnected: boolean;
+  offline: boolean;
+  degraded: boolean;
   wired: boolean;
   busy: boolean;
   empty: boolean;
@@ -801,7 +813,7 @@ function SendControl({
       </span>
     );
   }
-  if (disconnected) {
+  if (offline) {
     return (
       <span data-testid="chs-send-reason">
         <DisabledAction
@@ -846,9 +858,26 @@ function SendControl({
       </span>
     );
   }
+  /*
+   * DEGRADED IS AN ADVISORY, NOT A REFUSAL. The socket is down and the node is
+   * still answering over HTTP, which is the transport a send uses — so Send
+   * stays live and the note says the one thing that IS different: live updates
+   * arrive on the poll interval rather than instantly.
+   *
+   * Rendered beside an enabled control rather than as a banner over the
+   * composer, because a banner for a state that changes nothing about what the
+   * user can do is how "you're offline" ended up on a working connection.
+   */
   return (
-    <button type="button" className="chs-composer__send" disabled={busy || empty} onClick={onClick}>
-      {busy ? '…' : 'Send'}
-    </button>
+    <>
+      {degraded ? (
+        <span className="chs-composer__degraded" data-testid="chs-send-degraded" title="The realtime socket is down; the node is still answering over HTTP, so sends and history work normally — new messages just arrive on the poll interval instead of instantly.">
+          live updates delayed
+        </span>
+      ) : null}
+      <button type="button" className="chs-composer__send" disabled={busy || empty} onClick={onClick}>
+        {busy ? '…' : 'Send'}
+      </button>
+    </>
   );
 }

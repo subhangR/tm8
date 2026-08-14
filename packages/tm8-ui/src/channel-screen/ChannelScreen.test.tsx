@@ -529,6 +529,34 @@ describe('the composer', () => {
     expect(screen.getByText(/Focus on the guide x-offsets/)).toBeTruthy();
   });
 
+  it('keeps Send LIVE while POLLING — the node is answering, so a send succeeds', async () => {
+    /*
+     * The reported bug: the composer showed "You're offline — nothing is
+     * reaching the node" and withdrew Send on a connection that was working.
+     * `polling` means the socket is down and HTTP still reaches the node, and
+     * HTTP is the transport `messages.post` uses — so the refusal denied a
+     * write that would have succeeded, over a sentence that was false.
+     */
+    render(
+      <ChannelScreen
+        {...base}
+        page={page([messageItem()])}
+        onPost={vi.fn()}
+        connection={{ phase: 'polling', disconnectedSince: '2026-07-29T11:20:00.000Z' }}
+      />,
+    );
+
+    const send = screen.getByRole('button', { name: /^send$/i });
+    expect(send.getAttribute('aria-disabled')).not.toBe('true');
+    // And the false sentence is gone from the surface entirely.
+    expect(screen.queryByText(/nothing is reaching the node/i)).toBeNull();
+
+    // The advisory is held back until the state has persisted, so a socket
+    // flapping open and shut cannot strobe it (see connection-posture.test.ts).
+    expect(screen.queryByTestId('chs-send-degraded')).toBeNull();
+    await screen.findByTestId('chs-send-degraded', {}, { timeout: 5_000 });
+  });
+
   it('warns that Send is STORE-ONLY on an exited session, without disabling it (S21)', () => {
     // "The UI never implies Send wakes anything" — and never implies the
     // message was lost either. Both halves are the same sentence.
