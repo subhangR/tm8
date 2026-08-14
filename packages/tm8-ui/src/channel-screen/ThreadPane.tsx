@@ -54,6 +54,7 @@ export interface ThreadPaneProps {
   onOpenEntity?: (id: EntityId) => void;
   onStartAttachmentUpload?: ComposerProps['onStartAttachmentUpload'];
   mentionOptions?: readonly ComposerMentionOption[];
+  skillOptions?: ComposerProps['skillOptions'];
   uncertainSubmission?: ComposerProps['uncertainSubmission'];
 }
 
@@ -74,6 +75,7 @@ export function ThreadPane({
   onOpenEntity,
   onStartAttachmentUpload,
   mentionOptions,
+  skillOptions,
   uncertainSubmission,
 }: ThreadPaneProps) {
   /*
@@ -220,6 +222,7 @@ export function ThreadPane({
         uncertainSubmission={uncertainSubmission}
         onStartAttachmentUpload={onStartAttachmentUpload}
         mentionOptions={mentionOptions}
+        skillOptions={skillOptions}
       />
     </section>
   );

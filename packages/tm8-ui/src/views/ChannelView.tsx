@@ -291,6 +291,7 @@ export function ChannelView({
                   connection={data.connection}
                   onPost={feed.post}
                   mentionOptions={feed.mentionOptions}
+                  skillOptions={feed.skillOptions}
                   attachEntityOptions={feed.attachEntityOptions}
                   onStartAttachmentUpload={feed.startAttachmentUpload}
                   onLoadEarlier={feed.loadEarlier}

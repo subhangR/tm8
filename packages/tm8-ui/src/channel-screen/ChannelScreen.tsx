@@ -6,6 +6,7 @@ import { HollowInline } from '../panels/honesty/HollowValue';
 import { Composer, type ComposerProps } from './Composer';
 import type { ComposerMentionOption } from './Composer';
 import type { ChatAttachmentUploadTask } from './chat-attachments';
+import type { TriggerOption } from '../rich-input';
 import { FeedRowGroup } from './FeedRow';
 import { ThreadPane } from './ThreadPane';
 import { dayLabel as formatDay, dayStart } from '../kit/time';
@@ -76,6 +77,8 @@ export interface ChannelScreenProps {
   uncertainSubmission?: ComposerProps['uncertainSubmission'];
   onStartAttachmentUpload?: (file: File) => ChatAttachmentUploadTask;
   mentionOptions?: readonly ComposerMentionOption[];
+  /** Skills `/` can reference (R1). `undefined` ⇒ no skill seam at this mount. */
+  skillOptions?: readonly TriggerOption[];
   /** Workspace entities (tasks, docs, people) the attach picker offers. */
   attachEntityOptions?: readonly ComposerMentionOption[];
 
@@ -152,6 +155,7 @@ export function ChannelScreen({
   uncertainSubmission,
   onStartAttachmentUpload,
   mentionOptions,
+  skillOptions,
   attachEntityOptions,
   onPost,
   onLoadEarlier,
@@ -433,6 +437,7 @@ export function ChannelScreen({
         uncertainSubmission={uncertainSubmission}
         onStartAttachmentUpload={onStartAttachmentUpload}
         mentionOptions={mentionOptions}
+        skillOptions={skillOptions}
         attachEntityOptions={attachEntityOptions}
       />
       <p className="chs-visually-hidden" role="status" aria-live="polite">
@@ -464,6 +469,7 @@ export function ChannelScreen({
             onOpenEntity={onOpenEntity}
             onStartAttachmentUpload={onStartAttachmentUpload}
             mentionOptions={mentionOptions}
+            skillOptions={skillOptions}
             uncertainSubmission={uncertainSubmission}
           />
         ) : null}
