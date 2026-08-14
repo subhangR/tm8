@@ -5,6 +5,7 @@ import type { MarkdownFileHref } from '../kit';
 import type { DocBlock } from './blocks';
 import { DocPreview } from './DocPreview';
 import { DocSource, type DocAttach } from './DocSource';
+import type { TriggerOption } from '../rich-input';
 import { ConflictBanner, RefusalHost, SaveActions, SaveWord } from './EditorChrome';
 import type { DocSaveHandle } from './useDocSave';
 
@@ -31,6 +32,7 @@ export function DocSplitView({
   fileHref,
   attach,
   onAttached,
+  skillOptions,
 }: {
   save: DocSaveHandle;
   detail: EntityDetail;
@@ -39,6 +41,8 @@ export function DocSplitView({
   /** Uploads a file and writes its reference at the caret. See `DocAttach`. */
   attach?: DocAttach;
   onAttached?: () => void;
+  /** Skills `/` can reference in the source pane (R1). */
+  skillOptions?: readonly TriggerOption[];
   /** ⇲ — back to the panel. Absent ⇒ disabled-with-reason, never hidden. */
   onCollapse?: () => void;
   /**
@@ -89,6 +93,7 @@ export function DocSplitView({
             label="Document source (split view)"
             attach={attach}
             onAttached={onAttached}
+            skillOptions={skillOptions}
           />
         </div>
         {/*

@@ -4,6 +4,7 @@ import type { MarkdownFileHref } from '../kit';
 import type { DocBlock } from './blocks';
 import { DocPreview } from './DocPreview';
 import { DocSource, type DocAttach } from './DocSource';
+import type { TriggerOption } from '../rich-input';
 import {
   ConflictBanner,
   RefusalHost,
@@ -56,6 +57,7 @@ export function DocEditor({
   fileHref,
   attach,
   onAttached,
+  skillOptions,
 }: {
   save: DocSaveHandle;
   detail: EntityDetail;
@@ -64,6 +66,8 @@ export function DocEditor({
   /** Uploads a file and writes its reference at the caret. See `DocAttach`. */
   attach?: DocAttach;
   onAttached?: () => void;
+  /** Skills `/` can reference in the source stance (R1). */
+  skillOptions?: readonly TriggerOption[];
   /** Controlled stance, for a host that persists it. Uncontrolled by default. */
   stance?: DocStance;
   onStanceChange?: (next: DocStance) => void;
@@ -91,7 +95,7 @@ export function DocEditor({
 
       <div className="de-body">
         {stance === 'write' ? (
-          <DocSource save={save} onOpenBlock={onOpenBlock} attach={attach} onAttached={onAttached} />
+          <DocSource save={save} onOpenBlock={onOpenBlock} attach={attach} onAttached={onAttached} skillOptions={skillOptions} />
         ) : (
           <DocPreview source={save.body} fileHref={fileHref} />
         )}
