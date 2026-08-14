@@ -70,11 +70,11 @@ One registry drives routes, `origin` validation, palette generation, canonical c
 | Spells / Skills / Collections / Files / Commits | `spell` / `skill` / `collection` / `file` / `commit` | `spells` / `skills` / `collections` / `files` / `commits` | `collection` — registered day 1; not in default menu |
 | Projects | `project` | `projects` | `collection` — restricted materialized per-Space projection; default Tracking item; generic create/patch/delete/move refused |
 | Interaction Profiles | `interaction_profile` | `interaction-profiles` | `collection` — restricted lifecycle family; registered day 1 but not in the default menu; generic create/patch/delete/move refused |
-| **Channels** | `channel` | — (reserved word) | **`special`** — route builder `channel/{id}`; companion = channel list |
+| **Channels** | `channel` | `channels` | **`collection`** — companion = the channel-kind Entity View; its route builder deliberately retains the singular `channel/{id}` form for one channel |
 | **Messages** | `message` | — (no `k/` view) | **`anchored`** — canonical route = its containing channel/thread with a message anchor (`channel/{channelId}?msg={id}`); companion = that channel. If the parent is deleted/missing: `e/{messageId}` renders standalone with a tombstone banner and NO companion (left panel collapsed) — ruled, not fallthrough. |
 | Custom kinds | `c:{name}` | `c-{name}`, collision-checked at creation | `collection` |
 
-**Reserved words** (never kind slugs): `home feed inbox workspace settings channel e k`.
+**Reserved words** (never kind slugs): `home feed inbox workspace settings channel e k`. **RULING N (2026-08-14):** the shipped registry is authoritative here, and this is a spec catch-up to code, not an expansion of the app surface. `channel` remains reserved while `channels` is not, which is why the collection slug is plural. `#/s/{s}/channels` normalizes to `#/s/{s}/k/channels` and is the channel-kind Entity View: the tree of channels with the channel view beside it; `#/s/{s}/channel/{id}` remains the single-channel route because the route builder deliberately retains the singular form. The `channels`, `files`, `git`, and `messages` flat view segments are not reserved kind slugs: `#/s/{s}/files` (the Files explorer) and `#/s/{s}/k/files` (the `file`-kind collection) are deliberately different paths, just as `#/s/{s}/channels` and `#/s/{s}/k/channels` are. `RESERVED_SLUGS` remains unchanged (`packages/tm8-ui/src/domain/registry.ts:48-56`); the collection row and singular route builder are shipped at `packages/tm8-ui/src/domain/registry.ts:863-865`, and the channel destination's Entity View identity is recorded in `packages/tm8-ui/src/views/GateApp.tsx:810-815` and `packages/tm8-ui/src/domain/nav-targets.ts:52-59`.
 
 ### 2.2 Route grammar
 
@@ -84,9 +84,15 @@ One registry drives routes, `origin` validation, palette generation, canonical c
 #/s/{spaceId}/k/{slug}         ?mode=list|board|tree|feed|gallery|graph & q= & p= & pin= & t= & contentSurface=
 #/s/{spaceId}/e/{entityId}     ?origin={originSlug[.mode]} & p= & pin= & t= & contentSurface=
 #/s/{spaceId}/channels                                  ← canonical channel-list route (R7-6)
+#/s/{spaceId}/graph
+#/s/{spaceId}/files
+#/s/{spaceId}/git
+#/s/{spaceId}/messages
 #/s/{spaceId}/channel/{channelId}   [?msg={messageId}]
 #/s/{spaceId}/settings[/projects|/menu]
 ```
+
+**RULING N (2026-08-14) — four shipped view routes:** this is the frozen spec catching up to already-shipped addressability, not a widening of the app surface. `graph`, `files`, `git`, and `messages` are flat segments with no parameters of their own beyond the shared panel parameters above; each is a whole-centre screen under the D65 posture, with no side list. The codec already parses and builds all four (`packages/tm8-ui/src/routes/codec.ts:246-257`, `:301-322`), and GateApp already renders them from live branches (`packages/tm8-ui/src/views/GateApp.tsx:745-778`, `:858-877`). The route lines exist so these rail destinations can reload, be shared, and participate in browser history; they do not create new screens.
 
 - **Panel state:** the inherited `p=` (stack), `pin=` (pinned), and `t=` (per-panel outer tabs) remain unchanged. v2.11 adds **`contentSurface=`**, a separate per-panel `terminal|chat` value used only when the panel is a `work_session`; it never expands the outer `t=content|discussion|connections|activity` vocabulary. All four round-trip.
 - **Encodings:** RFC 3986 percent-encoding; `origin` from the §2.1 registry; `q` = versioned collection-query DTO codec (dossier).
@@ -96,7 +102,7 @@ One registry drives routes, `origin` validation, palette generation, canonical c
 - **Canonical reload rule:** `e/{id}` without `origin` → companion from the entity's **registry strategy** (§2.1); with `origin` → that view+mode.
 - **`?session=`** auto-opens that session's panel when `p`/`pin` absent; explicit panel state wins.
 - **History discipline:** user navigation and explicit pin/unpin = `pushState`; responsive normalization (demotions, dedup, overflow drops) = debounced idempotent `replaceState`. A Terminal/Chat surface toggle is viewer-local presentation state and uses `replaceState`, not a new browser-history entry.
-- **Legacy redirects (complete hashes, space preserved):** `#/s/{s}/tasks → #/s/{s}/k/tasks` · `#/s/{s}/sessions → #/s/{s}/k/sessions` · `#/s/{s}/sessions/{id} → #/s/{s}/e/{id}?origin=sessions` · `e/`, `channel/`, `workspace` unchanged. Bare legacy forms resolve against the last-active space, else the space picker.
+- **Legacy redirects (complete hashes, space preserved):** `#/s/{s}/tasks → #/s/{s}/k/tasks` · `#/s/{s}/sessions → #/s/{s}/k/sessions` · `#/s/{s}/sessions/{id} → #/s/{s}/e/{id}?origin=sessions` · `e/`, `channel/`, `workspace` unchanged. `graph` is no longer redirected to Home as deferred; it is a live route. `DeferredFeature` therefore contains `leaderboard` alone (`packages/tm8-ui/src/routes/redirects.ts:8-10`, `:31`, `:48-50`). The principle is binding: a deferral notice must not outlive the deferral. The route retirement is verified in `packages/tm8-ui/src/routes/redirects.ts:12-27`; known remaining drift is deliberately outside this amendment: `REASONS.graphDeferred` and the `graph-view` disposition row in `packages/tm8-ui/src/domain/actions.ts:59`, `:389` still describe Graph as unavailable, and belong to the actions lane.
 - Server selection enters the grammar only in Phase 2 (additive prefix).
 
 ### 2.3 Menu configuration (RULING H — the menu is per-space data)
@@ -111,13 +117,14 @@ One registry drives routes, `origin` validation, palette generation, canonical c
              | { type:'kind', ref: KindRef }
   MenuLeaf   = { type:'view', ref: ViewRef } | { type:'kind', ref: KindRef }   -- no further nesting: depth is EXACTLY ≤1
   ViewRef    = CLOSED v1 union: 'dashboard'|'feed'|'inbox'|'workspace'|'channels'|'settings'
+               | 'graph'|'files'|'git'|'messages'
                (extension namespace 'v:{name}' reserved for future REGISTERED views; a
                 registered-but-unimplemented view is invalid for menu save)
   KindRef    = a §2.1 registry row with strategy = 'collection' ONLY
   Uniqueness: refs unique across the WHOLE config, parents and children together.
   ```
   **RULING E is encoded as data (R8-2):** a view item WITH `children` renders as the caret view-item (row click = the view; caret expands the children); a view item without children is a plain row; group headers remain label-only and are never clickable. The shipped default encodes Workspace exactly this way: `{type:'view', ref:'workspace', children:[task, work_session, doc, team_member kind refs]}` — no positional convention, no hardcoding. Exact default IDs/labels/icons and the backfill payload are dossier items.
-  **The v1 view registry — FROZEN six rows (R7-6):**
+  **The v1 view registry — FROZEN ten rows (R7-6, RULING N, 2026-08-14):** The contract and schema already carried these ten refs (`packages/contract/src/contract.ts:1894`, `packages/contract/src/schemas.ts:1894`); this amendment records shipped code rather than widening the surface. The extension namespace was bypassed: the four names were added directly to the v1 union instead of being introduced through `v:{name}`. That process observation is retained because it explains why this frozen union changed.
   | ViewRef | Route template | Menu-eligible | Required | Status |
   |---|---|---|---|---|
   | `dashboard` | `#/s/{s}/home` | yes | no | implemented |
@@ -125,6 +132,10 @@ One registry drives routes, `origin` validation, palette generation, canonical c
   | `inbox` | `#/s/{s}/inbox` | yes | no | implemented |
   | `workspace` | `#/s/{s}/workspace` | yes | no | implemented |
   | `channels` | `#/s/{s}/channels` (the canonical list route, §2.2) | yes | no | implemented |
+  | `graph` | `#/s/{s}/graph` | yes | no | implemented |
+  | `files` | `#/s/{s}/files` | yes | no | implemented |
+  | `git` | `#/s/{s}/git` | yes | no | implemented |
+  | `messages` | `#/s/{s}/messages` | yes | no | implemented |
   | `settings` | `#/s/{s}/settings` | yes | **yes** | implemented |
 
   **Wire shapes (R6-4, R7-7):** the config is read as a field of the space-settings read, returning the full `MenuConfig` (WITH `revision`). **Writes carry a revision-free `MenuConfigPayload` (`{schemaVersion, groups}`) plus one `expectedRevision`** — there is no second revision inside the write, so no duplication conflict exists; the server increments the separate revision column and returns the new `MenuConfig`. Revision mismatch → existing code `invariant_violation` with stable `details.reason='menu_revision_conflict'` and typed `details.currentMenu` (`version_conflict` is NOT reused — its shape is entity-modeled). Live convergence event, named exactly: **`{type:'menu.updated', menu: MenuConfig, clientMutationId?}`** (event-union amendment, §8). **Version safety (R7-7):** an **unsupported FUTURE `schemaVersion` is preserved raw** — reads fall back to the shipped default for rendering only, and any edit is rejected with `invariant_violation`/`details.reason='menu_upgrade_required'` (an older client can never overwrite newer data). The default-with-stored-revision **repair** path applies ONLY to malformed payloads of a schema version the server understands (a missing row creates at `expectedRevision: 0`). Unsupported ≠ corrupt, and the two paths are tested separately.
