@@ -363,13 +363,14 @@ export interface GateData {
    * answer to "who can be mentioned here" and a mention id must be a member or
    * a team member for the write to be accepted.
    *
-   * `skillOptions` is its own read (`loadSkillTriggerOptions`), and it stays
-   * `[]` on failure rather than going absent: `[]` is a measured zero and lets
-   * the picker say "no matching skills", where `undefined` would claim the
-   * capability does not exist at all.
+   * `skillOptions` is its own read (`loadSkillTriggerOptions`), and it keeps
+   * the primitive's central distinction: `undefined` ⇒ the capability is not
+   * established (not read yet, or the read failed) and `/` types plain text;
+   * `[]` ⇒ a measured zero, so the control stays and the picker says there
+   * are none. A failed read measured NOTHING and must not answer as a zero.
    */
   mentionOptions: readonly TriggerOption[];
-  skillOptions: readonly SkillTriggerOption[];
+  skillOptions: readonly SkillTriggerOption[] | undefined;
   /** The active identity's member actor in this space, when one is bound. */
   viewerActor: ActorSummary | null;
   menu: ResolvedMenu;
@@ -590,7 +591,9 @@ export function useGateData(options: GateOptions): GateData {
   const [ready, setReady] = useState(false);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const [members, setMembers] = useState<readonly ActorSummary[]>([]);
-  const [skillOptions, setSkillOptions] = useState<readonly SkillTriggerOption[]>([]);
+  const [skillOptions, setSkillOptions] = useState<readonly SkillTriggerOption[] | undefined>(
+    undefined,
+  );
   const [viewerActor, setViewerActor] = useState<ActorSummary | null>(null);
   const [spaceId, setSpaceId] = useState<SpaceId>('' as SpaceId);
   const [menu, setMenu] = useState<ResolvedMenu>(() => resolveMenu(null));
@@ -1920,22 +1923,24 @@ export function useGateData(options: GateOptions): GateData {
    * Its own effect and not part of `hydrate`: a skill list is an enhancement
    * to every input box, never a boot gate, and folding it into the boot read
    * set would let a node that cannot answer it hold the workspace at
-   * `ready === false`. Cleared to `[]` on the way in so a previous space's
-   * skills can never be offered under a new space's `/`.
+   * `ready === false`. Reset to `undefined` on the way in so a previous
+   * space's skills can never be offered under a new space's `/`.
    */
   useEffect(() => {
     if (!spaceId) return;
     let current = true;
-    setSkillOptions([]);
+    setSkillOptions(undefined);
     void loadSkillTriggerOptions({ port: seam, spaceId }).then(
       (skills) => {
+        // An empty page IS an answer — the measured zero that earns the
+        // control and the "no matches" line.
         if (current) setSkillOptions(skills);
       },
       () => {
-        // `[]`, not absent: the capability exists and this read failed, so
-        // the picker says "no matching skills" instead of the sigil silently
-        // reverting to plain text.
-        if (current) setSkillOptions([]);
+        // A failed read measured nothing, so the capability stays
+        // unestablished and `/` keeps typing plain text. `[]` here would
+        // report an outage as an empty catalog.
+        if (current) setSkillOptions(undefined);
       },
     );
     return () => {

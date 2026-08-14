@@ -106,8 +106,20 @@ export interface ChannelFeed {
   refusal: ChannelRefusal | null;
   mentionOptions: ComposerMentionOption[];
   attachEntityOptions: ComposerMentionOption[];
-  /** `/` trigger subjects (R1). An empty list is a measured zero, same as mentions. */
-  skillOptions: SkillTriggerOption[];
+  /**
+   * `/` trigger subjects (R1), and the distinction the primitive is built on:
+   * `undefined` ⇒ THE CAPABILITY IS ABSENT (not read yet, or the read failed)
+   * and `/` types plain text; `[]` ⇒ A MEASURED ZERO — the space genuinely
+   * has no skills, the control stays, and the picker says so.
+   *
+   * This used to be `SkillTriggerOption[]` with `[]` on failure, which
+   * rendered a `/` control that reported "No matching skills" for a service
+   * outage — the two states are indistinguishable to a reader, and the one
+   * that lies is the failure. Verified against `SessionChatSurface`, which
+   * already mapped the same failure class to `undefined`; the two channel
+   * surfaces disagreed.
+   */
+  skillOptions: SkillTriggerOption[] | undefined;
   startAttachmentUpload: ((file: File) => ReturnType<typeof createChatAttachmentUploadTask>) | undefined;
   reload: () => Promise<void>;
   loadEarlier: (cursor: Cursor) => Promise<void>;
@@ -126,7 +138,9 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
   const [refusal, setRefusal] = useState<ChannelRefusal | null>(null);
   const [mentionOptions, setMentionOptions] = useState<ComposerMentionOption[]>([]);
   const [attachEntityOptions, setAttachEntityOptions] = useState<ComposerMentionOption[]>([]);
-  const [skillOptions, setSkillOptions] = useState<SkillTriggerOption[]>([]);
+  /* `undefined` until a read ANSWERS — the loading state is "capability not
+     established", never a measured zero. */
+  const [skillOptions, setSkillOptions] = useState<SkillTriggerOption[] | undefined>(undefined);
   const [thread, setThread] = useState<ChannelFeedThread | null>(null);
   /* The reload path refreshes an open branch without re-running on every
      thread state change — reload's identity must depend only on the channel
@@ -169,14 +183,20 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
     let current = true;
     setMentionOptions([]);
     setAttachEntityOptions([]);
+    // Back to "not established" while the new space's read is in flight, so a
+    // previous space's skills are never offered under this one's `/`.
+    setSkillOptions(undefined);
     void loadSkillTriggerOptions({ port: seam, spaceId }).then(
       (skills) => {
+        // Whatever came back, INCLUDING an empty page: that is the measured
+        // zero, and it earns the control and the "no matches" line.
         if (current) setSkillOptions(skills);
       },
       () => {
-        // Same law as mentions below: [] is a measured zero, the `/` control
-        // stays and the picker can say there are none.
-        if (current) setSkillOptions([]);
+        // A FAILED READ MEASURED NOTHING. `[]` here would draw the `/`
+        // control and report "No matching skills" for an outage — a refusal
+        // wearing an answer's clothes.
+        if (current) setSkillOptions(undefined);
       },
     );
     void readMentionOptions(liveIds).then(
