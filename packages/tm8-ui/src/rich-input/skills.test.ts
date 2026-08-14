@@ -37,6 +37,18 @@ describe('loadSkillTriggerOptions', () => {
       { id: 's2', display: 'ship checklist' },
     ]);
   });
+
+  it('walks the cursor to exhaustion — one page is a silent cap on a large catalog', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ page: { items: [skillRow('s1', 'alpha')], nextCursor: 'page-2' } } as unknown as CollectionResult)
+      .mockResolvedValueOnce({ page: { items: [skillRow('s2', 'beta')], nextCursor: null } } as unknown as CollectionResult);
+
+    const options = await loadSkillTriggerOptions({ port: { query }, spaceId: SPACE as never });
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[1]![0]).toMatchObject({ cursor: 'page-2' });
+    expect(options.map((o) => o.display)).toEqual(['alpha', 'beta']);
+  });
 });
 
 describe('skillReference', () => {
