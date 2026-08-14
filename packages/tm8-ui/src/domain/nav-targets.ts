@@ -122,6 +122,49 @@ const ROUTE_VIEW_REF: Partial<Record<string, MenuViewRef>> = Object.fromEntries(
 );
 
 /**
+ * A ROUTE-VIEW NAME → the `NavView` that addresses it, or `null` for a name
+ * that addresses nothing.
+ *
+ * WHY THIS EXISTS, AND WHY IT IS NOT `{ type: 'view', ref }`. Some callers hold
+ * a route view as a STRING rather than as a value — the keyboard contract's
+ * `nav.view` bindings are the live case, and their refs look deceptively like
+ * rail refs while speaking the route vocabulary:
+ *
+ *   - `g h` carries `ref: 'home'`. The `MenuViewRef` for that screen is
+ *     `dashboard`. Hand-assembling `{type:'view', ref:'home'}` produces a ref
+ *     that is not a `MenuViewRef` at all, and after Phase 0.5 that draws the
+ *     loud unrouted card — the chord would report an error instead of going
+ *     Home.
+ *   - `g c` carries `ref: 'channels'`, which is the ALIAS. It has to resolve
+ *     through `landingOfRoute` to the channel-kind screen; as a view target it
+ *     lands on the unbuilt-view card.
+ *
+ * So a string-holding caller comes in through the ROUTE vocabulary and lets
+ * this file do the translation, which is the whole reason it exists. `nav.kind`
+ * refs are SLUGS (`tasks`, not `task`) and need no helper — they are already a
+ * `{view:'kind', slug}` away, and `landingOfRoute` refuses an unknown slug.
+ */
+export function navViewOfName(name: string): NavView | null {
+  switch (name) {
+    case 'home':
+    case 'feed':
+    case 'inbox':
+    case 'workspace':
+    case 'graph':
+    case 'files':
+    case 'git':
+    case 'messages':
+    case 'channels':
+      return { view: name };
+    case 'settings':
+      /* No section: a chord names the screen, not a section within it. */
+      return { view: 'settings', section: null };
+    default:
+      return null;
+  }
+}
+
+/**
  * What a route asks the shell to do.
  *
  * TWO fields because a route can name two things at once, and this is the shape

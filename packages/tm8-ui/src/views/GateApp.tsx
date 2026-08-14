@@ -29,7 +29,8 @@ import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
-import { allKinds, KindIcon, VIEW_ART, landingOfRoute, routeViewOf } from '../domain';
+import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
+import type { NavView } from '../routes';
 import { getKind } from '../domain';
 import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
 import type { DispatchSelection, LaunchSelection } from './LaunchSheet';
@@ -315,6 +316,27 @@ export function GateApp(props: GateAppProps = {}) {
     if (data.spaceId) writeLastTarget(nodeKey, data.spaceId, target);
   }, [nodeKey, data.spaceId]);
 
+  /**
+   * Navigate to a destination expressed as a ROUTE rather than as a screen.
+   *
+   * Everything a viewer can click already holds a `MenuTarget`, but the
+   * keyboard holds route strings, so it needs the other direction. It still
+   * ends up in `navigateTo` — one user-navigation path, one place that
+   * remembers your place, one `push` entry — and it inherits that function's
+   * refusal for free. `null` in means the ref named nothing, which is REPORTED,
+   * never defaulted: a chord that quietly went Home instead of to the screen it
+   * promised would be the same silent-wrong-screen failure this lane exists to
+   * remove.
+   */
+  const navigateToRouteView = useCallback((view: NavView | null, ref: string) => {
+    const target = view ? landingOfRoute(view)?.target : null;
+    if (!target) {
+      console.error('[nav] no destination for keyboard ref', ref);
+      return;
+    }
+    navigateTo(target);
+  }, [navigateTo]);
+
   // Restore once per space. Deliberately NOT paired with a persisting effect:
   // an effect watching `activeTarget` would run in the same pass as this one,
   // still holding the outgoing space's target, and overwrite the very record
@@ -590,15 +612,34 @@ export function GateApp(props: GateAppProps = {}) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const keyboardRef = useRef<KeyboardController | null>(null);
-  const commandSink = useRef<(command: string) => void>(() => undefined);
+  /**
+   * THE SINK TAKES THE REF, AND THAT ONE ARGUMENT IS THE WHOLE BUG.
+   *
+   * `keyboard/contract.ts` declares nine `g` chords `guaranteed: true`
+   * (`g.home` … `g.settings`), and `controller.ts` has ALWAYS passed
+   * `binding.ref` as `onCommand`'s second argument. This sink was typed
+   * `(command) => void` and the controller was constructed with
+   * `onCommand: (command) => commandSink.current(command)`, so the ref was
+   * dropped at the boundary. Every one of the nine chords fired a `nav.view` or
+   * `nav.kind` command carrying a destination that nothing could receive, and
+   * none of them has ever worked.
+   */
+  const commandSink = useRef<(command: string, ref?: string) => void>(() => undefined);
   if (keyboardRef.current === null) {
     keyboardRef.current = createKeyboardController({
-      onCommand: (command) => commandSink.current(command),
+      onCommand: (command, ref) => commandSink.current(command, ref),
     });
   }
-  commandSink.current = (command: string) => {
+  commandSink.current = (command: string, ref?: string) => {
     if (command === 'palette.open') setPaletteOpen(true);
     if (command === 'menu.toggle') setMenuCollapsed((collapsed) => !collapsed);
+    /* THROUGH THE ROUTE VOCABULARY, NEVER BY HAND-ASSEMBLING A `MenuTarget`.
+       A chord's ref is a route view name or a kind SLUG — see `navViewOfName`
+       for the two mismatches that make the obvious spelling wrong. */
+    if (command === 'nav.view' && ref) navigateToRouteView(navViewOfName(ref), ref);
+    if (command === 'nav.kind' && ref) {
+      navigateToRouteView({ view: 'kind', slug: ref, mode: null, q: null }, ref);
+    }
   };
   useEffect(() => {
     const kb = keyboardRef.current;
