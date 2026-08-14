@@ -32,6 +32,7 @@ interface ClaimedTurn {
    */
   readonly requestedByMemberId?: string | null;
   readonly requestedByIdentityId?: string | null;
+  readonly requestedByAuthKind?: string | null;
   readonly requestedByDisplayName?: string | null;
   readonly teammateId: string;
   readonly model: string;
@@ -125,7 +126,11 @@ export class ChatOrchestrator {
   private readonly drains = new Map<string, Promise<void>>();
   /** Wakes that arrived while a drain for the same root was exiting. */
   private readonly pendingWakes = new Map<string, string>();
-  private readonly liveThreads = new Map<string, string>();
+  private readonly liveThreads = new Map<string, {
+    readonly threadId: string;
+    readonly authorizationIdentityId: string;
+    readonly authorizationAuthKind: string | null;
+  }>();
 
   constructor(private readonly options: ChatOrchestratorOptions) {}
 
@@ -336,9 +341,10 @@ export class ChatOrchestrator {
       // throwing "not running" forever. A turn that failed before any spawn
       // (e.g. a refused mint) deletes nothing and the state stays 'cold', so
       // a plain retry keeps taking the fresh-start path.
-      const wasLive = this.liveThreads.delete(turn.rootMessageId);
-      if (wasLive) {
-        await this.options.runtime.close(turn.rootMessageId).catch(() => undefined);
+      const currentLive = this.liveThreads.get(turn.rootMessageId);
+      this.liveThreads.delete(turn.rootMessageId);
+      if (currentLive) {
+        await this.options.runtime.close(currentLive.threadId).catch(() => undefined);
         await this.options.db.rpc(
           claims(turn.requesterIdentityId),
           'mark_chat_runtime_state',
@@ -376,13 +382,30 @@ export class ChatOrchestrator {
   }
 
   private async ensureRuntime(turn: ClaimedTurn): Promise<string> {
+    const authorizationIdentityId = turn.requestedByIdentityId ?? turn.requesterIdentityId;
+    const authorizationAuthKind = turn.requestedByAuthKind
+      ?? (authorizationIdentityId === turn.requesterIdentityId ? turn.requesterAuthKind ?? null : null);
     const live = this.liveThreads.get(turn.rootMessageId);
-    if (live) return live;
-    const mode = turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new';
+    if (
+      live?.authorizationIdentityId === authorizationIdentityId
+      && live.authorizationAuthKind === authorizationAuthKind
+    ) return live.threadId;
+    let authorizationChanged = false;
+    if (live) {
+      await this.options.runtime.close(live.threadId);
+      this.liveThreads.delete(turn.rootMessageId);
+      await this.options.db.rpc(
+        claims(turn.requesterIdentityId),
+        'mark_chat_runtime_state',
+        [turn.rootMessageId, 'stopped'],
+      );
+      authorizationChanged = true;
+    }
+    const mode = authorizationChanged || turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new';
     const launch = await this.options.resolveLaunchConfig({
       rootMessageId: turn.rootMessageId,
-      requesterIdentityId: turn.requesterIdentityId,
-      requesterAuthKind: turn.requesterAuthKind ?? null,
+      requesterIdentityId: authorizationIdentityId,
+      requesterAuthKind: authorizationAuthKind,
       teammateId: turn.teammateId,
       model: turn.model,
       provider: turn.provider,
@@ -400,6 +423,7 @@ export class ChatOrchestrator {
       cwd: runtimeCwd,
       systemPrompt: launch.systemPrompt,
       mcpConfigPath: launch.mcpConfigPath,
+      availableTools: launch.availableTools,
       allowedTools: launch.allowedTools,
       ...(launch.env ? { env: launch.env } : {}),
       ...(mode === 'resume-after-interrupt'
@@ -407,7 +431,11 @@ export class ChatOrchestrator {
         : {}),
     };
     const started = await this.options.runtime.startThread(input);
-    this.liveThreads.set(turn.rootMessageId, started.threadId);
+    this.liveThreads.set(turn.rootMessageId, {
+      threadId: started.threadId,
+      authorizationIdentityId,
+      authorizationAuthKind,
+    });
     await this.options.db.rpc(
       claims(turn.requesterIdentityId),
       'mark_chat_runtime_state',

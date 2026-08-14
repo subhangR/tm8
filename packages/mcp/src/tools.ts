@@ -273,20 +273,33 @@ export class ToolInputError extends Error {
 export interface Tm8ToolRouterOptions {
   mode?: ChatMode;
   projectRoot?: string;
+  spaceId?: string;
   fetchImpl?: typeof fetch;
+  /** Provider-native equivalents omitted from MCP registration and calls. */
+  hiddenTools?: readonly string[];
 }
 
 export class Tm8ToolRouter {
   private readonly mode: ChatMode;
   private readonly directContext: DirectToolContext;
+  private readonly hiddenTools: ReadonlySet<string>;
 
   constructor(private readonly transport: CatalogTransport, options: Tm8ToolRouterOptions = {}) {
     this.mode = options.mode ?? parseChatMode(undefined);
+    this.hiddenTools = new Set(options.hiddenTools ?? []);
     this.directContext = {
       transport,
       ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
+      ...(options.spaceId ? { spaceId: options.spaceId } : {}),
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
     };
+  }
+
+  listedTools(): readonly McpToolDefinition[] {
+    return TM8_MCP_TOOLS.filter((tool) => (
+      !this.hiddenTools.has(tool.name)
+      && toolPermission(this.mode, tool.name) === 'allow'
+    ));
   }
 
   async call(name: string, rawArguments: unknown): Promise<McpToolResult> {
@@ -294,13 +307,16 @@ export class Tm8ToolRouter {
       if (!(MCP_TOOL_NAMES as readonly string[]).includes(name)) {
         throw new ToolInputError(`unknown tm8 MCP tool: ${name}`);
       }
+      if (this.hiddenTools.has(name)) {
+        throw new ToolInputError(`${name} is replaced by a provider-native tool in this chat runtime`);
+      }
       if (isDirectTool(name)) {
         enforcePermission(this.mode, name);
         return success(await callDirectTool(name, rawArguments, this.directContext));
       }
       if (name === 'tm8_overview') {
         enforcePermission(this.mode, name);
-        return success(overview(rawArguments, this.mode));
+        return success(overview(rawArguments, this.mode, this.hiddenTools));
       }
       if (!isGroupName(name)) throw new ToolInputError(`unknown tm8 MCP tool: ${name}`);
       const args = objectOf(rawArguments, 'tool arguments');
@@ -363,7 +379,7 @@ function directoryResult(name: keyof typeof GROUPS, directory: readonly Operatio
   };
 }
 
-function overview(raw: unknown, mode: ChatMode): Record<string, unknown> {
+function overview(raw: unknown, mode: ChatMode, hiddenTools: ReadonlySet<string>): Record<string, unknown> {
   const args = objectOf(raw, 'tool arguments');
   const query = optionalString(args.query, 'query')?.toLowerCase();
   const groups = [
@@ -388,7 +404,7 @@ function overview(raw: unknown, mode: ChatMode): Record<string, unknown> {
     groups,
     mode,
     directTools: DIRECT_TOOLS
-      .filter((tool) => toolPermission(mode, tool.name) !== 'deny')
+      .filter((tool) => !hiddenTools.has(tool.name) && toolPermission(mode, tool.name) !== 'deny')
       .map((tool) => ({ tool: tool.name, purpose: tool.description })),
     ...(terms.length === 0
       ? {}

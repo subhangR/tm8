@@ -10,6 +10,13 @@ alter table public.chat_threads
 comment on column public.chat_threads.chat_mode is
   'Write-once chat authority profile. Persisted with teammate/model so resumes cannot widen it.';
 
+alter table public.chat_turns add column requested_by_auth_kind text
+  check (requested_by_auth_kind is null or requested_by_auth_kind in ('browser', 'cli'));
+
+comment on column public.chat_turns.requested_by_auth_kind is
+  'Server-resolved human auth kind for the member who queued this turn. Used '
+  'with requested_by_member_id to mint per-turn authority; NULL fails closed.';
+
 drop function public.start_chat_thread(uuid,uuid,text,text,text,uuid,text,text);
 
 create function public.start_chat_thread(
@@ -117,10 +124,10 @@ begin
   ) returning created_at into configured_at;
 
   insert into public.chat_turns(
-    root_message_id, user_message_id, requested_by_member_id,
+    root_message_id, user_message_id, requested_by_member_id, requested_by_auth_kind,
     pricing_provider, pricing_model, queued_at
   ) values (
-    p_root_message_id, p_root_message_id, member_id,
+    p_root_message_id, p_root_message_id, member_id, internal.claim_text('tm8.auth_kind'),
     p_provider, p_model, root.created_at
   );
 
@@ -145,7 +152,35 @@ $$;
 revoke all on function public.start_chat_thread(uuid,uuid,text,text,text,text,uuid,text,text) from public;
 grant execute on function public.start_chat_thread(uuid,uuid,text,text,text,text,uuid,text,text) to tm8_app;
 
--- Latest (115) claim shape, plus the stored chat mode.
+-- Latest (115) queue shape, plus the server-resolved auth kind needed to stop
+-- a shared chat from borrowing its configurer's authority for later senders.
+create or replace function internal.queue_chat_human_reply() returns trigger
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  binding public.chat_threads;
+  author_member public.members;
+  auth_kind text;
+begin
+  if new.root_message_id is null then return new; end if;
+  select * into binding from public.chat_threads where root_message_id = new.root_message_id;
+  if binding.root_message_id is null then return new; end if;
+  select * into author_member from public.members
+   where entity_id = new.author_id and space_id = binding.space_id;
+  if author_member.entity_id is null then return new; end if;
+  auth_kind := internal.claim_text('tm8.auth_kind');
+  if auth_kind not in ('browser', 'cli') then return new; end if;
+  insert into public.chat_turns(
+    root_message_id, user_message_id, requested_by_member_id, requested_by_auth_kind,
+    pricing_provider, pricing_model, queued_at
+  ) values (
+    binding.root_message_id, new.entity_id, author_member.entity_id, auth_kind,
+    binding.provider, binding.model, new.created_at
+  ) on conflict (user_message_id) do nothing;
+  return new;
+end
+$$;
+
+-- Latest (115) claim shape, plus stored mode and per-turn authority.
 create or replace function public.claim_next_chat_turn(p_root_message_id uuid)
 returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
@@ -186,6 +221,11 @@ begin
     'requesterAuthKind', binding.requester_auth_kind,
     'requestedByMemberId', requester.entity_id,
     'requestedByIdentityId', requester.identity_id,
+    'requestedByAuthKind', case
+      when turn_row.requested_by_auth_kind is not null then turn_row.requested_by_auth_kind
+      when requester.entity_id = binding.configured_by_member_id then binding.requester_auth_kind
+      else null
+    end,
     'requestedByDisplayName', requester.display_name,
     'teammateId', binding.teammate_id,
     'model', binding.model,
@@ -225,6 +265,7 @@ begin
     select 1 from public.activity a
      where a.entity_id = new.message_id and a.verb = 'chat.tool_called'
        and a.summary ->> 'toolCallId' = call_id
+       and a.summary ->> 'state' = coalesce(new.payload ->> 'state', 'unknown')
   ) then return new; end if;
   perform internal.record_activity(
     binding.space_id, new.message_id, binding.teammate_id, 'chat.tool_called',

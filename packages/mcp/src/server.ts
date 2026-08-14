@@ -1,7 +1,7 @@
 /** Dependency-free stdio MCP framing: one JSON-RPC object per line. */
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
-import { MCP_TOOL_NAMES, TM8_MCP_TOOLS, type Tm8ToolRouter } from './tools.js';
+import type { Tm8ToolRouter } from './tools.js';
 
 type JsonRpcId = string | number | null;
 
@@ -44,11 +44,12 @@ export class Tm8McpServer {
         }
         case 'server/discover': {
           if (notification) return null;
+          const listed = this.tools.listedTools();
           return rpcResult(id, {
             protocolVersion: '2026-07-28',
             capabilities: { tools: {} },
             serverInfo: MCP_SERVER_INFO,
-            tools: { count: MCP_TOOL_NAMES.length },
+            tools: { count: listed.length },
           });
         }
         case 'notifications/initialized':
@@ -57,7 +58,7 @@ export class Tm8McpServer {
         case 'ping':
           return notification ? null : rpcResult(id, {});
         case 'tools/list':
-          return notification ? null : rpcResult(id, { tools: TM8_MCP_TOOLS });
+          return notification ? null : rpcResult(id, { tools: this.tools.listedTools() });
         case 'tools/call': {
           if (notification) return null;
           const params = callParams(raw.params);

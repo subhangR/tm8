@@ -35,4 +35,18 @@ describe('chat mode policy', () => {
       structuredContent: { error: { code: 'mode_denied' } },
     });
   });
+
+  it('omits provider-native replacements from registration and invocation', async () => {
+    const router = new Tm8ToolRouter(transport, {
+      mode: 'build', hiddenTools: ['repo_read_file', 'repo_edit', 'web_fetch'],
+    });
+    expect(router.listedTools().map((tool) => tool.name)).not.toEqual(
+      expect.arrayContaining(['repo_read_file', 'repo_edit', 'web_fetch']),
+    );
+    await expect(router.call('repo_edit', {
+      path: 'x', oldText: 'a', newText: 'b',
+    })).resolves.toMatchObject({
+      isError: true, structuredContent: { error: { code: 'invalid_input' } },
+    });
+  });
 });

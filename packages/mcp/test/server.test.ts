@@ -3,7 +3,7 @@ import { once } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import type { CatalogTransport } from '../src/catalog-client.js';
 import { Tm8McpServer, serveStdio } from '../src/server.js';
-import { MCP_TOOL_NAMES, Tm8ToolRouter } from '../src/tools.js';
+import { Tm8ToolRouter } from '../src/tools.js';
 
 const transport: CatalogTransport = {
   invoke: async () => ({ ok: true }),
@@ -34,10 +34,12 @@ describe('stdio JSON-RPC server', () => {
     expect(JSON.stringify(response)).toContain('mode-gated');
   });
 
-  it('lists the full registry and calls one', async () => {
+  it('lists only the mode-allowed registry and calls one', async () => {
     const listed = await server().handle({ jsonrpc: '2.0', id: 'list', method: 'tools/list' });
-    const tools = (listed as { result: { tools: unknown[] } }).result.tools;
-    expect(tools).toHaveLength(MCP_TOOL_NAMES.length);
+    const tools = (listed as { result: { tools: Array<{ name: string }> } }).result.tools;
+    expect(tools.map((tool) => tool.name)).toContain('repo_read_file');
+    expect(tools.map((tool) => tool.name)).not.toContain('repo_write');
+    expect(tools.map((tool) => tool.name)).not.toContain('tm8_act');
 
     const called = await server().handle({
       jsonrpc: '2.0',

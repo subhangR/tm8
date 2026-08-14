@@ -225,6 +225,13 @@ describe('typed activity presentation', () => {
       const item = activityItem({}, { verb });
       expect(activityPresentation(item as Extract<FeedItem, { itemKind: 'activity' }>).kind).toBe('event');
     }
+    const tool = activityItem({}, {
+      verb: 'chat.tool_called',
+      summary: { tool: 'repo_read_file', state: 'completed', mode: 'ask' },
+    });
+    expect(activityPresentation(tool as Extract<FeedItem, { itemKind: 'activity' }>)).toEqual({
+      kind: 'event', label: 'repo_read_file: completed (ask)',
+    });
     const future = activityItem({}, { verb: 'future.variant' });
     expect(activityPresentation(future as Extract<FeedItem, { itemKind: 'activity' }>)).toEqual({ kind: 'unknown' });
   });

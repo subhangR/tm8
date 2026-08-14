@@ -17,6 +17,12 @@ if (!token) {
     ...(process.env.TM8_CHAT_PROJECT_ROOT?.trim()
       ? { projectRoot: process.env.TM8_CHAT_PROJECT_ROOT.trim() }
       : {}),
+    ...(process.env.TM8_CHAT_SPACE_ID?.trim()
+      ? { spaceId: process.env.TM8_CHAT_SPACE_ID.trim() }
+      : {}),
+    ...(process.env.TM8_CHAT_HIDDEN_TOOLS?.trim()
+      ? { hiddenTools: process.env.TM8_CHAT_HIDDEN_TOOLS.split(',').map((name) => name.trim()).filter(Boolean) }
+      : {}),
   }));
   serveStdio(server, { input: process.stdin, output: process.stdout });
 }

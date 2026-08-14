@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
-import { exec, execFile } from 'node:child_process';
-import { isIP } from 'node:net';
+import { exec, execFile, spawn } from 'node:child_process';
+import { constants, createReadStream } from 'node:fs';
+import { BlockList, isIP } from 'node:net';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, realpath } from 'node:fs/promises';
+import { glob as globFiles } from 'tinyglobby';
+import { Agent } from 'undici';
 
 import type { CatalogTransport } from './catalog-client.js';
 import { DIRECT_TOOL_NAMES, type DirectToolName } from './modes.js';
@@ -13,6 +16,7 @@ const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_OUTPUT_BYTES = 256 * 1024;
+const MAX_GREP_SCAN_BYTES = 50 * 1024 * 1024;
 
 export interface DirectToolDefinition {
   name: DirectToolName;
@@ -65,6 +69,7 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
 export interface DirectToolContext {
   transport: CatalogTransport;
   projectRoot?: string;
+  spaceId?: string;
   fetchImpl?: typeof fetch;
 }
 
@@ -119,8 +124,7 @@ export async function callDirectTool(
 async function repoReadFile(args: Record<string, unknown>, context: DirectToolContext) {
   const path = requiredString(args.path, 'path');
   const target = await confinedExistingPath(context, path);
-  const bytes = await readFile(target);
-  if (bytes.byteLength > MAX_FILE_BYTES) throw new DirectToolError('payload_too_large', `file exceeds ${MAX_FILE_BYTES} bytes`);
+  const bytes = await readFileCapped(target);
   const lines = bytes.toString('utf8').split('\n');
   const offset = integer(args.offset, 'offset', 1, 1_000_000) ?? 1;
   const limit = integer(args.limit, 'limit', 1, 5000) ?? 500;
@@ -130,10 +134,16 @@ async function repoReadFile(args: Record<string, unknown>, context: DirectToolCo
 
 async function repoGlob(args: Record<string, unknown>, context: DirectToolContext) {
   const pattern = requiredString(args.pattern, 'pattern');
+  validateGlobPattern(pattern, 'pattern');
   const limit = integer(args.limit, 'limit', 1, 2000) ?? 500;
   const root = await projectRoot(context);
-  const run = await execFileCapped('rg', ['--files', '--hidden', '-g', '!.git/**', '-g', pattern], root, 15_000, MAX_OUTPUT_BYTES, true);
-  const all = run.stdout.split('\n').filter(Boolean).sort();
+  const all = (await globFiles(pattern, {
+    cwd: root,
+    dot: true,
+    onlyFiles: true,
+    followSymbolicLinks: false,
+    ignore: ['.git/**'],
+  })).sort();
   return result('repo_glob', { pattern, paths: all.slice(0, limit), truncated: all.length > limit });
 }
 
@@ -141,23 +151,42 @@ async function repoGrep(args: Record<string, unknown>, context: DirectToolContex
   const query = requiredString(args.query, 'query');
   const limit = integer(args.limit, 'limit', 1, 1000) ?? 200;
   const root = await projectRoot(context);
-  const argv = ['--json', '--hidden', '-g', '!.git/**'];
   const glob = optionalString(args.glob, 'glob');
-  if (glob) argv.push('-g', glob);
-  argv.push('--', query, '.');
-  const run = await execFileCapped('rg', argv, root, 20_000, MAX_OUTPUT_BYTES, true);
+  if (glob) validateGlobPattern(glob, 'glob');
+  let expression: RegExp;
+  try { expression = new RegExp(query); }
+  catch { throw new DirectToolError('invalid_input', 'query must be a valid JavaScript regular expression'); }
+  const paths = (await globFiles(glob ?? '**/*', {
+    cwd: root,
+    dot: true,
+    onlyFiles: true,
+    followSymbolicLinks: false,
+    ignore: ['.git/**'],
+  })).sort();
   const matches: Array<Record<string, unknown>> = [];
-  for (const line of run.stdout.split('\n')) {
-    if (!line || matches.length >= limit) continue;
-    let event: { type?: string; data?: Record<string, unknown> };
-    try { event = JSON.parse(line) as typeof event; } catch { continue; }
-    if (event.type !== 'match' || !event.data) continue;
-    const path = ((event.data.path as { text?: string } | undefined)?.text ?? '').replace(/^\.\//, '');
-    const text = (event.data.lines as { text?: string } | undefined)?.text?.replace(/\r?\n$/, '') ?? '';
-    const sub = Array.isArray(event.data.submatches) ? event.data.submatches[0] as { start?: number } : undefined;
-    matches.push({ path, line: event.data.line_number, column: (sub?.start ?? 0) + 1, text });
+  let scannedBytes = 0;
+  let scannedFiles = 0;
+  let truncated = false;
+  for (const path of paths) {
+    if (matches.length >= limit || scannedBytes >= MAX_GREP_SCAN_BYTES) { truncated = true; break; }
+    const target = await confinedExistingPath(context, path);
+    let bytes: Buffer;
+    try { bytes = await readFileCapped(target); }
+    catch (error) {
+      if (error instanceof DirectToolError && error.code === 'payload_too_large') { truncated = true; continue; }
+      throw error;
+    }
+    scannedFiles += 1;
+    scannedBytes += bytes.byteLength;
+    if (bytes.includes(0)) continue;
+    for (const [lineIndex, text] of bytes.toString('utf8').split('\n').entries()) {
+      const match = expression.exec(text);
+      if (!match) continue;
+      matches.push({ path, line: lineIndex + 1, column: (match.index ?? 0) + 1, text: text.replace(/\r$/, '') });
+      if (matches.length >= limit) { truncated = true; break; }
+    }
   }
-  return result('repo_grep', { query, ...(glob ? { glob } : {}), matches, truncated: matches.length >= limit });
+  return result('repo_grep', { query, ...(glob ? { glob } : {}), matches, scannedFiles, scannedBytes, truncated });
 }
 
 async function repoWrite(args: Record<string, unknown>, context: DirectToolContext) {
@@ -166,9 +195,10 @@ async function repoWrite(args: Record<string, unknown>, context: DirectToolConte
   if (Buffer.byteLength(content) > MAX_FILE_BYTES) throw new DirectToolError('payload_too_large', `content exceeds ${MAX_FILE_BYTES} bytes`);
   const target = await confinedWritablePath(context, path);
   let previous: string | null = null;
-  try { previous = await readFile(target, 'utf8'); } catch { /* new file */ }
+  try { previous = (await readFileCapped(target)).toString('utf8'); }
+  catch (error) { if (!isNotFound(error)) throw error; }
   await mkdir(dirname(target), { recursive: true });
-  await writeFile(target, content, 'utf8');
+  await writeFileNoFollow(target, content);
   return result('repo_write', { path, changed: previous !== content, bytes: Buffer.byteLength(content) });
 }
 
@@ -177,23 +207,34 @@ async function repoEdit(args: Record<string, unknown>, context: DirectToolContex
   const oldText = requiredString(args.oldText, 'oldText');
   const newText = requiredString(args.newText, 'newText', true);
   const replaceAll = boolean(args.replaceAll, 'replaceAll') ?? false;
-  const target = await confinedExistingPath(context, path);
-  const current = await readFile(target, 'utf8');
+  const target = await confinedWritablePath(context, path);
+  const current = (await readFileCapped(target)).toString('utf8');
   const next = applyExactEdit(current, oldText, newText, replaceAll, path);
-  await writeFile(target, next.text, 'utf8');
+  assertFileSize(next.text);
+  await writeFileNoFollow(target, next.text);
   return result('repo_edit', { path, replacements: next.replacements, bytes: Buffer.byteLength(next.text) });
+}
+
+interface PendingRepoEdit {
+  path: string;
+  target: string;
+  original: string;
+  text: string;
+  replacements: number;
 }
 
 async function repoMultiEdit(args: Record<string, unknown>, context: DirectToolContext) {
   if (!Array.isArray(args.edits) || args.edits.length < 1 || args.edits.length > 100) {
     throw new DirectToolError('invalid_input', 'edits must contain 1..100 items');
   }
-  const pending = new Map<string, { target: string; text: string; replacements: number }>();
+  const pending = new Map<string, PendingRepoEdit>();
   for (const [index, rawEdit] of args.edits.entries()) {
     const edit = objectOf(rawEdit, `edits[${index}]`);
     const path = requiredString(edit.path, `edits[${index}].path`);
-    const target = await confinedExistingPath(context, path);
-    const current = pending.get(path)?.text ?? await readFile(target, 'utf8');
+    const target = await confinedWritablePath(context, path);
+    const existing = pending.get(target);
+    const original = existing?.original ?? (await readFileCapped(target)).toString('utf8');
+    const current = existing?.text ?? original;
     const applied = applyExactEdit(
       current,
       requiredString(edit.oldText, `edits[${index}].oldText`),
@@ -201,10 +242,26 @@ async function repoMultiEdit(args: Record<string, unknown>, context: DirectToolC
       boolean(edit.replaceAll, `edits[${index}].replaceAll`) ?? false,
       path,
     );
-    pending.set(path, { target, text: applied.text, replacements: (pending.get(path)?.replacements ?? 0) + applied.replacements });
+    assertFileSize(applied.text);
+    pending.set(target, {
+      path: existing?.path ?? path,
+      target,
+      original,
+      text: applied.text,
+      replacements: (existing?.replacements ?? 0) + applied.replacements,
+    });
   }
-  for (const entry of pending.values()) await writeFile(entry.target, entry.text, 'utf8');
-  return result('repo_multi_edit', { files: [...pending.entries()].map(([path, value]) => ({ path, replacements: value.replacements, bytes: Buffer.byteLength(value.text) })) });
+  const written: PendingRepoEdit[] = [];
+  try {
+    for (const entry of pending.values()) {
+      await writeFileNoFollow(entry.target, entry.text);
+      written.push(entry);
+    }
+  } catch {
+    await Promise.allSettled(written.map((entry) => writeFileNoFollow(entry.target, entry.original)));
+    throw new DirectToolError('tool_failed', 'multi-edit commit failed; completed writes were rolled back');
+  }
+  return result('repo_multi_edit', { files: [...pending.values()].map((value) => ({ path: value.path, replacements: value.replacements, bytes: Buffer.byteLength(value.text) })) });
 }
 
 async function repoBash(args: Record<string, unknown>, context: DirectToolContext) {
@@ -223,6 +280,7 @@ async function repoBash(args: Record<string, unknown>, context: DirectToolContex
 
 async function sessionTranscript(args: Record<string, unknown>, context: DirectToolContext, tail: boolean) {
   const sessionId = requiredString(args.sessionId, 'sessionId');
+  await confinedEntity(context, sessionId, 'work_session');
   const last = integer(args.last, 'last', 1, tail ? 100 : 200) ?? (tail ? 20 : 200);
   const data = await context.transport.invoke('execution.transcript', { params: { workSessionId: sessionId }, query: { last: String(last) } });
   return result(tail ? 'session_tail' : 'session_transcript', { data });
@@ -231,30 +289,38 @@ async function sessionTranscript(args: Record<string, unknown>, context: DirectT
 async function sessionFollowup(args: Record<string, unknown>, context: DirectToolContext) {
   const sessionId = requiredString(args.sessionId, 'sessionId');
   const body = requiredString(args.body, 'body');
+  await confinedEntity(context, sessionId, 'work_session');
   const data = await context.transport.invoke('messages.post', { body: { anchorIds: [sessionId], body, clientMutationId: randomUUID() } });
   return result('session_followup', { data });
 }
 
 async function sessionStop(args: Record<string, unknown>, context: DirectToolContext) {
   const sessionId = requiredString(args.sessionId, 'sessionId');
+  await confinedEntity(context, sessionId, 'work_session');
   const data = await context.transport.invoke('execution.terminate', { params: { id: sessionId }, body: { force: boolean(args.force, 'force') ?? false } });
   return result('session_stop', { data });
 }
 
 async function docCreate(args: Record<string, unknown>, context: DirectToolContext) {
+  const spaceId = requiredString(args.spaceId, 'spaceId');
+  assertThreadSpace(context, spaceId);
   const body: Record<string, unknown> = {
-    spaceId: requiredString(args.spaceId, 'spaceId'), kind: 'doc',
+    spaceId, kind: 'doc',
     title: requiredString(args.title, 'title'),
     content: { kind: 'doc', body: requiredString(args.body, 'body', true), format: 'markdown' },
     clientMutationId: randomUUID(),
   };
   const attachTo = optionalString(args.attachTo, 'attachTo');
-  if (attachTo) body.attachTo = { entityId: attachTo, edgeType: 'attached_to' };
+  if (attachTo) {
+    await confinedEntity(context, attachTo);
+    body.attachTo = { entityId: attachTo, edgeType: 'attached_to' };
+  }
   return result('doc_create', { data: await context.transport.invoke('entities.create', { body }) });
 }
 
 async function docUpdate(args: Record<string, unknown>, context: DirectToolContext) {
   const docId = requiredString(args.docId, 'docId');
+  await confinedEntity(context, docId, 'doc');
   const body: Record<string, unknown> = {
     expectedVersion: requiredInteger(args.expectedVersion, 'expectedVersion', 1, 1_000_000),
     content: { kind: 'doc', body: requiredString(args.body, 'body', true), format: 'markdown' },
@@ -265,17 +331,21 @@ async function docUpdate(args: Record<string, unknown>, context: DirectToolConte
 }
 
 async function artifactCreate(args: Record<string, unknown>, context: DirectToolContext) {
+  const spaceId = requiredString(args.spaceId, 'spaceId');
+  assertThreadSpace(context, spaceId);
   const body: Record<string, unknown> = {
-    spaceId: requiredString(args.spaceId, 'spaceId'), name: requiredString(args.name, 'name'),
+    spaceId, name: requiredString(args.name, 'name'),
     manifest: requiredObject(args.manifest, 'manifest'), clientMutationId: randomUUID(),
   };
   for (const key of ['description', 'files', 'sourceWorkSessionId'] as const) if (args[key] !== undefined) body[key] = args[key];
+  const sourceWorkSessionId = optionalString(args.sourceWorkSessionId, 'sourceWorkSessionId');
+  if (sourceWorkSessionId) await confinedEntity(context, sourceWorkSessionId, 'work_session');
   return result('artifact_create', { data: await context.transport.invoke('artifacts.create', { body }) });
 }
 
 async function webFetch(args: Record<string, unknown>, context: DirectToolContext) {
   const maxBytes = integer(args.maxBytes, 'maxBytes', 1024, 500_000) ?? 200_000;
-  const fetched = await fetchPublic(requiredString(args.url, 'url'), context.fetchImpl ?? fetch, maxBytes);
+  const fetched = await fetchPublic(requiredString(args.url, 'url'), context.fetchImpl ?? fetch, maxBytes, true, context.fetchImpl === undefined);
   return result('web_fetch', fetched);
 }
 
@@ -283,7 +353,7 @@ async function webSearch(args: Record<string, unknown>, context: DirectToolConte
   const query = requiredString(args.query, 'query');
   const limit = integer(args.limit, 'limit', 1, 10) ?? 5;
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-  const fetched = await fetchPublic(url, context.fetchImpl ?? fetch, 300_000, false);
+  const fetched = await fetchPublic(url, context.fetchImpl ?? fetch, 300_000, false, context.fetchImpl === undefined);
   const html = fetched.raw;
   const links = [...html.matchAll(/<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
   const results = links.slice(0, limit).map((match) => ({ url: searchResultUrl(match[1] ?? ''), title: htmlToText(match[2] ?? '') }));
@@ -292,13 +362,15 @@ async function webSearch(args: Record<string, unknown>, context: DirectToolConte
 
 async function memoryWrite(args: Record<string, unknown>, context: DirectToolContext) {
   const statement = requiredString(args.statement, 'statement');
+  const spaceId = requiredString(args.spaceId, 'spaceId');
+  assertThreadSpace(context, spaceId);
   const content: Record<string, unknown> = { statement };
   for (const key of ['mechanism', 'subjectScope', 'doesNotEstablish'] as const) {
     const value = optionalString(args[key], key);
     if (value) content[key] = value;
   }
   const data = await context.transport.invoke('entities.create', { body: {
-    spaceId: requiredString(args.spaceId, 'spaceId'), kind: 'memory', title: statement.slice(0, 200),
+    spaceId, kind: 'memory', title: statement.slice(0, 200),
     content, clientMutationId: randomUUID(),
   } });
   return result('memory_write', { data });
@@ -307,8 +379,10 @@ async function memoryWrite(args: Record<string, unknown>, context: DirectToolCon
 async function memorySearch(args: Record<string, unknown>, context: DirectToolContext) {
   const query = requiredString(args.query, 'query').toLowerCase();
   const limit = integer(args.limit, 'limit', 1, 50) ?? 10;
+  const spaceId = requiredString(args.spaceId, 'spaceId');
+  assertThreadSpace(context, spaceId);
   const data = await context.transport.invoke('collections.query', { body: {
-    spaceId: requiredString(args.spaceId, 'spaceId'), kinds: ['memory'], sort: 'updatedAt_desc', limit: 100,
+    spaceId, kinds: ['memory'], sort: 'updatedAt_desc', limit: 100,
   } });
   const page = data as { page?: { items?: Array<Record<string, unknown>> } };
   const terms = query.split(/\s+/).filter(Boolean);
@@ -325,12 +399,18 @@ async function gitBranch(context: DirectToolContext) {
     git(root, ['branch', '--show-current']), git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], true),
     git(root, ['rev-parse', 'HEAD']), git(root, ['remote', 'get-url', 'origin'], true),
   ]);
-  return result('git_branch', { branch: branch.trim(), upstream: upstream.trim() || null, head: head.trim(), remote: remote.trim() || null });
+  return result('git_branch', {
+    branch: branch.trim(), upstream: upstream.trim() || null, head: head.trim(),
+    remote: safeGitRemote(remote.trim()),
+  });
 }
 
 async function gitStatus(args: Record<string, unknown>, context: DirectToolContext) {
   const sessionId = optionalString(args.sessionId, 'sessionId');
-  if (sessionId) return result('git_status', { data: await context.transport.invoke('execution.gitStatus', { params: { workSessionId: sessionId } }) });
+  if (sessionId) {
+    await confinedEntity(context, sessionId, 'work_session');
+    return result('git_status', { data: await context.transport.invoke('execution.gitStatus', { params: { workSessionId: sessionId } }) });
+  }
   const root = await projectRoot(context);
   return result('git_status', { status: await git(root, ['status', '--short', '--branch']) });
 }
@@ -338,17 +418,19 @@ async function gitStatus(args: Record<string, unknown>, context: DirectToolConte
 async function gitDiff(args: Record<string, unknown>, context: DirectToolContext) {
   const sessionId = optionalString(args.sessionId, 'sessionId');
   const maxBytes = integer(args.maxBytes, 'maxBytes', 1024, 500_000) ?? 200_000;
-  if (sessionId) return result('git_diff', { data: await context.transport.invoke('execution.gitDiff', { params: { workSessionId: sessionId }, query: { maxBytes: String(maxBytes) } }) });
+  if (sessionId) {
+    await confinedEntity(context, sessionId, 'work_session');
+    return result('git_diff', { data: await context.transport.invoke('execution.gitDiff', { params: { workSessionId: sessionId }, query: { maxBytes: String(maxBytes) } }) });
+  }
   const root = await projectRoot(context);
-  const diff = await git(root, ['diff', '--no-ext-diff'], true, maxBytes);
-  return result('git_diff', { diff: cap(diff, maxBytes), truncated: Buffer.byteLength(diff) >= maxBytes });
+  const diff = await spawnOutputCapped('git', hardenedGitArgs(['diff', '--no-ext-diff']), root, 20_000, maxBytes);
+  return result('git_diff', { diff: diff.stdout, truncated: diff.truncated });
 }
 
 async function gitPr(args: Record<string, unknown>, context: DirectToolContext) {
   const sessionId = optionalString(args.sessionId, 'sessionId');
   if (sessionId) {
-    const session = await context.transport.invoke('entities.get', { params: { id: sessionId } }) as { spaceId?: unknown };
-    if (typeof session.spaceId !== 'string') throw new DirectToolError('upstream_error', 'session read returned no Space id');
+    const session = await confinedEntity(context, sessionId, 'work_session');
     const data = await context.transport.invoke('graph.query', { body: {
       spaceId: session.spaceId, focusId: sessionId, hops: 2, kinds: ['pull_request'], limit: 50,
     } });
@@ -357,8 +439,34 @@ async function gitPr(args: Record<string, unknown>, context: DirectToolContext) 
   const root = await projectRoot(context);
   const branch = (await git(root, ['branch', '--show-current'])).trim();
   const remote = (await git(root, ['remote', 'get-url', 'origin'], true)).trim();
-  const repository = githubRepository(remote);
-  return result('git_pr', { branch, remote: remote || null, pullRequestUrl: null, compareUrl: repository && branch ? `https://github.com/${repository}/compare/${encodeURIComponent(branch)}?expand=1` : null });
+  const safeRemote = safeGitRemote(remote);
+  const repository = githubRepository(safeRemote ?? '');
+  return result('git_pr', { branch, remote: safeRemote, pullRequestUrl: null, compareUrl: repository && branch ? `https://github.com/${repository}/compare/${encodeURIComponent(branch)}?expand=1` : null });
+}
+
+function assertThreadSpace(context: DirectToolContext, spaceId: string): void {
+  if (!context.spaceId) throw new DirectToolError('thread_scope_unavailable', 'thread Space scope is unavailable');
+  if (spaceId !== context.spaceId) throw new DirectToolError('forbidden', 'target is outside the chat thread Space');
+}
+
+async function confinedEntity(
+  context: DirectToolContext,
+  entityId: string,
+  expectedKind?: string,
+): Promise<{ id: string; kind: string; spaceId: string }> {
+  const data = await context.transport.invoke('entities.get', { params: { id: entityId } }) as {
+    id?: unknown;
+    kind?: unknown;
+    spaceId?: unknown;
+  };
+  if (typeof data.id !== 'string' || typeof data.kind !== 'string' || typeof data.spaceId !== 'string') {
+    throw new DirectToolError('upstream_error', 'entity scope check returned an invalid result');
+  }
+  assertThreadSpace(context, data.spaceId);
+  if (expectedKind && data.kind !== expectedKind) {
+    throw new DirectToolError('invalid_input', `target must be a ${expectedKind} entity`);
+  }
+  return { id: data.id, kind: data.kind, spaceId: data.spaceId };
 }
 
 async function projectRoot(context: DirectToolContext): Promise<string> {
@@ -367,8 +475,15 @@ async function projectRoot(context: DirectToolContext): Promise<string> {
 }
 
 function validateRelativePath(path: string): void {
-  if (path.includes('\0') || isAbsolute(path) || path.split(/[\\/]+/).includes('..')) {
-    throw new DirectToolError('invalid_input', 'path must be project-relative and may not contain ..');
+  const components = path.split(/[\\/]+/);
+  if (path.includes('\0') || isAbsolute(path) || components.includes('..') || components.includes('.git')) {
+    throw new DirectToolError('invalid_input', 'path must be project-relative and may not contain .. or .git');
+  }
+}
+
+function validateGlobPattern(pattern: string, field: string): void {
+  if (pattern.startsWith('!') || pattern.includes('\0') || isAbsolute(pattern) || pattern.split(/[\\/]+/).includes('..')) {
+    throw new DirectToolError('invalid_input', `${field} must be a non-negated project-relative glob`);
   }
 }
 
@@ -390,26 +505,85 @@ async function confinedWritablePath(context: DirectToolContext, path: string): P
   const root = await projectRoot(context);
   const target = resolve(root, path);
   if (!inside(root, target)) throw new DirectToolError('forbidden', 'path escapes the project checkout');
+  await refuseSymlinkComponents(root, target);
   try {
+    const info = await lstat(target);
+    if (info.isSymbolicLink() || info.nlink > 1) throw new DirectToolError('forbidden', 'writes through links are not allowed');
     const existing = await realpath(target);
     if (!inside(root, existing)) throw new DirectToolError('forbidden', 'path escapes the project checkout');
     return existing;
   } catch (error) {
     if (error instanceof DirectToolError) throw error;
+    if (!isNotFound(error)) throw error;
     let parent = dirname(target);
     for (;;) {
       try {
         const realParent = await realpath(parent);
         if (!inside(root, realParent)) throw new DirectToolError('forbidden', 'path escapes the project checkout');
-        return target;
+        return resolve(realParent, relative(parent, target));
       } catch (parentError) {
         if (parentError instanceof DirectToolError) throw parentError;
+        if (!isNotFound(parentError)) throw parentError;
         const next = dirname(parent);
         if (next === parent) throw new DirectToolError('forbidden', 'no confined parent exists');
         parent = next;
       }
     }
   }
+}
+
+async function refuseSymlinkComponents(root: string, target: string): Promise<void> {
+  const suffix = relative(root, target).split(sep).filter(Boolean);
+  let current = root;
+  for (const component of suffix) {
+    current = resolve(current, component);
+    try {
+      const info = await lstat(current);
+      if (info.isSymbolicLink()) throw new DirectToolError('forbidden', 'writes through symlinks are not allowed');
+    } catch (error) {
+      if (error instanceof DirectToolError) throw error;
+      if (isNotFound(error)) return;
+      throw error;
+    }
+  }
+}
+
+async function readFileCapped(path: string, maxBytes = MAX_FILE_BYTES): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  const stream = createReadStream(path, { highWaterMark: 64 * 1024 });
+  try {
+    for await (const raw of stream) {
+      const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as Uint8Array);
+      total += chunk.byteLength;
+      if (total > maxBytes) {
+        stream.destroy();
+        throw new DirectToolError('payload_too_large', `file exceeds ${maxBytes} bytes`);
+      }
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    stream.destroy();
+    throw error;
+  }
+  return Buffer.concat(chunks, total);
+}
+
+async function writeFileNoFollow(path: string, content: string): Promise<void> {
+  const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0);
+  const handle = await open(path, flags, 0o666);
+  try { await handle.writeFile(content, 'utf8'); }
+  finally { await handle.close(); }
+}
+
+function assertFileSize(content: string): void {
+  if (Buffer.byteLength(content) > MAX_FILE_BYTES) {
+    throw new DirectToolError('payload_too_large', `edited file exceeds ${MAX_FILE_BYTES} bytes`);
+  }
+}
+
+function isNotFound(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ENOENT';
 }
 
 function applyExactEdit(text: string, oldText: string, newText: string, replaceAll: boolean, path: string) {
@@ -419,43 +593,114 @@ function applyExactEdit(text: string, oldText: string, newText: string, replaceA
   return { text: replaceAll ? text.split(oldText).join(newText) : text.replace(oldText, newText), replacements: replaceAll ? count : 1 };
 }
 
-async function execFileCapped(command: string, argv: string[], cwd: string, timeout: number, maxBuffer: number, allowNoMatches = false) {
-  try {
-    return await execFileAsync(command, argv, { cwd, timeout, maxBuffer, encoding: 'utf8' });
-  } catch (error) {
-    const value = error as { code?: number | string; stdout?: string; stderr?: string };
-    if (allowNoMatches && value.code === 1) return { stdout: value.stdout ?? '', stderr: value.stderr ?? '' };
-    throw new DirectToolError('tool_failed', `${command} failed: ${cap(value.stderr ?? String(error))}`);
-  }
-}
-
 async function git(root: string, argv: string[], allowFailure = false, maxBuffer = MAX_OUTPUT_BYTES): Promise<string> {
-  try { return (await execFileAsync('git', argv, { cwd: root, timeout: 20_000, maxBuffer, encoding: 'utf8' })).stdout; }
+  try { return (await execFileAsync('git', hardenedGitArgs(argv), { cwd: root, timeout: 20_000, maxBuffer, encoding: 'utf8' })).stdout; }
   catch (error) {
     if (allowFailure) return '';
-    const value = error as { stderr?: string };
-    throw new DirectToolError('git_failed', cap(value.stderr ?? String(error)));
+    throw new DirectToolError('git_failed', 'git command failed');
   }
 }
 
-async function fetchPublic(urlText: string, fetchImpl: typeof fetch, maxBytes: number, extract = true) {
+function hardenedGitArgs(argv: string[]): string[] {
+  return ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...argv];
+}
+
+async function spawnOutputCapped(
+  command: string,
+  argv: string[],
+  cwd: string,
+  timeoutMs: number,
+  maxBytes: number,
+): Promise<{ stdout: string; truncated: boolean }> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(command, argv, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    });
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let truncated = false;
+    let stderrBytes = 0;
+    const stderr: Buffer[] = [];
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    child.stdout.on('data', (raw: Buffer) => {
+      if (truncated) return;
+      const remaining = maxBytes - bytes;
+      if (raw.byteLength > remaining) {
+        if (remaining > 0) chunks.push(raw.subarray(0, remaining));
+        bytes += Math.max(remaining, 0);
+        truncated = true;
+        child.kill('SIGTERM');
+        return;
+      }
+      chunks.push(raw);
+      bytes += raw.byteLength;
+    });
+    child.stderr.on('data', (raw: Buffer) => {
+      if (stderrBytes >= 64 * 1024) return;
+      const selected = raw.subarray(0, 64 * 1024 - stderrBytes);
+      stderr.push(selected);
+      stderrBytes += selected.byteLength;
+    });
+    child.once('error', () => {
+      clearTimeout(timer);
+      rejectPromise(new DirectToolError('tool_failed', `${command} failed`));
+    });
+    child.once('close', (code, signal) => {
+      clearTimeout(timer);
+      if (truncated) {
+        resolvePromise({ stdout: Buffer.concat(chunks, bytes).toString('utf8'), truncated: true });
+      } else if (code === 0) {
+        resolvePromise({ stdout: Buffer.concat(chunks, bytes).toString('utf8'), truncated: false });
+      } else {
+        void signal;
+        void stderr;
+        rejectPromise(new DirectToolError('tool_failed', `${command} failed`));
+      }
+    });
+  });
+}
+
+async function fetchPublic(
+  urlText: string,
+  fetchImpl: typeof fetch,
+  maxBytes: number,
+  extract = true,
+  pinDns = false,
+) {
   let url: URL;
   try { url = new URL(urlText); }
   catch { throw new DirectToolError('invalid_input', 'url must be a valid absolute HTTP(S) URL'); }
   for (let redirect = 0; redirect <= 4; redirect += 1) {
-    await validatePublicUrl(url);
-    const response = await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(15_000), headers: { 'user-agent': 'tm8-chat/1.0', accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.1' } });
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location');
-      if (!location) throw new DirectToolError('upstream_error', `redirect ${response.status} had no location`);
-      url = new URL(location, url);
-      continue;
+    const addresses = await validatePublicUrl(url);
+    const dispatcher = pinDns ? pinnedDispatcher(addresses) : undefined;
+    try {
+      const init = {
+        redirect: 'manual' as const,
+        signal: AbortSignal.timeout(15_000),
+        headers: { 'user-agent': 'tm8-chat/1.0', accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.1' },
+        ...(dispatcher ? { dispatcher } : {}),
+      };
+      const response = await fetchImpl(url, init as RequestInit);
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        await response.body?.cancel();
+        if (!location) throw new DirectToolError('upstream_error', `redirect ${response.status} had no location`);
+        url = new URL(location, url);
+        continue;
+      }
+      if (!response.ok) throw new DirectToolError('upstream_error', `web request returned ${response.status}`, response.status >= 500);
+      const bytes = await readResponseCapped(response, maxBytes);
+      const raw = Buffer.from(bytes).toString('utf8');
+      const contentType = response.headers.get('content-type') ?? '';
+      return { url: url.toString(), status: response.status, contentType, bytes: bytes.byteLength, raw, text: extract && contentType.includes('html') ? htmlToText(raw) : raw };
+    } catch (error) {
+      if (error instanceof DirectToolError) throw error;
+      throw new DirectToolError('upstream_unavailable', 'web request failed', true);
+    } finally {
+      await dispatcher?.close();
     }
-    if (!response.ok) throw new DirectToolError('upstream_error', `web request returned ${response.status}`, response.status >= 500);
-    const bytes = await readResponseCapped(response, maxBytes);
-    const raw = Buffer.from(bytes).toString('utf8');
-    const contentType = response.headers.get('content-type') ?? '';
-    return { url: url.toString(), status: response.status, contentType, bytes: bytes.byteLength, raw, text: extract && contentType.includes('html') ? htmlToText(raw) : raw };
   }
   throw new DirectToolError('upstream_error', 'web request exceeded the redirect limit');
 }
@@ -490,20 +735,59 @@ async function readResponseCapped(response: Response, maxBytes: number): Promise
   return bytes;
 }
 
-async function validatePublicUrl(url: URL): Promise<void> {
+type ResolvedAddress = { address: string; family: 4 | 6 };
+
+async function validatePublicUrl(url: URL): Promise<ResolvedAddress[]> {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new DirectToolError('invalid_input', 'URL must be public HTTP(S) without embedded credentials');
-  const addresses = isIP(url.hostname) ? [{ address: url.hostname }] : await lookup(url.hostname, { all: true });
+  const hostname = url.hostname.replace(/^\[|\]$/g, '');
+  let addresses: ResolvedAddress[];
+  try {
+    const family = isIP(hostname);
+    addresses = family
+      ? [{ address: hostname, family: family as 4 | 6 }]
+      : (await lookup(hostname, { all: true })).map((item) => ({ address: item.address, family: item.family as 4 | 6 }));
+  } catch {
+    throw new DirectToolError('upstream_unavailable', 'web host could not be resolved', true);
+  }
   if (addresses.length === 0 || addresses.some(({ address }) => privateAddress(address))) throw new DirectToolError('forbidden', 'URL resolves to a local or private address');
+  return addresses;
 }
 
+// Keep families in separate BlockLists: Node treats IPv4 input as IPv4-mapped
+// IPv6 when a list also contains `::ffff:0:0/96`, which would otherwise make
+// that defensive IPv6 rule reject every ordinary public IPv4 address.
+const NON_PUBLIC_IPV4 = new BlockList();
+const NON_PUBLIC_IPV6 = new BlockList();
+for (const [network, prefix] of [
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
+  ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24],
+  ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24],
+  ['224.0.0.0', 4], ['240.0.0.0', 4],
+] as const) NON_PUBLIC_IPV4.addSubnet(network, prefix, 'ipv4');
+for (const [network, prefix] of [
+  ['::', 128], ['::1', 128], ['::ffff:0:0', 96], ['fc00::', 7], ['fe80::', 10],
+  ['fec0::', 10], ['ff00::', 8], ['2001:db8::', 32],
+] as const) NON_PUBLIC_IPV6.addSubnet(network, prefix, 'ipv6');
+
 function privateAddress(address: string): boolean {
-  const normalized = address.toLowerCase();
-  if (normalized === '::1' || normalized === '::' || normalized.startsWith('fe80:') || normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
-  const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
-  const ipv4 = mapped ?? (isIP(normalized) === 4 ? normalized : null);
-  if (!ipv4) return false;
-  const [a, b] = ipv4.split('.').map(Number);
-  return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b! >= 16 && b! <= 31) || (a === 192 && b === 168) || a! >= 224;
+  const normalized = address.replace(/^\[|\]$/g, '').split('%')[0]!.toLowerCase();
+  const family = isIP(normalized);
+  if (family === 4) return NON_PUBLIC_IPV4.check(normalized, 'ipv4');
+  if (family === 6) return NON_PUBLIC_IPV6.check(normalized, 'ipv6');
+  return true;
+}
+
+function pinnedDispatcher(addresses: ResolvedAddress[]): Agent {
+  const selected = addresses[0];
+  if (!selected) throw new DirectToolError('upstream_unavailable', 'web host resolved to no addresses', true);
+  return new Agent({
+    connect: {
+      lookup: (_hostname, options, callback) => {
+        if (typeof options === 'object' && options.all) callback(null, [selected]);
+        else callback(null, selected.address, selected.family);
+      },
+    },
+  });
 }
 
 function htmlToText(html: string): string {
@@ -528,6 +812,20 @@ function searchResultUrl(href: string): string {
 function githubRepository(remote: string): string | null {
   const match = remote.match(/github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?$/i);
   return match?.[1] ?? null;
+}
+
+function safeGitRemote(remote: string): string | null {
+  if (/^git@github\.com:[^\s]+$/i.test(remote)) return remote;
+  try {
+    const url = new URL(remote);
+    if (!['https:', 'http:', 'ssh:'].includes(url.protocol) || !url.hostname) return null;
+    url.username = '';
+    url.password = '';
+    return url.toString();
+  } catch {
+    // Local filesystem remotes would disclose server paths to chat members.
+    return null;
+  }
 }
 
 function result(tool: string, data: Record<string, unknown>): Record<string, unknown> {
