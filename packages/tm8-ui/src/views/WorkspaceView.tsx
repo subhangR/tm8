@@ -475,7 +475,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           connections={data.connectionsOf(id)}
           linkedPullRequests={data.linkedPullRequestsOf?.(id) ?? []}
           linkedPullRequestsOf={data.linkedPullRequestsOf}
-          onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${id}:${Date.now()}`, anchorIds: [id], body })}
+          onPostMessage={(post) => data.postMessage({ clientMutationId: `post:${id}:${Date.now()}`, anchorIds: [id], ...post })}
+          mentionOptions={data.mentionOptions}
+          skillOptions={data.skillOptions}
           onResumeSession={() => handleSessionResume(id)}
           resumingSession={resumingId === id}
           /* GAP-2 (data-wiring handover): hand the seam commands down so the

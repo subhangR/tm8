@@ -195,11 +195,13 @@ export function ChannelView({
       messages={selectedMessages}
       connections={data.connectionsOf(selectedId)}
       linkedPullRequestsOf={data.linkedPullRequestsOf}
-      onPostMessage={(body) => data.postMessage({
+      onPostMessage={(post) => data.postMessage({
         clientMutationId: `entity-post:${selectedId}:${Date.now()}`,
         anchorIds: [selectedId],
-        body,
+        ...post,
       })}
+      mentionOptions={data.mentionOptions}
+      skillOptions={data.skillOptions}
       commands={data.seam.commands}
       onSaved={data.reconcileCommand}
       streaming={data.activity[selectedId] ?? false}

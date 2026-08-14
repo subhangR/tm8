@@ -639,7 +639,14 @@ export function EntityView(props: EntityViewProps) {
       connections={data.connectionsOf(selectedId)}
       linkedPullRequests={data.linkedPullRequestsOf?.(selectedId) ?? []}
       linkedPullRequestsOf={data.linkedPullRequestsOf}
-      onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], body })}
+      /* `post` now carries what the composer can express: the body, the ids
+         the `@` picker committed, and the files it staged. Spread whole so a
+         field added to `DiscussionPostInput` cannot be silently dropped by
+         this adapter — which is exactly how `mentionIds` went unsent for as
+         long as it did. */
+      onPostMessage={(post) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], ...post })}
+      mentionOptions={data.mentionOptions}
+      skillOptions={data.skillOptions}
       /* GAP-2 (data-wiring handover): the save path — inline title + Save +
          conflict card, and now the doc editor behind the reader archetype —
          is live only where the host hands down the seam's commands.
@@ -852,11 +859,18 @@ export function EntityView(props: EntityViewProps) {
                 messages={messages ?? []}
                 provenanceHollowReason={reasons.provenanceHollow}
                 canPost={detail.capabilities.canEdit || detail.capabilities.canReact}
-                onPost={(body) => data.postMessage({
+                onPost={(post) => data.postMessage({
                   clientMutationId: `post:${selectedId}:${Date.now()}`,
                   anchorIds: [selectedId as EntityId],
-                  body,
+                  ...post,
                 })}
+                /* The aux column is the SAME composer as the panel's, so it
+                   gets the same subjects; the attach port is deliberately not
+                   forwarded here — this column is a bounded read of another
+                   entity's thread, and `attachments` is bound to the panel's
+                   own anchor above. Absent ⇒ the attach control says so. */
+                mentionOptions={data.mentionOptions}
+                skillOptions={data.skillOptions}
               />
             ) : detail && aux.tab === 'connections' ? (
               <ConnectionsTab

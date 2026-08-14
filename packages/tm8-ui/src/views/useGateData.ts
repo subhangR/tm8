@@ -41,6 +41,11 @@ import type {
 } from '@tm8/contract';
 import { CollabError, launchModel } from '@tm8/contract';
 import { subscribeToSession } from '../auth/session';
+import {
+  loadSkillTriggerOptions,
+  type SkillTriggerOption,
+  type TriggerOption,
+} from '../rich-input';
 import type { ConnectionState, LivenessSnapshot, Seam, SessionLiveness } from '../data/seam';
 import {
   browserWebSocketFactory,
@@ -350,6 +355,21 @@ export interface GateData {
   spaces: SpaceSummary[];
   /** Real membership of the active space, never inferred from result authors. */
   members: readonly ActorSummary[];
+  /**
+   * THE TWO TRIGGER SUBJECTS every rich input in this shell picks from.
+   *
+   * `mentionOptions` is the space's own membership projected into the picker's
+   * shape — no second read, because `members` is already the authoritative
+   * answer to "who can be mentioned here" and a mention id must be a member or
+   * a team member for the write to be accepted.
+   *
+   * `skillOptions` is its own read (`loadSkillTriggerOptions`), and it stays
+   * `[]` on failure rather than going absent: `[]` is a measured zero and lets
+   * the picker say "no matching skills", where `undefined` would claim the
+   * capability does not exist at all.
+   */
+  mentionOptions: readonly TriggerOption[];
+  skillOptions: readonly SkillTriggerOption[];
   /** The active identity's member actor in this space, when one is bound. */
   viewerActor: ActorSummary | null;
   menu: ResolvedMenu;
@@ -570,6 +590,7 @@ export function useGateData(options: GateOptions): GateData {
   const [ready, setReady] = useState(false);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const [members, setMembers] = useState<readonly ActorSummary[]>([]);
+  const [skillOptions, setSkillOptions] = useState<readonly SkillTriggerOption[]>([]);
   const [viewerActor, setViewerActor] = useState<ActorSummary | null>(null);
   const [spaceId, setSpaceId] = useState<SpaceId>('' as SpaceId);
   const [menu, setMenu] = useState<ResolvedMenu>(() => resolveMenu(null));
@@ -1893,6 +1914,49 @@ export function useGateData(options: GateOptions): GateData {
       .catch(() => undefined);
   }, [seam, spaceId]);
 
+  /**
+   * THE `/` SUBJECT, read once per space rather than once per composer.
+   *
+   * Its own effect and not part of `hydrate`: a skill list is an enhancement
+   * to every input box, never a boot gate, and folding it into the boot read
+   * set would let a node that cannot answer it hold the workspace at
+   * `ready === false`. Cleared to `[]` on the way in so a previous space's
+   * skills can never be offered under a new space's `/`.
+   */
+  useEffect(() => {
+    if (!spaceId) return;
+    let current = true;
+    setSkillOptions([]);
+    void loadSkillTriggerOptions({ port: seam, spaceId }).then(
+      (skills) => {
+        if (current) setSkillOptions(skills);
+      },
+      () => {
+        // `[]`, not absent: the capability exists and this read failed, so
+        // the picker says "no matching skills" instead of the sigil silently
+        // reverting to plain text.
+        if (current) setSkillOptions([]);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [seam, spaceId]);
+
+  /**
+   * Membership in the picker's shape. `isAgent` is the actor's own flag, so
+   * the meta line distinguishes a teammate from a person without this layer
+   * naming a kind.
+   */
+  const mentionOptions = useMemo<readonly TriggerOption[]>(
+    () => members.map((member) => ({
+      id: member.id,
+      display: member.displayName,
+      meta: member.isAgent ? 'agent' : 'member',
+    })),
+    [members],
+  );
+
   // without reaching for the seam themselves.
   const data = useMemo<GateData & { pull: (id: string) => void }>(
     () => ({
@@ -1900,6 +1964,8 @@ export function useGateData(options: GateOptions): GateData {
       spaceId,
       spaces,
       members,
+      mentionOptions,
+      skillOptions,
       viewerActor,
       menu,
       connection,
@@ -1933,7 +1999,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

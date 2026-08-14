@@ -32,6 +32,9 @@ export { NodeRoom, useNodeFacts, connectionRow, type NodeRoomProps, type Provide
 
 /* ── the attachment strip: files on ONE entity, inside its panel body ───── */
 export { AttachmentStrip, canThumbnail, type AttachmentStripProps } from './AttachmentStrip';
+/* The picker markup, shared by every surface that adopted the rich input —
+   see the component's header for why this lane owns it. */
+export { ChooseFilesControl } from './ChooseFilesControl';
 export { ProjectFolderPicker, type ProjectFolderPickerProps } from './ProjectFolderPicker';
 export {
   createFileUploadTask,

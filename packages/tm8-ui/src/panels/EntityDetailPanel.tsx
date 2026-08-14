@@ -38,7 +38,7 @@ import {
   StalePinBanner,
   TombstoneBody,
 } from './detail/PanelStates';
-import { ActivityTab, ConnectionsTab, DiscussionTab } from './detail/tabs';
+import { ActivityTab, ConnectionsTab, DiscussionTab, type DiscussionPostInput } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
 import { EntityControlStrip, type ControlHost, type ControlSubject } from './controls/EntityControls';
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
@@ -56,6 +56,7 @@ import { WorkSessionContent } from './bodies/WorkSessionContent';
 import { AttachmentStrip } from '../files/AttachmentStrip';
 import { attachedFiles } from '../files/model';
 import type { AttachmentsPort } from '../files/port';
+import type { TriggerOption } from '../rich-input';
 import { LinkedPullRequestChips, pullRequestFactsOf, type LinkedPullRequestFacts } from '../pull-requests';
 import { MergePullRequestFlow } from './pull-requests/MergePullRequestFlow';
 
@@ -226,7 +227,20 @@ export interface EntityDetailPanelProps {
    */
   onMarkMemory?: ((mark: MemoryMarkKind) => void) | null;
   /** The composer's dispatcher — absent ⇒ composer disabled-with-reason. */
-  onPostMessage?: (body: string) => Promise<void> | void;
+  onPostMessage?: (input: DiscussionPostInput) => Promise<void> | void;
+  /**
+   * THE TRIGGER SUBJECTS, for every rich input this panel mounts — the
+   * Discussion composer's `@` and `/`, and the doc editor's `/`.
+   *
+   * `undefined` means the capability is ABSENT and the sigil types as plain
+   * text; `[]` is a measured zero and keeps the picker able to say so. The
+   * panel holds no seam of its own, so a host that has one wires these and a
+   * host that does not gets an input which is honest about what it can do —
+   * which is the whole reason the Discussion placeholder could advertise an
+   * `@` that was never implemented.
+   */
+  mentionOptions?: readonly TriggerOption[];
+  skillOptions?: readonly TriggerOption[];
   /**
    * Resume this exited/failed work session. Absent ⇒ the exited card renders
    * its Resume button DISABLED with a reason, never hidden — a missing button
@@ -883,6 +897,14 @@ function PanelBody(
         canPost={detail.capabilities.canEdit || detail.capabilities.canReact}
         onPost={props.onPostMessage}
         onOpenEntity={onOpenEntity}
+        /* The anchor is bound HERE, exactly as it is for the reader's doc
+           editor below: a file attached to a reply is an attachment of the
+           entity being discussed, and `detail/` never learns which id that
+           is. `startUpload` was already in scope at this call and was simply
+           never forwarded — the reason paste and drop did nothing here. */
+        attach={startUpload ? (file: File) => startUpload(file, detail.id) : undefined}
+        mentionOptions={props.mentionOptions}
+        skillOptions={props.skillOptions}
       />
     );
   }
@@ -1025,6 +1047,10 @@ function PanelBody(
           startUpload ? (file: File) => startUpload(file, detail.id) : undefined
         }
         onAttached={props.onAttachmentUploaded}
+        /* `DocEditor`/`DocSplitView` have threaded `skillOptions` since the
+           lift; this is the panel host finally supplying the data. Absent ⇒
+           `/` types plain text in the source, which is what it did before. */
+        skillOptions={props.skillOptions}
       />
     );
   }
