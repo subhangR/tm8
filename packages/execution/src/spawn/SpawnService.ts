@@ -25,6 +25,7 @@ import {
   composeManifest,
   resolveAgentBinary,
   resolveCommandNetworkPolicy,
+  resolveCoordinatorSessionId,
   resolveLaunchConfig,
   resolveSessionTitle,
   resolveWorkdir,
@@ -681,6 +682,10 @@ export class SpawnService {
 
     const inherited = await this.inheritedPosture(auth, request);
     const launch = resolveLaunchConfig(request, context, this.env, inherited);
+    // Fail before creating a work_session row when a coordinated mode has no
+    // concrete parent to receive its result. composeManifest repeats this
+    // guard so direct callers cannot manufacture an unroutable prompt.
+    resolveCoordinatorSessionId(launch.mode, request.parentSessionId);
     const commandNetwork = resolveCommandNetworkPolicy(launch, this.env);
     if (inherited) {
       this.logger?.info('SpawnService: child inherits its parent session posture', {
@@ -1250,6 +1255,7 @@ export class SpawnService {
     const syntheticRequest: SpawnRequest = {
       spaceId: info.spaceId,
       teamMemberId: info.teamMemberId,
+      parentSessionId: info.parentSessionId,
       projectId: info.projectId,
       taskIds: info.taskIds,
       mode: info.mode,

@@ -59,6 +59,10 @@ function id(value: string | null | undefined): string {
  * someone forgot into a refused launch instead of a half-briefed agent.
  */
 export function composeKernel(facts: KernelFacts): string {
+  const coordinatorSession = id(facts.coordinatorSessionId);
+  const completionReturnPath = coordinatorSession === KERNEL_NONE
+    ? 'send the required completion reply to the assignment anchor'
+    : `send the required completion reply to coordinator work-session ${coordinatorSession}, never the assignment or task anchor`;
   const text = `You are a tm8 ${id(facts.mode)} operating as ${id(facts.displayName)}.
 
 Launch facts:
@@ -70,7 +74,7 @@ Launch facts:
 - workdirMode=${id(facts.workdirMode)}
 - launchProject=${id(facts.launchProjectId)}
 - primaryTask=${id(facts.primaryTaskId)}
-- coordinatorSession=${id(facts.coordinatorSessionId)}
+- coordinatorSession=${coordinatorSession}
 - interactionProfile=${id(facts.interactionProfileId)}@${id(String(facts.interactionProfileVersion))}
 - interactionProfileHash=${id(facts.resolvedProfileHash)}
 
@@ -88,7 +92,7 @@ Communicate durably with graph messages. Reply on the received anchor. A live de
 
 Reuse a mutation ID only when retrying the same logical intent after an uncertain or retryable outcome. After a version conflict, refresh and create a new mutation ID for the revised intent.
 
-Completion requires: verify the requested result, record required task state through its owning command, send the required completion reply to the assignment anchor, and report blockers honestly. Provider prose or process exit alone does not complete a task.
+Completion requires: verify the requested result, record required task state through its owning command, ${completionReturnPath}, and report blockers honestly. Provider prose or process exit alone does not complete a task.
 
 Bootstrap manifest: ${id(facts.manifestPath)}
 `;

@@ -83,12 +83,18 @@ function profileLine(f: BootstrapControlFacts): string {
 }
 
 export function workerBootstrapControl(f: BootstrapControlFacts): string {
+  const coordinatorSessionId = f.coordinatorSessionId?.trim() || null;
   return [
     '<trusted_control type="tm8.worker-bootstrap" version="1">',
     identityLine(f),
     workspaceLine(f),
     profileLine(f),
     `  <assignment primary_task_id="${attr(f.taskId)}" coordinator_session_id="${attr(f.coordinatorSessionId)}" />`,
+    ...(coordinatorSessionId
+      ? [
+          `  <reply_address session_id="${attr(coordinatorSessionId)}">Report completion or blockage with \`tm8 message send --to ${attr(coordinatorSessionId)}\`. Never send that report to the assignment or task anchor.</reply_address>`,
+        ]
+      : []),
     `  <discovery root="${DISCOVERY_PROMPT_FORM.root}" actions="${DISCOVERY_PROMPT_FORM.actions}" context="${DISCOVERY_PROMPT_FORM.context}" />`,
     '  <rule>Fetch the bounded assignment snapshot before acting. Current server permissions and entity versions govern every mutation.</rule>',
     '  <git>If you create a pull request or a meaningful commit for your task, link it immediately: `tm8 task link-pr TASK_ID PR_URL` / `tm8 task link-commit TASK_ID COMMIT_URL`. An unlinked PR is invisible to tm8 — no chips, no CI nudges, and a pr_merged gate can never pass against it. After linking, tracking is automatic.</git>',
@@ -241,6 +247,11 @@ export interface TaskAssignmentFacts {
   senderAttribution?: 'verified' | 'recorded_only';
   sourceSessionId?: string | null;
   destinationSessionId: string;
+  /**
+   * Where completion/blockage must be reported. Standalone work omits this and
+   * replies on the task; coordinated work supplies the parent work-session id.
+   */
+  replyAnchorId?: string | null;
   /** Title and body, already excerpted by the caller if it was long. */
   body: string;
   truncated?: boolean;
@@ -256,6 +267,7 @@ export interface TaskAssignmentFacts {
 }
 
 export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
+  const replyAnchorId = f.replyAnchorId ?? f.taskId;
   const control = [
     `<trusted_control type="tm8.session-input" version="1" kind="task_assignment" message_id="${attr(f.messageId)}" message_batch_id="none" delivery_attempt_id="none">`,
     `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution ?? 'recorded_only'}" />`,
@@ -264,7 +276,7 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
     '  <context />',
     `  <thread parent_message_id="none" root_message_id="${attr(f.threadRootMessageId)}" />`,
     `  <task id="${attr(f.taskId)}" version="${attr(f.taskVersion)}" />`,
-    `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/send" anchor_id="${attr(f.taskId)}" parent_message_id="none" />`,
+    `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/send" anchor_id="${attr(replyAnchorId)}" parent_message_id="none" />`,
     '  <delivery transport="spawn_initial_turn" stored="true" attempt="1" status_source="work_session" />',
     '</trusted_control>',
   ].join('\n');
