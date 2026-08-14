@@ -79,6 +79,9 @@ describe('§14.1 worker bootstrap', () => {
     expect(xml).toContain(
       '<assignment primary_task_id="tsk_1" coordinator_session_id="ses_coord" />',
     );
+    expect(xml).toContain('<reply_address session_id="ses_coord">');
+    expect(xml).toContain('tm8 message send --to ses_coord');
+    expect(xml).toMatch(/Never send that report to the assignment or task anchor/);
     expect(xml).toContain('</trusted_control>');
     expect(xml).toMatch(/Fetch the bounded assignment snapshot before acting/);
   });
@@ -104,6 +107,31 @@ describe('§14.1 worker bootstrap', () => {
     });
     expect(xml).toContain('launch_project_id="none"');
     expect(xml).toContain('coordinator_session_id="none"');
+    expect(xml).not.toContain('<reply_address');
+  });
+});
+
+describe('§14.3 task assignment reply route', () => {
+  const facts = {
+    messageId: 'msg_1',
+    taskId: 'tsk_1',
+    taskVersion: 4,
+    senderActorId: 'ent_a',
+    senderActorKind: 'member',
+    senderAttribution: 'verified' as const,
+    sourceSessionId: 'ses_coord',
+    destinationSessionId: 'ses_worker',
+    body: 'do the work',
+  };
+
+  it('uses the assignment task for a standalone worker', () => {
+    expect(taskAssignmentInjection(facts)).toMatch(/<reply [^>]*anchor_id="tsk_1"/);
+  });
+
+  it('uses the caller-selected coordinator session for a coordinated worker', () => {
+    const xml = taskAssignmentInjection({ ...facts, replyAnchorId: 'ses_coord' });
+    expect(xml).toMatch(/<reply [^>]*anchor_id="ses_coord"/);
+    expect(xml).not.toMatch(/<reply [^>]*anchor_id="tsk_1"/);
   });
 });
 

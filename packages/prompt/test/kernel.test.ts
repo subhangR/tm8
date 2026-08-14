@@ -131,6 +131,17 @@ describe('composeKernel', () => {
     expect(kernel).toMatch(/process exit alone does not complete a task/i);
   });
 
+  it('routes coordinated completion to the concrete parent session', () => {
+    const coordinated = composeKernel(FACTS);
+    expect(coordinated).toContain(
+      'send the required completion reply to coordinator work-session ses_coord',
+    );
+    expect(coordinated).toMatch(/never the assignment or task anchor/);
+
+    const standalone = composeKernel({ ...FACTS, coordinatorSessionId: null });
+    expect(standalone).toContain('send the required completion reply to the assignment anchor');
+  });
+
   it('sanitizes a server-owned value that tries to forge a kernel line', () => {
     // The values are server-computed, but the kernel is line-oriented plain
     // text: a display name containing a newline plus "- cwd=/" would forge a

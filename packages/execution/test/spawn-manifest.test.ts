@@ -13,6 +13,7 @@ import {
   composeEnv,
   composeManifest,
   resolveCommandNetworkPolicy,
+  resolveCoordinatorSessionId,
   resolveLaunchConfig,
   resolveWorkdir,
   withAgentPrompt,
@@ -740,6 +741,16 @@ describe('composeEnv', () => {
 });
 
 describe('composeManifest', () => {
+  it('requires and preserves the parent return route for coordinated modes', () => {
+    expect(resolveCoordinatorSessionId('coordinated-worker', ' coord-session-1 ')).toBe(
+      'coord-session-1',
+    );
+    expect(resolveCoordinatorSessionId('worker', 'coord-session-1')).toBeNull();
+    expect(() => resolveCoordinatorSessionId('coordinated-worker', null)).toThrow(
+      /requires parentSessionId/,
+    );
+  });
+
   it('persists the effective Codex command-network policy separately from posture', () => {
     const codexLaunch = {
       mode: 'worker' as const,
@@ -773,7 +784,11 @@ describe('composeManifest', () => {
   it('carries the persona, the resolved posture and the server-computed cwd', () => {
     const manifest = composeManifest({
       sessionId: 'sess-2',
-      request: { ...base, promptExtra: '  focus on the seam  ' },
+      request: {
+        ...base,
+        parentSessionId: 'coord-session-1',
+        promptExtra: '  focus on the seam  ',
+      },
       context: context(),
       launch: {
         mode: 'coordinated-worker',
@@ -789,6 +804,7 @@ describe('composeManifest', () => {
 
     expect(manifest.manifestVersion).toBe('1');
     expect(manifest.mode).toBe('coordinated-worker');
+    expect(manifest.coordinator).toEqual({ sessionId: 'coord-session-1' });
     expect(manifest.launch.permissionMode).toBe('bypassPermissions');
     expect(manifest.launch.commandNetwork).toEqual({
       mode: 'provider-default',

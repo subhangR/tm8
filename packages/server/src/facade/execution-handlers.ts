@@ -693,6 +693,7 @@ export class DbGraphPort implements GraphPort {
       const rows = await q.query<{
         entity_id: string;
         space_id: string;
+        parent_id: string | null;
         project_id: string | null;
         workdir_mode: string;
         workdir_path: string | null;
@@ -704,7 +705,7 @@ export class DbGraphPort implements GraphPort {
         native_session_id: string | null;
         agent_config_dir: string | null;
       }>(
-        `select ws.entity_id, e.space_id, ws.project_id, ws.workdir_mode,
+        `select ws.entity_id, e.space_id, e.parent_id, ws.project_id, ws.workdir_mode,
                 ws.workdir_path, ws.mode, ws.model, ws.agent_tool, ws.title,
                 ws.status, ws.native_session_id, ws.agent_config_dir
            from public.work_sessions ws
@@ -729,6 +730,7 @@ export class DbGraphPort implements GraphPort {
       return {
         sessionId: row.entity_id,
         spaceId: row.space_id,
+        parentSessionId: row.parent_id,
         teamMemberId: members[0]?.dst_id ?? null,
         projectId: row.project_id,
         taskIds: tasks.map((t) => t.dst_id),

@@ -67,9 +67,13 @@ describe('composePrompt', () => {
   });
 
   it('surfaces the coordinator return path when one spawned this session', () => {
-    const { system } = composePrompt(readManifest(FIXTURE), { sessionId: 'ws_1' });
+    const { system, task } = composePrompt(readManifest(FIXTURE), { sessionId: 'ws_1' });
     expect(system).toContain('<coordinator_session_id>ws_01HZORION</coordinator_session_id>');
+    expect(system).toContain('tm8 message send --to &lt;coordinator-session-id&gt;');
+    expect(system).toMatch(/never the assignment or task anchor/i);
     expect(system).toContain('do not simply go idle');
+    expect(task).toMatch(/<reply [^>]*anchor_id="ws_01HZORION"/);
+    expect(task).not.toMatch(/<reply [^>]*anchor_id="ent_01HZTASKONE"/);
   });
 
   it('escapes markup in authored text so a persona cannot break the prompt frame', () => {

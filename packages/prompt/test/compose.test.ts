@@ -36,7 +36,12 @@ describe('four-mode identity', () => {
 
   it('renders the mode on the envelope and a stable profile name', () => {
     for (const mode of AGENT_MODES) {
-      const { system, metadata } = composePrompt({ ...manifest, mode });
+      const coordinated = mode === 'coordinated-worker' || mode === 'coordinated-coordinator';
+      const { system, metadata } = composePrompt({
+        ...manifest,
+        mode,
+        coordinator: coordinated ? { sessionId: 'coord-1' } : null,
+      });
       expect(metadata.mode).toBe(mode);
       expect(system).toContain(`mode="${mode}"`);
       expect(system).toContain(`<profile>tm8-${mode}</profile>`);
@@ -45,7 +50,10 @@ describe('four-mode identity', () => {
 
   it('tells a COORDINATED worker its report is awaited, and a standalone worker nothing of the kind', () => {
     expect(instructionFor('coordinated-worker')).toMatch(/coordinator/i);
-    expect(instructionFor('coordinated-worker')).toMatch(/do not|don't/i);
+    expect(instructionFor('coordinated-worker')).toContain(
+      'tm8 message send --to <coordinator-session-id>',
+    );
+    expect(instructionFor('coordinated-worker')).toMatch(/never the assignment or task anchor/i);
     expect(instructionFor('worker')).not.toMatch(/coordinator/i);
   });
 
@@ -114,6 +122,31 @@ describe('four-mode identity', () => {
 });
 
 describe('composePrompt', () => {
+  it('routes a coordinated worker completion to its parent session, not its task', () => {
+    const { system, task } = composePrompt({
+      ...manifest,
+      mode: 'coordinated-worker',
+      coordinator: { sessionId: 'coord-1' },
+    });
+
+    expect(system).toContain('<coordinator_session_id>coord-1</coordinator_session_id>');
+    expect(system).toContain('tm8 message send --to &lt;coordinator-session-id&gt;');
+    expect(system).toMatch(/never the assignment or task anchor/i);
+    expect(task).toMatch(/<reply [^>]*anchor_id="coord-1"/);
+    expect(task).not.toMatch(/<reply [^>]*anchor_id="task-1"/);
+  });
+
+  it('keeps the task as the reply anchor for a standalone worker', () => {
+    const { task } = composePrompt(manifest);
+    expect(task).toMatch(/<reply [^>]*anchor_id="task-1"/);
+  });
+
+  it('refuses a coordinated prompt without a parent coordinator session', () => {
+    expect(() => composePrompt({ ...manifest, mode: 'coordinated-worker' })).toThrow(
+      /requires a coordinator session id/,
+    );
+  });
+
   it('renders acceptance criteria — the agent definition of done', () => {
     // These are composed into the manifest from the graph and used to be
     // dropped by the CLI reader, so an agent could not tell when it was done.

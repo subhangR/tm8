@@ -387,6 +387,8 @@ export interface RecordCommandInput {
 export interface WorkSessionResumeInfo {
   sessionId: string;
   spaceId: string;
+  /** Parent work session persisted on the entity hierarchy; the coordinator return path. */
+  parentSessionId: string | null;
   /** From the `relates_to` edge; null if the edge is somehow gone. */
   teamMemberId: string | null;
   projectId: string | null;
@@ -741,8 +743,8 @@ export interface Tm8Manifest {
    *  omitted so the CLI's shape stays stable. */
   skills: Array<{ name: string; body: string }>;
 
-  /** Coordinator re-rooting (R27) is post-G1A; always null in this wave. */
-  coordinator: { sessionId: string; displayName: string } | null;
+  /** Present for coordinated modes — the concrete work-session return path. */
+  coordinator: { sessionId: string; displayName?: string } | null;
 
   /** Coordinator directive delivery is post-G1A; always null in this wave. */
   directive: { subject: string; message: string; fromSessionId: string } | null;

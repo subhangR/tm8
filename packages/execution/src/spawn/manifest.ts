@@ -12,7 +12,7 @@
 // request, so the chain collapses to three links and runs in-process.
 //
 // Deliberately NOT ported (parked with Orion, R20/R27/R29): worktree creation,
-// coordinator/sub-team re-rooting, spell injection, multi-member model-power
+// sub-team re-rooting, spell injection, multi-member model-power
 // ranking. Power ranking in particular belongs in model-profile DATA, not in a
 // branch table that drifts every time a model ships.
 
@@ -63,6 +63,29 @@ export const DEFAULT_AGENT_TOOL = 'claude-code';
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'auto';
 /** The magic `TM8_AGENT_CMD` value that selects the built-in smoke agent. */
 export const ECHO_AGENT_CMD = 'echo-agent';
+
+/**
+ * A coordinated launch is only coherent when it names the work session that
+ * will receive the result. The parent id has already passed the server's
+ * same-space/session validation by the time the manifest is composed; carrying
+ * it here turns that persisted hierarchy into the prompt's concrete return
+ * address. Non-coordinated child sessions deliberately get no coordinator.
+ */
+export function resolveCoordinatorSessionId(
+  mode: AgentMode,
+  parentSessionId: string | null | undefined,
+): string | null {
+  if (mode !== 'coordinated-worker' && mode !== 'coordinated-coordinator') return null;
+  const coordinatorSessionId = parentSessionId?.trim() || null;
+  if (!coordinatorSessionId) {
+    throw new SpawnError(
+      `mode '${mode}' requires parentSessionId so the worker can report to its coordinator`,
+      'invalid_input',
+      { mode, reason: 'coordinator_session_required' },
+    );
+  }
+  return coordinatorSessionId;
+}
 
 /** Exact hosts tm8 grants to sandboxed Codex commands. */
 export const CODEX_LOOPBACK_HOSTS = ['127.0.0.1', 'localhost'] as const;
@@ -1187,6 +1210,7 @@ export interface ComposeManifestInput {
  */
 export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   const { sessionId, request, context, launch, workdir, command, baseUrl } = input;
+  const coordinatorSessionId = resolveCoordinatorSessionId(launch.mode, request.parentSessionId);
   const interactionProfile = input.interactionProfile ?? {
     profileId: null,
     profileVersion: null,
@@ -1251,10 +1275,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     // context predating this (the test fake, an older caller) is "no skills",
     // not an error. This is the value change the shape was held stable for.
     skills: context.skills ?? [],
-    // Composed as null in G1A rather than omitted: the CLI reader is tolerant,
-    // but a stable shape means adding them later is a value change, not a
-    // schema change.
-    coordinator: null,
+    coordinator: coordinatorSessionId ? { sessionId: coordinatorSessionId } : null,
     directive: null,
     promptExtra: request.promptExtra?.trim() || null,
   });
