@@ -23,6 +23,7 @@ import {
   reconcileChatMutationEvent,
 } from './chat-mutations';
 import { createChatAttachmentUploadTask } from './chat-attachments';
+import { loadSkillTriggerOptions, type SkillTriggerOption } from '../rich-input';
 import { discoverComposerActions } from './composer-actions';
 import type { ComposerMentionOption } from './Composer';
 
@@ -76,6 +77,7 @@ export function SessionChatSurface({
 }: SessionChatSurfaceProps) {
   const actions = useMemo(() => discoverComposerActions(composerPolicy), [composerPolicy]);
   const [mentionOptions, setMentionOptions] = useState<ComposerMentionOption[] | undefined>(undefined);
+  const [skillOptions, setSkillOptions] = useState<SkillTriggerOption[] | undefined>(undefined);
   const key = useMemo(() => ({
     viewerMemberId,
     sessionId,
@@ -178,6 +180,28 @@ export function SessionChatSurface({
     };
   }, [actions.canMention, seam, spaceId]);
 
+  /* Same capability law as mentions: no query seam ⇒ `/` types plain text.
+     R1 needs no per-action gate beyond posting itself — the committed skill
+     is body text, not a dispatch. */
+  useEffect(() => {
+    if (!seam.query) {
+      setSkillOptions(undefined);
+      return;
+    }
+    let current = true;
+    void loadSkillTriggerOptions({ port: { query: seam.query.bind(seam) }, spaceId }).then(
+      (skills) => {
+        if (current) setSkillOptions(skills);
+      },
+      () => {
+        if (current) setSkillOptions(undefined);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [seam, spaceId]);
+
   const startAttachmentUpload = useMemo(() => {
     if (!actions.canAttach || !seam.files) return undefined;
     return (file: File) => createChatAttachmentUploadTask({
@@ -232,6 +256,7 @@ export function SessionChatSurface({
       } : null}
       onStartAttachmentUpload={startAttachmentUpload}
       mentionOptions={mentionOptions}
+      skillOptions={skillOptions}
     />
   );
 }

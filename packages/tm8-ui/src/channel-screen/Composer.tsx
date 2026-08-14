@@ -3,14 +3,10 @@ import type { EntityId, MessageView } from '@tm8/contract';
 import type { ConnectionState } from '../data/seam';
 import { Avatar } from '../kit';
 import { DisabledAction, DisabledIconControl } from '../panels/honesty/DisabledWithReason';
-import { extractImageFiles } from '../terminal/clipboardImages';
+import { skillReference, useRichInput, type TriggerOption } from '../rich-input';
 import type { ChannelPostInput } from './feed-model';
 import type { ComposerMentionOption } from './channel-tags';
-import {
-  safeUploadReason,
-  type ChatAttachmentUploadTask,
-  type UploadedChatAttachment,
-} from './chat-attachments';
+import type { ChatAttachmentUploadTask } from './chat-attachments';
 
 export type { ComposerMentionOption } from './channel-tags';
 
@@ -21,6 +17,15 @@ export type { ComposerMentionOption } from './channel-tags';
  * sends · Shift+Enter newline" and "draft keyed member+session · survives
  * switches & reconnects". A build that wires only the button has DRAWN a
  * promise it does not keep, so the keyboard path is tested beside the click.
+ *
+ * SINCE THE RICH-INPUT LIFT: the trigger grammar (`@` mentions, `/` skills),
+ * the popover keyboard contract, paste extraction and the staged-upload
+ * machine live in `rich-input/useRichInput` — this file keeps what is
+ * genuinely the CHAT's: the send layers, reply/thread restrictions, the
+ * workspace-attach picker (a searchable listbox, not a sigil trigger), and
+ * its own `chs-*` markup over the hook's state. Behaviour is unchanged;
+ * paste now takes the agent-readable set (R2) rather than images only, and
+ * `/` references a skill (R1 — a reference, never an invocation).
  *
  * THE ONE THING THIS COMPONENT WILL NOT DO: pretend. Every refusal below names
  * which fact is missing, because the three ways Send can be unavailable are
@@ -80,17 +85,18 @@ export interface ComposerProps {
    * measured zero and keeps the control visible so it can say so.
    */
   attachEntityOptions?: readonly ComposerMentionOption[];
+  /**
+   * Skills the `/` trigger can reference (R1: a committed skill is a
+   * `tm8://skill/<id>` link in the body — the agent reads it and chooses).
+   * `undefined` means the host has no skill seam; `/` then types plain text.
+   */
+  skillOptions?: readonly TriggerOption[];
 }
 
 const NO_UPLOAD_SEAM = {
   cause: 'Attachments aren’t available for this Interaction Profile',
   remedy: 'the pinned composer policy must bind messages.post and the complete canonical file upload lifecycle',
 };
-
-type StagedAttachment =
-  | { id: number; phase: 'uploading'; file: File }
-  | { id: number; phase: 'uploaded'; file: File; uploaded: UploadedChatAttachment }
-  | { id: number; phase: 'failed'; file: File; reason: string };
 
 export function Composer({
   anchorId,
@@ -107,6 +113,7 @@ export function Composer({
   onStartAttachmentUpload,
   mentionOptions,
   attachEntityOptions,
+  skillOptions,
 }: ComposerProps) {
   const [localText, setLocalText] = useState('');
   const text = draft ?? localText;
@@ -116,60 +123,71 @@ export function Composer({
   };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [attachments, setAttachments] = useState<StagedAttachment[]>([]);
   const [attachedEntities, setAttachedEntities] = useState<ComposerMentionOption[]>([]);
   const [attachOpen, setAttachOpen] = useState(false);
   const [attachSearch, setAttachSearch] = useState('');
   const [attachActive, setAttachActive] = useState(0);
   const attachListbox = useRef<HTMLDivElement>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMentionOption[]>([]);
-  const [mentionOpen, setMentionOpen] = useState(false);
-  const [mentionSearch, setMentionSearch] = useState('');
-  const [mentionRange, setMentionRange] = useState<{ start: number; end: number } | null>(null);
-  const [mentionActive, setMentionActive] = useState(0);
-  const mentionListbox = useRef<HTMLDivElement>(null);
-  const attachmentSeq = useRef(0);
-  const uploadTasks = useRef(new Map<number, ChatAttachmentUploadTask>());
   const fileInput = useRef<HTMLInputElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
 
   const disconnected = connection?.phase === 'offline' || connection?.phase === 'polling';
-  /**
-   * PREFIX, not substring. What the user typed after `@` is the start of a
-   * name they are reaching for — matching mid-word (or against `meta`/`group`
-   * blurb text, as this once did) makes the list churn with rows whose visible
-   * label does not begin with what was typed, which reads as "the filter is
-   * broken". Each whitespace-separated word is a valid starting point so a
-   * surname or the second word of a session title still reaches its row.
-   */
   const composingReply = Boolean(replyTo || threadRoot);
-  const mentionQuery = mentionSearch.trim().toLowerCase();
-  const availableMentionOptions = (mentionOptions ?? [])
-    .filter((option) => !composingReply || !option.route)
-    .filter((option) => {
-      if (!mentionQuery) return true;
-      const display = option.display.toLowerCase();
-      return display.startsWith(mentionQuery)
-        || display.split(/\s+/).some((word) => word.startsWith(mentionQuery));
-    });
-
-  /**
-   * Clamped on read rather than stored clamped: the option list shrinks as the
-   * user types, and a stored index would point past the end for the render
-   * between the keystroke and any correcting effect.
-   */
-  const mentionActiveIndex = availableMentionOptions.length
-    ? Math.min(mentionActive, availableMentionOptions.length - 1)
-    : 0;
-  const activeMentionOption = availableMentionOptions[mentionActiveIndex];
   const replyAuthor = replyTo ? (replyTo.state.author ?? replyTo.createdBy) : null;
 
-  const closeMentionPicker = (): void => {
-    setMentionOpen(false);
-    setMentionSearch('');
-    setMentionRange(null);
-    setMentionActive(0);
-  };
+  /**
+   * The hook owns the trigger grammar and the staged-upload machine; this
+   * component declares what each capability MEANS here. Mentions available in
+   * a reply exclude routed targets (a reply cannot re-route a session), which
+   * is why the option list is filtered before it reaches the trigger.
+   */
+  const availableMentionOptions = mentionOptions === undefined
+    ? undefined
+    : mentionOptions.filter((option) => !composingReply || !option.route);
+
+  const rich = useRichInput({
+    value: text,
+    onChange: setText,
+    areaRef: textarea,
+    triggers: [
+      {
+        sigil: '@',
+        options: availableMentionOptions,
+        onSelect: (option) => {
+          const mention = option as ComposerMentionOption;
+          setSelectedMentions((current) => current.some((item) => item.id === mention.id)
+            ? current
+            : [...current, mention]);
+          return { insert: `@${mention.display} ` };
+        },
+      },
+      {
+        sigil: '/',
+        options: skillOptions,
+        onSelect: (option) => ({ insert: skillReference(option.display, option.id) }),
+      },
+    ],
+    attachments: {
+      start: onStartAttachmentUpload,
+      placement: { mode: 'chip' },
+    },
+    onKeyDown: (e) => {
+      if (e.key === 'Escape') {
+        if (replyTo) onCancelReply();
+        return;
+      }
+      // Shift+Enter is the newline and must fall through to the textarea
+      // untouched; anything else here would swallow a keystroke the
+      // footer copy promises works.
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        void submit();
+      }
+    },
+  });
+  const attachments = rich.attachments!;
+  const popover = rich.popover;
 
   /**
    * The workspace-attach picker. Same PREFIX filter as the `@` list, same
@@ -215,47 +233,6 @@ export function Composer({
     textarea.current?.focus();
   };
 
-  /**
-   * The toolbar `@` and typing `@` must land in the SAME state, or the picker
-   * has two behaviours and only one of them filters. So the button types the
-   * character on the user's behalf and hands focus straight back to the
-   * textarea; from there every keystroke is the ordinary typed-trigger path.
-   */
-  const openMentionPickerAtCaret = (): void => {
-    const field = textarea.current;
-    const caret = field?.selectionStart ?? text.length;
-    const prefix = text.slice(0, caret);
-    const separator = prefix.length > 0 && !/\s$/.test(prefix) ? ' ' : '';
-    const insertion = `${separator}@`;
-    const at = caret + insertion.length;
-
-    setText(`${prefix}${insertion}${text.slice(caret)}`);
-    setMentionRange({ start: at - 1, end: at });
-    setMentionSearch('');
-    setMentionActive(0);
-    setMentionOpen(true);
-    window.setTimeout(() => {
-      field?.focus();
-      field?.setSelectionRange(at, at);
-    }, 0);
-  };
-
-  const selectMention = (option: ComposerMentionOption): void => {
-    setSelectedMentions((current) => current.some((item) => item.id === option.id)
-      ? current
-      : [...current, option]);
-
-    if (mentionRange) {
-      const before = text.slice(0, mentionRange.start);
-      const after = text.slice(mentionRange.end).replace(/^\s+/, '');
-      setText(`${before}@${option.display} ${after}`);
-    } else if (!text.includes(`@${option.display}`)) {
-      setText(`${text.trimEnd()}${text.trimEnd() ? ' ' : ''}@${option.display} `);
-    }
-    closeMentionPicker();
-    textarea.current?.focus();
-  };
-
   useEffect(() => {
     if (!uncertainSubmission) setError(null);
   }, [uncertainSubmission]);
@@ -266,53 +243,17 @@ export function Composer({
    * keyboard tests honest instead of stubbing the DOM.
    */
   useEffect(() => {
-    if (!mentionOpen) return;
-    const active = mentionListbox.current?.querySelector('[data-active="true"]');
-    (active as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest' });
-  }, [mentionOpen, mentionActiveIndex]);
-
-  useEffect(() => {
     if (!attachOpen) return;
     const active = attachListbox.current?.querySelector('[data-active="true"]');
     (active as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest' });
   }, [attachOpen, attachActiveIndex]);
 
-  useEffect(() => () => {
-    for (const task of uploadTasks.current.values()) task.cancel();
-    uploadTasks.current.clear();
-  }, []);
-
-  const startUpload = (file: File, reuseId?: number): void => {
-    if (!onStartAttachmentUpload) return;
-    const id = reuseId ?? ++attachmentSeq.current;
-    const task = onStartAttachmentUpload(file);
-    uploadTasks.current.set(id, task);
-    setAttachments((current) => {
-      const next: StagedAttachment = { id, phase: 'uploading', file };
-      return reuseId === undefined
-        ? [...current, next]
-        : current.map((item) => item.id === id ? next : item);
-    });
-    void task.result.then((uploaded) => {
-      if (uploadTasks.current.get(id) !== task) return;
-      setAttachments((current) => current.map((item) =>
-        item.id === id ? { id, phase: 'uploaded', file, uploaded } : item));
-    }).catch((reason: unknown) => {
-      if (uploadTasks.current.get(id) !== task) return;
-      setAttachments((current) => current.map((item) =>
-        item.id === id ? { id, phase: 'failed', file, reason: safeUploadReason(reason) } : item));
-    });
-  };
-
-  const removeAttachment = (id: number): void => {
-    uploadTasks.current.get(id)?.cancel();
-    uploadTasks.current.delete(id);
-    setAttachments((current) => current.filter((item) => item.id !== id));
-  };
-
-  const addFiles = (files: FileList | readonly File[]): void => {
-    for (const file of Array.from(files)) startUpload(file);
-  };
+  const mentionListbox = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!popover) return;
+    const active = mentionListbox.current?.querySelector('[data-active="true"]');
+    (active as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest' });
+  }, [popover, popover?.activeIndex]);
 
   const submit = async (): Promise<void> => {
     const body = text.trim();
@@ -320,8 +261,7 @@ export function Composer({
     setBusy(true);
     setError(null);
     try {
-      const attachmentIds = attachments.flatMap((item) =>
-        item.phase === 'uploaded' ? [item.uploaded.fileEntityId] : []);
+      const attachmentIds = attachments.uploadedIds() as EntityId[];
       const mentionIds = selectedMentions.flatMap((mention) =>
         mention.kind === 'member' || mention.kind === 'team_member' ? [mention.id] : []);
       const tagTargetIds = selectedMentions.flatMap((mention) => mention.route ? [mention.id] : []);
@@ -348,8 +288,7 @@ export function Composer({
       // Cleared ONLY on success. The reply target clears with it: the next
       // message is a new thought unless the user says otherwise.
       setText('');
-      uploadTasks.current.clear();
-      setAttachments([]);
+      attachments.clear();
       setAttachedEntities([]);
       setSelectedMentions([]);
       onCancelReply();
@@ -377,6 +316,13 @@ export function Composer({
       {error ? (
         <p className="chs-composer__error" role="alert">
           {error}
+        </p>
+      ) : null}
+
+      {attachments.refusal ? (
+        <p className="chs-composer__error" role="alert" data-testid="chs-paste-refusal">
+          {attachments.refusal}
+          <button type="button" onClick={attachments.clearRefusal} aria-label="Dismiss">✕</button>
         </p>
       ) : null}
 
@@ -420,9 +366,9 @@ export function Composer({
         </div>
       ) : null}
 
-      {attachments.length ? (
+      {attachments.staged.length ? (
         <ul className="chs-upload-list" aria-label="Attachments" aria-live="polite">
-          {attachments.map((item) => (
+          {attachments.staged.map((item) => (
             <li key={item.id} className="chs-upload" data-phase={item.phase}>
               <span className="chs-upload__name">{item.file.name}</span>
               {item.phase === 'uploading' ? <span role="status">uploading…</span> : null}
@@ -431,11 +377,11 @@ export function Composer({
                 <span role="alert" className="chs-upload__error">{item.reason}</span>
               ) : null}
               {item.phase === 'failed' ? (
-                <button type="button" onClick={() => startUpload(item.file, item.id)} aria-label={`Try ${item.file.name} again`}>
+                <button type="button" onClick={() => attachments.retry(item.id)} aria-label={`Try ${item.file.name} again`}>
                   Try again
                 </button>
               ) : null}
-              <button type="button" onClick={() => removeAttachment(item.id)} aria-label={`Remove ${item.file.name}`}>
+              <button type="button" onClick={() => attachments.remove(item.id)} aria-label={`Remove ${item.file.name}`}>
                 {item.phase === 'uploading' ? 'Cancel' : 'Remove'}
               </button>
             </li>
@@ -546,44 +492,55 @@ export function Composer({
         </div>
       ) : null}
 
-      {mentionOpen && mentionOptions ? (
-        <div className="chs-mention-picker" data-testid="chs-mention-picker">
-          {mentionQuery ? (
+      {popover ? (
+        <div
+          className="chs-mention-picker"
+          data-testid={popover.sigil === '/' ? 'chs-skill-picker' : 'chs-mention-picker'}
+        >
+          {popover.query ? (
             <p className="chs-mention-picker__query">
-              {`Matching “${mentionQuery}”`}
+              {`Matching “${popover.query.toLowerCase()}”`}
             </p>
           ) : null}
           <div
-            id="chs-mention-options"
+            id={popover.listboxId}
             ref={mentionListbox}
             role="listbox"
-            aria-label="Available @Tag options"
+            aria-label={popover.sigil === '/' ? 'Available skills' : 'Available @Tag options'}
           >
-            {availableMentionOptions.map((option, index) => (
+            {popover.options.map((option, index) => (
               <button
                 key={option.id}
-                id={`chs-mention-option-${option.id}`}
+                id={popover.optionDomId(option)}
                 type="button"
                 role="option"
-                data-active={index === mentionActiveIndex}
-                aria-selected={selectedMentions.some((item) => item.id === option.id)}
+                data-active={index === popover.activeIndex}
+                aria-selected={popover.sigil === '@'
+                  && selectedMentions.some((item) => item.id === option.id)}
                 /* Pointer hover moves the highlight so the mouse and the arrow
                    keys never disagree about which row Enter would take. */
-                onMouseEnter={() => setMentionActive(index)}
-                onClick={() => selectMention(option)}
+                onMouseEnter={() => popover.setActive(index)}
+                onClick={() => popover.select(option)}
               >
                 <span className="chs-mention-picker__identity">
-                  <MentionFace option={option} />
-                  <span className="chs-mention-picker__name">{option.display}</span>
+                  {popover.sigil === '@' ? <MentionFace option={option as ComposerMentionOption} /> : null}
+                  <span className="chs-mention-picker__name">
+                    {popover.sigil === '/' ? `/${option.display}` : option.display}
+                  </span>
                 </span>
                 <span className="chs-mention-picker__meta">
-                  {option.meta ?? option.group ?? (option.kind === 'team_member' ? 'agent' : 'member')}
+                  {option.meta ?? option.group
+                    ?? ((option as ComposerMentionOption).kind === 'team_member' ? 'agent'
+                      : (option as ComposerMentionOption).kind === 'member' ? 'member'
+                        : 'skill')}
                 </span>
               </button>
             ))}
           </div>
-          {availableMentionOptions.length ? null : (
-            <p className="chs-mention-picker__empty" role="status">No matching @Tag options</p>
+          {popover.options.length ? null : (
+            <p className="chs-mention-picker__empty" role="status">
+              {popover.sigil === '/' ? 'No matching skills' : 'No matching @Tag options'}
+            </p>
           )}
         </div>
       ) : null}
@@ -594,9 +551,12 @@ export function Composer({
           if (onStartAttachmentUpload && event.dataTransfer.types.includes('Files')) event.preventDefault();
         }}
         onDrop={(event) => {
+          // A drop on the textarea itself was already taken by the hook and
+          // bubbles up here — without this guard the same files would stage twice.
+          if (event.defaultPrevented) return;
           if (!onStartAttachmentUpload || event.dataTransfer.files.length === 0) return;
           event.preventDefault();
-          addFiles(event.dataTransfer.files);
+          attachments.addFiles(event.dataTransfer.files);
         }}
       >
         {onStartAttachmentUpload ? (
@@ -611,7 +571,7 @@ export function Composer({
               multiple
               aria-label="Choose files to attach"
               onChange={(event) => {
-                if (event.target.files) addFiles(event.target.files);
+                if (event.target.files) attachments.addFiles(event.target.files);
                 event.target.value = '';
               }}
             />
@@ -630,7 +590,7 @@ export function Composer({
             onClick={() => {
               if (attachOpen) closeAttachPicker();
               else {
-                closeMentionPicker();
+                popover?.close();
                 setAttachOpen(true);
               }
             }}
@@ -644,13 +604,35 @@ export function Composer({
             className="chs-iconbtn"
             aria-label="Mention someone"
             aria-haspopup="listbox"
-            aria-expanded={mentionOpen}
+            aria-expanded={popover?.sigil === '@'}
             onClick={() => {
-              if (mentionOpen) closeMentionPicker();
-              else openMentionPickerAtCaret();
+              /**
+               * The toolbar `@` and typing `@` must land in the SAME state, or
+               * the picker has two behaviours and only one of them filters —
+               * so the button types the character on the user's behalf
+               * (`openTrigger`) and hands focus straight back to the textarea.
+               */
+              if (popover?.sigil === '@') popover.close();
+              else rich.openTrigger('@');
             }}
           >
             <span aria-hidden>@</span>
+          </button>
+        ) : null}
+        {skillOptions ? (
+          <button
+            type="button"
+            className="chs-iconbtn"
+            aria-label="Reference a skill"
+            title="reference a skill — the agent reads it and decides; nothing runs by itself"
+            aria-haspopup="listbox"
+            aria-expanded={popover?.sigil === '/'}
+            onClick={() => {
+              if (popover?.sigil === '/') popover.close();
+              else rich.openTrigger('/');
+            }}
+          >
+            <span aria-hidden>/</span>
           </button>
         ) : null}
         <textarea
@@ -662,81 +644,9 @@ export function Composer({
              active-row pointer. `aria-expanded` is deliberately absent: it is
              not an allowed attribute on role=textbox, and promoting this to
              role=combobox would change how every existing query finds it. */
-          aria-controls={mentionOpen ? 'chs-mention-options' : undefined}
-          aria-activedescendant={mentionOpen && activeMentionOption
-            ? `chs-mention-option-${activeMentionOption.id}`
-            : undefined}
           value={text}
           disabled={busy}
-          /* A pasted image becomes a STAGED ATTACHMENT, not an injected path
-             like the terminal does: a channel message is read on other
-             machines, where a node-local path resolves to nothing. Text paste
-             is untouched — only image bytes are intercepted. */
-          onPaste={(e) => {
-            if (!onStartAttachmentUpload) return;
-            const images = extractImageFiles(e.clipboardData, { renameAll: true });
-            if (images.length === 0) return;
-            e.preventDefault();
-            addFiles(images);
-          }}
-          onChange={(e) => {
-            const next = e.target.value;
-            const caret = e.target.selectionStart ?? next.length;
-            setText(next);
-            const trigger = /(?:^|\s)@([^\s@]*)$/.exec(next.slice(0, caret));
-            if (mentionOptions && trigger) {
-              setMentionRange({ start: next.lastIndexOf('@', caret - 1), end: caret });
-              setMentionSearch(trigger[1]);
-              setMentionActive(0);
-              setMentionOpen(true);
-            } else if (mentionOpen) {
-              // The trigger the picker was opened for no longer exists — the
-              // user deleted the `@` or typed past it. Leaving it open would
-              // float a list over the composer that nothing can now filter.
-              closeMentionPicker();
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              if (mentionOpen) closeMentionPicker();
-              else if (replyTo) onCancelReply();
-              return;
-            }
-            /**
-             * The picker is driven from the textarea, never from a second
-             * focusable field: focus stays where the message is being typed,
-             * so ↑/↓ browse the list while every other key keeps composing.
-             * These returns must precede the Enter-sends rule below — while a
-             * target is highlighted, Enter commits the choice, not the message.
-             */
-            if (mentionOpen && availableMentionOptions.length > 0) {
-              if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setMentionActive((current) => (current + 1) % availableMentionOptions.length);
-                return;
-              }
-              if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setMentionActive((current) => (
-                  current - 1 + availableMentionOptions.length) % availableMentionOptions.length);
-                return;
-              }
-              if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
-                if (activeMentionOption) {
-                  e.preventDefault();
-                  selectMention(activeMentionOption);
-                  return;
-                }
-              }
-            }
-            // Shift+Enter is the newline and must fall through to the textarea
-            // untouched; anything else here would swallow a keystroke the
-            // footer copy promises works.
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              void submit();
-            }
-          }}
+          {...rich.areaProps}
         />
         <SendControl
           disconnected={disconnected}
@@ -744,7 +654,7 @@ export function Composer({
           busy={busy}
           empty={text.trim().length === 0}
           blocked={uncertainSubmission !== null}
-          attachmentBlocked={attachments.some((item) => item.phase !== 'uploaded')}
+          attachmentBlocked={attachments.blocked}
           onClick={() => void submit()}
         />
       </div>

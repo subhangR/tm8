@@ -1,0 +1,159 @@
+/**
+ * rich-input — the shared trigger popover and attachment chips.
+ *
+ * Token-only (the package hex guard walks this file). The popover geometry
+ * and the keyboard-highlight rule are transcribed from the channel composer's
+ * `chs-mention-picker`, which is the one picker users have already learned —
+ * same card, same brand highlight, same capped width and the same reason for
+ * it (a name and its one-line reason belong together; a full-width row
+ * strands the reason a screen away from the name).
+ */
+
+/* The positioning context a host wraps its textarea in. */
+.ri-host {
+  position: relative;
+}
+
+.ri-popover {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-width: 420px;
+  z-index: 30;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+  overflow: hidden;
+}
+
+.ri-popover__query {
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--pn-line);
+  color: var(--pn-ink-4);
+  font-size: 10.5px;
+}
+
+.ri-popover [role='listbox'] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 238px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+}
+
+.ri-popover button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-2);
+  padding: 6px 9px;
+  cursor: pointer;
+  text-align: left;
+}
+.ri-popover button:hover { border-color: var(--pn-line-2); background: var(--pn-hover); }
+
+/**
+ * THE KEYBOARD HIGHLIGHT. Without this the arrow keys move an invisible
+ * cursor and Enter commits a row the user cannot see — the navigation is
+ * only as useful as this rule. Toned with the brand accent so it outranks
+ * the hover tint when the mouse happens to rest on a different row.
+ */
+.ri-popover button[data-active='true'] {
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+  color: var(--pn-ink);
+}
+
+.ri-popover__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ri-popover__meta {
+  color: var(--pn-ink-4);
+  font: 9px var(--pn-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+.ri-popover__empty {
+  margin: 0;
+  padding: 10px;
+  color: var(--pn-ink-4);
+  font-size: 11px;
+}
+
+/* ------------------------------------------------------------------------- */
+
+.ri-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ri-attachments__refusal {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-block);
+  font-size: 11px;
+}
+.ri-attachments__refusal button {
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.ri-attachments__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ri-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+.ri-attachment[data-phase='failed'] { border-color: var(--pn-block); }
+.ri-attachment__name { color: var(--pn-ink-2); overflow-wrap: anywhere; }
+.ri-attachment__error { color: var(--pn-block); }
+.ri-attachment button {
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-size: 10px;
+  padding: 1px 7px;
+  cursor: pointer;
+}

@@ -29,6 +29,7 @@ import type {
   SpaceId,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
+import { loadSkillTriggerOptions, type SkillTriggerOption } from '../rich-input';
 import { createChatAttachmentUploadTask } from './chat-attachments';
 import {
   dispatchTaggedChannelMessage,
@@ -105,6 +106,8 @@ export interface ChannelFeed {
   refusal: ChannelRefusal | null;
   mentionOptions: ComposerMentionOption[];
   attachEntityOptions: ComposerMentionOption[];
+  /** `/` trigger subjects (R1). An empty list is a measured zero, same as mentions. */
+  skillOptions: SkillTriggerOption[];
   startAttachmentUpload: ((file: File) => ReturnType<typeof createChatAttachmentUploadTask>) | undefined;
   reload: () => Promise<void>;
   loadEarlier: (cursor: Cursor) => Promise<void>;
@@ -123,6 +126,7 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
   const [refusal, setRefusal] = useState<ChannelRefusal | null>(null);
   const [mentionOptions, setMentionOptions] = useState<ComposerMentionOption[]>([]);
   const [attachEntityOptions, setAttachEntityOptions] = useState<ComposerMentionOption[]>([]);
+  const [skillOptions, setSkillOptions] = useState<SkillTriggerOption[]>([]);
   const [thread, setThread] = useState<ChannelFeedThread | null>(null);
   /* The reload path refreshes an open branch without re-running on every
      thread state change — reload's identity must depend only on the channel
@@ -165,6 +169,16 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
     let current = true;
     setMentionOptions([]);
     setAttachEntityOptions([]);
+    void loadSkillTriggerOptions({ port: seam, spaceId }).then(
+      (skills) => {
+        if (current) setSkillOptions(skills);
+      },
+      () => {
+        // Same law as mentions below: [] is a measured zero, the `/` control
+        // stays and the picker can say there are none.
+        if (current) setSkillOptions([]);
+      },
+    );
     void readMentionOptions(liveIds).then(
       async (options) => {
         if (current) setMentionOptions(options);
@@ -375,6 +389,7 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
     refusal,
     mentionOptions,
     attachEntityOptions,
+    skillOptions,
     startAttachmentUpload,
     reload,
     loadEarlier,

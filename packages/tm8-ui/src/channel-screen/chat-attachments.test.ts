@@ -71,6 +71,10 @@ describe('canonical Chat attachment upload task', () => {
       mime: 'text/plain',
       sizeBytes: 4,
       maxSizeBytes: 1024,
+      /* The completion's own CommandResult rides the resolution — upload.ts
+         carries it deliberately (the caller reconciles it into the store),
+         and this assertion went stale when that field landed. */
+      result: expect.objectContaining({ entity: expect.anything() }),
     });
     expect(h.files.uploadInit).toHaveBeenCalledWith({
       clientMutationId: 'mutation-1',

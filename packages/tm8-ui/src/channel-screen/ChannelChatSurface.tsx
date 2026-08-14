@@ -63,6 +63,7 @@ export function ChannelChatSurface({
       connection={connection}
       onPost={feed.post}
       mentionOptions={feed.mentionOptions}
+      skillOptions={feed.skillOptions}
       attachEntityOptions={feed.attachEntityOptions}
       onStartAttachmentUpload={feed.startAttachmentUpload}
       onLoadEarlier={feed.loadEarlier}
