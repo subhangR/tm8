@@ -18,12 +18,16 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine — the revision-12 tab row', () => {
+  it('encodes the shipped group spine — the revision-13 tab row', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
-      'Home',
       // Revision 12 (2026-08-15, five-tab ruling + Files amendment): the
       // groups are the top-level tabs. Code retired into Work (R3);
       // Chats renamed Channels (R4); the File browser became its own tab.
+      //
+      // Revision 13 (later the same day, conversation-axis ruling): HOME NO
+      // LONGER LEADS — the group is gone, because Home became the container
+      // the shell falls back to rather than a place you navigate to. The row
+      // starts at Work now.
       'Work',
       'Graph',
       'Channels',

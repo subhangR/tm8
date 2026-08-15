@@ -111,14 +111,33 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   /**
-   * Revision 11 (single-home ruling, 2026-08-14): Home is the one landing row.
-   * Messages moved to Chats beside the channel collection; Inbox left the rail
-   * for the top-bar bell (its rows also feed the Home page's NEEDS YOU and
-   * MENTIONS sections, so a rail row was a third door to the same fact).
+   * Revision 13 (conversation-axis ruling, 2026-08-15): there is NO Home group.
+   * Home stopped being a destination and became the CONTAINER — the
+   * conversation surface the shell falls back to — so a tab for it, and a rail
+   * row inside that tab repeating its own name, were two more doors to the
+   * place you are already standing in.
+   *
+   * The `dashboard` VIEW REF is untouched, and this test pins that distinction:
+   * a group can retire without its ref being deleted. `dashboard` still routes,
+   * is still the no-remembered-place landing, and the menu editor can still
+   * offer it. Only its menu HOME is gone.
    */
-  it('keeps Home as the single landing row', () => {
-    const home = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'home');
-    expect(home?.items).toEqual([{ type: 'view', ref: 'dashboard' }]);
+  it('retires the Home GROUP without deleting the dashboard REF', () => {
+    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('home');
+    const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
+    expect(refs).not.toContain('dashboard');
+    // Still a registered ref: the FROZEN DTO accepts a menu that puts it back,
+    // which is what "the editor can offer it" means at the contract layer.
+    expect(
+      MenuConfigSchema.safeParse({
+        schemaVersion: SHIPPED_DEFAULT_MENU.schemaVersion,
+        revision: 1,
+        groups: [
+          { id: 'home', label: 'Home', items: [{ type: 'view', ref: 'dashboard' }] },
+          { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
+        ],
+      }).success,
+    ).toBe(true);
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('chats');
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('voice');
   });
@@ -186,7 +205,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(12);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(13);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

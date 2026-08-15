@@ -215,6 +215,12 @@ describe('the menu rail', () => {
   it('remembers being collapsed — the choice outlives the tab', async () => {
     const first = render(<GateApp />);
     await waitFor(() => first.getByTestId('home-page'));
+    /* Revision 13 (conversation-axis ruling): the landing surface belongs to
+       no group, so there is no rail there to collapse. The walk starts on a
+       tab that HAS one — which is also what makes the second boot below land
+       somewhere the remembered choice is observable. */
+    fireEvent.click(within(first.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
+    await waitFor(() => first.getByTestId('menu-rail'));
     fireEvent.click(first.getByRole('button', { name: 'Collapse menu rail' }));
     await waitFor(() =>
       expect(first.getByTestId('menu-rail').dataset.collapsed).toBe('true'),
@@ -223,9 +229,10 @@ describe('the menu rail', () => {
 
     expect(window.localStorage.getItem('tm8ui.panel-flag.menu-rail-collapsed')).toBe('1');
 
-    resetNav();
+    // The address left behind by the walk outranks last-place at boot (R3), so
+    // the second mount comes up on the Work tab with its rail already drawn.
     const second = render(<GateApp />);
-    await waitFor(() => second.getByTestId('home-page'));
+    await waitFor(() => second.getByTestId('menu-rail'));
     expect(second.getByTestId('menu-rail').dataset.collapsed).toBe('true');
     second.unmount();
   });

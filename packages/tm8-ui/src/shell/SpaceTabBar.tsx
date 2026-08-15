@@ -15,6 +15,15 @@
  * maps them); this component hardcodes no tab names. `tabs` absent renders no
  * tablist, so a bar without a host keeps the r11 product-bar shape.
  *
+ * REVISION 13 (conversation-axis ruling, 2026-08-15): there is no Home tab,
+ * because the `home` group left the menu — Home is the container now, not a
+ * destination. THE MARK IS ITS DOOR: with `onGoHome` wired the product mark
+ * becomes the button back to the conversation surface. It is deliberately NOT
+ * a tab and never reads current — a tab would re-assert the destination the
+ * ruling removed — and it is not a second door either, because the tab it
+ * replaces no longer exists. Left unwired the mark stays inert text, so every
+ * bar rendered without a host is unchanged.
+ *
  * REVISION 11 (single-home ruling, 2026-08-14): the server chip and the space
  * tablist left this bar for the rail's identity block. R1 moves that block
  * into the bar — the ruling's ONE-home invariant holds; only the address
@@ -61,6 +70,12 @@ export interface SpaceTabBarProps {
   /** Which tab reads as current — the group owning the active target. */
   activeTabId?: string | null;
   onSelectTab?(id: string): void;
+  /**
+   * Back to the conversation surface — the mark's verb (revision 13). Absent
+   * ⇒ the mark is inert text, exactly as it was before Home became the
+   * container.
+   */
+  onGoHome?(): void;
   /** Opens the Inbox screen — the bell. Absent, the bell renders disabled. */
   onOpenInbox?(): void;
   /** Account menu — theme's home per D1. */
@@ -96,9 +111,22 @@ export interface SpaceTabBarProps {
 export function SpaceTabBar(props: SpaceTabBarProps) {
   return (
     <header className="shell-tabbar" data-testid="space-tab-bar">
-      <div className="shell-tabbar__mark" aria-label="tm8">
-        <BrandMark /> tm8
-      </div>
+      {props.onGoHome ? (
+        <button
+          type="button"
+          className="shell-tabbar__mark shell-tabbar__mark--door"
+          data-testid="go-home"
+          aria-label="tm8 — back to conversations"
+          title="Back to conversations"
+          onClick={props.onGoHome}
+        >
+          <BrandMark /> tm8
+        </button>
+      ) : (
+        <div className="shell-tabbar__mark" aria-label="tm8">
+          <BrandMark /> tm8
+        </div>
+      )}
 
       {props.switcherSlot ?? null}
 

@@ -57,7 +57,15 @@ describe('Chat Home stability', () => {
     const gated = gateReads(port);
     const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
     act(() => gated.release());
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    // Scoped to the PANEL row: since the conversation-axis change the open
+    // conversation also carries its title in the working-set tab strip, so a
+    // bare text query matches twice. The panel row is what "the thread has
+    // loaded" means here.
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
 
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Quick follow-up.' },
@@ -91,7 +99,11 @@ describe('Chat Home stability', () => {
   it('sends on plain Enter and keeps Shift+Enter as a newline', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
 
     const composer = view.getByLabelText('Message the chat agent');
     fireEvent.change(composer, { target: { value: 'Line one' } });
@@ -137,7 +149,11 @@ describe('Chat Home stability', () => {
   it('marks a sidebar thread live when its frames stream while it is not active', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
 
     act(() => {
       controls.emit({

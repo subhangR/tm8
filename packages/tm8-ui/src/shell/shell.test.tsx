@@ -332,8 +332,10 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     // that returns null after that check has already passed.
     const { queryByText } = renderRail({ presentKind: () => null });
     expect(queryByText('Channels')).toBeNull();
-    // View refs still resolve — they are shell's own table.
-    expect(queryByText('Home')).not.toBeNull();
+    // View refs still resolve — they are shell's own table. (Revision 13
+    // retired the Home group, so the surviving witness is Workspace, whose
+    // row is a VIEW ref even though its caret children are kinds.)
+    expect(queryByText('Workspace')).not.toBeNull();
   });
 });
 
@@ -355,7 +357,7 @@ describe('MenuRail — fail-closed rendering, end to end (§4.1)', () => {
   it('renders the shipped default for a future schemaVersion instead of nothing', () => {
     const { container } = renderResolved({ schemaVersion: 4, revision: 1, groups: [] } as never);
     const labels = [...container.querySelectorAll('.shell-rail__label')].map((n) => n.textContent);
-    expect(labels).toContain('Home');
+    expect(labels).toContain('Workspace');
     expect(labels).toContain('Settings');
   });
 

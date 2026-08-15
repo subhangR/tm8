@@ -108,7 +108,7 @@ describe('rename', () => {
   it('an empty label is REFUSED by the validator, not silently coerced', () => {
     // resolveMenu requires 1..32 chars. A blank group label would render the
     // rail with an unlabelled band; the editor must be able to say so.
-    const d = renameGroup(startDraft(BASE), 'home', '');
+    const d = renameGroup(startDraft(BASE), 'graph', '');
     expect(draftIssue(d)).not.toBeNull();
   });
 });
@@ -157,16 +157,28 @@ describe('add', () => {
     // here is hardcoded: `availableViewRefs` is VIEW_PRESENTATION minus what
     // the draft already places, so this assertion moves whenever the shipped
     // default does — which is the point of it.
-    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels']);
+    //
+    // DASHBOARD JOINED THE FREE SET on 2026-08-15 (revision 13, the
+    // conversation-axis ruling): the Home GROUP retired because Home became
+    // the container rather than a destination, and the ref it held came back
+    // on offer. It is the cleanest possible statement that the ruling was a
+    // rail edit and not a feature removal — the screen is still there, still
+    // routable, and an operator who wants a row for it can put one back.
+    expect(availableViewRefs(startDraft(BASE))).toEqual([
+      'dashboard',
+      'feed',
+      'inbox',
+      'channels',
+    ]);
   });
 
   it('adds a freed view ref back onto the rail', () => {
-    const d = addItem(startDraft(BASE), 'home', { type: 'view', ref: 'feed' });
+    const d = addItem(startDraft(BASE), 'graph', { type: 'view', ref: 'dashboard' });
     expect(draftIssue(d)).toBeNull();
-    expect(draftConfig(d).groups.find((g) => g.id === 'home')?.items.map((i) => i.ref))
-      .toEqual(['dashboard', 'feed']);
+    expect(draftConfig(d).groups.find((g) => g.id === 'graph')?.items.map((i) => i.ref))
+      .toEqual(['graph', 'dashboard']);
     // And once used, it stops being on offer.
-    expect(availableViewRefs(d)).toEqual(['inbox', 'channels']);
+    expect(availableViewRefs(d)).toEqual(['feed', 'inbox', 'channels']);
   });
 
   it('offers only refs the rail can actually render, and never a duplicate', () => {
@@ -246,12 +258,13 @@ describe('capacity — the caps are the RAIL’s caps, cross-checked not copied'
   it('reports group and item capacity too', () => {
     const d = startDraft(BASE);
     expect(groupCapacity(d)).toEqual({ used: BASE.groups.length, max: MENU_CAPS.groups, full: false });
-    // Home is the single landing row since revision 11. Derived from BASE
-    // rather than typed, so a future Home edit moves this assertion with it
-    // instead of turning it red for the wrong reason.
-    const homeItems = BASE.groups.find((g) => g.id === 'home')?.items.length ?? 0;
-    expect(homeItems).toBe(1);
-    expect(itemCapacity(d, 'home')).toEqual({ used: homeItems, max: MENU_CAPS.items, full: false });
+    // Graph is a one-row group (revision 13 retired Home, which used to be the
+    // single-row witness here). Derived from BASE rather than typed, so a
+    // future edit moves this assertion with it instead of turning it red for
+    // the wrong reason.
+    const graphItems = BASE.groups.find((g) => g.id === 'graph')?.items.length ?? 0;
+    expect(graphItems).toBe(1);
+    expect(itemCapacity(d, 'graph')).toEqual({ used: graphItems, max: MENU_CAPS.items, full: false });
   });
 
   it('an add past the cap is REFUSED by the model, so the control can state the cap', () => {
