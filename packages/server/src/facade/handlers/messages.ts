@@ -210,9 +210,13 @@ async function embedBoundedReplies(
   });
 }
 
-function cursorFingerprint(anchorId: string, rootMessageId: string | null): string {
+function cursorFingerprint(
+  anchorId: string,
+  rootMessageId: string | null,
+  order: 'oldest' | 'newest',
+): string {
   return createHash('sha256')
-    .update(JSON.stringify({ operation: 'messages.list', anchorId, rootMessageId }))
+    .update(JSON.stringify({ operation: 'messages.list', anchorId, rootMessageId, order }))
     .digest('hex');
 }
 
@@ -231,12 +235,17 @@ export function messagesList(deps: FacadeDeps): OperationHandler {
     const anchorId = requireUuidParam(ctx, 'anchorId');
     const limit = limitOf(ctx.query.get('limit'));
     const cursor = ctx.query.get('cursor');
+    const rawOrder = ctx.query.get('order');
+    if (rawOrder !== null && rawOrder !== 'oldest' && rawOrder !== 'newest') {
+      throw new CollabError('invalid_input', 'order must be oldest or newest');
+    }
+    const order: 'oldest' | 'newest' = rawOrder ?? 'oldest';
     // `?rootMessageId=` switches from "thread roots" to "replies under a root".
     const rootMessageId = ctx.query.get('rootMessageId');
     if (rootMessageId && !/^[0-9a-f-]{36}$/i.test(rootMessageId)) {
       throw new CollabError('not_found', `no such rootMessageId: ${rootMessageId}`);
     }
-    const fingerprint = cursorFingerprint(anchorId, rootMessageId);
+    const fingerprint = cursorFingerprint(anchorId, rootMessageId, order);
 
     return deps.db.tx({
       ...claimsFor(owner, ctx),
@@ -260,11 +269,12 @@ export function messagesList(deps: FacadeDeps): OperationHandler {
           throw new CollabError('invalid_cursor', 'cursor does not match this message thread');
         }
         params.push(String(k[1]), String(k[2]));
-        keyset = `and (msg.created_at, e.id) > ($${params.length - 1}::timestamptz, $${params.length}::uuid)`;
+        const comparator = order === 'newest' ? '<' : '>';
+        keyset = `and (msg.created_at, e.id) ${comparator} ($${params.length - 1}::timestamptz, $${params.length}::uuid)`;
       }
 
-      // Threads read oldest-first: a conversation is read in the order it
-      // happened, unlike a feed.
+      // Threads default to oldest-first, while callers polling a busy anchor
+      // can start at the newest edge without walking the whole history.
       //
       // `msg.created_at` is carried as TEXT deliberately, and it is
       // load-bearing for pagination in two independent ways. ENTITY_COLUMNS selects
@@ -286,7 +296,7 @@ export function messagesList(deps: FacadeDeps): OperationHandler {
       const rows = await q.query<MessageKeysetRow>(
         `select ${ENTITY_COLUMNS}, ${MICROS('msg.created_at')} as message_created_at ${ENTITY_FROM}
           where msg.anchor_id = $1 and ${scope} ${keyset}
-          order by msg.created_at asc, e.id asc
+          order by msg.created_at ${order === 'newest' ? 'desc' : 'asc'}, e.id ${order === 'newest' ? 'desc' : 'asc'}
           limit ${limit + 1}`,
         params,
       );

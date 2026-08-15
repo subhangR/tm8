@@ -311,4 +311,35 @@ describe.sequential('W2.G04-FIX messages.list keyset pagination makes forward pr
     expect(byTwo).toEqual(byOne);
     expect(whole).toEqual(byOne);
   });
+
+  it('reads newest-first from the newest edge and paginates backward', async () => {
+    const oldest = await handler(listContext(
+      fixture.anchorId, `limit=${MESSAGE_COUNT}&order=oldest`, fixture.identityId,
+    )) as { items: Array<{ id: string }>; nextCursor: string | null };
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const query = new URLSearchParams({ limit: '2', order: 'newest' });
+      if (cursor) query.set('cursor', cursor);
+      const page = await handler(listContext(fixture.anchorId, query.toString(), fixture.identityId)) as
+        { items: Array<{ id: string }>; nextCursor: string | null };
+      seen.push(...page.items.map((item) => item.id));
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    expect(seen).toEqual(oldest.items.map((item) => item.id).reverse());
+    expect(new Set(seen).size).toBe(MESSAGE_COUNT);
+  });
+
+  it('binds cursors to their requested order', async () => {
+    const page = await handler(listContext(
+      fixture.anchorId, 'limit=1&order=newest', fixture.identityId,
+    )) as { nextCursor: string | null };
+    await expect(handler(listContext(
+      fixture.anchorId,
+      `limit=1&order=oldest&cursor=${encodeURIComponent(page.nextCursor!)}`,
+      fixture.identityId,
+    ))).rejects.toMatchObject({ code: 'invalid_cursor' });
+  });
 });

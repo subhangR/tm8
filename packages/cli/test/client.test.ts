@@ -176,6 +176,21 @@ describe('failure classification', () => {
     expect(exitCodeFor(err)).toBe(7);
     expect((err as TransportError).message).toContain('http://127.0.0.1:4610');
   });
+
+  it('names an expired request deadline instead of accusing the Server', async () => {
+    const fetchImpl = ((_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      })) as typeof fetch;
+    const timedClient = new Tm8Client({
+      baseUrl: 'http://127.0.0.1:4610', fetchImpl, timeoutMs: 1,
+    });
+    const err = await timedClient.invoke('identity.get').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    expect((err as TransportError).message).toContain('timed out after 1ms');
+    expect((err as TransportError).message).toContain('per-request deadline');
+    expect((err as TransportError).message).not.toContain('is tm8-server running');
+  });
 });
 
 describe('pathParamNames', () => {
