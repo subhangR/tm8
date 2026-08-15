@@ -69,11 +69,9 @@ export interface HomeViewProps {
   onNotice(notice: Notice): void;
   /** Absent ⇒ the panel's Launch renders disabled-with-reason, as everywhere. */
   onSpawn?(input: ExecutionSpawnInput): void | Promise<void>;
-  onOpenKind(kind: string): void;
   onOpenWorkspace(): void;
   /** D12: the ONE route out of Home — C's explicit workspace action. */
   onOpenInWorkspace?(id: EntityId): void;
-  countsFor?: (kind: string) => { total: number; unseen: number } | undefined;
   /** D11/D14 — the GateApp launch-sheet singleton, mounted over this screen
    *  while it holds a subject, exactly as EntityView mounts it. */
   onLaunchOpen?(id: EntityId): void;
@@ -412,9 +410,7 @@ export function HomeView(props: HomeViewProps) {
         /* A NEEDS YOU card opens where a chip does. They are the same gesture
            — "show me that" — from two places on one screen. */
         onOpenEntity={(id) => openEntity(id as EntityId)}
-        onOpenKind={props.onOpenKind}
         onOpenWorkspace={props.onOpenWorkspace}
-        {...(props.countsFor ? { countsFor: props.countsFor } : {})}
       />
       {/* D11/D14: the full launch sheet over this screen while the shell
           holds a subject — Run on a task row opened it. Its own capture-phase

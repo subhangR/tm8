@@ -198,7 +198,6 @@ function screenFor(props: MobileShellProps): ReactNode {
           seam={data.seam}
           spaceId={props.spaceId}
           nodeKey={props.nodeKey}
-          {...(props.spaceLabel ? { spaceLabel: props.spaceLabel } : {})}
           {...(props.chatAnchorId ? { anchorId: props.chatAnchorId } : {})}
         />
       );

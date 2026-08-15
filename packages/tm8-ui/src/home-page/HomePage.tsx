@@ -28,7 +28,7 @@
  * (`'liveWork' in state`), and every glyph resolves through the registry.
  */
 import { useMemo, type ReactNode } from 'react';
-import { HOME_PRESENCE_KIND, HOME_RAIL_KINDS, KindIcon, getKind } from '../domain';
+import { KindIcon } from '../domain';
 import {
   composeMyWork,
   useHomeData,
@@ -54,15 +54,7 @@ export interface HomePageProps {
    */
   aside?: ReactNode;
   onOpenEntity(id: string): void;
-  onOpenKind(kind: string): void;
   onOpenWorkspace(): void;
-  /**
-   * Per-kind `{ total, unseen }` from `spaces.counts` — the one cheap, real
-   * counts read. `undefined` for a kind means THIS SERVER NEVER COUNTED IT,
-   * and the chip renders no number (absent ≠ zero). Optional so a host
-   * without the read simply shows no counts strip.
-   */
-  countsFor?: (kind: string) => { total: number; unseen: number } | undefined;
 }
 
 function RowCard({ row, onOpen }: { row: HomeRow; onOpen(id: string): void }) {
@@ -130,16 +122,10 @@ export function HomePage(props: HomePageProps) {
     return work.sections.find((section) => section.emphasis === 'needs-you') ?? null;
   }, [home, data.livenessOf, data.activity]);
 
-  const presenceRows = data.rowsFor(HOME_PRESENCE_KIND)(undefined);
-  const workingTeammates = presenceRows.filter(
-    (row) => 'liveWork' in row.state && row.state.liveWork,
-  ).length;
-
   /* R4 (2026-08-15): Home IS the chat view. The chat surface — with its
-     merged conversation column — fills the canvas; triage rides above it,
-     and the foot is one strip of REAL per-kind counts (spaces.counts) with
-     the live-session count from the liveness snapshot. The glance rails and
-     presence row retired to the Work tab, where the inventory framing lives. */
+     merged conversation column — fills the canvas and triage rides above it.
+     The glance rails, the presence row and the per-kind counts strip retired
+     to the Work tab, where the inventory framing lives. */
   return (
     <div className="hp-root hp-root--chat" data-testid="home-page" data-aside={props.aside ? 'open' : undefined}>
       <div className="hp-page">
@@ -152,44 +138,6 @@ export function HomePage(props: HomePageProps) {
       <section className="hp-chat hp-chat--full" aria-label="Chat">
         {props.chat}
       </section>
-
-      {props.countsFor ? (
-        <footer className="hp-counts" aria-label="Space at a glance" data-testid="hp-counts">
-          {[...HOME_RAIL_KINDS, HOME_PRESENCE_KIND].map((kind: string) => {
-            const config = getKind(kind);
-            const counts = props.countsFor!(kind);
-            const live = config.list.liveTreatment ? data.liveIds.length : null;
-            const working = kind === HOME_PRESENCE_KIND ? workingTeammates : null;
-            return (
-              <button
-                key={kind}
-                type="button"
-                className="hp-counts__chip"
-                title={
-                  counts
-                    ? `${counts.total} ${config.labelPlural.toLowerCase()}${counts.unseen > 0 ? `, ${counts.unseen} new to you` : ''}`
-                    : `${config.labelPlural} — this server did not report a count`
-                }
-                onClick={() => props.onOpenKind(kind)}
-              >
-                <KindIcon kind={kind} />
-                <span className="hp-counts__label">{config.labelPlural}</span>
-                {/* Absent ≠ zero: no counts read ⇒ no number, never `0`. */}
-                {counts ? <span className="hp-counts__total">{counts.total}</span> : null}
-                {counts && counts.unseen > 0 ? (
-                  <span className="hp-counts__unseen">{counts.unseen} new</span>
-                ) : null}
-                {live !== null && live > 0 ? (
-                  <span className="hp-counts__live">● {live} live</span>
-                ) : null}
-                {working !== null && working > 0 ? (
-                  <span className="hp-counts__live">● {working} working</span>
-                ) : null}
-              </button>
-            );
-          })}
-        </footer>
-      ) : null}
       </div>
 
       {props.aside ?? null}

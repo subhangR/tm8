@@ -1856,7 +1856,6 @@ export function GateApp(props: GateAppProps = {}) {
                 homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
                 homeRegionStore.getState().setTab(data.spaceId, 'sessions');
               }}
-              onOpenKind={(kind) => navigateTo({ type: 'kind', ref: kind })}
               onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
               /* D12: the ONE route out of Home — region C's explicit header
                  action. Chips never navigate; this button does. */
@@ -1864,10 +1863,6 @@ export function GateApp(props: GateAppProps = {}) {
                 navigateTo(WORKSPACE_TARGET);
                 nav.push(id);
               }}
-              /* The one cheap real counts read (spaces.counts) — the foot
-                 strip's numbers. A kind the server never counted renders no
-                 number (absent ≠ zero). */
-              countsFor={data.countsFor}
               /* D11/D14: the launch-sheet singleton, mounted over Home while
                  it holds a subject — Run on a task row opens it here. */
               onLaunchOpen={(id) => launch.open(id)}
@@ -1885,7 +1880,6 @@ export function GateApp(props: GateAppProps = {}) {
                   seam={data.seam}
                   spaceId={data.spaceId}
                   nodeKey={nodeKey}
-                  spaceLabel={data.spaces.find((sp) => sp.id === data.spaceId)?.name}
                   bridge={chatBridge}
                   /* PR188 review F3: the space id is NOT an entity and
                      messages.post 404s on it (measured). Bare-home chats anchor

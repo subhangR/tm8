@@ -22,7 +22,6 @@ export interface ChatHomeSurfaceProps {
   spaceId: SpaceId | string;
   nodeKey: string;
   anchorId?: EntityId;
-  spaceLabel?: string;
   bridge?: ChatHomeL2Bridge;
   /** The shell's entity-open verb: opens the right-side detail panel. */
   onOpenEntity?: (id: EntityId) => void;

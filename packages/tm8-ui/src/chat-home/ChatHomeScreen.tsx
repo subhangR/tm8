@@ -35,7 +35,6 @@ export interface ChatHomeScreenProps {
   /** Bare Home defaults to the space entity. A contextual host passes its entity instead. */
   anchorId?: EntityId;
   models: readonly ChatModelOption[];
-  spaceLabel?: string;
   newMutationId?: (prefix: string) => string;
   /** Opens the entity detail panel for an entity a tool call referenced. */
   onOpenEntity?: ((id: EntityId) => void) | undefined;
@@ -142,7 +141,6 @@ export function ChatHomeScreen({
   spaceId,
   anchorId = spaceId as EntityId,
   models,
-  spaceLabel,
   newMutationId = defaultMutationId,
   onOpenEntity,
   resolveEntity,
@@ -718,12 +716,6 @@ export function ChatHomeScreen({
         marks read like any other open.
       */}
       <aside className="tch-sidebar" aria-label="Tasks, chats and sessions">
-        <header className="tch-sidebar__head">
-          <span>
-            <strong>Home</strong>
-            <small>{spaceLabel ?? 'this space'}</small>
-          </span>
-        </header>
         {/* D2: two constant buttons. No New session — a session is created by
             RUNNING a task (D11); the old permanently-disabled button is gone. */}
         <div className="tch-sidebar__actions">
