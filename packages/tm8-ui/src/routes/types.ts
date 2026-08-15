@@ -176,6 +176,21 @@ export interface BuildOutcome {
 
 export const MAX_HASH_LENGTH = 2048;
 
+/**
+ * THE ADDRESS THAT NAMES NOTHING — what the bar reads when this browser is not
+ * pointed at anybody's space.
+ *
+ * `parse` returns a null route for it (the space picker renders) and
+ * `createBrowserTarget` already treats an absent hash as this string, so it is
+ * the one form that means "no destination" rather than "a destination that
+ * failed to load". It was written as a bare `'#/'` literal in three places
+ * before it had a name — the Server-switch address reset, both transport
+ * fallbacks — and the sign-out reset made it four. A route the app can WRITE is
+ * the codec's business (L8: never hand-assemble a hash), even when the route is
+ * the empty one.
+ */
+export const UNADDRESSED_HASH = '#/';
+
 export function emptyPanels(): PanelState {
   return { stack: [], pinned: [], tabs: {}, contentSurface: {}, session: null };
 }

@@ -102,3 +102,28 @@ export function writeLastTarget(nodeKey: string, spaceId: string, target: MenuTa
   const place = read(nodeKey);
   write(nodeKey, { ...place, targets: { ...place.targets, [spaceId]: target } });
 }
+
+/**
+ * FORGET THIS NODE'S PLACE — the sign-out half of the record above.
+ *
+ * A remembered place is a preference of the VIEWER, not of the browser, and
+ * this module could not tell the difference: the record outlives the pass, so
+ * the next person to sign in on this machine was restored into the last space
+ * and onto the last target of the person before them — and a target is
+ * `{type:'entity', ref:<entity id>}`, so that restore names a specific entity.
+ * Same class as the module-level stores `auth/session-reset.ts` clears, and
+ * WORSE in one respect: this one survives a reload too.
+ *
+ * Per-node, because sign-out is per-server: leaving one node must not erase
+ * where you were on another.
+ */
+export function clearLastPlace(nodeKey: string): void {
+  const store = storage();
+  if (!store) return;
+  try {
+    store.removeItem(`${KEY_PREFIX}.${nodeKey}`);
+  } catch {
+    // Same policy as every other access here: a browser that refuses storage
+    // has nothing to forget.
+  }
+}
