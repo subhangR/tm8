@@ -322,6 +322,12 @@ export class Tm8Client {
         responseChars: 0,
         durationMs: Date.now() - startedMs,
       });
+      if (controller.signal.aborted) {
+        throw new TransportError(
+          `${op.method} ${url.pathname} timed out after ${timeoutMs}ms (per-request deadline)`,
+          err,
+        );
+      }
       const reason = err instanceof Error ? err.message : String(err);
       throw new TransportError(
         `${op.method} ${url.pathname} failed: ${reason} (is tm8-server running at ${this.baseUrl}?)`,
