@@ -1320,3 +1320,147 @@
 .cv2-root .ls__accessbtn--fullAccess {
   color: var(--pn-block); border-color: var(--pn-block); background: var(--pn-block-soft);
 }
+
+/* ------------------------------------------------------------------------- */
+/* SpaceSwitcher — the identity block at the rail's head (single-home, r11). */
+/* One server ⋄ space control replacing the in-rail server rows, the tab     */
+/* bar's server chip AND its space tablist. Tokens only (D5).                */
+/* ------------------------------------------------------------------------- */
+.cv2-root .shell-switcher {
+  position: relative;
+  padding: 6px 8px 4px;
+}
+.cv2-root .shell-switcher__trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-card);
+  font-family: var(--pn-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .shell-switcher__trigger:hover { background: var(--pn-hover); }
+.cv2-root .shell-switcher__monogram {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 7px;
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-active);
+  color: var(--pn-ink-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+.cv2-root .shell-switcher__monogram--small { width: 20px; height: 20px; font-size: 11px; border-radius: 5px; }
+.cv2-root .shell-switcher__names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cv2-root .shell-switcher__space {
+  overflow: hidden;
+  color: var(--pn-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .shell-switcher__server-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.cv2-root .shell-switcher__caret { flex: none; color: var(--pn-ink-4); font-size: 9px; }
+.cv2-root .shell-switcher__pop {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 8px;
+  z-index: 40;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 4px;
+  border: 1px solid var(--pn-line);
+  border-radius: 10px;
+  background: var(--pn-surface);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--pn-ink) 14%, transparent);
+}
+.cv2-root .shell-switcher__section + .shell-switcher__section { margin-top: 2px; }
+.cv2-root .shell-switcher__server,
+.cv2-root .shell-switcher__space-row,
+.cv2-root .shell-switcher__add {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .shell-switcher__server:hover,
+.cv2-root .shell-switcher__space-row:hover,
+.cv2-root .shell-switcher__add:hover { background: var(--pn-hover); }
+.cv2-root .shell-switcher__server--active { cursor: default; }
+.cv2-root .shell-switcher__server--active:hover { background: transparent; }
+.cv2-root .shell-switcher__server-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .shell-switcher__space-row { padding-left: 14px; }
+.cv2-root .shell-switcher__space-row--active { color: var(--pn-brand-2); font-weight: 600; }
+.cv2-root .shell-switcher__check { width: 12px; flex: none; color: var(--pn-brand-2); font-size: 11px; }
+.cv2-root .shell-switcher__hint {
+  padding: 2px 8px 5px 33px;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+}
+.cv2-root .shell-switcher__footer {
+  display: flex;
+  gap: 2px;
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--pn-line-2);
+}
+.cv2-root .shell-switcher__add { flex: 1; color: var(--pn-ink-3); font-size: 11.5px; }
+.cv2-root .shell-switcher__add[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }
+.cv2-root .shell-rail--collapsed .shell-switcher { padding: 6px 4px 4px; }
+.cv2-root .shell-rail--collapsed .shell-switcher__trigger { justify-content: center; padding: 5px 0; }
+.cv2-root .shell-rail--collapsed .shell-switcher__pop { left: 4px; min-width: 200px; }
+
+/* Revision 11: the expanded rail draws NO group eyebrows — the group boundary
+   is spacing (the accessible name rides the group's aria-label). */
+.cv2-root .shell-rail--expanded .shell-rail__group + .shell-rail__group { margin-top: 9px; }
+
+/* The inbox bell (revision 11) — Inbox's one chrome door after its rail row
+   retired. Same control idiom as the palette hint beside it. */
+.cv2-root .shell-tabbar__bell {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  background: var(--pn-card);
+  color: var(--pn-ink-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cv2-root .shell-tabbar__bell:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-root .shell-tabbar__bell[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }

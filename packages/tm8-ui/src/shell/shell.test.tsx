@@ -13,9 +13,10 @@ import { fireEvent, render, within } from '@testing-library/react';
 import type { EntityId, MenuConfig, SpaceId, SpaceSummary } from '@tm8/contract';
 import { MenuRail, type KindPresenter, type RefPresentation } from './MenuRail';
 import { SpaceTabBar } from './SpaceTabBar';
+import { SpaceSwitcher, SWITCHER_ADD_SERVER_REASON } from './SpaceSwitcher';
 import { PanelStack } from './PanelStack';
 import { NoticeHost } from './NoticeHost';
-import { REASONS, SHIPPED_DEFAULT_MENU } from '../domain';
+import { SHIPPED_DEFAULT_MENU } from '../domain';
 import { resolveMenu } from './menu-resolve';
 import { demotionNotice, describeDropped, overflowNotice } from './notices';
 import type { NavPort } from './nav-port';
@@ -31,6 +32,7 @@ const presentKind: KindPresenter = (ref) => {
     memory: { label: 'Memories', icon: '◈' },
     artifact: { label: 'Artifacts', icon: '❖' },
     loop: { label: 'Loops', icon: '↻' },
+    file: { label: 'Files', icon: '▥' },
     project: { label: 'Projects', icon: '⬒' },
     pull_request: { label: 'Pull requests', icon: '⑂' },
     worktree: { label: 'Worktrees', icon: '⑂' },
@@ -54,17 +56,18 @@ const renderRail = (props: Partial<React.ComponentProps<typeof MenuRail>> = {}) 
   );
 
 describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', () => {
-  it('GRAMMAR 1: a group header is a label and nothing else — never clickable', () => {
+  it('GRAMMAR 1: groups are boundaries, not printed labels (revision 11)', () => {
+    // The expanded rail draws NO eyebrow headers — six intent clusters of one
+    // or two rows each made a header above every row say what the row already
+    // says. The label survives as the group's ACCESSIBLE name and the boundary
+    // as spacing/hairlines.
     const { container } = renderRail();
-    const headers = container.querySelectorAll('.shell-rail__header');
-    expect(headers).toHaveLength(SHIPPED_DEFAULT_MENU.groups.length);
-    headers.forEach((header) => {
-      // Not a button, not focusable, no handler surface.
-      expect(header.tagName).not.toBe('BUTTON');
-      expect(header.getAttribute('tabindex')).toBeNull();
-      expect(header.closest('button')).toBeNull();
-    });
-    expect(headers[0]?.textContent).toBe('Home');
+    expect(container.querySelectorAll('.shell-rail__header')).toHaveLength(0);
+    const groups = [...container.querySelectorAll('.shell-rail__group')];
+    expect(groups).toHaveLength(SHIPPED_DEFAULT_MENU.groups.length);
+    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(
+      SHIPPED_DEFAULT_MENU.groups.map((g) => g.label),
+    );
   });
 
   /**
@@ -74,22 +77,25 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
    * use it — so this asserts the mechanism still works AND that no channel row
    * or Channels header rides along on the shipped default.
    */
-  it('keeps the dynamic-group grammar for voice, with no Channels section left', () => {
+  it('appends dynamic voice rows beneath the Chats cluster (revision 11)', () => {
     const onNavigate = vi.fn();
     const { container, getByText } = renderRail({
       onNavigate,
       dynamicGroups: {
-        voice: {
+        chats: {
           items: [{ id: 'vc-studio', kind: 'voice_channel', label: 'studio', icon: '\u266a', live: 2 }],
         },
       },
     });
 
-    const headers = [...container.querySelectorAll('.shell-rail__header')]
-      .map((node) => node.textContent);
-    expect(headers).toContain('Voice');
-    expect(headers).not.toContain('Channels');
-    expect(container.querySelectorAll('[data-entity-id]')).toHaveLength(1);
+    const chats = [...container.querySelectorAll('.shell-rail__group')].find(
+      (group) => group.getAttribute('aria-label') === 'Chats',
+    ) as HTMLElement;
+    expect(chats).toBeDefined();
+    // Authored conversation rows stay \u2014 the dynamic rows APPEND, never replace.
+    expect(within(chats).getByText('Channels')).toBeTruthy();
+    expect(within(chats).getByText('Messages')).toBeTruthy();
+    expect(chats.querySelectorAll('[data-entity-id]')).toHaveLength(1);
 
     fireEvent.click(getByText('studio'));
     expect(onNavigate).toHaveBeenCalledWith({ type: 'entity', ref: 'vc-studio', kind: 'voice_channel' });
@@ -98,8 +104,8 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
   it('GRAMMAR 2: a plain item renders one navigating row with its glyph', () => {
     const onNavigate = vi.fn();
     const { getByText } = renderRail({ onNavigate });
-    fireEvent.click(getByText('Pull requests'));
-    expect(onNavigate).toHaveBeenCalledWith({ type: 'kind', ref: 'pull_request' });
+    fireEvent.click(getByText('Channels'));
+    expect(onNavigate).toHaveBeenCalledWith({ type: 'kind', ref: 'channel' });
   });
 
   it('GRAMMAR 3: the caret row navigates on the ROW and toggles on the CARET', () => {
@@ -115,41 +121,57 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     ) as HTMLElement;
     expect(row).toBeDefined();
 
-    // Ships expanded, per the canvas.
-    expect(queryByText('Tasks')).not.toBeNull();
-
-    // Caret collapses WITHOUT navigating — the two controls are independent.
-    fireEvent.click(getByLabelText('Collapse Workspace'));
-    expect(onNavigate).not.toHaveBeenCalled();
+    // Revision 11: carets ship CLOSED — ~8 intent rows on first paint, the
+    // classification one caret-click deeper.
     expect(queryByText('Tasks')).toBeNull();
 
-    // Row click opens the composed view (RULING E) without re-expanding.
+    // Caret expands WITHOUT navigating — the two controls are independent.
+    fireEvent.click(getByLabelText('Expand Workspace'));
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(queryByText('Tasks')).not.toBeNull();
+
+    // Row click opens the composed view (RULING E) without re-collapsing.
     fireEvent.click(row);
     expect(onNavigate).toHaveBeenCalledWith({ type: 'view', ref: 'workspace' });
-    expect(queryByText('Tasks')).toBeNull();
-
-    fireEvent.click(getByLabelText('Expand Workspace'));
     expect(queryByText('Tasks')).not.toBeNull();
+
+    fireEvent.click(getByLabelText('Collapse Workspace'));
+    expect(queryByText('Tasks')).toBeNull();
   });
 
   it('renders leaves with the guide rule and no icon column (T1-1)', () => {
-    const { container, getByText } = renderRail();
+    const { container, getByText, getByLabelText } = renderRail();
+    fireEvent.click(getByLabelText('Expand Workspace'));
     const leaf = getByText('Sessions').closest('.shell-rail__leaf');
     expect(leaf).not.toBeNull();
     expect(leaf?.querySelector('.shell-rail__guide')).not.toBeNull();
     expect(leaf?.querySelector('.shell-rail__icon')).toBeNull();
     const leaves = [...container.querySelectorAll('.shell-rail__leaf')];
     expect(leaves).toHaveLength(8);
+    // Revision 11: channel left for Chats; file fills the eighth slot.
     expect(leaves.map((row) => row.querySelector('.shell-rail__label')?.textContent)).toEqual([
-      'Tasks', 'Sessions', 'Docs', 'Channels', 'Teammates', 'Memories', 'Artifacts', 'Loops',
+      'Tasks', 'Sessions', 'Docs', 'Teammates', 'Memories', 'Artifacts', 'Loops', 'Files',
+    ]);
+  });
+
+  it('gives Code its own caret carrying the dev collections (revision 11)', () => {
+    const { container, getByLabelText, queryByText } = renderRail();
+    expect(queryByText('Pull requests')).toBeNull();
+    fireEvent.click(getByLabelText('Expand Code'));
+    const code = [...container.querySelectorAll('.shell-rail__group')].find(
+      (group) => group.getAttribute('aria-label') === 'Code',
+    );
+    const leaves = [...(code?.querySelectorAll('.shell-rail__leaf') ?? [])];
+    expect(leaves.map((row) => row.querySelector('.shell-rail__label')?.textContent)).toEqual([
+      'Projects', 'Pull requests', 'Worktrees',
     ]);
   });
 
   it('marks the active target with aria-current, and only that one', () => {
-    const { container } = renderRail({ activeTarget: { type: 'kind', ref: 'task' } });
+    const { container } = renderRail({ activeTarget: { type: 'kind', ref: 'channel' } });
     const current = container.querySelectorAll('[aria-current="page"]');
     expect(current).toHaveLength(1);
-    expect(current[0]?.textContent).toContain('Tasks');
+    expect(current[0]?.textContent).toContain('Channels');
   });
 
   it('is DISCRETE: 165 expanded, 48 collapsed, nothing between', () => {
@@ -267,7 +289,8 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
   });
 
   it('the EXPANDED live mark carries the word "live", not a bare number (C8/L10)', () => {
-    const { container } = renderRail();
+    const { container, getByLabelText } = renderRail();
+    fireEvent.click(getByLabelText('Expand Workspace'));
     const live = container.querySelector('.shell-rail__live');
     // Colour alone never carries status; the word rides along visually-hidden.
     expect(live?.textContent).toContain('live');
@@ -284,18 +307,15 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     });
   });
 
-  it('renders add-server DISABLED WITH REASON — never hidden, never faked (L6/R10)', () => {
-    const { getByTitle } = renderRail();
-    // D28: aria-disabled AND still focusable. The previous version asserted
-    // `control.disabled === true`, which pinned the violation in place — a
-    // natively disabled control leaves the tab order, so the reason it carries
-    // becomes unreachable for keyboard and screen-reader users.
-    const control = getByTitle(REASONS.addServerDeferred) as HTMLButtonElement;
-    // D28's trio, per A1a: PRESENT, ANNOUNCED, and REACHABLE.
-    expect(control.getAttribute('aria-disabled')).toBe('true'); // announced
-    expect(control.disabled).toBe(false); // inverted guard: native attr must NOT return
-    control.focus(); // reachable — the reason is useless if you cannot land on it
-    expect(document.activeElement).toBe(control);
+  it('renders the identity slot at the head of the scroll area', () => {
+    // The in-rail server rows and the add-server footer RETIRED with revision
+    // 11 — the identity block (SpaceSwitcher) is their one successor, and the
+    // rail hosts it as a slot rather than knowing servers itself.
+    const { container } = renderRail({ identitySlot: <div data-testid="ident" /> });
+    const scroll = container.querySelector('.shell-rail__scroll');
+    expect(scroll?.firstElementChild?.getAttribute('data-testid')).toBe('ident');
+    expect(container.querySelector('.shell-rail__servers')).toBeNull();
+    expect(container.textContent).not.toContain('add server');
   });
 
   it('drops a ref it cannot present rather than drawing a blank row', () => {
@@ -305,9 +325,9 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     // so a viewer is never silently short a row. This only covers a presenter
     // that returns null after that check has already passed.
     const { queryByText } = renderRail({ presentKind: () => null });
-    expect(queryByText('Tasks')).toBeNull();
+    expect(queryByText('Channels')).toBeNull();
     // View refs still resolve — they are shell's own table.
-    expect(queryByText('Dashboard')).not.toBeNull();
+    expect(queryByText('Home')).not.toBeNull();
   });
 });
 
@@ -320,17 +340,16 @@ describe('MenuRail — fail-closed rendering, end to end (§4.1)', () => {
   it('renders the shipped default when the seam resolves null (the Phase-1 path)', () => {
     // createFixtureSeam ships no menu row, so this IS the gate rendering.
     const { container, getByText } = renderResolved(null);
-    // Row labels, not raw text: group headers legitimately repeat these words.
     const labels = [...container.querySelectorAll('.shell-rail__label')].map((n) => n.textContent);
     expect(labels).toContain('Workspace');
     expect(labels).toContain('Settings');
-    getByText('Tasks');
+    getByText('Channels');
   });
 
   it('renders the shipped default for a future schemaVersion instead of nothing', () => {
     const { container } = renderResolved({ schemaVersion: 4, revision: 1, groups: [] } as never);
     const labels = [...container.querySelectorAll('.shell-rail__label')].map((n) => n.textContent);
-    expect(labels).toContain('Dashboard');
+    expect(labels).toContain('Home');
     expect(labels).toContain('Settings');
   });
 
@@ -343,11 +362,13 @@ describe('MenuRail — fail-closed rendering, end to end (§4.1)', () => {
         { id: 'admin', label: 'Admin', items: [{ type: 'view', ref: 'settings' }] },
       ],
     };
-    const { getByText, queryByText } = renderResolved(custom);
-    getByText('Ops');
+    const { container, getByText, queryByText } = renderResolved(custom);
+    // Group labels are accessible names now, not printed eyebrows.
+    const groups = [...container.querySelectorAll('.shell-rail__group')];
+    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Ops', 'Admin']);
     getByText('Tasks');
     // The shipped default's groups are NOT merged in.
-    expect(queryByText('Tracking')).toBeNull();
+    expect(queryByText('Chats')).toBeNull();
   });
 
   it('always keeps a route to settings, whatever the server said', () => {
@@ -360,21 +381,11 @@ describe('MenuRail — fail-closed rendering, end to end (§4.1)', () => {
   });
 });
 
-describe('SpaceTabBar (T0-1, D1)', () => {
-  const spaces = [
-    { id: 'sp_1' as SpaceId, name: 'atelier' },
-    { id: 'sp_2' as SpaceId, name: 'playground' },
-  ] as SpaceSummary[];
-
+describe('SpaceTabBar (T0-1, D1 — revision 11: the product bar)', () => {
   const renderBar = (props: Partial<React.ComponentProps<typeof SpaceTabBar>> = {}) =>
     render(
       <div className="cv2-root">
-        <SpaceTabBar
-          spaces={spaces}
-          activeSpaceId={'sp_1' as SpaceId}
-          onSelectSpace={() => {}}
-          {...props}
-        />
+        <SpaceTabBar {...props} />
       </div>,
     );
 
@@ -393,23 +404,28 @@ describe('SpaceTabBar (T0-1, D1)', () => {
     expect(onOpenAccount).toHaveBeenCalled();
   });
 
-  it('marks exactly one space tab selected and switches on click', () => {
-    const onSelectSpace = vi.fn();
-    const { getAllByRole, getByText } = renderBar({ onSelectSpace });
-    const selected = getAllByRole('tab').filter((t) => t.getAttribute('aria-selected') === 'true');
-    expect(selected).toHaveLength(1);
-    expect(selected[0]?.textContent).toContain('atelier');
-    fireEvent.click(getByText('playground'));
-    expect(onSelectSpace).toHaveBeenCalledWith('sp_2');
+  it('carries NO server chip and NO space tabs — the identity block owns both (r11)', () => {
+    const { container } = renderBar();
+    expect(container.querySelector('.shell-tabbar__server')).toBeNull();
+    expect(container.querySelector('.shell-tabbar__spaces')).toBeNull();
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
   });
 
-  it('shows the selected Server immediately after the tm8 mark', () => {
-    const { container, getByLabelText } = renderBar({
-      activeServer: { label: 'ec2 · ubuntu', reachability: 'online' },
-    });
-    expect(getByLabelText('Selected server: ec2 · ubuntu, online')).toBeTruthy();
-    const mark = container.querySelector('.shell-tabbar__mark');
-    expect(mark?.nextElementSibling?.classList.contains('shell-tabbar__server')).toBe(true);
+  it('the bell opens Inbox when a host wires it', () => {
+    const onOpenInbox = vi.fn();
+    const { getByTestId } = renderBar({ onOpenInbox });
+    const bell = getByTestId('open-inbox');
+    expect(bell.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(bell);
+    expect(onOpenInbox).toHaveBeenCalledOnce();
+  });
+
+  it('the bell keeps the D28 posture without a host: announced, reachable, refused', () => {
+    const bell = renderBar().getByTestId('open-inbox') as HTMLButtonElement;
+    expect(bell.getAttribute('aria-disabled')).toBe('true'); // announced
+    expect(bell.disabled).toBe(false); // inverted guard against the native attr
+    bell.focus(); // reachable
+    expect(document.activeElement).toBe(bell);
   });
 
   it('opens the prompt catalog from the bar when the host wires it', () => {
@@ -424,21 +440,101 @@ describe('SpaceTabBar (T0-1, D1)', () => {
     // control at all, rather than one that does nothing when clicked.
     expect(renderBar().queryByTestId('open-prompts')).toBeNull();
   });
+});
 
-  it('renders add-space disabled-with-reason rather than hiding it (L6)', () => {
-    const control = renderBar().getByLabelText('Add space') as HTMLButtonElement;
-    expect(control.getAttribute('aria-disabled')).toBe('true'); // announced
-    expect(control.disabled).toBe(false); // inverted guard against the native attr
-    control.focus(); // reachable
-    expect(document.activeElement).toBe(control);
+describe('SpaceSwitcher — the identity block (revision 11)', () => {
+  const servers = [
+    { id: 'local', label: 'local', local: true, reachability: 'online' as const },
+    { id: 'utho', label: 'utho · tm8', local: false, reachability: 'offline' as const },
+  ];
+  const spaces = [
+    { id: 'sp_1' as SpaceId, name: 'atelier' },
+    { id: 'sp_2' as SpaceId, name: 'playground' },
+  ] as SpaceSummary[];
+
+  const renderSwitcher = (
+    props: Partial<React.ComponentProps<typeof SpaceSwitcher>> = {},
+  ) =>
+    render(
+      <div className="cv2-root">
+        <SpaceSwitcher
+          servers={servers}
+          activeServerId="local"
+          spaces={spaces}
+          activeSpaceId={'sp_1' as SpaceId}
+          collapsed={false}
+          onSelectServer={() => {}}
+          onSelectSpace={() => {}}
+          {...props}
+        />
+      </div>,
+    );
+
+  it('names the pair — active space and its server — on the trigger', () => {
+    const { getByLabelText } = renderSwitcher();
+    expect(getByLabelText('Server and space: local · atelier')).toBeTruthy();
   });
 
-  it('opens Space and local-project onboarding when the real seam wires it', () => {
+  it('switches space from the popover and closes', () => {
+    const onSelectSpace = vi.fn();
+    const { getByLabelText, getByText, queryByRole } = renderSwitcher({ onSelectSpace });
+    fireEvent.click(getByLabelText('Server and space: local · atelier'));
+    fireEvent.click(getByText('playground'));
+    expect(onSelectSpace).toHaveBeenCalledWith('sp_2');
+    expect(queryByRole('dialog')).toBeNull();
+  });
+
+  it('marks the current space and does NOT re-select it on click', () => {
+    const onSelectSpace = vi.fn();
+    const { getByLabelText, getByRole } = renderSwitcher({ onSelectSpace });
+    fireEvent.click(getByLabelText('Server and space: local · atelier'));
+    // Scoped to the popover: the trigger also prints the space name.
+    const dialog = getByRole('dialog');
+    const current = within(dialog).getByText('atelier').closest('button');
+    expect(current?.getAttribute('aria-current')).toBe('true');
+    fireEvent.click(current as HTMLElement);
+    expect(onSelectSpace).not.toHaveBeenCalled();
+  });
+
+  it('an INACTIVE server row is the switch; its spaces are honestly not listed', () => {
+    const onSelectServer = vi.fn();
+    const { getByLabelText, getByText } = renderSwitcher({ onSelectServer });
+    fireEvent.click(getByLabelText('Server and space: local · atelier'));
+    // No cross-server aggregation exists: the popover says so instead of
+    // pretending to list a remote server's spaces.
+    expect(getByText('switch to see its spaces')).toBeTruthy();
+    fireEvent.click(getByText('utho · tm8'));
+    expect(onSelectServer).toHaveBeenCalledWith('utho');
+  });
+
+  it('renders both add-affordances disabled-with-reason when unhosted (D28/L6)', () => {
+    const { getByLabelText, getByTitle } = renderSwitcher();
+    fireEvent.click(getByLabelText('Server and space: local · atelier'));
+    const addServer = getByTitle(SWITCHER_ADD_SERVER_REASON) as HTMLButtonElement;
+    expect(addServer.getAttribute('aria-disabled')).toBe('true');
+    expect(addServer.disabled).toBe(false);
+    addServer.focus();
+    expect(document.activeElement).toBe(addServer);
+  });
+
+  it('wires add-space and add-server when the host supplies them', () => {
     const onAddSpace = vi.fn();
-    const control = renderBar({ onAddSpace }).getByLabelText('Add space');
-    expect(control.getAttribute('aria-disabled')).toBeNull();
-    fireEvent.click(control);
+    const onAddServer = vi.fn();
+    const { getByLabelText, getByText } = renderSwitcher({ onAddSpace, onAddServer });
+    fireEvent.click(getByLabelText('Server and space: local · atelier'));
+    fireEvent.click(getByText('＋ new space'));
     expect(onAddSpace).toHaveBeenCalledOnce();
+    fireEvent.click(getByLabelText('Server and space: local · atelier'));
+    fireEvent.click(getByText('＋ add server'));
+    expect(onAddServer).toHaveBeenCalledOnce();
+  });
+
+  it('Escape closes the popover', () => {
+    const { getByLabelText, queryByRole } = renderSwitcher();
+    fireEvent.click(getByLabelText('Server and space: local · atelier'));
+    expect(queryByRole('dialog')).not.toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(queryByRole('dialog')).toBeNull();
   });
 });
 
@@ -607,8 +703,28 @@ describe('per-kind counters — the rail shows what is NEW, not how much exists'
     return table[ref] ?? null;
   };
 
+  /* A flat config: revision 11 tucks these kinds behind closed carets in the
+     shipped default, and these tests are about COUNTERS, not caret state. */
+  const countsConfig: MenuConfig = {
+    schemaVersion: 1,
+    revision: 1,
+    groups: [
+      {
+        id: 'counts',
+        label: 'Counts',
+        items: [
+          { type: 'kind', ref: 'task' },
+          { type: 'kind', ref: 'doc' },
+          { type: 'kind', ref: 'work_session' },
+          { type: 'kind', ref: 'project' },
+          { type: 'view', ref: 'settings' },
+        ],
+      },
+    ],
+  };
+
   it('draws the UNSEEN count, not the lifetime total', () => {
-    const { container } = renderRail({ presentKind: presentCounts });
+    const { container } = renderRail({ config: countsConfig, presentKind: presentCounts });
     const badges = [...container.querySelectorAll('.shell-rail__badge')];
     const texts = badges.map((b) => b.textContent?.replace(/\D/g, ''));
     // 7 new, not 142 total. A total only grows, is the same on every visit,
@@ -618,7 +734,7 @@ describe('per-kind counters — the rail shows what is NEW, not how much exists'
   });
 
   it('a caught-up kind draws NO badge — not a zero', () => {
-    const { container } = renderRail({ presentKind: presentCounts });
+    const { container } = renderRail({ config: countsConfig, presentKind: presentCounts });
     const badges = [...container.querySelectorAll('.shell-rail__badge')];
     // Docs: 210 total, 0 unseen. A `0` on every row of a caught-up workspace
     // is noise, and reads as a state rather than as the absence of news.
@@ -627,14 +743,14 @@ describe('per-kind counters — the rail shows what is NEW, not how much exists'
   });
 
   it('the TOTAL is demoted to the hover title, not discarded', () => {
-    const { container } = renderRail({ presentKind: presentCounts });
+    const { container } = renderRail({ config: countsConfig, presentKind: presentCounts });
     const row = [...container.querySelectorAll('.shell-rail__leaf, .shell-rail__row')]
       .find((element) => element.querySelector('.shell-rail__label')?.textContent === 'Tasks');
     expect(row?.getAttribute('title')).toBe('142 tasks, 7 new');
   });
 
   it('ABSENT counters draw nothing at all', () => {
-    const { container } = renderRail({ presentKind: presentCounts });
+    const { container } = renderRail({ config: countsConfig, presentKind: presentCounts });
     const projects = [...container.querySelectorAll('.shell-rail__row')]
       .find((element) => element.querySelector('.shell-rail__label')?.textContent === 'Projects');
     expect(projects?.querySelector('.shell-rail__badge')).toBeNull();
@@ -642,7 +758,7 @@ describe('per-kind counters — the rail shows what is NEW, not how much exists'
   });
 
   it('sessions keep the green RUNNING dot beside their news count', () => {
-    const { container } = renderRail({ presentKind: presentCounts });
+    const { container } = renderRail({ config: countsConfig, presentKind: presentCounts });
     // Two different facts: 3 PTYs are running (about the world), 2 rows are
     // new to me (about this viewer). Neither may absorb the other.
     const live = [...container.querySelectorAll('.shell-rail__live')]
