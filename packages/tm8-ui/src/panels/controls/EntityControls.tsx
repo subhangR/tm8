@@ -863,35 +863,76 @@ function RestoreIcon() {
  *                        vocabulary, never the disabled one).
  *   no `onSetState`    — the host did not wire the write; disabled-with-reason
  *                        rather than a select that silently drops the change.
+ *
+ * TWO ANATOMIES, ONE CONTROL — the same pairing `RowMembershipControl` makes,
+ * for the same reason (user ruling 2026-08-16: "there is a status button on
+ * the task tile... clicking on that should move it to done"). `select` is the
+ * expanded strip's dropdown, unchanged; `dot` is the COLLAPSED tile's status
+ * mark, which until now was an inert `<span>` that looked pressable and was
+ * not. Same options, same gates, same refusal words — a second copy is exactly
+ * the duplication D67 removed once already.
+ *
+ * THE MENU OFFERS THE WHOLE VOCABULARY, not a `done` toggle. `set_work_state`
+ * accepts any value from any other, so a control that only ever wrote `done`
+ * would misname itself on six of seven values and have no way back; and `done`
+ * in particular routes through `complete`, which carries the acceptance gate —
+ * a refusal needs somewhere to be SAID, which a bare dot has not got. The
+ * unconditional one-click Complete already exists as a row action beside it.
  */
-function RowStateControl({
+export function RowStateControl({
   row,
   props,
   control,
   pill,
+  variant = 'select',
+  glyph,
 }: {
   row: ControlSubject;
   props: ControlHost;
   control: StateControl | undefined;
   /** The kind's existing value→word / value→tone map. The ONLY source for both. */
   pill: StatusPillSpec | undefined;
+  /** `dot` for the collapsed tile's status mark. */
+  variant?: 'select' | 'dot';
+  /**
+   * The tile's own status mark, passed in rather than drawn here: the tile
+   * resolves which mark to draw against liveness precedence, and a refusal
+   * must carry the SAME mark as the live control or the row changes shape at
+   * the moment it refuses.
+   */
+  glyph?: ReactNode;
 }) {
   const selectId = useId();
+  const dot = variant === 'dot';
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLSpanElement>(null);
+  const menuRef = useRef<HTMLSpanElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismissable(open, [boxRef, menuRef], close);
+  const anchor = useMenuAnchor(open, boxRef, menuRef, close);
   const wordFor = (value: string): string =>
     pill?.labels?.[value] ?? value.replace(/_/g, ' ');
   const toneFor = (value: string): PillTone => pill?.tones?.[value] ?? 'idle';
+  const label = `Change state for ${row.title}`;
+  /* The refusal FORM follows the anatomy, not the reason: prose under a strip
+     control, which has room for it; a tooltip on a 16px mark, which has not.
+     Both are DisabledWithReason — the split is the one that primitive names. */
+  const refuse = (reason: UnavailableReason, face: ReactNode) =>
+    dot ? (
+      <DisabledIconControl label={label} glyph={glyph} reason={reason} />
+    ) : (
+      <DisabledAction label="Change state" reason={reason}>
+        {face}
+      </DisabledAction>
+    );
 
   if (!control) {
-    return (
-      <DisabledAction
-        label="Change state"
-        reason={{
-          cause: `${getKind(props.kind).label} has no state to set on this node`,
-          remedy: 'the contract records no status field for this kind, so nothing could be written',
-        }}
-      >
-        <span className="lp__statesel lp__statesel--absent">no state</span>
-      </DisabledAction>
+    return refuse(
+      {
+        cause: `${getKind(props.kind).label} has no state to set on this node`,
+        remedy: 'the contract records no status field for this kind, so nothing could be written',
+      },
+      <span className="lp__statesel lp__statesel--absent">no state</span>,
     );
   }
 
@@ -907,15 +948,15 @@ function RowStateControl({
   );
 
   if (control.readOnlyReason) {
-    return (
-      <DisabledAction label="Change state" reason={toReason(control.readOnlyReason)}>
-        {currentPill}
-      </DisabledAction>
-    );
+    return refuse(toReason(control.readOnlyReason), currentPill);
   }
 
   if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
-    return <CheckingPermission label="Change state" />;
+    return dot ? (
+      <CheckingPermission label={label} glyph={glyph} />
+    ) : (
+      <CheckingPermission label="Change state" />
+    );
   }
 
   const availability = resolveAction(control.command).availability({
@@ -927,18 +968,84 @@ function RowStateControl({
   });
 
   if (availability.kind === 'disabled') {
-    return (
-      <DisabledAction label="Change state" reason={toReason(availability.reason)}>
-        {currentPill}
-      </DisabledAction>
-    );
+    return refuse(toReason(availability.reason), currentPill);
   }
 
   if (!props.onSetState) {
+    return refuse(NOT_WIRED_REASON, currentPill);
+  }
+
+  if (dot) {
+    const word = current === '' ? 'unknown' : wordFor(current);
     return (
-      <DisabledAction label="Change state" reason={NOT_WIRED_REASON}>
-        {currentPill}
-      </DisabledAction>
+      <span className="lp__assignwrap" ref={boxRef}>
+        <button
+          type="button"
+          className="lp__statedot"
+          data-testid="row-state-trigger"
+          /* The trigger carries the CURRENT value in its name and its tooltip,
+             so a value the registry does not list — which the menu has no row
+             for — is still stated rather than silently unrepresented. */
+          title={`${word} — change state`}
+          aria-expanded={open}
+          aria-haspopup="true"
+          aria-label={`${label}, currently ${word}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((v) => !v);
+          }}
+        >
+          {glyph}
+        </button>
+        {open && anchor
+          ? createPortal(
+              <span
+                ref={menuRef}
+                className="lp__assignmenu"
+                style={anchor.style}
+                /* Radio, not the membership menu's toggles: these values are
+                   mutually exclusive, and exactly one is always true. */
+                role="radiogroup"
+                aria-label={`State for ${row.title}`}
+              >
+                {control.options.map((o) => {
+                  const on = o.id === current;
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      role="radio"
+                      className={on ? 'lp__assignopt lp__assignopt--on' : 'lp__assignopt'}
+                      data-testid="row-state-option"
+                      data-state={o.id}
+                      aria-checked={on}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpen(false);
+                        if (on) return;
+                        // The option's own `via` wins, exactly as in the
+                        // select: `done` must reach the completion verb.
+                        props.onSetState?.(row.id, o.id, o.via ?? control.command);
+                      }}
+                    >
+                      {/* WORDS ONLY, exactly as the select's options are. A
+                          dot per row would have to invent a tone AND a fill
+                          for a value no record holds — `renderBadge` derives
+                          both from a row, and there is no row to derive them
+                          from until the value is chosen. The mark stays where
+                          it is a fact: on the trigger. */}
+                      <span className="lp__assignopt-name">{wordFor(o.id)}</span>
+                      <span className="lp__assignopt-mark" aria-hidden>
+                        {on ? '✓' : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+              </span>,
+              anchor.host,
+            )
+          : null}
+      </span>
     );
   }
 

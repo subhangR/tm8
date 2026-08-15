@@ -175,6 +175,136 @@ describe('D67 — the picker writes the value the user chose', () => {
   });
 });
 
+/**
+ * THE COLLAPSED TILE'S STATUS MARK, as a control.
+ *
+ * USER RULING 2026-08-16: "there is a status button on the task tile, which
+ * shows a circle with the status, i am thinking clicking on that should move it
+ * to done". The mark was an inert `<span>` — it looked pressable and was not,
+ * and a click on it selected the row. It is now the SAME control the expanded
+ * strip mounts, in its `dot` anatomy.
+ *
+ * NOT a one-click `done`, and these tests are where that reasoning is held: the
+ * vocabulary has seven values with no transition matrix behind it, and `done`
+ * alone carries the acceptance gate, so a mark that only ever wrote `done`
+ * would misname itself on six values and refuse on the seventh with nowhere to
+ * say why. The menu offers the whole vocabulary and routes each value through
+ * the verb that value requires — which is exactly what the select already did.
+ */
+describe('the collapsed tile writes state through the same control', () => {
+  function openTileMenu(): void {
+    const trigger = screen.getAllByTestId('row-state-trigger')[0]!;
+    // Reachable with the row COLLAPSED: no detail strip has been opened, so
+    // this cannot be passing on the expanded strip's control by accident.
+    expect(document.querySelectorAll('.lp__rowdetail').length).toBe(0);
+    fireEvent.click(trigger);
+  }
+
+  it('makes the status mark a real button, not a span that looks like one', () => {
+    mount('task', { onSetState: vi.fn() });
+    const trigger = screen.getAllByTestId('row-state-trigger')[0]!;
+    expect(trigger.tagName).toBe('BUTTON');
+    expect(trigger.getAttribute('aria-haspopup')).toBe('true');
+    // The name states the value it is showing, so the fact survives being
+    // drawn as a coloured dot.
+    expect(trigger.getAttribute('aria-label')).toMatch(/^Change state for .+, currently /);
+  });
+
+  it('offers every settable state the registry declares, in registry order', () => {
+    mount('task', { onSetState: vi.fn() });
+    openTileMenu();
+    const offered = screen
+      .getAllByTestId('row-state-option')
+      .map((o) => o.getAttribute('data-state'));
+    expect(offered).toEqual(getKind('task').list.stateControl!.options.map((o) => o.id));
+  });
+
+  it('dispatches the ordinary work verb for an ordinary state', () => {
+    const onSetState = vi.fn();
+    mount('task', { onSetState });
+    openTileMenu();
+    fireEvent.click(screen.getAllByTestId('row-state-option').find(
+      (o) => o.getAttribute('data-state') === 'blocked',
+    )!);
+
+    expect(onSetState).toHaveBeenCalledTimes(1);
+    const [, next, via] = onSetState.mock.calls[0]!;
+    expect(next).toBe('blocked');
+    expect(via).toBe('set-state');
+  });
+
+  /** The same routing the select holds, from the other anatomy — one control. */
+  it('routes `done` through the completion verb, not the work verb', () => {
+    const onSetState = vi.fn();
+    mount('task', { onSetState });
+    openTileMenu();
+    fireEvent.click(screen.getAllByTestId('row-state-option').find(
+      (o) => o.getAttribute('data-state') === 'done',
+    )!);
+
+    const [, next, via] = onSetState.mock.calls[0]!;
+    expect(next).toBe('done');
+    expect(via).toBe('complete');
+  });
+
+  it('marks the current value and writes nothing when it is re-chosen', () => {
+    const onSetState = vi.fn();
+    const [row] = rowsOfKind('task');
+    const current = (row!.state as unknown as { workStatus: string }).workStatus;
+    mount('task', { onSetState }, [row!]);
+    openTileMenu();
+
+    const chosen = screen.getAllByTestId('row-state-option').filter(
+      (o) => o.getAttribute('aria-checked') === 'true',
+    );
+    expect(chosen.map((o) => o.getAttribute('data-state'))).toEqual([current]);
+    fireEvent.click(chosen[0]!);
+    expect(onSetState).not.toHaveBeenCalled();
+  });
+
+  it('opening the menu does not select the row underneath it', () => {
+    const onSelect = vi.fn();
+    mount('task', { onSetState: vi.fn(), onSelect });
+    openTileMenu();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The status word is visually hidden and easy to drop when the mark becomes
+   * a control — at which point a status a sighted user reads as a colour is
+   * readable to nobody else. It is the row's read-out, so it survives.
+   */
+  it('keeps the row’s own accessible status word', () => {
+    mount('task', { onSetState: vi.fn() });
+    const word = document.querySelector('.pn-tt__status-text')?.textContent;
+    expect(word).toBeTruthy();
+  });
+
+  /**
+   * REFUSAL FORM FOLLOWS THE ANATOMY. `DisabledAction`'s caption is a block
+   * UNDER the control: correct in the strip, fatal on a 16px mark in a
+   * single-line row. The tile must therefore refuse in the TOOLTIP form.
+   */
+  it.each([
+    ['an unwired host', { onSetState: undefined }],
+    ['refused edit permission', { onSetState: vi.fn(), capabilitiesOf: () => CAPS_NONE }],
+  ])('%s refuses in the tooltip form, without a caption', (_label, over) => {
+    mount('task', over);
+    expect(screen.queryByTestId('row-state-trigger')).toBeNull();
+    const tile = document.querySelector('[data-testid="list-tile"]') as HTMLElement;
+    const refused = within(tile).getAllByTestId('disabled-with-reason');
+    expect(refused.length).toBeGreaterThan(0);
+    expect(tile.querySelector('.pn-tt__main .hon-caption')).toBeNull();
+    expect(tile.querySelector('.pn-tt__main .hon-tip')).not.toBeNull();
+  });
+
+  it('unloaded capabilities read as CHECKING on the tile too', () => {
+    mount('task', { onSetState: vi.fn(), capabilitiesOf: () => undefined });
+    expect(screen.queryByTestId('row-state-trigger')).toBeNull();
+    expect(screen.getAllByTestId('checking-permission').length).toBeGreaterThan(0);
+  });
+});
+
 describe('D67 — the four refusals stay distinct', () => {
   it('a kind with no state field says so, and draws no picker', () => {
     // doc carries no state member in the contract's EntityState union.
