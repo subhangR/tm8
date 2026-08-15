@@ -26,6 +26,14 @@
  *     rendered anyway. A card that says "deleted" about a node timeout is the
  *     same class of lie in the other direction.
  *
+ * IT RUNS FOR EVERY `entity` ROUTE, not only for a cold arrival, and that is a
+ * deliberate trade rather than an oversight. Scoping it to "the address was
+ * pasted" would need a fact nothing keeps — the id looks identical whether it
+ * came from a link or from a click — and the every-time version is also the one
+ * that stays true when the address changes under a live shell. The cost is one
+ * read of the entity the route names, which is the entity every screen on that
+ * route is about to read anyway.
+ *
  * IT DRAWS NOTHING AND NAVIGATES NOWHERE. The recovery — the Space's safe
  * default view, as a history REPLACEMENT so Back cannot restore the broken URL
  * — belongs to the host, which owns the nav store. This only answers.
