@@ -441,11 +441,14 @@ export function GateApp(props: GateAppProps = {}) {
     if (!data.spaceId) return;
     /* THE SEED HAS TO GO WITH THE ADDRESS, or the recovery only half-works.
        An `e/{id}?origin=` link seeds the dead id onto its origin screen's
-       stack, and the address↔stack sync runs BOTH ways: leave it there and the
-       viewer's next visit to that screen re-derives `e/{dead}` from the stack
-       and lands them back on this card, having pressed nothing that asked for
-       it. Clearing the stacks is the same act `leaveSpaceContext` performs for
-       the same reason — stale screen state must not resurrect a destination. */
+       stack; leave it there and the viewer's next visit to that screen opens a
+       tombstoned entity in its aside, having pressed nothing that asked for it.
+       (It used to be worse: while the stack→address sync existed, that screen
+       re-derived `e/{dead}` and landed them back on this card. The sync is gone
+       under ruling M1 — see `openOnScreen` — and this clear is still right for
+       the half of the reason that remains.) Clearing the stacks is the same act
+       `leaveSpaceContext` performs for the same reason — stale screen state
+       must not resurrect a destination. */
     screenStackStore.getState().clearAll();
     const view = defaultRoute(data.spaceId).target;
     navStore.setState((s) => ({ view, history: 'replace', revision: s.revision + 1 }));
