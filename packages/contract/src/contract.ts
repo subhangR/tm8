@@ -2073,6 +2073,24 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // no-remembered-place landing, still offerable through the menu editor.
   // A rail edit, not a feature removal: the same posture 125 took toward
   // `chats` and `code`.
+  //
+  // AND REVERSED THE SAME DAY (user ruling, migration 127): a group leads
+  // `dashboard` again, now named CHATS —
+  //   chats | work | graph | channels | files | settings
+  // 126 read the redundancy correctly and drew the wrong conclusion from it.
+  // The duplicated door was the RAIL ROW, not the tab: standing on the
+  // conversation surface, the rail drew one row repeating the tab's own name.
+  // Retiring the group deleted the tab too, which left the brand mark as the
+  // only way back to conversations — a door with no label, discoverable only
+  // by guessing. So the tab returns and the RAIL is what stays gone:
+  // `dashboard` joins the railless view refs (tm8-ui `menu-resolve.ts`), and
+  // the surface is exactly two panes — the conversation LIST is the
+  // navigation, and it belongs to the screen.
+  //
+  // The id is `chats` on both sides. It is free: 125 RENAMED the old `chats`
+  // group to `channels` (it was the channel collection's group, never this
+  // surface's), so nothing else claims it and no space can hold both.
+  { serverId: 'chats', clientId: 'chats' },
   { serverId: 'work', clientId: 'workspace' },
   { serverId: 'graph', clientId: 'graph' },
   { serverId: 'channels', clientId: 'channels' },

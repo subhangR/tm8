@@ -49,13 +49,22 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // place you are already standing in. The `dashboard` ref itself is untouched:
 // same route, same palette row, same menu-editor eligibility, and it is still
 // where a viewer with no remembered place lands. Only its menu HOME is gone.
-export const SHIPPED_DEFAULT_MENU_REVISION = 13;
+// Revision 14 (2026-08-15, user ruling — 13 is reversed): the group leads
+// again, named CHATS. 13 read the redundancy right and cut the wrong thing:
+// the repeated door was the RAIL ROW, not the tab, and removing the group
+// took the tab with it — leaving the brand mark as the only way back to
+// conversations, a door with no label that you find by guessing. The tab
+// returns; the rail is what stays gone (`dashboard` is a railless view ref
+// now), so the surface is two panes and the conversation LIST is its
+// navigation.
+export const SHIPPED_DEFAULT_MENU_REVISION = 14;
 
 /**
- * The tab shell (revision 13, conversation-axis ruling, 2026-08-15), encoded
- * literally — the GROUPS are the top-row TABS and the rail renders only the
- * active group's contents:
+ * The tab shell (revision 14, 2026-08-15), encoded literally — the GROUPS are
+ * the top-row TABS and the rail renders only the active group's contents:
  *
+ *   Chats    → the conversation surface (view ref `dashboard`), two panes:
+ *              the conversation LIST · the open conversation. No rail.
  *   Work     → Workspace ▾ (caret: Tasks · Sessions · Docs · Teammates ·
  *              Memories · Artifacts · Loops · Files) ·
  *              Projects · Pull requests · Worktrees · Code (the git view)
@@ -74,13 +83,18 @@ export const SHIPPED_DEFAULT_MENU_REVISION = 13;
  * (reversible default D2). Nothing was deleted, only re-shelved: every ref
  * keeps its route, its chord and its menu-editor eligibility.
  *
- * THERE IS NO HOME TAB (revision 13). The conversation surface is what the
- * shell falls back to — `HOME_TARGET` in `views/GateApp.tsx` is still the
- * no-remembered-place landing and the brand mark is its door — so no group
- * claims `dashboard`, no tab reads current while you are standing on it, and
- * `activeGroupId` resolving to null is what makes the shell draw NO rail
- * there. The conversation panel is the left column, and it belongs to the
- * screen, not to the chrome.
+ * THE CHATS TAB DRAWS NO RAIL (revision 14), and that is the whole of what
+ * survives from 13. The group owns exactly one childless view item, so
+ * `isRaillessGroup` answers true and the shell renders the screen full-bleed
+ * beside the tab row — which is what keeps the surface at TWO panes. The
+ * conversation LIST is the left one; it belongs to the screen, not to the
+ * chrome, and it is the navigation. A rail here could only have repeated the
+ * tab's own name, which is the redundancy 13 correctly objected to.
+ *
+ * `HOME_TARGET` in `views/GateApp.tsx` is unchanged: the conversation surface
+ * is still where a viewer with no remembered place lands. The difference from
+ * 13 is that the tab now reads CURRENT when you are standing there, instead of
+ * no tab claiming the place at all.
  *
  * MESSAGES stays a VIEW and not a kind row for two independent reasons: the
  * `message` registry row is `strategy: 'anchored'` with `slug: null`, so
@@ -92,6 +106,10 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
   schemaVersion: 1,
   revision: SHIPPED_DEFAULT_MENU_REVISION,
   groups: [
+    // CHATS leads (revision 14). One childless view item is what makes the
+    // group railless — add a second row here and the surface grows a third
+    // pane, which is the arrangement this revision exists to prevent.
+    { id: 'chats', label: 'Chats', items: [{ type: 'view', ref: 'dashboard' }] },
     {
       id: 'workspace',
       label: 'Work',

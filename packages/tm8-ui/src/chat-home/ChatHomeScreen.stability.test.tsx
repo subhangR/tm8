@@ -57,10 +57,11 @@ describe('Chat Home stability', () => {
     const gated = gateReads(port);
     const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
     act(() => gated.release());
-    // Scoped to the PANEL row: since the conversation-axis change the open
-    // conversation also carries its title in the working-set tab strip, so a
-    // bare text query matches twice. The panel row is what "the thread has
-    // loaded" means here.
+    // Scoped to the PANEL row. The working-set tab strip forced this (it made
+    // a bare text query match twice) and revision 14 removed the strip again,
+    // but the scoping is KEPT: the panel row is precisely what "the thread has
+    // loaded into the list" means here, where a bare query would also accept
+    // the conversation head. Same for the two cases below.
     await waitFor(() =>
       expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
         'Plan the launch sequence',

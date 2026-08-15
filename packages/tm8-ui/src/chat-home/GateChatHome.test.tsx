@@ -29,11 +29,8 @@ beforeEach(() => {
 
 describe('dashboard route', () => {
   it('mounts the merged single home — chat hero inside the HomePage canvas', async () => {
-    // Revision 13 (conversation-axis ruling): NOBODY CLICKS TO GET HERE. With
-    // no remembered place the shell boots straight onto the conversation
-    // surface, because Home stopped being a destination and became the
-    // container. The click this case used to make — a "Home" row in the rail —
-    // is the exact affordance the ruling removed.
+    // Revision 14: the Chats TAB leads here, and with no remembered place the
+    // shell also boots straight onto it. Both doors, one destination.
     const view = render(<GateApp />);
 
     // The merged canvas hosts the chat surface as its hero. The old T5-1
@@ -41,52 +38,80 @@ describe('dashboard route', () => {
     expect(await view.findByTestId('home-page')).toBeTruthy();
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
     expect(view.queryByTestId('home-screen')).toBeNull();
-    // Three sightings, one conversation: the panel row (the inventory), the
-    // working-set tab (it is open), and the conversation's own head.
+    // TWO sightings, one conversation: the panel row (the inventory and the
+    // only selector) and the conversation's own head. It was three while the
+    // working-set tab strip existed; revision 14 removed the strip, and this
+    // count is how that stays removed.
     await waitFor(() =>
-      expect(view.getAllByText('Plan the launch sequence')).toHaveLength(3),
+      expect(view.getAllByText('Plan the launch sequence')).toHaveLength(2),
     );
     fireEvent.click(view.getByRole('button', { name: /^New chat$/ }));
     expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
   });
 
-  it('offers no door back to a Home that no longer exists — the mark is the one door', async () => {
+  it('leads with a Chats tab that reads CURRENT while you stand on the surface', async () => {
     const view = render(<GateApp />);
     await view.findByTestId('chat-home-screen');
 
-    // No tab, and no rail row, is labelled Home: `dashboard` belongs to no
-    // group now. The tablist is the top row; the rail below renders only the
-    // ACTIVE group's contents, and no group owns the surface we are standing
-    // on, so there is nothing for it to draw.
     const tabs = view.getByRole('tablist', { name: 'Screens' });
-    expect(within(tabs).queryByText('Home')).toBeNull();
-    expect(within(tabs).getByRole('tab', { name: 'Work' })).toBeTruthy();
+    const chats = within(tabs).getByRole('tab', { name: 'Chats' });
+    // Revision 13's defect, pinned: no tab claimed this place, so standing
+    // here nothing read as current and the only way back was an unlabelled
+    // mark. The group is what makes the tab able to say "you are here".
+    expect(chats.getAttribute('aria-selected')).toBe('true');
+    // Named for what it holds — the ref's own presentation label is 'Home',
+    // and the tab deliberately does not use it.
+    expect(within(tabs).queryByRole('tab', { name: 'Home' })).toBeNull();
 
-    // The mark is the way back — not a second door, because the tab it
-    // replaces was retired in the same change. It never reads as current.
-    const mark = view.getByTestId('go-home');
-    expect(mark.getAttribute('role')).toBeNull();
-    fireEvent.click(mark);
+    // It is a real door, not just a highlight: leave and come back by it.
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'Work' }));
+    await waitFor(() => expect(view.queryByTestId('chat-home-screen')).toBeNull());
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'Chats' }));
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
   });
 
-  it('opens a panel conversation as a tab, and closing the tab leaves the panel whole', async () => {
+  it('keeps the brand mark as a second door that never competes for CURRENT', async () => {
     const view = render(<GateApp />);
     await view.findByTestId('chat-home-screen');
-    const strip = await waitFor(() => view.getByRole('tablist', { name: 'Open conversations' }));
+    const tabs = view.getByRole('tablist', { name: 'Screens' });
 
-    // Cold start auto-opened the most recent conversation, so the strip is
-    // already one tab deep and the panel row it came from is still listed.
-    const panelRows = () =>
-      [...view.container.querySelectorAll('.tch-thread__title')].map((n) => n.textContent);
-    const before = panelRows();
-    expect(within(strip).getAllByRole('tab')).toHaveLength(1);
+    // The mark was revision 13's only way back. 14 gave the tab back and kept
+    // the mark, so the pair has to be non-contradictory: the mark navigates,
+    // the TAB is what says where you are. A mark that also read current would
+    // be two things claiming the same fact.
+    const mark = view.getByTestId('go-home');
+    expect(mark.getAttribute('role')).toBeNull();
+    expect(mark.getAttribute('aria-selected')).toBeNull();
 
-    fireEvent.click(within(strip).getByRole('button', { name: /^Close / }));
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'Work' }));
+    await waitFor(() => expect(view.queryByTestId('chat-home-screen')).toBeNull());
 
-    // The tab is gone. THE PANEL IS NOT: closing a tab is not a delete, and
-    // the inventory is the panel's, not the working set's.
+    fireEvent.click(view.getByTestId('go-home'));
+    expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
+    // Arriving by the mark lights the same tab as arriving by the tab.
+    await waitFor(() =>
+      expect(within(tabs).getByRole('tab', { name: 'Chats' }).getAttribute('aria-selected'))
+        .toBe('true'),
+    );
+  });
+
+  it('is EXACTLY TWO PANES — no rail beside the list, no tab strip above the conversation', async () => {
+    const view = render(<GateApp />);
+    await view.findByTestId('chat-home-screen');
+    await waitFor(() => expect(view.container.querySelector('.tch-thread__title')).toBeTruthy());
+
+    // NO RAIL. The Chats group is railless, so the shell draws no third
+    // column — the conversation LIST is the navigation and the screen owns it.
+    expect(view.queryByTestId('menu-rail')).toBeNull();
+
+    // NO WORKING-SET STRIP. The panel is the only conversation selector; the
+    // one tablist on this screen is the shell's top row.
     expect(view.queryByRole('tablist', { name: 'Open conversations' })).toBeNull();
-    expect(panelRows()).toEqual(before);
+    expect(view.getAllByRole('tablist').map((n) => n.getAttribute('aria-label')))
+      .toEqual(['Screens']);
+
+    // And the two panes are both really there.
+    expect(view.getByRole('complementary', { name: 'Conversations' })).toBeTruthy();
+    expect(view.getByRole('region', { name: 'Conversation' })).toBeTruthy();
   });
 });

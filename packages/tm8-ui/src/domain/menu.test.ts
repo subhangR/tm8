@@ -111,23 +111,40 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   /**
-   * Revision 13 (conversation-axis ruling, 2026-08-15): there is NO Home group.
-   * Home stopped being a destination and became the CONTAINER — the
-   * conversation surface the shell falls back to — so a tab for it, and a rail
-   * row inside that tab repeating its own name, were two more doors to the
-   * place you are already standing in.
+   * Revision 14 (user ruling, 2026-08-15): the conversation surface has a TAB
+   * again, named Chats — 13's retirement of the `home` group is reversed.
    *
-   * The `dashboard` VIEW REF is untouched, and this test pins that distinction:
-   * a group can retire without its ref being deleted. `dashboard` still routes,
-   * is still the no-remembered-place landing, and the menu editor can still
-   * offer it. Only its menu HOME is gone.
+   * What 13 got right is kept, and this test pins the pair together because
+   * they are only correct as a pair: the group exists AND it is railless. 13
+   * objected to two doors to the room you were standing in, and the second
+   * door was the RAIL ROW — one row repeating the tab's own name, drawn one
+   * column left of the conversation list that is the real navigation. Removing
+   * the group removed the tab as well, which is the part the user rejected;
+   * the rail is what actually had to go, and `isRaillessGroup` is where that
+   * now lives. A group with a second item here would draw one again, so the
+   * single-item shape is load-bearing, not incidental — and it is asserted
+   * here as a SHAPE. That the shape means "no rail" is `isRaillessGroup`'s
+   * claim, proven next to it in shell/menu-resolve.test.ts; domain/ does not
+   * reach into shell/ to borrow the predicate.
    */
-  it('retires the Home GROUP without deleting the dashboard REF', () => {
-    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('home');
-    const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
-    expect(refs).not.toContain('dashboard');
-    // Still a registered ref: the FROZEN DTO accepts a menu that puts it back,
-    // which is what "the editor can offer it" means at the contract layer.
+  it('leads with a single-item Chats group — the tab is back, the rail row is not', () => {
+    const ids = SHIPPED_DEFAULT_MENU.groups.map((g) => g.id);
+    expect(ids[0]).toBe('chats');
+    // `home` is NOT the id: 13 retired that group and 14 does not resurrect it,
+    // it names the surface after what the surface holds.
+    expect(ids).not.toContain('home');
+    expect(ids).not.toContain('voice');
+
+    const chats = SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === 'chats');
+    expect(chats?.label).toBe('Chats');
+    expect(chats?.items).toEqual([{ type: 'view', ref: 'dashboard' }]);
+    // ONE item, and childless — the shape the railless rule keys on. A second
+    // row here and the surface grows a third pane.
+    expect(chats?.items).toHaveLength(1);
+    expect(chats?.items[0]?.type === 'view' && chats.items[0].children).toBeUndefined();
+
+    // Still a registered ref, and the FROZEN DTO still accepts the 12-era
+    // arrangement — a space that wants its own Home group back can have one.
     expect(
       MenuConfigSchema.safeParse({
         schemaVersion: SHIPPED_DEFAULT_MENU.schemaVersion,
@@ -138,8 +155,6 @@ describe('SHIPPED_DEFAULT_MENU', () => {
         ],
       }).success,
     ).toBe(true);
-    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('chats');
-    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('voice');
   });
 
   it('leaves feed, channels and inbox off the RAIL without dropping them from the union', () => {
@@ -205,7 +220,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(13);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(14);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

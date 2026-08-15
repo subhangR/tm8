@@ -158,27 +158,21 @@ describe('add', () => {
     // the draft already places, so this assertion moves whenever the shipped
     // default does — which is the point of it.
     //
-    // DASHBOARD JOINED THE FREE SET on 2026-08-15 (revision 13, the
-    // conversation-axis ruling): the Home GROUP retired because Home became
-    // the container rather than a destination, and the ref it held came back
-    // on offer. It is the cleanest possible statement that the ruling was a
-    // rail edit and not a feature removal — the screen is still there, still
-    // routable, and an operator who wants a row for it can put one back.
-    expect(availableViewRefs(startDraft(BASE))).toEqual([
-      'dashboard',
-      'feed',
-      'inbox',
-      'channels',
-    ]);
+    // DASHBOARD JOINED THE FREE SET on 2026-08-15 (revision 13) and LEFT IT
+    // AGAIN the same day (revision 14): the Chats group places it, so the
+    // editor no longer offers it. The round trip is the assertion's whole
+    // value — it moved twice without anyone touching this list, because
+    // `availableViewRefs` is VIEW_PRESENTATION minus what the draft places.
+    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels']);
   });
 
   it('adds a freed view ref back onto the rail', () => {
-    const d = addItem(startDraft(BASE), 'graph', { type: 'view', ref: 'dashboard' });
+    const d = addItem(startDraft(BASE), 'graph', { type: 'view', ref: 'feed' });
     expect(draftIssue(d)).toBeNull();
     expect(draftConfig(d).groups.find((g) => g.id === 'graph')?.items.map((i) => i.ref))
-      .toEqual(['graph', 'dashboard']);
+      .toEqual(['graph', 'feed']);
     // And once used, it stops being on offer.
-    expect(availableViewRefs(d)).toEqual(['feed', 'inbox', 'channels']);
+    expect(availableViewRefs(d)).toEqual(['inbox', 'channels']);
   });
 
   it('offers only refs the rail can actually render, and never a duplicate', () => {

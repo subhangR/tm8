@@ -15,14 +15,16 @@
  * maps them); this component hardcodes no tab names. `tabs` absent renders no
  * tablist, so a bar without a host keeps the r11 product-bar shape.
  *
- * REVISION 13 (conversation-axis ruling, 2026-08-15): there is no Home tab,
- * because the `home` group left the menu — Home is the container now, not a
- * destination. THE MARK IS ITS DOOR: with `onGoHome` wired the product mark
- * becomes the button back to the conversation surface. It is deliberately NOT
- * a tab and never reads current — a tab would re-assert the destination the
- * ruling removed — and it is not a second door either, because the tab it
- * replaces no longer exists. Left unwired the mark stays inert text, so every
- * bar rendered without a host is unchanged.
+ * THE MARK IS A DOOR to the conversation surface: with `onGoHome` wired the
+ * product mark becomes a button back to it. Left unwired it stays inert text,
+ * so every bar rendered without a host is unchanged.
+ *
+ * It arrived in revision 13, when the `home` group was retired and the mark
+ * was the ONLY way back. Revision 14 restored that tab (as Chats), so the mark
+ * is now a SECOND door — kept deliberately, because a clickable product mark
+ * is a convention people already try, and the objection 13 raised was never to
+ * this button. What holds is that it is not a TAB: it never reads current, so
+ * it cannot disagree with the tab row about where you are.
  *
  * REVISION 11 (single-home ruling, 2026-08-14): the server chip and the space
  * tablist left this bar for the rail's identity block. R1 moves that block

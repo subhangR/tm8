@@ -197,10 +197,23 @@ export function primaryTargetOfGroup(group: MenuGroup): MenuTarget | null {
  * The full-bleed screens: a tab landing on one of these draws NO rail (R2:
  * "Graph and Settings have no rail"; the Files explorer has the same
  * full-screen posture). View refs are shell's own territory — the same
- * jurisdiction VIEW_PRESENTATION claims. `dashboard` (Home) is deliberately
- * NOT here: its rail is the conversation list of the Home redesign.
+ * jurisdiction VIEW_PRESENTATION claims.
+ *
+ * `dashboard` JOINED THEM on 2026-08-15 (revision 14). It was deliberately
+ * excluded before, on the reasoning that "its rail is the conversation list" —
+ * but the conversation list is drawn by the SCREEN, inside its own left pane,
+ * and never by the rail. So the shell drew a rail anyway and put a single row
+ * in it repeating the tab's own name, one column left of the list that is the
+ * real navigation: three panes where the design calls for two. Excluding it
+ * here is what made the Chats tab look redundant enough to retire in 126;
+ * including it is what lets the tab come back (127) without the third column.
  */
-const RAILLESS_VIEW_REFS: ReadonlySet<MenuViewRef> = new Set<MenuViewRef>(['graph', 'settings', 'files']);
+const RAILLESS_VIEW_REFS: ReadonlySet<MenuViewRef> = new Set<MenuViewRef>([
+  'graph',
+  'settings',
+  'files',
+  'dashboard',
+]);
 
 /**
  * A group draws no rail when its whole content is a single childless

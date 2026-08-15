@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_MENU_WORKSPACE_KIND_SPINE, MenuConfigSchema } from '@tm8/contract';
 import type { MenuConfig } from '@tm8/contract';
 import { SHIPPED_DEFAULT_MENU, SHIPPED_DEFAULT_MENU_REVISION } from '../domain';
-import { VIEW_PRESENTATION, resolveMenu } from './menu-resolve';
+import { VIEW_PRESENTATION, isRaillessGroup, resolveMenu } from './menu-resolve';
 
 describe('the shipped default menu', () => {
   it('satisfies the frozen MenuConfig DTO (contract zod, not a local guess)', () => {
@@ -18,22 +18,64 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine — the revision-13 tab row', () => {
+  it('encodes the shipped group spine — the revision-14 tab row', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       // Revision 12 (2026-08-15, five-tab ruling + Files amendment): the
       // groups are the top-level tabs. Code retired into Work (R3);
       // Chats renamed Channels (R4); the File browser became its own tab.
       //
       // Revision 13 (later the same day, conversation-axis ruling): HOME NO
-      // LONGER LEADS — the group is gone, because Home became the container
-      // the shell falls back to rather than a place you navigate to. The row
-      // starts at Work now.
+      // LONGER LEADS — the group was removed entirely.
+      //
+      // Revision 14 (user ruling, same day): a group leads the conversation
+      // surface again, named CHATS. 13 left the brand mark as the only way
+      // back to it; what 13 was actually right about — the redundant RAIL ROW
+      // — is handled by `isRaillessGroup` instead, proven below. Note the row
+      // reads Chats while the ref's own presentation label is still Home:
+      // the GROUP names the tab, the ref names nothing here.
+      'Chats',
       'Work',
       'Graph',
       'Channels',
       'Files',
       'Settings',
     ]);
+  });
+
+  it('draws NO rail on Chats — the two-pane guarantee, at the seam that decides it', () => {
+    // The surface is conversation LIST | conversation. The list is drawn by
+    // the screen inside its own pane, so a rail here would be a THIRD column
+    // holding one row that repeats the tab's own name — which is precisely
+    // what made revision 13 retire the tab. The rule is what lets 14 restore
+    // the tab without restoring that column.
+    const chats = SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === 'chats');
+    expect(chats).toBeTruthy();
+    expect(isRaillessGroup(chats!)).toBe(true);
+
+    // The other full-bleed screens keep their posture, and the groups with
+    // real rows keep theirs — this is a widening, not a change of rule.
+    for (const id of ['graph', 'settings', 'files']) {
+      expect(isRaillessGroup(SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === id)!), id).toBe(true);
+    }
+    for (const id of ['workspace', 'channels']) {
+      expect(isRaillessGroup(SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === id)!), id).toBe(false);
+    }
+  });
+
+  it('keys railless on the SHAPE, so a Chats group with a second row draws a rail again', () => {
+    // The guarantee is one childless view item, not the `dashboard` ref alone.
+    // An operator who adds a row to this group has asked for a rail and gets
+    // one, rather than silently losing the row they just added.
+    expect(
+      isRaillessGroup({
+        id: 'chats',
+        label: 'Chats',
+        items: [
+          { type: 'view', ref: 'dashboard' },
+          { type: 'view', ref: 'feed' },
+        ],
+      }),
+    ).toBe(false);
   });
 
   it('keeps Workspace as a caret view item with its eight leaves (RULING E)', () => {

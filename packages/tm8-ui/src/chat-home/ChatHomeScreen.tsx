@@ -116,21 +116,6 @@ export function ChatHomeScreen({
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [teammates, setTeammates] = useState<readonly ChatTeammateOption[]>([]);
   const [selectedRootId, setSelectedRootId] = useState<EntityId | null>(null);
-  /**
-   * THE WORKING SET (conversation-axis ruling, 2026-08-15) — the conversations
-   * with a tab above the right pane, in the order they were opened.
-   *
-   * It is deliberately NOT the inventory. The panel on the left is the full
-   * list and it never changes when a tab opens or closes; this is only what
-   * the viewer currently has to hand. Closing a tab therefore REMOVES NOTHING
-   * — the conversation is still one click away in the panel, which is why the
-   * close control needs no confirmation and no undo.
-   *
-   * Not persisted. A working set is what you are holding in this sitting, and
-   * restoring yesterday's would be asserting an intent nobody expressed; cold
-   * start opens the most recent conversation instead (see the mount effect).
-   */
-  const [openRootIds, setOpenRootIds] = useState<readonly EntityId[]>([]);
   const [detail, setDetail] = useState<ChatThreadDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -175,42 +160,6 @@ export function ChatHomeScreen({
   useEffect(() => {
     detailRef.current = detail;
   }, [detail]);
-
-  /**
-   * OPENING IS WHAT PUTS A TAB UP — every path, once, here.
-   *
-   * A conversation becomes selected from four directions (cold-start
-   * auto-open, a click in the panel, posting a new thread, closing the tab
-   * beside it) and each one means the same thing: this is open now. Joining
-   * them at the selection rather than at the four call sites is what keeps
-   * "opened" and "has a tab" from being two facts free to disagree.
-   */
-  useEffect(() => {
-    if (!selectedRootId) return;
-    setOpenRootIds((current) =>
-      current.includes(selectedRootId) ? current : [...current, selectedRootId],
-    );
-  }, [selectedRootId]);
-
-  /**
-   * Closing takes the tab away and NOTHING else — no delete, no archive, no
-   * change to the panel. When the tab being closed is the one you are reading,
-   * the neighbour to its left takes over (the right one if it was first), and
-   * with the last tab gone the pane holds a new conversation rather than an
-   * empty state: the main pane is always a conversation.
-   */
-  const closeTab = useCallback(
-    (rootId: EntityId) => {
-      const index = openRootIds.indexOf(rootId);
-      if (index === -1) return;
-      const next = openRootIds.filter((id) => id !== rootId);
-      setOpenRootIds(next);
-      if (selectedRootId === rootId) {
-        setSelectedRootId(next[index - 1] ?? next[index] ?? null);
-      }
-    },
-    [openRootIds, selectedRootId],
-  );
 
   const refreshThreads = useCallback(async (preferRoot?: EntityId) => {
     const next = await port.listThreads(spaceId);
@@ -272,15 +221,14 @@ export function ChatHomeScreen({
            returns most-recent-first; no conversations at all lands on the new
            conversation composer, which is still a conversation.
 
-           The ruling's follow-on — "an open tab is read by definition", so
-           auto-open silently marks the most recent read — DOES NOT BITE YET,
-           and the reason is worth writing down: there is no per-conversation
-           unread anywhere to mark. `ChatThreadSummary` carries none, the only
-           per-viewer unseen the server exposes is KIND-level
-           (`spaces.counts`), and `read_marks` is not written per thread. When
-           per-thread unread lands, the accepted default is that this
-           auto-open marks read like any other open — see the panel's
-           block comment. */
+           The ruling's follow-on — auto-open silently marks the most recent
+           read — DOES NOT BITE YET, and the reason is worth writing down:
+           there is no per-conversation unread anywhere to mark.
+           `ChatThreadSummary` carries none, the only per-viewer unseen the
+           server exposes is KIND-level (`spaces.counts`), and `read_marks` is
+           not written per thread. When per-thread unread lands, the accepted
+           default is that this auto-open marks read like any other open — see
+           the panel's block comment. */
         setSelectedRootId(nextThreads[0]?.rootId ?? null);
         setTeammateId(nextTeammates[0]?.id ?? '');
       })
@@ -648,11 +596,13 @@ export function ChatHomeScreen({
   return (
     <main className="tch-root" data-testid="chat-home-screen">
       {/*
-        THE NAVIGATION AXIS (ruling 2026-08-15). This panel is the full
-        inventory and it is always here: opening a conversation, closing its
-        tab, or switching tabs changes nothing in it. That is the whole
-        division of labour with the strip on the right — inventory here,
-        working set there.
+        THE NAVIGATION AXIS (ruling 2026-08-15, reaffirmed by revision 14).
+        This panel is the full inventory AND the only selector: it is the left
+        of the surface's two panes, it is always here, and switching
+        conversations changes nothing in it. Nothing else on this screen
+        selects a conversation — a working-set tab strip briefly lived above
+        the right pane and was removed, because a second selector for one
+        selection is exactly the redundancy this surface keeps shedding.
 
         UNREAD IS NOT DRAWN, AND ITS ABSENCE IS THE HONEST STATE. The ruling
         puts unread state in this panel and nowhere else; what it could not
@@ -826,46 +776,15 @@ export function ChatHomeScreen({
         </footer>
       </aside>
 
+      {/*
+        THE SECOND AND LAST PANE (revision 14). There is no working-set tab
+        strip above this: a conversation is opened from the panel on the left
+        and it is the only selector, because two selectors for one selection
+        is the redundancy this surface keeps being redesigned to remove.
+        Everything the strip offered, the panel already offers — with the whole
+        inventory in view instead of only the part you happened to open.
+      */}
       <section className="tch-conversation" aria-label="Conversation">
-        {/* THE WORKING SET, above the conversation it belongs to. Rendered
-            only when something is open — a strip with no tabs would be chrome
-            asserting a working set nobody has. */}
-        {openRootIds.length > 0 ? (
-          <div className="tch-tabs" role="tablist" aria-label="Open conversations">
-            {openRootIds.map((rootId) => {
-              const open = threads.find((thread) => thread.rootId === rootId);
-              const active = rootId === selectedRootId;
-              return (
-                <span
-                  key={rootId}
-                  className={`tch-tab ${active ? 'tch-tab--active' : ''}`}
-                  data-active={active || undefined}
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    className="tch-tab__title"
-                    onClick={() => setSelectedRootId(rootId)}
-                  >
-                    {/* A tab for a conversation the list has not loaded yet
-                        says so rather than rendering a blank label. */}
-                    {open?.title ?? 'Conversation'}
-                  </button>
-                  <button
-                    type="button"
-                    className="tch-tab__close"
-                    aria-label={`Close ${open?.title ?? 'conversation'} — it stays in the panel`}
-                    title="Close this tab. The conversation stays in the panel."
-                    onClick={() => closeTab(rootId)}
-                  >
-                    <span aria-hidden>×</span>
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-        ) : null}
         <header className="tch-conversation__head">
           <div className="tch-title">
             <strong>{detail?.summary.title ?? 'New conversation'}</strong>
