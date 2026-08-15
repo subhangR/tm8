@@ -113,6 +113,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const viewportWidth = useViewportWidth();
 
   const engine = usePanelEngine({ nav, centerWidth, onNotice: props.onNotice });
+  const visibleNav = useMemo(
+    () => ({ ...nav, stack: engine.visible.stack, pinned: engine.visible.pinned }),
+    [nav, engine.visible],
+  );
 
   /**
    * THE LAYOUT MODE OF EACH SIDE PANEL, held here rather than left to the
@@ -189,16 +193,16 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       solveWorkspace({
         viewport: viewportWidth,
         serverRail: false, // R10: Phase 1 wires only the implicit local server.
-        stack: nav.stack,
-        pinned: nav.pinned,
+        stack: engine.visible.stack,
+        pinned: engine.visible.pinned,
         menuCollapsedByUser: menuCollapsed,
         leftWidth: props.leftWidth ?? LEFT_PANEL_DEFAULT,
         rightWidth: props.rightWidth ?? RIGHT_PANEL_DEFAULT,
       }),
     [
       viewportWidth,
-      nav.stack,
-      nav.pinned,
+      engine.visible.stack,
+      engine.visible.pinned,
       menuCollapsed,
       props.leftWidth,
       props.rightWidth,
@@ -345,6 +349,20 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     spaceId: data.spaceId,
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
+    /*
+     * THE VANILLA TERMINAL TAKES THE SAME WORKING DIRECTORY A LAUNCH WOULD.
+     *
+     * `projectId` is optional on SessionStartHost and neither caller passed it,
+     * so it arrived `undefined`, `projectId ?? null` sent null, and
+     * `execution.terminal.start` minted a scratch directory — for EVERY terminal,
+     * in every Space, however many trusted projects were linked. Not a default
+     * anyone chose: the prop was simply never wired, so no arrangement of
+     * projects could change the outcome.
+     *
+     * Same rule the launch sheet uses, so the terminal and a launched session
+     * open in the same place rather than disagreeing.
+     */
+    projectId: data.launch.projects.find((p) => p.selectedByDefault && p.trusted)?.id ?? null,
     onOpen: openEntity,
     onError: (_verb, error) => {
       props.onNotice({
@@ -561,7 +579,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     onCreated: (id) => nav.push?.(id as EntityId),
   });
 
-  const centreIsEmpty = nav.stack.length === 0 && nav.pinned.length === 0;
+  const centreIsEmpty = engine.visible.stack.length === 0 && engine.visible.pinned.length === 0;
 
   return (
     <WorkspaceGrid
@@ -615,7 +633,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
           linkedPullRequestsOf={data.linkedPullRequestsOf}
-          selectedId={nav.stack[nav.stack.length - 1] ?? null}
+          selectedId={engine.visible.stack[engine.visible.stack.length - 1] ?? null}
           onSelect={openEntity}
           onTerminate={leftConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onSetState={rowLifecycle.setState}
@@ -702,7 +720,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               onFocusSession={openEntity}
             />
           ) : (
-            <PanelStack nav={nav} renderPanel={renderPanel} isKeyboardOwnedAbove={props.isModalOpen} />
+            <PanelStack nav={visibleNav} renderPanel={renderPanel} isKeyboardOwnedAbove={props.isModalOpen} />
           )}
         </>
       }
@@ -740,7 +758,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
           linkedPullRequestsOf={data.linkedPullRequestsOf}
-          selectedId={nav.stack[nav.stack.length - 1] ?? null}
+          selectedId={engine.visible.stack[engine.visible.stack.length - 1] ?? null}
           onSelect={openEntity}
           onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onSetState={rowLifecycle.setState}

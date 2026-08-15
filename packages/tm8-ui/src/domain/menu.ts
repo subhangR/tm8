@@ -17,7 +17,12 @@
  * deferred features out of the shipped MenuConfig — they surface only as
  * disabled palette-discovery rows (§4.2).
  */
-import { DEFAULT_MENU_LIBRARY_SPINE, type MenuConfig } from '@tm8/contract';
+import {
+  DEFAULT_MENU_CHATS_SPINE,
+  DEFAULT_MENU_CODE_KIND_SPINE,
+  DEFAULT_MENU_WORKSPACE_KIND_SPINE,
+  type MenuConfig,
+} from '@tm8/contract';
 import { getKind } from './registry';
 import { CUSTOM_KIND_FALLBACK } from './types';
 
@@ -30,37 +35,43 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // Revision 9 (2026-08-12, Git UI landing): the Git view row leads Tracking.
 // Revision 10 (2026-08-13): Messages (new view ref) and Inbox (an existing ref
 // whose finished screen was never mounted) join Dashboard under Home.
-export const SHIPPED_DEFAULT_MENU_REVISION = 10;
+// Revision 11 (2026-08-14, single-home ruling): the rail reorganized around
+// intents — Home / Chats / Workspace / Code / Graph / Settings, ~8 visible
+// rows. See `DEFAULT_MENU_GROUP_SPINE` for the full account of what moved
+// where; nothing was deleted, only re-shelved.
+export const SHIPPED_DEFAULT_MENU_REVISION = 11;
 
 /**
- * WLT §2, encoded literally:
+ * The single-home rail (revision 11, user ruling 2026-08-14), encoded literally:
  *
- *   Home        → Dashboard
+ *   Home        → the merged chat-first landing (view ref `dashboard`)
+ *   Chats       → Channels · Messages, plus live voice rooms injected beneath
+ *                 (the dynamic group moved here from the retired Voice group)
  *   Workspace ▾ → (row click = the composed view; caret expands — RULING E)
- *                 Tasks · Sessions · Docs · Channels · Teammates · Memories ·
- *                 Artifacts · Loops
- *   Library     → Files · Spells · Collections
- *   Tracking    → Projects · Pull requests · Worktrees
- *   Collab      → Members
- *   Voice       → live per-space voice_channel rows injected beneath this label
+ *                 Tasks · Sessions · Docs · Teammates · Memories · Artifacts ·
+ *                 Loops · Files — plus the File browser view as a sibling row
+ *   Code ▾      → the git view; caret expands Projects · Pull requests ·
+ *                 Worktrees
+ *   Graph       → the space picture
  *   Settings    → Space settings
  *
- * Revision 5 (2026-08-01, user ruling): CHANNELS LEFT THE RAIL ENTIRELY. They
- * are entities, so they belong in the Entity List Panel with every other
- * collection — `channel` became `strategy: 'collection'` in the registry and
- * the panel's kind switcher now offers it. A rail section AND a collection
- * list would be two divergent homes for one kind, which is what the voice
- * row's docblock warned about; this resolves it by keeping the collection.
- * Feed and Inbox left the rail in the same ruling, so Home is Dashboard alone.
+ * WHAT LEFT THE RAIL, and where it went — nothing was deleted, only
+ * re-shelved, and every ref keeps its route, its chord and its menu-editor
+ * eligibility:
  *
- * NOTHING here was deleted from the app: `feed`, `inbox` and `channels` all
- * keep their routes, their `MenuViewRef` membership and their chords, and the
- * menu editor can put any of the three back — they are now the three FREE view
- * refs. This is a rail edit, not a feature removal.
+ *   - INBOX → the top-bar bell (GateApp). Its rows also feed the Home page's
+ *     NEEDS YOU / MENTIONS sections, so a rail row was a third door to the
+ *     same fact.
+ *   - `spell`, `collection`, `member` → the palette and the Entity List
+ *     Panel's kind switcher. They are occasional destinations; the rail's
+ *     scarce rows go to daily ones.
+ *   - The VOICE group label: live rooms now hang beneath Chats, where the
+ *     other conversation surfaces are, and an empty space no longer spends a
+ *     group label promising rooms it does not have.
  *
- * Workspace is the one caret VIEW item (RULING E) — it is a `type:'view'`
- * MenuItem carrying `children`, visually distinct from a group header, which
- * is a label and nothing else. Every other row is a plain item.
+ * Workspace and Code are the two caret VIEW items (RULING E) — `type:'view'`
+ * MenuItems carrying `children`. Both carets ship CLOSED: the classification
+ * is one click away rather than thirty rows tall.
  */
 export const SHIPPED_DEFAULT_MENU: MenuConfig = {
   schemaVersion: 1,
@@ -69,30 +80,17 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     {
       id: 'home',
       label: 'Home',
-      // Revision 10 (2026-08-13): Messages and Inbox join Dashboard in Home.
-      //
-      // MESSAGES is a new view ref — the cross-entity conversation browser. It
-      // is a VIEW and not a kind row for two independent reasons, and both are
-      // worth knowing before anyone tries to "simplify" it into one: the
+      items: [{ type: 'view', ref: 'dashboard' }],
+    },
+    {
+      id: 'chats',
+      label: 'Chats',
+      // MESSAGES is a VIEW and not a kind row for two independent reasons: the
       // `message` registry row is `strategy: 'anchored'` with `slug: null`, so
       // `isMenuEligibleKind` refuses it and the rail would fail closed; and the
       // DB's own twin (`internal.w2_normalize_menu_payload`) rejects a kind ref
       // of `message` outright. There is exactly one door and this is it.
-      //
-      // INBOX was ALREADY a member of `MenuViewRef` and already had its
-      // `menu_view_registry` row (seeded by 029) — it was simply never given a
-      // rail row, and `GateApp` drew the "isn't built yet" card for it while a
-      // FINISHED `InboxScreen` sat unmounted in `src/inbox/`. Nothing was built
-      // for it here; it was pointed at.
-      //
-      // The two sit together deliberately: Messages is the corpus ("every
-      // conversation"), Inbox is the subset addressed to you ("what wants me").
-      // Neither answers the other's question, which is why both are rows.
-      items: [
-        { type: 'view', ref: 'dashboard' },
-        { type: 'view', ref: 'messages' },
-        { type: 'view', ref: 'inbox' },
-      ],
+      items: [...DEFAULT_MENU_CHATS_SPINE],
     },
     {
       id: 'workspace',
@@ -101,81 +99,37 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
         {
           type: 'view',
           ref: 'workspace',
-          children: [
-            { type: 'kind', ref: 'task' },
-            { type: 'kind', ref: 'work_session' },
-            { type: 'kind', ref: 'doc' },
-            // Revision 6 (2026-08-01, user ruling): Channels takes its place in
-            // the collection list, one row like Docs.
-            //
-            // This is NOT the Channels SECTION revision 5 removed. That was a
-            // group whose rows were the space's live #channel entities — a
-            // second, divergent home for the kind. This is the same single row
-            // every other collection kind has, opening the same list, and it
-            // exists because `channel` became a collection kind and was then
-            // the ONLY one the rail never named. The workspace has two docks
-            // and three collections that want to be on screen; pointing a dock
-            // at channels just took sessions off it, so visibility belongs
-            // here, where it costs no dock at all.
-            { type: 'kind', ref: 'channel' },
-            { type: 'kind', ref: 'team_member' },
-            // Revision 4 (2026-07-31): Memories and Artifacts — both shipped
-            // features whose lists were unreachable from the rail. Caret
-            // children cap is 8; revision 6 brought the count to 7.
-            { type: 'kind', ref: 'memory' },
-            { type: 'kind', ref: 'artifact' },
-            // Revision 7 (2026-08-09): Loop fills the eighth and final caret
-            // slot. The kind already has a collection route and registry row;
-            // this makes the shipped scheduler surface reachable by default.
-            { type: 'kind', ref: 'loop' },
-          ],
+          // The one entity browser. `channel` left this caret for Chats
+          // (revision 11); `file` takes the freed eighth slot, which is what
+          // let the Library group fold in without losing the file rows.
+          children: DEFAULT_MENU_WORKSPACE_KIND_SPINE.map((ref) => ({
+            type: 'kind' as const,
+            ref,
+          })),
         },
-        // Revision 2 (2026-07-29): the ◉ Graph view — no longer deferred, the
-        // prototype ships on fixtures (GRAPH-VIEW-PLAN §2).
-        { type: 'view', ref: 'graph' },
+        // The Files EXPLORER view — browse roots, folders, uploads. Distinct
+        // from the `file` KIND child above, which lists file ENTITIES; owner
+        // ruling R9 keeps BOTH (labels differ: "File browser" vs "Files").
+        { type: 'view', ref: 'files' },
       ],
     },
     {
-      id: 'library',
-      label: 'Library',
-      // Revision 8 (2026-08-10): the Files EXPLORER view — browse roots,
-      // folders, uploads. Distinct from the `file` KIND row below, which
-      // lists file ENTITIES; owner ruling R9 keeps BOTH (rail labels
-      // differ: "File browser" vs "Files"). The shared spine prevents the
-      // client fallback and persisted server default from drifting again.
-      items: [...DEFAULT_MENU_LIBRARY_SPINE],
-    },
-    {
-      id: 'tracking',
-      label: 'Tracking',
+      id: 'code',
+      label: 'Code',
       items: [
-        // Revision 7 (2026-08-09, Git UI wave): the project git screen —
-        // topology, worktree lanes and contention — leads the group it
-        // surveys. Migration 089 is the server twin: it registers the view,
-        // reteaches `internal.w1_default_menu_payload()`, and upgrades
-        // byte-equivalent legacy defaults (customized menus untouched — the
-        // ref stays offerable through the menu editor's free view refs).
-        { type: 'view', ref: 'git' },
-        { type: 'kind', ref: 'project' },
-        { type: 'kind', ref: 'pull_request' },
-        // Revision 4 (2026-07-31): Worktrees live with the git-adjacent rows.
-        // Menu-visible only — creation stays with the provisioning saga
-        // (contract MenuKindRef note; registry row has quickCreate: false).
-        { type: 'kind', ref: 'worktree' },
+        {
+          // The project git screen — topology, worktree lanes, contention —
+          // is the row; the dev-tracking collections ride its caret.
+          type: 'view',
+          ref: 'git',
+          children: DEFAULT_MENU_CODE_KIND_SPINE.map((ref) => ({
+            type: 'kind' as const,
+            ref,
+          })),
+        },
       ],
     },
-    { id: 'collab', label: 'Collab', items: [{ type: 'kind', ref: 'member' }] },
-    // Revision 5 (2026-08-01): the Channels GROUP is gone — its route ref and
-    // its live rows both moved into Home. See the docblock.
-    // Revision 3 (2026-07-31): the Voice group. Deliberately items-EMPTY —
-    // there is no `voice` member of the closed `MenuViewRef` union to author,
-    // and `voice_channel` is `strategy: 'special'` so it is not a menu-eligible
-    // kind ref either. The group exists purely as the LABEL that GateApp's
-    // dynamic group hangs the space's live voice rooms beneath, exactly as
-    // Channels works once its authored item is replaced. With no rooms it
-    // renders its header and the dynamic group's empty line — honest, not a
-    // promise the app cannot keep.
-    { id: 'voice', label: 'Voice', items: [] },
+    { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
     { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
   ],
 };

@@ -292,13 +292,32 @@ describe('the router sync loop', () => {
 
   it('applies a legacy redirect and reports the deferred feature (R7)', async () => {
     const notices: RouteNotice[] = [];
-    const target = createMemoryTarget(`#/s/${SPACE}/graph`);
+    const target = createMemoryTarget(`#/s/${SPACE}/leaderboard`);
     const detach = attachRouter(target, { replaceDebounceMs: 0, onNotice: (n) => notices.push(n) });
     expect(nav().view).toEqual({ view: 'home' });
     expect(notices).toContainEqual(
-      expect.objectContaining({ kind: 'deferred-feature', feature: 'graph' }),
+      expect.objectContaining({ kind: 'deferred-feature', feature: 'leaderboard' }),
     );
     detach();
+  });
+
+  it('hydrates the four newly-routed screens instead of deferring them', async () => {
+    // graph/files/git/messages rendered from the rail with no route at all, so
+    // none of them could be reloaded into or shared. `graph` additionally had
+    // to be un-deferred: it was redirected to Home with a notice about a screen
+    // that has been built and mounted for some time.
+    for (const view of ['graph', 'files', 'git', 'messages'] as const) {
+      const notices: RouteNotice[] = [];
+      const target = createMemoryTarget(`#/s/${SPACE}/${view}`);
+      const detach = attachRouter(target, {
+        replaceDebounceMs: 0,
+        onNotice: (n) => notices.push(n),
+      });
+      expect(nav().view, `${view} did not hydrate`).toEqual({ view });
+      expect(notices, `${view} reported a notice`).toEqual([]);
+      expect(target.getHash()).toBe(`#/s/${SPACE}/${view}`);
+      detach();
+    }
   });
 
   it('emits ONE generalized drop notice, class-named and free of raw IDs (R4-7)', async () => {

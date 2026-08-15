@@ -129,6 +129,7 @@ describe('a resumed session keeps the posture it was launched with', () => {
     sessionId: SESSION_ID,
     spaceId: SPACE_ID,
     teamMemberId: MEMBER_ID,
+    parentSessionId: null,
     projectId: null,
     taskIds: [],
     workdirMode: 'scratch',

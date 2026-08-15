@@ -531,10 +531,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // highest applied file on main when this was written — the rule every entry
     // above restates, and the one the sorted-order assertion below is the only
     // thing that can catch on a live deployment.
-    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 112.
-    // 112 -> 113 on 2026-08-14: 122 persists chat mode and audits chat tool
-    // calls. Re-measured on this tree: `ls db/migrations/*.sql | wc -l` = 113.
-    expect(server.appliedMigrations.length).toBe(113);
+    // 112 -> 113 on 2026-08-15: 122_menu_single_home.sql — the server twin of
+    // menu revision 11 (single-home rail, task 01a0027d). Takes a number above
+    // 121, the highest applied file on main when it was written.
+    // 113 -> 114: 123 persists chat mode and audits chat tool calls; it was
+    // renumbered from 122 after the single-home migration landed on main.
+    // 114 -> 115: 124 widens that write-once authority to Explain mode.
+    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 115.
+    expect(server.appliedMigrations.length).toBe(115);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

@@ -79,6 +79,7 @@ import { debugSurfaceFor } from './debugSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
+import { AuxEntityPanel } from './auxPanel';
 import { representedThreadMessageCount } from './message-thread';
 
 export interface EntityViewProps {
@@ -508,6 +509,20 @@ export function EntityView(props: EntityViewProps) {
     spaceId: data.spaceId,
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
+    /*
+     * THE VANILLA TERMINAL TAKES THE SAME WORKING DIRECTORY A LAUNCH WOULD.
+     *
+     * `projectId` is optional on SessionStartHost and neither caller passed it,
+     * so it arrived `undefined`, `projectId ?? null` sent null, and
+     * `execution.terminal.start` minted a scratch directory — for EVERY terminal,
+     * in every Space, however many trusted projects were linked. Not a default
+     * anyone chose: the prop was simply never wired, so no arrangement of
+     * projects could change the outcome.
+     *
+     * Same rule the launch sheet uses, so the terminal and a launched session
+     * open in the same place rather than disagreeing.
+     */
+    projectId: data.launch.projects.find((p) => p.selectedByDefault && p.trusted)?.id ?? null,
     onOpen: selectFromList,
     onError: (_verb, error) => props.onNotice({
       id: 'terminal-start-failed',
@@ -1013,43 +1028,27 @@ export function EntityView(props: EntityViewProps) {
           </div>
           <div className="ev-aux__body">
             {aux.sort === 'entity' ? (
-              <EntityDetailPanel
-                detail={auxDetail ?? null}
-                serverBaseUrl={props.serverBaseUrl}
-                loading={!auxDetail}
-                host="stack"
-                reasons={reasons}
-                ctx={{ ...ctx, entityId: aux.id }}
-                controls={controlHost}
-                onAction={primaries.forEntity(aux.id)}
-                wiredActions={primaries.wiredActions}
-                membershipAuthoring={membership.authoringFor(auxDetail)}
-                launch={launchPort}
-                mergePr={mergePrPortFor(data.seam)}
-                onRestore={() => rowLifecycle.archive('restore', aux.id)}
-                pinned={false}
-                pinRefusal="Pinning lives in the Workspace"
-                liveness={data.livenessOf(aux.id)}
-                debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
-                gitSurface={gitSurfaceFor(data.seam, aux.id, data.livenessOf)}
-                taskGitSection={taskGitSectionFor(data.seam, data.detailOf(aux.id), (id) => setAux({ sort: 'entity', id: id as EntityId }))}
-                graphSurface={graphSurfaceFor(data.seam, aux.id, data.livenessOf, (id) =>
-                  setAux({ sort: 'entity', id: id as EntityId }),
-                )}
-                livenessOf={data.livenessOf}
-                attachments={attachments}
-                onAttachmentUploaded={() => props.data.refetchDetail(aux.id)}
-                viewerMemberId={props.viewerMemberId}
-                messages={data.messagesOf(aux.id)}
-                connections={data.connectionsOf(aux.id)}
-                linkedPullRequests={data.linkedPullRequestsOf?.(aux.id) ?? []}
-                linkedPullRequestsOf={data.linkedPullRequestsOf}
-                commands={data.seam.commands}
-                onSaved={data.reconcileCommand}
-                // Drilling from the aux REPLACES the aux, it does not open a
-                // fourth column. Three regions is the ruling; a stack here
-                // would grow the screen sideways without anyone asking.
-                onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
+              /* The mount moved to `auxPanel.tsx` so a second host can render
+                 the SAME panel; the ports below are this screen's own, shared
+                 with the centre mount exactly as before. Drilling from the aux
+                 REPLACES the aux, it does not open a fourth column — three
+                 regions is the ruling, and that rule travels with the mount. */
+              <AuxEntityPanel
+                host={{
+                  data,
+                  reasons,
+                  ctx,
+                  controls: controlHost,
+                  primaries,
+                  membership,
+                  launchPort,
+                  rowLifecycle,
+                  attachments,
+                  serverBaseUrl: props.serverBaseUrl,
+                  viewerMemberId: props.viewerMemberId,
+                }}
+                entityId={aux.id}
+                onOpenEntity={(id) => setAux({ sort: 'entity', id })}
                 onClose={() => setAux(null)}
               />
             ) : detail && aux.tab === 'discussion' ? (

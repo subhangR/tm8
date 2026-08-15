@@ -1,4 +1,4 @@
--- 123 — Explain is a write-once chat authority profile for explanatory
+-- 124 — Explain is a write-once chat authority profile for explanatory
 -- outputs such as diagrams and artifacts.
 
 set role tm8_graph_owner;

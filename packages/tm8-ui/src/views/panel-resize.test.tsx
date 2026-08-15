@@ -48,12 +48,25 @@ beforeEach(() => {
   Object.defineProperty(window, 'localStorage', { configurable: true, value: store });
   resetNav();
   screenStackStore.getState().clearAll();
+  /* The URL is state and jsdom keeps ONE `window.location` per file — the
+     same reset every sibling gate file carries. Without it, the address the
+     previous case navigated to outranks last-place at the next boot (R3) and
+     the case never sees the landing screen it waits for. */
+  window.location.hash = '';
 });
 
 async function openTasksScreen() {
   const view = render(<GateApp />);
-  await waitFor(() => view.getByTestId('workspace-grid'));
-  fireEvent.click(within(view.getByTestId('menu-rail')).getByRole('button', { name: /^Tasks/ }));
+  /* Revision 11: Tasks rides the closed Workspace caret. Cases that remount
+     mid-test boot straight onto `k/tasks` from the address (R3), so the rail
+     click is skipped when the screen is already there. */
+  await waitFor(() => view.getByTestId('menu-rail'));
+  if (!view.queryByTestId('entity-view')) {
+    const rail = within(view.getByTestId('menu-rail'));
+    const caret = rail.queryByLabelText('Expand Workspace');
+    if (caret) fireEvent.click(caret);
+    fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+  }
   await waitFor(() => view.getByTestId('entity-view'));
   return view;
 }
@@ -255,19 +268,23 @@ describe('regressions found reviewing PR #213', () => {
 });
 
 describe('the menu rail', () => {
-  it('opens COLLAPSED, icons only, with every destination still reachable', async () => {
+  it('opens EXPANDED (r11), and collapsing keeps every destination reachable', async () => {
     const view = render(<GateApp />);
-    await waitFor(() => view.getByTestId('workspace-grid'));
+    await waitFor(() => view.getByTestId('home-page'));
     const rail = view.getByTestId('menu-rail');
-    expect(rail.dataset.collapsed).toBe('true');
+    /* Revision 11 flipped the default back to expanded: the redesigned rail is
+       ~8 rows plus the identity block, so first paint shows the whole map. */
+    expect(rail.dataset.collapsed).toBe('false');
+
+    fireEvent.click(view.getByRole('button', { name: 'Collapse menu rail' }));
+    await waitFor(() => expect(rail.dataset.collapsed).toBe('true'));
 
     // Icons only — no words anywhere in the rail…
     expect(rail.querySelectorAll('.shell-rail__label')).toHaveLength(0);
-    // …and yet the eight caret leaves the shipped default hangs off the
-    // Workspace row are still there, still named, still navigable. This is the
-    // pairing that makes collapsed-by-default safe: the old rail dropped its
-    // leaves when it collapsed, so a default-collapsed rail would have shipped
-    // with Tasks, Docs and Sessions unreachable on first paint.
+    // …and yet the caret leaves are still there, still named, still navigable
+    // — collapsed shows EVERY leaf regardless of caret state, because the
+    // caret control itself only renders expanded. Without this pairing a
+    // closed caret would strand its children at 48px.
     expect(within(rail).getByRole('button', { name: /^Tasks/ })).toBeTruthy();
     expect(within(rail).getByRole('button', { name: /^Docs/ })).toBeTruthy();
 
@@ -277,21 +294,21 @@ describe('the menu rail', () => {
     view.unmount();
   });
 
-  it('remembers being expanded — the choice outlives the tab', async () => {
+  it('remembers being collapsed — the choice outlives the tab', async () => {
     const first = render(<GateApp />);
-    await waitFor(() => first.getByTestId('workspace-grid'));
-    fireEvent.click(first.getByRole('button', { name: 'Expand menu rail' }));
+    await waitFor(() => first.getByTestId('home-page'));
+    fireEvent.click(first.getByRole('button', { name: 'Collapse menu rail' }));
     await waitFor(() =>
-      expect(first.getByTestId('menu-rail').dataset.collapsed).toBe('false'),
+      expect(first.getByTestId('menu-rail').dataset.collapsed).toBe('true'),
     );
     first.unmount();
 
-    expect(window.localStorage.getItem('tm8ui.panel-flag.menu-rail-collapsed')).toBe('0');
+    expect(window.localStorage.getItem('tm8ui.panel-flag.menu-rail-collapsed')).toBe('1');
 
     resetNav();
     const second = render(<GateApp />);
-    await waitFor(() => second.getByTestId('workspace-grid'));
-    expect(second.getByTestId('menu-rail').dataset.collapsed).toBe('false');
+    await waitFor(() => second.getByTestId('home-page'));
+    expect(second.getByTestId('menu-rail').dataset.collapsed).toBe('true');
     second.unmount();
   });
 });

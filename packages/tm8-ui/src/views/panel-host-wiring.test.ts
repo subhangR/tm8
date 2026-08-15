@@ -25,7 +25,7 @@
  * `hex-ban`, which guard their invariants the same way.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const SRC = new URL('..', import.meta.url).pathname;
@@ -71,6 +71,36 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     .flatMap((file) => mountBlocks(readFileSync(file, 'utf8')).map((block) => ({ file, block })));
   const hosts = Array.from(new Set(mounts.map((m) => m.file)))
     .map((f) => [f.slice(f.indexOf('/src/') + 1), f] as const);
+
+  /**
+   * SHARED MOUNTS — a component whose whole job is to be the ONE copy of a
+   * mount, taking its ports from a host bundle instead of building them.
+   * `auxPanel.tsx` is the first: EntityView's third column and the chat
+   * surface's aside show the same panel, and a second hand-copy of eleven
+   * props across two screens is exactly the drift this file exists to stop.
+   *
+   * The rule below — "the file that mounts must also call the helper" — was
+   * always a PROXY for "this wiring is not hand-rolled". A shared mount does
+   * not weaken that invariant, it relocates it, so the assertion follows ONE
+   * HOP: every file that RENDERS the shared mount must build the ports through
+   * the shared helpers. Delete an entry from this map and the original
+   * file-scoped rule applies to it again, unchanged.
+   */
+  const SHARED_MOUNTS: ReadonlyMap<string, string> = new Map([
+    ['auxPanel.tsx', '<AuxEntityPanel'],
+  ]);
+
+  /** The files that must own the port: the mount's own, or its renderers'. */
+  function portOwners(file: string): string[] {
+    const tag = SHARED_MOUNTS.get(basename(file));
+    if (tag === undefined) return [file];
+    const renderers = sourceFiles(SRC).filter(
+      (candidate) => candidate !== file && readFileSync(candidate, 'utf8').includes(tag),
+    );
+    // A shared mount nobody renders is dead code wearing a helper's clothes.
+    expect(renderers.length, `${file} is a shared mount with no renderers`).toBeGreaterThan(0);
+    return renderers;
+  }
 
   it('finds the mount sites at all (guards against a vacuous pass)', () => {
     // If the scan silently matched nothing, the assertions below would pass
@@ -168,11 +198,13 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
         ).toBe(true);
       }
       if (block.includes('attachments=')) {
-        expect(
-          readFileSync(file, 'utf8').includes('attachmentsFor'),
-          `${file} builds its attachments port by hand; use attachmentsFor() so every host ` +
-            'treats an absent seam the same way',
-        ).toBe(true);
+        for (const owner of portOwners(file)) {
+          expect(
+            readFileSync(owner, 'utf8').includes('attachmentsFor'),
+            `${owner} builds its attachments port by hand; use attachmentsFor() so every host ` +
+              'treats an absent seam the same way',
+          ).toBe(true);
+        }
       }
       if (block.includes('membershipAuthoring')) {
         // The authoring lane holds state, so the composer is a HOOK called
@@ -180,11 +212,13 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
         // at the mount — the direction/picker/refusal mapping must not be
         // rebuilt per host, which is exactly how the first four copies of
         // this wiring drifted apart.
-        expect(
-          readFileSync(file, 'utf8').includes('useMembershipSurface'),
-          `${file} builds membershipAuthoring by hand; use useMembershipSurface() so every ` +
-            'host maps the registry block the same way',
-        ).toBe(true);
+        for (const owner of portOwners(file)) {
+          expect(
+            readFileSync(owner, 'utf8').includes('useMembershipSurface'),
+            `${owner} builds membershipAuthoring by hand; use useMembershipSurface() so every ` +
+              'host maps the registry block the same way',
+          ).toBe(true);
+        }
         expect(
           block.includes('authoringFor('),
           `${file} passes membershipAuthoring from somewhere other than authoringFor(detail); ` +

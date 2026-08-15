@@ -295,7 +295,7 @@ const CONTROL_SPECS: readonly ControlSpec[] = [
   {
     id: 'control.task-assignment',
     title: '§14.3 Task assignment',
-    summary: 'Announces a task and its version, and demands a reply on the task anchor.',
+    summary: 'Announces a task and its version, with a caller-selected durable reply anchor.',
     text: taskAssignmentInjection({
       messageId: '{messageId}',
       taskId: '{taskId}',
@@ -305,6 +305,7 @@ const CONTROL_SPECS: readonly ControlSpec[] = [
       senderAttribution: 'verified',
       sourceSessionId: '{sourceSessionId}',
       destinationSessionId: '{destinationSessionId}',
+      replyAnchorId: '{replyAnchorId}',
       body: '{the task title and body, excerpted by the caller}',
       truncated: false,
       fetchRef: '{fetchRef}',
@@ -512,13 +513,10 @@ const FRAME_ENTRIES: readonly PromptEntry[] = [
     categoryId: 'frame',
     title: 'Coordination note',
     summary: 'Tells a spawned agent that a coordinator is blocked on a durable reply, not on its exit.',
-    status: 'unwired',
-    statusNote:
-      'The composer renders this only when the manifest names a coordinator, and composeManifest ' +
-      'hardcodes coordinator: null — so it has never rendered for any real agent.',
+    status: 'live',
     rendering: 'verbatim',
     source: 'packages/prompt/src/index.ts',
-    injectedWhen: 'Inside <coordination>, only when the manifest names a coordinator.',
+    injectedWhen: 'Inside <coordination> for coordinated-worker and coordinated-coordinator launches.',
     text: COORDINATION_INSTRUCTION,
   },
   {

@@ -214,6 +214,13 @@ beforeEach(() => {
   installStorage();
   server = installFakeAuthServer();
   resetNav();
+  /* The URL is state now, and jsdom keeps ONE `window.location` per file. A
+     case that navigates leaves its address behind and the next case boots from
+     it, because an addressable hash at boot deliberately outranks last-place
+     (R3) — so `resetNav()` alone stopped being a reset the day the router was
+     mounted. Same class as the localStorage doubles these files already carry,
+     one global later. */
+  window.location.hash = '';
 });
 afterEach(() => {
   cleanup();
@@ -233,7 +240,7 @@ async function mountAndSwitchToStaging(seam: Seam) {
       <GateApp key="local" activeServer={LOCAL_SERVER} seam={createFixtureSeam()} />
     </AuthGate>,
   );
-  await waitFor(() => expect(screen.getByTestId('workspace-grid')).toBeTruthy());
+  await waitFor(() => expect(screen.getByTestId('home-page')).toBeTruthy());
   localStorage.setItem(ACTIVE_SERVER_KEY, 'staging');
   view.rerender(
     <AuthGate>
@@ -271,7 +278,7 @@ describe('signing in to the active server from inside the workspace', () => {
 
     // The frame goes; the parked boot read resumes and the workspace mounts.
     await waitFor(() => expect(screen.queryByTestId('auth-frame')).toBeNull());
-    await waitFor(() => expect(screen.getByTestId('workspace-grid')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('home-page')).toBeTruthy());
     expect(spacesCalls()).toBeGreaterThanOrEqual(2);
 
     // The login rode the RELAY to the named server, not the local node.

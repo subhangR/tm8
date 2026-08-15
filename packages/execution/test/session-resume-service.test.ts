@@ -32,6 +32,7 @@ const RESUME_INFO: WorkSessionResumeInfo = {
   sessionId: SESSION_ID,
   spaceId: SPACE_ID,
   teamMemberId: MEMBER_ID,
+  parentSessionId: null,
   projectId: null,
   taskIds: [],
   workdirMode: 'scratch',
@@ -155,6 +156,20 @@ describe('SpawnService.resume — guards and orchestration', () => {
     expect(graph.resumes).toEqual([
       { sessionId: SESSION_ID, clientMutationId: 'cmid-1', nodeId: NODE_ID },
     ]);
+  });
+
+  it('restores the parent coordinator as the durable return route', async () => {
+    const coordinatorSessionId = '55555555-5555-4555-8555-555555555555';
+    graph.resumeInfo = {
+      ...RESUME_INFO,
+      mode: 'coordinated-worker',
+      parentSessionId: coordinatorSessionId,
+    };
+    graph.resumeReplayed = true;
+
+    const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
+
+    expect(result.manifest.coordinator).toEqual({ sessionId: coordinatorSessionId });
   });
 
   it('does not boot a second child on a ledger replay', async () => {

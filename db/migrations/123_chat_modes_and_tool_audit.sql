@@ -1,4 +1,4 @@
--- 122 — Chat modes are write-once thread authority, and every provider tool
+-- 123 — Chat modes are write-once thread authority, and every provider tool
 -- call gets a small graph audit event without duplicating arguments or output.
 
 set role tm8_graph_owner;

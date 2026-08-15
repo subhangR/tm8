@@ -53,7 +53,13 @@ export {
   type RefPresentation,
   type ServerRailItem,
 } from './MenuRail';
-export { SpaceTabBar, ADD_SPACE_DISABLED_REASON, type SpaceTabBarProps } from './SpaceTabBar';
+export { SpaceTabBar, type SpaceTabBarProps } from './SpaceTabBar';
+export {
+  SpaceSwitcher,
+  SWITCHER_ADD_SERVER_REASON,
+  SWITCHER_ADD_SPACE_REASON,
+  type SpaceSwitcherProps,
+} from './SpaceSwitcher';
 export { NoticeHost, useNotices, type NoticeHostHandle, type NoticeHostProps } from './NoticeHost';
 export {
   NOTICE_TTL_MS,
