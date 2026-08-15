@@ -18,7 +18,7 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine — the revision-14 tab row', () => {
+  it('encodes the shipped group spine — the revision-16 tab row', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       // Revision 12 (2026-08-15, five-tab ruling + Files amendment): the
       // groups are the top-level tabs. Code retired into Work (R3);
@@ -36,10 +36,18 @@ describe('the shipped default menu', () => {
       //
       // Revision 15 (2026-08-16): the label is COLLAB — a rename only, the
       // group id stays `chats`.
+      //
+      // Revision 16 (2026-08-16, user ruling): the row is stated outright —
+      // HOME | WORKSPACE | COLLAB | GRAPH | FILES | SETTINGS. 15 named the
+      // wrong tab: `chats` owns `dashboard`, the place that is YOURS, while
+      // the SHARED half (`channels`) was called Channels — a KIND, not an
+      // activity. Swapped, and `channels` moves ahead of `graph`. The IDS DO
+      // NOT MOVE, so this list reads Home-then-Collab over ids
+      // chats-then-channels; that is deliberate, ids are wire-stable.
+      'Home',
+      'Workspace',
       'Collab',
-      'Work',
       'Graph',
-      'Channels',
       'Files',
       'Settings',
     ]);

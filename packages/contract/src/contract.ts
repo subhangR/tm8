@@ -2090,10 +2090,38 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // The id is `chats` on both sides. It is free: 125 RENAMED the old `chats`
   // group to `channels` (it was the channel collection's group, never this
   // surface's), so nothing else claims it and no space can hold both.
+  //
+  // 2026-08-16 (user ruling, migration 129) — the row is stated outright:
+  //   home | workspace | collab | graph | files | settings
+  // Three LABEL changes and one MOVE. No group is added, removed or
+  // re-scoped, and every id below is unchanged.
+  //
+  // The labels 128 left behind were wrong in a way only the finished row makes
+  // obvious. `chats` holds the `dashboard` view — the conversation surface you
+  // land on with no remembered place — so calling that tab COLLAB named the
+  // one place that is yours, while the group that actually holds shared
+  // conversation (`channels`: the channel collection plus Messages) was called
+  // Channels, which names a KIND rather than an activity. Swapping them makes
+  // each tab say what standing there gets you: HOME is where you are, COLLAB
+  // is where everyone else is. `work` becomes WORKSPACE because that is what
+  // the thing inside it is called everywhere else — the `workspace` view ref,
+  // the Workspace caret, "Open full workspace". "Work" was an abbreviation
+  // nothing else used.
+  //
+  // The MOVE puts `channels` ahead of `graph`. That is ORDER and nothing else:
+  // this constant is the sole source of group order for both twins, so the
+  // seeder and the client cannot drift apart on it.
+  //
+  // NOTE THE ID/LABEL DIVERGENCE this locks in: the HOME tab's id is `chats`
+  // and the COLLAB tab's id is `channels`. That reads backwards, and it is
+  // deliberate. Ids are the wire-stable half — upgrade guards, GateApp's
+  // voice-room fallback and every resolver key on them — so renaming an id to
+  // chase a label would strand every space that already stored one. Read the
+  // id as history and the label as the product.
   { serverId: 'chats', clientId: 'chats' },
   { serverId: 'work', clientId: 'workspace' },
-  { serverId: 'graph', clientId: 'graph' },
   { serverId: 'channels', clientId: 'channels' },
+  { serverId: 'graph', clientId: 'graph' },
   { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },
 ] as const;

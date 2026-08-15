@@ -76,8 +76,13 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
    * collection. The rail keeps the dynamic-group mechanism — voice rooms still
    * use it — so this asserts the mechanism still works AND that no channel row
    * or Channels header rides along on the shipped default.
+   *
+   * Revision 16 renamed the GROUP to Collab. The channel-kind ROW inside it is
+   * still labelled Channels — that label comes from the registry's kind
+   * presentation, not from the group — and both are asserted below so the two
+   * names cannot silently collapse back into one.
    */
-  it('appends dynamic voice rows beneath the Channels cluster (revision 12)', () => {
+  it('appends dynamic voice rows beneath the Collab cluster (revision 16)', () => {
     const onNavigate = vi.fn();
     const { container, getByText } = renderRail({
       onNavigate,
@@ -89,7 +94,7 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     });
 
     const channels = [...container.querySelectorAll('.shell-rail__group')].find(
-      (group) => group.getAttribute('aria-label') === 'Channels',
+      (group) => group.getAttribute('aria-label') === 'Collab',
     ) as HTMLElement;
     expect(channels).toBeDefined();
     // Authored conversation rows stay \u2014 the dynamic rows APPEND, never replace.
@@ -161,7 +166,7 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     const { container, getByText, queryByLabelText } = renderRail({ onNavigate });
     expect(queryByLabelText('Expand Code')).toBeNull();
     const work = [...container.querySelectorAll('.shell-rail__group')].find(
-      (group) => group.getAttribute('aria-label') === 'Work',
+      (group) => group.getAttribute('aria-label') === 'Workspace',
     ) as HTMLElement;
     const rows = [...work.querySelectorAll('.shell-rail__row')];
     expect(rows.map((row) => row.querySelector('.shell-rail__label')?.textContent)).toEqual([

@@ -61,11 +61,14 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(DEFAULT_MENU_WORKSPACE_KIND_SPINE).toHaveLength(8);
   });
 
-  it('clusters the conversation surfaces in Channels, pinned to the contract spine', () => {
+  it('clusters the SHARED conversation surfaces in Collab, pinned to the contract spine', () => {
+    // Revision 16 renamed this group's LABEL to Collab and left its id
+    // `channels`. The id is the wire-stable half — the migration's upgrade
+    // guard and every resolver key on it — so the two read apart on purpose.
     const channels = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'channels');
     expect(channels).toEqual({
       id: 'channels',
-      label: 'Channels',
+      label: 'Collab',
       items: DEFAULT_MENU_CHANNELS_SPINE,
     });
   });
@@ -127,7 +130,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
    * claim, proven next to it in shell/menu-resolve.test.ts; domain/ does not
    * reach into shell/ to borrow the predicate.
    */
-  it('leads with a single-item Collab group — the tab is back, the rail row is not', () => {
+  it('leads with a single-item Home group — the tab is back, the rail row is not', () => {
     const ids = SHIPPED_DEFAULT_MENU.groups.map((g) => g.id);
     expect(ids[0]).toBe('chats');
     // `home` is NOT the id: 13 retired that group and 14 does not resurrect it,
@@ -136,9 +139,12 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(ids).not.toContain('voice');
 
     const chats = SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === 'chats');
-    // Revision 15 renamed the LABEL to Collab; the id stays `chats` because
-    // ids are the wire-stable half every resolver and upgrade guard keys on.
-    expect(chats?.label).toBe('Collab');
+    // Revision 15 renamed the LABEL to Collab and 16 corrected it to HOME —
+    // this group owns `dashboard`, the surface you land on with no remembered
+    // place, so it is the one that is YOURS; the SHARED half is `channels`.
+    // The id stays `chats` through both because ids are the wire-stable half
+    // every resolver and upgrade guard keys on.
+    expect(chats?.label).toBe('Home');
     expect(chats?.items).toEqual([{ type: 'view', ref: 'dashboard' }]);
     // ONE item, and childless — the shape the railless rule keys on. A second
     // row here and the surface grows a third pane.
@@ -222,7 +228,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(15);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(16);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

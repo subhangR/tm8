@@ -572,9 +572,10 @@ describe('T2-3 — the menu editor', () => {
 
   it('renaming a group commits on ⏎ and cancels on esc', () => {
     render(<MenuEditor menu={MENU} spaceName="atelier" />);
-    // Revision 12: the group label is "Work" (the tab name).
-    fireEvent.click(screen.getByRole('button', { name: 'rename Work' }));
-    const input = screen.getByLabelText('rename Work') as HTMLInputElement;
+    // Revision 16: the group label is "Workspace" (the tab name), matching the
+    // `workspace` view ref it leads with. Revision 12 called it "Work".
+    fireEvent.click(screen.getByRole('button', { name: 'rename Workspace' }));
+    const input = screen.getByLabelText('rename Workspace') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'LIBRARY' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(screen.getByTestId('menu-preview').textContent).toMatch(/LIBRARY/);
