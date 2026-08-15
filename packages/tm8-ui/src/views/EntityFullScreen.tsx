@@ -25,6 +25,18 @@
  *
  * ── WHAT THIS FILE DECIDES, AND WHAT IT REFUSES TO ─────────────────────────
  *
+ * ONE KNOWN GAP, STATED RATHER THAN DISCOVERED LATER. A promoted work_session
+ * gets its TERMINAL — `EntityDetailPanel` mounts `TerminalBody` itself, so §9.2's
+ * first-class terminal host works through this mount — but not its CHAT feed:
+ * `chatSurface` is host-supplied and `AuxEntityPanel` has never taken one, so
+ * switching to Chat in the full view renders the panel's honest "its feed host
+ * is unavailable" alert. That is exactly the aux column's long-standing
+ * behaviour and not a regression from the promote guard this replaced (which
+ * refused outright). It is NOT fixed here on purpose: the fix is to extract the
+ * archetype→surface choice into a shared helper the way `gitSurfaceFor` and
+ * `graphSurfaceFor` were extracted, and hand-copying `WorkspaceView`'s block
+ * into a third host is precisely the drift those helpers exist to prevent.
+ *
  * It decides ONE thing: what `port.lookup` answers, which is the §2.2
  * canonical-reload rule's input. It does NOT decide the history discipline
  * (`EntityFullView` computes that from `arrival` and hands it to `onLeave`), it
