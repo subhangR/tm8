@@ -136,3 +136,28 @@ describe('the home chat canvas', () => {
     expect(queryByTestId('hp-needs-you')).toBeNull();
   });
 });
+
+/**
+ * THE DEFECT (user report, 2026-08-16): opening an entity from the transcript
+ * navigated to the Workspace, so the conversation you were still having went
+ * off screen to show you the thing it had just mentioned.
+ */
+describe('the detail column Home opens BESIDE itself', () => {
+  it('draws no column at all when the host opened nothing', () => {
+    // An empty column is a promise of a panel; absent is the honest state.
+    const { getByTestId } = renderPage({});
+    expect(getByTestId('home-page').getAttribute('data-aside')).toBeNull();
+  });
+
+  it('keeps the conversation mounted while the column shows the entity', () => {
+    const { getByTestId } = renderPage(
+      {},
+      { aside: <div data-testid="aside-slot">the entity</div> },
+    );
+    const page = getByTestId('home-page');
+    expect(page.getAttribute('data-aside')).toBe('open');
+    expect(within(page).getByTestId('aside-slot')).toBeTruthy();
+    // The whole point: the chat did not go anywhere.
+    expect(within(page).getByTestId('chat-slot')).toBeTruthy();
+  });
+});

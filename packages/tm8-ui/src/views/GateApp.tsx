@@ -64,7 +64,7 @@ import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
 import { ChatHomeSurface, type ChatSessionRow } from '../chat-home';
 import { homeRowOf } from '../home';
-import { HomePage } from '../home-page';
+import { HomeView } from './HomeView';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
@@ -1745,13 +1745,18 @@ export function GateApp(props: GateAppProps = {}) {
                NEEDS YOU strip, the glance rails and the presence row beneath.
                The existing dashboard route stays stable while its centre is
                replaced wholesale (the same D65 posture as every view swap). */
-            <HomePage
+            <HomeView
               /* GateData satisfies HomeScreenData structurally — the same
                  narrow port src/home was built against. */
               data={data}
-              onOpenEntity={(id) => {
+              reasons={reasons}
+              serverBaseUrl={activeServer.routeBaseUrl}
+              viewerMemberId={viewerMemberId}
+              onNotice={notices.push}
+              onSpawn={async (input) => {
+                const sessionId = await data.spawn(input);
                 navigateTo(WORKSPACE_TARGET);
-                nav.push(id as EntityId);
+                nav.push(sessionId);
               }}
               onOpenKind={(kind) => navigateTo({ type: 'kind', ref: kind })}
               onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
@@ -1759,7 +1764,7 @@ export function GateApp(props: GateAppProps = {}) {
                  strip's numbers. A kind the server never counted renders no
                  number (absent ≠ zero). */
               countsFor={data.countsFor}
-              chat={
+              chat={(openEntity) => (
                 <ChatHomeSurface
                   seam={data.seam}
                   spaceId={data.spaceId}
@@ -1790,14 +1795,15 @@ export function GateApp(props: GateAppProps = {}) {
                   slots={homeSlots}
                   onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
                   viewerName={data.viewerActor?.displayName}
-                  /* Entity chips in the transcript open the detail panel
-                     through the SAME handoff every other screen commits. */
-                  onOpenEntity={(id) => {
-                    navigateTo(WORKSPACE_TARGET);
-                    nav.push(id as EntityId);
-                  }}
+                  /* IN PLACE, not away (user report 2026-08-16): a chip inside
+                     a conversation you are still having opens the entity in
+                     Home's own column. Leaving for the workspace is the right
+                     handoff for a screen you are DONE with — Git's lanes,
+                     Messages' "go to the entity this lives on" — and the wrong
+                     one for a reference mid-thread. */
+                  onOpenEntity={openEntity}
                 />
-              }
+              )}
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&

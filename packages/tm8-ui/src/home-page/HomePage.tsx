@@ -42,6 +42,17 @@ export interface HomePageProps {
   data: HomeScreenData;
   /** The chat surface — the host mounts it (seam wiring is its business). */
   chat: ReactNode;
+  /**
+   * The entity opened FROM this page, shown BESIDE it rather than instead of
+   * it. Absent ⇒ no column at all: a host with nowhere to put a detail must
+   * not be handed a slot that draws an empty one.
+   *
+   * The column AND its chrome are the host's (`views/HomeView`), exactly as
+   * they are on the channel screen — this page only makes room. That is why
+   * the node lands here unwrapped: the separator that resizes the column has
+   * to be its SIBLING, not something inside it.
+   */
+  aside?: ReactNode;
   onOpenEntity(id: string): void;
   onOpenKind(kind: string): void;
   onOpenWorkspace(): void;
@@ -130,7 +141,8 @@ export function HomePage(props: HomePageProps) {
      the live-session count from the liveness snapshot. The glance rails and
      presence row retired to the Work tab, where the inventory framing lives. */
   return (
-    <div className="hp-root hp-root--chat" data-testid="home-page">
+    <div className="hp-root hp-root--chat" data-testid="home-page" data-aside={props.aside ? 'open' : undefined}>
+      <div className="hp-page">
       {needsYou && needsYou.rows.length > 0 ? (
         <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
       ) : needsYou && (home.viewerError || home.notificationsError) ? (
@@ -178,6 +190,9 @@ export function HomePage(props: HomePageProps) {
           })}
         </footer>
       ) : null}
+      </div>
+
+      {props.aside ?? null}
     </div>
   );
 }

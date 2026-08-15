@@ -171,9 +171,43 @@
 /* Full-bleed variant: the chat fills the canvas WITH its merged conversation
    column visible (threads + sessions), triage above, the counts strip below.
    The rules below override the solo-hero block for this variant only. */
-.cv2-root .hp-root--chat {
-  flex-direction: column;
+/* The host wrapper is TRANSPARENT to layout — it exists only to carry the
+   measured width the resizer solves. Without these four lines `.hp-root`'s
+   `flex: 1` would have nothing to grow inside. */
+.cv2-root .hp-host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
+}
+
+/* The page is a COLUMN inside a ROW: the detail column opened from a chip or a
+   NEEDS YOU card sits beside the conversation instead of replacing the screen,
+   so the thing you were reading is still there when you look back at it. */
+.cv2-root .hp-root--chat {
+  flex-direction: row;
+  min-height: 0;
+}
+.cv2-root .hp-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+.cv2-root .hp-aside {
+  display: flex;
+  flex: none;
+  width: var(--hp-aside, 440px);
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  overflow: hidden;
+}
+.cv2-root .hp-aside > * {
+  flex: 1;
+  min-width: 0;
 }
 .cv2-root .hp-root--chat .hp-needs {
   flex: none;
