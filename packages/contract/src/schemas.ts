@@ -209,6 +209,11 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     axes: z.record(z.string()),
     dueDate: z.string().nullable().optional(),
     assignees: z.array(ActorSummarySchema),
+    assignments: z.array(z.object({
+      assignee: ActorSummarySchema,
+      assignedBy: ActorSummarySchema.nullable(),
+      assignedAt: IsoTimestamp,
+    }).strict()).optional(),
     acceptance: z.object({ total: z.number().int().nonnegative(), completed: z.number().int().nonnegative() }).strict(),
     // 082's opt-in completion gate, additive + optional (Git UI wave).
     completionGate: z.enum(['none', 'pr_merged']).optional(),
@@ -694,6 +699,7 @@ const CollectionFiltersSchema = z.object({
   workStatus: z.array(WorkStatusSchema).optional(),
   axes: z.record(z.array(z.string())).optional(),
   assigneeIds: z.array(EntityIdSchema).optional(),
+  assignedByIds: z.array(EntityIdSchema).optional(),
   edge: z.object({
     type: z.string(),
     direction: z.enum(['incoming', 'outgoing']),
