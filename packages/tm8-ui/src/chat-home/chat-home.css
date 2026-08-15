@@ -297,14 +297,25 @@
   background: var(--pn-surface);
 }
 
+/* A real button now (it discloses the call), so the button chrome is reset back
+   to the header it has always looked like — the press is the only new thing. */
 .tch-tool__head {
   display: flex;
+  width: 100%;
   align-items: center;
   gap: 7px;
   min-height: 30px;
   padding: 0 9px;
+  border: 0;
   border-bottom: 1px solid var(--pn-line);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
+
+.tch-tool__head:hover { background: var(--pn-hover); }
 
 .tch-tool__mark { color: var(--pn-brand-2); }
 .tch-tool code { color: var(--pn-ink-2); font: 10px var(--pn-mono); }

@@ -140,8 +140,12 @@ describe('LiveToolGraph strip', () => {
     expect(toggle.textContent).toContain('2 entities');
     expect(toggle.textContent).toContain('3 touches');
     expect(screen.getByRole('img', { name: /this session touched 2 entities/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /task: fix login — updated ×2/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /doc: runbook — created/i })).toBeTruthy();
+    /* Labelled and drawn, but NOT buttons: this host passed no `onOpenEntity`,
+       and a node that cannot be opened must not advertise a press. The wired
+       case is the next test. */
+    expect(screen.getByLabelText(/task: fix login — updated ×2/i)).toBeTruthy();
+    expect(screen.getByLabelText(/doc: runbook — created/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /fix login/i })).toBeNull();
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');

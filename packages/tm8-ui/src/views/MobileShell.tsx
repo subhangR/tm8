@@ -168,9 +168,30 @@ function screenFor(props: MobileShellProps): ReactNode {
     );
   }
 
+  /*
+   * WHY NEITHER OF THESE IS HANDED AN `onOpenEntity`, and why that is the fix
+   * rather than the omission it looks like.
+   *
+   * Opening an arbitrary entity is a WORKSPACE move — the desktop does it by
+   * navigating to the workspace and pushing the id onto the panel stack, and the
+   * workspace is precisely what has no phone arrangement (see the default arm).
+   * The phone's `entity` route is the CHANNEL screen, so routing a task or a
+   * session there would draw a message feed for something that has none: the
+   * misroute `GateApp` was repaired for.
+   *
+   * Both of these screens already have an honest answer for a host that cannot
+   * navigate — `InboxScreen` renders its rows disabled-WITH-REASON, and
+   * `EntityChip` renders an inert badge instead of a button — and both check it
+   * by asking whether the callback EXISTS. So they were each passed
+   * `() => undefined`, which is not "no handler": it is a handler that does
+   * nothing. The prop was present, the honest states switched themselves off,
+   * and every inbox row and every tool-call chip on a phone became a live-looking
+   * control that swallowed the press. Passing nothing is what makes them tell
+   * the truth. Wiring them for real is a phone workspace, not a callback.
+   */
   switch (activeTarget.ref) {
     case 'inbox':
-      return <InboxView seam={data.seam} onOpenEntity={() => undefined} />;
+      return <InboxView seam={data.seam} />;
     case 'dashboard':
       return (
         <ChatHomeSurface
@@ -179,7 +200,6 @@ function screenFor(props: MobileShellProps): ReactNode {
           nodeKey={props.nodeKey}
           {...(props.spaceLabel ? { spaceLabel: props.spaceLabel } : {})}
           {...(props.chatAnchorId ? { anchorId: props.chatAnchorId } : {})}
-          onOpenEntity={() => undefined}
         />
       );
     default:

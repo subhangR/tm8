@@ -9,7 +9,7 @@
  * Visual language is the session-graph surface's (`sg-*` classes, registry
  * icon art), so the fourth chip's full graph and this strip read as one family.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 import type { EntityId, FeedItem } from '@tm8/contract';
 import { getKind } from '../domain';
 import { NODE_H, NODE_W } from '../session-graph/layout';
@@ -192,21 +192,30 @@ function TouchNode({
   onOpen?: (id: EntityId) => void;
 }) {
   const config = getKind(touch.kind);
-  const open = () => onOpen?.(touch.id);
+  /* A node is a BUTTON only where the host can actually open the entity. With
+     no handler it keeps its label and drops the role, the tab stop and the
+     handlers — the same rule the entity chips follow, and for the same reason:
+     `role="button"` over a no-op is a control that swallows the press. */
+  const label = `${config.label}: ${touch.title} — ${edgeLabel(touch)}`;
+  const pressable = onOpen
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        onClick: () => onOpen(touch.id),
+        onKeyDown: (event: KeyboardEvent<SVGGElement>) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onOpen(touch.id);
+          }
+        },
+      }
+    : {};
   return (
     <g
       className={`sg-cell${fresh ? ' chs-livegraph__cell--fresh' : ''}`}
       transform={`translate(${x - NODE_W / 2} ${y - NODE_H / 2})`}
-      role="button"
-      tabIndex={0}
-      aria-label={`${config.label}: ${touch.title} — ${edgeLabel(touch)}`}
-      onClick={open}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          open();
-        }
-      }}
+      aria-label={label}
+      {...pressable}
     >
       <rect className="sg-box" width={NODE_W} height={NODE_H} rx={8} data-hop={1} />
       <g className="sg-icon" transform={`translate(11 ${NODE_H / 2 - 8})`}>
