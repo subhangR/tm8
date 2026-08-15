@@ -195,18 +195,26 @@ derived from it**.
 
 Same rule, both shells. The desktop column differs; the meaning of back does not.
 
+Each block starts fresh; `→` chains within a block.
+
 | Walk | Address after | Stack after | Back leaves app? |
 |---|---|---|---|
-| Cold arrival `e/{A}?origin=tasks` | unchanged, 1 entry | `[A]` | **yes** — nothing behind it |
-| …then step UP (Esc / `‹`) | `k/tasks`, still 1 entry (R15 replace) | `[]` | **yes** |
-| …then drill to `B`, then back | `e/{A}`, 2 entries | `[A]` | no |
-| `k/tasks` → drill `A` → drill `B` | `e/{B}`, 3 entries | `[A, B]` | no |
-| …back | `e/{A}` | `[A]` | no |
-| …back again | `k/tasks` | `[]` | no |
-| …forward twice | `e/{B}` | `[A, B]` | no |
-| Back at a screen root reached by walking | previous screen | untouched | no |
+| **A.** Cold arrival `e/{A}?origin=tasks` | unchanged, 1 entry | `[A]` | **yes** — nothing behind it |
+| **A** → step UP (Esc / `‹`) | `k/tasks`, still 1 entry (R15 **replace**) | `[]` | **yes** |
+| **B.** Cold arrival `e/{A}` → drill `B` | `e/{B}`, 2 entries | `[A, B]` | no |
+| **B** → back | `e/{A}`, still 2 entries | `[A]` | no |
+| **C.** `k/tasks` → drill `A` → drill `B` | `e/{B}`, 3 entries | `[A, B]` | no |
+| **C** → back | `e/{A}` | `[A]` | no |
+| **C** → back → back | `k/tasks` | `[]` | no |
+| **C** → back → back → forward → forward | `e/{B}` | `[A, B]` | no |
+| **D.** `inbox` → `k/tasks` → drill `A` → back → back | `inbox` | `[]` | no |
 | Rotate, at any point above | unchanged | unchanged | unchanged |
 | Resume after tab discard | the address it was on | rebuilt to depth ≤ 1 | per Q4 |
+
+Row **B → back** is the one that used to fail: the address walked to `e/{A}` and
+the screen→URL sync pushed `e/{B}` straight back. Row **D** is "back at a screen
+root reached by walking" — it leaves the *screen*, for the previous screen, and
+the Space and the app are both still there.
 
 An address is a statement about **one** screen. Landing on Channels says nothing
 about what the Tasks screen has open, so the Tasks stack survives untouched and
