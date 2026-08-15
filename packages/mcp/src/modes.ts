@@ -8,6 +8,7 @@ export const DIRECT_TOOL_NAMES = [
   'repo_read_file', 'repo_glob', 'repo_grep',
   'repo_write', 'repo_edit', 'repo_multi_edit', 'repo_bash',
   'session_transcript', 'session_tail', 'session_followup', 'session_stop',
+  'explain_diagram', 'explain_graph', 'explain_code', 'explain_asset',
   'doc_create', 'doc_update', 'artifact_create',
   'web_fetch', 'web_search',
   'memory_write', 'memory_search',
@@ -27,6 +28,9 @@ const RESEARCH_READ_TOOLS = new Set<string>([
 ]);
 
 const PLAN_WRITES = new Set<string>(['doc_create', 'doc_update', 'artifact_create']);
+const EXPLAIN_OUTPUTS = new Set<string>([
+  'explain_diagram', 'explain_graph', 'explain_code', 'explain_asset',
+]);
 const BUILD_ONLY = new Set<string>([
   'repo_write', 'repo_edit', 'repo_multi_edit', 'memory_write',
 ]);
@@ -44,7 +48,9 @@ export function toolPermission(mode: ChatMode, tool: string, operation?: string)
 
   if (mode === 'ask') return MINIMAL_READ_TOOLS.has(tool) ? 'allow' : 'deny';
   if (mode === 'explain') {
-    return MINIMAL_READ_TOOLS.has(tool) || PLAN_WRITES.has(tool) ? 'allow' : 'deny';
+    return MINIMAL_READ_TOOLS.has(tool) || EXPLAIN_OUTPUTS.has(tool) || PLAN_WRITES.has(tool)
+      ? 'allow'
+      : 'deny';
   }
 
   if (tool === 'tm8_messages') {

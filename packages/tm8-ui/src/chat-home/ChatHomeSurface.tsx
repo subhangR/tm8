@@ -64,11 +64,18 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     ...(model.note ? { note: model.note } : {}),
   }));
 
-  const props: ChatHomeScreenProps = { ...screen, port, models, resolveEntity, onOpenEntity, attach };
+  const props: ChatHomeScreenProps = {
+    ...screen,
+    port,
+    models,
+    resolveEntity,
+    onOpenEntity,
+    attach,
+    assetHref: seam.files.downloadHref,
+  };
   return (
     <Suspense fallback={<div className="tch-load" role="status">Loading Chat…</div>}>
       <SplitChatHomeScreen {...props} />
     </Suspense>
   );
 }
-

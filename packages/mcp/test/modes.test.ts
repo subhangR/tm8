@@ -32,11 +32,17 @@ describe('chat mode policy', () => {
   it('keeps Explain focused on reads and explanatory artifacts', () => {
     expect(exposedToolNames('explain', MCP_TOOL_NAMES)).toEqual([
       'tm8_read', 'repo_read_file', 'repo_glob', 'repo_grep',
-      'session_transcript', 'doc_create', 'doc_update', 'artifact_create',
+      'session_transcript',
+      'explain_diagram', 'explain_graph', 'explain_code', 'explain_asset',
+      'doc_create', 'doc_update', 'artifact_create',
     ]);
     expect(toolPermission('explain', 'tm8_read')).toBe('allow');
     expect(toolPermission('explain', 'repo_grep')).toBe('allow');
     expect(toolPermission('explain', 'session_transcript')).toBe('allow');
+    expect(toolPermission('explain', 'explain_diagram')).toBe('allow');
+    expect(toolPermission('explain', 'explain_graph')).toBe('allow');
+    expect(toolPermission('explain', 'explain_code')).toBe('allow');
+    expect(toolPermission('explain', 'explain_asset')).toBe('allow');
     expect(toolPermission('explain', 'doc_create')).toBe('allow');
     expect(toolPermission('explain', 'doc_update')).toBe('allow');
     expect(toolPermission('explain', 'artifact_create')).toBe('allow');
