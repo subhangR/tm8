@@ -35,6 +35,7 @@ import {
   type Route,
   type RouterTarget,
 } from '../routes';
+import { reconcileScreenStacks } from './backContract';
 
 /** WLT §5.2 / SPEC-FINAL: three pins, no more. */
 export const MAX_PINNED = 3;
@@ -441,6 +442,36 @@ export function attachRouter(target: RouterTarget, opts: RouterSyncOptions = {})
     applying = true;
     try {
       navStore.getState().hydrate(outcome.route);
+      /*
+       * THE ADDRESS LEADS THE SCREEN STACK — but ONLY here, and "here" is the
+       * whole rule. This path runs for back, forward, a pasted hash and a
+       * reload, and is already filtered against store-led writes by `applying`
+       * and `lastWritten` above. So the split falls out of the loop's existing
+       * shape rather than being asserted on top of it:
+       *
+       *   viewer moved the STACK   (a row, Esc) → stack leads, URL follows
+       *   viewer moved the ADDRESS (back, paste) → address leads, stack follows
+       *
+       * WITHOUT THIS, BACK WAS A TRAP. `GateApp` seeds the stack from an address
+       * that names an entity and has no branch for one that names none, so back
+       * from `e/A?origin=tasks` to `k/tasks` left the stack holding `[A]` and the
+       * screen→URL sync pushed `e/A` straight back — returning the viewer to the
+       * entity they had just left, on the exact entry path a shared link creates.
+       *
+       * INSIDE the `applying` window deliberately: this and `hydrate` are one
+       * atomic answer to one inbound address, and a subscriber that observed the
+       * store between them would see a screen stack disagreeing with the view it
+       * belongs to. See `backContract.ts` for the contract, and
+       * `docs/features/mobile/BACK-CONTRACT.md` for why it is this way round.
+       *
+       * READ BACK THE HYDRATED VIEW rather than `outcome.route.target`. The two
+       * are the same string today — `normalize` passes `target` through — but the
+       * value that must drive the stack is the one that will RENDER, and taking
+       * it from the store is what keeps that true if normalization ever gains a
+       * target rule. A stack keyed off a pre-normalization target would be a
+       * silent mis-seed, which is the failure class hardest to see.
+       */
+      reconcileScreenStacks(navStore.getState().view);
     } finally {
       applying = false;
     }
