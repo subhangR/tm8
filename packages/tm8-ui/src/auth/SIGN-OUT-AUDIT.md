@@ -86,3 +86,10 @@ keyed by the viewer, or it must appear in `auth/session-reset.ts`.** There is no
 third option, and the two entries that had neither are precisely the two that
 leaked. `views/useSidePanelKinds.ts` shows the first form; this file's §1 is the
 second.
+
+One loose end, left loose deliberately: `resetLocalAuth()` in `session.ts`
+forgets every pass on every server and has **no callers** — it is a dev/test
+affordance. It does not run the reset, because wiring it in would blank the
+address of whichever test first adopts it, and a surprise is a poor thing to
+leave in a helper. If it ever gains a real caller, that caller is ending a
+session and must go through `endSession`.
