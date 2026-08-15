@@ -223,6 +223,30 @@ describe('Home three-tab column', () => {
     expect(onSelectEntity).toHaveBeenCalledWith('task-1');
   });
 
+  it('a host renderTaskRow REPLACES the plain row; null falls back to it', () => {
+    const view = renderHome({
+      tab: 'tasks',
+      renderTaskRow: (task, ctx) =>
+        task.id === 'task-1' ? (
+          <div data-testid="hosted-tile" data-active-flag={String(ctx.active)}>
+            {task.title}
+          </div>
+        ) : null,
+      selectedEntityId: 'task-1',
+      centerOverride: <div />,
+    });
+    // task-1: the hosted tile, with the honest active flag — and no plain row.
+    const tile = within(view.container).getByTestId('hosted-tile');
+    expect(tile.getAttribute('data-active-flag')).toBe('true');
+    expect(
+      within(view.container).queryByRole('button', { name: /^Ship the tab column/ }),
+    ).toBeNull();
+    // task-2 returned null: the plain row (with its Run refusal) still draws.
+    expect(
+      within(view.container).getByRole('button', { name: /^Retire the merged list/ }),
+    ).toBeTruthy();
+  });
+
   it('an unwired tab says so — absent is not an empty list', () => {
     const { port } = createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD]);
     const view = render(

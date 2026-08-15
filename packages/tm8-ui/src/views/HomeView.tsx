@@ -39,6 +39,8 @@ import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { useHomeRegion, type HomeTab } from '../stores/homeRegionStore';
+import type { ChatTaskRow } from '../chat-home';
+import { HomeTaskTile } from './HomeTaskTile';
 import type { Notice } from '../shell';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { useLaunchPort } from './useLaunchPort';
@@ -74,6 +76,7 @@ export interface HomeViewProps {
   countsFor?: (kind: string) => { total: number; unseen: number } | undefined;
   /** D11/D14 — the GateApp launch-sheet singleton, mounted over this screen
    *  while it holds a subject, exactly as EntityView mounts it. */
+  onLaunchOpen?(id: EntityId): void;
   launchSubjectId?: EntityId | null;
   launchRefusal?: { cause: string; detail: string } | null;
   launchInFlight?: boolean;
@@ -103,6 +106,13 @@ export interface HomeChatRegions {
   newTaskUnavailable: { cause: string; remedy: string } | null;
   /** B's non-chat occupant, rendered inside the chat grid (D8). */
   centerOverride?: ReactNode;
+  /**
+   * The Tasks tab's row renderer: the WORKSPACE task tile with its status
+   * controls, composed here because the control executor (`rowLifecycle`
+   * through `ControlHost`) is this screen's singleton. The chat column keeps
+   * ordering/filtering over the row DATA and calls this per visible row.
+   */
+  renderTaskRow?: (task: ChatTaskRow, ctx: { active: boolean }) => ReactNode;
 }
 
 export function HomeView(props: HomeViewProps) {
@@ -168,6 +178,10 @@ export function HomeView(props: HomeViewProps) {
       livenessOf: data.livenessOf,
       capabilitiesOf: (id) => data.detailOf(id)?.capabilities,
       onNeedDetail: (id: string) => data.pull?.(id),
+      /* Row verbs (Run, Complete) dispatch through the SAME primaries the
+         panels use — one executor per screen. `forEntity` answers undefined
+         for an unwired verb, which the optional call keeps unreachable. */
+      onAction: (ref, entityId) => primaries.forEntity(entityId)?.(ref),
       onSetState: rowLifecycle.setState,
       onArchive: rowLifecycle.archive,
       onSetValue: rowLifecycle.setValue,
@@ -177,7 +191,7 @@ export function HomeView(props: HomeViewProps) {
       membershipSets: rowLifecycle.membershipSets,
       connectionsOf: data.connectionsOf,
     }),
-    [focusDetail?.kind, ctx, data, rowLifecycle],
+    [focusDetail?.kind, ctx, data, primaries, rowLifecycle],
   );
 
   /* The panels read `detailOf`; nothing else on Home does, so the pulls are
@@ -271,6 +285,38 @@ export function HomeView(props: HomeViewProps) {
     />
   ) : undefined;
 
+  /* THE TASKS TAB DRAWS THE WORKSPACE TILE (user ruling 2026-08-16): status
+     word + changeable state strip, avatars, badges, hover-revealed Run — the
+     same `MaestroTaskTile` anatomy, composed HERE because the control
+     executor is this screen's singleton. The chat column keeps the row DATA
+     for its ordering and search; this map resolves each visible id back to
+     its full summary. Same cached `rowsFor` read GateApp's composition uses. */
+  const taskSummaries = data.rowsFor(taskKind.kind)(undefined);
+  const taskById = useMemo(
+    () => new Map(taskSummaries.map((row) => [row.id, row])),
+    [taskSummaries],
+  );
+  const renderTaskRow = useCallback(
+    (task: ChatTaskRow, tileCtx: { active: boolean }): ReactNode => {
+      const row = taskById.get(task.id);
+      if (!row) return null; // the screen falls back to its plain row
+      return (
+        <HomeTaskTile
+          row={row}
+          config={taskKind}
+          controls={controls}
+          selected={tileCtx.active}
+          streaming={data.activity[row.id] === true}
+          badges={task.badges}
+          onSelect={() => region.selectCenter(task.id as EntityId)}
+          onOpenLaunch={props.onLaunchOpen ? (id) => props.onLaunchOpen!(id as EntityId) : undefined}
+        />
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [taskById, taskKind, controls, data.activity, props.onLaunchOpen],
+  );
+
   const regions: HomeChatRegions = {
     tab: region.tab,
     onTab: region.setTab,
@@ -280,6 +326,7 @@ export function HomeView(props: HomeViewProps) {
     ...(newTask.unavailable === null ? { onNewTask: () => void newTask.create() } : {}),
     newTaskUnavailable: newTask.unavailable,
     ...(centerOverride !== undefined ? { centerOverride } : {}),
+    renderTaskRow,
   };
 
   /* REGION C. Chips inside it REPLACE its subject (auxPanel's ruling —

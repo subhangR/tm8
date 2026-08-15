@@ -1870,6 +1870,7 @@ export function GateApp(props: GateAppProps = {}) {
               countsFor={data.countsFor}
               /* D11/D14: the launch-sheet singleton, mounted over Home while
                  it holds a subject — Run on a task row opens it here. */
+              onLaunchOpen={(id) => launch.open(id)}
               launchSubjectId={launch.subjectId}
               launchRefusal={launchRefusal}
               launchInFlight={launching}
@@ -1903,6 +1904,7 @@ export function GateApp(props: GateAppProps = {}) {
                   sessions={homeSessionRows}
                   tasks={homeTaskRows}
                   onRunTask={(id) => launch.open(id as EntityId)}
+                  renderTaskRow={regions.renderTaskRow}
                   tab={regions.tab}
                   onTab={regions.onTab}
                   selectedEntityId={regions.selectedEntityId}

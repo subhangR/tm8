@@ -44,6 +44,7 @@ export interface ChatHomeSurfaceProps {
   onNewTask?: ChatHomeScreenProps['onNewTask'];
   newTaskUnavailable?: ChatHomeScreenProps['newTaskUnavailable'];
   onRunTask?: ChatHomeScreenProps['onRunTask'];
+  renderTaskRow?: ChatHomeScreenProps['renderTaskRow'];
   centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];
   onOpenWorkspace?: ChatHomeScreenProps['onOpenWorkspace'];

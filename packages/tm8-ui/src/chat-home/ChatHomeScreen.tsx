@@ -100,8 +100,17 @@ export interface ChatHomeScreenProps {
    *  Absent ⇒ disabled with `newTaskUnavailable`'s reason, never hidden. */
   onNewTask?: (() => void) | undefined;
   newTaskUnavailable?: { cause: string; remedy: string } | null;
-  /** D11: Run on a task row → the host opens its launch sheet on that task. */
+  /** D11: Run on a task row → the host opens its launch sheet on that task.
+   *  Serves the FALLBACK row only — a host that passes `renderTaskRow` wires
+   *  Run inside its own tile. */
   onRunTask?: ((id: string) => void) | undefined;
+  /**
+   * The host's own task-row renderer — the workspace tile with its status
+   * controls (user ruling 2026-08-16). This screen keeps ordering and the
+   * D4 search over the row DATA and calls this per visible row; a `null`
+   * return (row data the host cannot resolve) falls back to the plain row.
+   */
+  renderTaskRow?: ((task: ChatTaskRow, ctx: { active: boolean }) => ReactNode) | undefined;
   /**
    * Region B when it is NOT the chat (D7/D8): the host's entity panel,
    * rendered in the conversation pane's place while the conversation stays
@@ -149,6 +158,7 @@ export function ChatHomeScreen({
   onNewTask,
   newTaskUnavailable,
   onRunTask,
+  renderTaskRow,
   centerOverride,
   slots,
   onOpenWorkspace,
@@ -895,7 +905,21 @@ export function ChatHomeScreen({
             : null}
 
           {tab === 'tasks'
-            ? taskRows.map((task) => (
+            ? taskRows.map((task) => {
+                /* THE WORKSPACE TILE, when the host renders one (status
+                   controls, avatars, hover Run). This screen keeps only the
+                   ordering and the search that chose the row. */
+                const hosted = renderTaskRow?.(task, {
+                  active: task.id === selectedEntityId,
+                });
+                if (hosted != null) {
+                  return (
+                    <div key={task.id} className="tch-tile-host">
+                      {hosted}
+                    </div>
+                  );
+                }
+                return (
                 /* A row and its Run are SIBLINGS — a button cannot nest a
                    button, and Run must not be the row's whole surface. The
                    badge sub-row (PR chips, entity counts) is a sibling too,
@@ -961,7 +985,8 @@ export function ChatHomeScreen({
                   <span className="tch-thread__badges">{task.badges}</span>
                 ) : null}
                 </div>
-              ))
+                );
+              })
             : null}
         </div>
         <footer className="tch-sidebar__foot">
