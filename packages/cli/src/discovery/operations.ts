@@ -535,7 +535,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
-      'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate}',
+      'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
     ],
     examples: [
@@ -2176,6 +2176,25 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ["tm8 message reply <message-id> '<body>' --mutation-id <uuid>"],
   }],
+  // `task axis` is SUGAR over `entities.get` + `entities.patch`: the axis
+  // write IS the ordinary task content patch, and the read exists because the
+  // server replaces the axes jsonb wholesale — merging one axis into the
+  // stored record requires the record. No new catalog row for a door that
+  // already exists.
+  ['task axis', {
+    path: ['task', 'axis'],
+    syntax: 'tm8 task axis <task-id> <axis-name> [<value>] [--clear] [--expect-version <n>] [--mutation-id <id>]',
+    summary: 'Set or clear one per-space axis value on a task (e.g. the `type` taxonomy)',
+    notes: [
+      'sugar over entities.get + entities.patch — the write is the version-guarded task content patch, merged into the stored axes record',
+      'axis names and legal values are per-Space data: `tm8 space task-axis list`; an illegal value is refused by the Server (invalid_input)',
+      'an axis with no declared values takes free text; --clear unsets the axis, which is distinct from any value',
+    ],
+    examples: [
+      'tm8 task axis <task-id> type code',
+      'tm8 task axis <task-id> type --clear',
+    ],
+  }],
   // `task import-issue` is SUGAR over `entities.create`: the GitHub read is a
   // local network act the catalog does not model (same reasoning as the Tier 2
   // git verbs' local git execution), and the only graph write is an ordinary
@@ -2308,6 +2327,14 @@ const COMMAND_ALIASES = new Map<string, {
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
 COMMAND_ORDER.splice(messageSendIndex < 0 ? COMMAND_ORDER.length : messageSendIndex + 1, 0, 'message reply');
+// `task axis` is as available as the read and the patch it composes. The
+// PATCH leads because the help header derives side-effect and versioning
+// traits from the FIRST operation, and the patch is what this command IS —
+// a header reading `side effect: none` off the merge's read would be a lie
+// about a durable write.
+COMMAND_OPS.set('task axis', ['entities.patch', 'entities.get']);
+const taskGateIndex = COMMAND_ORDER.indexOf('task gate');
+COMMAND_ORDER.splice(taskGateIndex < 0 ? COMMAND_ORDER.length : taskGateIndex + 1, 0, 'task axis');
 // `task import-issue`'s only wire operation is the create it performs; the
 // GitHub read is local network execution the availability model does not see.
 COMMAND_OPS.set('task import-issue', ['entities.create']);

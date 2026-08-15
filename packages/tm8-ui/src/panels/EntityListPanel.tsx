@@ -280,6 +280,22 @@ export interface EntityListPanelProps {
   onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
 
   /**
+   * Set or clear (`null`) ONE axis of an expanded row's `state.axes` record.
+   * Its own prop for the same reason `onSetValue` is: the write is a
+   * version-guarded content patch, and additionally a MERGE — the server
+   * replaces the whole axes jsonb, so the host folds this one change into the
+   * stored record. See `ControlHost.onSetAxis`.
+   */
+  onSetAxis?: (entityId: string, axisName: string, next: string | null, label: string) => void;
+
+  /**
+   * The space's axis registry — per-space DATA from `spaceSettings().taskAxes`,
+   * hydrated by the host. The axis pickers draw one control per entry for
+   * kinds whose registry declares `axisControls`; empty draws none.
+   */
+  taskAxes?: readonly import('@tm8/contract').TaskAxis[];
+
+  /**
    * Add or remove ONE assignment on an expanded row.
    *
    * `edgeType` is registry data, passed through rather than known here — the

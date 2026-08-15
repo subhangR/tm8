@@ -1,8 +1,9 @@
 /**
  * `tm8 task …` — the closed kind-command namespace for tasks (§4.5).
  *
- * SIX commands: `transition`, `complete`, `gate`, `link-pr`, `link-commit`,
- * `import-issue`. There is deliberately no `task create`, `task get` or
+ * SEVEN commands: `transition`, `complete`, `gate`, `axis`, `link-pr`,
+ * `link-commit`, `import-issue`. There is deliberately no `task create`,
+ * `task get` or
  * `task list`: a task is an entity, so it is created, read and queried through
  * the universal entity commands. A parallel task noun would be a second way to
  * say the same thing, drifting from the first. (`import-issue` is create-side
@@ -415,10 +416,84 @@ async function taskImportIssue(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `tm8 task axis <task-id> <axis-name> [<value>] [--clear]` — set or clear one
+ * per-space axis value on a task.
+ *
+ * SUGAR OVER `entities.get` + `entities.patch`, not a new operation: the axis
+ * write IS the ordinary task content patch. The read is not ceremony — the
+ * server stores axes as ONE jsonb the patch replaces wholesale
+ * (`update_task_content`: `axes = coalesce(p_axes, axes)`), so writing one
+ * axis without restating the record requires knowing the record. The same
+ * read supplies `expectedVersion` unless the caller pins one with
+ * `--expect-version`; either way the guard holds — a write racing this
+ * read-merge-write lands as a version conflict, never a silent overwrite.
+ *
+ * NO CLIENT-SIDE VOCABULARY CHECK, deliberately. The trigger
+ * (`internal.validate_task_axes`) owns the refusal and names it
+ * (`invalid value X for task axis Y`); a local copy of the axis list would be
+ * a second rule free to drift, and it would break the one shape the UI's
+ * picker cannot write — an `axisValues: []` free-text axis.
+ */
+async function taskAxis(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['clear', 'expect-version', 'mutation-id']);
+  const id = requireArg(cmd, 0, '<task-id>');
+  const name = requireArg(cmd, 1, '<axis-name>');
+  const clear = cmd.options.bool('clear');
+  const value = cmd.args[2];
+  if (clear && value !== undefined) {
+    throw new CliError('`--clear` and a <value> are two different intents; pass one', EXIT_USAGE);
+  }
+  if (!clear && value === undefined) {
+    throw new CliError('`tm8 task axis` needs a <value>, or --clear to unset', EXIT_USAGE, {
+      hint: `tm8 task axis ${id} ${name} <value> · tm8 task axis ${id} ${name} --clear`,
+    });
+  }
+
+  const client = clientFor(cmd.ctx);
+  const entity = (await observedInvoke<unknown>(client, 'entities.get', {
+    params: { id },
+  })) as { version?: unknown; state?: { axes?: unknown } };
+  const version = cmd.options.integer('expect-version') ?? entity.version;
+  if (typeof version !== 'number') {
+    throw new CliError(`could not read a version for ${id}; pass --expect-version <n>`, EXIT_USAGE);
+  }
+  const stored = entity.state?.axes;
+  const axes: Record<string, string> = {};
+  if (stored !== null && typeof stored === 'object') {
+    for (const [axis, v] of Object.entries(stored as Record<string, unknown>)) {
+      if (typeof v === 'string') axes[axis] = v;
+    }
+  }
+  if (clear) {
+    if (!(name in axes)) {
+      // Clearing an unset axis is a no-op the server cannot distinguish from
+      // a real write; say so instead of spending a version bump on nothing.
+      cmd.out.warn(`note: ${name} is not set on ${id}; nothing to clear`);
+      return EXIT_OK;
+    }
+    delete axes[name];
+  } else {
+    axes[name] = value as string;
+  }
+
+  const data = await observedInvoke<unknown>(client, 'entities.patch', {
+    params: { id },
+    body: withActor(cmd, {
+      clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+      expectedVersion: version,
+      content: { axes },
+    }),
+  });
+  cmd.out.data(data, renderCommandResult);
+  return EXIT_OK;
+}
+
 export const TASK_COMMANDS: CommandModule[] = [
   { path: ['task', 'transition'], run: taskTransition },
   { path: ['task', 'complete'], run: taskComplete },
   { path: ['task', 'gate'], run: taskGate },
+  { path: ['task', 'axis'], run: taskAxis },
   { path: ['task', 'link-pr'], run: linker('entities.commands.linkPr') },
   { path: ['task', 'link-commit'], run: linker('entities.commands.linkCommit') },
   { path: ['task', 'import-issue'], run: taskImportIssue },

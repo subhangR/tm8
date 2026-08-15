@@ -52,6 +52,8 @@ function row(id: string, kind: string, title: string): EntitySummary {
 interface HarnessOptions {
   /** Absent ⇒ the detail is NOT hydrated, which is the refusal arm. */
   version?: number;
+  /** The hydrated detail's stored axes record — what `setAxis` merges into. */
+  axes?: Record<string, string>;
   members?: readonly ActorSummary[];
   rows?: Record<string, EntitySummary[]>;
   connections?: unknown[];
@@ -95,7 +97,10 @@ function harness(options: HarnessOptions = {}) {
     detailOf: (id: string) =>
       options.version === undefined || id !== TASK
         ? undefined
-        : ({ version: options.version } as unknown as EntityDetail),
+        : ({
+            version: options.version,
+            state: { kind: 'task', axes: options.axes ?? {} },
+          } as unknown as EntityDetail),
     rowsFor: (kind: string) => () => rows[kind] ?? [],
   } as unknown as GateData;
 
@@ -291,6 +296,56 @@ describe('useRowLifecycle — setValue: the content patch', () => {
     expect(h.seam.commands.patchEntity).toHaveBeenCalledTimes(1);
     expect(h.notices[0]!.body).toContain('version_conflict');
     expect(h.data.reconcileCommand).not.toHaveBeenCalled();
+  });
+});
+
+describe('useRowLifecycle — setAxis: the MERGED content patch', () => {
+  /**
+   * WHY MERGE IS THE ASSERTION. `update_task_content` replaces the axes
+   * jsonb wholesale (`axes = coalesce(p_axes, axes)`, 038:389) — a writer
+   * that patched `{ [name]: next }` alone would pass every panel test and
+   * silently drop the task's OTHER axes at the node. The layer that chooses
+   * the body is the only layer that can be caught doing it.
+   */
+  it('folds one axis into the STORED record — the untouched axis survives', async () => {
+    const h = harness({ version: 7, axes: { type: 'design', size: 'l' } });
+    h.lifecycle.setAxis(TASK, 'type', 'code', 'Type');
+    await flush();
+
+    expect(h.seam.commands.patchEntity).toHaveBeenCalledWith(TASK, {
+      expectedVersion: 7,
+      content: { axes: { type: 'code', size: 'l' } },
+    });
+  });
+
+  it('clearing DROPS the key rather than writing an empty string', async () => {
+    const h = harness({ version: 7, axes: { type: 'design', size: 'l' } });
+    h.lifecycle.setAxis(TASK, 'type', null, 'Type');
+    await flush();
+
+    expect(h.seam.commands.patchEntity).toHaveBeenCalledWith(TASK, {
+      expectedVersion: 7,
+      content: { axes: { size: 'l' } },
+    });
+  });
+
+  it('refuses rather than guessing when the detail is not loaded', async () => {
+    const h = harness();
+    h.lifecycle.setAxis(TASK, 'type', 'code', 'Type');
+    await flush();
+
+    expect(h.seam.commands.patchEntity).not.toHaveBeenCalled();
+    expect(h.notices).toHaveLength(1);
+    expect(h.notices[0]!.title).toBe('Type could not be changed');
+  });
+
+  it('surfaces the server refusal verbatim — the trigger owns the vocabulary', async () => {
+    const h = harness({ version: 7, fail: new Error('invalid value banana for task axis type') });
+    h.lifecycle.setAxis(TASK, 'type', 'banana', 'Type');
+    await flush();
+
+    expect(h.notices[0]!.title).toBe('Type could not be changed');
+    expect(h.notices[0]!.body).toContain('invalid value banana for task axis type');
   });
 });
 

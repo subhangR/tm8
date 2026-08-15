@@ -48,6 +48,7 @@ import type {
   EntityCapabilities,
   EntityKind,
   EntitySummary,
+  TaskAxis,
 } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type {
@@ -140,6 +141,21 @@ export interface ControlHost {
    * here too; an optional fourth argument would let a host silently drop it.
    */
   onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
+  /**
+   * A registry `axisControls` write — ONE axis of the row's `state.axes`
+   * record. `null` clears the axis back to unset, which is a real state the
+   * picker offers (`no <axis>`), unlike `onSetValue` whose fields have no
+   * contract-level clear. The executor merges into the stored record before
+   * patching, because the server replaces the jsonb wholesale.
+   */
+  onSetAxis?: (entityId: string, axisName: string, next: string | null, label: string) => void;
+  /**
+   * The space's axis registry, for the `axisControls` pickers — PER-SPACE
+   * DATA from `spaceSettings().taskAxes`, hydrated by the host like the
+   * assign roster. Empty means the space defines none, and the strip renders
+   * no axis controls at all (an empty picker would fabricate a taxonomy).
+   */
+  taskAxes?: readonly TaskAxis[];
   onAssign?: (entityId: string, actorId: string, edgeType: string, assigned: boolean) => void;
   assignableActors?: readonly ActorSummary[];
   /**
@@ -272,6 +288,15 @@ export function EntityControlStrip({
         line(value.label, <RowValueControl row={row} props={props} control={value} />),
       )}
 
+      {/* One picker per axis the SPACE defines — none defined, none drawn.
+          Registry presence only marks the kind whose state carries `axes`;
+          the vocabulary is the host's `taskAxes` data. */}
+      {list.axisControls
+        ? (props.taskAxes ?? []).map((axis) =>
+            line(axisLabel(axis.name), <RowAxisControl row={row} props={props} axis={axis} />),
+          )
+        : null}
+
       {list.assignControl
         ? line(
             list.assignControl.label,
@@ -402,6 +427,127 @@ function RowValueControl({
         {control.options.map((o) => (
           <option key={o.id} value={o.id}>
             {o.label}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+/** User copy for an axis whose NAME is data ("type" → "Type"). */
+function axisLabel(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/**
+ * The picker for ONE per-space task axis (`state.axes[name]`).
+ *
+ * `RowValueControl`'s anatomy and refusals, with three deliberate
+ * differences, each forced by axes being DATA rather than registry config:
+ *
+ * 1. The vocabulary is the axis row's `axisValues`, straight from the node's
+ *    own registry — the same list `internal.validate_task_axes` enforces, so
+ *    the picker can only offer what the trigger will accept.
+ * 2. UNSET IS SELECTABLE. `no <axis>` is a real option that clears the value,
+ *    because clearing is a legal write here (the executor drops the key from
+ *    the record), unlike priority where nothing in the contract clears.
+ * 3. `axisValues: []` means FREE TEXT per the DB comment (001:537-550). This
+ *    control is a picker and cannot offer an open vocabulary, so it refuses
+ *    with that named reason instead of drawing an empty select that looks
+ *    like "no legal values". The CLI (`tm8 task axis`) writes free text.
+ */
+function RowAxisControl({
+  row,
+  props,
+  axis,
+}: {
+  row: ControlSubject;
+  props: ControlHost;
+  axis: TaskAxis;
+}) {
+  const selectId = useId();
+  const label = axisLabel(axis.name);
+  const record = (row.state as unknown as Record<string, unknown>).axes;
+  const raw =
+    record !== null && typeof record === 'object'
+      ? (record as Record<string, unknown>)[axis.name]
+      : undefined;
+  const current = typeof raw === 'string' ? raw : '';
+  const emptyLabel = `no ${axis.name}`;
+
+  const currentPill = (
+    <span className="lp__statesel kit-pill--idle" data-source={`axis:${axis.name}`}>
+      {current || emptyLabel}
+    </span>
+  );
+
+  if (axis.axisValues.length === 0) {
+    return (
+      <DisabledAction
+        label={`Change ${axis.name}`}
+        reason={{
+          cause: `The ${axis.name} axis takes free text, not a fixed list`,
+          remedy: 'set it from the CLI: tm8 task axis <task-id> ' + axis.name + ' <value>',
+        }}
+      >
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
+    return <CheckingPermission label={`Change ${axis.name}`} />;
+  }
+
+  /* `canEdit`, exactly as `RowValueControl`: the value travels in the kind's
+     content patch, which the server authorizes as an edit. */
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id)?.canEdit === false) {
+    return (
+      <DisabledAction label={`Change ${axis.name}`} reason={toReason(REASONS.cannotEdit)}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  if (!props.onSetAxis) {
+    return (
+      <DisabledAction label={`Change ${axis.name}`} reason={NOT_WIRED_REASON}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  const known = axis.axisValues.includes(current);
+  return (
+    <span className="lp__statewrap">
+      <select
+        id={selectId}
+        className="lp__statesel lp__statesel--live kit-pill--idle"
+        aria-label={`Change ${axis.name} for ${row.title}`}
+        data-testid="row-axis-select"
+        data-source={`axis:${axis.name}`}
+        value={current}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next === current) return;
+          props.onSetAxis?.(row.id, axis.name, next === '' ? null : next, label);
+        }}
+      >
+        {/* Unset is a real, REACHABLE state here — the one honest difference
+            from RowValueControl's disabled empty option. */}
+        <option value="">{emptyLabel}</option>
+        {/* A stored value outside today's vocabulary still shows the truth
+            (the axis was re-valued since this task was written); it is
+            offered only as the current state, not as a choice. */}
+        {!known && current !== '' ? (
+          <option value={current} disabled>
+            {current}
+          </option>
+        ) : null}
+        {axis.axisValues.map((v) => (
+          <option key={v} value={v}>
+            {v}
           </option>
         ))}
       </select>
