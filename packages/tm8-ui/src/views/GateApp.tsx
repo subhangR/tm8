@@ -16,6 +16,7 @@ import {
   MenuRail,
   NOTICE_TTL_MS,
   NoticeHost,
+  SpaceSwitcher,
   SpaceTabBar,
   useNotices,
   type KindPresenter,
@@ -57,6 +58,7 @@ import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions }
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
 import { ChatHomeSurface } from '../chat-home';
+import { HomePage } from '../home-page';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
@@ -101,8 +103,15 @@ const DEFAULT_RIGHT_KIND = 'work_session';
  */
 const LIVE_COUNT_KIND = 'work_session';
 
-/** The screen a viewer with no remembered place lands on. */
+/** The three-panel workspace — the handoff destination entity opens use. */
 const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
+/**
+ * The screen a viewer with no remembered place lands on (single-home ruling,
+ * 2026-08-14): the merged Home page. A viewer's OWN remembered place still
+ * wins — `last-place` is consulted first — so this changes first boots and
+ * fresh spaces, not anyone's established habit.
+ */
+const HOME_TARGET: MenuTarget = { type: 'view', ref: 'dashboard' };
 
 /**
  * WHAT THIS FILE ACTUALLY RENDERS FOR EACH `MenuViewRef`, written down.
@@ -312,7 +321,11 @@ export function GateApp(props: GateAppProps = {}) {
    * PREFERENCE rather than a solved state, which is why it lives here and not
    * in the geometry module.
    */
-  const [menuCollapsed, setMenuCollapsed] = usePanelFlag('menu-rail-collapsed', true);
+  /* Revision 11 flips the default back to EXPANDED: the redesigned rail is ~8
+     rows plus the identity block, so the 117px it costs buys the whole
+     navigation being legible on first paint. The viewer's persisted choice
+     still wins — this is only the value a fresh profile starts from. */
+  const [menuCollapsed, setMenuCollapsed] = usePanelFlag('menu-rail-collapsed', false);
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
@@ -733,7 +746,7 @@ export function GateApp(props: GateAppProps = {}) {
        stays empty on every boot that did not come from a URL — and the router
        discards URLs built with no space. */
     navStore.getState().setSpace(data.spaceId);
-    const remembered = readLastTarget(nodeKey, data.spaceId) ?? WORKSPACE_TARGET;
+    const remembered = readLastTarget(nodeKey, data.spaceId) ?? HOME_TARGET;
     const view = routeViewOf(remembered);
     if (!view) {
       /* Unroutable: SAY SO rather than substituting the workspace. Storage is
@@ -1182,8 +1195,12 @@ export function GateApp(props: GateAppProps = {}) {
   const voiceKind = getKind('voice_channel');
   const voiceEntities = data.rowsFor(voiceKind.kind)(undefined);
   const voiceGroup = useMemo<MenuDynamicGroup>(() => ({
-    replaceConfiguredItems: true,
-    emptyLabel: 'No voice channels in this space yet.',
+    /* Revision 11: live rooms hang beneath the CHATS group's authored rows
+       (Channels · Messages) instead of replacing a dedicated Voice group —
+       appended, so the authored conversation rows stay. No emptyLabel: a
+       space with no live rooms shows the two rows and nothing else, rather
+       than a line promising rooms it does not have. */
+    replaceConfiguredItems: false,
     items: voiceEntities.map((entity) => {
       const state = entity.state as unknown as { participantCount?: number };
       return {
@@ -1274,6 +1291,9 @@ export function GateApp(props: GateAppProps = {}) {
 
   const paletteViews = useMemo<PaletteView[]>(
     () => [
+      /* Revision 11: Home leads — it is the landing screen, and the palette
+         should offer the way back to it from anywhere. */
+      { id: 'view:dashboard', label: 'Home', glyph: <VectorIcon paths={VIEW_ART.dashboard} /> },
       { id: 'view:workspace', label: 'Workspace', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
       { id: 'view:graph', label: 'Graph', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
       { id: 'view:channels', label: 'Channels', glyph: <VectorIcon paths={VIEW_ART.channels} /> },
@@ -1341,17 +1361,11 @@ export function GateApp(props: GateAppProps = {}) {
     <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
       <div className="shell-root">
         <SpaceTabBar
-          activeServer={{
-            label: activeServer.label,
-            reachability: activeServer.reachability,
-          }}
-          spaces={data.spaces}
-          activeSpaceId={data.spaceId || null}
-          onSelectSpace={(id: SpaceId) => {
-            leaveSpaceContext();
-            data.selectSpace(id);
-          }}
-          onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
+          /* Revision 11: the server chip and the space tablist left this bar
+             for the rail's identity block (SpaceSwitcher below). The bell is
+             Inbox's one chrome door — its rail row retired with the same
+             ruling. */
+          onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
           onOpenPrompts={() => setPromptsOpen(true)}
@@ -1400,17 +1414,36 @@ export function GateApp(props: GateAppProps = {}) {
             activeTarget={activeTarget}
             onNavigate={navigateTo}
             presentKind={presentKind}
-            dynamicGroups={{ voice: voiceGroup }}
-            servers={props.servers}
-            activeServerId={activeServer.id}
-            onSelectServer={(id) => {
-              leaveSpaceContext();
-              /* See `resetAddress`: the remount reads the address, and a Space
-                 id from the Server you just left addresses nothing here. */
-              resetAddress();
-              props.onSelectServer?.(id);
-            }}
-            onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
+            /* Revision 11: live voice rooms hang beneath the Chats cluster. */
+            dynamicGroups={{ chats: voiceGroup }}
+            identitySlot={
+              <SpaceSwitcher
+                servers={props.servers ?? [activeServer]}
+                activeServerId={activeServer.id}
+                spaces={data.spaces}
+                activeSpaceId={(data.spaceId as SpaceId) || null}
+                collapsed={menuCollapsed}
+                onSelectServer={(id) => {
+                  /* INVARIANT (privacy-lane agreement, 2026-08-15): these two
+                     calls stay TOGETHER and in THIS order wherever the
+                     server-switch control lives. `leaveSpaceContext` is the
+                     one path that clears the space-scoped module stores —
+                     entity ids are space-scoped, so a missed reset does not
+                     throw, it shows someone else's rows. `resetAddress` then
+                     writes last: the remount reads the address, and a Space id
+                     from the Server you just left addresses nothing here. */
+                  leaveSpaceContext();
+                  resetAddress();
+                  props.onSelectServer?.(id);
+                }}
+                onSelectSpace={(id) => {
+                  leaveSpaceContext();
+                  data.selectSpace(id);
+                }}
+                onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
+                onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
+              />
+            }
           />
 
           {/* The REAL error boundary wraps the whole view region: a crashed
@@ -1585,29 +1618,44 @@ export function GateApp(props: GateAppProps = {}) {
               }
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'dashboard' ? (
-            /* D1-amended: Chat is the home screen. The existing dashboard
-               route stays stable while its centre is replaced wholesale. */
-            <ChatHomeSurface
-              seam={data.seam}
-              spaceId={data.spaceId}
-              nodeKey={nodeKey}
-              spaceLabel={data.spaces.find((sp) => sp.id === data.spaceId)?.name}
-              bridge={chatBridge}
-              /* PR188 review F3: the space id is NOT an entity and
-                 messages.post 404s on it (measured). Bare-home chats anchor
-                 to the seeded default channel. */
-              anchorId={channelEntities[0]?.id}
-              /* One read per space, shared with every other rich input in the
-                 shell — see `useGateData`. */
-              skillOptions={data.skillOptions}
-              /* Entity chips in the transcript open the detail panel through
-                 the SAME handoff every other screen commits (ProjectGitScreen,
-                 lane click-through): land in the workspace three-pane layout
-                 with the entity pushed onto the right-side panel stack. */
+            /* THE MERGED SINGLE HOME (task 01a0027d, 2026-08-14): the chat
+               surface stays the hero — solo, thread sidebar hidden — with the
+               NEEDS YOU strip, the glance rails and the presence row beneath.
+               The existing dashboard route stays stable while its centre is
+               replaced wholesale (the same D65 posture as every view swap). */
+            <HomePage
+              /* GateData satisfies HomeScreenData structurally — the same
+                 narrow port src/home was built against. */
+              data={data}
               onOpenEntity={(id) => {
                 navigateTo(WORKSPACE_TARGET);
                 nav.push(id as EntityId);
               }}
+              onOpenKind={(kind) => navigateTo({ type: 'kind', ref: kind })}
+              onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
+              chat={
+                <ChatHomeSurface
+                  seam={data.seam}
+                  spaceId={data.spaceId}
+                  nodeKey={nodeKey}
+                  spaceLabel={data.spaces.find((sp) => sp.id === data.spaceId)?.name}
+                  bridge={chatBridge}
+                  /* PR188 review F3: the space id is NOT an entity and
+                     messages.post 404s on it (measured). Bare-home chats anchor
+                     to the seeded default channel; the per-user home thread is
+                     the ruled follow-up (R1) and needs a server seam first. */
+                  anchorId={channelEntities[0]?.id}
+                  /* One read per space, shared with every other rich input in
+                     the shell — see `useGateData`. */
+                  skillOptions={data.skillOptions}
+                  /* Entity chips in the transcript open the detail panel
+                     through the SAME handoff every other screen commits. */
+                  onOpenEntity={(id) => {
+                    navigateTo(WORKSPACE_TARGET);
+                    nav.push(id as EntityId);
+                  }}
+                />
+              }
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&

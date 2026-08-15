@@ -1938,14 +1938,42 @@ export interface MenuGroup {
  * menu DTO caps caret children at 8; this list intentionally fills that cap.
  */
 export const DEFAULT_MENU_WORKSPACE_KIND_SPINE = [
+  // 2026-08-14 (single-home ruling): `channel` left the Workspace caret for the
+  // Chats group (`DEFAULT_MENU_CHATS_SPINE`) — conversation surfaces and entity
+  // collections stopped sharing one cluster. `file` takes the freed slot, so
+  // the Library group could fold into Workspace without losing the file rows.
   'task',
   'work_session',
   'doc',
-  'channel',
   'team_member',
   'memory',
   'artifact',
   'loop',
+  'file',
+] as const satisfies readonly MenuKindRef[];
+
+/**
+ * The ordered rows in the default Chats group (single-home ruling, 2026-08-14):
+ * the conversation surfaces, clustered — the channel collection and the
+ * cross-entity Messages browser. Live voice rooms are appended beneath them at
+ * runtime (GateApp's dynamic group), exactly as the old Voice group worked.
+ * Same twin-joining job as the other spines: the server seeder and the client
+ * fallback each prove their copy against this list.
+ */
+export const DEFAULT_MENU_CHATS_SPINE = [
+  { type: 'kind', ref: 'channel' },
+  { type: 'view', ref: 'messages' },
+] as const satisfies readonly MenuItem[];
+
+/**
+ * The ordered caret children beneath the default Code row (the `git` view).
+ * The dev-tracking collections live under one caret rather than as four
+ * always-visible rows — the same trim the Workspace caret already made.
+ */
+export const DEFAULT_MENU_CODE_KIND_SPINE = [
+  'project',
+  'pull_request',
+  'worktree',
 ] as const satisfies readonly MenuKindRef[];
 
 /**
@@ -1955,6 +1983,14 @@ export const DEFAULT_MENU_WORKSPACE_KIND_SPINE = [
  * that caused the production flash-and-disappear regression: revision 8 added
  * the Files explorer to the client default, while migration 094 still served
  * the older three-kind Library group from persisted Space menus.
+ */
+/**
+ * 2026-08-14 (single-home ruling): the Library GROUP left the shipped default —
+ * the Files explorer view and the `file` kind row moved into Workspace, and
+ * `spell` / `collection` became palette-and-kind-switcher destinations (free
+ * refs the menu editor can put back). The constant stays exported because the
+ * pre-11 defaults in persisted Space menus still carry this exact shape and
+ * the upgrade migrations characterize against it.
  */
 export const DEFAULT_MENU_LIBRARY_SPINE = [
   { type: 'view', ref: 'files' },
@@ -1982,26 +2018,20 @@ export const DEFAULT_MENU_LIBRARY_SPINE = [
  * Additive export only: no schema, operation, or DTO changes ride on it.
  */
 export const DEFAULT_MENU_GROUP_SPINE = [
-  // 2026-08-01 (user ruling): the Channels GROUP is gone. Channels are
-  // ENTITIES, so they live in the Entity List Panel with every other
-  // collection — tm8-ui's `channel` registry row is `strategy: 'collection'`
-  // now, which is what puts them in that panel's kind switcher. A rail section
-  // AND a collection list would be two divergent homes for one kind.
-  // Feed and Inbox left the rail in the same ruling, so `home` is Dashboard
-  // alone. All three view refs keep their routes and their chords: this
-  // removes rail rows, not features.
+  // 2026-08-14 (single-home ruling): the rail reorganized around INTENTS
+  // rather than kinds — six groups, ~8 always-visible rows. Home is the merged
+  // chat-first landing; Chats clusters the conversation surfaces (channel
+  // collection + Messages + live voice rows via the dynamic group, retiring the
+  // items-empty `voice` group); Workspace absorbs the Library rows behind its
+  // caret; Code is the old Tracking group behind the git row's caret; `collab`
+  // (the `member` row) left the shipped rail for the palette and the kind
+  // switcher. Inbox left the rail for the top-bar bell. Nothing was deleted:
+  // every ref keeps its route, its chord and its menu-editor eligibility.
   { serverId: 'home', clientId: 'home' },
+  { serverId: 'chats', clientId: 'chats' },
   { serverId: 'work', clientId: 'workspace' },
-  // 2026-08-09: Files, Spells and Collections graduated from palette-only
-  // reachability into the shipped rail. They get their own group because the
-  // Workspace caret is contract-capped at eight children and already carries
-  // seven collection destinations.
-  { serverId: 'library', clientId: 'library' },
-  { serverId: 'tracking', clientId: 'tracking' },
-  { serverId: 'collab', clientId: 'collab' },
-  // items-empty on both sides BY NECESSITY: MenuViewRef is a closed enum with
-  // no 'voice'; GateApp hangs live voice_channel rows beneath the group id.
-  { serverId: 'voice', clientId: 'voice' },
+  { serverId: 'code', clientId: 'code' },
+  { serverId: 'graph', clientId: 'graph' },
   { serverId: 'settings', clientId: 'settings' },
 ] as const;
 

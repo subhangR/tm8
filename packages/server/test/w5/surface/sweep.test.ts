@@ -531,8 +531,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // highest applied file on main when this was written — the rule every entry
     // above restates, and the one the sorted-order assertion below is the only
     // thing that can catch on a live deployment.
-    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 112.
-    expect(server.appliedMigrations.length).toBe(112);
+    // 112 -> 113 on 2026-08-15: 122_menu_single_home.sql — the server twin of
+    // menu revision 11 (single-home rail, task 01a0027d). Takes a number above
+    // 121, the highest applied file on main when it was written.
+    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 113.
+    expect(server.appliedMigrations.length).toBe(113);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

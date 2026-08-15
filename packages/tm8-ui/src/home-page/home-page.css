@@ -1,0 +1,168 @@
+/* HomePage — the merged single home. Tokens only (D5); no per-theme override
+   (the same law home.css carries — a data-theme rule here would be evidence a
+   light rule above it is mis-tokenised). */
+
+.cv2-root .hp-root {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  background: var(--pn-paper);
+}
+.cv2-root .hp-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 920px;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 14px 18px 20px;
+  overflow-y: auto;
+}
+
+/* --- the chat hero ------------------------------------------------------- */
+/* The chat-home surface mounts SOLO: one conversation column, no thread
+   sidebar. Thread management stays on the Messages screen; the home canvas is
+   the conversation itself. */
+.cv2-root .hp-chat {
+  display: flex;
+  min-height: 380px;
+  height: 52vh;
+  border: 1px solid var(--pn-line);
+  border-radius: 12px;
+  background: var(--pn-surface);
+  overflow: hidden;
+}
+.cv2-root .hp-chat > * { flex: 1; min-width: 0; }
+.cv2-root .hp-chat .tch-root { grid-template-columns: minmax(0, 1fr); height: 100%; }
+.cv2-root .hp-chat .tch-sidebar { display: none; }
+
+/* --- rails ---------------------------------------------------------------- */
+.cv2-root .hp-rail__head { display: flex; align-items: center; }
+.cv2-root .hp-rail__label { color: var(--pn-ink-3); }
+.cv2-root .hp-rail__open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .hp-rail__open:hover .hp-rail__label { color: var(--pn-ink); }
+.cv2-root .hp-rail__scroll {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  padding-bottom: 4px;
+  overflow-x: auto;
+}
+.cv2-root .hp-needs .hp-rail__label { color: var(--pn-wait); }
+.cv2-root .hp-needs .hp-card { border-color: color-mix(in srgb, var(--pn-wait) 45%, var(--pn-line)); }
+
+.cv2-root .hp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 200px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--pn-line);
+  border-radius: 10px;
+  background: var(--pn-card);
+  font-family: var(--pn-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .hp-card:hover { background: var(--pn-hover); }
+.cv2-root .hp-card__head { display: flex; align-items: center; gap: 6px; min-height: 16px; }
+.cv2-root .hp-card__glyph { display: inline-flex; color: var(--pn-ink-3); }
+.cv2-root .hp-card__word {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+}
+.cv2-root .hp-card__word--run { color: var(--pn-run); }
+.cv2-root .hp-card__word--wait { color: var(--pn-wait); }
+.cv2-root .hp-card__word--block { color: var(--pn-block); }
+.cv2-root .hp-card__word--info { color: var(--pn-info); }
+.cv2-root .hp-card__word--idle { color: var(--pn-ink-4); }
+.cv2-root .hp-card__dot { width: 7px; height: 7px; border-radius: 50%; }
+.cv2-root .hp-card__dot--solid { background: currentcolor; }
+.cv2-root .hp-card__dot--pulse { background: currentcolor; animation: hp-pulse 1.4s ease-in-out infinite; }
+.cv2-root .hp-card__dot--ring { border: 1.5px solid currentcolor; }
+@keyframes hp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.cv2-root .hp-card__title {
+  overflow: hidden;
+  color: var(--pn-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.cv2-root .hp-note {
+  margin: 4px 0 0;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 11px;
+}
+
+/* --- presence ------------------------------------------------------------- */
+.cv2-root .hp-presence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cv2-root .hp-presence__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: 999px;
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.cv2-root .hp-presence__row:hover { background: var(--pn-hover); }
+.cv2-root .hp-presence__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--pn-ink-4);
+}
+.cv2-root .hp-presence__dot--working { border: 0; background: var(--pn-run); }
+.cv2-root .hp-presence__verb { color: var(--pn-run); font-family: var(--pn-mono); font-size: 10px; }
+
+/* --- footer --------------------------------------------------------------- */
+.cv2-root .hp-foot { display: flex; justify-content: flex-end; }
+.cv2-root .hp-foot__workspace {
+  padding: 4px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  background: var(--pn-card);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.cv2-root .hp-foot__workspace:hover { color: var(--pn-ink); background: var(--pn-hover); }
+
+/* --- the narrow floor ----------------------------------------------------- */
+@media (max-width: 640px) {
+  .cv2-root .hp-scroll { padding: 10px 10px 16px; }
+  .cv2-root .hp-chat { height: 46vh; min-height: 300px; }
+}

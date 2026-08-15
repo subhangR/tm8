@@ -134,7 +134,8 @@ describe('URL → screen', () => {
        nothing, which is what lets last-place apply — asserted below. */
     const target = createMemoryTarget('#/');
     const view = mount(target);
-    await waitFor(() => view.getByTestId('workspace-grid'));
+    /* Revision 11: no memory, no address — the merged Home is the landing. */
+    await waitFor(() => view.getByTestId('home-page'));
     view.unmount();
   });
 });
@@ -146,7 +147,13 @@ describe('screen → URL', () => {
     await waitFor(() => view.getByTestId('workspace-grid'));
     const before = target.entries.length;
 
-    fireEvent.click(within(view.getByTestId('menu-rail')).getByRole('button', { name: /^Tasks/ }));
+    {
+      /* Revision 11: Tasks rides the closed Workspace caret. */
+      const rail = within(view.getByTestId('menu-rail'));
+      const caret = rail.queryByLabelText('Expand Workspace');
+      if (caret) fireEvent.click(caret);
+      fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+    }
     await waitFor(() => view.getByTestId('entity-view'));
     await settle();
 
@@ -162,7 +169,12 @@ describe('screen → URL', () => {
     const first = createMemoryTarget(`#/s/${SPACE}/workspace`);
     const a = mount(first);
     await waitFor(() => a.getByTestId('workspace-grid'));
-    fireEvent.click(within(a.getByTestId('menu-rail')).getByRole('button', { name: /^Tasks/ }));
+    {
+      const rail = within(a.getByTestId('menu-rail'));
+      const caret = rail.queryByLabelText('Expand Workspace');
+      if (caret) fireEvent.click(caret);
+      fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+    }
     await waitFor(() => a.getByTestId('entity-view'));
     await settle();
     const shared = first.getHash();
@@ -267,7 +279,13 @@ describe('back and forward', () => {
     const view = mount(target);
     await waitFor(() => view.getByTestId('workspace-grid'));
 
-    fireEvent.click(within(view.getByTestId('menu-rail')).getByRole('button', { name: /^Tasks/ }));
+    {
+      /* Revision 11: Tasks rides the closed Workspace caret. */
+      const rail = within(view.getByTestId('menu-rail'));
+      const caret = rail.queryByLabelText('Expand Workspace');
+      if (caret) fireEvent.click(caret);
+      fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+    }
     await waitFor(() => view.getByTestId('entity-view'));
     await settle();
 
@@ -296,7 +314,12 @@ describe('R3 — an addressable hash at boot OUTRANKS last-place', () => {
     const warm = createMemoryTarget(`#/s/${SPACE}/workspace`);
     const a = mount(warm);
     await waitFor(() => a.getByTestId('workspace-grid'));
-    fireEvent.click(within(a.getByTestId('menu-rail')).getByRole('button', { name: /^Tasks/ }));
+    {
+      const rail = within(a.getByTestId('menu-rail'));
+      const caret = rail.queryByLabelText('Expand Workspace');
+      if (caret) fireEvent.click(caret);
+      fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+    }
     await waitFor(() => a.getByTestId('entity-view'));
     await settle();
     a.unmount();
@@ -319,7 +342,12 @@ describe('R3 — an addressable hash at boot OUTRANKS last-place', () => {
     const warm = createMemoryTarget(`#/s/${SPACE}/workspace`);
     const a = mount(warm);
     await waitFor(() => a.getByTestId('workspace-grid'));
-    fireEvent.click(within(a.getByTestId('menu-rail')).getByRole('button', { name: /^Tasks/ }));
+    {
+      const rail = within(a.getByTestId('menu-rail'));
+      const caret = rail.queryByLabelText('Expand Workspace');
+      if (caret) fireEvent.click(caret);
+      fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+    }
     await waitFor(() => a.getByTestId('entity-view'));
     await settle();
     a.unmount();
@@ -359,7 +387,9 @@ describe('a Server switch does not carry the old Server’s address', () => {
     await settle();
     expect(target.getHash()).toBe(`#/s/${SPACE}/k/tasks`);
 
-    fireEvent.click(view.getByRole('button', { name: /^staging · box,/ }));
+    /* Revision 11: servers moved into the identity block's popover. */
+    fireEvent.click(view.getByLabelText(/^Server and space:/));
+    fireEvent.click(within(view.getByRole('dialog')).getByText('staging · box'));
 
     /* The switch really happened — otherwise this would assert the reset of a
        button that did nothing. */
@@ -421,8 +451,9 @@ describe('the space the link names outranks the space you last had open', () => 
     const target = createMemoryTarget('#/s/sp-not-yours/workspace');
     const view = mount(target);
     await waitFor(() => view.getByText(/another Space/i));
-    /* And it lands them somewhere real rather than on a blank refusal. */
-    await waitFor(() => view.getByTestId('workspace-grid'));
+    /* And it lands them somewhere real rather than on a blank refusal —
+       with no remembered place, that is the merged Home (revision 11). */
+    await waitFor(() => view.getByTestId('home-page'));
     view.unmount();
   });
 });

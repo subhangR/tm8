@@ -38,6 +38,16 @@ const renderGate = () => {
   // the Graph case boots onto the graph screen and never renders the workspace,
   // which reads as seven unrelated failures rather than as one missing line.
   window.location.hash = '';
+  // Revision 11 made the merged Home the no-memory landing. These tests are
+  // about the WORKSPACE composition, so they boot as a viewer whose last place
+  // IS the workspace — the same record last-place.ts writes.
+  window.localStorage.setItem(
+    'tm8.last-place.v1.local',
+    JSON.stringify({
+      spaceId: 'sp-atelier',
+      targets: { 'sp-atelier': { type: 'view', ref: 'workspace' } },
+    }),
+  );
   return render(<GateApp />);
 };
 
@@ -63,24 +73,25 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // createFixtureSeam resolves menu() as null (C-4), so the rail the reviewer
     // sees IS the shipped default constant.
     //
-    // THE RAIL NOW OPENS COLLAPSED, so the group labels arrive first as the
-    // dividers' accessible names rather than as `.shell-rail__header` text.
-    // Both halves are asserted, because both are the shipped default reaching
-    // the screen: the collapsed rail must still SAY what its groups are, and
-    // expanding must draw the same labels as headers.
+    // Revision 11: the rail opens EXPANDED with no printed eyebrows — group
+    // labels are the groups' accessible names — and collapsing degrades them
+    // to the dividers' accessible names. Both halves are asserted, because
+    // both are the shipped default reaching the screen.
     const { container, getByRole } = renderGate();
     await waitFor(() =>
-      expect(container.querySelectorAll('.shell-rail__divider').length).toBeGreaterThan(0),
+      expect(container.querySelectorAll('.shell-rail__group').length).toBeGreaterThan(0),
     );
+    const groupLabels = [...container.querySelectorAll('.shell-rail__group')]
+      .map((n) => n.getAttribute('aria-label'));
+    expect(groupLabels).toContain('Workspace');
+    expect(groupLabels).toContain('Chats');
+    expect(groupLabels).toContain('Settings');
+
+    fireEvent.click(getByRole('button', { name: 'Collapse menu rail' }));
     const dividerLabels = [...container.querySelectorAll('.shell-rail__divider')]
       .map((n) => n.getAttribute('aria-label'));
     expect(dividerLabels).toContain('Workspace');
     expect(dividerLabels).toContain('Settings');
-
-    fireEvent.click(getByRole('button', { name: 'Expand menu rail' }));
-    const labels = [...container.querySelectorAll('.shell-rail__header')].map((n) => n.textContent);
-    expect(labels).toContain('Workspace');
-    expect(labels).toContain('Settings');
   });
 
   /**
@@ -94,9 +105,10 @@ describe('THE GATE — composed T0-1 master screen', () => {
     const view = renderGate();
     const grid = await waitFor(() => view.getByTestId('workspace-grid'));
 
-    // Not in the rail, at all.
-    expect([...view.container.querySelectorAll('.shell-rail__header')]
-      .some((node) => node.textContent === 'Channels')).toBe(false);
+    // Revision 11 note: the rail's Chats cluster carries a Channels COLLECTION
+    // row (one door to the same list). What must never return is the old
+    // Channels SECTION — per-channel entity rows in the rail. That is what
+    // this pins.
     expect(view.container.querySelector('[data-entity-id="ch-design"]')).toBeNull();
 
     // Channels is an offered COLLECTION in the list panel's kind switcher.
@@ -358,6 +370,10 @@ describe('detail screens keep what you were looking at', () => {
     within(view.getByTestId('menu-rail'));
 
   const openKind = async (view: ReturnType<typeof renderGate>, name: RegExp) => {
+    // Revision 11: the collection leaves ride the Workspace caret, which ships
+    // CLOSED — open it first (idempotently; the label flips once open).
+    const caret = rail(view).queryByLabelText('Expand Workspace');
+    if (caret) fireEvent.click(caret);
     // Scoped to the rail (the workspace panels carry their own kind controls)
     // and matched by prefix (rail labels carry badge text: "Tasks3, 3 unseen").
     fireEvent.click(rail(view).getByRole('button', { name }));
@@ -386,15 +402,20 @@ describe('detail screens keep what you were looking at', () => {
         expect(panel).toBeTruthy();
         const text = panel?.textContent ?? '';
         expect(text).not.toContain('Loading');
+        // The LINKED section hydrates git links in its own async pass; a
+        // capture taken mid-read differs from the settled panel by exactly
+        // that block, and the equality below would then compare two
+        // transients rather than the entity.
+        expect(text).not.toContain('Reading git links');
         return text;
       });
     const openedText = await settled();
     expect(openedText.length).toBeGreaterThan(0);
 
-    // LEAVE — Dashboard is a different branch of GateApp's view ternary, so
+    // LEAVE — Home is a different branch of GateApp's view ternary, so
     // EntityView really unmounts. That is the step that used to destroy the
     // selection, and the assertion below is that it no longer does.
-    fireEvent.click(rail(view).getByRole('button', { name: /^Dashboard$/ }));
+    fireEvent.click(rail(view).getByRole('button', { name: /^Home$/ }));
     await waitFor(() => expect(view.queryByTestId('entity-view')).toBeNull());
 
     // COME BACK.

@@ -240,7 +240,7 @@ async function mountAndSwitchToStaging(seam: Seam) {
       <GateApp key="local" activeServer={LOCAL_SERVER} seam={createFixtureSeam()} />
     </AuthGate>,
   );
-  await waitFor(() => expect(screen.getByTestId('workspace-grid')).toBeTruthy());
+  await waitFor(() => expect(screen.getByTestId('home-page')).toBeTruthy());
   localStorage.setItem(ACTIVE_SERVER_KEY, 'staging');
   view.rerender(
     <AuthGate>
@@ -278,7 +278,7 @@ describe('signing in to the active server from inside the workspace', () => {
 
     // The frame goes; the parked boot read resumes and the workspace mounts.
     await waitFor(() => expect(screen.queryByTestId('auth-frame')).toBeNull());
-    await waitFor(() => expect(screen.getByTestId('workspace-grid')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('home-page')).toBeTruthy());
     expect(spacesCalls()).toBeGreaterThanOrEqual(2);
 
     // The login rode the RELAY to the named server, not the local node.

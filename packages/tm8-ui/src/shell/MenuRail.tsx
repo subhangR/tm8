@@ -106,19 +106,22 @@ export interface MenuRailProps {
   activeTarget?: MenuTarget | null;
   onNavigate(target: MenuTarget): void;
   presentKind: KindPresenter;
-  /** Live rows keyed by MenuGroup.id, rendered directly beneath its label. */
+  /** Live rows keyed by MenuGroup.id, rendered directly beneath its cluster. */
   dynamicGroups?: Readonly<Record<string, MenuDynamicGroup | undefined>>;
-  /** Phase 2: Servers are groups in this one rail, never a second rail. */
-  servers?: readonly ServerRailItem[];
-  activeServerId?: string;
-  onSelectServer?(id: string): void;
-  onAddServer?(): void;
   /**
-   * R10 / RULING B: Phase 1 wires ONLY the implicit local server. The rail is
-   * built per the T0-1 unified design, but the add-server affordance renders
-   * DISABLED-WITH-REASON — never hidden, never faked (L6).
+   * The identity block at the rail's head — the single server ⋄ space control
+   * (single-home ruling, 2026-08-14). A SLOT, not rendered props: the rail has
+   * no business knowing how servers are listed, how a space switch resets nav
+   * state, or what adding either looks like. `SpaceSwitcher` is the intended
+   * occupant; left undefined the rail simply starts at the menu, so a rail
+   * rendered without a host (the shell tests) is unchanged in behaviour.
+   *
+   * This slot RETIRED the in-rail server monogram rows and the add-server
+   * footer: server identity was drawn twice (rail rows + tab-bar label) with a
+   * purely decorative caret, and servers are a context you stand inside — a
+   * profile — not a navigation destination, so they do not belong in a menu.
    */
-  addServerReason?: string;
+  identitySlot?: ReactNode;
 }
 
 /**
@@ -343,9 +346,10 @@ function DynamicEntityNode({
 
 export function MenuRail(props: MenuRailProps) {
   const { config, collapsed, activeTarget, onNavigate, presentKind } = props;
-  // Which caret rows are open. The default follows the canvas: the shipped
-  // Workspace row ships expanded.
-  const [openRows, setOpenRows] = useState<Record<string, boolean>>({ workspace: true });
+  // Which caret rows are open. Revision 11 ships every caret CLOSED: the rail
+  // is ~8 rows of intents, and the caret leaves are the one-click-deeper
+  // classification rather than a thirty-row wall on first paint.
+  const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
 
   const width = collapsed ? MENU_COLLAPSED : MENU_EXPANDED;
 
@@ -358,45 +362,19 @@ export function MenuRail(props: MenuRailProps) {
       data-collapsed={collapsed}
     >
       <div className="shell-rail__scroll">
-        {props.servers ? (
-          <div className="shell-rail__servers" aria-label="Servers">
-            {props.servers.map((server) => {
-              const active = server.id === props.activeServerId;
-              const initial = server.local ? '◈' : server.label.trim().charAt(0).toUpperCase();
-              return (
-                <button
-                  type="button"
-                  key={server.id}
-                  className={`shell-rail__server ${active ? 'shell-rail__server--active' : ''}`}
-                  aria-current={active ? 'true' : undefined}
-                  aria-expanded={active}
-                  aria-label={`${server.label}, ${server.reachability}`}
-                  title={collapsed ? `${server.label} · ${server.reachability}` : undefined}
-                  onClick={() => props.onSelectServer?.(server.id)}
-                >
-                  <span className="shell-rail__server-icon" aria-hidden="true">{initial}</span>
-                  {!collapsed ? <span className="shell-rail__server-name">{server.label}</span> : null}
-                  <span
-                    className={`shell-rail__server-status shell-rail__server-status--${server.reachability}`}
-                    aria-hidden="true"
-                  />
-                  {!collapsed ? <span className="shell-rail__server-caret" aria-hidden="true">{active ? '▾' : '▸'}</span> : null}
-                </button>
-              );
-            })}
-            <div className="shell-rail__server-divider" role="separator" />
-          </div>
-        ) : null}
+        {props.identitySlot ?? null}
         {config.groups.map((group) => (
-          <div key={group.id} className="shell-rail__group">
-            {/* GRAMMAR 1 — group header. A label, and nothing else: not a
-                button, not focusable, no click target (LLD §4.1). Collapsed,
-                it degrades to the hairline divider the canvas draws. */}
+          <div key={group.id} className="shell-rail__group" role="group" aria-label={group.label}>
+            {/* GRAMMAR 1 — the group boundary. Revision 11 retired the printed
+                eyebrow label: with six intent clusters of one or two rows each,
+                a header above every row doubled the rail's height while saying
+                what the row already says ("HOME" over "Home"). The label
+                survives as the group's ACCESSIBLE name above and the boundary
+                survives as spacing — and, collapsed, as the hairline the canvas
+                draws, exactly as before. */}
             {collapsed ? (
               <div className="shell-rail__divider" role="separator" aria-label={group.label} />
-            ) : (
-              <div className="shell-rail__header kit-eyebrow">{group.label}</div>
-            )}
+            ) : null}
 
             {(props.dynamicGroups?.[group.id]?.replaceConfiguredItems ? [] : group.items).map((item) => {
               const presentation = present(item, presentKind);
@@ -501,7 +479,12 @@ export function MenuRail(props: MenuRailProps) {
                       composed `aria-label` its parent row uses collapsed, and
                       loses only the guide line and the label — the same trade
                       every other collapsed row already makes. */}
-                  {open &&
+                  {/* COLLAPSED SHOWS EVERY LEAF, regardless of the caret. The
+                      caret control itself renders only expanded, so a closed
+                      caret would strand its children entirely at 48px — and
+                      the collapsed premise has always been "icons for
+                      everything". `open` gates the expanded rail only. */}
+                  {(collapsed || open) &&
                     children.map((leaf) => {
                       const leafPresentation = present(leaf, presentKind);
                       if (!leafPresentation) return null;
@@ -580,29 +563,9 @@ export function MenuRail(props: MenuRailProps) {
         ))}
       </div>
 
-      {/* L6: the affordance is REAL and visibly refused, with the reason on it.
-          A ghost may never advertise an action the facade cannot perform. */}
-      {/* D28: aria-disabled and FOCUSABLE, never natively `disabled` — a native
-          disabled control leaves the tab order, so a keyboard or screen-reader
-          user can never reach it to learn WHY it is unavailable. That would make
-          the reason unreachable to exactly the people L6 exists to serve. */}
-      <button
-        type="button"
-        className={`shell-rail__footer ${props.onAddServer ? '' : 'shell-rail__footer--disabled'}`}
-        aria-disabled={props.onAddServer ? undefined : 'true'}
-        onClick={props.onAddServer ?? ((event) => event.preventDefault())}
-        // The reason rides the accessible name and the tooltip, NOT inline
-        // text: a full sentence printed into a fixed-width rail wrapped to three
-        // lines and collided with its own label (caught in the browser — jsdom
-        // has no layout engine and reported this as passing). Same floor-
-        // inversion class as D34: long copy in a fixed slot destroys the slot.
-        aria-label={props.onAddServer ? 'Add server' : `Add server — ${props.addServerReason ?? ADD_SERVER_DISABLED_REASON}`}
-        title={props.onAddServer ? 'Add server' : props.addServerReason ?? ADD_SERVER_DISABLED_REASON}
-      >
-        <span aria-hidden="true">＋</span>
-        {!collapsed && <span className="shell-rail__footer-label">add server</span>}
-      </button>
-
+      {/* The add-server affordance moved into the identity block's switcher
+          (single-home ruling): adding a server is a context action, and it now
+          lives beside the contexts it adds to. */}
       <button
         type="button"
         className="shell-rail__footer"

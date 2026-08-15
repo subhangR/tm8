@@ -95,9 +95,13 @@ function lastPlaceEntry(): [string, { spaceId: string | null; targets: Record<st
  */
 async function rememberTarget(target: unknown): Promise<void> {
   const first = mount();
-  await waitFor(() => first.getByTestId('workspace-grid'));
-  /* Any real navigation will do — this is what writes the record. */
-  fireEvent.click(within(first.getByTestId('menu-rail')).getByRole('button', { name: /^Tasks/ }));
+  /* Revision 11: a viewer with no memory lands on the merged Home. */
+  await waitFor(() => first.getByTestId('home-page'));
+  /* Any real navigation will do — this is what writes the record. Tasks rides
+     the Workspace caret now, so open it first. */
+  const rail = within(first.getByTestId('menu-rail'));
+  fireEvent.click(rail.getByLabelText('Expand Workspace'));
+  fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
   await waitFor(() => first.getByTestId('entity-view'));
   first.unmount();
 

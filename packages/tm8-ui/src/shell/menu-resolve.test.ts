@@ -18,51 +18,39 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine, including the Library destinations', () => {
+  it('encodes the shipped group spine — the revision-11 intent clusters', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       'Home',
+      // Revision 11 (2026-08-14, single-home ruling): Chats clusters the
+      // conversation surfaces; live voice rooms hang beneath it via the
+      // dynamic group, so the items-empty Voice label retired. Library folded
+      // into Workspace; Tracking became the Code caret; Collab's member row
+      // left for the palette and the kind switcher.
+      'Chats',
       'Workspace',
-      'Library',
-      'Tracking',
-      'Collab',
-      // Revision 5 (2026-08-01) — the Channels label is GONE: channels moved
-      // into Home, where the dynamic group now hangs their rows. Voice keeps
-      // its own label because there is no `voice` MenuViewRef to move.
-      'Voice',
+      'Code',
+      'Graph',
       'Settings',
     ]);
   });
 
-  it('puts Files, Spells and Collections in Library as plain kind rows', () => {
-    const library = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'library');
-    expect(library?.items).toEqual([
-      // Revision 8: the Files EXPLORER view row (distinct from the `file` kind).
-      { type: 'view', ref: 'files' },
-      { type: 'kind', ref: 'file' },
-      { type: 'kind', ref: 'spell' },
-      { type: 'kind', ref: 'collection' },
-    ]);
-  });
-
-  it('makes Workspace the ONE caret view item, with its eight leaves (RULING E)', () => {
+  it('keeps Workspace as a caret view item with its eight leaves (RULING E)', () => {
     const workspace = SHIPPED_DEFAULT_MENU.groups
       .flatMap((g) => g.items)
       .find((item) => item.ref === 'workspace');
     expect(workspace?.type).toBe('view');
     const children = workspace?.type === 'view' ? workspace.children ?? [] : [];
-    // Revision 4 (2026-07-31): memory + artifact joined the caret.
-    // Revision 6 (2026-08-01): channel joined it, beside doc — it became a
-    // collection kind and was the only one the rail never named.
-    // Revision 7 (2026-08-09): loop fills the eighth and final slot.
+    // Revision 11: channel left for the Chats group; file takes the freed
+    // eighth slot (the Library fold).
     expect(children.map((c) => c.ref)).toEqual(DEFAULT_MENU_WORKSPACE_KIND_SPINE);
     expect(children).toHaveLength(8);
   });
 
-  it('is the only item with children — depth is exactly ≤1', () => {
+  it('carries exactly two caret items — Workspace and Code — depth exactly ≤1', () => {
     const withChildren = SHIPPED_DEFAULT_MENU.groups
       .flatMap((g) => g.items)
       .filter((item) => item.type === 'view' && (item.children?.length ?? 0) > 0);
-    expect(withChildren).toHaveLength(1);
+    expect(withChildren.map((item) => item.ref)).toEqual(['workspace', 'git']);
   });
 
   it('omits deferred features entirely (R7-5: never rows in the shipped config)', () => {

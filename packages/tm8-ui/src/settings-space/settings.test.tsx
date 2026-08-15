@@ -542,13 +542,15 @@ describe('T2-3 — the menu editor', () => {
     render(<MenuEditor menu={MENU} spaceName="atelier" />);
     const preview = () => screen.getByTestId('menu-preview').textContent ?? '';
     const before = preview();
-    expect(before).toMatch(/Dashboard/);
+    expect(before).toMatch(/File browser/);
 
-    // Projects, not Dashboard: revision 5 left Home with a SINGLE item, and
-    // moving the only row in a group is correctly a no-op — which would make
-    // this test assert that a reorder does nothing.
-    const grip = screen.getByRole('button', { name: /reorder Projects/ });
-    fireEvent.keyDown(grip, { key: 'ArrowDown', altKey: true });
+    // Messages, not Home: Home ships a SINGLE item, and moving the only row
+    // in a group is correctly a no-op — which would make this test assert
+    // that a reorder does nothing. Chats has two rows (revision 11).
+    const grip = screen.getByRole('button', { name: /reorder Messages/ });
+    /* Up, not down: Messages is the LAST row of Chats, and moving the last
+       row down is correctly a no-op. */
+    fireEvent.keyDown(grip, { key: 'ArrowUp', altKey: true });
     expect(preview()).not.toBe(before);
     // The preview footer must now say the change is unsaved.
     expect(document.body.textContent).toMatch(/unsaved changes — preview only/);
@@ -598,12 +600,11 @@ describe('T2-3 — the menu editor', () => {
     const options = screen.getAllByRole('button').filter((b) => b.className === 'set-add');
     const labels = options.map((b) => (b.textContent ?? '').trim());
     expect(labels.some((l) => /Feed/i.test(l))).toBe(true);
-    // Channels replaces Inbox as the second assertion here. Revision 10 gave
-    // Inbox a rail row — its screen was finished and unmounted, not missing —
-    // so the picker correctly stops offering it. The CONTROL being live is what
-    // this test is really about, and Feed and Channels still keep it live.
+    // Inbox REJOINED the free set with revision 11: its rail row retired for
+    // the top-bar bell, so the picker offers it again — the editor-side proof
+    // that the bell move unrouted the screen rather than deleting it.
     expect(labels.some((l) => /Channels/i.test(l))).toBe(true);
-    expect(labels.some((l) => /Inbox/i.test(l))).toBe(false);
+    expect(labels.some((l) => /Inbox/i.test(l))).toBe(true);
   });
 
   it('“＋ kind ref” is LIVE, and adding one lands in the preview', () => {
@@ -619,9 +620,11 @@ describe('T2-3 — the menu editor', () => {
 
   it('the child cap control states its own numbers when full', () => {
     render(<MenuEditor menu={MENU} spaceName="atelier" />);
-    // Revision 7 fills the frozen Workspace cap with Loop, so the control is
-    // honest about being unavailable from the first render.
-    expect(screen.queryByRole('button', { name: '＋ add child' })).toBeNull();
+    // The Workspace caret ships at the frozen 8-child cap, so ITS control is
+    // honest about being unavailable from the first render. (The Code caret
+    // ships with three children, so a LIVE add-child legitimately exists
+    // elsewhere on the screen since revision 11 — the assertion is about the
+    // full row stating its numbers, not about the control class.)
     const capped = screen.getByRole('button', { name: 'add child' });
     expect(capped.getAttribute('aria-disabled')).toBe('true');
     expect(capped.textContent).toMatch(/this row has 8 of 8/);

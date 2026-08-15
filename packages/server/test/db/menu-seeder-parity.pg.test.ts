@@ -28,8 +28,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_MENU_CHATS_SPINE,
+  DEFAULT_MENU_CODE_KIND_SPINE,
   DEFAULT_MENU_GROUP_SPINE,
-  DEFAULT_MENU_LIBRARY_SPINE,
   DEFAULT_MENU_WORKSPACE_KIND_SPINE,
 } from '@tm8/contract';
 
@@ -85,13 +86,18 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     expect(rows[0]?.ids).toEqual(DEFAULT_MENU_GROUP_SPINE.map((g) => g.serverId));
   });
 
-  it('keeps the voice group items-empty — the only shape the closed MenuViewRef union permits', async () => {
-    const rows = await db.query<{ items: unknown }>(
-      `select g->'items' as items
-         from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g
-        where g->>'id' = 'voice'`,
+  it('clusters the conversation surfaces in chats, pinned to the contract spine (122)', async () => {
+    // The voice group retired with 122: live rooms hang beneath `chats`
+    // client-side (the dynamic group), so an items-empty label no longer
+    // ships. The channel collection row and the messages view are the
+    // authored rows.
+    const rows = await db.query<{ items: Array<{ type: string; ref: string }> }>(
+      `select jsonb_agg(jsonb_build_object('type', item->>'type', 'ref', item->>'ref') order by item_ord) as items
+         from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
+              jsonb_array_elements(g->'items') with ordinality items(item, item_ord)
+        where g->>'id' = 'chats'`,
     );
-    expect(rows[0]?.items).toEqual([]);
+    expect(rows[0]?.items).toEqual(DEFAULT_MENU_CHATS_SPINE);
   });
 
   it('names all eight Workspace kinds in client order, filling but not widening the cap', async () => {
@@ -108,23 +114,27 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     expect(rows[0]?.refs).toHaveLength(8);
   });
 
-  it('names the Files explorer before the Library entity rows', async () => {
-    const rows = await db.query<{ items: Array<{ type: string; ref: string }> }>(
-      `select jsonb_agg(jsonb_build_object('type', item->>'type', 'ref', item->>'ref') order by item_ord) as items
+  it('rides the Files explorer view beside the Workspace caret (the Library fold, 122)', async () => {
+    const rows = await db.query<{ refs: string[] }>(
+      `select array_agg(item->>'ref' order by item_ord) as refs
          from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
               jsonb_array_elements(g->'items') with ordinality items(item, item_ord)
-        where g->>'id' = 'library'`,
+        where g->>'id' = 'work'`,
     );
-    expect(rows[0]?.items).toEqual(DEFAULT_MENU_LIBRARY_SPINE);
+    expect(rows[0]?.refs).toEqual(['workspace', 'files']);
   });
 
-  it('leads Tracking with the git VIEW row (102) — the wave’s screen must be reachable on real spaces', async () => {
-    const rows = await db.query<{ first: { type: string; ref: string } }>(
+  it('leads Code with the git VIEW row carrying the dev collections as its caret (122)', async () => {
+    const rows = await db.query<{ first: { type: string; ref: string; children?: Array<{ type: string; ref: string }> } }>(
       `select g->'items'->0 as first
          from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g
-        where g->>'id' = 'tracking'`,
+        where g->>'id' = 'code'`,
     );
-    expect(rows[0]?.first).toEqual({ type: 'view', ref: 'git' });
+    expect(rows[0]?.first?.type).toBe('view');
+    expect(rows[0]?.first?.ref).toBe('git');
+    expect(rows[0]?.first?.children?.map((child) => child.ref)).toEqual([
+      ...DEFAULT_MENU_CODE_KIND_SPINE,
+    ]);
   });
 
   it('the guard ACCEPTS the new default — the registry row exists, so the seeder cannot refuse its own payload', async () => {
@@ -317,7 +327,20 @@ describeDb('Loop default-menu saved-row compatibility', () => {
         where g->>'id' = 'work'
           and item->>'ref' = 'workspace'`,
     );
-    expect(rows[0]?.refs).toEqual(DEFAULT_MENU_WORKSPACE_KIND_SPINE);
+    // The HISTORICAL caret, literal on purpose: this block applies the chain
+    // only through the loops migration, so it characterizes that era's
+    // payload. 122 later swaps channel→file (the contract spine moved with
+    // it), which must not rewrite what this frozen point in history served.
+    expect(rows[0]?.refs).toEqual([
+      'task',
+      'work_session',
+      'doc',
+      'channel',
+      'team_member',
+      'memory',
+      'artifact',
+      'loop',
+    ]);
     expect(rows[0]?.refs.at(-1)).toBe('loop');
   });
 });

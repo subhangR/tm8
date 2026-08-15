@@ -56,8 +56,12 @@ const SLOW_GATE_MS = 30_000;
 
 async function openTasksScreen() {
   const view = render(<GateApp />);
-  await waitFor(() => view.getByTestId('workspace-grid'));
-  fireEvent.click(within(view.getByTestId('menu-rail')).getByRole('button', { name: /^Tasks/ }));
+  /* Revision 11: no-memory boots land on the merged Home; Tasks rides the
+     Workspace caret, which ships closed. */
+  await waitFor(() => view.getByTestId('home-page'));
+  const rail = within(view.getByTestId('menu-rail'));
+  fireEvent.click(rail.getByLabelText('Expand Workspace'));
+  fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
   await waitFor(() => view.getByTestId('entity-view'));
   return view;
 }

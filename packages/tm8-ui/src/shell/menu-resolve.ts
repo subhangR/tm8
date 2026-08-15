@@ -191,7 +191,10 @@ function describeError(error: unknown): string {
  * keeps one column in one idiom.
  */
 export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: string; art: KindArt }> = {
-  dashboard: { label: 'Dashboard', icon: '⌂', art: VIEW_ART.dashboard },
+  // Revision 11 (single-home ruling): the row reads "Home" — it IS the landing
+  // page now, and "Dashboard" promised a stats screen this row never was. The
+  // ref stays `dashboard` (closed union; the route already says `/home`).
+  dashboard: { label: 'Home', icon: '⌂', art: VIEW_ART.dashboard },
   feed: { label: 'Feed', icon: '≋', art: VIEW_ART.feed },
   inbox: { label: 'Inbox', icon: '◹', art: VIEW_ART.inbox },
   // 2026-08-13: the cross-entity conversation browser. Label "Messages"
@@ -210,5 +213,8 @@ export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: strin
   settings: { label: 'Settings', icon: '⛭', art: VIEW_ART.settings },
   // Git UI wave: the project git screen — its glyph is a branch fork, an
   // idiom no kind row uses (the commit mark is a bare ring; this one forks).
-  git: { label: 'Git', icon: '⎇', art: VIEW_ART.git },
+  // Revision 11: the rail row reads "Code" — it leads the dev cluster
+  // (projects, PRs, worktrees ride its caret), and "Git" named the tool
+  // rather than the intent. The ref stays `git`.
+  git: { label: 'Code', icon: '⎇', art: VIEW_ART.git },
 };
