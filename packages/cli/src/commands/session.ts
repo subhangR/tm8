@@ -76,6 +76,10 @@ type SessionMode = (typeof SESSION_MODES)[number];
 const ACCESS_MODES = ['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess'] as const;
 type AccessMode = (typeof ACCESS_MODES)[number];
 
+/** The provider-independent launch reasoning levels accepted by the contract. */
+const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
 /** §4.13's closed attach-mode set. `view` observes; `drive` owns the terminal. */
 const ATTACH_MODES = ['view', 'drive'] as const;
 type AttachMode = (typeof ATTACH_MODES)[number];
@@ -378,6 +382,11 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   const workdir = closed<WorkdirMode>('workdir', cmd.options.value('workdir'), WORKDIRS);
   const mode = closed<SessionMode>('mode', cmd.options.value('mode'), SESSION_MODES);
   const accessMode = closed<AccessMode>('access-mode', cmd.options.value('access-mode'), ACCESS_MODES);
+  const reasoningEffort = closed<ReasoningEffort>(
+    'reasoning-effort',
+    cmd.options.value('reasoning-effort'),
+    REASONING_EFFORTS,
+  );
   const taskIds = cmd.options.values('task');
   const projectId = cmd.options.value('launch-project');
   const profileId = cmd.options.value('interaction-profile');
@@ -433,6 +442,7 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   // `resolveLaunchConfig`. Sending a value here is how a coordinator hands a
   // child LESS than it holds, which is the only direction worth spelling out.
   if (accessMode !== undefined) body.accessMode = accessMode;
+  if (reasoningEffort !== undefined) body.reasoningEffort = reasoningEffort;
   if (model !== undefined) body.model = model;
   if (agentTool !== undefined) body.agentTool = agentTool;
   if (title !== undefined) body.title = title;
