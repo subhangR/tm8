@@ -160,7 +160,19 @@ function uniqueInOrder(values: readonly string[]): string[] {
  */
 async function messageList(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('message list', cmd.options.value('mutation-id'));
-  const anchorId = requireArg(cmd.args[0], 'an <anchor-entity-id>', 'message list');
+  const positionalAnchor = cmd.args[0];
+  const flaggedAnchor = cmd.options.value('for');
+  if (positionalAnchor !== undefined && flaggedAnchor !== undefined) {
+    throw new CliError(
+      '`tm8 message list` accepts its anchor either positionally or with --for, not both',
+      EXIT_USAGE,
+    );
+  }
+  const anchorId = requireArg(
+    positionalAnchor ?? flaggedAnchor,
+    'an <anchor-entity-id> or --for <anchor-entity-id>',
+    'message list',
+  );
   const limit = cmd.options.integer('limit');
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'messages.list', {

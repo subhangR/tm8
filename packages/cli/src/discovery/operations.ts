@@ -787,14 +787,14 @@ const ROWS: Record<OperationName, Row> = {
   // ── messages ─────────────────────────────────────────────────────────────
   'messages.list': {
     cmd: ['message', 'list'],
-    syn: 'tm8 message list <anchor-entity-id> [--root <message-id>] [--order oldest|newest] [--limit <count>] [--cursor <cursor>]',
+    syn: 'tm8 message list (<anchor-entity-id>|--for <anchor-entity-id>) [--root <message-id>] [--order oldest|newest] [--limit <count>] [--cursor <cursor>]',
     sum: 'Page the durable messages anchored to an entity',
     authz: 'entity',
     input: 'none',
     tags: ['read', 'thread', 'chat', 'conversation', 'inbox'],
     notes: [
       'pass --limit; unbounded listings measured several times larger',
-      'the anchor id is positional — there is no --to/--for/--entity/--anchor flag here; --to belongs to message send',
+      'the anchor id may be positional or passed with --for, matching action list; --to belongs to message send',
     ],
   },
   'messages.post': {
