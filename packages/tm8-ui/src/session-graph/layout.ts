@@ -21,12 +21,55 @@
  */
 import type { Cell, Link, SessionGraph } from './model';
 
-export const NODE_W = 148;
-export const NODE_H = 40;
-/** Radius of the first ring, then one step per hop. */
-const R1 = 150;
-const R_STEP = 132;
-const PAD = 28;
+/**
+ * Cell size. Sized to the TITLE, not to the diagram: at 148x40 a card held
+ * seventeen characters of title, so a real task name became an ellipsis and the
+ * picture said nothing without clicking every node. The whole-space canvas
+ * settled on 240x124 for the same reason; these cards carry less (no avatar
+ * row, no counters) so they need less height, but they must clear the width at
+ * which titles stop being guesses.
+ */
+export const NODE_W = 216;
+export const NODE_H = 62;
+/** Clear space demanded between two cards sitting side by side on a ring. */
+const RING_GAP = 26;
+/**
+ * Smallest first ring, and smallest step between rings. Both are NODE_W-derived
+ * rather than chosen: a child inherits its parent's sector and is placed at the
+ * sector's midpoint, so a lone child sits at EXACTLY its parent's angle — and
+ * when that angle is horizontal the only thing separating the two cards is the
+ * radius. Anything below a card's width therefore overlaps, which is what the
+ * old constants did the moment the cards grew (caught by layout.test.ts, not by
+ * eye). The floors clear a full card in the worst direction.
+ */
+const R1_MIN = NODE_W + RING_GAP;
+const R_STEP_MIN = NODE_W + RING_GAP;
+const PAD = 32;
+
+/**
+ * RADII ARE DERIVED FROM OCCUPANCY, NOT CONSTANT.
+ *
+ * A ring has to seat its cells side by side, so the radius a hop needs is
+ * whatever makes its circumference hold them: r ≥ n·(NODE_W + gap) / 2π. Fixed
+ * radii were survivable while cells were 148 wide and hops held four or five
+ * things; at 216 wide, a hop holding a dozen peers overlaps them into an
+ * unreadable stack — which is the same defect as the too-small card, arriving
+ * from the other direction. Deriving the radius means a busy hop pushes its
+ * ring out instead of piling up, and a quiet one stays compact.
+ *
+ * Monotonic by construction: a ring is never drawn inside the one before it.
+ */
+function radiiFor(countByHop: ReadonlyMap<number, number>, maxHop: number): number[] {
+  const out: number[] = [];
+  let previous = 0;
+  for (let hop = 1; hop <= maxHop; hop += 1) {
+    const needed = ((countByHop.get(hop) ?? 0) * (NODE_W + RING_GAP)) / (2 * Math.PI);
+    const floor = hop === 1 ? R1_MIN : previous + R_STEP_MIN;
+    previous = Math.max(floor, needed);
+    out.push(previous);
+  }
+  return out;
+}
 
 export interface PlacedCell {
   cell: Cell;
@@ -53,6 +96,13 @@ export interface Placement {
   width: number;
   height: number;
   centre: { x: number; y: number };
+  /**
+   * The radius actually used for each hop, so the canvas draws its hop guides
+   * on the rings the cells are standing on. Returned rather than recomputed by
+   * the caller — the radii now depend on how many cells a hop holds, so a
+   * caller deriving them from the hop count alone would draw guides that miss.
+   */
+  radii: readonly number[];
 }
 
 export function layoutSessionGraph(graph: SessionGraph): Placement {
@@ -80,7 +130,13 @@ export function layoutSessionGraph(graph: SessionGraph): Placement {
   weigh(graph.focusId);
 
   const maxHop = graph.cells.reduce((max, cell) => Math.max(max, cell.hop), 0);
-  const radius = maxHop === 0 ? 0 : R1 + (maxHop - 1) * R_STEP;
+  const countByHop = new Map<number, number>();
+  for (const cell of graph.cells) {
+    countByHop.set(cell.hop, (countByHop.get(cell.hop) ?? 0) + 1);
+  }
+  const radii = radiiFor(countByHop, maxHop);
+  const radiusAt = (hop: number): number => (hop === 0 ? 0 : radii[hop - 1] ?? 0);
+  const radius = maxHop === 0 ? 0 : radiusAt(maxHop);
   const half = radius + NODE_W / 2 + PAD;
   const width = half * 2;
   const height = half * 2;
@@ -94,7 +150,7 @@ export function layoutSessionGraph(graph: SessionGraph): Placement {
     if (!cell) return;
     const mid = (from + to) / 2;
     angleOf.set(id, mid);
-    const r = cell.hop === 0 ? 0 : R1 + (cell.hop - 1) * R_STEP;
+    const r = radiusAt(cell.hop);
     placed.push({
       cell,
       x: centre.x + Math.cos(mid) * r,
@@ -140,12 +196,6 @@ export function layoutSessionGraph(graph: SessionGraph): Placement {
     });
   }
 
-  return { cells: placed, links, width, height, centre };
+  return { cells: placed, links, width, height, centre, radii };
 }
 
-/** Ring radii, so the canvas can draw the hop guides the rings stand on. */
-export function ringRadii(maxHop: number): number[] {
-  const out: number[] = [];
-  for (let hop = 1; hop <= maxHop; hop += 1) out.push(R1 + (hop - 1) * R_STEP);
-  return out;
-}

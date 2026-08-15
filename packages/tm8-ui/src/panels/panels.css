@@ -731,6 +731,54 @@
 }
 .cv2-root .pn-body > .pn-section { padding: 0 0 10px; }
 
+/* Connections has TWO renderings of ONE fact, so the switch is a segmented
+   control rather than a tab: List and Graph are the same edges, read
+   differently. It sits above the surface it governs and never scrolls with it. */
+.cv2-root .pn-viewswitch {
+  flex: none;
+  align-self: flex-start;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  background: var(--pn-hover);
+}
+.cv2-root .pn-viewswitch__opt {
+  appearance: none;
+  border: 0;
+  background: none;
+  border-radius: 5px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .pn-viewswitch__opt:hover { color: var(--pn-ink); }
+.cv2-root .pn-viewswitch__opt--on {
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* The graph arm gives the canvas the whole body. A canvas measures itself from
+   its box, so the body must NOT scroll here — a scrolling parent would let the
+   canvas ask for height forever — and the graph gets `min-height: 0` so it
+   shrinks with the panel instead of overflowing it. */
+.cv2-root .pn-body--graph {
+  overflow: hidden;
+  gap: 8px;
+}
+.cv2-root .pn-connections-graph {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Connections tab: one row per connected ENTITY, its edge types trailing it.
    The peer chip leads because "what is this connected to" is the question;
    the relation labels answer "how" without competing for the eye. */

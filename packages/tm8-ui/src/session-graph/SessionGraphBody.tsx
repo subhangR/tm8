@@ -40,7 +40,7 @@ import {
   type Cell,
   type SessionGraph,
 } from './model';
-import { NODE_H, NODE_W, layoutSessionGraph, ringRadii } from './layout';
+import { NODE_H, NODE_W, layoutSessionGraph } from './layout';
 import './session-graph.css';
 
 const POLL_MS = 20_000;
@@ -50,10 +50,16 @@ const ZOOM_MAX = 2.2;
 
 export interface SessionGraphBodyProps {
   seam: Seam;
-  sessionId: EntityId;
-  /** The session's own summary, so the centre draws before any read resolves. */
+  /**
+   * THE CENTRE, WHATEVER KIND IT IS. This was `sessionId` while sessions were
+   * the only mount; the surface is now the Connections tab's graph view for
+   * every kind, and a name that says "session" would have told the next reader
+   * that a task centred here was a misuse rather than the point.
+   */
+  focusId: EntityId;
+  /** The centre's own summary, so it draws before any read resolves. */
   focus?: EntitySummary | null;
-  /** Running ⇒ poll; exited ⇒ one read. */
+  /** Still able to grow edges ⇒ poll; finished ⇒ one read. */
   live: boolean;
   /** Absent ⇒ the selection card refuses "open" with a reason, never hides it. */
   onOpenEntity?: (id: string) => void;
@@ -66,7 +72,7 @@ type State =
 
 export function SessionGraphBody({
   seam,
-  sessionId,
+  focusId,
   focus = null,
   live,
   onOpenEntity,
@@ -88,7 +94,7 @@ export function SessionGraphBody({
     try {
       const result = await loadSessionGraph({
         read: (id, opts) => seam.connections(id, opts),
-        focusId: sessionId,
+        focusId,
         hops,
         openFolds,
       });
@@ -104,7 +110,7 @@ export function SessionGraphBody({
     } finally {
       setReading(false);
     }
-  }, [seam, sessionId, hops, openFolds]);
+  }, [seam, focusId, hops, openFolds]);
 
   useEffect(() => {
     void load();
@@ -126,27 +132,27 @@ export function SessionGraphBody({
     setPan({ x: 0, y: 0 });
     hasLoaded.current = false;
     setState({ phase: 'loading' });
-  }, [sessionId]);
+  }, [focusId]);
 
   const graph: SessionGraph | null = useMemo(() => {
     if (state.phase !== 'ready') return null;
-    const edges = state.result.edgesByNode.get(sessionId) ?? [];
+    const edges = state.result.edgesByNode.get(focusId) ?? [];
     // The centre must exist even before the panel hands us a summary: any edge
     // touching the session carries the session's own summary on one end.
     const self =
       focus ??
-      edges.map((e) => (e.source.id === sessionId ? e.source : e.target)).find((e) => e.id === sessionId) ??
+      edges.map((e) => (e.source.id === focusId ? e.source : e.target)).find((e) => e.id === focusId) ??
       null;
     if (!self) return null;
     return buildSessionGraph({
-      focusId: sessionId,
+      focusId,
       edgesByNode: state.result.edgesByNode,
       focus: self,
       hops,
       openFolds,
       hiddenRelations: hidden,
     });
-  }, [state, sessionId, focus, hops, openFolds, hidden]);
+  }, [state, focusId, focus, hops, openFolds, hidden]);
 
   const placement = useMemo(() => (graph ? layoutSessionGraph(graph) : null), [graph]);
   const summary = useMemo(() => (graph ? summarize(graph) : null), [graph]);
@@ -354,7 +360,7 @@ export function SessionGraphBody({
           <g
             transform={`translate(${pan.x} ${pan.y}) translate(${placement.centre.x} ${placement.centre.y}) scale(${zoom}) translate(${-placement.centre.x} ${-placement.centre.y})`}
           >
-            {ringRadii(maxHop).map((r, index) => (
+            {placement.radii.map((r, index) => (
               <circle
                 key={r}
                 className="sg-ring"
@@ -474,13 +480,13 @@ function CellNode({
         }}
       >
         <rect className="sg-box sg-box--fold" width={NODE_W} height={NODE_H} rx={NODE_H / 2} />
-        <text className="sg-title" x={14} y={17}>
+        <text className="sg-title" x={24} y={27}>
           {cell.label}
         </text>
-        <text className="sg-meta" x={14} y={30}>
-          {truncate(detail, 26)}
+        <text className="sg-meta" x={24} y={45}>
+          {truncate(detail, 28)}
         </text>
-        <text className="sg-count" x={NODE_W - 12} y={24} textAnchor="end">
+        <text className="sg-count" x={NODE_W - 20} y={37} textAnchor="end">
           {cell.count}
         </text>
       </g>
@@ -516,29 +522,39 @@ function CellNode({
         data-hub={cell.hub ? 'true' : 'false'}
         data-unread={cell.degree === null ? 'true' : 'false'}
       />
-      <g className="sg-icon" transform={`translate(11 ${NODE_H / 2 - 8}) scale(1)`}>
+      <g className="sg-icon" transform="translate(14 15) scale(1)">
         {config.iconArt.map((d) => (
           <path key={d} d={d} />
         ))}
       </g>
-      <text className="sg-title" x={33} y={17}>
-        {truncate(entity.title, 17)}
+      {/* THREE LINES, BECAUSE THERE IS NOW ROOM FOR THREE. The old card had to
+          choose between naming the kind and naming the state, and it chose the
+          state — so a card reading "waiting" told you nothing about WHAT was
+          waiting. Both fit now, and the title gets enough width to be a title
+          rather than a prefix. */}
+      <text className="sg-title" x={40} y={26}>
+        {truncate(entity.title, 25)}
       </text>
-      <text className="sg-meta" x={33} y={30}>
-        {status ? truncate(status.word, 20) : config.label}
+      <text className="sg-meta" x={40} y={43}>
+        {config.label}
       </text>
+      {status ? (
+        <text className="sg-meta sg-meta--status" x={40} y={56}>
+          {truncate(status.word, 28)}
+        </text>
+      ) : null}
       {cell.hub ? (
-        <text className="sg-badge" x={NODE_W - 10} y={15} textAnchor="end">
+        <text className="sg-badge" x={NODE_W - 12} y={22} textAnchor="end">
           ◈{cell.degree}
         </text>
       ) : null}
       {!cell.hub && cell.withheld > 0 ? (
-        <text className="sg-badge sg-badge--faint" x={NODE_W - 10} y={15} textAnchor="end">
+        <text className="sg-badge sg-badge--faint" x={NODE_W - 12} y={22} textAnchor="end">
           +{cell.withheld}
         </text>
       ) : null}
       {cell.degree === null ? (
-        <text className="sg-badge sg-badge--faint" x={NODE_W - 10} y={32} textAnchor="end">
+        <text className="sg-badge sg-badge--faint" x={NODE_W - 12} y={52} textAnchor="end">
           ⋯
         </text>
       ) : null}

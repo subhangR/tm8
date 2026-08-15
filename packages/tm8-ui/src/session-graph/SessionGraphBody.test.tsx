@@ -74,7 +74,7 @@ describe('SessionGraphBody', () => {
         : page([]),
     );
 
-    render(<SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live={false} />);
+    render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />);
 
     const headline = await screen.findByTestId('session-graph-headline');
     expect(headline.textContent).toContain('Working on');
@@ -88,7 +88,7 @@ describe('SessionGraphBody', () => {
       throw new Error('forbidden');
     });
 
-    render(<SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live={false} />);
+    render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />);
 
     const footer = await screen.findByTestId('session-graph-footer');
     expect(footer.textContent).toContain('missing, not empty');
@@ -99,7 +99,7 @@ describe('SessionGraphBody', () => {
       throw new Error('entity not found');
     });
 
-    render(<SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live={false} />);
+    render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />);
 
     const error = await screen.findByTestId('session-graph-error');
     expect(error.textContent).toContain('Graph unavailable');
@@ -111,13 +111,13 @@ describe('SessionGraphBody', () => {
     const seam = seamWith(read);
 
     const exited = render(
-      <SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live={false} />,
+      <SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />,
     );
     await vi.advanceTimersByTimeAsync(60_000);
     const afterExited = read.mock.calls.length;
     exited.unmount();
 
-    render(<SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live />);
+    render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live />);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(read.mock.calls.length).toBeGreaterThan(afterExited * 2);
   });
@@ -127,7 +127,7 @@ describe('SessionGraphBody', () => {
       id === FOCUS ? page([edge(focus, 'working_on', task)]) : page([]),
     );
 
-    render(<SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live={false} />);
+    render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />);
     await screen.findByTestId('session-graph-canvas');
 
     const node = await waitFor(() => {

@@ -1507,6 +1507,10 @@ export function GateApp(props: GateAppProps = {}) {
               loading={data.graph.loading}
               error={data.graph.error}
               onRetry={data.graph.refresh}
+              window={data.graph.window}
+              onChooseWindow={data.graph.setWindow}
+              atCeiling={data.graph.atCeiling}
+              nodeLimit={data.graph.limit}
               launch={graphLaunchPort}
               onNotice={notices.push}
             />

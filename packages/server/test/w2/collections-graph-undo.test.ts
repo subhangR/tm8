@@ -246,6 +246,37 @@ describe('W2.G05 collection, graph, and undo handlers', () => {
     expect(edgeSql).toContain('dst.deleted_at is null');
   });
 
+  it('turns filters.activeSince into a bound clock predicate on the ordering column', async () => {
+    // THE WINDOW IS A READ, NOT A CLIENT-SIDE SIEVE. `activityAt_desc` + a limit
+    // can only ever answer "the newest N"; it cannot answer "what happened
+    // today", because the page boundary moves with the space's volume. The
+    // canvas's whole scope rests on this predicate existing server-side, so the
+    // test asserts three separate things about it: that the column is
+    // `activity_at` (the SAME column the default sort orders by, so a windowed
+    // read is that ordering with a floor under it rather than a second notion of
+    // recency), that the instant arrives as a BOUND PARAMETER rather than
+    // interpolated text, and that it survives the graph read, which reaches
+    // `queryCollection` through its own candidate call and could silently drop
+    // an unrecognised filter on the way.
+    const captured: Array<{ sql: string; params: readonly unknown[] }> = [];
+    const q: Querier = {
+      query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => {
+        captured.push({ sql, params });
+        if (sql.includes(' as __sort')) return [taskRow(ROOT_ID, 'Root', null, 1)] as R[];
+        return [];
+      },
+      rpc: async <T>(): Promise<T> => ({}) as T,
+    };
+    const activeSince = '2026-07-28T10:00:00.000Z';
+
+    await queryGraph(q, { spaceId: SPACE_ID, limit: 5, filters: { activeSince } }, 'g05-owner');
+
+    const entityRead = captured.find((call) => call.sql.includes(' as __sort'));
+    expect(entityRead).toBeDefined();
+    expect(entityRead!.sql).toMatch(/e\.activity_at >= \$\d+::timestamptz/);
+    expect(entityRead!.params).toContain(activeSince);
+  });
+
   it('enriches a pull_request node with the same forge-fact fields as the connections read', async () => {
     // Same stored facts the connections read projects in
     // `projects-associations.ts` `artifactSummary`: the graph lens must serve

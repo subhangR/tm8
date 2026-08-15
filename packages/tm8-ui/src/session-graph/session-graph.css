@@ -283,6 +283,9 @@
   fill: var(--pn-ink-3);
 }
 
+/* The state line sits under the kind line and must not read as more of it. */
+.sg-meta--status { fill: var(--pn-ink-2); }
+
 .sg-count,
 .sg-badge {
   font-family: var(--pn-mono);
