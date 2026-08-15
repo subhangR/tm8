@@ -376,7 +376,7 @@ describe('MenuRail — fail-closed rendering, end to end (§4.1)', () => {
     expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Ops', 'Admin']);
     getByText('Tasks');
     // The shipped default's groups are NOT merged in.
-    expect(queryByText('Chats')).toBeNull();
+    expect(queryByText('Collab')).toBeNull();
   });
 
   it('always keeps a route to settings, whatever the server said', () => {

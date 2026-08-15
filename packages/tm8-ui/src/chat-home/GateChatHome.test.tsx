@@ -49,12 +49,14 @@ describe('dashboard route', () => {
     expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
   });
 
-  it('leads with a Chats tab that reads CURRENT while you stand on the surface', async () => {
+  it('leads with a Collab tab that reads CURRENT while you stand on the surface', async () => {
     const view = render(<GateApp />);
     await view.findByTestId('chat-home-screen');
 
     const tabs = view.getByRole('tablist', { name: 'Screens' });
-    const chats = within(tabs).getByRole('tab', { name: 'Chats' });
+    // Revision 15: the label is Collab (rename only — the group id is still
+    // `chats`, which is what routes it).
+    const chats = within(tabs).getByRole('tab', { name: 'Collab' });
     // Revision 13's defect, pinned: no tab claimed this place, so standing
     // here nothing read as current and the only way back was an unlabelled
     // mark. The group is what makes the tab able to say "you are here".
@@ -66,7 +68,7 @@ describe('dashboard route', () => {
     // It is a real door, not just a highlight: leave and come back by it.
     fireEvent.click(within(tabs).getByRole('tab', { name: 'Work' }));
     await waitFor(() => expect(view.queryByTestId('chat-home-screen')).toBeNull());
-    fireEvent.click(within(tabs).getByRole('tab', { name: 'Chats' }));
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'Collab' }));
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
   });
 
@@ -90,7 +92,7 @@ describe('dashboard route', () => {
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
     // Arriving by the mark lights the same tab as arriving by the tab.
     await waitFor(() =>
-      expect(within(tabs).getByRole('tab', { name: 'Chats' }).getAttribute('aria-selected'))
+      expect(within(tabs).getByRole('tab', { name: 'Collab' }).getAttribute('aria-selected'))
         .toBe('true'),
     );
   });

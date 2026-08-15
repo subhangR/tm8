@@ -158,7 +158,9 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
               with ordinality t(g, ord)
         where g->>'id' = 'chats'`,
     );
-    expect(shape[0]).toEqual({ label: 'Chats', ord: 1, has_children: false });
+    // 128 renamed the LABEL to Collab (user ruling, 2026-08-16); the id and
+    // the single-childless-item shape are what 127 established and both stay.
+    expect(shape[0]).toEqual({ label: 'Collab', ord: 1, has_children: false });
   });
 
   it('serves the File browser as its own tab group (125 — user amendment)', async () => {
@@ -276,6 +278,102 @@ describeDb('127 upgrade — existing spaces gain the Chats tab, customized menus
     expect(rows[0]?.revision).toBe(10);
     // And it is the CURRENT seeder output, not merely something chats-shaped —
     // an upgraded space and a fresh space must be indistinguishable.
+    const seeded = (await db.query<{ payload: unknown }>(
+      `select internal.w1_default_menu_payload() payload`,
+    ))[0]!.payload;
+    expect(rows[0]?.payload).toEqual(seeded);
+  });
+
+  it('the customized row is untouched — payload byte-identical, revision unmoved', async () => {
+    const rows = await db.query<{ revision: number; payload: unknown }>(
+      `select revision, payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    );
+    expect(rows[0]?.revision).toBe(31);
+    expect(rows[0]?.payload).toEqual(customPayloadBefore);
+  });
+});
+
+/**
+ * The 128 UPGRADE BLOCK — same shape as 127's, same reason: the upgrade is
+ * guarded by the PREVIOUS default verbatim (127's payload), and one wrong
+ * byte in that literal matches zero rows silently. Every existing space
+ * would then keep a tab labelled Chats while fresh spaces read Collab.
+ */
+describeDb('128 upgrade — existing default menus read Collab, customized menus do not move', () => {
+  let db: W1ScratchDatabase;
+  const DEFAULT_SPACE = '00000000-0000-4000-8000-000000000131';
+  const CUSTOM_SPACE = '00000000-0000-4000-8000-000000000132';
+  let customPayloadBefore: unknown;
+
+  beforeAll(async () => {
+    db = await createW1ScratchDatabase('menu-collab-upgrade');
+    const files = migrationFiles();
+    const migration = files.find((file) => file.startsWith('128_'));
+    if (!migration) throw new Error('the 128 migration is missing from the chain');
+    const index = files.indexOf(migration);
+    // Split application: the rows must EXIST before 128 runs for its WHERE
+    // clause to be the thing under test.
+    db.apply(files.slice(0, index));
+
+    await db.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.user_profiles(identity_id, display_name)
+         values ('collab-default', 'Collab default'), ('collab-custom', 'Collab custom')`,
+      );
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity)
+         values ($1, 'Default menu', 'collab-default'), ($2, 'Custom menu', 'collab-custom')`,
+        [DEFAULT_SPACE, CUSTOM_SPACE],
+      );
+      await client.query(
+        `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
+         values ($1, 1, 10, internal.w1_default_menu_payload())`,
+        [DEFAULT_SPACE],
+      );
+      await client.query(
+        `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
+         values ($1, 1, 31,
+                 jsonb_set(internal.w1_default_menu_payload(),
+                           '{groups,0,label}', '"Mission Control"'))`,
+        [CUSTOM_SPACE],
+      );
+    });
+
+    customPayloadBefore = (await db.query<{ payload: unknown }>(
+      `select payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    ))[0]?.payload;
+
+    // THE RED SIDE, measured: before 128 the default row still reads Chats.
+    const before = await db.query<{ label: string }>(
+      `select payload->'groups'->0->>'label' as label
+         from public.space_menu_configs where space_id = $1`,
+      [DEFAULT_SPACE],
+    );
+    expect(before[0]?.label).toBe('Chats');
+
+    db.apply([migration]);
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.destroy();
+  }, 30_000);
+
+  it('the verbatim-default row reads Collab, same id and shape, exactly one revision', async () => {
+    const rows = await db.query<{ revision: number; first: unknown; payload: unknown }>(
+      `select revision, payload->'groups'->0 as first, payload
+         from public.space_menu_configs where space_id = $1`,
+      [DEFAULT_SPACE],
+    );
+    expect(rows[0]?.first).toEqual({
+      id: 'chats',
+      label: 'Collab',
+      items: [{ type: 'view', ref: 'dashboard' }],
+    });
+    expect(rows[0]?.revision).toBe(11);
+    // An upgraded space and a fresh space must be indistinguishable.
     const seeded = (await db.query<{ payload: unknown }>(
       `select internal.w1_default_menu_payload() payload`,
     ))[0]!.payload;

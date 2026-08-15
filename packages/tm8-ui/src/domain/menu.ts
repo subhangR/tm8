@@ -57,14 +57,19 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // returns; the rail is what stays gone (`dashboard` is a railless view ref
 // now), so the surface is two panes and the conversation LIST is its
 // navigation.
-export const SHIPPED_DEFAULT_MENU_REVISION = 14;
+// Revision 15 (2026-08-16, user ruling): the tab is renamed COLLAB. A label
+// change only — the group id stays `chats` (ids are wire-stable; every
+// resolver, voice-room fallback and upgrade guard keys on the id), the single
+// railless `dashboard` item stays, and the two-pane guarantee is untouched.
+export const SHIPPED_DEFAULT_MENU_REVISION = 15;
 
 /**
  * The tab shell (revision 14, 2026-08-15), encoded literally — the GROUPS are
  * the top-row TABS and the rail renders only the active group's contents:
  *
- *   Chats    → the conversation surface (view ref `dashboard`), two panes:
+ *   Collab   → the conversation surface (view ref `dashboard`), two panes:
  *              the conversation LIST · the open conversation. No rail.
+ *              (Group id `chats`; revision 15 renamed the LABEL only.)
  *   Work     → Workspace ▾ (caret: Tasks · Sessions · Docs · Teammates ·
  *              Memories · Artifacts · Loops · Files) ·
  *              Projects · Pull requests · Worktrees · Code (the git view)
@@ -106,10 +111,11 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
   schemaVersion: 1,
   revision: SHIPPED_DEFAULT_MENU_REVISION,
   groups: [
-    // CHATS leads (revision 14). One childless view item is what makes the
-    // group railless — add a second row here and the surface grows a third
-    // pane, which is the arrangement this revision exists to prevent.
-    { id: 'chats', label: 'Chats', items: [{ type: 'view', ref: 'dashboard' }] },
+    // COLLAB leads (revision 14 restored the tab; 15 renamed the label — the
+    // id stays `chats`). One childless view item is what makes the group
+    // railless — add a second row here and the surface grows a third pane,
+    // which is the arrangement this revision exists to prevent.
+    { id: 'chats', label: 'Collab', items: [{ type: 'view', ref: 'dashboard' }] },
     {
       id: 'workspace',
       label: 'Work',

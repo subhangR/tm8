@@ -31,9 +31,12 @@ describe('the shipped default menu', () => {
       // surface again, named CHATS. 13 left the brand mark as the only way
       // back to it; what 13 was actually right about — the redundant RAIL ROW
       // — is handled by `isRaillessGroup` instead, proven below. Note the row
-      // reads Chats while the ref's own presentation label is still Home:
+      // reads its own label while the ref's presentation label is still Home:
       // the GROUP names the tab, the ref names nothing here.
-      'Chats',
+      //
+      // Revision 15 (2026-08-16): the label is COLLAB — a rename only, the
+      // group id stays `chats`.
+      'Collab',
       'Work',
       'Graph',
       'Channels',

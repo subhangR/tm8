@@ -127,7 +127,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
    * claim, proven next to it in shell/menu-resolve.test.ts; domain/ does not
    * reach into shell/ to borrow the predicate.
    */
-  it('leads with a single-item Chats group — the tab is back, the rail row is not', () => {
+  it('leads with a single-item Collab group — the tab is back, the rail row is not', () => {
     const ids = SHIPPED_DEFAULT_MENU.groups.map((g) => g.id);
     expect(ids[0]).toBe('chats');
     // `home` is NOT the id: 13 retired that group and 14 does not resurrect it,
@@ -136,7 +136,9 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(ids).not.toContain('voice');
 
     const chats = SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === 'chats');
-    expect(chats?.label).toBe('Chats');
+    // Revision 15 renamed the LABEL to Collab; the id stays `chats` because
+    // ids are the wire-stable half every resolver and upgrade guard keys on.
+    expect(chats?.label).toBe('Collab');
     expect(chats?.items).toEqual([{ type: 'view', ref: 'dashboard' }]);
     // ONE item, and childless — the shape the railless rule keys on. A second
     // row here and the surface grows a third pane.
@@ -220,7 +222,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(14);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(15);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });
