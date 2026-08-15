@@ -62,7 +62,10 @@ canonical (ruled 2026-08-12) and now lives in exactly one place.
 - **Contract-first:** nothing imports Postgres types or server internals across package lines; `packages/contract` is the only cross-package dependency.
 - **Runtime split:** `packages/server` and `packages/execution` run under **node**, never bun (node-pty is broken under bun). Everything else may use bun.
 - **No legacy references:** zero Firebase/Supabase references, zero UID-bypass machinery, no imported migration history.
-- Verification is scoped: per-package `tsc -b` / `vitest`. Never run parallel vite builds.
+- Verification is scoped: run each package's `bun run typecheck` / `bun run test`.
+  Every first-class `tsconfig.json` is composite and resolves to source files; CI audits
+  that invariant before invoking `tsc -b`, so build mode cannot report a vacuous green.
+  Never run parallel vite builds.
 - **The product UI is `packages/tm8-ui`.** `packages/ui` is the legacy collab-v2
   oracle — not served, not built, not started. The launchers pointed at the wrong
   one until 2026-08-12.

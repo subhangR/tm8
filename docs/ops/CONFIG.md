@@ -160,10 +160,12 @@ Stages, in order — each runs to completion so one invocation surfaces every pr
 1. **toolchain** — bun and node present, node ≥ 20 (hard requirement: server + execution
    run under node).
 2. **install** — `bun install`, or `bun install --frozen-lockfile` when `CI` is set.
-3. **typecheck** — per-package scoped `tsc -b`, **sequentially**, in dependency order:
+3. **typecheck** — first audit every first-class TypeScript project for an effective
+   `composite: true` and a non-empty input set, then run package typechecks
+   **sequentially**, in dependency order:
    `packages/contract` → `server` → `execution` → `cli` → `tools/conformance`. A package with
    no `tsconfig.json` is reported as skipped, not silently passed. `packages/ui` is checked
-   with its own scoped `tsc -b` once it exists; **the gate never fans out vite builds** —
+   through its own `bun run typecheck`; **the gate never fans out vite builds** —
    concurrent vite builds SIGTERM each other.
 4. **tests** — `bun run test` per package, but only where test files actually exist
    (`vitest run` exits non-zero on "no test files"). Placeholder `echo` test scripts and
