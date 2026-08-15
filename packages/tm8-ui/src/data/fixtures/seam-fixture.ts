@@ -926,6 +926,16 @@ export function createFixtureSeam(): FixtureSeam {
     return { items: all.slice(start, end), nextCursor: end < all.length ? String(end) : null, total: all.length };
   }
 
+  /** The node's own group labels (collections.ts) — the fixture must hand
+   *  back 'High', not 'high', or a label-rendering surface diverges. */
+  const GROUP_STATUS_LABELS: Record<string, string> = {
+    open: 'Open', pulled: 'Pulled', working: 'Working', in_review: 'In review',
+    done: 'Done', blocked: 'Blocked', cancelled: 'Cancelled',
+  };
+  const GROUP_PRIORITY_LABELS: Record<string, string> = {
+    urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low',
+  };
+
   /**
    * `groupBy` answered for real, PAGE-SCOPED like the node's own.
    *
@@ -942,15 +952,21 @@ export function createFixtureSeam(): FixtureSeam {
     /**
      * The server's `groupItems` arms, mirrored (collections.ts): a
      * multi-assignee task appears in EVERY assignee column, no assignee is
-     * the '' / "Unassigned" column, and status/priority labels stay raw keys
-     * here — canonical words and tones are presentation truth the board's
-     * own ColumnSpecs supply.
+     * the '' / "Unassigned" column, labels are the server's display words
+     * (WORK_STATUS_LABELS / PRIORITY_LABELS), and a NON-task row lands in
+     * the same default bucket the server gives it ('open' / 'medium' /
+     * Unassigned) instead of vanishing from the groups it counts toward.
      */
     const keysOf = (row: EntitySummary): readonly (readonly [string, string])[] => {
-      if (row.state.kind !== 'task') return [];
-      if (groupBy === 'workStatus') return [[row.state.workStatus, row.state.workStatus]];
-      if (groupBy === 'priority') return [[row.state.priority, row.state.priority]];
-      const assignees = row.state.assignees;
+      if (groupBy === 'workStatus') {
+        const status = row.state.kind === 'task' ? row.state.workStatus : 'open';
+        return [[status, GROUP_STATUS_LABELS[status] ?? status]];
+      }
+      if (groupBy === 'priority') {
+        const priority = row.state.kind === 'task' ? row.state.priority : 'medium';
+        return [[priority, GROUP_PRIORITY_LABELS[priority] ?? priority]];
+      }
+      const assignees = row.state.kind === 'task' ? row.state.assignees : [];
       if (assignees.length === 0) return [['', 'Unassigned']];
       return assignees.map((a) => [a.id, a.displayName] as const);
     };
@@ -1289,11 +1305,14 @@ export function createFixtureSeam(): FixtureSeam {
         if (input.parentId !== undefined && s.parentId !== input.parentId) return false;
         if (subtree && !subtree.has(s.id)) return false;
         const f = input.filters;
-        if (f?.workStatus && !(s.state.kind === 'task' && f.workStatus.includes(s.state.workStatus))) return false;
-        if (f?.priority && !(s.state.kind === 'task' && f.priority.includes(s.state.priority))) return false;
-        if (f?.sessionStatus && !(s.state.kind === 'work_session'
+        /* Empty lists are NO constraint — the server guards every arm with
+           `length > 0` (collections.ts), so `priority: []` must not read as
+           "match nothing" here while the node reads it as "unfiltered". */
+        if (f?.workStatus?.length && !(s.state.kind === 'task' && f.workStatus.includes(s.state.workStatus))) return false;
+        if (f?.priority?.length && !(s.state.kind === 'task' && f.priority.includes(s.state.priority))) return false;
+        if (f?.sessionStatus?.length && !(s.state.kind === 'work_session'
           && f.sessionStatus.includes(s.state.status))) return false;
-        if (f?.assigneeIds && !(s.state.kind === 'task'
+        if (f?.assigneeIds?.length && !(s.state.kind === 'task'
           && s.state.assignees.some((a) => f.assigneeIds!.includes(a.id)))) return false;
         /* The `edge` clause the server executes as an EXISTS over
            public.edges (collections.ts): keep this row exactly when it has an
@@ -2105,6 +2124,19 @@ export function createFixtureSeam(): FixtureSeam {
           if (s.state.kind === 'task' && 'priority' in patched) {
             const p = patched.priority;
             if (p === 'low' || p === 'medium' || p === 'high' || p === 'urgent') s.state.priority = p;
+          }
+          /**
+           * And the crossing is a MOVE, not a copy: the node's `contentOf`
+           * never carries these state-projected keys (task content is
+           * kind/description/acceptanceCriteria/pointsEstimate, strict), so
+           * a fixture that left them merged into content would hand back a
+           * detail `EntityDetailSchema` refuses — contract-invalid in a way
+           * the real server never is.
+           */
+          if (s.state.kind === 'task') {
+            const c = e.content as Record<string, unknown>;
+            delete c.priority;
+            delete c.dueDate;
           }
         }
         touch(s);

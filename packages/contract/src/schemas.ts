@@ -721,6 +721,14 @@ const CollectionFiltersSchema = z.object({
       message: 'workStatus and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
     });
   }
+  // Same law for the priority axis: priority is task-only, so pairing it with
+  // sessionStatus is another always-empty conjunction that must refuse.
+  if (f.priority && f.priority.length > 0 && f.sessionStatus && f.sessionStatus.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'priority and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
+    });
+  }
 });
 
 function collectionQueryShape() {
