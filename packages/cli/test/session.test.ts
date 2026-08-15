@@ -251,6 +251,12 @@ describe('execution.prompt has no command and never renders syntax', () => {
 // ── session spawn ───────────────────────────────────────────────────────────
 
 describe('session spawn', () => {
+  it('advertises --reasoning-effort with the complete closed set', () => {
+    expect(discoveryFor('execution.spawn').syntax).toContain(
+      '[--reasoning-effort low|medium|high|xhigh|max]',
+    );
+  });
+
   it('binds execution.spawn and carries the frozen body', async () => {
     const r = await drive([
       'session', 'spawn',
@@ -305,6 +311,23 @@ describe('session spawn', () => {
     ]);
     expect(r.code).toBe(0);
     expect(body().accessMode).toBe('fullAccess');
+  });
+
+  it('carries an explicit --reasoning-effort', async () => {
+    const r = await drive([
+      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--reasoning-effort', 'xhigh',
+    ]);
+    expect(r.code).toBe(0);
+    expect(body().reasoningEffort).toBe('xhigh');
+  });
+
+  it('refuses a reasoning effort outside the closed set', async () => {
+    const r = await drive([
+      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--reasoning-effort', 'extreme',
+    ]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('low|medium|high|xhigh|max');
+    expect(seen).toEqual([]);
   });
 
   it('refuses an access mode outside the closed set', async () => {
