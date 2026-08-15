@@ -245,6 +245,20 @@ describe('message list', () => {
     expect(seen[0]?.method).toBe('GET');
   });
 
+  it('accepts --for as an alias for the positional anchor', async () => {
+    reply = () => envelope({ items: [], nextCursor: null });
+    const r = await dispatch(['message', 'list', '--for', ANCHOR, '--format', 'json']);
+    expect(r.code).toBe(0);
+    expect(seen[0]?.path).toBe(bindPath('messages.list', { anchorId: ANCHOR }));
+  });
+
+  it('refuses an anchor supplied both positionally and with --for', async () => {
+    const r = await dispatch(['message', 'list', ANCHOR, '--for', ANCHOR]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toMatch(/either positionally or with --for, not both/);
+    expect(seen).toHaveLength(0);
+  });
+
   it('carries --root, --limit and --cursor as the catalog query', async () => {
     reply = () => envelope({ items: [], nextCursor: null });
     await dispatch([
