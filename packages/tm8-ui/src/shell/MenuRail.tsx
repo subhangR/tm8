@@ -21,7 +21,7 @@ import { useState, type ReactNode } from 'react';
 import type { MenuConfig, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
 import { REASONS } from '../domain';
 import { VectorIcon } from '../kit';
-import type { CollectionMode } from '../domain';
+import type { CollectionMode, GroupByKey } from '../domain';
 import { VIEW_PRESENTATION } from './menu-resolve';
 import { MENU_COLLAPSED, MENU_EXPANDED } from './geometry';
 
@@ -87,7 +87,18 @@ export type MenuTarget =
    * panel's switcher survives navigation (§1.1). The rail never sets it; it
    * rides along so switching kinds and switching layout are one target shape.
    */
-  | { type: 'kind'; ref: string; mode?: CollectionMode }
+  | {
+      type: 'kind';
+      ref: string;
+      mode?: CollectionMode;
+      /**
+       * The BOARD's grouping choice (W3) — route state exactly like `mode`,
+       * held by the shell so a grouped board is shareable and survives
+       * reload. The rail never sets it; `routes/q.ts` carries it as
+       * `q.groupBy` (`workStatus` | `assignee` | `axis:<name>`).
+       */
+      groupBy?: GroupByKey;
+    }
   | { type: 'entity'; ref: string; kind: string };
 
 export interface ServerRailItem {

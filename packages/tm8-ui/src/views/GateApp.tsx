@@ -1583,6 +1583,14 @@ export function GateApp(props: GateAppProps = {}) {
                 if (activeTarget.type !== 'kind') return;
                 navigateTo({ ...activeTarget, mode: m });
               }}
+              /* W3 — the board's grouping rides the target exactly as `mode`
+                 does, so a grouped board survives reload and its URL is the
+                 board someone else opens. */
+              {...(activeTarget.groupBy !== undefined ? { groupBy: activeTarget.groupBy } : {})}
+              onGroupBy={(g) => {
+                if (activeTarget.type !== 'kind') return;
+                navigateTo({ ...activeTarget, groupBy: g });
+              }}
               /* The same verb the workspace's tiles commit. Passing it is what
                  makes the tile's `Launch ▸` a live control here instead of a
                  disabled-with-reason one; the sources behind it come from
