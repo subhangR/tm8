@@ -51,11 +51,15 @@ describe('sessionLaneOf', () => {
 });
 
 describe('SessionLaneLine', () => {
-  it('draws the branch glyph, the name and the mode badge', () => {
+  it('draws the branch glyph, the name and the worktree SYMBOL, never the word', () => {
     render(<SessionLaneLine lane={{ branch: 'tm8/ab12cd34', mode: 'worktree' }} />);
     const line = screen.getByTestId('session-lane-line');
     expect(line.textContent).toContain('tm8/ab12cd34');
-    expect(line.textContent).toContain('worktree');
+    // The mark replaces the green word outright — no pill is drawn at all —
+    // and the symbol carries the meaning as a labelled `img`. (Asserting on
+    // textContent would be blind here: the svg's own <title> counts as text.)
+    expect(line.querySelector('.kit-pill')).toBeNull();
+    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('worktree');
   });
 
   it('a shared checkout names its honesty in the badge title', () => {
