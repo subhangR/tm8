@@ -29,18 +29,64 @@ beforeEach(() => {
 
 describe('dashboard route', () => {
   it('mounts the merged single home — chat hero inside the HomePage canvas', async () => {
+    // Revision 13 (conversation-axis ruling): NOBODY CLICKS TO GET HERE. With
+    // no remembered place the shell boots straight onto the conversation
+    // surface, because Home stopped being a destination and became the
+    // container. The click this case used to make — a "Home" row in the rail —
+    // is the exact affordance the ruling removed.
     const view = render(<GateApp />);
-    const rail = await waitFor(() => view.getByTestId('menu-rail'));
-    // Revision 11: the row reads "Home" (the ref stays `dashboard`).
-    fireEvent.click(within(rail).getByRole('button', { name: /^Home$/ }));
 
     // The merged canvas hosts the chat surface as its hero. The old T5-1
     // triage dashboard stays unmounted.
     expect(await view.findByTestId('home-page')).toBeTruthy();
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
     expect(view.queryByTestId('home-screen')).toBeNull();
-    expect(await view.findAllByText('Plan the launch sequence')).toHaveLength(2);
+    // Three sightings, one conversation: the panel row (the inventory), the
+    // working-set tab (it is open), and the conversation's own head.
+    await waitFor(() =>
+      expect(view.getAllByText('Plan the launch sequence')).toHaveLength(3),
+    );
     fireEvent.click(view.getByRole('button', { name: /^New chat$/ }));
     expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
+  });
+
+  it('offers no door back to a Home that no longer exists — the mark is the one door', async () => {
+    const view = render(<GateApp />);
+    await view.findByTestId('chat-home-screen');
+
+    // No tab, and no rail row, is labelled Home: `dashboard` belongs to no
+    // group now. The tablist is the top row; the rail below renders only the
+    // ACTIVE group's contents, and no group owns the surface we are standing
+    // on, so there is nothing for it to draw.
+    const tabs = view.getByRole('tablist', { name: 'Screens' });
+    expect(within(tabs).queryByText('Home')).toBeNull();
+    expect(within(tabs).getByRole('tab', { name: 'Work' })).toBeTruthy();
+
+    // The mark is the way back — not a second door, because the tab it
+    // replaces was retired in the same change. It never reads as current.
+    const mark = view.getByTestId('go-home');
+    expect(mark.getAttribute('role')).toBeNull();
+    fireEvent.click(mark);
+    expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
+  });
+
+  it('opens a panel conversation as a tab, and closing the tab leaves the panel whole', async () => {
+    const view = render(<GateApp />);
+    await view.findByTestId('chat-home-screen');
+    const strip = await waitFor(() => view.getByRole('tablist', { name: 'Open conversations' }));
+
+    // Cold start auto-opened the most recent conversation, so the strip is
+    // already one tab deep and the panel row it came from is still listed.
+    const panelRows = () =>
+      [...view.container.querySelectorAll('.tch-thread__title')].map((n) => n.textContent);
+    const before = panelRows();
+    expect(within(strip).getAllByRole('tab')).toHaveLength(1);
+
+    fireEvent.click(within(strip).getByRole('button', { name: /^Close / }));
+
+    // The tab is gone. THE PANEL IS NOT: closing a tab is not a delete, and
+    // the inventory is the panel's, not the working set's.
+    expect(view.queryByRole('tablist', { name: 'Open conversations' })).toBeNull();
+    expect(panelRows()).toEqual(before);
   });
 });

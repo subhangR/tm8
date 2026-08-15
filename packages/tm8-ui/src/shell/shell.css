@@ -39,6 +39,21 @@
   color: var(--pn-brand);
   white-space: nowrap;
 }
+/* The mark as the door back to conversations (revision 13). It reads as the
+   mark, not as a tab — no active state, because there is no destination to
+   be current on. */
+.cv2-root .shell-tabbar__mark--door {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.cv2-root .shell-tabbar__mark--door:hover {
+  color: var(--pn-text);
+}
 .cv2-root .shell-tabbar__server {
   min-width: 0;
   max-width: 168px;

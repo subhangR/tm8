@@ -42,14 +42,20 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // into Work (its three kinds become ordinary rows; the git view stays a plain
 // Work row, D1); `chats` renamed Channels. See `DEFAULT_MENU_GROUP_SPINE` for
 // the full account; nothing was deleted, only re-shelved.
-export const SHIPPED_DEFAULT_MENU_REVISION = 12;
+// Revision 13 (2026-08-15, conversation-axis ruling): the `home` GROUP is
+// retired. Home stopped being a destination and became the CONTAINER — the
+// conversation surface the shell falls back to — so a tab for it, and a rail
+// row inside that tab repeating its own name, were two more doors to the
+// place you are already standing in. The `dashboard` ref itself is untouched:
+// same route, same palette row, same menu-editor eligibility, and it is still
+// where a viewer with no remembered place lands. Only its menu HOME is gone.
+export const SHIPPED_DEFAULT_MENU_REVISION = 13;
 
 /**
- * The five-tab shell (revision 12, user rulings R2/R3/R4, 2026-08-15),
- * encoded literally — the GROUPS are the top-row TABS and the rail renders
- * only the active group's contents:
+ * The tab shell (revision 13, conversation-axis ruling, 2026-08-15), encoded
+ * literally — the GROUPS are the top-row TABS and the rail renders only the
+ * active group's contents:
  *
- *   Home     → the chat-first landing (view ref `dashboard`)
  *   Work     → Workspace ▾ (caret: Tasks · Sessions · Docs · Teammates ·
  *              Memories · Artifacts · Loops · Files) ·
  *              Projects · Pull requests · Worktrees · Code (the git view)
@@ -68,6 +74,14 @@ export const SHIPPED_DEFAULT_MENU_REVISION = 12;
  * (reversible default D2). Nothing was deleted, only re-shelved: every ref
  * keeps its route, its chord and its menu-editor eligibility.
  *
+ * THERE IS NO HOME TAB (revision 13). The conversation surface is what the
+ * shell falls back to — `HOME_TARGET` in `views/GateApp.tsx` is still the
+ * no-remembered-place landing and the brand mark is its door — so no group
+ * claims `dashboard`, no tab reads current while you are standing on it, and
+ * `activeGroupId` resolving to null is what makes the shell draw NO rail
+ * there. The conversation panel is the left column, and it belongs to the
+ * screen, not to the chrome.
+ *
  * MESSAGES stays a VIEW and not a kind row for two independent reasons: the
  * `message` registry row is `strategy: 'anchored'` with `slug: null`, so
  * `isMenuEligibleKind` refuses it and the rail would fail closed; and the
@@ -78,11 +92,6 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
   schemaVersion: 1,
   revision: SHIPPED_DEFAULT_MENU_REVISION,
   groups: [
-    {
-      id: 'home',
-      label: 'Home',
-      items: [{ type: 'view', ref: 'dashboard' }],
-    },
     {
       id: 'workspace',
       label: 'Work',

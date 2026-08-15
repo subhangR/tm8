@@ -2061,7 +2061,18 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   //
   // (The pre-125 rail history — six intent clusters, Chats group, Code caret —
   // is characterized by migrations 122-124 and their parity tests.)
-  { serverId: 'home', clientId: 'home' },
+  //
+  // LATER THE SAME DAY (conversation-axis ruling, migration 126): the `home`
+  // GROUP is retired, leaving —
+  //   work | graph | channels | files | settings
+  // Home stopped being a destination and became the CONTAINER: the
+  // conversation surface the shell falls back to. A tab for it, plus a rail
+  // row inside that tab repeating its own name, were two more doors to the
+  // place you were already standing in. The `dashboard` VIEW REF is
+  // untouched — still registered, still routable, still the
+  // no-remembered-place landing, still offerable through the menu editor.
+  // A rail edit, not a feature removal: the same posture 125 took toward
+  // `chats` and `code`.
   { serverId: 'work', clientId: 'workspace' },
   { serverId: 'graph', clientId: 'graph' },
   { serverId: 'channels', clientId: 'channels' },

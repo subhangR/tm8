@@ -1504,6 +1504,10 @@ export function GateApp(props: GateAppProps = {}) {
           tabs={shellTabs}
           activeTabId={activeGroupId}
           onSelectTab={openTab}
+          /* Revision 13: no group owns `dashboard`, so no tab leads back to
+             the conversation surface — the MARK does. Not an extra door: the
+             tab it replaces was retired in the same change. */
+          onGoHome={() => navigateTo(HOME_TARGET)}
           onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
