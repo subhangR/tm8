@@ -98,6 +98,18 @@ describe('nav-targets — round trips', () => {
     expect(landingOfRoute(route as NavView)?.target).toEqual(target);
   });
 
+  it('round-trips the board grouping as q.groupBy — a grouped board is shareable (W3)', () => {
+    const target = { type: 'kind', ref: 'task', mode: 'board', groupBy: 'axis:type' } as const;
+    const route = routeViewOf(target);
+    expect(route).toEqual({
+      view: 'kind',
+      slug: 'tasks',
+      mode: 'board',
+      q: { v: 1, groupBy: 'axis:type' },
+    });
+    expect(landingOfRoute(route as NavView)?.target).toEqual(target);
+  });
+
   it('round-trips an open entity as the shareable e/{id}?origin= form', () => {
     // THE REQUIREMENT'S MAIN CASE: a kind screen with an entity open is a link
     // that reopens that entity on that screen.

@@ -84,9 +84,14 @@ function harness(options: HarnessOptions = {}) {
       if (options.connectionsFail) throw options.connectionsFail;
       return { items: options.connections ?? [], nextCursor: null };
     }),
-    /* Present ONLY so that a call to it would be visible. The version fallback
-       it used to serve is gone; if it is ever called again, a test says so. */
-    entity: vi.fn(async () => ({ version: 99 }) as unknown as EntityDetail),
+    /* For `setValue` this exists ONLY so a call would be visible — its
+       version fallback is gone and a test asserts it stays uncalled. For
+       `setAxis` it is the BOARD path's deliberate read: an uncached card is
+       read once before the merged, guarded write. */
+    entity: vi.fn(
+      async () =>
+        ({ version: 99, state: { kind: 'task', axes: options.axes ?? {} } }) as unknown as EntityDetail,
+    ),
   };
 
   const rows = options.rows ?? {};
@@ -329,14 +334,32 @@ describe('useRowLifecycle — setAxis: the MERGED content patch', () => {
     });
   });
 
-  it('refuses rather than guessing when the detail is not loaded', async () => {
-    const h = harness();
-    h.lifecycle.setAxis(TASK, 'type', 'code', 'Type');
+  /**
+   * THE BOARD PATH. A dragged card's detail is usually not hydrated, and
+   * unlike `setValue` there is no capability gate in front of this write —
+   * so an uncached row costs one honest `entity()` read, whose version and
+   * axes feed the same merged, guarded patch. The version guard still
+   * catches a write racing the read.
+   */
+  it('READS the entity once for an uncached row, then writes the merged patch', async () => {
+    const h = harness({ axes: { size: 'l' } });
+    void h.lifecycle.setAxis(TASK, 'type', 'code', 'Type');
     await flush();
 
-    expect(h.seam.commands.patchEntity).not.toHaveBeenCalled();
-    expect(h.notices).toHaveLength(1);
-    expect(h.notices[0]!.title).toBe('Type could not be changed');
+    expect(h.seam.entity).toHaveBeenCalledTimes(1);
+    expect(h.seam.commands.patchEntity).toHaveBeenCalledWith(TASK, {
+      expectedVersion: 99,
+      content: { axes: { size: 'l', type: 'code' } },
+    });
+  });
+
+  it('with {notify:false} a refusal comes back as the OUTCOME, not a notice', async () => {
+    const h = harness({ version: 7, fail: new Error('version_conflict: entity moved') });
+    const outcome = await h.lifecycle.setAxis(TASK, 'type', 'code', 'Type', { notify: false });
+    await flush();
+
+    expect(outcome).toMatchObject({ ok: false });
+    expect(h.notices).toHaveLength(0);
   });
 
   it('surfaces the server refusal verbatim — the trigger owns the vocabulary', async () => {

@@ -601,7 +601,10 @@ const ROWS: readonly KindConfig[] = [
          `ValueControl`. */
       axisControls: { source: 'axes' },
       assignControl: TASK_ASSIGN_CONTROL,
-      // A2: the board groups by the same field the state picker writes. The
+      // A2: the board's DEFAULT grouping — the field the state picker
+      // writes. Since W3 this is a seed, not a pin: the board's own picker
+      // offers `workStatus`, `assignee`, and `axis:<name>` per axis the
+      // SPACE defines, and the choice rides the route (`q.groupBy`). The
       // server computes the groups (collections.ts groupItems); the client
       // never groups (L3).
       board: { groupBy: 'workStatus' },
