@@ -65,6 +65,12 @@ export interface ProjectOnboardingPort {
   linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void>;
   createMemory(input: CreateEntityInput): Promise<CommandResult>;
   /**
+   * Every project on the node, unscoped. Optional so ports that predate it
+   * keep compiling; without it a working-dir conflict stays a dead end
+   * instead of recovering into a link of the existing project.
+   */
+  listProjects?(): Promise<ProjectResource[]>;
+  /**
    * Absent when this node does not serve `projects.folderUploads.*`; the
    * Upload radio is then disabled with the truthful reason rather than
    * offered and failed at submit.
@@ -180,15 +186,47 @@ export function repoFolderName(raw: string): string {
   return /^[^\\/]+$/.test(tail) && tail !== '.' && tail !== '..' ? tail : '';
 }
 
-function memoryStatement(spaceName: string, project: ProjectResource, source: ProjectSource): string {
+function memoryStatement(
+  spaceName: string,
+  project: ProjectResource,
+  source: ProjectSource,
+  reusedExisting: boolean,
+): string {
   const base = `Space “${spaceName}” uses project “${project.name}” at node-local folder “${project.workingDir}”.`;
+  const reuse = reusedExisting
+    ? ' The folder already belonged to this EXISTING project, which was linked as-is; nothing new was created on disk and the project keeps its own name and trust level.'
+    : '';
   if (source.kind === 'github') {
-    return `${base} Its GitHub repository ${source.repoUrl} is RECORDED as the project's remote; nothing has been cloned.`;
+    return `${base}${reuse} Its GitHub repository ${source.repoUrl} is RECORDED as the project's remote; nothing has been cloned.`;
   }
   if (source.kind === 'upload') {
     return `${base} Its contents were uploaded from a browser and materialized on the node.`;
   }
-  return base;
+  return `${base}${reuse}`;
+}
+
+/**
+ * `working_dir` is node-globally unique BY DESIGN — two projects sharing a
+ * directory would make a spawn's cwd ambiguous. So "this folder already has a
+ * project" is not a failure of the user's intent: the existing project IS the
+ * thing they pointed at, and the honest continuation is to link it into the
+ * new Space. Surfacing the raw constraint name (`projects_working_dir_key`)
+ * walked the user into a dead end where Retry could only replay the refusal.
+ */
+export function isWorkingDirConflict(cause: unknown): boolean {
+  return String((cause as { message?: unknown } | null)?.message ?? cause)
+    .includes('projects_working_dir_key');
+}
+
+async function existingProjectForWorkingDir(
+  port: ProjectOnboardingPort,
+  workingDir: string,
+  cause: unknown,
+): Promise<ProjectResource | null> {
+  if (!isWorkingDirConflict(cause) || !port.listProjects) return null;
+  // A failed lookup must not mask the original refusal — fall through to it.
+  const all = await port.listProjects().catch(() => null);
+  return all?.find((candidate) => candidate.workingDir === workingDir) ?? null;
 }
 
 /**
@@ -217,6 +255,7 @@ export async function onboardSpaceProject(
   const trust: ProjectTrustLevel = wanted.trusted ? 'trusted' : 'untrusted';
   const source = wanted.source;
   let project: ProjectResource;
+  let reusedExisting = false;
 
   if (source.kind === 'upload') {
     const importFolder = port.importFolder;
@@ -242,18 +281,29 @@ export async function onboardSpaceProject(
     // `projects.folderUploads.complete` creates AND links the project itself,
     // so a second `projects.link` here would be a duplicate, not a safety net.
   } else {
-    project = await stage('project', onStage, () => port.createProject({
-      name: wanted.name.trim(),
-      workingDir: source.workingDir,
-      ensureWorkingDir: source.ensureWorkingDir,
-      trust,
-      ...(source.kind === 'github' ? { repoUrl: source.repoUrl.trim() } : {}),
-      clientMutationId: ids.project,
-    }));
+    let reused = false;
+    project = await stage('project', onStage, async () => {
+      try {
+        return await port.createProject({
+          name: wanted.name.trim(),
+          workingDir: source.workingDir,
+          ensureWorkingDir: source.ensureWorkingDir,
+          trust,
+          ...(source.kind === 'github' ? { repoUrl: source.repoUrl.trim() } : {}),
+          clientMutationId: ids.project,
+        });
+      } catch (cause) {
+        const existing = await existingProjectForWorkingDir(port, source.workingDir, cause);
+        if (!existing) throw cause;
+        reused = true;
+        return existing;
+      }
+    });
     await stage('link', onStage, () => port.linkProject(space.id, {
       projectId: project.id,
       clientMutationId: ids.link,
     }));
+    reusedExisting = reused;
   }
 
   await stage('memory', onStage, () => port.createMemory({
@@ -262,10 +312,12 @@ export async function onboardSpaceProject(
     kind: 'memory',
     title: `Project folder: ${project.name}`,
     content: {
-      statement: memoryStatement(space.name, project, source),
+      statement: memoryStatement(space.name, project, source, reusedExisting),
       mechanism: source.kind === 'upload'
         ? 'Recorded by Space project onboarding after projects.folderUploads.complete succeeded.'
-        : 'Recorded by Space project onboarding after projects.create and projects.link succeeded.',
+        : reusedExisting
+          ? 'Recorded by Space project onboarding after projects.create refused the already-connected folder and projects.link linked its existing project.'
+          : 'Recorded by Space project onboarding after projects.create and projects.link succeeded.',
       subjectScope: `Space ${space.id}; project ${project.id}; working directory ${project.workingDir}`,
       doesNotEstablish: source.kind === 'github'
         ? 'This records the repository URL and the configured working directory; it does not establish a clone, fetched refs, or any Git state on disk.'

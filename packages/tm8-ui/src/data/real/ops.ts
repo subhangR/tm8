@@ -363,7 +363,8 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<EntityKindDef[]>('entityKinds.list', { params: { spaceId } });
     },
 
-    projects(spaceId: SpaceId): Promise<ProjectResource[]> {
+    /** Space-scoped with `spaceId`; the whole node's projects without. */
+    projects(spaceId?: SpaceId): Promise<ProjectResource[]> {
       return http.call<ProjectResource[]>('projects.list', { query: { spaceId } });
     },
 

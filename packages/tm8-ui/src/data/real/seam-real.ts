@@ -296,6 +296,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       createSpace: (input) => ops.createSpace(input),
       createProject: (input) => ops.createProject(input),
       linkProject: (spaceId, input) => ops.linkProject(spaceId, input),
+      listProjects: () => ops.projects(),
     },
     projectFiles: {
       list: (projectId, path) => ops.projectFiles(projectId, path),

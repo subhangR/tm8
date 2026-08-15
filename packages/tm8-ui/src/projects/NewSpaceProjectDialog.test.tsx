@@ -267,6 +267,81 @@ describe('Create Space — a project from a node-local folder', () => {
       .toBe(false);
   });
 
+  it('a folder that already HAS a project links that project instead of dead-ending on the constraint', async () => {
+    // `working_dir` is node-globally unique by design; the raw
+    // `projects_working_dir_key` refusal used to surface verbatim and Retry
+    // could only ever replay it. The existing project IS what the user
+    // pointed at, so the saga finds it and links it.
+    const existing: ProjectResource = {
+      ...project,
+      id: 'project-existing' as ProjectId,
+      name: 'tm8',
+      trust: 'trusted',
+    };
+    const p = port({
+      createProject: vi.fn().mockRejectedValue(
+        new Error('duplicate key value violates unique constraint "projects_working_dir_key"'),
+      ),
+      listProjects: vi.fn().mockResolvedValue([
+        { ...project, id: 'project-other' as ProjectId, workingDir: '/srv/projects/other' },
+        existing,
+      ]),
+    });
+    const ids = newOnboardingMutationIds('reuse');
+
+    const result = await onboardSpaceProject(p, { spaceName: 'Studio', project: folderSource }, ids);
+
+    expect(result.project).toEqual(existing);
+    expect(p.linkProject).toHaveBeenCalledWith(space.id, {
+      projectId: existing.id,
+      clientMutationId: ids.link,
+    });
+    // The recorded memory says the truth: reused, not created.
+    expect(p.createMemory).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.objectContaining({
+        statement: expect.stringContaining('EXISTING project'),
+        mechanism: expect.stringContaining('already-connected folder'),
+      }),
+    }));
+  });
+
+  it('a working-dir conflict with NO project match still surfaces the original refusal', async () => {
+    const conflict = new Error('duplicate key value violates unique constraint "projects_working_dir_key"');
+    const p = port({
+      createProject: vi.fn().mockRejectedValue(conflict),
+      listProjects: vi.fn().mockResolvedValue([
+        { ...project, workingDir: '/srv/projects/unrelated' },
+      ]),
+    });
+
+    await expect(
+      onboardSpaceProject(p, { spaceName: 'Studio', project: folderSource }, newOnboardingMutationIds('x')),
+    ).rejects.toMatchObject({ stage: 'project', message: conflict.message });
+    expect(p.linkProject).not.toHaveBeenCalled();
+  });
+
+  it('a port without listProjects keeps the old behavior: the conflict propagates', async () => {
+    const conflict = new Error('duplicate key value violates unique constraint "projects_working_dir_key"');
+    // port() carries no listProjects unless a test provides one.
+    const p = port({ createProject: vi.fn().mockRejectedValue(conflict) });
+
+    await expect(
+      onboardSpaceProject(p, { spaceName: 'Studio', project: folderSource }, newOnboardingMutationIds('y')),
+    ).rejects.toMatchObject({ stage: 'project', message: conflict.message });
+  });
+
+  it('a NON-conflict createProject failure never triggers the lookup', async () => {
+    const p = port({
+      createProject: vi.fn().mockRejectedValue(new Error('forbidden: node-admin access is required')),
+      listProjects: vi.fn(),
+    });
+
+    await expect(
+      onboardSpaceProject(p, { spaceName: 'Studio', project: folderSource }, newOnboardingMutationIds('z')),
+    ).rejects.toMatchObject({ stage: 'project' });
+    expect(p.listProjects).not.toHaveBeenCalled();
+  });
+
   it('can replay the same mutation ids after a staged failure', async () => {
     const ids = newOnboardingMutationIds('retry');
     const createMemory = vi.fn()
