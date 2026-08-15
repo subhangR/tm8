@@ -283,6 +283,29 @@
   fill: var(--pn-ink-3);
 }
 
+/* THE STATE WORD CARRIES ITS TONE, and it is the only coloured text on a card.
+   A canvas where a blocked task and a running session read alike is a canvas
+   you have to click through; the tones are the ones the pills already use, so
+   the same state is the same colour wherever it appears. */
+.sg-state { font-weight: 600; }
+.sg-state--run   { fill: var(--pn-run); }
+.sg-state--wait  { fill: var(--pn-wait); }
+.sg-state--block { fill: var(--pn-block); }
+.sg-state--info  { fill: var(--pn-info); }
+.sg-state--idle  { fill: var(--pn-idle); }
+.sg-state--brand { fill: var(--pn-brand-2); }
+
+/* The kind's OWN facts — priority, model, PR state, whatever it declares. Mono
+   because they are mostly values rather than prose, and quieter than the state
+   so the card still has one thing that reads first. */
+.sg-facts {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  fill: var(--pn-ink-2);
+}
+
+.sg-facts--faint { fill: var(--pn-ink-4); }
+
 .sg-count,
 .sg-badge {
   font-family: var(--pn-mono);

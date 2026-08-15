@@ -88,6 +88,16 @@ export interface GraphScreenProps {
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+  /**
+   * The canvas's time window, relayed from the host that OWNS THE READ. It is
+   * passed through rather than held here because choosing a window re-queries
+   * the space; a screen holding it locally could only filter what it was handed
+   * while labelling the result as if the space had been searched.
+   */
+  window?: string;
+  onChooseWindow?: (id: string) => void;
+  atCeiling?: boolean;
+  nodeLimit?: number;
 }
 
 type DetailMode = 'aside' | 'full';
@@ -223,6 +233,10 @@ export function GraphScreen(props: GraphScreenProps) {
       onSelect={(id) => setSelectedId(id)}
       livenessOf={data.livenessOf}
       selectedId={selectedId}
+      {...(props.window === undefined ? {} : { window: props.window })}
+      {...(props.onChooseWindow === undefined ? {} : { onChooseWindow: props.onChooseWindow })}
+      {...(props.atCeiling === undefined ? {} : { atCeiling: props.atCeiling })}
+      {...(props.nodeLimit === undefined ? {} : { nodeLimit: props.nodeLimit })}
     />
   );
 

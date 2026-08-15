@@ -706,6 +706,10 @@ const CollectionFiltersSchema = z.object({
   inFlightForActorId: EntityIdSchema.optional(),
   needsActorId: EntityIdSchema.optional(),
   sessionStatus: z.array(WorkSessionStatusSchema).optional(),
+  // Validated as a real instant, not merely a string: an unparseable value
+  // would otherwise reach Postgres as a cast error, and a window filter that
+  // 500s is indistinguishable at the client from a node that is down.
+  activeSince: z.string().datetime({ offset: true }).optional(),
   deleted: z.enum(['exclude', 'only', 'include']).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no

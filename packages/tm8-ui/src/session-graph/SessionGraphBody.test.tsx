@@ -74,7 +74,7 @@ describe('SessionGraphBody', () => {
         : page([]),
     );
 
-    render(<SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live={false} />);
+    render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />);
 
     const headline = await screen.findByTestId('session-graph-headline');
     expect(headline.textContent).toContain('Working on');
@@ -88,7 +88,7 @@ describe('SessionGraphBody', () => {
       throw new Error('forbidden');
     });
 
-    render(<SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live={false} />);
+    render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />);
 
     const footer = await screen.findByTestId('session-graph-footer');
     expect(footer.textContent).toContain('missing, not empty');
@@ -99,7 +99,7 @@ describe('SessionGraphBody', () => {
       throw new Error('entity not found');
     });
 
-    render(<SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live={false} />);
+    render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />);
 
     const error = await screen.findByTestId('session-graph-error');
     expect(error.textContent).toContain('Graph unavailable');
@@ -111,15 +111,48 @@ describe('SessionGraphBody', () => {
     const seam = seamWith(read);
 
     const exited = render(
-      <SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live={false} />,
+      <SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />,
     );
     await vi.advanceTimersByTimeAsync(60_000);
     const afterExited = read.mock.calls.length;
     exited.unmount();
 
-    render(<SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live />);
+    render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live />);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(read.mock.calls.length).toBeGreaterThan(afterExited * 2);
+  });
+
+  /**
+   * A card carrying only a title and a kind label tells the viewer what they
+   * already knew from asking. The facts that make a node worth looking at are
+   * ALREADY declared per kind as `list.tile.badges` — this asserts the canvas
+   * reads that declaration rather than a switch of its own, by planting state
+   * the graph module has never heard of and expecting it drawn.
+   */
+  it('draws the facts the kind registry declares, not a list of its own', async () => {
+    const blocked = {
+      ...entity('task-1', 'task', 'Session Graph'),
+      state: { workStatus: 'blocked', priority: 'urgent' },
+    } as unknown as EntitySummary;
+    const seam = seamWith(async (id) =>
+      id === FOCUS ? page([edge(focus, 'working_on', blocked)]) : page([]),
+    );
+
+    render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />);
+    const canvas = await screen.findByTestId('session-graph-canvas');
+
+    const node = await waitFor(() => {
+      const found = screen
+        .getAllByRole('button')
+        .find((el) => el.getAttribute('aria-label')?.includes('Session Graph'));
+      if (!found) throw new Error('task node not drawn');
+      return found;
+    });
+    expect(node.textContent).toContain('blocked');
+    // Verbatim from the registry's own renderer, casing included — a canvas
+    // that re-worded the value would be presenting a second vocabulary.
+    expect(node.textContent).toContain('URGENT');
+    expect(canvas.querySelector('.sg-state--block')).toBeTruthy();
   });
 
   it('offers no navigation when the host wired none, and says why', async () => {
@@ -127,7 +160,7 @@ describe('SessionGraphBody', () => {
       id === FOCUS ? page([edge(focus, 'working_on', task)]) : page([]),
     );
 
-    render(<SessionGraphBody seam={seam} sessionId={FOCUS} focus={focus} live={false} />);
+    render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />);
     await screen.findByTestId('session-graph-canvas');
 
     const node = await waitFor(() => {

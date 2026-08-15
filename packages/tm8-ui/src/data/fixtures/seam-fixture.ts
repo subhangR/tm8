@@ -1265,6 +1265,13 @@ export function createFixtureSeam(): FixtureSeam {
           && f.sessionStatus.includes(s.state.status))) return false;
         if (f?.assigneeIds && !(s.state.kind === 'task'
           && s.state.assignees.some((a) => f.assigneeIds!.includes(a.id)))) return false;
+        /* The clock window (`collections.ts`: `e.activity_at >= $n`). Honoured
+           here because the graph canvas's whole scope is this predicate — a
+           fixture that ignored it would hand back the entire space and let a
+           test prove a window that does nothing. Compared as strings: `tick()`
+           and the caller both produce `toISOString()`, which is always UTC and
+           fixed-width, so lexical order IS chronological order. */
+        if (f?.activeSince && s.activityAt < f.activeSince) return false;
         /* The `edge` clause the server executes as an EXISTS over
            public.edges (collections.ts): keep this row exactly when it has an
            edge of `type` in `direction` whose OTHER endpoint is `entityId`.

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type {
   ActivityItem,
   Connections,
@@ -451,20 +451,69 @@ function peerTitle(kind: string, title: string): string {
   return `${getKind(kind).label} · ${title}`;
 }
 
+function ConnectionsViewSwitch({
+  view,
+  onChange,
+}: {
+  view: 'list' | 'graph';
+  onChange: (next: 'list' | 'graph') => void;
+}) {
+  return (
+    <div className="pn-viewswitch" role="group" aria-label="Connections view">
+      {(['list', 'graph'] as const).map((id) => (
+        <button
+          key={id}
+          type="button"
+          className={id === view ? 'pn-viewswitch__opt pn-viewswitch__opt--on' : 'pn-viewswitch__opt'}
+          aria-pressed={id === view}
+          onClick={() => onChange(id)}
+        >
+          {id === 'list' ? 'List' : 'Graph'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * "two axes: vertical = where it lives · horizontal = what it connects to."
  * Parent/children come from the hierarchy; LINKED rows are one per connected
  * entity, each showing the edge types it holds with this one.
  */
+/**
+ * THE GRAPH IS A VIEW OF CONNECTIONS, NOT A FEATURE OF SESSIONS.
+ *
+ * The ego-network canvas shipped as a fourth chip on `work_session`, so "what
+ * is this connected to, drawn" became something only a session could answer —
+ * "everything is centered around the session", in code. Nothing in that canvas
+ * is session-shaped: it walks `entities.connections` outward from any focus id,
+ * and this tab renders the very same edges as a list. They are two readings of
+ * one fact, so they belong behind one switch. The list is the PRECISE reading
+ * (every peer, every relation type, named); the graph is the SHAPE (what
+ * clusters, what sits two hops out, what is a hub).
+ *
+ * Making it a VIEW rather than a per-kind chip is what makes a task-wise graph
+ * cost nothing: `graphSurfaceFor` is already passed to this panel by all five
+ * hosts, so every kind gains it in one place instead of fifteen.
+ *
+ * LIST STAYS THE DEFAULT: it answers a specific question, it needs no seam, and
+ * it cannot fail — the graph reads the network, and a host without a seam has
+ * no network to read. A host that passes no surface draws no switch, rather
+ * than a control that would do nothing.
+ */
 export function ConnectionsTab({
   detail,
   connections,
   onOpenEntity,
+  graph,
 }: {
   detail: EntityDetail;
   connections?: Connections;
   onOpenEntity?: (id: string) => void;
+  /** The ego-network canvas for THIS entity. Absent ⇒ no switch is drawn. */
+  graph?: ReactNode;
 }) {
+  const [view, setView] = useState<'list' | 'graph'>('list');
   const groups: EdgeGroup[] = [
     ...(connections?.outgoing ?? detail.connections.outgoing),
     ...(connections?.incoming ?? detail.connections.incoming),
@@ -474,8 +523,23 @@ export function ConnectionsTab({
   const children = detail.hierarchy.children.items;
   const empty = !parent && children.length === 0 && peers.length === 0;
 
+  if (graph !== undefined && view === 'graph') {
+    return (
+      <div
+        className="pn-body pn-body--graph"
+        id="tabpanel-connections"
+        role="tabpanel"
+        aria-labelledby="tab-connections"
+      >
+        <ConnectionsViewSwitch view={view} onChange={setView} />
+        <div className="pn-connections-graph">{graph}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="pn-body" id="tabpanel-connections" role="tabpanel" aria-labelledby="tab-connections">
+      {graph === undefined ? null : <ConnectionsViewSwitch view={view} onChange={setView} />}
       {empty ? (
         <EmptyBody
           glyph="⊕"

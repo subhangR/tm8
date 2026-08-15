@@ -1074,6 +1074,14 @@ export function EntityView(props: EntityViewProps) {
                 detail={detail}
                 connections={data.connectionsOf(detail.id)}
                 onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
+                /* The same canvas the panel's own Connections tab offers. A
+                   surface present in one column and missing from the other
+                   would read as a defect in the entity rather than a choice
+                   about this column — and the column is wide enough to be a
+                   real second reading of the same edges. */
+                graph={graphSurfaceFor(data.seam, detail.id, data.livenessOf, (id) =>
+                  setAux({ sort: 'entity', id: id as EntityId }),
+                )}
               />
             ) : (
               <EmptyBody sentence="The entity this panel belongs to is no longer open." />
