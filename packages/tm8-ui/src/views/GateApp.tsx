@@ -1904,7 +1904,7 @@ export function GateApp(props: GateAppProps = {}) {
                   sessions={homeSessionRows}
                   tasks={homeTaskRows}
                   onRunTask={(id) => launch.open(id as EntityId)}
-                  renderTaskRow={regions.renderTaskRow}
+                  renderTabList={regions.renderTabList}
                   tab={regions.tab}
                   onTab={regions.onTab}
                   selectedEntityId={regions.selectedEntityId}

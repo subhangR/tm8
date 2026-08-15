@@ -257,6 +257,12 @@
 .cv2-root .hp-chat--full .tch-root {
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
 }
+/* A hosted workspace list (Tasks/Sessions tabs) needs the rail's width the
+   workspace gives it, not the chat column's — the tree, lifecycle tabs and
+   in-panel search were cut for ~320px. */
+.cv2-root .hp-chat--full .tch-root[data-hosted-list] {
+  grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+}
 .cv2-root .hp-chat--full .tch-sidebar { display: flex; }
 
 .cv2-root .hp-counts {

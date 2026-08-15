@@ -101,16 +101,16 @@ export interface ChatHomeScreenProps {
   onNewTask?: (() => void) | undefined;
   newTaskUnavailable?: { cause: string; remedy: string } | null;
   /** D11: Run on a task row → the host opens its launch sheet on that task.
-   *  Serves the FALLBACK row only — a host that passes `renderTaskRow` wires
-   *  Run inside its own tile. */
+   *  Serves the FALLBACK rows only — a hosted tab list wires Run itself. */
   onRunTask?: ((id: string) => void) | undefined;
   /**
-   * The host's own task-row renderer — the workspace tile with its status
-   * controls (user ruling 2026-08-16). This screen keeps ordering and the
-   * D4 search over the row DATA and calls this per visible row; a `null`
-   * return (row data the host cannot resolve) falls back to the plain row.
+   * The host's own CONTENT for a tab — the workspace's `EntityListPanel`
+   * with its full tree, tiles, lifecycle tabs and in-panel search (user
+   * ruling 2026-08-16: exact same components). Non-null replaces this
+   * screen's list AND its search box for that tab (the panel brings its
+   * own); null keeps the built-in rows — the standalone/mobile mounts.
    */
-  renderTaskRow?: ((task: ChatTaskRow, ctx: { active: boolean }) => ReactNode) | undefined;
+  renderTabList?: ((tab: HomeTab) => ReactNode) | undefined;
   /**
    * Region B when it is NOT the chat (D7/D8): the host's entity panel,
    * rendered in the conversation pane's place while the conversation stays
@@ -158,7 +158,7 @@ export function ChatHomeScreen({
   onNewTask,
   newTaskUnavailable,
   onRunTask,
-  renderTaskRow,
+  renderTabList,
   centerOverride,
   slots,
   onOpenWorkspace,
@@ -531,6 +531,9 @@ export function ChatHomeScreen({
    *  OCCUPIES region B; an entity selection extinguishes them rather than
    *  fabricating an active row on a tab the selection is not from. */
   const chatOccupiesCenter = centerOverride === undefined || centerOverride === null;
+  /** The host's whole-tab takeover: the workspace list panel, with its own
+   *  search — so this screen's find box stands down for that tab. */
+  const hostedList = renderTabList?.(tab) ?? null;
 
   const send = useCallback(async () => {
     const body = draft.trim();
@@ -678,7 +681,13 @@ export function ChatHomeScreen({
   }, [port, selectedRootId]);
 
   return (
-    <main className="tch-root" data-testid="chat-home-screen">
+    <main
+      className="tch-root"
+      data-testid="chat-home-screen"
+      /* A hosted workspace list needs the rail's width, not the chat
+         column's — the layout grid reads this to widen column A. */
+      data-hosted-list={hostedList != null || undefined}
+    >
       {/*
         THE NAVIGATION AXIS (task 01a006f8, 2026-08-16, superseding R4's
         merged list). This panel is the full inventory AND the only selector,
@@ -776,15 +785,24 @@ export function ChatHomeScreen({
             </button>
           ))}
         </div>
-        <input
-          type="search"
-          className="tch-find"
-          placeholder={FIND_COPY[tab].placeholder}
-          aria-label={`${FIND_COPY[tab].label} — filters what is already loaded`}
-          title={`Filters the ${FIND_COPY[tab].noun} already loaded here; this is not a server search`}
-          value={findQuery}
-          onChange={(event) => setFindQuery(event.target.value)}
-        />
+        {hostedList == null ? (
+          <input
+            type="search"
+            className="tch-find"
+            placeholder={FIND_COPY[tab].placeholder}
+            aria-label={`${FIND_COPY[tab].label} — filters what is already loaded`}
+            title={`Filters the ${FIND_COPY[tab].noun} already loaded here; this is not a server search`}
+            value={findQuery}
+            onChange={(event) => setFindQuery(event.target.value)}
+          />
+        ) : null}
+        {hostedList != null ? (
+          /* The workspace's own EntityListPanel, given the tab's space —
+             tree, tiles, lifecycle tiers, sort and search are all its own. */
+          <div className="tch-panel-host" data-testid="tch-hosted-list">
+            {hostedList}
+          </div>
+        ) : (
         <div className="tch-thread-list">
           {tab === 'chats' && loading ? (
             <p className="tch-hollow">Reading conversations…</p>
@@ -905,21 +923,7 @@ export function ChatHomeScreen({
             : null}
 
           {tab === 'tasks'
-            ? taskRows.map((task) => {
-                /* THE WORKSPACE TILE, when the host renders one (status
-                   controls, avatars, hover Run). This screen keeps only the
-                   ordering and the search that chose the row. */
-                const hosted = renderTaskRow?.(task, {
-                  active: task.id === selectedEntityId,
-                });
-                if (hosted != null) {
-                  return (
-                    <div key={task.id} className="tch-tile-host">
-                      {hosted}
-                    </div>
-                  );
-                }
-                return (
+            ? taskRows.map((task) => (
                 /* A row and its Run are SIBLINGS — a button cannot nest a
                    button, and Run must not be the row's whole surface. The
                    badge sub-row (PR chips, entity counts) is a sibling too,
@@ -985,10 +989,10 @@ export function ChatHomeScreen({
                   <span className="tch-thread__badges">{task.badges}</span>
                 ) : null}
                 </div>
-                );
-              })
+              ))
             : null}
         </div>
+        )}
         <footer className="tch-sidebar__foot">
           {slots ? (
             <div

@@ -223,28 +223,24 @@ describe('Home three-tab column', () => {
     expect(onSelectEntity).toHaveBeenCalledWith('task-1');
   });
 
-  it('a host renderTaskRow REPLACES the plain row; null falls back to it', () => {
+  it('a host renderTabList REPLACES the tab list AND the find box; null keeps both', () => {
+    // Uncontrolled tab so the strip itself can browse between the two states.
     const view = renderHome({
-      tab: 'tasks',
-      renderTaskRow: (task, ctx) =>
-        task.id === 'task-1' ? (
-          <div data-testid="hosted-tile" data-active-flag={String(ctx.active)}>
-            {task.title}
-          </div>
-        ) : null,
-      selectedEntityId: 'task-1',
-      centerOverride: <div />,
+      renderTabList: (tab) => (tab === 'tasks' ? <div data-testid="hosted-panel" /> : null),
     });
-    // task-1: the hosted tile, with the honest active flag — and no plain row.
-    const tile = within(view.container).getByTestId('hosted-tile');
-    expect(tile.getAttribute('data-active-flag')).toBe('true');
+    fireEvent.click(within(view.container).getByRole('tab', { name: 'Tasks' }));
+    // Tasks: the workspace panel takes the whole tab — the built-in rows and
+    // this screen's find box stand down (the panel brings its own search).
+    expect(within(view.container).getByTestId('tch-hosted-list')).toBeTruthy();
+    expect(within(view.container).getByTestId('hosted-panel')).toBeTruthy();
     expect(
       within(view.container).queryByRole('button', { name: /^Ship the tab column/ }),
     ).toBeNull();
-    // task-2 returned null: the plain row (with its Run refusal) still draws.
-    expect(
-      within(view.container).getByRole('button', { name: /^Retire the merged list/ }),
-    ).toBeTruthy();
+    expect(within(view.container).queryByRole('searchbox')).toBeNull();
+    // Chats returned null: the built-in column and find box come back.
+    fireEvent.click(within(view.container).getByRole('tab', { name: 'Chats' }));
+    expect(within(view.container).queryByTestId('tch-hosted-list')).toBeNull();
+    expect(within(view.container).getByRole('searchbox')).toBeTruthy();
   });
 
   it('an unwired tab says so — absent is not an empty list', () => {

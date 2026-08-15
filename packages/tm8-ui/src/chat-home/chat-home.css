@@ -698,30 +698,39 @@ button.tch-entity-chip:hover {
 }
 .tch-thread--task[aria-disabled='true'] { cursor: not-allowed; opacity: 0.7; }
 
-/* THE WORKSPACE TILE'S HOME COAT (user ruling 2026-08-16): the Tasks tab
-   mounts the real `MaestroTaskTile` — status glyph + changeable state strip,
-   avatars, hover actions — and this scope only re-cuts it for a narrow
-   column: compact paddings, the chat rows' type scale, and no reserved
-   gutter for a tree it does not draw. Anatomy and behaviour stay the
-   component's own. */
-.tch-tile-host { min-width: 0; }
-.cv2-root .tch-thread-list .pn-tt {
+/* THE WORKSPACE LIST'S HOME COAT (user ruling 2026-08-16): Tasks and
+   Sessions tabs mount the real `EntityListPanel` — the exact tree, tiles,
+   lifecycle tabs and in-panel search the workspace draws. The host fills
+   the tab's space; this scope only re-cuts the tiles for a narrow column
+   (compact paddings, the chat rows' type scale). Anatomy and behaviour
+   stay the components' own. */
+.tch-panel-host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.tch-panel-host > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.cv2-root .tch-panel-host .pn-tt {
   margin: 0 0 3px;
   border-radius: var(--pn-r-sm);
 }
-.cv2-root .tch-thread-list .pn-tt__main {
+.cv2-root .tch-panel-host .pn-tt__main {
   padding: 7px 6px;
   gap: 5px;
 }
-.cv2-root .tch-thread-list .pn-tt__title {
+.cv2-root .tch-panel-host .pn-tt__title {
   font-size: 12px;
   font-weight: 600;
 }
-/* Flat list: the empty tree-arrow gutter is dead space at this width. */
-.cv2-root .tch-thread-list .pn-tt__arrow--empty { display: none; }
-.cv2-root .tch-thread-list .pn-tt__status-text { font-size: 9.5px; }
-.cv2-root .tch-thread-list .pn-tt__badges { padding: 0 8px 6px; }
-.cv2-root .tch-thread-list .pn-tt__meta { padding: 6px 8px 8px; }
+.cv2-root .tch-panel-host .pn-tt__status-text { font-size: 9.5px; }
+.cv2-root .tch-panel-host .pn-tt__badges { padding: 0 8px 6px; }
+.cv2-root .tch-panel-host .pn-tt__meta { padding: 6px 8px 8px; }
 
 /* REGION B when a task/session is selected (D7): the host's panel takes the
    conversation's grid cell; the conversation itself stays MOUNTED but
