@@ -123,7 +123,7 @@ describe('LiveToolGraph strip', () => {
     cleanup();
   });
 
-  it('collapsed by default with honest counts; expanding draws the star', () => {
+  it('draws the star by default with honest counts; the toggle puts it away', () => {
     render(
       <LiveToolGraph
         items={[
@@ -136,15 +136,16 @@ describe('LiveToolGraph strip', () => {
       />,
     );
     const toggle = screen.getByRole('button', { name: /live graph/i });
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(toggle.textContent).toContain('2 entities');
     expect(toggle.textContent).toContain('3 touches');
-
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByRole('img', { name: /this session touched 2 entities/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /task: fix login — updated ×2/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /doc: runbook — created/i })).toBeTruthy();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('img', { name: /this session touched 2 entities/i })).toBeNull();
     cleanup();
   });
 
@@ -158,7 +159,6 @@ describe('LiveToolGraph strip', () => {
         onOpenEntity={(id) => opened.push(id)}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: /live graph/i }));
     fireEvent.click(screen.getByRole('button', { name: /task: fix login/i }));
     expect(opened).toEqual(['task-1']);
     cleanup();

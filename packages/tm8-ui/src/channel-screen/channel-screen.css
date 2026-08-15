@@ -1395,7 +1395,13 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 /* --- live tool graph — the collapsible strip above a session feed ---------- */
 
+/* Sticky: the strip is the first child of a scrolling transcript, so without
+   this it scrolls off the top and a live graph becomes invisible the moment
+   the conversation is longer than the viewport. */
 .chs-livegraph {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   border-bottom: 1px solid var(--pn-line);
   background: var(--pn-card);
 }
