@@ -66,6 +66,45 @@ function busyRing(n: number) {
   );
 }
 
+/**
+ * One branch carrying twenty-six cells and one carrying three, with every node
+ * kept UNDER `HUB_DEGREE` and every relation kept at or under `FOLD_AT` so that
+ * neither the hub stop nor the fold quietly rescues the layout — both of which
+ * hide this defect if you let them, which is how the first version of the skew
+ * test came out green while the bug was live.
+ *
+ * The heavy branch takes 26/29 of the circle, so `light-a` and `light-b` end up
+ * ~0.216 rad apart on a ring that holds only seven cells in total.
+ */
+function squeezedTree(): Map<string, EdgeView[]> {
+  const heavy = entity('heavy', 'task');
+  const light = entity('light', 'task');
+  const mids = Array.from({ length: 5 }, (_, i) => entity(`mid-${i}`, 'task'));
+  const lightA = entity('light-a', 'doc');
+  const lightB = entity('light-b', 'doc');
+
+  const edgesByNode = new Map<string, EdgeView[]>([
+    [FOCUS, [edge(focusEntity, 'rel_h', heavy), edge(focusEntity, 'rel_l', light)]],
+    ['heavy', [
+      edge(focusEntity, 'rel_h', heavy),
+      ...mids.map((m, i) => edge(heavy, `rel_m${i}`, m)),
+    ]],
+    ['light', [
+      edge(focusEntity, 'rel_l', light),
+      edge(light, 'rel_a', lightA),
+      edge(light, 'rel_b', lightB),
+    ]],
+  ]);
+  for (const [i, m] of mids.entries()) {
+    const kids = Array.from({ length: 4 }, (_, k) => entity(`deep-${i}-${k}`, 'doc'));
+    edgesByNode.set(m.id, [
+      edge(heavy, `rel_m${i}`, m),
+      ...kids.map((k, j) => edge(m, `deep_rel_${j}`, k)),
+    ]);
+  }
+  return edgesByNode;
+}
+
 /** Every unordered pair of placed cells that overlap as NODE_W x NODE_H boxes. */
 function overlaps(placement: ReturnType<typeof layoutSessionGraph>): string[] {
   const hits: string[] = [];
@@ -131,6 +170,47 @@ describe('ring radii are derived from occupancy', () => {
       );
       expect(overlaps(placement)).toEqual([]);
     }
+  });
+
+  /**
+   * PEER REVIEW, GPT 5.6, 2026-08-15 — the case above is not the hard one, and
+   * a green test on it was evidence of nothing.
+   *
+   * A sector is INHERITED: a child is placed inside its parent's sector, so a
+   * branch that was squeezed at hop 1 stays squeezed at every hop below it,
+   * however few cells that ring holds in total. Here hop 2 holds three cells —
+   * an occupancy radius reads that as "almost empty" — but two of them are
+   * sharing the 2/22 of the circle their parent was given, and they land on top
+   * of each other. The twenty hop-3 leaves fail the other way: their angular
+   * gap is wide enough, but the cards are AXIS-ALIGNED, so near the top of the
+   * circle a generous arc still leaves almost no separation in x.
+   *
+   * Both say the same thing: circumference ÷ count is not a collision test.
+   */
+  it('never overlaps in a sector inherited from a squeezed parent', () => {
+    const placement = layoutSessionGraph(buildSessionGraph({
+      focusId: FOCUS,
+      focus: focusEntity,
+      edgesByNode: squeezedTree(),
+      hops: 3,
+    }));
+    expect(overlaps(placement)).toEqual([]);
+  });
+
+  it('sizes that ring by its tightest pair, not by how many it holds', () => {
+    // The mechanism, not just the symptom. Hop 2 holds SEVEN cells, which by
+    // circumference ÷ count needs about 270 and so would have been handed the
+    // 484 floor — the number that produced the overlap above. A ring sized by
+    // its narrowest gap must come out far beyond that; if this ever drops back
+    // to the floor, the averaging has returned and the test above will only
+    // catch it if someone happens to re-run this exact topology.
+    const { radii } = layoutSessionGraph(buildSessionGraph({
+      focusId: FOCUS,
+      focus: focusEntity,
+      edgesByNode: squeezedTree(),
+      hops: 3,
+    }));
+    expect(radii[1]!).toBeGreaterThan(radii[0]! * 3);
   });
 
   it('never draws a ring inside the one before it', () => {

@@ -47,28 +47,92 @@ const R_STEP_MIN = NODE_W + RING_GAP;
 const PAD = 32;
 
 /**
- * RADII ARE DERIVED FROM OCCUPANCY, NOT CONSTANT.
+ * Separation two cards on the same ring must achieve between their CENTRES.
  *
- * A ring has to seat its cells side by side, so the radius a hop needs is
- * whatever makes its circumference hold them: r ≥ n·(NODE_W + gap) / 2π. Fixed
- * radii were survivable while cells were 148 wide and hops held four or five
- * things; at 216 wide, a hop holding a dozen peers overlaps them into an
- * unreadable stack — which is the same defect as the too-small card, arriving
- * from the other direction. Deriving the radius means a busy hop pushes its
- * ring out instead of piling up, and a quiet one stays compact.
- *
- * Monotonic by construction: a ring is never drawn inside the one before it.
+ * A card is an axis-aligned rectangle, so the honest test is `|Δx| ≥ W` or
+ * `|Δy| ≥ H` — never the arc length between them. Two cells near the top of the
+ * circle can be a generous arc apart and still sit almost directly above one
+ * another in x. Requiring the chord to clear `√2·(W + gap)` makes the weaker of
+ * the two axes carry at least `W + gap` on its own, whatever the chord's
+ * direction: one of |sin|, |cos| is always ≥ √2/2.
  */
-function radiiFor(countByHop: ReadonlyMap<number, number>, maxHop: number): number[] {
-  const out: number[] = [];
-  let previous = 0;
-  for (let hop = 1; hop <= maxHop; hop += 1) {
-    const needed = ((countByHop.get(hop) ?? 0) * (NODE_W + RING_GAP)) / (2 * Math.PI);
-    const floor = hop === 1 ? R1_MIN : previous + R_STEP_MIN;
-    previous = Math.max(floor, needed);
-    out.push(previous);
+const CHORD_CLEARANCE = Math.SQRT2 * (NODE_W + RING_GAP);
+
+/**
+ * PEER REVIEW, GPT 5.6, 2026-08-15 — `circumference ÷ count` is not a collision
+ * test, and the first version of this file shipped it as one.
+ *
+ * A cell inherits its parent's sector, so a branch squeezed at hop 1 is still
+ * squeezed at hop 2 no matter how empty that ring is overall. Reproduced: one
+ * heavy branch of 26 and one light branch of 3 put `light-a` and `light-b`
+ * 0.216 rad apart on a ring whose whole occupancy said 484 was plenty — and
+ * they landed on top of each other. Averaging over a ring cannot see that,
+ * because the crowding is inside ONE sector.
+ *
+ * So the ring is first given a floor on the angular gap it actually assigned,
+ * and only then is a radius derived from that gap. Nothing here averages.
+ */
+const EPSILON = 1e-9;
+
+/**
+ * How far past the evenly-spaced radius a ring may push before it gives its
+ * sectors up. Sectors are worth paying for — they put a branch's children near
+ * their parent — but not without limit: a sector narrow enough would demand a
+ * radius that fits the ring on screen only by shrinking every card back to the
+ * unreadable size this whole change exists to end. Beyond this multiple, the
+ * ring spreads evenly instead and the LINKS carry the parentage, which is what
+ * they were always doing anyway.
+ */
+const SPREAD_MAX = 2.5;
+
+/** Smallest gap between any two angles on a ring, measured around the circle. */
+function minGap(angles: readonly number[]): number {
+  if (angles.length < 2) return Math.PI * 2;
+  const sorted = [...angles].sort((a, b) => a - b);
+  let smallest = sorted[0]! + Math.PI * 2 - sorted[sorted.length - 1]!;
+  for (let i = 1; i < sorted.length; i += 1) {
+    smallest = Math.min(smallest, sorted[i]! - sorted[i - 1]!);
   }
+  return smallest;
+}
+
+/**
+ * The radius a ring needs, given the gap it actually has.
+ *
+ * `chord = 2r·sin(δ/2)`, and the chord must clear `CHORD_CLEARANCE`, so
+ * `r ≥ CHORD_CLEARANCE / (2·sin(δ/2))`. Note what is NOT here: any count. The
+ * ring is sized by its tightest pair, which is the only pair that can collide.
+ */
+function radiusFor(gap: number, floor: number): number {
+  const half = Math.sin(Math.max(gap, EPSILON) / 2);
+  return Math.max(floor, CHORD_CLEARANCE / (2 * half));
+}
+
+/** The same angles, spread evenly around the circle in their existing order. */
+function evenly(angles: readonly number[]): number[] {
+  const n = angles.length;
+  const step = (Math.PI * 2) / n;
+  const order = angles
+    .map((angle, index) => ({ angle, index }))
+    .sort((a, b) => a.angle - b.angle);
+  const out = new Array<number>(n);
+  for (let i = 0; i < n; i += 1) out[order[i]!.index] = order[0]!.angle + i * step;
   return out;
+}
+
+/**
+ * One ring's final angles and radius.
+ *
+ * Sectors first, evenness only if sectors cost too much — see `SPREAD_MAX`. The
+ * even arrangement is always seatable, because `2π/n` is the largest minimum
+ * gap any `n` angles can have, so this can never fail to return a placement.
+ */
+function seatRing(angles: readonly number[], floor: number): { angles: number[]; radius: number } {
+  const kept = radiusFor(minGap(angles), floor);
+  const even = evenly(angles);
+  const spread = radiusFor(minGap(even), floor);
+  if (kept <= spread * SPREAD_MAX) return { angles: [...angles], radius: kept };
+  return { angles: even, radius: spread };
 }
 
 export interface PlacedCell {
@@ -130,11 +194,54 @@ export function layoutSessionGraph(graph: SessionGraph): Placement {
   weigh(graph.focusId);
 
   const maxHop = graph.cells.reduce((max, cell) => Math.max(max, cell.hop), 0);
-  const countByHop = new Map<number, number>();
+
+  /* PASS ONE — ANGLES ONLY. The radii now depend on the angles a ring ends up
+     with, so nothing can be placed until every angle is known. Sweeping and
+     placing in one recursion is what forced the old code to size a ring from
+     its count, which is the average that let a squeezed sector through. */
+  const angleOf = new Map<string, number>();
+  const sweep = (id: string, from: number, to: number): void => {
+    if (!byId.has(id)) return;
+    angleOf.set(id, (from + to) / 2);
+    const kids = children.get(id) ?? [];
+    if (kids.length === 0) return;
+    const total = kids.reduce((sum, kid) => sum + weigh(kid), 0) || 1;
+    let cursor = from;
+    for (const kid of kids) {
+      const span = ((to - from) * weigh(kid)) / total;
+      sweep(kid, cursor, cursor + span);
+      cursor += span;
+    }
+  };
+  // Start at the top and sweep clockwise; the focus owns the whole circle.
+  const START = -Math.PI / 2;
+  sweep(graph.focusId, START, START + Math.PI * 2);
+
+  /* PASS TWO — SEAT EACH RING, outward, so a ring's floor is the ring before
+     it. The floors are what keep the rings ordered and keep a lone child from
+     landing on its own parent when both sit at the same angle. */
+  const ringOf = new Map<number, string[]>();
   for (const cell of graph.cells) {
-    countByHop.set(cell.hop, (countByHop.get(cell.hop) ?? 0) + 1);
+    if (cell.hop === 0) continue;
+    const list = ringOf.get(cell.hop);
+    if (list) list.push(cell.id);
+    else ringOf.set(cell.hop, [cell.id]);
   }
-  const radii = radiiFor(countByHop, maxHop);
+  const radii: number[] = [];
+  let previous = 0;
+  for (let hop = 1; hop <= maxHop; hop += 1) {
+    const ids = ringOf.get(hop) ?? [];
+    const floor = hop === 1 ? R1_MIN : previous + R_STEP_MIN;
+    if (ids.length === 0) {
+      previous = floor;
+      radii.push(floor);
+      continue;
+    }
+    const seated = seatRing(ids.map((id) => angleOf.get(id) ?? 0), floor);
+    ids.forEach((id, index) => angleOf.set(id, seated.angles[index]!));
+    previous = seated.radius;
+    radii.push(seated.radius);
+  }
   const radiusAt = (hop: number): number => (hop === 0 ? 0 : radii[hop - 1] ?? 0);
   const radius = maxHop === 0 ? 0 : radiusAt(maxHop);
   const half = radius + NODE_W / 2 + PAD;
@@ -142,35 +249,19 @@ export function layoutSessionGraph(graph: SessionGraph): Placement {
   const height = half * 2;
   const centre = { x: half, y: half };
 
+  /* PASS THREE — PLACE. */
   const placed: PlacedCell[] = [];
-  const angleOf = new Map<string, number>();
-
-  const place = (id: string, from: number, to: number): void => {
-    const cell = byId.get(id);
-    if (!cell) return;
-    const mid = (from + to) / 2;
-    angleOf.set(id, mid);
+  for (const cell of graph.cells) {
+    const angle = angleOf.get(cell.id);
+    if (angle === undefined) continue;
     const r = radiusAt(cell.hop);
     placed.push({
       cell,
-      x: centre.x + Math.cos(mid) * r,
-      y: centre.y + Math.sin(mid) * r,
-      angle: mid,
+      x: centre.x + Math.cos(angle) * r,
+      y: centre.y + Math.sin(angle) * r,
+      angle,
     });
-    const kids = children.get(id) ?? [];
-    if (kids.length === 0) return;
-    const total = kids.reduce((sum, kid) => sum + weigh(kid), 0) || 1;
-    let cursor = from;
-    for (const kid of kids) {
-      const span = ((to - from) * weigh(kid)) / total;
-      place(kid, cursor, cursor + span);
-      cursor += span;
-    }
-  };
-
-  // Start at the top and sweep clockwise; the focus owns the whole circle.
-  const START = -Math.PI / 2;
-  place(graph.focusId, START, START + Math.PI * 2);
+  }
 
   const positions = new Map(placed.map((p) => [p.cell.id, p]));
   const links: PlacedLink[] = [];
