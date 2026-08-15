@@ -414,15 +414,24 @@ describe('an over-cap link says what it dropped', () => {
 });
 
 describe('the space the link names outranks the space you last had open', () => {
-  it('says so out loud when the node does not list that Space', async () => {
-    /* Not an error to swallow: showing a different Space's content under that
-       address is the failure this lane removes. The fixture node serves exactly
-       one space, so an unknown one is easy to name. */
+  it('refuses rather than opening a Space the link did not name', async () => {
+    /* THIS CASE USED TO ASSERT THE OPPOSITE, and the reversal is the fix.
+       It read: "it lands them somewhere real rather than on a blank refusal",
+       and pinned `workspace-grid` — a DIFFERENT Space's workspace, drawn under
+       this Space's address, with a five-second toast as the only clue. That is
+       the failure the refusal surfaces were built to remove, pinned as a
+       feature because the toast made it feel handled.
+
+       "Somewhere real" was the wrong goal. The refusal is not blank: it says
+       what happened and offers an available Space on an explicit click. What
+       it does not do is choose one for you.
+
+       The full behaviour is pinned in `link-refusal-wiring.test.tsx`; this
+       case stays here because THIS file is where the old promise was made. */
     const target = createMemoryTarget('#/s/sp-not-yours/workspace');
     const view = mount(target);
-    await waitFor(() => view.getByText(/another Space/i));
-    /* And it lands them somewhere real rather than on a blank refusal. */
-    await waitFor(() => view.getByTestId('workspace-grid'));
+    await waitFor(() => view.getByTestId('space-access-refusal'));
+    expect(view.queryByTestId('workspace-grid')).toBeNull();
     view.unmount();
   });
 });

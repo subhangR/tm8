@@ -26,8 +26,10 @@ import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
 import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
 import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../stores/navStore';
-import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../routes';
+import { UNADDRESSED_HASH, createBrowserTarget, defaultRoute, parse, type RouterTarget } from '../routes';
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
+import { EntityUnavailableRefusal, SpaceAccessRefusal } from './link-refusal';
+import { useLinkedEntity } from './useLinkedEntity';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { CopyLinkControl } from '../share';
 import { useShellKind } from '../mobile';
@@ -251,7 +253,37 @@ export function GateApp(props: GateAppProps = {}) {
   // would silently disable persistence altogether — the storage key would never
   // match the one the next session reads.
   const activeServer = props.activeServer ?? LOCAL_SERVER;
+  /**
+   * THE SPACE THE ADDRESS BAR ITSELF NAMED, latched when the router reads it.
+   *
+   * RULING R4 TURNS ENTIRELY ON THIS ONE FACT, so it is worth saying why it is
+   * a raw-hash parse and not `navStore.getState().spaceId`.
+   *
+   * Two viewers can be looking at the same refused Space for opposite reasons:
+   *   · Someone handed a URL. They may be probing, and they do not yet know
+   *     whether the Space exists. Telling them "you are not a member of this
+   *     Space" CONFIRMS THAT IT EXISTS — the exact disclosure the ruling
+   *     prevents. They must get one refusal that covers both wrong-node and
+   *     non-member, and no way to tell which occurred.
+   *   · Someone whose ordinary boot restored a Space they were removed from.
+   *     They ALREADY KNEW it existed; they were in it. Withholding the reason
+   *     from them is not privacy, it is unhelpfulness — which is why the boot
+   *     card below (`bootErrorCode === 'forbidden'`) still passes the node's own
+   *     words through, and must keep doing so.
+   *
+   * Same refusal, two audiences, and the distinguishing fact is whether the
+   * viewer arrived BY ADDRESS or BY MEMORY. The nav store cannot answer that: a
+   * hash carrying no Space is redirected through `lastActiveSpaceId` BEFORE it
+   * is parsed, so `#/k/tasks` reaches the store looking exactly like a link
+   * someone sent. The raw hash is the only place the two are still distinct.
+   *
+   * NEXT PERSON TO SEE TWO SIMILAR CARDS: they are not duplicates, and merging
+   * them collapses the two audiences into whichever one you kept.
+   */
+  const addressedSpace = useRef<SpaceId | null>(null);
+  const readAddressedSpace = useCallback(() => addressedSpace.current, []);
   const data = useGateData({
+    addressedSpaceId: readAddressedSpace,
     leftKind: DEFAULT_LEFT_KIND,
     rightKind: DEFAULT_RIGHT_KIND,
     serverBaseUrl: activeServer.routeBaseUrl,
@@ -364,6 +396,55 @@ export function GateApp(props: GateAppProps = {}) {
   );
 
   /**
+   * DOES THE ENTITY THIS ADDRESS NAMES STILL EXIST? — the second refusal.
+   *
+   * The Space opened, so nothing upstream failed, and every screen in the chain
+   * below will draw itself perfectly well around an entity that is not there:
+   * `e/{id}?origin=tasks` lands on Tasks with an empty panel, and the bare form
+   * lands on the not-built-yet card. Both are true sentences about the SCREEN
+   * and neither is an answer about the LINK, which is what the recipient of a
+   * dead link is actually asking.
+   *
+   * Only the `entity` route asks the question. `channel` and `voice` also name
+   * an entity, but they address a ROOM whose screen has its own empty and
+   * error states; putting a link tombstone over those would be this lane
+   * reaching into somebody else's surface.
+   */
+  const linkedEntity = useLinkedEntity({
+    seam: data.seam,
+    spaceId: data.spaceId,
+    ready: data.ready,
+    entityId: navView.view === 'entity' ? navView.entityId : null,
+  });
+
+  /**
+   * THE WAY OUT OF A DEAD ENTITY LINK — and `replace` is the whole hazard.
+   *
+   * A PUSH would leave the broken address one back-press away, and pressing
+   * Back is precisely what someone does after landing on a tombstone: straight
+   * back onto the tombstone, in a two-item loop with no exit. Replacing spends
+   * the entry the dead link occupied, so the address stops existing in this
+   * browser's history rather than merely stopping being current.
+   *
+   * `defaultRoute` supplies the destination. The Space is already open, so its
+   * own default view is the honest landing — and asking the codec for it is
+   * what keeps this from being a hand-assembled route.
+   */
+  const recoverFromDeadEntity = useCallback(() => {
+    if (!data.spaceId) return;
+    /* THE SEED HAS TO GO WITH THE ADDRESS, or the recovery only half-works.
+       An `e/{id}?origin=` link seeds the dead id onto its origin screen's
+       stack, and the address↔stack sync runs BOTH ways: leave it there and the
+       viewer's next visit to that screen re-derives `e/{dead}` from the stack
+       and lands them back on this card, having pressed nothing that asked for
+       it. Clearing the stacks is the same act `leaveSpaceContext` performs for
+       the same reason — stale screen state must not resurrect a destination. */
+    screenStackStore.getState().clearAll();
+    const view = defaultRoute(data.spaceId).target;
+    navStore.setState((s) => ({ view, history: 'replace', revision: s.revision + 1 }));
+  }, [data.spaceId]);
+
+  /**
    * EVERY user navigation goes through here, so there is no second write path
    * that can forget to remember the place.
    *
@@ -446,6 +527,13 @@ export function GateApp(props: GateAppProps = {}) {
   useLayoutEffect(() => {
     const target = routerTarget ?? createBrowserTarget();
     routerRef.current = target;
+    /* R4's distinguishing fact, read at the ONE moment it is still legible —
+       before `attachRouter` runs the hash through `redirect`, which will fill a
+       missing Space in from `lastActiveSpaceId` and make a memory arrival
+       indistinguishable from an addressed one. See `addressedSpace`.
+       `parse` rather than a hand-read of the string: the grammar has one owner
+       and this is not it. */
+    addressedSpace.current = parse(target.getHash()).route?.spaceId ?? null;
     /* Latched from `onSpacePicker`, which `attachRouter` fires synchronously
        during its own initial read when the hash carries no addressable space.
        So this is settled by the time `attachRouter` returns. */
@@ -676,9 +764,23 @@ export function GateApp(props: GateAppProps = {}) {
    * address wins — that is what "share a link" means.
    *
    * A link naming a Space the node does not list for this viewer is NOT an
-   * error to swallow. It is said out loud and the boot demoted to `none`, which
-   * re-runs the restore below and lands them where they were. Silently showing
-   * them a different Space under that address is the failure this lane removes.
+   * error to swallow AND NOT A NOTICE EITHER — that was the shape this effect
+   * shipped with, and it was still the bug. It warned, demoted the boot to
+   * `none`, and let last-place restore, which is "a toast, and then you are
+   * quietly in somebody else's Space under this Space's address". A warn toast
+   * that the shell paints over in five seconds is not a refusal.
+   *
+   * SO THE ANSWER MOVED DOWN, NOT SIDEWAYS. `useGateData` now opens the
+   * addressed Space or opens NOTHING, and holds `linkSpaceUnavailable`; the
+   * render chain below draws `SpaceAccessRefusal` from it. This effect keeps
+   * only the job it is uniquely placed to do: reconciling a link's Space
+   * against a shell that has already settled on another one — which is the
+   * post-boot case (back/forward onto another Space's address), since at boot
+   * the hook has already opened exactly what the address named.
+   *
+   * `openLinkedSpace`, NEVER `selectSpace`: the unlisted id is a normal
+   * outcome of a link and a caller bug in a picker, and only one of those may
+   * raise a refusal.
    */
   const spaceSettled = useRef(false);
   useEffect(() => {
@@ -690,20 +792,16 @@ export function GateApp(props: GateAppProps = {}) {
     }
     // Still booting: the space list is the only thing that can answer this.
     if (data.spaces.length === 0) return;
-    spaceSettled.current = true;
-    if (data.spaces.some((space) => space.id === linkSpace)) {
-      data.selectSpace(linkSpace as SpaceId);
+    /* The hook refused this very Space and opened nothing, which is why
+       `data.spaceId` is empty. Its refusal is the answer; re-asking here would
+       only give a second writer the chance to disagree with the first. */
+    if (data.linkSpaceUnavailable) {
+      spaceSettled.current = true;
       return;
     }
-    noticeSink.current({
-      id: 'route:unknown-space',
-      tone: 'warn',
-      title: 'That link points at another Space',
-      body: 'This node does not list that Space for you, so it could not be opened. You are where you left off.',
-      ttlMs: NOTICE_TTL_MS,
-    });
-    setBootRoute('none');
-  }, [bootRoute, data.spaces, data.spaceId, data.selectSpace]);
+    spaceSettled.current = true;
+    data.openLinkedSpace(linkSpace as SpaceId);
+  }, [bootRoute, data.spaces, data.spaceId, data.linkSpaceUnavailable, data.openLinkedSpace]);
 
   // Restore once per space. Deliberately NOT paired with a persisting effect:
   // an effect watching `activeTarget` would run in the same pass as this one,
@@ -748,13 +846,16 @@ export function GateApp(props: GateAppProps = {}) {
        navigation and must not leave a back-button entry. */
     navStore.setState((s) => ({ view, history: 'replace', revision: s.revision + 1 }));
     /* `bootRoute` IS A DEPENDENCY, and leaving it out was a real hole rather
-       than a lint nit. The ordinary path happens to work without it, because
-       this effect re-runs when `data.spaceId` lands and closes over whatever
-       `bootRoute` had become by then. The DEMOTION path does not: when the link
-       names a Space this node does not list, the reconciliation above flips
-       `addressable` → `none` and NOTHING ELSE CHANGES — so without this the
-       effect would never re-run and last-place would never restore, leaving the
-       viewer on a screen the refused link chose. */
+       than a lint nit: `pending` → `addressable`/`none` is settled by a LAYOUT
+       effect that may land after this one has already read `data.spaceId`, and
+       without the dep this would never re-run to see the verdict.
+
+       IT NO LONGER GUARDS A DEMOTION. The reconciliation above used to flip
+       `addressable` → `none` for a link naming an unlisted Space, so that
+       last-place would restore and put the viewer somewhere — which is exactly
+       the substitution `SpaceAccessRefusal` replaces. There is no demotion
+       path now; a refused link stays refused, and `data.spaceId` stays empty
+       so this effect correctly restores nothing. */
   }, [nodeKey, data.spaceId, bootRoute]);
 
   /**
@@ -1318,6 +1419,61 @@ export function GateApp(props: GateAppProps = {}) {
    * Placed after the router mount effect deliberately — a fork above it would
    * give the two shells two mounts, and two mounts are two histories.
    */
+  /*
+   * THE LINK'S SPACE WAS REFUSED, SO THIS IS THE WHOLE SCREEN.
+   *
+   * ABOVE THE SHELL FORK, and that placement is the assertion. Rendered inside
+   * either shell's centre, the refusal would sit under a Space tab bar with
+   * some other Space highlighted — the card would say "nothing else was opened
+   * in its place" while the chrome around it named the thing that was. There is
+   * no open Space here, so there is no shell to draw: `data.spaceId` is empty
+   * precisely because `useGateData` refused to substitute one.
+   *
+   * It is not a dead end. The card's one control is an EXPLICIT act — the
+   * viewer choosing to open a Space they can reach — which is the line between
+   * this and the fallback it replaces.
+   *
+   * ONE CARD FOR BOTH FAILURES, deliberately: see `addressedSpace` for why
+   * `WrongNodeRefusal` and `NotSpaceMemberRefusal` stay unused on this path.
+   */
+  if (data.linkSpaceUnavailable) {
+    return (
+      <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
+        <SpaceAccessRefusal
+          {...(data.spaces.length ? { onOpenAvailableSpace: data.dismissLinkSpaceRefusal } : {})}
+        />
+        <NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />
+      </div>
+    );
+  }
+
+  /*
+   * THE LINKED ENTITY IS GONE — the tombstone, and it is the whole screen for
+   * the same reason the Space refusal is.
+   *
+   * ABOVE THE SHELL FORK because A REFUSAL MUST NOT FORK. Drawn in the desktop
+   * centre it would simply not exist on a phone, and "the link says nothing is
+   * there" would be a desktop-only sentence about a link most often opened on
+   * a phone. One decision, one rendering, both shells — which is the same law
+   * `mobile/no-router-fork.test.ts` enforces for the router itself.
+   *
+   * `'dead'` ONLY. `'checking'` must not flash a tombstone over an entity that
+   * is about to arrive, and `'unreadable'` is a node that could not answer —
+   * neither is evidence, and `useLinkedEntity` keeps them apart so this line
+   * can be a single comparison rather than a judgement.
+   *
+   * STANDALONE, with no origin companion resolved or drawn: the entity is the
+   * only thing the link named and the only thing this may speak about.
+   */
+  if (linkedEntity === 'dead') {
+    return (
+      <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
+        <EntityUnavailableRefusal onOpenSpace={recoverFromDeadEntity} />
+        <NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />
+      </div>
+    );
+  }
+
   if (shell === 'mobile' && data.spaceId) {
     return (
       <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
