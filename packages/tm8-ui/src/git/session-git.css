@@ -363,6 +363,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The worktree mark sits in the branch's own ink rather than a status tone:
+   the ordinary lane should read as quietly as the branch name it qualifies. */
+.cv2-root .pn-lane__worktree-mark {
+  color: var(--pn-ink-2);
+  flex: none;
+}
 
 /* -- transcript-observed file changes (renders with OR without a worktree) -- */
 .pn-git__change-totals { display: inline-flex; gap: var(--pn-space-2); }
