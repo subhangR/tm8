@@ -25,7 +25,13 @@
  *   reports `application/octet-stream` for every source and config file — the
  *   extension is then the only evidence of what the file is. The server uses
  *   it for that and generates the name it writes.
+ * - **`X-TM8-Client` on the request.** This raw upload bypasses the shared
+ *   JSON client, but a same-origin browser still attaches the tm8 session
+ *   cookie. S6 rejects that cookie-authenticated mutation unless this header
+ *   is present.
  */
+import { TM8_CLIENT_HEADER, TM8_CLIENT_HEADER_VALUE } from '@tm8/contract';
+
 import { ptyTransport } from './pty/ptyTransport';
 
 export const CLIPBOARD_UPLOAD_PATH = '/v2/clipboard/images';
@@ -68,6 +74,7 @@ export async function uploadClipboardFile(
 
   const headers: Record<string, string> = {
     'content-type': file.type || 'application/octet-stream',
+    [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
   };
   /* ASCII only, and only when the name survives it: a header value with a
      newline in it is a request-splitting primitive, and the name is a
