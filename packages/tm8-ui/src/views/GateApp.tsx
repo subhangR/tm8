@@ -62,9 +62,10 @@ import { useTheme } from '../theme/useTheme';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
-import { ChatHomeSurface, type ChatSessionRow } from '../chat-home';
+import { ChatHomeSurface, type ChatSessionRow, type ChatTaskRow } from '../chat-home';
 import { homeRowOf } from '../home';
 import { HomeView } from './HomeView';
+import { homeRegionStore } from '../stores/homeRegionStore';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
@@ -108,6 +109,14 @@ const DEFAULT_RIGHT_KIND = 'work_session';
  * for. Named for what it is instead.
  */
 const LIVE_COUNT_KIND = 'work_session';
+/** Home's Tasks tab population (task 01a006f8, Q1 provisional). */
+const HOME_TASK_KIND = 'task';
+/** Open-first ordering: a settled task sinks below every open one. The two
+ *  closed statuses mirror the registry's `TASK_CLOSED_STATUSES`. */
+function isSettledWorkStatus(state: unknown): boolean {
+  const status = (state as { workStatus?: string }).workStatus;
+  return status === 'done' || status === 'cancelled';
+}
 
 /** The three-panel workspace — the handoff destination entity opens use. */
 const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
@@ -940,13 +949,24 @@ export function GateApp(props: GateAppProps = {}) {
       )
       .then((sessionId) => {
         launch.close();
-        navigateTo(WORKSPACE_TARGET);
-        nav.push(sessionId);
+        /* D11 (task 01a006f8): a launch submitted FROM HOME stays in Home —
+           the new session takes region B and the left column flips to
+           Sessions. Everywhere else keeps the workspace hand-off. */
+        if (activeTarget?.type === 'view' && activeTarget.ref === 'dashboard') {
+          homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
+          homeRegionStore.getState().setTab(data.spaceId, 'sessions');
+        } else {
+          navigateTo(WORKSPACE_TARGET);
+          nav.push(sessionId);
+        }
         notices.push({
           id: 'launch-done',
           tone: 'info',
           title: 'Session launched',
-          body: 'The live terminal is open in the workspace.',
+          body:
+            activeTarget?.type === 'view' && activeTarget.ref === 'dashboard'
+              ? 'The live terminal is open here in Home.'
+              : 'The live terminal is open in the workspace.',
           ttlMs: 6000,
         });
       })
@@ -1242,6 +1262,41 @@ export function GateApp(props: GateAppProps = {}) {
           };
         }),
     [data, viewerMemberId],
+  );
+  /**
+   * Tasks for Home's TASKS TAB (task 01a006f8 D1; Q1 provisional pending
+   * Subhang's answer): every task the viewer can see, open-first then by
+   * recent activity. Same law as the session rows — the word/tone come from
+   * `homeRowOf`, the registry projection, and the CHAT MODULE re-derives
+   * nothing. `rowsFor` issues its own query on first read, so no ensureKind
+   * bootstrap is needed here.
+   */
+  const homeTaskRows = useMemo<ChatTaskRow[]>(
+    () =>
+      [...data.rowsFor(HOME_TASK_KIND)(undefined)]
+        .sort((a, b) => {
+          const aDone = isSettledWorkStatus(a.state);
+          const bDone = isSettledWorkStatus(b.state);
+          if (aDone !== bDone) return aDone ? 1 : -1;
+          return b.activityAt.localeCompare(a.activityAt);
+        })
+        .map((row) => {
+          const projected = homeRowOf(row, {
+            liveness: data.livenessOf(row.id),
+            streaming: data.activity[row.id] === true,
+            compact: true,
+          });
+          const priority = (row.state as { priority?: string }).priority;
+          return {
+            id: row.id,
+            title: row.title,
+            statusWord: projected.word ?? '',
+            tone: projected.tone,
+            ...(typeof priority === 'string' && priority.length > 0 ? { detail: priority } : {}),
+            updatedAt: row.activityAt,
+          };
+        }),
+    [data],
   );
   const homeSlots = useMemo(
     () =>
@@ -1754,17 +1809,36 @@ export function GateApp(props: GateAppProps = {}) {
               viewerMemberId={viewerMemberId}
               onNotice={notices.push}
               onSpawn={async (input) => {
+                /* D11: a spawn committed on Home STAYS on Home — the session
+                   takes region B and the column flips to Sessions. */
                 const sessionId = await data.spawn(input);
-                navigateTo(WORKSPACE_TARGET);
-                nav.push(sessionId);
+                homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
+                homeRegionStore.getState().setTab(data.spaceId, 'sessions');
               }}
               onOpenKind={(kind) => navigateTo({ type: 'kind', ref: kind })}
               onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
+              /* D12: the ONE route out of Home — region C's explicit header
+                 action. Chips never navigate; this button does. */
+              onOpenInWorkspace={(id) => {
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id);
+              }}
               /* The one cheap real counts read (spaces.counts) — the foot
                  strip's numbers. A kind the server never counted renders no
                  number (absent ≠ zero). */
               countsFor={data.countsFor}
-              chat={(openEntity) => (
+              /* D11/D14: the launch-sheet singleton, mounted over Home while
+                 it holds a subject — Run on a task row opens it here. */
+              launchSubjectId={launch.subjectId}
+              launchRefusal={launchRefusal}
+              launchInFlight={launching}
+              onLaunchCancel={() => {
+                setLaunchRefusal(null);
+                launch.close();
+              }}
+              onLaunchSubmit={submitLaunch}
+              onLaunchDispatch={submitDispatch}
+              chat={(openEntity, regions) => (
                 <ChatHomeSurface
                   seam={data.seam}
                   spaceId={data.spaceId}
@@ -1779,19 +1853,23 @@ export function GateApp(props: GateAppProps = {}) {
                   /* One read per space, shared with every other rich input in
                      the shell — see `useGateData`. */
                   skillOptions={data.skillOptions}
-                  /* R4: the merged conversation column — sessions composed
-                     above (liveness-first), slots from execution capacity.
-                     `onNewSession` is deliberately ABSENT: the launch sheet
-                     needs a subject entity and no subjectless launch exists,
-                     so the button says so instead of pretending. */
+                  /* The three-tab column (task 01a006f8): sessions keep the
+                     R4 composition (liveness-first, credential terminals
+                     filtered, "view only" labels), tasks are composed above
+                     under the same registry-projection law. There is NO New
+                     session button any more (D2): a session is created by
+                     RUNNING a task, which is `onRunTask` → the launch sheet. */
                   sessions={homeSessionRows}
-                  onOpenSession={(id) => {
-                    /* Sessions open in the workspace detail — the
-                       session-as-conversation centre inside Home is not built
-                       in this pass, and the row's title says so. */
-                    navigateTo(WORKSPACE_TARGET);
-                    nav.push(id as EntityId);
-                  }}
+                  tasks={homeTaskRows}
+                  onRunTask={(id) => launch.open(id as EntityId)}
+                  tab={regions.tab}
+                  onTab={regions.onTab}
+                  selectedEntityId={regions.selectedEntityId}
+                  onSelectEntity={regions.onSelectEntity}
+                  onShowChat={regions.onShowChat}
+                  onNewTask={regions.onNewTask}
+                  newTaskUnavailable={regions.newTaskUnavailable}
+                  centerOverride={regions.centerOverride}
                   slots={homeSlots}
                   onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
                   viewerName={data.viewerActor?.displayName}

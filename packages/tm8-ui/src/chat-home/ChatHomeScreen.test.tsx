@@ -196,8 +196,8 @@ describe('Chat Home', () => {
       },
     };
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByRole('button', { name: /new/i })).toBeTruthy());
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
+    await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
     expect(view.getByText(/does not expose chat thread configuration/i)).toBeTruthy();
     expect(view.getByRole('button', { name: /send/i }).getAttribute('aria-disabled')).toBe('true');
   });

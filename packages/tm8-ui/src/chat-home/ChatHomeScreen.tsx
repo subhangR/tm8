@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, SpaceId } from '@tm8/contract';
+import type { HomeTab } from '../stores/homeRegionStore';
 import { Avatar, Timestamp } from '../kit';
 import { ChooseFilesControl } from '../files/ChooseFilesControl';
 import type { FileUploadTask } from '../files/upload';
@@ -20,6 +21,7 @@ import type {
   ChatHomePort,
   ChatModelOption,
   ChatSessionRow,
+  ChatTaskRow,
   ChatTeammateOption,
   ChatThreadDetail,
   ChatThreadSummary,
@@ -62,19 +64,50 @@ export interface ChatHomeScreenProps {
    */
   skillOptions?: readonly TriggerOption[];
   /**
-   * Work sessions for the MERGED left column (R4, 2026-08-15): one
-   * time-grouped list of conversations, chat threads and sessions alike.
-   * Rows arrive COMPOSED — status word, tone and the live verdict are the
-   * host's (liveness outranks the stored record); this screen renders them.
+   * Work sessions for the SESSIONS TAB (task 01a006f8 D1/D17 — the merged
+   * R4 column is retired; each population owns a tab now). Rows arrive
+   * COMPOSED — status word, tone and the live verdict are the host's
+   * (liveness outranks the stored record); this screen renders them.
    * `undefined` means the host did not wire sessions (older mounts), and the
-   * column shows threads alone — absent is not an empty session list.
+   * tab says so — absent is not an empty session list.
    */
   sessions?: readonly ChatSessionRow[];
-  /** Opens a session row. Sessions open in the workspace detail — the
-   *  session-as-conversation centre view is not built in this pass. */
-  onOpenSession?: ((id: string) => void) | undefined;
-  /** The `>_ Session` button. Absent ⇒ disabled-with-reason, never hidden. */
-  onNewSession?: (() => void) | undefined;
+  /**
+   * Tasks for the TASKS TAB, same contract as `sessions`: host-composed and
+   * host-ordered. `undefined` ⇒ the tab states tasks are not wired here.
+   */
+  tasks?: readonly ChatTaskRow[];
+  /**
+   * The active tab, when the HOST owns it (D15: persisted per space, and
+   * D11 flips it to Sessions from outside this screen on spawn). Absent ⇒
+   * uncontrolled, defaulting to Chats — the standalone/mobile mounts.
+   */
+  tab?: HomeTab;
+  onTab?: ((tab: HomeTab) => void) | undefined;
+  /**
+   * The entity currently occupying region B, for the HONEST active-row
+   * highlight (D9): a task/session row draws active only when it IS the
+   * selection; while an entity is selected, no chat row is active.
+   */
+  selectedEntityId?: string | null;
+  /** SELECTING (D7): puts a task/session row's entity in region B. Absent ⇒
+   *  those rows render disabled-with-reason, never dead. */
+  onSelectEntity?: ((id: string) => void) | undefined;
+  /** The host clears region B back to the chat — a chat row click or ＋ New
+   *  chat calls it, so the conversation pane (D8: mounted, hidden) returns. */
+  onShowChat?: (() => void) | undefined;
+  /** D2/D3: `＋ New task` — the host's `useNewTask` create-immediately flow.
+   *  Absent ⇒ disabled with `newTaskUnavailable`'s reason, never hidden. */
+  onNewTask?: (() => void) | undefined;
+  newTaskUnavailable?: { cause: string; remedy: string } | null;
+  /** D11: Run on a task row → the host opens its launch sheet on that task. */
+  onRunTask?: ((id: string) => void) | undefined;
+  /**
+   * Region B when it is NOT the chat (D7/D8): the host's entity panel,
+   * rendered in the conversation pane's place while the conversation stays
+   * MOUNTED but hidden — unmounting it would tear down a streaming thread.
+   */
+  centerOverride?: ReactNode;
   /**
    * Node slot usage for the column foot — `execution.liveness.capacity`,
    * passed through. `undefined` renders NOTHING (absent ≠ zero: no snapshot
@@ -107,8 +140,16 @@ export function ChatHomeScreen({
   attach,
   skillOptions,
   sessions,
-  onOpenSession,
-  onNewSession,
+  tasks,
+  tab: tabProp,
+  onTab,
+  selectedEntityId = null,
+  onSelectEntity,
+  onShowChat,
+  onNewTask,
+  newTaskUnavailable,
+  onRunTask,
+  centerOverride,
   slots,
   onOpenWorkspace,
   viewerName,
@@ -439,14 +480,47 @@ export function ChatHomeScreen({
 
   const sendDisabled = busy || draft.trim() === '' || refusal !== null || attachments.blocked;
 
-  /* The MERGED column (R4): chat threads + work sessions, one list,
-     time-grouped. The filter searches WHAT IS READ — the hydrated thread list
-     and the host's session rows; there is no server-side search behind it. */
-  const [findQuery, setFindQuery] = useState('');
-  const columnGroups = useMemo(
-    () => composeConversationColumn(threads, sessions, findQuery),
-    [threads, sessions, findQuery],
+  /* THREE TABS, one population each (task 01a006f8 D1 — the merged R4 column
+     is retired). The tab is CONTROLLED when the host owns it (D15 per-space
+     persistence; D11's spawn flip arrives from outside) and uncontrolled on
+     standalone mounts, opening on Chats. D6: switching a tab is BROWSING — it
+     re-lists this column and touches nothing else on the screen. */
+  const [innerTab, setInnerTab] = useState<HomeTab>('chats');
+  const tab = tabProp ?? innerTab;
+  const setTab = useCallback(
+    (next: HomeTab) => {
+      if (onTab) onTab(next);
+      else setInnerTab(next);
+    },
+    [onTab],
   );
+
+  /* ONE search box, scoped to the active tab (D4). It filters WHAT IS READ —
+     there is no server-side search behind it, and its labels must not claim
+     one. The query survives a tab switch: it is one box, not three. */
+  const [findQuery, setFindQuery] = useState('');
+  const threadGroups = useMemo(
+    () => (tab === 'chats' ? composeThreadColumn(threads, findQuery) : []),
+    [tab, threads, findQuery],
+  );
+  const sessionGroups = useMemo(
+    () => (tab === 'sessions' ? composeSessionColumn(sessions ?? [], findQuery) : []),
+    [tab, sessions, findQuery],
+  );
+  const taskRows = useMemo(
+    () => (tab === 'tasks' ? filterTaskRows(tasks ?? [], findQuery) : []),
+    [tab, tasks, findQuery],
+  );
+  const activeTabEmpty =
+    tab === 'chats'
+      ? threadGroups.length === 0
+      : tab === 'sessions'
+        ? sessionGroups.length === 0
+        : taskRows.length === 0;
+  /** D9 — the honest highlight: chat rows are active only while the chat
+   *  OCCUPIES region B; an entity selection extinguishes them rather than
+   *  fabricating an active row on a tab the selection is not from. */
+  const chatOccupiesCenter = centerOverride === undefined || centerOverride === null;
 
   const send = useCallback(async () => {
     const body = draft.trim();
@@ -596,13 +670,16 @@ export function ChatHomeScreen({
   return (
     <main className="tch-root" data-testid="chat-home-screen">
       {/*
-        THE NAVIGATION AXIS (ruling 2026-08-15, reaffirmed by revision 14).
-        This panel is the full inventory AND the only selector: it is the left
-        of the surface's two panes, it is always here, and switching
-        conversations changes nothing in it. Nothing else on this screen
-        selects a conversation — a working-set tab strip briefly lived above
-        the right pane and was removed, because a second selector for one
-        selection is exactly the redundancy this surface keeps shedding.
+        THE NAVIGATION AXIS (task 01a006f8, 2026-08-16, superseding R4's
+        merged list). This panel is the full inventory AND the only selector,
+        as one time-grouped THREE-TAB column: Tasks | Chats | Sessions (D1).
+        Switching a tab is BROWSING — it re-lists this column only (D6);
+        clicking a row is SELECTING — it puts that entity in region B (D7).
+        The two ＋ buttons above the tabs are the single exception to D6:
+        each takes region B AND switches this column to its own tab (D10).
+
+        NO COUNTS ON THE TAB LABELS (D16): the only number obtainable is
+        "how many are loaded", which would read as a total — absent ≠ zero.
 
         UNREAD IS NOT DRAWN, AND ITS ABSENCE IS THE HONEST STATE. The ruling
         puts unread state in this panel and nowhere else; what it could not
@@ -621,13 +698,15 @@ export function ChatHomeScreen({
         When it lands, the accepted default is that the cold-start auto-open
         marks read like any other open.
       */}
-      <aside className="tch-sidebar" aria-label="Conversations">
+      <aside className="tch-sidebar" aria-label="Tasks, chats and sessions">
         <header className="tch-sidebar__head">
           <span>
-            <strong>Conversations</strong>
+            <strong>Home</strong>
             <small>{spaceLabel ?? 'this space'}</small>
           </span>
         </header>
+        {/* D2: two constant buttons. No New session — a session is created by
+            RUNNING a task (D11); the old permanently-disabled button is gone. */}
         <div className="tch-sidebar__actions">
           <button
             type="button"
@@ -638,119 +717,229 @@ export function ChatHomeScreen({
               stoppedRootRef.current = null;
               setPhase('idle');
               setSubmitError(null);
+              /* D10: takes region B (back to the chat's new-conversation
+                 composer) AND switches the column to its own tab. */
+              onShowChat?.();
+              setTab('chats');
             }}
           >
             <span aria-hidden>＋</span> New chat
           </button>
           <button
             type="button"
-            className="tch-new tch-new--session"
-            aria-disabled={onNewSession ? undefined : 'true'}
+            className="tch-new tch-new--task"
+            aria-disabled={onNewTask ? undefined : 'true'}
             title={
-              onNewSession
-                ? 'Launch a work session'
-                : 'Launching from Home isn’t wired on this surface — use the workspace'
+              onNewTask
+                ? 'Create an Untitled task and open it — type its name there'
+                : newTaskUnavailable
+                  ? `${newTaskUnavailable.cause} — ${newTaskUnavailable.remedy}`
+                  : 'Creating tasks isn’t wired on this surface'
             }
-            onClick={onNewSession ?? ((event) => event.preventDefault())}
+            onClick={
+              onNewTask
+                ? () => {
+                    /* D3: create immediately — the host's useNewTask flow
+                       makes the entity, selects it into B (title focused)
+                       and, per D10, we land on its tab. */
+                    onNewTask();
+                    setTab('tasks');
+                  }
+                : (event) => event.preventDefault()
+            }
           >
-            <span aria-hidden>❯_</span> Session
+            <span aria-hidden>＋</span> New task
           </button>
+        </div>
+        {/* D1: Tasks | Chats | Sessions, in that order. Labels only (D16). */}
+        <div className="tch-tabs" role="tablist" aria-label="Home lists">
+          {HOME_TAB_STRIP.map((entry) => (
+            <button
+              key={entry.tab}
+              type="button"
+              role="tab"
+              aria-selected={tab === entry.tab}
+              className={`tch-tab ${tab === entry.tab ? 'tch-tab--active' : ''}`}
+              onClick={() => setTab(entry.tab)}
+            >
+              {entry.label}
+            </button>
+          ))}
         </div>
         <input
           type="search"
           className="tch-find"
-          placeholder="Find a conversation…"
-          aria-label="Find a conversation — filters what is already loaded"
-          title="Filters the conversations already loaded here; this is not a server search"
+          placeholder={FIND_COPY[tab].placeholder}
+          aria-label={`${FIND_COPY[tab].label} — filters what is already loaded`}
+          title={`Filters the ${FIND_COPY[tab].noun} already loaded here; this is not a server search`}
           value={findQuery}
           onChange={(event) => setFindQuery(event.target.value)}
         />
         <div className="tch-thread-list">
-          {loading ? <p className="tch-hollow">Reading conversations…</p> : null}
-          {!loading && columnGroups.length === 0 ? (
+          {tab === 'chats' && loading ? (
+            <p className="tch-hollow">Reading conversations…</p>
+          ) : null}
+          {!(tab === 'chats' && loading) && activeTabEmpty ? (
             <p className="tch-hollow">
-              {findQuery.trim()
-                ? 'Nothing loaded here matches.'
-                : 'No conversations yet. Start with the composer.'}
+              {findQuery.trim() ? 'Nothing loaded here matches.' : EMPTY_COPY[tab](
+                tab === 'sessions' ? sessions !== undefined : tab !== 'tasks' || tasks !== undefined,
+              )}
             </p>
           ) : null}
-          {port.threadListUnavailableReason ? (
+          {tab === 'chats' && port.threadListUnavailableReason ? (
             <p className="tch-thread-refusal">{port.threadListUnavailableReason}</p>
           ) : null}
-          {columnGroups.map((group) => (
-            <div key={group.label} className="tch-group" role="group" aria-label={group.label}>
-              <span className="tch-group__label">{group.label}</span>
-              {group.rows.map((row) =>
-                row.kind === 'thread' ? (
+
+          {tab === 'chats'
+            ? threadGroups.map((group) => (
+                <div key={group.label} className="tch-group" role="group" aria-label={group.label}>
+                  <span className="tch-group__label">{group.label}</span>
+                  {group.rows.map((thread) => (
+                    <button
+                      type="button"
+                      key={thread.rootId}
+                      className="tch-thread"
+                      /* D9: honest only while the chat occupies B. */
+                      data-active={
+                        (chatOccupiesCenter && thread.rootId === selectedRootId) || undefined
+                      }
+                      onClick={() => {
+                        /* D7: selecting a chat puts the conversation in B. */
+                        setSelectedRootId(thread.rootId);
+                        onShowChat?.();
+                      }}
+                    >
+                      <span className="tch-thread__title">
+                        {thread.state === 'streaming' ? (
+                          <span className="tch-thread__live" title="Agent is working" aria-label="Agent is working" />
+                        ) : null}
+                        {thread.title}
+                      </span>
+                      <span className="tch-thread__preview">{thread.preview}</span>
+                      <span className="tch-thread__meta">
+                        <span className="tch-mode-chip">{thread.config.mode}</span>
+                        <span>{thread.config.teammateLabel}</span>
+                        <span aria-hidden>·</span>
+                        <span>{thread.config.modelLabel}</span>
+                        <Timestamp at={thread.updatedAt} />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ))
+            : null}
+
+          {tab === 'sessions'
+            ? sessionGroups.map((group) => (
+                <div key={group.label} className="tch-group" role="group" aria-label={group.label}>
+                  <span className="tch-group__label">{group.label}</span>
+                  {group.rows.map((session) => (
+                    <button
+                      type="button"
+                      key={session.id}
+                      className="tch-thread tch-thread--session"
+                      data-active={session.id === selectedEntityId || undefined}
+                      title={
+                        onSelectEntity
+                          ? 'Open this session here'
+                          : 'Opening sessions isn’t wired on this surface'
+                      }
+                      aria-disabled={onSelectEntity ? undefined : 'true'}
+                      onClick={
+                        onSelectEntity
+                          ? () => onSelectEntity(session.id)
+                          : (event) => event.preventDefault()
+                      }
+                    >
+                      <span className="tch-thread__title">
+                        <span className="tch-thread__glyph" aria-hidden>❯_</span>
+                        {session.title}
+                      </span>
+                      <span className="tch-thread__meta">
+                        <span className={`tch-session-word tch-session-word--${session.tone}`}>
+                          {session.live ? <span className="tch-thread__live" aria-hidden /> : null}
+                          {session.statusWord}
+                        </span>
+                        {session.detail ? (
+                          <>
+                            <span aria-hidden>·</span>
+                            <span>{session.detail}</span>
+                          </>
+                        ) : null}
+                        {session.viewOnly ? (
+                          <span
+                            className="tch-viewonly"
+                            title="Another member’s session — you can see it; only the owner can attach to its terminal"
+                          >
+                            view only
+                          </span>
+                        ) : null}
+                        <Timestamp at={session.updatedAt} />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ))
+            : null}
+
+          {tab === 'tasks'
+            ? taskRows.map((task) => (
+                /* A row and its Run are SIBLINGS — a button cannot nest a
+                   button, and Run must not be the row's whole surface. */
+                <div key={task.id} className="tch-task-row">
                   <button
                     type="button"
-                    key={row.thread.rootId}
-                    className="tch-thread"
-                    data-active={row.thread.rootId === selectedRootId || undefined}
-                    onClick={() => setSelectedRootId(row.thread.rootId)}
-                  >
-                    <span className="tch-thread__title">
-                      {row.thread.state === 'streaming' ? (
-                        <span className="tch-thread__live" title="Agent is working" aria-label="Agent is working" />
-                      ) : null}
-                      {row.thread.title}
-                    </span>
-                    <span className="tch-thread__preview">{row.thread.preview}</span>
-                    <span className="tch-thread__meta">
-                      <span className="tch-mode-chip">{row.thread.config.mode}</span>
-                      <span>{row.thread.config.teammateLabel}</span>
-                      <span aria-hidden>·</span>
-                      <span>{row.thread.config.modelLabel}</span>
-                      <Timestamp at={row.thread.updatedAt} />
-                    </span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    key={row.session.id}
-                    className="tch-thread tch-thread--session"
+                    className="tch-thread tch-thread--task"
+                    data-active={task.id === selectedEntityId || undefined}
                     title={
-                      onOpenSession
-                        ? 'Opens in the workspace — the session view inside Home isn’t built yet'
-                        : 'Opening sessions isn’t wired on this surface'
+                      onSelectEntity
+                        ? 'Open this task here'
+                        : 'Opening tasks isn’t wired on this surface'
                     }
-                    aria-disabled={onOpenSession ? undefined : 'true'}
+                    aria-disabled={onSelectEntity ? undefined : 'true'}
                     onClick={
-                      onOpenSession
-                        ? () => onOpenSession(row.session.id)
+                      onSelectEntity
+                        ? () => onSelectEntity(task.id)
                         : (event) => event.preventDefault()
                     }
                   >
-                    <span className="tch-thread__title">
-                      <span className="tch-thread__glyph" aria-hidden>❯_</span>
-                      {row.session.title}
-                    </span>
+                    <span className="tch-thread__title">{task.title}</span>
                     <span className="tch-thread__meta">
-                      <span className={`tch-session-word tch-session-word--${row.session.tone}`}>
-                        {row.session.live ? <span className="tch-thread__live" aria-hidden /> : null}
-                        {row.session.statusWord}
+                      <span className={`tch-session-word tch-session-word--${task.tone}`}>
+                        {task.statusWord}
                       </span>
-                      {row.session.detail ? (
+                      {task.detail ? (
                         <>
                           <span aria-hidden>·</span>
-                          <span>{row.session.detail}</span>
+                          <span>{task.detail}</span>
                         </>
                       ) : null}
-                      {row.session.viewOnly ? (
-                        <span
-                          className="tch-viewonly"
-                          title="Another member’s session — you can see it; only the owner can attach to its terminal"
-                        >
-                          view only
-                        </span>
-                      ) : null}
-                      <Timestamp at={row.session.updatedAt} />
+                      <Timestamp at={task.updatedAt} />
                     </span>
                   </button>
-                ),
-              )}
-            </div>
-          ))}
+                  {onRunTask ? (
+                    <button
+                      type="button"
+                      className="tch-run"
+                      title="Run — configure and launch a session on this task"
+                      aria-label={`Run ${task.title}`}
+                      onClick={() => onRunTask(task.id)}
+                    >
+                      ◔ Run ▸
+                    </button>
+                  ) : (
+                    <DisabledIconControl
+                      label={`Run ${task.title}`}
+                      glyph="▸"
+                      reason={{
+                        cause: 'Launching isn’t wired on this surface',
+                        remedy: 'open the task in the workspace to run it',
+                      }}
+                    />
+                  )}
+                </div>
+              ))
+            : null}
         </div>
         <footer className="tch-sidebar__foot">
           {slots ? (
@@ -777,14 +966,24 @@ export function ChatHomeScreen({
       </aside>
 
       {/*
-        THE SECOND AND LAST PANE (revision 14). There is no working-set tab
-        strip above this: a conversation is opened from the panel on the left
-        and it is the only selector, because two selectors for one selection
-        is the redundancy this surface keeps being redesigned to remove.
-        Everything the strip offered, the panel already offers — with the whole
-        inventory in view instead of only the part you happened to open.
+        REGION B — the selection (D5/D7). The conversation pane is B's CHAT
+        occupant; when a task or session is selected the host hands
+        `centerOverride` and this pane goes display:none while staying
+        MOUNTED (D8) — unmounting it would tear down a streaming thread.
+        There is still no working-set tab strip above it: the left column is
+        the only selector.
       */}
-      <section className="tch-conversation" aria-label="Conversation">
+      {centerOverride != null ? (
+        <section className="tch-center" aria-label="Selection" data-testid="tch-center-override">
+          {centerOverride}
+        </section>
+      ) : null}
+      <section
+        className="tch-conversation"
+        aria-label="Conversation"
+        data-hidden={centerOverride != null ? 'true' : undefined}
+        hidden={centerOverride != null || undefined}
+      >
         <header className="tch-conversation__head">
           <div className="tch-title">
             <strong>{detail?.summary.title ?? 'New conversation'}</strong>
@@ -1128,50 +1327,97 @@ function greetingLine(viewerName?: string): string {
   return viewerName ? `${daypart}, ${viewerName}.` : `${daypart}.`;
 }
 
-type ColumnRow =
-  | { kind: 'thread'; thread: ChatThreadSummary; at: string }
-  | { kind: 'session'; session: ChatSessionRow; at: string };
+/** D1's strip, in D1's order. Labels only — no counts (D16). */
+const HOME_TAB_STRIP: readonly { tab: HomeTab; label: string }[] = [
+  { tab: 'tasks', label: 'Tasks' },
+  { tab: 'chats', label: 'Chats' },
+  { tab: 'sessions', label: 'Sessions' },
+];
+
+/** D4: the one search box, worded per tab and never claiming server search. */
+const FIND_COPY: Record<HomeTab, { placeholder: string; label: string; noun: string }> = {
+  tasks: { placeholder: 'Find a task…', label: 'Find a task', noun: 'tasks' },
+  chats: { placeholder: 'Find a conversation…', label: 'Find a conversation', noun: 'conversations' },
+  sessions: { placeholder: 'Find a session…', label: 'Find a session', noun: 'sessions' },
+};
+
+/** Empty states: an unwired tab (host passed nothing) is NOT an empty list. */
+const EMPTY_COPY: Record<HomeTab, (wired: boolean) => string> = {
+  tasks: (wired) =>
+    wired ? 'No tasks yet. ＋ New task creates one.' : 'Tasks aren’t wired on this surface.',
+  chats: () => 'No conversations yet. Start with the composer.',
+  sessions: (wired) =>
+    wired
+      ? 'No sessions yet. Run a task to launch one.'
+      : 'Sessions aren’t wired on this surface.',
+};
 
 /**
- * The merged, time-grouped column. Grouping is by calendar day in the
- * VIEWER's local time — Today, Yesterday, then Earlier — the same buckets the
- * reference design draws. Sessions and threads interleave by recency.
+ * Day buckets in the VIEWER's local time — Today, Yesterday, then Earlier —
+ * the same grouping the merged column drew, now applied per tab.
  */
-function composeConversationColumn(
-  threads: readonly ChatThreadSummary[],
-  sessions: readonly ChatSessionRow[] | undefined,
-  query: string,
-): { label: string; rows: ColumnRow[] }[] {
-  const q = query.trim().toLowerCase();
-  const rows: ColumnRow[] = [
-    ...threads.map((thread) => ({ kind: 'thread' as const, thread, at: thread.updatedAt })),
-    ...(sessions ?? []).map((session) => ({ kind: 'session' as const, session, at: session.updatedAt })),
-  ]
-    .filter((row) => {
-      if (!q) return true;
-      const text =
-        row.kind === 'thread'
-          ? `${row.thread.title} ${row.thread.preview} ${row.thread.config.teammateLabel}`
-          : `${row.session.title} ${row.session.detail ?? ''} ${row.session.statusWord}`;
-      return text.toLowerCase().includes(q);
-    })
-    .sort((a, b) => b.at.localeCompare(a.at));
-
+function bucketByDay<T>(rows: readonly { at: string; row: T }[]): { label: string; rows: T[] }[] {
+  const sorted = [...rows].sort((a, b) => b.at.localeCompare(a.at));
   const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
   const today = startOfDay(new Date());
   const dayMs = 24 * 60 * 60 * 1000;
 
-  const buckets: { label: string; rows: ColumnRow[] }[] = [];
-  for (const row of rows) {
-    const at = new Date(row.at);
+  const buckets: { label: string; rows: T[] }[] = [];
+  for (const entry of sorted) {
+    const at = new Date(entry.at);
     const stamp = Number.isNaN(at.getTime()) ? 0 : startOfDay(at);
     const label = stamp >= today ? 'Today' : stamp >= today - dayMs ? 'Yesterday' : 'Earlier';
-    const bucket = buckets[buckets.length - 1];
-    if (bucket && bucket.label === label) bucket.rows.push(row);
-    else if (!buckets.some((existing) => existing.label === label)) buckets.push({ label, rows: [row] });
-    else buckets.find((existing) => existing.label === label)!.rows.push(row);
+    const existing = buckets.find((bucket) => bucket.label === label);
+    if (existing) existing.rows.push(entry.row);
+    else buckets.push({ label, rows: [entry.row] });
   }
   return buckets;
+}
+
+function composeThreadColumn(
+  threads: readonly ChatThreadSummary[],
+  query: string,
+): { label: string; rows: ChatThreadSummary[] }[] {
+  const q = query.trim().toLowerCase();
+  return bucketByDay(
+    threads
+      .filter(
+        (thread) =>
+          !q ||
+          `${thread.title} ${thread.preview} ${thread.config.teammateLabel}`
+            .toLowerCase()
+            .includes(q),
+      )
+      .map((thread) => ({ at: thread.updatedAt, row: thread })),
+  );
+}
+
+function composeSessionColumn(
+  sessions: readonly ChatSessionRow[],
+  query: string,
+): { label: string; rows: ChatSessionRow[] }[] {
+  const q = query.trim().toLowerCase();
+  return bucketByDay(
+    sessions
+      .filter(
+        (session) =>
+          !q ||
+          `${session.title} ${session.detail ?? ''} ${session.statusWord}`
+            .toLowerCase()
+            .includes(q),
+      )
+      .map((session) => ({ at: session.updatedAt, row: session })),
+  );
+}
+
+/** Tasks keep the HOST's order (open-first, then recency) — no day buckets,
+ *  because interleaving open-first with date groups would lie about one axis. */
+function filterTaskRows(tasks: readonly ChatTaskRow[], query: string): ChatTaskRow[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...tasks];
+  return tasks.filter((task) =>
+    `${task.title} ${task.statusWord} ${task.detail ?? ''}`.toLowerCase().includes(q),
+  );
 }
 
 function Turn({
