@@ -12,7 +12,7 @@ import {
   type TriggerOption,
 } from '../rich-input';
 import { LiveGraphStrip } from '../channel-screen/LiveToolGraph';
-import { mergeChatTurnFrame, reconcileDetails } from './turn-model';
+import { mergeChatTurnFrame, projectTurnParts, reconcileDetails } from './turn-model';
 import { foldTurnGraph } from './turn-graph';
 import type { ChatEntityResolver } from './EntityChip';
 import { TurnParts } from './TurnParts';
@@ -344,6 +344,7 @@ export function ChatHomeScreen({
   );
   const busy = isBusyPhase(phase);
   const thinking = detail !== null && showThinking(phase, detail);
+  const pendingTurnId = detail !== null && thinking ? claimedSilentTurnId(phase, detail) : null;
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
   const selectionUnavailable =
@@ -644,12 +645,12 @@ export function ChatHomeScreen({
                   onOpenEntity={onOpenEntity}
                 />
               ) : null}
-              {detail.turns.map((turn, index) => (
+              {detail.turns.map((turn) => (
                 <Turn
                   key={turn.messageId}
                   turn={turn}
                   mode={detail.summary.config.mode}
-                  pending={thinking && index === detail.turns.length - 1}
+                  pending={turn.messageId === pendingTurnId}
                   onOpenEntity={onOpenEntity}
                   resolveEntity={resolveEntity}
                   suppressEntityIds={ownMessageIds}
@@ -885,19 +886,25 @@ function Turn({
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
   const agent = turn.author?.isAgent ?? turn.role === 'assistant';
   /**
-   * AN ANSWER IS ITS PARTS. The server writes the assistant message body twice
-   * — 'Agent turn in progress.' when the turn is claimed, the finished text
-   * when it completes — because feeds, previews and notifications have no
-   * parts to read. Here they do, so printing the body alongside them said the
-   * same thing twice: the answer duplicated on every re-read, and a redundant
-   * placeholder bubble under the thinking pulse while the turn ran.
+   * AN ANSWER IS ITS RENDERED PARTS. The server writes the assistant message
+   * body twice — 'Agent turn in progress.' when the turn is claimed, the
+   * finished text when it completes — because feeds, previews and
+   * notifications have no parts to read. Here they do, so printing the body
+   * alongside them said the same thing twice: the answer duplicated on every
+   * re-read, and a redundant placeholder bubble under the thinking pulse.
    *
-   * A turn that carries no parts at all is not a chat turn (every completed
-   * one persists at least its `done`) — it is an ordinary message posted into
-   * this thread, and its body is the only thing it has to say. The one
-   * exception is the claimed-but-silent turn the pulse is already covering.
+   * The test is what the transcript actually DRAWS, not how many rows were
+   * stored. `projectTurnParts` folds a call and its result into one card and
+   * drops `done` entirely, so a turn that terminated without producing output
+   * holds one part and renders nothing — suppressing its body on `length` left
+   * an empty bubble where the durable 'Agent turn completed.' should be.
+   *
+   * A turn that draws nothing is not an answer: either an ordinary message
+   * posted into this thread by a teammate, whose body is all it has to say, or
+   * the claimed-but-silent turn the pulse is already covering.
    */
-  const bodyIsContent = turn.role !== 'assistant' || (turn.parts.length === 0 && !pending);
+  const bodyIsContent =
+    turn.role !== 'assistant' || (projectTurnParts(turn.parts).length === 0 && !pending);
   return (
     <article className="tch-turn" data-role={turn.role} data-mode={mode}>
       <header className="tch-turn__byline">
@@ -941,7 +948,34 @@ function showThinking(phase: ComposerPhase, detail: ChatThreadDetail): boolean {
   if (phase === 'posting-root' || phase === 'configuring' || phase === 'posting-turn') return true;
   if (phase !== 'streaming') return false;
   const last = detail.turns[detail.turns.length - 1];
-  return !last || last.role !== 'assistant' || last.parts.length === 0;
+  return !last || last.role !== 'assistant' || projectTurnParts(last.parts).length === 0;
+}
+
+/**
+ * WHICH turn the pulse is standing in for — by identity, never by position.
+ *
+ * A claimed turn's placeholder and an ordinary message a teammate posted into
+ * this thread are INDISTINGUISHABLE on the wire: `role` is derived purely from
+ * `author.isAgent`, and `MessageView.parts` is omitted entirely when a message
+ * has none, so neither carries a mark saying "I am a chat turn". Position
+ * cannot stand in for identity either — the composer stays open during
+ * `streaming`, so a later user message can sit after the placeholder, and the
+ * placeholder is then no longer the last row.
+ *
+ * So suppress only what is UNAMBIGUOUS: exactly one silent assistant turn,
+ * while a turn really is streaming. Two of them and we cannot tell which the
+ * pulse means — then neither is suppressed, because a redundant progress line
+ * is a blemish and a swallowed message is data loss.
+ *
+ * During the posting phases the pulse is announcing OUR OWN write, not any
+ * turn on screen, so it stands in for nothing and suppresses nothing.
+ */
+function claimedSilentTurnId(phase: ComposerPhase, detail: ChatThreadDetail): EntityId | null {
+  if (phase !== 'streaming') return null;
+  const silent = detail.turns.filter(
+    (turn) => turn.role === 'assistant' && projectTurnParts(turn.parts).length === 0,
+  );
+  return silent.length === 1 ? silent[0]!.messageId : null;
 }
 
 function phaseForThreadState(state: ChatThreadSummary['state']): ComposerPhase {

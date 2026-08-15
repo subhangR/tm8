@@ -248,6 +248,103 @@ describe('Chat Home', () => {
     expect(view.queryByText('Agent turn in progress.')).toBeNull();
   });
 
+  /**
+   * The composer stays open while a turn streams, so a later message can sit
+   * AFTER the claimed placeholder. Keying the suppression to the last row put
+   * it on the wrong turn and printed the placeholder again — the reported bug,
+   * one ordering to the left.
+   */
+  it('covers the claimed turn even when a later message follows it', async () => {
+    const thread = structuredClone(CHAT_HOME_FIXTURE_THREAD);
+    thread.summary.state = 'streaming';
+    thread.turns = [
+      thread.turns[0]!,
+      {
+        messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
+        role: 'assistant',
+        author: thread.turns[1]!.author,
+        createdAt: '2026-08-13T08:19:30.000Z',
+        body: 'Agent turn in progress.',
+        parts: [],
+      },
+      {
+        messageId: '019f0000-0000-7000-8000-0000000000a1' as EntityId,
+        role: 'user',
+        author: thread.turns[0]!.author,
+        createdAt: '2026-08-13T08:19:40.000Z',
+        body: 'One more thing while you work.',
+        parts: [],
+      },
+    ];
+    const { port } = createChatHomeFixturePort([thread]);
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() => expect(view.getByText('One more thing while you work.')).toBeTruthy());
+    expect(view.getByTestId('chat-thinking')).toBeTruthy();
+    expect(view.queryByText('Agent turn in progress.')).toBeNull();
+  });
+
+  /**
+   * `role` is derived from `author.isAgent` alone, so a message a teammate
+   * posts into the thread by the ordinary writer is assistant-role with no
+   * parts — indistinguishable from a claimed placeholder. When two silent
+   * assistant turns exist we cannot know which one the pulse means, and
+   * swallowing a real message is far worse than a redundant progress line.
+   */
+  it('never swallows a teammate message it cannot tell from a placeholder', async () => {
+    const thread = structuredClone(CHAT_HOME_FIXTURE_THREAD);
+    thread.summary.state = 'streaming';
+    thread.turns = [
+      thread.turns[0]!,
+      {
+        messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
+        role: 'assistant',
+        author: thread.turns[1]!.author,
+        createdAt: '2026-08-13T08:19:30.000Z',
+        body: 'Agent turn in progress.',
+        parts: [],
+      },
+      {
+        messageId: '019f0000-0000-7000-8000-0000000000a2' as EntityId,
+        role: 'assistant',
+        author: thread.turns[1]!.author,
+        createdAt: '2026-08-13T08:19:45.000Z',
+        body: 'Heads up: I am reading the storage lane first.',
+        parts: [],
+      },
+    ];
+    const { port } = createChatHomeFixturePort([thread]);
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() =>
+      expect(view.getByText('Heads up: I am reading the storage lane first.')).toBeTruthy(),
+    );
+  });
+
+  /**
+   * `projectTurnParts` drops `done`, so a turn that terminated without output
+   * holds one stored part and DRAWS nothing. Suppressing its body on
+   * `parts.length` left an empty bubble where the durable fallback belongs.
+   */
+  it('keeps the durable fallback when a turn stored parts but drew nothing', async () => {
+    const thread = structuredClone(CHAT_HOME_FIXTURE_THREAD);
+    thread.turns = [
+      thread.turns[0]!,
+      {
+        messageId: '019f0000-0000-7000-8000-0000000000a3' as EntityId,
+        role: 'assistant',
+        author: thread.turns[1]!.author,
+        createdAt: '2026-08-13T08:20:00.000Z',
+        body: 'Agent turn completed.',
+        parts: [{ seq: 0, kind: 'done' }],
+      },
+    ];
+    const { port } = createChatHomeFixturePort([thread]);
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() => expect(view.getByText('Agent turn completed.')).toBeTruthy());
+  });
+
   it('says why a running turn cannot be stopped when the port has no interrupt', async () => {
     const fixture = createChatHomeFixturePort();
     const { interrupt: _interrupt, ...withoutInterrupt } = fixture.port;
