@@ -35,7 +35,6 @@ export interface ChatHomeScreenProps {
   /** Bare Home defaults to the space entity. A contextual host passes its entity instead. */
   anchorId?: EntityId;
   models: readonly ChatModelOption[];
-  spaceLabel?: string;
   newMutationId?: (prefix: string) => string;
   /** Opens the entity detail panel for an entity a tool call referenced. */
   onOpenEntity?: ((id: EntityId) => void) | undefined;
@@ -100,8 +99,17 @@ export interface ChatHomeScreenProps {
    *  Absent ⇒ disabled with `newTaskUnavailable`'s reason, never hidden. */
   onNewTask?: (() => void) | undefined;
   newTaskUnavailable?: { cause: string; remedy: string } | null;
-  /** D11: Run on a task row → the host opens its launch sheet on that task. */
+  /** D11: Run on a task row → the host opens its launch sheet on that task.
+   *  Serves the FALLBACK rows only — a hosted tab list wires Run itself. */
   onRunTask?: ((id: string) => void) | undefined;
+  /**
+   * The host's own CONTENT for a tab — the workspace's `EntityListPanel`
+   * with its full tree, tiles, lifecycle tabs and in-panel search (user
+   * ruling 2026-08-16: exact same components). Non-null replaces this
+   * screen's list AND its search box for that tab (the panel brings its
+   * own); null keeps the built-in rows — the standalone/mobile mounts.
+   */
+  renderTabList?: ((tab: HomeTab) => ReactNode) | undefined;
   /**
    * Region B when it is NOT the chat (D7/D8): the host's entity panel,
    * rendered in the conversation pane's place while the conversation stays
@@ -133,7 +141,6 @@ export function ChatHomeScreen({
   spaceId,
   anchorId = spaceId as EntityId,
   models,
-  spaceLabel,
   newMutationId = defaultMutationId,
   onOpenEntity,
   resolveEntity,
@@ -149,6 +156,7 @@ export function ChatHomeScreen({
   onNewTask,
   newTaskUnavailable,
   onRunTask,
+  renderTabList,
   centerOverride,
   slots,
   onOpenWorkspace,
@@ -521,6 +529,9 @@ export function ChatHomeScreen({
    *  OCCUPIES region B; an entity selection extinguishes them rather than
    *  fabricating an active row on a tab the selection is not from. */
   const chatOccupiesCenter = centerOverride === undefined || centerOverride === null;
+  /** The host's whole-tab takeover: the workspace list panel, with its own
+   *  search — so this screen's find box stands down for that tab. */
+  const hostedList = renderTabList?.(tab) ?? null;
 
   const send = useCallback(async () => {
     const body = draft.trim();
@@ -668,7 +679,13 @@ export function ChatHomeScreen({
   }, [port, selectedRootId]);
 
   return (
-    <main className="tch-root" data-testid="chat-home-screen">
+    <main
+      className="tch-root"
+      data-testid="chat-home-screen"
+      /* A hosted workspace list needs the rail's width, not the chat
+         column's — the layout grid reads this to widen column A. */
+      data-hosted-list={hostedList != null || undefined}
+    >
       {/*
         THE NAVIGATION AXIS (task 01a006f8, 2026-08-16, superseding R4's
         merged list). This panel is the full inventory AND the only selector,
@@ -699,12 +716,6 @@ export function ChatHomeScreen({
         marks read like any other open.
       */}
       <aside className="tch-sidebar" aria-label="Tasks, chats and sessions">
-        <header className="tch-sidebar__head">
-          <span>
-            <strong>Home</strong>
-            <small>{spaceLabel ?? 'this space'}</small>
-          </span>
-        </header>
         {/* D2: two constant buttons. No New session — a session is created by
             RUNNING a task (D11); the old permanently-disabled button is gone. */}
         <div className="tch-sidebar__actions">
@@ -766,15 +777,24 @@ export function ChatHomeScreen({
             </button>
           ))}
         </div>
-        <input
-          type="search"
-          className="tch-find"
-          placeholder={FIND_COPY[tab].placeholder}
-          aria-label={`${FIND_COPY[tab].label} — filters what is already loaded`}
-          title={`Filters the ${FIND_COPY[tab].noun} already loaded here; this is not a server search`}
-          value={findQuery}
-          onChange={(event) => setFindQuery(event.target.value)}
-        />
+        {hostedList == null ? (
+          <input
+            type="search"
+            className="tch-find"
+            placeholder={FIND_COPY[tab].placeholder}
+            aria-label={`${FIND_COPY[tab].label} — filters what is already loaded`}
+            title={`Filters the ${FIND_COPY[tab].noun} already loaded here; this is not a server search`}
+            value={findQuery}
+            onChange={(event) => setFindQuery(event.target.value)}
+          />
+        ) : null}
+        {hostedList != null ? (
+          /* The workspace's own EntityListPanel, given the tab's space —
+             tree, tiles, lifecycle tiers, sort and search are all its own. */
+          <div className="tch-panel-host" data-testid="tch-hosted-list">
+            {hostedList}
+          </div>
+        ) : (
         <div className="tch-thread-list">
           {tab === 'chats' && loading ? (
             <p className="tch-hollow">Reading conversations…</p>
@@ -834,9 +854,17 @@ export function ChatHomeScreen({
                 <div key={group.label} className="tch-group" role="group" aria-label={group.label}>
                   <span className="tch-group__label">{group.label}</span>
                   {group.rows.map((session) => (
+                    /* The badge sub-row is a SIBLING of the row button — PR
+                       chips carry real links, which cannot nest in a button.
+                       The tile wrapper carries the hover/active visuals so
+                       button and badges read as one row. */
+                    <div
+                      key={session.id}
+                      className="tch-tile"
+                      data-active={session.id === selectedEntityId || undefined}
+                    >
                     <button
                       type="button"
-                      key={session.id}
                       className="tch-thread tch-thread--session"
                       data-active={session.id === selectedEntityId || undefined}
                       title={
@@ -877,6 +905,10 @@ export function ChatHomeScreen({
                         <Timestamp at={session.updatedAt} />
                       </span>
                     </button>
+                    {session.badges ? (
+                      <span className="tch-thread__badges">{session.badges}</span>
+                    ) : null}
+                    </div>
                   ))}
                 </div>
               ))
@@ -885,8 +917,15 @@ export function ChatHomeScreen({
           {tab === 'tasks'
             ? taskRows.map((task) => (
                 /* A row and its Run are SIBLINGS — a button cannot nest a
-                   button, and Run must not be the row's whole surface. */
-                <div key={task.id} className="tch-task-row">
+                   button, and Run must not be the row's whole surface. The
+                   badge sub-row (PR chips, entity counts) is a sibling too,
+                   for the same reason: chips carry real links. */
+                <div
+                  key={task.id}
+                  className="tch-tile"
+                  data-active={task.id === selectedEntityId || undefined}
+                >
+                <div className="tch-task-row">
                   <button
                     type="button"
                     className="tch-thread tch-thread--task"
@@ -938,9 +977,14 @@ export function ChatHomeScreen({
                     />
                   )}
                 </div>
+                {task.badges ? (
+                  <span className="tch-thread__badges">{task.badges}</span>
+                ) : null}
+                </div>
               ))
             : null}
         </div>
+        )}
         <footer className="tch-sidebar__foot">
           {slots ? (
             <div

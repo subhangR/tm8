@@ -8,7 +8,7 @@
  * D16 no counts, D17 view-only sessions — so a later redesign has to argue
  * with the ruling, not just move JSX.
  */
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ChatHomeScreen, type ChatHomeScreenProps } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
@@ -190,6 +190,57 @@ describe('Home three-tab column', () => {
   it('D17: another member’s session keeps its view-only label on the Sessions tab', () => {
     const view = renderHome({ tab: 'sessions' });
     expect(view.getByText('view only')).toBeTruthy();
+  });
+
+  it('host-composed tile badges render BESIDE the row button, never inside it', () => {
+    // PR chips carry real <a> links — an <a> inside a <button> is invalid
+    // HTML and breaks both. The badge node must land as a sibling.
+    const withBadges: ChatSessionRow[] = [
+      {
+        ...SESSIONS[0],
+        badges: <a href="https://example.test/pr/1" data-testid="fake-pr-chip">#1</a>,
+      },
+    ];
+    const tasksWithBadges: ChatTaskRow[] = [
+      { ...TASKS[0], badges: <span data-testid="fake-count-badge">2 docs</span> },
+    ];
+
+    const sessionsView = renderHome({ tab: 'sessions', sessions: withBadges });
+    const chip = sessionsView.getByTestId('fake-pr-chip');
+    expect(chip.closest('button')).toBeNull();
+    expect(chip.closest('.tch-tile')).not.toBeNull();
+
+    const tasksView = renderHome({ tab: 'tasks', tasks: tasksWithBadges });
+    const count = tasksView.getByTestId('fake-count-badge');
+    expect(count.closest('button')).toBeNull();
+    expect(count.closest('.tch-tile')).not.toBeNull();
+    // And the row itself still selects.
+    const onSelectEntity = vi.fn();
+    const live = renderHome({ tab: 'tasks', tasks: tasksWithBadges, onSelectEntity });
+    fireEvent.click(
+      within(live.container).getByRole('button', { name: /^Ship the tab column/ }),
+    );
+    expect(onSelectEntity).toHaveBeenCalledWith('task-1');
+  });
+
+  it('a host renderTabList REPLACES the tab list AND the find box; null keeps both', () => {
+    // Uncontrolled tab so the strip itself can browse between the two states.
+    const view = renderHome({
+      renderTabList: (tab) => (tab === 'tasks' ? <div data-testid="hosted-panel" /> : null),
+    });
+    fireEvent.click(within(view.container).getByRole('tab', { name: 'Tasks' }));
+    // Tasks: the workspace panel takes the whole tab — the built-in rows and
+    // this screen's find box stand down (the panel brings its own search).
+    expect(within(view.container).getByTestId('tch-hosted-list')).toBeTruthy();
+    expect(within(view.container).getByTestId('hosted-panel')).toBeTruthy();
+    expect(
+      within(view.container).queryByRole('button', { name: /^Ship the tab column/ }),
+    ).toBeNull();
+    expect(within(view.container).queryByRole('searchbox')).toBeNull();
+    // Chats returned null: the built-in column and find box come back.
+    fireEvent.click(within(view.container).getByRole('tab', { name: 'Chats' }));
+    expect(within(view.container).queryByTestId('tch-hosted-list')).toBeNull();
+    expect(within(view.container).getByRole('searchbox')).toBeTruthy();
   });
 
   it('an unwired tab says so — absent is not an empty list', () => {

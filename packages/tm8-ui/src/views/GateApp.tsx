@@ -66,6 +66,9 @@ import { ChatHomeSurface, type ChatSessionRow, type ChatTaskRow } from '../chat-
 import { homeRowOf } from '../home';
 import { HomeView } from './HomeView';
 import { homeRegionStore } from '../stores/homeRegionStore';
+import { LinkedPullRequestChips } from '../pull-requests';
+import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
+import { TileCountBadges, hasTileCounts } from '../panels/list/TileCountBadges';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
@@ -1250,6 +1253,26 @@ export function GateApp(props: GateAppProps = {}) {
           const mine =
             viewerMemberId !== undefined &&
             (row.createdBy.id === viewerMemberId || row.createdBy.ownerMemberId === viewerMemberId);
+          /* THE WORKSPACE TILE'S OWN BADGE SUB-ROW, reused verbatim: the
+             lane facts (⎇ branch + worktree/shared/scratch, riding the
+             summary state per 107), the PR chips resolved through the same
+             index the tiles read, and the glyph counts. The chat module
+             renders the node; nothing is re-derived there. */
+          const lane = sessionLaneOf(row.state);
+          const pullRequests = data.linkedPullRequestsOf?.(row.id) ?? [];
+          const badges =
+            lane !== null || pullRequests.length > 0 || hasTileCounts(row.counters) ? (
+              <>
+                {lane !== null ? <SessionLaneLine lane={lane} /> : null}
+                {pullRequests.length > 0 ? (
+                  <LinkedPullRequestChips pullRequests={pullRequests} placement="tile" />
+                ) : null}
+                <TileCountBadges
+                  counters={row.counters}
+                  humanAuthors={row.badges.humanMessageAuthors}
+                />
+              </>
+            ) : undefined;
           return {
             id: row.id,
             title: row.title,
@@ -1259,6 +1282,7 @@ export function GateApp(props: GateAppProps = {}) {
             ...(detailParts.length > 0 ? { detail: detailParts.join(' · ') } : {}),
             updatedAt: row.activityAt,
             ...(mine ? {} : { viewOnly: true }),
+            ...(badges !== undefined ? { badges } : {}),
           };
         }),
     [data, viewerMemberId],
@@ -1287,6 +1311,22 @@ export function GateApp(props: GateAppProps = {}) {
             compact: true,
           });
           const priority = (row.state as { priority?: string }).priority;
+          /* Same badge sub-row as the workspace task tiles: PR chips through
+             the tracks index + the entity glyph counts (docs, messages,
+             memories). One vocabulary; the chat module renders it verbatim. */
+          const pullRequests = data.linkedPullRequestsOf?.(row.id) ?? [];
+          const badges =
+            pullRequests.length > 0 || hasTileCounts(row.counters) ? (
+              <>
+                {pullRequests.length > 0 ? (
+                  <LinkedPullRequestChips pullRequests={pullRequests} placement="tile" />
+                ) : null}
+                <TileCountBadges
+                  counters={row.counters}
+                  humanAuthors={row.badges.humanMessageAuthors}
+                />
+              </>
+            ) : undefined;
           return {
             id: row.id,
             title: row.title,
@@ -1294,6 +1334,7 @@ export function GateApp(props: GateAppProps = {}) {
             tone: projected.tone,
             ...(typeof priority === 'string' && priority.length > 0 ? { detail: priority } : {}),
             updatedAt: row.activityAt,
+            ...(badges !== undefined ? { badges } : {}),
           };
         }),
     [data],
@@ -1815,7 +1856,6 @@ export function GateApp(props: GateAppProps = {}) {
                 homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
                 homeRegionStore.getState().setTab(data.spaceId, 'sessions');
               }}
-              onOpenKind={(kind) => navigateTo({ type: 'kind', ref: kind })}
               onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
               /* D12: the ONE route out of Home — region C's explicit header
                  action. Chips never navigate; this button does. */
@@ -1823,12 +1863,9 @@ export function GateApp(props: GateAppProps = {}) {
                 navigateTo(WORKSPACE_TARGET);
                 nav.push(id);
               }}
-              /* The one cheap real counts read (spaces.counts) — the foot
-                 strip's numbers. A kind the server never counted renders no
-                 number (absent ≠ zero). */
-              countsFor={data.countsFor}
               /* D11/D14: the launch-sheet singleton, mounted over Home while
                  it holds a subject — Run on a task row opens it here. */
+              onLaunchOpen={(id) => launch.open(id)}
               launchSubjectId={launch.subjectId}
               launchRefusal={launchRefusal}
               launchInFlight={launching}
@@ -1843,7 +1880,6 @@ export function GateApp(props: GateAppProps = {}) {
                   seam={data.seam}
                   spaceId={data.spaceId}
                   nodeKey={nodeKey}
-                  spaceLabel={data.spaces.find((sp) => sp.id === data.spaceId)?.name}
                   bridge={chatBridge}
                   /* PR188 review F3: the space id is NOT an entity and
                      messages.post 404s on it (measured). Bare-home chats anchor
@@ -1862,6 +1898,7 @@ export function GateApp(props: GateAppProps = {}) {
                   sessions={homeSessionRows}
                   tasks={homeTaskRows}
                   onRunTask={(id) => launch.open(id as EntityId)}
+                  renderTabList={regions.renderTabList}
                   tab={regions.tab}
                   onTab={regions.onTab}
                   selectedEntityId={regions.selectedEntityId}

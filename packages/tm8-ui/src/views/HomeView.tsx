@@ -31,7 +31,7 @@ import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { HomePage } from '../home-page';
 import { AuxEntityPanel } from './auxPanel';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
-import type { ControlHost, DetailReasons } from '../panels';
+import { EntityListPanel, type ControlHost, type DetailReasons } from '../panels';
 import type { ActionRef } from '../domain';
 import { getKind } from '../domain';
 import { attachmentsFor } from '../files/port';
@@ -58,6 +58,8 @@ const HOME_MIN = 420;
 /** The 8px separator track plus the aside's own 1px border — this package sets
     no global `border-box`, so that border ADDS to the declared width. */
 const ASIDE_CHROME = 8 + 1;
+/** The Sessions tab's kind — same literal law as GateApp's LIVE_COUNT_KIND. */
+const HOME_SESSION_KIND = 'work_session';
 
 export interface HomeViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -67,13 +69,12 @@ export interface HomeViewProps {
   onNotice(notice: Notice): void;
   /** Absent ⇒ the panel's Launch renders disabled-with-reason, as everywhere. */
   onSpawn?(input: ExecutionSpawnInput): void | Promise<void>;
-  onOpenKind(kind: string): void;
   onOpenWorkspace(): void;
   /** D12: the ONE route out of Home — C's explicit workspace action. */
   onOpenInWorkspace?(id: EntityId): void;
-  countsFor?: (kind: string) => { total: number; unseen: number } | undefined;
   /** D11/D14 — the GateApp launch-sheet singleton, mounted over this screen
    *  while it holds a subject, exactly as EntityView mounts it. */
+  onLaunchOpen?(id: EntityId): void;
   launchSubjectId?: EntityId | null;
   launchRefusal?: { cause: string; detail: string } | null;
   launchInFlight?: boolean;
@@ -103,6 +104,15 @@ export interface HomeChatRegions {
   newTaskUnavailable: { cause: string; remedy: string } | null;
   /** B's non-chat occupant, rendered inside the chat grid (D8). */
   centerOverride?: ReactNode;
+  /**
+   * The Tasks/Sessions tab CONTENT: the WORKSPACE's own `EntityListPanel` —
+   * the exact tree, tiles, lifecycle tabs, sort and in-panel search the
+   * workspace list draws (user ruling 2026-08-16: "exact tree structure,
+   * reuse the same components full"). Composed here because the control
+   * executor (`rowLifecycle` through `ControlHost`) is this screen's
+   * singleton. Returns null for tabs this host does not take over (Chats).
+   */
+  renderTabList?: (tab: HomeTab) => ReactNode;
 }
 
 export function HomeView(props: HomeViewProps) {
@@ -130,7 +140,15 @@ export function HomeView(props: HomeViewProps) {
     [onNotice],
   );
 
-  const launchPort = useLaunchPort(data, props.onSpawn ? { onSpawn: props.onSpawn } : {});
+  /* `onFullOptions` rides in when the shell wired `onLaunchOpen` — a task
+     row's Run then goes STRAIGHT to the launch sheet this screen mounts,
+     the same outranking the kind screens apply. */
+  const launchPort = useLaunchPort(data, {
+    ...(props.onSpawn ? { onSpawn: props.onSpawn } : {}),
+    ...(props.onLaunchOpen
+      ? { onFullOptions: (entityId: string) => props.onLaunchOpen!(entityId as EntityId) }
+      : {}),
+  });
   const primaries = usePanelPrimaries({
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
@@ -168,6 +186,10 @@ export function HomeView(props: HomeViewProps) {
       livenessOf: data.livenessOf,
       capabilitiesOf: (id) => data.detailOf(id)?.capabilities,
       onNeedDetail: (id: string) => data.pull?.(id),
+      /* Row verbs (Run, Complete) dispatch through the SAME primaries the
+         panels use — one executor per screen. `forEntity` answers undefined
+         for an unwired verb, which the optional call keeps unreachable. */
+      onAction: (ref, entityId) => primaries.forEntity(entityId)?.(ref),
       onSetState: rowLifecycle.setState,
       onArchive: rowLifecycle.archive,
       onSetValue: rowLifecycle.setValue,
@@ -177,7 +199,7 @@ export function HomeView(props: HomeViewProps) {
       membershipSets: rowLifecycle.membershipSets,
       connectionsOf: data.connectionsOf,
     }),
-    [focusDetail?.kind, ctx, data, rowLifecycle],
+    [focusDetail?.kind, ctx, data, primaries, rowLifecycle],
   );
 
   /* The panels read `detailOf`; nothing else on Home does, so the pulls are
@@ -271,6 +293,53 @@ export function HomeView(props: HomeViewProps) {
     />
   ) : undefined;
 
+  /* THE TASKS AND SESSIONS TABS ARE THE WORKSPACE LIST (user ruling
+     2026-08-16): the SAME `EntityListPanel` the workspace and the entity
+     screens mount — its tree (children, expand, depth), its tiles with the
+     changeable-status expand, its lifecycle tabs, sort and its own in-panel
+     search. Composed here because every executor it needs is this screen's
+     singleton set; the chat column just gives it the tab's space. The mount
+     mirrors `EntityView`'s, minus the header verbs no Home executor owns
+     (they render their honest not-wired refusal). */
+  const renderTabList = useCallback(
+    (tab: HomeTab): ReactNode => {
+      if (tab === 'chats') return null;
+      const kind = tab === 'tasks' ? taskKind.kind : HOME_SESSION_KIND;
+      return (
+        <EntityListPanel
+          kind={kind}
+          rowsFor={data.rowsFor(kind)}
+          pageStateOf={data.pageStateOf(kind)}
+          loadMore={data.loadMore(kind)}
+          boardFor={data.boardFor(kind) as never}
+          members={data.members}
+          ctx={ctx}
+          liveIds={data.liveIds}
+          livenessOf={data.livenessOf}
+          activity={data.activity}
+          messagePulses={data.messagePulses}
+          linkedPullRequestsOf={data.linkedPullRequestsOf}
+          capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          onNeedDetail={(id) => data.pull?.(id)}
+          selectedId={centerId}
+          onSelect={(id) => region.selectCenter(id as EntityId)}
+          onSetState={rowLifecycle.setState}
+          onArchive={rowLifecycle.archive}
+          onSetValue={rowLifecycle.setValue}
+          onAssign={rowLifecycle.assign}
+          assignableActors={rowLifecycle.assignable}
+          onMembership={rowLifecycle.membership}
+          membershipSets={rowLifecycle.membershipSets}
+          connectionsOf={data.connectionsOf}
+          launch={launchPort}
+          compact
+        />
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [taskKind.kind, data, ctx, centerId, rowLifecycle, launchPort],
+  );
+
   const regions: HomeChatRegions = {
     tab: region.tab,
     onTab: region.setTab,
@@ -280,6 +349,7 @@ export function HomeView(props: HomeViewProps) {
     ...(newTask.unavailable === null ? { onNewTask: () => void newTask.create() } : {}),
     newTaskUnavailable: newTask.unavailable,
     ...(centerOverride !== undefined ? { centerOverride } : {}),
+    renderTabList,
   };
 
   /* REGION C. Chips inside it REPLACE its subject (auxPanel's ruling —
@@ -340,9 +410,7 @@ export function HomeView(props: HomeViewProps) {
         /* A NEEDS YOU card opens where a chip does. They are the same gesture
            — "show me that" — from two places on one screen. */
         onOpenEntity={(id) => openEntity(id as EntityId)}
-        onOpenKind={props.onOpenKind}
         onOpenWorkspace={props.onOpenWorkspace}
-        {...(props.countsFor ? { countsFor: props.countsFor } : {})}
       />
       {/* D11/D14: the full launch sheet over this screen while the shell
           holds a subject — Run on a task row opened it. Its own capture-phase

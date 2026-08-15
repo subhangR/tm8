@@ -257,41 +257,10 @@
 .cv2-root .hp-chat--full .tch-root {
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
 }
+/* A hosted workspace list (Tasks/Sessions tabs) needs the rail's width the
+   workspace gives it, not the chat column's — the tree, lifecycle tabs and
+   in-panel search were cut for ~320px. */
+.cv2-root .hp-chat--full .tch-root[data-hosted-list] {
+  grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+}
 .cv2-root .hp-chat--full .tch-sidebar { display: flex; }
-
-.cv2-root .hp-counts {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: center;
-  padding: 0 14px 12px;
-}
-.cv2-root .hp-counts__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border: 1px solid var(--pn-line);
-  border-radius: 999px;
-  background: var(--pn-card);
-  color: var(--pn-ink-2);
-  font-family: var(--pn-ui);
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.cv2-root .hp-counts__chip:hover { background: var(--pn-hover); }
-.cv2-root .hp-counts__label { font-weight: 600; color: var(--pn-ink); }
-.cv2-root .hp-counts__total { font-family: var(--pn-mono); font-size: 11px; }
-.cv2-root .hp-counts__unseen {
-  color: var(--pn-brand);
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  font-weight: 600;
-}
-.cv2-root .hp-counts__live {
-  color: var(--pn-run);
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  font-weight: 600;
-}
