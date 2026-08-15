@@ -28,11 +28,15 @@ beforeEach(() => {
 });
 
 describe('dashboard route', () => {
-  it('mounts Chat as Home rather than the previous triage dashboard', async () => {
+  it('mounts the merged single home — chat hero inside the HomePage canvas', async () => {
     const view = render(<GateApp />);
     const rail = await waitFor(() => view.getByTestId('menu-rail'));
-    fireEvent.click(within(rail).getByRole('button', { name: /^Dashboard$/ }));
+    // Revision 11: the row reads "Home" (the ref stays `dashboard`).
+    fireEvent.click(within(rail).getByRole('button', { name: /^Home$/ }));
 
+    // The merged canvas hosts the chat surface as its hero. The old T5-1
+    // triage dashboard stays unmounted.
+    expect(await view.findByTestId('home-page')).toBeTruthy();
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
     expect(view.queryByTestId('home-screen')).toBeNull();
     expect(await view.findAllByText('Plan the launch sequence')).toHaveLength(2);

@@ -58,13 +58,16 @@ beforeEach(() => {
 const mount = () => render(<GateApp />);
 
 describe('a server round trip keeps your place', () => {
-  it('comes back to the view you left, not the workspace', async () => {
+  it('comes back to the view you left, not the landing screen', async () => {
     const first = mount();
-    await waitFor(() => first.getByTestId('workspace-grid'));
+    // Revision 11: a viewer with no memory lands on the merged Home.
+    await waitFor(() => first.getByTestId('home-page'));
 
-    // Leave the workspace for a kind screen — the branch of GateApp's ternary
-    // that renders EntityView.
-    fireEvent.click(within(first.getByTestId('menu-rail')).getByRole('button', { name: /^Tasks/ }));
+    // Leave for a kind screen — the branch of GateApp's ternary that renders
+    // EntityView. Tasks rides the Workspace caret now, so open it first.
+    const rail = first.getByTestId('menu-rail');
+    fireEvent.click(within(rail).getByLabelText('Expand Workspace'));
+    fireEvent.click(within(rail).getByRole('button', { name: /^Tasks/ }));
     await waitFor(() => first.getByTestId('entity-view'));
 
     // THE ROUND TRIP. Unmount is what `key={activeServer.id}` does on a switch.
@@ -82,15 +85,17 @@ describe('a server round trip keeps your place', () => {
 
     const second = mount();
     await waitFor(() => second.getByTestId('entity-view'));
-    // The regression this replaces: `workspace-grid`, every time.
+    // The regression this replaces: the landing screen, every time.
     expect(second.queryByTestId('workspace-grid')).toBeNull();
+    expect(second.queryByTestId('home-page')).toBeNull();
     second.unmount();
   });
 
-  it('still boots to the workspace for a viewer with no remembered place', async () => {
+  it('boots to the merged Home for a viewer with no remembered place (r11)', async () => {
     const view = mount();
-    await waitFor(() => view.getByTestId('workspace-grid'));
+    await waitFor(() => view.getByTestId('home-page'));
     expect(view.queryByTestId('entity-view')).toBeNull();
+    expect(view.queryByTestId('workspace-grid')).toBeNull();
     view.unmount();
   });
 });

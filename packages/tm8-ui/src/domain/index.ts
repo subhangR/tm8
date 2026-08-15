@@ -150,6 +150,9 @@ export {
   unrenderableKindRefs,
 } from './menu';
 
+/** The merged Home page's rail/presence kinds — registry-adjacent data (D18). */
+export { HOME_PRESENCE_KIND, HOME_RAIL_KINDS } from './home-page';
+
 /**
  * The MenuTarget <-> NavView mapping. Exported from the barrel because the
  * shell composes from `domain/`, and this is the one place the two navigation
