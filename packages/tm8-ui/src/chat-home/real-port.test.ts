@@ -38,6 +38,7 @@ describe('real chat-home seam adapter', () => {
       anchorId: ANCHOR,
       teammateId: TEAMMATE,
       model: 'claude-sonnet-4-5',
+      mode: 'ask' as const,
       createdAt: '2026-08-13T08:00:00.000Z',
       lastReplyAt: null,
     }]);
@@ -50,6 +51,7 @@ describe('real chat-home seam adapter', () => {
       teammateLabel: 'Forge',
       model: 'claude-sonnet-4-5',
       modelLabel: 'claude-sonnet-4-5',
+      mode: 'ask',
     });
 
     await port.postTurn({
@@ -71,6 +73,7 @@ describe('real chat-home seam adapter', () => {
       threadRootId: input.rootMessageId,
       teammateId: input.teammateId,
       model: input.model,
+      mode: input.mode,
     }));
     const port = createChatHomePortFromSeam(seam, { configureThread });
     const root = await port.startThread.createRoot({
@@ -95,6 +98,7 @@ describe('real chat-home seam adapter', () => {
       anchorId: ANCHOR,
       teammateId: TEAMMATE,
       model: 'claude-sonnet-4-5',
+      mode: 'plan' as const,
       createdAt: '2026-08-13T08:00:00.000Z',
       lastReplyAt: null,
     };
@@ -116,7 +120,7 @@ describe('real chat-home seam adapter', () => {
 
   it('seeds the caches at createRoot so a brand-new chat never races the home read', async () => {
     const { seam, postMessage } = seamStub();
-    const configureThread = vi.fn(async () => ({ threadRootId: ROOT, teammateId: TEAMMATE, model: 'm' }));
+    const configureThread = vi.fn(async () => ({ threadRootId: ROOT, teammateId: TEAMMATE, model: 'm', mode: 'ask' as const }));
     // No listThreads bridge at all: the seeded entry must carry the sequence alone.
     const port = createChatHomePortFromSeam(seam, { configureThread });
 
@@ -124,7 +128,7 @@ describe('real chat-home seam adapter', () => {
       spaceId: 'space-1', anchorId: ANCHOR, body: 'first prompt', clientMutationId: 'root-1',
     });
     await port.startThread.configure({
-      rootMessageId: threadRootId, teammateId: TEAMMATE, model: 'claude-sonnet-4-5', clientMutationId: 'cfg-1',
+      rootMessageId: threadRootId, teammateId: TEAMMATE, model: 'claude-sonnet-4-5', mode: 'ask', clientMutationId: 'cfg-1',
     });
     await port.postTurn({ threadRootId, body: 'second turn', clientMutationId: 'turn-2' });
     expect(postMessage).toHaveBeenLastCalledWith({
@@ -135,4 +139,3 @@ describe('real chat-home seam adapter', () => {
     });
   });
 });
-

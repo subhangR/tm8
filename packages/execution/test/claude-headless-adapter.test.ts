@@ -56,6 +56,7 @@ describe('ClaudeHeadlessAdapter', () => {
       cwd: root,
       systemPrompt: 'Use only the TM8 graph tools.',
       mcpConfigPath: join(root, 'mcp.json'),
+      availableTools: ['Read', 'Bash'],
       allowedTools: ALLOWED_TOOLS,
       ...overrides,
     };
@@ -110,8 +111,10 @@ describe('ClaudeHeadlessAdapter', () => {
       '--mcp-config',
       join(root, 'mcp.json'),
       '--strict-mcp-config',
+      '--permission-mode',
+      'dontAsk',
       '--tools',
-      '',
+      'Read,Bash',
       '--allowed-tools',
       ...ALLOWED_TOOLS,
       '--session-id',
@@ -122,6 +125,24 @@ describe('ClaudeHeadlessAdapter', () => {
     expect(recorded.args).not.toContain('--bare');
     expect(recorded.home).toBe(process.env.HOME ?? null);
     expect(recorded.marker).toBe('per-thread');
+  });
+
+  it('explicitly disallows Claude built-ins when the visible native set is empty', async () => {
+    const argvFile = join(root, 'orchestrate-argv.json');
+    const runtime = adapter();
+    const thread = input({
+      availableTools: [],
+      env: { TM8_FAKE_ARGV_FILE: argvFile },
+    });
+
+    await runtime.startThread(thread);
+    const recorded = JSON.parse(await readFile(argvFile, 'utf8')) as { args: string[] };
+    expect(recorded.args).not.toContain('--tools');
+    expect(recorded.args).toContain('--disallowed-tools');
+    for (const tool of ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebFetch', 'WebSearch']) {
+      expect(recorded.args).toContain(tool);
+    }
+    expect(recorded.args).toContain('--allowed-tools');
   });
 
   it('refuses any per-thread HOME override before spawning', async () => {

@@ -22,15 +22,39 @@ describe('TM8 Chat v1 contract', () => {
       rootMessageId: ID,
       teammateId: '10000000-0000-4000-8000-000000000002',
       model: 'gpt-5.6-sol',
+      mode: 'ask',
       clientMutationId: 'start-1',
     })).not.toHaveProperty('nativeSessionId');
     expect(() => StartChatThreadInputSchema.parse({
       rootMessageId: ID,
       teammateId: '10000000-0000-4000-8000-000000000002',
       model: 'gpt-5.6-sol',
+      mode: 'ask',
       clientMutationId: 'start-1',
       nativeSessionId: 'leak',
     })).toThrow();
+  });
+
+  it('accepts Explain as a durable chat mode', () => {
+    const input = StartChatThreadInputSchema.parse({
+      rootMessageId: ID,
+      teammateId: '10000000-0000-4000-8000-000000000002',
+      model: 'gpt-5.6-sol',
+      mode: 'explain',
+      clientMutationId: 'start-explain',
+    });
+    expect(input.mode).toBe('explain');
+
+    const summary = ChatThreadSummarySchema.parse({
+      rootMessageId: ID,
+      anchorId: '10000000-0000-4000-8000-000000000004',
+      teammateId: '10000000-0000-4000-8000-000000000002',
+      model: 'gpt-5.6-sol',
+      mode: 'explain',
+      createdAt: '2026-08-13T00:00:00.000Z',
+      lastReplyAt: null,
+    });
+    expect(summary.mode).toBe('explain');
   });
 
   it('accepts exactly the seven ordered C1 message-part kinds', () => {
@@ -63,6 +87,7 @@ describe('TM8 Chat v1 contract', () => {
       anchorId: '10000000-0000-4000-8000-000000000004',
       teammateId: '10000000-0000-4000-8000-000000000002',
       model: 'gpt-5.6-sol',
+      mode: 'plan',
       createdAt: '2026-08-13T00:00:00.000Z',
       lastReplyAt: null,
     });

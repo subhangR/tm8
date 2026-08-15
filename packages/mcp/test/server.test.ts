@@ -31,13 +31,15 @@ describe('stdio JSON-RPC server', () => {
         serverInfo: { name: 'tm8', version: '0.1.0' },
       },
     });
-    expect(JSON.stringify(response)).toContain('start with tm8_overview');
+    expect(JSON.stringify(response)).toContain('mode-gated');
   });
 
-  it('lists five tools and calls one', async () => {
+  it('lists only the mode-allowed registry and calls one', async () => {
     const listed = await server().handle({ jsonrpc: '2.0', id: 'list', method: 'tools/list' });
-    const tools = (listed as { result: { tools: unknown[] } }).result.tools;
-    expect(tools).toHaveLength(5);
+    const tools = (listed as { result: { tools: Array<{ name: string }> } }).result.tools;
+    expect(tools.map((tool) => tool.name)).toContain('repo_read_file');
+    expect(tools.map((tool) => tool.name)).not.toContain('repo_write');
+    expect(tools.map((tool) => tool.name)).not.toContain('tm8_act');
 
     const called = await server().handle({
       jsonrpc: '2.0',

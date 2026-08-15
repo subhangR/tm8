@@ -35,10 +35,12 @@ function claim(runtimeState: RuntimeState): Record<string, unknown> {
     body: 'human prompt verbatim',
     anchorId: ANCHOR,
     requesterIdentityId: IDENTITY,
+    requesterAuthKind: 'browser',
     teammateId: TEAMMATE,
     model: 'gpt-5.6-sol',
     provider: 'openai',
     agentTool: 'codex',
+    chatMode: 'ask',
     nativeSessionId: NATIVE,
     cwd: '/tmp/tm8-chat-test',
     runtimeState,
@@ -72,13 +74,18 @@ class FakeDb implements Db {
   /** Which identity each claim ran as — 112 requires the CONFIGURING human. */
   readonly claimIdentities: (string | undefined)[] = [];
   claimCalls = 0;
-  private claimed = false;
+  private nextClaim = 0;
+  private readonly claimedTurns: readonly Record<string, unknown>[];
 
   constructor(
-    private readonly claimedTurn: Record<string, unknown> | null,
+    claimedTurn: Record<string, unknown> | readonly Record<string, unknown>[] | null,
     private readonly events: string[],
     readonly configuredRoots: string[] = [],
-  ) {}
+  ) {
+    this.claimedTurns = claimedTurn === null
+      ? []
+      : Array.isArray(claimedTurn) ? claimedTurn : [claimedTurn];
+  }
 
   async tx<T>(_claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T> {
     const q: Querier = {
@@ -102,9 +109,9 @@ class FakeDb implements Db {
     if (name === 'claim_next_chat_turn') {
       this.claimCalls += 1;
       this.claimIdentities.push(rpcClaims.identityId);
-      if (this.claimed || !this.claimedTurn) return null as T;
-      this.claimed = true;
-      return this.claimedTurn as T;
+      const claimed = this.claimedTurns[this.nextClaim];
+      this.nextClaim += 1;
+      return (claimed ?? null) as T;
     }
     if (name === 'append_chat_message_part') {
       const [, seq, kind, payload] = args;
@@ -139,6 +146,7 @@ class FakeDb implements Db {
 class FakeRuntime implements AgentRuntime {
   readonly starts: StartAgentThreadInput[] = [];
   readonly turns: string[] = [];
+  readonly closes: string[] = [];
   constructor(private readonly items: readonly TurnItem[]) {}
   async startThread(input: StartAgentThreadInput): Promise<{ threadId: string }> {
     this.starts.push(input);
@@ -149,7 +157,7 @@ class FakeRuntime implements AgentRuntime {
     for (const item of this.items) yield item;
   }
   async interrupt(): Promise<boolean> { return true; }
-  async close(): Promise<void> {}
+  async close(threadId: string): Promise<void> { this.closes.push(threadId); }
 }
 
 function rig(runtimeState: RuntimeState, items: readonly TurnItem[]) {
@@ -167,6 +175,7 @@ function rig(runtimeState: RuntimeState, items: readonly TurnItem[]) {
     resolveLaunchConfig: async () => ({
       systemPrompt: 'system',
       mcpConfigPath: '/tmp/mcp.json',
+      availableTools: [],
       allowedTools: ['messages.post'],
     }),
   });
@@ -221,7 +230,7 @@ describe('TM8 Chat durable orchestration', () => {
       runtime: new FakeRuntime([]),
       publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
       resolveLaunchConfig: async () => ({
-        systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', allowedTools: [],
+        systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', availableTools: [], allowedTools: [],
       }),
     });
     await orchestrator.wakeForMessages('other-human', [{
@@ -264,7 +273,7 @@ describe('TM8 Chat durable orchestration', () => {
       runtime,
       publisher: new ChatTurnPublisher(registry),
       resolveLaunchConfig: async () => ({
-        systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', allowedTools: [],
+        systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', availableTools: [], allowedTools: [],
       }),
     });
     await orchestrator.wake(ROOT, IDENTITY);
@@ -275,6 +284,57 @@ describe('TM8 Chat durable orchestration', () => {
     expect(senderSink.frames).toHaveLength(3);
     expect(bystanderSink.frames).toHaveLength(3);
     expect(otherSpaceSink.frames).toHaveLength(0);
+  });
+
+  it('rotates the runtime credential and resumes when the next turn has another sender', async () => {
+    const events: string[] = [];
+    const secondTurn = '10000000-0000-4000-8000-00000000000a';
+    const secondMessage = '10000000-0000-4000-8000-00000000000b';
+    const db = new FakeDb([
+      {
+        ...claim('cold'), agentMessageId: AGENT_MESSAGE,
+        requestedByIdentityId: IDENTITY, requestedByAuthKind: 'browser',
+      },
+      {
+        ...claim('live'), turnId: secondTurn, userMessageId: secondMessage,
+        agentMessageId: AGENT_MESSAGE, requestedByMemberId: MEMBER_B,
+        requestedByIdentityId: OTHER_IDENTITY, requestedByAuthKind: 'browser',
+        requestedByDisplayName: 'Member B',
+      },
+    ], events);
+    const runtime = new FakeRuntime([
+      { kind: 'text', text: 'ok' },
+      { kind: 'done', reason: 'success' },
+    ]);
+    const resolvedFor: Array<{ identityId: string; authKind: string | null; mode: string }> = [];
+    const orchestrator = new ChatOrchestrator({
+      db,
+      runtime,
+      publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveLaunchConfig: async (input) => {
+        resolvedFor.push({
+          identityId: input.requesterIdentityId,
+          authKind: input.requesterAuthKind,
+          mode: input.mode,
+        });
+        return {
+          systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+          availableTools: [], allowedTools: ['mcp__tm8__tm8_read'],
+        };
+      },
+    });
+
+    await orchestrator.wake(ROOT, IDENTITY);
+
+    expect(resolvedFor).toEqual([
+      { identityId: IDENTITY, authKind: 'browser', mode: 'new' },
+      { identityId: OTHER_IDENTITY, authKind: 'browser', mode: 'resume-after-interrupt' },
+    ]);
+    expect(runtime.closes).toEqual([ROOT]);
+    expect(runtime.starts[1]?.resume).toEqual({
+      nativeSessionId: NATIVE,
+      cwd: '/tmp/tm8-chat-test',
+    });
   });
 
   // A wake that lands while a drain for the same root is exiting must not be
@@ -290,7 +350,7 @@ describe('TM8 Chat durable orchestration', () => {
       runtime: new FakeRuntime([]),
       publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
       resolveLaunchConfig: async () => ({
-        systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', allowedTools: [],
+        systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', availableTools: [], allowedTools: [],
       }),
     });
     const first = orchestrator.wake(ROOT, IDENTITY);
@@ -319,7 +379,7 @@ describe('TM8 Chat durable orchestration', () => {
       runtime,
       publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
       resolveLaunchConfig: async () => ({
-        systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', allowedTools: [],
+        systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', availableTools: [], allowedTools: [],
       }),
     });
     await orchestrator.wake(ROOT, IDENTITY);

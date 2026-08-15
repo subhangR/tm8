@@ -1,4 +1,4 @@
-import type { ActorSummary, EntityId, SpaceId } from '@tm8/contract';
+import type { ActorSummary, ChatMode, EntityId, SpaceId } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
 export type ChatTurnItem =
@@ -64,6 +64,7 @@ export interface ChatThreadConfig {
   teammateLabel: string;
   model: string;
   modelLabel: string;
+  mode: ChatMode;
 }
 
 export interface ChatThreadSummary {
@@ -110,6 +111,7 @@ export interface ChatConfigureInput {
   rootMessageId: EntityId;
   teammateId: EntityId;
   model: string;
+  mode: ChatMode;
   clientMutationId: string;
 }
 
@@ -125,6 +127,7 @@ export interface ChatStartResult {
   threadRootId: EntityId;
   teammateId: EntityId;
   model: string;
+  mode: ChatMode;
 }
 
 export interface ChatPostResult {

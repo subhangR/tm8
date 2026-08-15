@@ -40,6 +40,7 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
       teammateLabel: 'Forge',
       model: 'claude-sonnet-4-5',
       modelLabel: 'Sonnet 4.5',
+      mode: 'plan',
     },
     state: 'idle',
   },
@@ -178,6 +179,7 @@ export function createChatHomeFixturePort(
               teammateLabel: 'Pending configuration',
               model: '',
               modelLabel: 'Pending configuration',
+              mode: 'ask',
             },
             state: 'idle',
           },
@@ -205,6 +207,7 @@ export function createChatHomeFixturePort(
             teammateLabel: input.teammateId === AGENT.id ? 'Forge' : 'Researcher',
             model: input.model,
             modelLabel: input.model,
+            mode: input.mode,
           },
           state: 'streaming',
         };
@@ -212,6 +215,7 @@ export function createChatHomeFixturePort(
           threadRootId: input.rootMessageId,
           teammateId: input.teammateId,
           model: input.model,
+          mode: input.mode,
         };
       },
     },

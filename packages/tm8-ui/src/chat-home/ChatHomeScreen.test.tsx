@@ -31,6 +31,8 @@ describe('Chat Home', () => {
     expect(within(view.getByTestId('chat-tool-card')).getByText('completed')).toBeTruthy();
     expect(view.getByTestId('chat-usage-card').textContent).toContain('$0.0073');
     expect((view.getByLabelText('Chat teammate') as HTMLSelectElement).disabled).toBe(true);
+    expect((view.getByLabelText('Chat mode') as HTMLSelectElement).disabled).toBe(true);
+    expect(view.getAllByText('plan').length).toBeGreaterThan(0);
     expect(view.getByText('pinned for this thread')).toBeTruthy();
   });
 
@@ -49,6 +51,7 @@ describe('Chat Home', () => {
     fireEvent.click(view.getByRole('button', { name: /new/i }));
     expect((view.getByLabelText('Chat teammate') as HTMLSelectElement).disabled).toBe(false);
     fireEvent.change(view.getByLabelText('Chat model'), { target: { value: 'gpt-5.6-sol' } });
+    fireEvent.change(view.getByLabelText('Chat mode'), { target: { value: 'build' } });
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Audit the release blockers.' },
     });
@@ -63,11 +66,42 @@ describe('Chat Home', () => {
     });
     expect(controls.configs[0]).toMatchObject({
       model: 'gpt-5.6-sol',
+      mode: 'build',
       clientMutationId: 'chat-config:test',
     });
     expect(controls.configs[0]?.rootMessageId).toMatch(/^019f/);
     expect(controls.posts).toHaveLength(0);
     expect(view.getByText('Agent is working')).toBeTruthy();
+  });
+
+  it('offers Explain and persists it in the write-once thread configuration', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const view = render(
+      <ChatHomeScreen
+        port={port}
+        spaceId={SPACE_ID}
+        models={MODELS}
+        newMutationId={(prefix) => `${prefix}:explain-test`}
+      />,
+    );
+
+    await waitFor(() => expect(view.getByRole('button', { name: /new/i })).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new/i }));
+    const mode = view.getByLabelText('Chat mode') as HTMLSelectElement;
+    expect(within(mode).getByRole('option', { name: 'Explain' })).toBeTruthy();
+    fireEvent.change(mode, { target: { value: 'explain' } });
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Explain the request flow with a diagram.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+
+    await waitFor(() => expect(controls.configs).toHaveLength(1));
+    expect(controls.configs[0]).toMatchObject({ mode: 'explain' });
+    await waitFor(() => {
+      expect((view.getByLabelText('Chat mode') as HTMLSelectElement).disabled).toBe(true);
+    });
+    expect((view.getByLabelText('Chat mode') as HTMLSelectElement).value).toBe('explain');
+    expect(view.getByText('pinned for this thread')).toBeTruthy();
   });
 
   it('appends a streamed part by seq and settles on done', async () => {

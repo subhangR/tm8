@@ -10,7 +10,7 @@
  * state and the URL, the panels own anatomy. This file is composition only.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, EntitySummary, MenuViewRef, ProjectTrustLevel, SpaceId } from '@tm8/contract';
+import type { ChatMode, EntityId, EntitySummary, MenuViewRef, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
   MenuRail,
@@ -1177,13 +1177,15 @@ export function GateApp(props: GateAppProps = {}) {
   const chatBridge = useMemo(() => ({
     listThreads: async (sid: string) => (await data.seam.home(sid)).chatThreads ?? [],
     configureThread: async (input: {
-      rootMessageId: string; teammateId: string; model: string; clientMutationId: string;
+      rootMessageId: string; teammateId: string; model: string;
+      mode: ChatMode; clientMutationId: string;
     }) => {
       const result = await data.seam.commands.startChatThread(input);
       return {
         threadRootId: result.thread.rootMessageId,
         teammateId: result.thread.teammateId,
         model: result.thread.model,
+        mode: result.thread.mode,
       };
     },
   }), [data.seam]);

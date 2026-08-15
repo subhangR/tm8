@@ -61,6 +61,8 @@
       },
       "dependencies": {
         "@tm8/contract": "workspace:*",
+        "tinyglobby": "^0.2.17",
+        "undici": "^7.29.0",
       },
       "devDependencies": {
         "@types/node": "^20.14.0",

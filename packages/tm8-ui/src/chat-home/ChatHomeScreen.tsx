@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, SpaceId } from '@tm8/contract';
+import type { ChatMode, EntityId, SpaceId } from '@tm8/contract';
 import { Avatar, Timestamp } from '../kit';
 import { ChooseFilesControl } from '../files/ChooseFilesControl';
 import type { FileUploadTask } from '../files/upload';
@@ -91,6 +91,7 @@ export function ChatHomeScreen({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
   const [modelId, setModelId] = useState(models[0]?.model ?? '');
+  const [chatMode, setChatMode] = useState<ChatMode>('ask');
   const activeRootRef = useRef<EntityId | null>(null);
   const stoppedRootRef = useRef<EntityId | null>(null);
   const detailRef = useRef<ChatThreadDetail | null>(null);
@@ -445,12 +446,14 @@ export function ChatHomeScreen({
         rootMessageId: root.threadRootId,
         teammateId,
         model: selectedModel.model,
+        mode: chatMode,
         clientMutationId: newMutationId('chat-config'),
       });
       if (
         configured.threadRootId !== root.threadRootId ||
         configured.teammateId !== teammateId ||
-        configured.model !== selectedModel.model
+        configured.model !== selectedModel.model ||
+        configured.mode !== chatMode
       ) {
         throw new Error('The node returned a different thread configuration than the one selected.');
       }
@@ -480,6 +483,7 @@ export function ChatHomeScreen({
   }, [
     anchorId,
     busy,
+    chatMode,
     draft,
     loadDetail,
     newMutationId,
@@ -576,6 +580,7 @@ export function ChatHomeScreen({
                 <span>{thread.config.teammateLabel}</span>
                 <span aria-hidden>·</span>
                 <span>{thread.config.modelLabel}</span>
+                <span className="tch-mode-chip">{thread.config.mode}</span>
                 <Timestamp at={thread.updatedAt} />
               </span>
             </button>
@@ -594,12 +599,14 @@ export function ChatHomeScreen({
             models={models}
             teammateId={activeConfig?.teammateId ?? teammateId}
             modelId={activeConfig?.model ?? modelId}
+            mode={activeConfig?.mode ?? chatMode}
             provider={
               models.find((model) => model.model === (activeConfig?.model ?? modelId))?.provider ?? ''
             }
             pinned={activeConfig !== null}
             onTeammate={(id) => setTeammateId(id)}
             onModel={setModelId}
+            onMode={setChatMode}
           />
         </header>
 
@@ -623,6 +630,7 @@ export function ChatHomeScreen({
                 <Turn
                   key={turn.messageId}
                   turn={turn}
+                  mode={detail.summary.config.mode}
                   onOpenEntity={onOpenEntity}
                   resolveEntity={resolveEntity}
                   suppressEntityIds={ownMessageIds}
@@ -752,19 +760,23 @@ function Selector({
   models,
   teammateId,
   modelId,
+  mode,
   provider,
   pinned,
   onTeammate,
   onModel,
+  onMode,
 }: {
   teammates: readonly ChatTeammateOption[];
   models: readonly ChatModelOption[];
   teammateId: EntityId | '';
   modelId: string;
+  mode: ChatMode;
   provider: string;
   pinned: boolean;
   onTeammate(id: EntityId): void;
   onModel(id: string): void;
+  onMode(mode: ChatMode): void;
 }) {
   return (
     <div className="tch-selector" data-pinned={pinned || undefined}>
@@ -779,6 +791,21 @@ function Selector({
           {teammates.map((teammate) => (
             <option key={teammate.id} value={teammate.id}>{teammate.label}</option>
           ))}
+        </select>
+      </label>
+      <label>
+        <span>Mode</span>
+        <select
+          aria-label="Chat mode"
+          disabled={pinned}
+          value={mode}
+          onChange={(event) => onMode(event.target.value as ChatMode)}
+        >
+          <option value="ask">Ask</option>
+          <option value="explain">Explain</option>
+          <option value="plan">Plan</option>
+          <option value="build">Build</option>
+          <option value="orchestrate">Orchestrate</option>
         </select>
       </label>
       <label>
@@ -804,11 +831,13 @@ function Selector({
 
 function Turn({
   turn,
+  mode,
   onOpenEntity,
   resolveEntity,
   suppressEntityIds,
 }: {
   turn: ChatThreadDetail['turns'][number];
+  mode: ChatMode;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   resolveEntity?: ChatEntityResolver | undefined;
   suppressEntityIds?: ReadonlySet<string> | undefined;
@@ -817,7 +846,7 @@ function Turn({
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
   const agent = turn.author?.isAgent ?? turn.role === 'assistant';
   return (
-    <article className="tch-turn" data-role={turn.role}>
+    <article className="tch-turn" data-role={turn.role} data-mode={mode}>
       <header className="tch-turn__byline">
         <Avatar
           actorId={actorId}
@@ -827,6 +856,7 @@ function Turn({
           src={turn.author?.avatar}
         />
         <strong>{label}</strong>
+        <span className="tch-mode-chip" title={`This answer ran in ${mode} mode`}>{mode}</span>
         <Timestamp at={turn.createdAt} />
       </header>
       {turn.body ? <div className="tch-user-body">{turn.body}</div> : null}

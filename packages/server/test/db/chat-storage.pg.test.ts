@@ -33,6 +33,7 @@ let facadeDb: PgDb;
 let fixture: Fixture;
 let rootMessageId: string;
 let authorReplyId: string;
+let otherReplyId: string;
 
 async function seed(db: W1ScratchDatabase): Promise<Fixture> {
   const values: Fixture = {
@@ -115,13 +116,14 @@ async function post(
 async function configure(identityId: string, authKind: 'browser' | 'agent', mutationId: string) {
   return asIdentity(identityId, authKind, async (client) => (
     await client.query<{ result: Record<string, unknown> }>(
-      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8) result`,
+      `select public.start_chat_thread($1,$2,$3,$4,$5,$6,$7,$8,$9) result`,
       [
         rootMessageId,
         fixture.teammateId,
         'gpt-5.6-sol',
         'openai',
         'codex',
+        'explain',
         randomUUID(),
         `/tmp/tm8-chat-${rootMessageId}`,
         mutationId,
@@ -175,6 +177,7 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
         anchorId: fixture.anchorId,
         teammateId: fixture.teammateId,
         model: 'gpt-5.6-sol',
+        mode: 'explain',
         lastReplyAt: null,
       },
     });
@@ -189,7 +192,7 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
   // comes from the author having no `members` row, not from an id comparison.
   it('queues every human member while the teammate never self-triggers', async () => {
     authorReplyId = await post(fixture.identityA, 'next human turn', rootMessageId);
-    const otherReplyId = await post(fixture.identityB, 'second member asks too', rootMessageId);
+    otherReplyId = await post(fixture.identityB, 'second member asks too', rootMessageId);
     const agentReplyId = await post(
       fixture.identityA,
       'agent reply must not self-trigger',
@@ -235,6 +238,14 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
       )).rows[0]!.result;
       expect(replay).toEqual(first);
       await client.query(
+        `select public.append_chat_message_part($1,1,'tool_call',$2::jsonb)`,
+        [agentMessageId, JSON.stringify({ id: 'call-1', name: 'repo_read_file', args: { path: 'README.md' }, state: 'running' })],
+      );
+      await client.query(
+        `select public.append_chat_message_part($1,2,'tool_call',$2::jsonb)`,
+        [agentMessageId, JSON.stringify({ id: 'call-1', name: 'repo_read_file', args: { path: 'README.md' }, state: 'completed' })],
+      );
+      await client.query(
         `select public.complete_chat_turn($1,'completed','answer',$2::jsonb,null,null)`,
         [claimed.turnId, JSON.stringify({ input_tokens: 7 })],
       );
@@ -266,6 +277,37 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
     const projectedAgent = root.replies?.items.find((message) => message.id === agentMessageId);
     expect(projectedAgent?.parts).toMatchObject([
       { seq: 0, kind: 'usage', payload: { input_tokens: 7 } },
+      { seq: 1, kind: 'tool_call', payload: { id: 'call-1', name: 'repo_read_file', state: 'running' } },
+      { seq: 2, kind: 'tool_call', payload: { id: 'call-1', name: 'repo_read_file', state: 'completed' } },
+    ]);
+
+    const audits = await database.query<{ verb: string; summary: Record<string, unknown> }>(
+      `select verb, summary from public.activity
+        where entity_id = $1 and verb = 'chat.tool_called'
+        order by created_at, id`,
+      [agentMessageId],
+    );
+    expect(audits).toEqual([
+      {
+        verb: 'chat.tool_called',
+        summary: {
+          threadRootId: rootMessageId,
+          toolCallId: 'call-1',
+          tool: 'repo_read_file',
+          state: 'running',
+          mode: 'explain',
+        },
+      },
+      {
+        verb: 'chat.tool_called',
+        summary: {
+          threadRootId: rootMessageId,
+          toolCallId: 'call-1',
+          tool: 'repo_read_file',
+          state: 'completed',
+          mode: 'explain',
+        },
+      },
     ]);
 
     const home = await spacesHome(deps)(
@@ -274,25 +316,27 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
     const summary = home.chatThreads?.find((thread) => thread.rootMessageId === rootMessageId);
     expect(Object.keys(summary ?? {}).sort()).toEqual([
       // + title/replyCount: PR188 review F4 — the list needs a readable row.
-      'anchorId', 'createdAt', 'lastReplyAt', 'model', 'replyCount', 'rootMessageId', 'teammateId', 'title',
+      'anchorId', 'createdAt', 'lastReplyAt', 'mode', 'model', 'replyCount', 'rootMessageId', 'teammateId', 'title',
     ]);
     expect(summary).toMatchObject({
       anchorId: fixture.anchorId,
       teammateId: fixture.teammateId,
       model: 'gpt-5.6-sol',
+      mode: 'explain',
     });
   });
 
-  it('R9: records the resolved auth kind once, replays it to the mint, and fails closed without it', async () => {
-    // The mint inherits a human ACCOUNT's authority (105), which the chat
-    // fixture does not otherwise need — seed one for identityA.
+  it('records each sender auth kind, mints with that sender, and fails closed without it', async () => {
+    // The mint inherits a human ACCOUNT's authority (105), which this chat
+    // fixture does not otherwise need — seed both collaborating humans.
     await database.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');
       await client.query(
         `insert into public.accounts(identity_id, username, display_name, is_node_admin, is_owner)
-         values ($1, 'chat-owner-a', 'Chat A', false, true)
+         values ($1, 'chat-owner-a', 'Chat A', false, true),
+                ($2, 'chat-member-b', 'Chat B', false, false)
          on conflict do nothing`,
-        [fixture.identityA],
+        [fixture.identityA, fixture.identityB],
       );
     });
 
@@ -308,30 +352,55 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
     });
     expect(bound.requester_auth_kind).toBe('browser');
 
-    // (2) The claim read carries the recorded literal to the orchestrator.
-    const claimed = await asIdentity(fixture.identityA, 'browser', async (client) => (
-      await client.query<{ result: { requesterAuthKind?: string } | null }>(
-        `select public.claim_next_chat_turn($1) result`,
-        [rootMessageId],
-      )
-    ).rows[0]!.result);
-    if (claimed) expect(claimed.requesterAuthKind).toBe('browser');
+    const turnForB = (await database.query<{
+      requested_by_member_id: string;
+      requested_by_auth_kind: string | null;
+    }>(
+      `select requested_by_member_id::text, requested_by_auth_kind
+         from public.chat_turns where user_message_id = $1`,
+      [otherReplyId],
+    ))[0]!;
+    expect(turnForB).toEqual({
+      requested_by_member_id: fixture.memberB,
+      requested_by_auth_kind: 'browser',
+    });
 
-    // (3) The C5 mint accepts the truthful replay...
-    const minted = await asIdentity(fixture.identityA, 'browser', async (client) => (
+    // The configuring identity owns the durable drain, but the claim carries
+    // the current turn sender and that sender's server-resolved auth kind.
+    let claimedByB: {
+      userMessageId: string;
+      requestedByIdentityId?: string;
+      requestedByAuthKind?: string;
+    } | null = null;
+    for (let index = 0; index < 3 && !claimedByB; index += 1) {
+      const claimed = await asIdentity(fixture.identityA, 'browser', async (client) => (
+        await client.query<{ result: typeof claimedByB }>(
+          `select public.claim_next_chat_turn($1) result`, [rootMessageId],
+        )
+      ).rows[0]!.result);
+      if (claimed?.userMessageId === otherReplyId) claimedByB = claimed;
+    }
+    expect(claimedByB).toMatchObject({
+      userMessageId: otherReplyId,
+      requestedByIdentityId: fixture.identityB,
+      requestedByAuthKind: 'browser',
+    });
+
+    // The C5 mint accepts the truthful per-turn sender replay.
+    const minted = await asIdentity(fixture.identityB, 'browser', async (client) => (
       await client.query<{ result: { id: string; runtime_member_id: string | null } }>(
         `select public.issue_agent_runtime_session($1,$2,$3,$4,$5) result`,
         [rootMessageId, fixture.teammateId, 'a'.repeat(64), new Date(Date.now() + 60_000).toISOString(), 'r9'],
       )
     ).rows[0]!.result);
-    expect(minted.runtime_member_id).not.toBeNull();
+    expect(minted.runtime_member_id).toBe(fixture.memberB);
 
     // ...and FAILS CLOSED when no auth kind is bound — the exact live-measured
     // composition failure this column exists to fix (advisor R9, condition 3b).
     await expect(
       database.transaction(async (client) => {
         await client.query('set local role tm8_app');
-        await client.query(`select set_config('tm8.identity_id',$1,true)`, [fixture.identityA]);
+        await client.query(`select set_config('tm8.identity_id',$1,true)`, [fixture.identityB]);
         await client.query(
           `select public.issue_agent_runtime_session($1,$2,$3,$4,$5)`,
           [rootMessageId, fixture.teammateId, 'b'.repeat(64), new Date(Date.now() + 60_000).toISOString(), 'r9-closed'],

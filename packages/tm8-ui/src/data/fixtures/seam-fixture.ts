@@ -2507,6 +2507,7 @@ export function createFixtureSeam(): FixtureSeam {
             anchorId: root.parentId ?? input.rootMessageId,
             teammateId: input.teammateId,
             model: input.model,
+            mode: input.mode,
             createdAt: new Date().toISOString(),
             lastReplyAt: null,
           },

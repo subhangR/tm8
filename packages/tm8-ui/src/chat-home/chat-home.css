@@ -181,6 +181,17 @@
   white-space: nowrap;
 }
 
+.tch-mode-chip {
+  color: var(--pn-info);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  padding: 1px 5px;
+  font: 8px var(--pn-mono);
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-label);
+  white-space: nowrap;
+}
+
 .tch-selector__pin {
   color: var(--pn-info);
   border: 1px solid var(--pn-line);

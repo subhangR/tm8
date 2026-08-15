@@ -87,7 +87,9 @@ export interface StartAgentThreadInput {
   systemPrompt: string;
   /** Absolute path to the per-thread strict MCP configuration. */
   mcpConfigPath: string;
-  /** Closed, pre-authorized TM8 MCP tool set. */
+  /** Provider-native tools visible to the model. Empty explicitly disallows Claude built-ins. */
+  availableTools: readonly string[];
+  /** Closed, pre-authorized provider-native and TM8 MCP tool set. */
   allowedTools: readonly string[];
   /**
    * Narrow D8/R8 exception authorized by the orchestrator's durable thread

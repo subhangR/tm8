@@ -7,15 +7,23 @@
  * same HTTP facade as every other client.
  */
 import { randomUUID } from 'node:crypto';
-import { getOperation, OPERATIONS, type OperationName } from '@tm8/contract';
+import { getOperation, OPERATIONS, type ChatMode, type OperationName } from '@tm8/contract';
 import {
   CatalogHttpError,
   type CatalogInvokeOptions,
   type CatalogTransport,
   type QueryValue,
 } from './catalog-client.js';
+import {
+  callDirectTool,
+  DIRECT_TOOLS,
+  DirectToolError,
+  isDirectTool,
+  type DirectToolContext,
+} from './direct-tools.js';
+import { DIRECT_TOOL_NAMES, parseChatMode, toolPermission } from './modes.js';
 
-export const MCP_TOOL_NAMES = [
+export const GRAPH_TOOL_NAMES = [
   'tm8_overview',
   'tm8_read',
   'tm8_act',
@@ -23,10 +31,12 @@ export const MCP_TOOL_NAMES = [
   'tm8_messages',
 ] as const;
 
+export const MCP_TOOL_NAMES = [...GRAPH_TOOL_NAMES, ...DIRECT_TOOL_NAMES] as const;
+
 export type Tm8McpToolName = (typeof MCP_TOOL_NAMES)[number];
 
 export interface McpToolDefinition {
-  name: Tm8McpToolName;
+  name: string;
   description: string;
   inputSchema: Record<string, unknown>;
   annotations: {
@@ -249,6 +259,7 @@ export const TM8_MCP_TOOLS: readonly McpToolDefinition[] = [
     inputSchema: GROUP_SCHEMA,
     annotations: annotations(false, false, false),
   },
+  ...DIRECT_TOOLS,
 ];
 
 export class ToolInputError extends Error {
@@ -259,17 +270,65 @@ export class ToolInputError extends Error {
   }
 }
 
+export interface Tm8ToolRouterOptions {
+  mode?: ChatMode;
+  projectRoot?: string;
+  spaceId?: string;
+  fetchImpl?: typeof fetch;
+  /** Provider-native equivalents omitted from MCP registration and calls. */
+  hiddenTools?: readonly string[];
+}
+
 export class Tm8ToolRouter {
-  constructor(private readonly transport: CatalogTransport) {}
+  private readonly mode: ChatMode;
+  private readonly directContext: DirectToolContext;
+  private readonly hiddenTools: ReadonlySet<string>;
+
+  constructor(private readonly transport: CatalogTransport, options: Tm8ToolRouterOptions = {}) {
+    this.mode = options.mode ?? parseChatMode(undefined);
+    this.hiddenTools = new Set(options.hiddenTools ?? []);
+    this.directContext = {
+      transport,
+      ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
+      ...(options.spaceId ? { spaceId: options.spaceId } : {}),
+      ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+    };
+  }
+
+  listedTools(): readonly McpToolDefinition[] {
+    return TM8_MCP_TOOLS.filter((tool) => (
+      !this.hiddenTools.has(tool.name)
+      && toolPermission(this.mode, tool.name) === 'allow'
+    ));
+  }
 
   async call(name: string, rawArguments: unknown): Promise<McpToolResult> {
     try {
-      if (name === 'tm8_overview') return success(overview(rawArguments));
+      if (!(MCP_TOOL_NAMES as readonly string[]).includes(name)) {
+        throw new ToolInputError(`unknown tm8 MCP tool: ${name}`);
+      }
+      if (this.hiddenTools.has(name)) {
+        throw new ToolInputError(`${name} is replaced by a provider-native tool in this chat runtime`);
+      }
+      if (isDirectTool(name)) {
+        enforcePermission(this.mode, name);
+        return success(await callDirectTool(name, rawArguments, this.directContext));
+      }
+      if (name === 'tm8_overview') {
+        enforcePermission(this.mode, name);
+        return success(overview(rawArguments, this.mode, this.hiddenTools));
+      }
       if (!isGroupName(name)) throw new ToolInputError(`unknown tm8 MCP tool: ${name}`);
       const args = objectOf(rawArguments, 'tool arguments');
       const operation = optionalString(args.operation, 'operation');
       const directory = GROUPS[name];
-      if (!operation) return success(directoryResult(name, directory));
+      enforcePermission(this.mode, name, operation);
+      if (!operation) {
+        return success(directoryResult(
+          name,
+          directory.filter((item) => toolPermission(this.mode, name, item.operation) !== 'deny'),
+        ));
+      }
       const selected = directory.find((item) => item.operation === operation);
       if (!selected) {
         throw new ToolInputError(`${operation} is not available through ${name}; call ${name} with {} for its directory`);
@@ -320,7 +379,7 @@ function directoryResult(name: keyof typeof GROUPS, directory: readonly Operatio
   };
 }
 
-function overview(raw: unknown): Record<string, unknown> {
+function overview(raw: unknown, mode: ChatMode, hiddenTools: ReadonlySet<string>): Record<string, unknown> {
   const args = objectOf(raw, 'tool arguments');
   const query = optionalString(args.query, 'query')?.toLowerCase();
   const groups = [
@@ -328,19 +387,25 @@ function overview(raw: unknown): Record<string, unknown> {
     { tool: 'tm8_act', purpose: 'entity, task, relationship, placement and attention mutations' },
     { tool: 'tm8_delegate', purpose: 'dispatching and lifecycle of durable worker sessions' },
     { tool: 'tm8_messages', purpose: 'durable anchored messages and threaded replies' },
-  ];
+  ].filter((group) => toolPermission(mode, group.tool) === 'allow');
   const operations = Object.entries(GROUPS).flatMap(([tool, guides]) =>
-    guides.map((item) => ({ tool, operation: item.operation, summary: item.summary })));
+    guides
+      .filter((item) => toolPermission(mode, tool, item.operation) !== 'deny')
+      .map((item) => ({ tool, operation: item.operation, summary: item.summary })));
   const terms = query?.split(/\s+/).filter(Boolean) ?? [];
   return {
     schemaVersion: 'tm8.mcp.overview.v1',
     security: {
       authority: 'requesting human claims',
       provenance: 'selected teammate actor',
-      filesystem: false,
+      filesystem: toolPermission(mode, 'repo_read_file') === 'allow',
       credentialOperations: false,
     },
     groups,
+    mode,
+    directTools: DIRECT_TOOLS
+      .filter((tool) => !hiddenTools.has(tool.name) && toolPermission(mode, tool.name) !== 'deny')
+      .map((tool) => ({ tool: tool.name, purpose: tool.description })),
     ...(terms.length === 0
       ? {}
       : {
@@ -353,6 +418,21 @@ function overview(raw: unknown): Record<string, unknown> {
         }),
     instructions: 'Open one group with {} to load only that group\'s next-level schemas.',
   };
+}
+
+function enforcePermission(mode: ChatMode, tool: string, operation?: string): void {
+  const permission = toolPermission(mode, tool, operation);
+  if (permission === 'allow') return;
+  if (permission === 'ask') {
+    throw new DirectToolError(
+      'permission_required',
+      `${tool} requires explicit approval in ${mode} mode; headless chat fails closed`,
+    );
+  }
+  throw new DirectToolError(
+    'mode_denied',
+    `${operation ?? tool} is not available in ${mode} mode`,
+  );
 }
 
 const REQUIRES_MUTATION_ID = new Set<OperationName>([
@@ -461,11 +541,24 @@ function errorValue(error: unknown): Record<string, unknown> {
       error: { code: error.code, message: error.message, retryable: false },
     };
   }
+  if (error instanceof DirectToolError) {
+    return {
+      schemaVersion: 'tm8.mcp.error.v1',
+      error: {
+        code: error.code,
+        message: error.message,
+        retryable: error.retryable,
+        ...(error.details === undefined ? {} : { details: error.details }),
+      },
+    };
+  }
   return {
     schemaVersion: 'tm8.mcp.error.v1',
     error: {
       code: 'internal_error',
-      message: error instanceof Error ? error.message : String(error),
+      // Do not reflect raw filesystem/process errors: they can contain the
+      // server checkout root, command environment, or another tenant's path.
+      message: 'unexpected tool failure',
       retryable: false,
     },
   };

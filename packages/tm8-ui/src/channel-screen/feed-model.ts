@@ -250,6 +250,12 @@ export function activityPresentation(
     const to = summaryString(activity.summary, 'toParentId') ?? 'top level';
     return { kind: 'state', label: 'Parent', from: from ?? 'top level', to };
   }
+  if (activity.verb === 'chat.tool_called') {
+    const tool = summaryString(activity.summary, 'tool') ?? 'unknown tool';
+    const state = summaryString(activity.summary, 'state') ?? 'unknown state';
+    const mode = summaryString(activity.summary, 'mode');
+    return { kind: 'event', label: `${tool}: ${state}${mode ? ` (${mode})` : ''}` };
+  }
   const terminalState: Readonly<Record<string, string>> = {
     completed: 'Completed',
     deleted: 'Deleted',
