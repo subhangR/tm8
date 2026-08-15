@@ -1062,7 +1062,12 @@ export class W2FeedContextService {
 
     const loaded = await this.deps.db.tx(claims, (q) =>
       this.loadContext(q, ctx, id, sections, viewerIdentityId));
-    return boundedView(id, loaded, sections, totalBytes, sectionBytes);
+    // The default section cap is a fair-share guard for structural sections,
+    // but applying it to messages first starves a coordination anchor before
+    // the total-budget priority loop can let its conversation win. An explicit
+    // sectionBytes remains an exact caller-requested cap.
+    const messageBytes = input.sectionBytes === undefined ? totalBytes : sectionBytes;
+    return boundedView(id, loaded, sections, totalBytes, sectionBytes, messageBytes);
   };
 
   private async loadContext(
@@ -1238,6 +1243,7 @@ function boundedView(
   sections: ReadonlySet<EntityContextSection>,
   totalBytes: number,
   sectionBytes: number,
+  messageBytes: number,
 ): EntityContextView {
   let truncated = loaded.overfetched;
 
@@ -1245,7 +1251,7 @@ function boundedView(
     parents: capList(loaded.parents, sectionBytes),
     children: capList(loaded.children, sectionBytes),
     edges: capList(loaded.edges, sectionBytes),
-    messages: capList(loaded.messages, sectionBytes),
+    messages: capList(loaded.messages, messageBytes),
     actions: capList(loaded.actions, sectionBytes),
   };
   for (const section of Object.values(capped)) truncated ||= section.truncated;

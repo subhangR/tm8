@@ -284,7 +284,7 @@ interface Stub {
   parents?: EntityRow[];
   children?: EntityRow[];
   edges?: Array<Record<string, unknown>>;
-  messages?: Array<{ entity_id: string }>;
+  messages?: Array<{ entity_id: string; cursor_created_at?: string }>;
   eventSeq?: number;
 }
 
@@ -1143,6 +1143,30 @@ describe('W2.G13 entities.context bounded focus', () => {
     const view = await run('sections=hierarchy&totalBytes=32768&sectionBytes=512');
     expect(Buffer.byteLength(JSON.stringify(view.children), 'utf8')).toBeLessThanOrEqual(512);
     expect(view.truncated).toBe(true);
+  });
+
+  it('lets a coordination-anchor conversation claim the default total budget', async () => {
+    const messageIds = Array.from({ length: 12 }, (_, index) =>
+      `00000000-0000-7000-8000-0000000013${index.toString(16).padStart(2, '0')}`,
+    );
+    const heavy: Stub = {
+      ...CONTEXT_STUB,
+      messages: messageIds.map((entity_id, index) => ({
+        entity_id,
+        cursor_created_at: `2026-07-26T09:10:${index.toString().padStart(2, '0')}.000000Z`,
+      })),
+      entities: [
+        taskRow(IDS.task),
+        ...messageIds.map((id, index) => messageRow(id, { body: `${index}: ${'M'.repeat(900)}` })),
+      ],
+    };
+
+    const view = await contextOn(heavy).run();
+
+    expect(view.byteSize).toBeLessThanOrEqual(16_384);
+    expect(view.messages.length).toBeGreaterThan(4);
+    expect(view.truncated).toBe(true);
+    expect(view.cursors.messages).toEqual(expect.any(String));
   });
 
   it('truncates deterministically — the same request twice is byte-identical', async () => {
