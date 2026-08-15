@@ -58,7 +58,11 @@ export function LiveGraphStrip({
   focusKind = 'work_session',
   onOpenEntity,
 }: LiveGraphStripProps) {
-  const [open, setOpen] = useState(false);
+  // OPEN BY DEFAULT. Collapsed, this strip is a one-line text toggle, which is
+  // indistinguishable from "the feature is not here" to anyone who did not
+  // build it — and it was read that way twice. The graph is the point; the
+  // toggle is how you put it away, not how you find it.
+  const [open, setOpen] = useState(true);
   const { touches } = model;
 
   // Nothing touched yet ⇒ no strip at all. An empty graph header would be a
