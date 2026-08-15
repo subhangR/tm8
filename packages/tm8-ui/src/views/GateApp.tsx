@@ -1680,6 +1680,10 @@ export function GateApp(props: GateAppProps = {}) {
             <SettingsShell
               port={settingsPort}
               nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
+              /* W2 -> W1/W3: an axis write must reach the workspace's own
+                 pickers and board options; axis rows are not entities, so no
+                 event will do it. */
+              onAxesChanged={data.refreshTaskAxes}
               sections={
                 credentialsPort || branchesPort
                   ? {

@@ -136,6 +136,8 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
+  type TaskAxis,
+  type TaskAxisInput,
   type TrackingPrMergeInput,
   type TrackingPrMergeResult,
   type WorkInput,
@@ -256,6 +258,30 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     revokeInvite(spaceId: SpaceId, inviteId: string, body: CommandContext): Promise<SpaceInviteView> {
       return http.call<SpaceInviteView>('spaces.invites.revoke', {
         params: { spaceId, inviteId },
+        body,
+      });
+    },
+
+    /**
+     * Task-axis writes (W2) — the same path rule as the membership writes
+     * above: the subject rides the PATH, the w2_* RPCs authorize against the
+     * (space, axis) pair. Create answers 201 with the row; update answers the
+     * row; delete answers `{ axisId }` (the handler discards the RPC body).
+     */
+    createTaskAxis(spaceId: SpaceId, input: TaskAxisInput): Promise<TaskAxis> {
+      return http.call<TaskAxis>('spaces.taskAxes.create', { params: { spaceId }, body: input });
+    },
+
+    updateTaskAxis(spaceId: SpaceId, axisId: string, input: TaskAxisInput): Promise<TaskAxis> {
+      return http.call<TaskAxis>('spaces.taskAxes.update', {
+        params: { spaceId, axisId },
+        body: input,
+      });
+    },
+
+    deleteTaskAxis(spaceId: SpaceId, axisId: string, body: CommandContext): Promise<{ axisId: string }> {
+      return http.call<{ axisId: string }>('spaces.taskAxes.delete', {
+        params: { spaceId, axisId },
         body,
       });
     },

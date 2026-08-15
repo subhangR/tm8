@@ -319,6 +319,12 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // in hand-maintained alphabetical order, because four insertions at four
       // different points is how a list like this acquires a silent duplicate.
       'createInvite', 'redeemInvite', 'revokeInvite', 'setMemberRole',
+      // W2 (2026-08-16): the task-axis registry's writes, over the catalog
+      // ops that existed all along (`spaces.taskAxes.*`) — the settings shell
+      // stops refusing with the measured-false AXES_UNREADABLE. The READ has
+      // no verb: axes ride `spaceSettings()`. Same `.sort()`-at-the-end
+      // posture as the membership four, for the same silent-duplicate reason.
+      'createTaskAxis', 'updateTaskAxis', 'deleteTaskAxis',
       // Amendment 10 (2026-08-13, PR188 review F1): `chat.threads.start` — the
       // write half of the chat-home bridge. Sorts between spawn and
       // startTerminal.
