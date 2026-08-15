@@ -109,6 +109,8 @@ export const VIEW_REF_ROUTE = {
   files: 'files',
   git: 'git',
   messages: 'messages',
+  /* The task Board tab (2026-08-16) — same flat-segment posture. */
+  board: 'board',
   /* Alias, not a view — see CHANNEL_KIND. Present so the record stays total
      over MenuViewRef; `routeViewOf` never emits it. */
   channels: 'channels',
@@ -154,6 +156,7 @@ export function navViewOfName(name: string): NavView | null {
     case 'files':
     case 'git':
     case 'messages':
+    case 'board':
     case 'channels':
       return { view: name };
     case 'settings':
@@ -207,6 +210,7 @@ export function landingOfRoute(view: NavView): Landing | null {
     case 'files':
     case 'git':
     case 'messages':
+    case 'board':
       return { target: { type: 'view', ref: refOfRouteView(view.view) }, openEntity: null };
 
     case 'channels':
@@ -289,6 +293,7 @@ export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = nu
         case 'files':
         case 'git':
         case 'messages':
+        case 'board':
           return { view };
         case 'settings':
           return { view: 'settings', section: null };

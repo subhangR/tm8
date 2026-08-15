@@ -36,8 +36,12 @@ describe('the shipped default menu', () => {
       //
       // Revision 15 (2026-08-16): the label is COLLAB — a rename only, the
       // group id stays `chats`.
+      //
+      // Revision 16 (2026-08-16, Board tab wave): BOARD joins beside Work —
+      // the task kanban as its own railless tab.
       'Collab',
       'Work',
+      'Board',
       'Graph',
       'Channels',
       'Files',
@@ -57,7 +61,7 @@ describe('the shipped default menu', () => {
 
     // The other full-bleed screens keep their posture, and the groups with
     // real rows keep theirs — this is a widening, not a change of rule.
-    for (const id of ['graph', 'settings', 'files']) {
+    for (const id of ['graph', 'settings', 'files', 'board']) {
       expect(isRaillessGroup(SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === id)!), id).toBe(true);
     }
     for (const id of ['workspace', 'channels']) {
@@ -128,9 +132,10 @@ describe('the shipped default menu', () => {
     // posture as `graph`). The union is closed, so this list is how a widening
     // announces itself rather than silently shipping a ref with no glyph.
     // `messages` joined 2026-08-13 (the cross-entity conversation browser),
-    // same additive R4 widening as the two above.
+    // same additive R4 widening as the two above. `board` joined 2026-08-16
+    // (the task kanban tab), same posture.
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['channels', 'dashboard', 'feed', 'files', 'git', 'graph', 'inbox', 'messages', 'settings', 'workspace'].sort(),
+      ['board', 'channels', 'dashboard', 'feed', 'files', 'git', 'graph', 'inbox', 'messages', 'settings', 'workspace'].sort(),
     );
   });
 });

@@ -61,7 +61,12 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // change only — the group id stays `chats` (ids are wire-stable; every
 // resolver, voice-room fallback and upgrade guard keys on the id), the single
 // railless `dashboard` item stays, and the two-pane guarantee is untouched.
-export const SHIPPED_DEFAULT_MENU_REVISION = 15;
+// Revision 16 (2026-08-16, Board tab wave): a BOARD group joins beside Work —
+// the task kanban as its own full-bleed tab (railless: one childless `board`
+// view item, the graph/files posture). It PRESENTS the task collection; the
+// `task` kind row stays in the Workspace caret, so this is a second door to
+// tasks, not a move.
+export const SHIPPED_DEFAULT_MENU_REVISION = 16;
 
 /**
  * The tab shell (revision 14, 2026-08-15), encoded literally — the GROUPS are
@@ -124,6 +129,9 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
       // caret's children alike.
       items: [...DEFAULT_MENU_WORK_ITEM_SPINE],
     },
+    // The task kanban (revision 16). Railless for the same reason as Collab:
+    // one childless view item — the board's own columns are the navigation.
+    { id: 'board', label: 'Board', items: [{ type: 'view', ref: 'board' }] },
     { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
     {
       id: 'channels',

@@ -1895,7 +1895,8 @@ export const UpdateMemberRoleInputSchema: z.ZodType<UpdateMemberRoleInput> = z.o
 // `files` widened 2026-08-10 in lockstep with the MenuViewRef type (R4 posture).
 // `git` widened 2026-08-12 in the same lockstep (Git UI wave: the project git screen).
 // `messages` widened 2026-08-13 in the same lockstep (the Messages surface).
-export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages']);
+// `board` widened 2026-08-16 in the same lockstep (the task kanban tab).
+export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board']);
 // `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
 // menu-visible, still not menu-creatable (creation stays with the saga).
 // `channel` un-excluded 2026-08-01, same lockstep — it became a collection

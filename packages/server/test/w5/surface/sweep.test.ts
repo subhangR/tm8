@@ -544,8 +544,13 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // Collab relabel. They are four and not one collapsed file precisely
     // because a menu revision that ships and is disliked has to come back
     // out on its own.
-    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 119.
-    expect(server.appliedMigrations.length).toBe(119);
+    // 119 -> 120 on 2026-08-16: 130_menu_board_tab.sql — the task kanban as
+    // its own tab (menu revision 16). Takes 130 rather than 129 because 129
+    // is RESERVED by the concurrent assigned-by provenance lane on the same
+    // task family; a number is claimed the moment a lane is told to use it,
+    // not when its file lands.
+    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 120.
+    expect(server.appliedMigrations.length).toBe(120);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
