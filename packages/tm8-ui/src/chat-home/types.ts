@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { ActorSummary, ChatMode, EntityId, SpaceId } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
@@ -101,6 +102,14 @@ export interface ChatSessionRow {
   updatedAt: string;
   /** Visible but not yours: listing has no owner gate; terminal attach does. */
   viewOnly?: boolean;
+  /**
+   * The workspace tile's badge sub-row, composed BY THE HOST from the same
+   * components the tiles use (`SessionLaneLine` branch/worktree facts,
+   * `LinkedPullRequestChips`, `TileCountBadges`) — one vocabulary, zero
+   * re-derivation here. Rendered as a SIBLING of the row button because PR
+   * chips carry real `<a>` links, which cannot nest inside a button.
+   */
+  badges?: ReactNode;
 }
 
 /**
@@ -120,6 +129,8 @@ export interface ChatTaskRow {
   /** e.g. priority or assignee — whatever the host can truthfully compose. */
   detail?: string;
   updatedAt: string;
+  /** Same contract as `ChatSessionRow.badges` — PR chips + entity counts. */
+  badges?: ReactNode;
 }
 
 export interface ChatTurn {

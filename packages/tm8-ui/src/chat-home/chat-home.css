@@ -627,13 +627,46 @@ button.tch-entity-chip:hover {
   color: var(--pn-ink);
 }
 
+/* A tile groups a row button with its NON-BUTTON siblings (the Run control,
+   the badge sub-row — PR chips carry real links, which cannot nest inside a
+   button). The tile carries the hover/active visuals so all of it reads as
+   one row; the inner button's own chrome goes quiet inside it. */
+.tch-tile {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 3px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+}
+.tch-tile:hover { background: var(--pn-hover); }
+.tch-tile[data-active] {
+  border-color: var(--pn-line);
+  background: var(--pn-active);
+}
+.tch-tile .tch-thread { margin: 0; }
+.tch-tile .tch-thread:hover { background: transparent; }
+.tch-tile .tch-thread[data-active] {
+  border-color: transparent;
+  background: transparent;
+}
+
+/* The workspace tiles' badge sub-row, verbatim components (SessionLaneLine,
+   LinkedPullRequestChips, TileCountBadges) in a chat-column coat. */
+.tch-thread__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px 7px;
+  font-size: 10px;
+}
+
 /* A task row and its Run are siblings — Run must not be the row's whole
    surface, and a button cannot nest a button. */
 .tch-task-row {
   display: flex;
   align-items: stretch;
   gap: 3px;
-  margin: 0 0 3px;
 }
 .tch-task-row .tch-thread { flex: 1; margin: 0; }
 .tch-run {

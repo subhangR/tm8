@@ -834,9 +834,17 @@ export function ChatHomeScreen({
                 <div key={group.label} className="tch-group" role="group" aria-label={group.label}>
                   <span className="tch-group__label">{group.label}</span>
                   {group.rows.map((session) => (
+                    /* The badge sub-row is a SIBLING of the row button — PR
+                       chips carry real links, which cannot nest in a button.
+                       The tile wrapper carries the hover/active visuals so
+                       button and badges read as one row. */
+                    <div
+                      key={session.id}
+                      className="tch-tile"
+                      data-active={session.id === selectedEntityId || undefined}
+                    >
                     <button
                       type="button"
-                      key={session.id}
                       className="tch-thread tch-thread--session"
                       data-active={session.id === selectedEntityId || undefined}
                       title={
@@ -877,6 +885,10 @@ export function ChatHomeScreen({
                         <Timestamp at={session.updatedAt} />
                       </span>
                     </button>
+                    {session.badges ? (
+                      <span className="tch-thread__badges">{session.badges}</span>
+                    ) : null}
+                    </div>
                   ))}
                 </div>
               ))
@@ -885,8 +897,15 @@ export function ChatHomeScreen({
           {tab === 'tasks'
             ? taskRows.map((task) => (
                 /* A row and its Run are SIBLINGS — a button cannot nest a
-                   button, and Run must not be the row's whole surface. */
-                <div key={task.id} className="tch-task-row">
+                   button, and Run must not be the row's whole surface. The
+                   badge sub-row (PR chips, entity counts) is a sibling too,
+                   for the same reason: chips carry real links. */
+                <div
+                  key={task.id}
+                  className="tch-tile"
+                  data-active={task.id === selectedEntityId || undefined}
+                >
+                <div className="tch-task-row">
                   <button
                     type="button"
                     className="tch-thread tch-thread--task"
@@ -937,6 +956,10 @@ export function ChatHomeScreen({
                       }}
                     />
                   )}
+                </div>
+                {task.badges ? (
+                  <span className="tch-thread__badges">{task.badges}</span>
+                ) : null}
                 </div>
               ))
             : null}
