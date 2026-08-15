@@ -14,7 +14,16 @@ import type { EntityId, FeedItem } from '@tm8/contract';
 import { getKind } from '../domain';
 import { NODE_H, NODE_W } from '../session-graph/layout';
 import '../session-graph/session-graph.css';
-import { edgeLabel, foldLiveGraph, type LiveGraphTouch } from './live-graph-model';
+// The strip's own chrome (`.chs-livegraph*`) lives in the channel stylesheet;
+// importing it here means any host (session Chat, Chat Home) gets the styles
+// with the component instead of relying on ChannelScreen having loaded first.
+import './channel-screen.css';
+import {
+  edgeLabel,
+  foldLiveGraph,
+  type LiveGraphModel,
+  type LiveGraphTouch,
+} from './live-graph-model';
 
 export interface LiveToolGraphProps {
   items: readonly FeedItem[];
@@ -24,12 +33,32 @@ export interface LiveToolGraphProps {
   onOpenEntity?: (id: EntityId) => void;
 }
 
+export interface LiveGraphStripProps {
+  /** A prebuilt fold — any client-side source of touches (feed activity,
+   *  chat-home tool calls, …). The strip stays presentational. */
+  model: LiveGraphModel;
+  /** The caller's word for the centre ("this session", "this conversation"). */
+  anchorNoun: string;
+  /** Registry kind whose icon draws the centre node. */
+  focusKind?: string;
+  onOpenEntity?: (id: EntityId) => void;
+}
+
 const PAD = 24;
 const MIN_R = 132;
 
 export function LiveToolGraph({ items, anchorId, anchorNoun, onOpenEntity }: LiveToolGraphProps) {
-  const [open, setOpen] = useState(false);
   const model = useMemo(() => foldLiveGraph(items, anchorId), [items, anchorId]);
+  return <LiveGraphStrip model={model} anchorNoun={anchorNoun} onOpenEntity={onOpenEntity} />;
+}
+
+export function LiveGraphStrip({
+  model,
+  anchorNoun,
+  focusKind = 'work_session',
+  onOpenEntity,
+}: LiveGraphStripProps) {
+  const [open, setOpen] = useState(false);
   const { touches } = model;
 
   // Nothing touched yet ⇒ no strip at all. An empty graph header would be a
@@ -57,6 +86,7 @@ export function LiveToolGraph({ items, anchorId, anchorNoun, onOpenEntity }: Liv
         <LiveGraphCanvas
           touches={touches}
           anchorNoun={anchorNoun}
+          focusKind={focusKind}
           onOpenEntity={onOpenEntity}
         />
       ) : null}
@@ -67,10 +97,12 @@ export function LiveToolGraph({ items, anchorId, anchorNoun, onOpenEntity }: Liv
 function LiveGraphCanvas({
   touches,
   anchorNoun,
+  focusKind,
   onOpenEntity,
 }: {
   touches: readonly LiveGraphTouch[];
   anchorNoun: string;
+  focusKind: string;
   onOpenEntity?: (id: EntityId) => void;
 }) {
   const n = touches.length;
@@ -116,14 +148,14 @@ function LiveGraphCanvas({
             </g>
           );
         })}
-        <FocusNode cx={cx} cy={cy} label={anchorNoun} />
+        <FocusNode cx={cx} cy={cy} label={anchorNoun} kind={focusKind} />
       </svg>
     </div>
   );
 }
 
-function FocusNode({ cx, cy, label }: { cx: number; cy: number; label: string }) {
-  const config = getKind('work_session');
+function FocusNode({ cx, cy, label, kind }: { cx: number; cy: number; label: string; kind: string }) {
+  const config = getKind(kind);
   return (
     <g className="sg-cell sg-cell--focus" transform={`translate(${cx - NODE_W / 2} ${cy - NODE_H / 2})`}>
       <rect className="sg-box" width={NODE_W} height={NODE_H} rx={8} />

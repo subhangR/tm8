@@ -11,7 +11,9 @@ import {
   useRichInput,
   type TriggerOption,
 } from '../rich-input';
+import { LiveGraphStrip } from '../channel-screen/LiveToolGraph';
 import { mergeChatTurnFrame, reconcileDetails } from './turn-model';
+import { foldTurnGraph } from './turn-graph';
 import type { ChatEntityResolver } from './EntityChip';
 import { TurnParts } from './TurnParts';
 import type {
@@ -328,6 +330,13 @@ export function ChatHomeScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by id list
   }, [ownMessageIdsKey]);
 
+  /** Live star of every entity this thread's tool calls referenced — the same
+   *  client-side extraction the chips use, folded once per turns change. */
+  const turnGraph = useMemo(
+    () => (detail ? foldTurnGraph(detail.turns, ownMessageIds) : null),
+    [detail, ownMessageIds],
+  );
+
   const activeConfig = detail?.summary.config ?? null;
   const selectedModel = useMemo(
     () => models.find((model) => model.model === modelId) ?? null,
@@ -626,6 +635,14 @@ export function ChatHomeScreen({
             </div>
           ) : detail ? (
             <>
+              {turnGraph ? (
+                <LiveGraphStrip
+                  model={turnGraph}
+                  anchorNoun="this conversation"
+                  focusKind="message"
+                  onOpenEntity={onOpenEntity}
+                />
+              ) : null}
               {detail.turns.map((turn) => (
                 <Turn
                   key={turn.messageId}
