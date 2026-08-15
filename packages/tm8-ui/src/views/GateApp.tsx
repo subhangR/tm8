@@ -913,6 +913,31 @@ export function GateApp(props: GateAppProps = {}) {
       revision: s.revision + 1,
     }));
   }, []);
+
+  /**
+   * THE WAY OUT OF A REFUSED SPACE LINK — a context switch, not a dismissal.
+   *
+   * `dismissLinkSpaceRefusal` alone would have re-created the original lie from
+   * the other end. The nav store still holds the Space the LINK named, and R3
+   * keeps it authoritative for an `addressable` boot — so clearing the flag and
+   * opening an available Space would have left the address bar saying the
+   * refused Space while a different one rendered underneath it. Silently
+   * showing you somebody else's Space under this Space's address is the
+   * failure, whichever direction the mismatch is introduced from.
+   *
+   * So the abandoned address is demoted here: this boot no longer carries a
+   * route, last-place applies, and the restore effect writes the store's Space
+   * and view for the Space that actually opened. `leaveSpaceContext` supplies
+   * the panel/stack reset and — critically — a REPLACE, so the refused link
+   * does not survive as a back entry either.
+   *
+   * IT IS STILL NOT AN IMPLICIT FALLBACK. The only caller is the card's button.
+   */
+  const openAvailableSpace = useCallback(() => {
+    leaveSpaceContext();
+    setBootRoute('none');
+    data.dismissLinkSpaceRefusal();
+  }, [leaveSpaceContext, data.dismissLinkSpaceRefusal]);
   const projectOnboardingPort = useMemo<ProjectOnboardingPort | null>(() => {
     const setup = data.seam.projectSetup;
     if (!setup) return null;
@@ -1440,7 +1465,7 @@ export function GateApp(props: GateAppProps = {}) {
     return (
       <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
         <SpaceAccessRefusal
-          {...(data.spaces.length ? { onOpenAvailableSpace: data.dismissLinkSpaceRefusal } : {})}
+          {...(data.spaces.length ? { onOpenAvailableSpace: openAvailableSpace } : {})}
         />
         <NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />
       </div>

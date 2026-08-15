@@ -164,6 +164,16 @@ describe('a link into a Space the viewer cannot open', () => {
 
     fireEvent.click(card.querySelector('button')!);
     await waitFor(() => expect(opened).toEqual([SPACE]));
+
+    /* AND THE ADDRESS FOLLOWS. Clearing the refusal without demoting the boot
+       would have re-created the original lie from the other end: the nav store
+       still holds the Space the LINK named and R3 keeps it authoritative, so
+       the address bar would say the refused Space while a different one
+       rendered underneath it. The whole stack is asserted, so the abandoned
+       link is not merely off-screen but out of the back button's reach. */
+    await settle();
+    expect(target.getHash()).not.toContain(UNREACHABLE);
+    expect(target.entries.some((entry) => entry.includes(UNREACHABLE))).toBe(false);
   });
 });
 
