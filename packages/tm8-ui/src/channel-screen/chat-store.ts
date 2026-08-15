@@ -71,6 +71,22 @@ export interface ChatStoreState {
   setDraft(key: ChatStateKeyParts, body: string, replyToId?: EntityId | null): void;
   setReplyTarget(key: string, replyToId: EntityId | null): void;
   setScrollAnchor(key: string, anchor: ChatScrollAnchor | null): void;
+  /**
+   * Drop every entry. `chatStore` below is a MODULE-LEVEL singleton, so its
+   * loaded pages, reply targets and in-memory drafts outlive the sign-out that
+   * ends the session they were read under (`auth/session-reset.ts`).
+   *
+   * The entry key carries `viewerMemberId`, so the next viewer could never have
+   * READ these entries — this is the belt to that suspender, and it is what
+   * makes "the pages the last viewer loaded are still in this tab's memory"
+   * false rather than merely unreachable.
+   *
+   * The PERSISTED drafts are deliberately not touched: they are keyed by viewer
+   * as well, they are the one thing here a viewer would want back when they
+   * sign in again, and destroying half-written messages is a worse failure than
+   * the one this guards. Same shape as the known-accounts rule in `session.ts`.
+   */
+  clearAll(): void;
 }
 
 export interface ChatSyncSeam {
@@ -176,6 +192,10 @@ export function createChatStore(options: ChatStoreOptions = {}): StoreApi<ChatSt
     },
     setScrollAnchor(key, scrollAnchor) {
       get().patch(key, { scrollAnchor });
+    },
+    clearAll() {
+      if (Object.keys(get().entries).length === 0) return;
+      set({ entries: {} });
     },
   }));
 }
