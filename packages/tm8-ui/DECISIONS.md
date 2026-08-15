@@ -921,3 +921,18 @@ Source: the review of PR #16 (`fix/task-acceptance-criteria`), which landed the 
 4. **The refusal uses the honesty vocabulary.** The first cut used native `disabled` plus a `title`, which `DisabledWithReason` rules out in terms: a natively disabled control leaves the tab order, so the keyboard-only user it refuses can never read the refusal. And a REASON now beats a HANDLER — passing both resolves to refusal rather than a live box wearing a refusal tooltip.
 
 **The lesson, which is why this is a full entry.** A deferral is only honest while its disclosure exists. D48.2 was ruled, written down, and cited for a week by seats that read the ruling and not the registry; the sentence "returned to the user as ruled-not-missed" was true of the ledger and false of the screen from the day it was written. **A mitigation named in a ruling is part of the ruling, and it needs the same control everything else gets.** The `notice` block would have been eleven bytes of registry data and one test; instead the promise was carried by prose in a handover under "D-ENTRY / REGISTRY TEXT I AM PROPOSING", where it was proposed and never taken up. Where a ruling's honesty depends on a thing being configured, the entry names the control that fails when it is not.
+
+## D74 — An EXPLICIT sign-out blanks the address; an EXPIRED session keeps it (2026-08-15)
+
+Source: the sign-out reset (task "Sign-out does not reset: the next user inherits the previous user's panels"), which named the address as a real choice and asked for it to be ruled rather than assumed.
+
+**The two facts in tension.** Keeping the address means signing back in returns you to the page you were reading, which is the whole value of an addressable app. Keeping the address ALSO means the bar goes on naming a specific entity — `#/s/{space}/e/{id}?origin=tasks` — to whoever is now sitting at the screen. Both are true at once and no single answer serves both ends of a session.
+
+**Ruling.** The two ends are different acts and get different answers.
+
+- **Explicit sign-out** (`signOutOfServer`): blank the address to `UNADDRESSED_HASH`, and drop this node's `last-place` record and launch-source cache with it. Someone who signs out may be handing the machine over — that is the case the reset exists for — and "return me where I was" is worth nothing to a viewer who chose to leave and everything to the stranger who did not.
+- **Session expiry** (`verifyStoredSession` → `invalid`): leave the address exactly as it stands, and leave `last-place` alone. The server ended this, not the viewer; they are most likely still in the chair, mid-task, and re-landing on the page they were reading is the correct outcome of signing back in. The module-level stores are still cleared, because the next mount re-derives them from the address — a request is not a leak.
+
+**What is NOT ruled by this entry, and stays as it was.** The signed-out GATE still never writes the hash (`views/signed-out-hash.test.tsx`): that law binds the RENDER path, where a tidy-up destroys the deep link of a recipient who has done nothing. This entry is about an ACT a signed-in viewer performs. The distinction is act versus render, and the test that pins the law never signs out.
+
+**Rationale, and the reason it is written down at all.** The address was the one part of this reset with a genuine argument on both sides; everything else it clears (`navStore`, `screenStackStore`, the screen-stack caches, `last-place`, the launch cache) is cross-user exposure with no counter-argument. A choice with a real cost on each side is exactly the kind that gets silently reversed by the next person who reads the code and sees only one of the two costs — so both are recorded here, next to which act pays which.

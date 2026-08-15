@@ -24,6 +24,7 @@ export {
   DROP_CLASS_COPY,
   MAX_HASH_LENGTH,
   PANEL_TABS,
+  UNADDRESSED_HASH,
   dropNoticeText,
   emptyPanels,
 } from './types';
