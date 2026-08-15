@@ -400,6 +400,59 @@
   flex: 1;
 }
 
+/* --- LIVE SESSION card (Phase 3, refs/03-workspace.png) --------------------
+   The run row's grammar at card weight: two text lines, a green verdict dot,
+   the LIVE word on the right. Same token vocabulary as .sb-run, one size up,
+   because it is the promoted rendering of the same fact. */
+.cv2-root .sb-livecard {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 10px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .sb-livecard + .sb-livecard {
+  margin-top: 6px;
+}
+.cv2-root .sb-livecard:hover {
+  border-color: var(--pn-line-2);
+}
+.cv2-root .sb-livecard__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cv2-root .sb-livecard__title {
+  color: var(--pn-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .sb-livecard__meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .sb-livecard__spacer {
+  flex: 1;
+}
+
 .cv2-root .sb-notices {
   display: flex;
   flex-direction: column;
