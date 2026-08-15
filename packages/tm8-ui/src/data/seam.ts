@@ -474,6 +474,13 @@ export interface Seam {
     createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult>;
     createProject(input: ProjectCreateInput): Promise<ProjectResource>;
     linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void>;
+    /**
+     * Every project on the node, unscoped — `projects.list` without a
+     * `spaceId`. `working_dir` is node-globally unique, so when
+     * `createProject` refuses because the folder already HAS a project, this
+     * is how onboarding finds that project to link instead of dead-ending.
+     */
+    listProjects(): Promise<ProjectResource[]>;
   };
   /**
    * Reading an ALREADY-CONNECTED project folder, for the same reason
