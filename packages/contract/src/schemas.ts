@@ -687,13 +687,15 @@ export const EntityDetailSchema: z.ZodType<EntityDetail> = z.lazy(() => z.object
 const GroupBySchema = z.union([
   z.literal('workStatus'),
   z.literal('assignee'),
-  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "workStatus", "assignee" or "axis:<name>"'),
+  z.literal('priority'),
+  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "workStatus", "assignee", "priority" or "axis:<name>"'),
 ]);
 
 const CollectionFiltersSchema = z.object({
   workStatus: z.array(WorkStatusSchema).optional(),
   axes: z.record(z.array(z.string())).optional(),
   assigneeIds: z.array(EntityIdSchema).optional(),
+  priority: z.array(PrioritySchema).optional(),
   edge: z.object({
     type: z.string(),
     direction: z.enum(['incoming', 'outgoing']),

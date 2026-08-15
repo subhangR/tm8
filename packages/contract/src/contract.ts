@@ -536,6 +536,12 @@ export interface CollectionQuery {
   parentId?: EntityId | null;
   filters?: {
     workStatus?: WorkStatus[]; axes?: Record<string, string[]>; assigneeIds?: EntityId[];
+    /**
+     * Additive (Board tab wave, 2026-08-16): tasks at any of these priorities.
+     * Same kind-narrowing semantics as `workStatus` — priority lives on the
+     * task arm only, so a non-task row never matches.
+     */
+    priority?: ('low'|'medium'|'high'|'urgent')[];
     edge?: { type: string; direction: 'incoming'|'outgoing'; entityId: EntityId };
     readyToPull?: boolean; inReviewForActorId?: EntityId; mentionedActorId?: EntityId;
     /**
@@ -569,7 +575,8 @@ export interface CollectionQuery {
     deleted?: 'exclude'|'only'|'include';
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
-  groupBy?: 'workStatus'|'assignee'|`axis:${string}`;
+  /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
+  groupBy?: 'workStatus'|'assignee'|'priority'|`axis:${string}`;
   sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'priority';
   cursor?: Cursor; limit?: number;
 }
