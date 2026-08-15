@@ -158,9 +158,12 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
               with ordinality t(g, ord)
         where g->>'id' = 'chats'`,
     );
-    // 128 renamed the LABEL to Collab (user ruling, 2026-08-16); the id and
-    // the single-childless-item shape are what 127 established and both stay.
-    expect(shape[0]).toEqual({ label: 'Collab', ord: 1, has_children: false });
+    // 128 renamed the LABEL to Collab and 129 corrected it to HOME (user
+    // rulings, both 2026-08-16): this group owns `dashboard`, the surface you
+    // land on with no remembered place, so it is the one that is YOURS —
+    // Collab belongs to `channels`, the shared half. The id and the
+    // single-childless-item shape are what 127 established and both stay.
+    expect(shape[0]).toEqual({ label: 'Home', ord: 1, has_children: false });
   });
 
   it('serves the File browser as its own tab group (125 — user amendment)', async () => {
@@ -373,6 +376,116 @@ describeDb('128 upgrade — existing default menus read Collab, customized menus
       items: [{ type: 'view', ref: 'dashboard' }],
     });
     expect(rows[0]?.revision).toBe(11);
+    // An upgraded space and a fresh space must be indistinguishable.
+    const seeded = (await db.query<{ payload: unknown }>(
+      `select internal.w1_default_menu_payload() payload`,
+    ))[0]!.payload;
+    expect(rows[0]?.payload).toEqual(seeded);
+  });
+
+  it('the customized row is untouched — payload byte-identical, revision unmoved', async () => {
+    const rows = await db.query<{ revision: number; payload: unknown }>(
+      `select revision, payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    );
+    expect(rows[0]?.revision).toBe(31);
+    expect(rows[0]?.payload).toEqual(customPayloadBefore);
+  });
+});
+
+/**
+ * The 129 UPGRADE BLOCK — the row stated outright as
+ * Home | Workspace | Collab | Graph | Files | Settings.
+ *
+ * Same two-halves reason as 127 and 128, plus one thing neither of those had
+ * to prove: 129 MOVES a group as well as renaming three. A relabel that
+ * matched the guard but reordered nothing would pass a label-only assertion,
+ * so the upgraded row's group ORDER is measured here against the seeder's,
+ * not just its first group's name.
+ */
+describeDb('129 upgrade — existing default menus read the stated tab row', () => {
+  let db: W1ScratchDatabase;
+  const DEFAULT_SPACE = '00000000-0000-4000-8000-000000000133';
+  const CUSTOM_SPACE = '00000000-0000-4000-8000-000000000134';
+  let customPayloadBefore: unknown;
+
+  beforeAll(async () => {
+    db = await createW1ScratchDatabase('menu-home-upgrade');
+    const files = migrationFiles();
+    const migration = files.find((file) => file.startsWith('129_'));
+    if (!migration) throw new Error('the 129 migration is missing from the chain');
+    const index = files.indexOf(migration);
+    db.apply(files.slice(0, index));
+
+    await db.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.user_profiles(identity_id, display_name)
+         values ('home-default', 'Home default'), ('home-custom', 'Home custom')`,
+      );
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity)
+         values ($1, 'Default menu', 'home-default'), ($2, 'Custom menu', 'home-custom')`,
+        [DEFAULT_SPACE, CUSTOM_SPACE],
+      );
+      await client.query(
+        `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
+         values ($1, 1, 11, internal.w1_default_menu_payload())`,
+        [DEFAULT_SPACE],
+      );
+      await client.query(
+        `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
+         values ($1, 1, 31,
+                 jsonb_set(internal.w1_default_menu_payload(),
+                           '{groups,0,label}', '"Mission Control"'))`,
+        [CUSTOM_SPACE],
+      );
+    });
+
+    customPayloadBefore = (await db.query<{ payload: unknown }>(
+      `select payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    ))[0]?.payload;
+
+    // THE RED SIDE, measured: before 129 the default row still reads 128's
+    // arrangement — first group labelled Collab, `graph` ahead of `channels`.
+    const before = await db.query<{ label: string; ids: string[] }>(
+      `select payload->'groups'->0->>'label' as label,
+              array(select g->>'id' from jsonb_array_elements(payload->'groups') g) as ids
+         from public.space_menu_configs where space_id = $1`,
+      [DEFAULT_SPACE],
+    );
+    expect(before[0]?.label).toBe('Collab');
+    expect(before[0]?.ids).toEqual(['chats', 'work', 'graph', 'channels', 'files', 'settings']);
+
+    db.apply([migration]);
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.destroy();
+  }, 30_000);
+
+  it('the verbatim-default row reads the stated row, ids unmoved, exactly one revision', async () => {
+    const rows = await db.query<{
+      revision: number;
+      labels: string[];
+      ids: string[];
+      payload: unknown;
+    }>(
+      `select revision,
+              array(select g->>'label' from jsonb_array_elements(payload->'groups') g) as labels,
+              array(select g->>'id' from jsonb_array_elements(payload->'groups') g) as ids,
+              payload
+         from public.space_menu_configs where space_id = $1`,
+      [DEFAULT_SPACE],
+    );
+    expect(rows[0]?.labels).toEqual(['Home', 'Workspace', 'Collab', 'Graph', 'Files', 'Settings']);
+    // The ids read Home-over-`chats` and Collab-over-`channels`, which looks
+    // backwards and is: ids are the wire-stable half every resolver, upgrade
+    // guard and voice-room fallback keys on, so 129 renames labels and moves
+    // `channels` without renaming a single id.
+    expect(rows[0]?.ids).toEqual(['chats', 'work', 'channels', 'graph', 'files', 'settings']);
+    expect(rows[0]?.revision).toBe(12);
     // An upgraded space and a fresh space must be indistinguishable.
     const seeded = (await db.query<{ payload: unknown }>(
       `select internal.w1_default_menu_payload() payload`,

@@ -66,7 +66,7 @@ describe('a server round trip keeps your place', () => {
     // Leave for a kind screen — the branch of GateApp's ternary that renders
     // EntityView. Tasks rides the Workspace caret on the WORK TAB now
     // (revision 12), so switch tab and open the caret first.
-    fireEvent.click(within(first.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
+    fireEvent.click(within(first.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Workspace' }));
     const rail = first.getByTestId('menu-rail');
     fireEvent.click(within(rail).getByLabelText('Expand Workspace'));
     fireEvent.click(within(rail).getByRole('button', { name: /^Tasks/ }));

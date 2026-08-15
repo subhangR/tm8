@@ -544,8 +544,12 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // Collab relabel. They are four and not one collapsed file precisely
     // because a menu revision that ships and is disliked has to come back
     // out on its own.
-    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 119.
-    expect(server.appliedMigrations.length).toBe(119);
+    // 119 -> 120: 129 is the FIFTH of that run — the row stated outright as
+    // Home | Workspace | Collab | Graph | Files | Settings. Three labels and
+    // one move; 128's Collab named the wrong tab and this reverses it without
+    // touching a single group id.
+    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 120.
+    expect(server.appliedMigrations.length).toBe(120);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

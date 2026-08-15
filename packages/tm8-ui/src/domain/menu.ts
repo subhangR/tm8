@@ -61,7 +61,20 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // change only — the group id stays `chats` (ids are wire-stable; every
 // resolver, voice-room fallback and upgrade guard keys on the id), the single
 // railless `dashboard` item stays, and the two-pane guarantee is untouched.
-export const SHIPPED_DEFAULT_MENU_REVISION = 15;
+// Revision 16 (2026-08-16, user ruling): the row is stated outright —
+// HOME | WORKSPACE | COLLAB | GRAPH | FILES | SETTINGS. Three labels and one
+// move; no group added, removed or re-scoped. 15 named the wrong tab: `chats`
+// owns `dashboard`, the surface you land on with no remembered place, so
+// COLLAB there named the one place that is YOURS, while the group that
+// actually holds shared conversation (`channels`) was called Channels — a
+// KIND, not an activity. Swapped, each tab says what standing there gets you.
+// `work` becomes WORKSPACE to match the `workspace` view ref, the Workspace
+// caret and "Open full workspace"; "Work" was an abbreviation nothing else
+// used. `channels` moves ahead of `graph` — order lives in the contract spine.
+// The IDS DO NOT MOVE: Home is still id `chats`, Collab still id `channels`.
+// That reads backwards on purpose — ids are wire-stable and every upgrade
+// guard, resolver and voice-room fallback keys on them.
+export const SHIPPED_DEFAULT_MENU_REVISION = 16;
 
 /**
  * The tab shell (revision 14, 2026-08-15), encoded literally — the GROUPS are
@@ -111,25 +124,27 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
   schemaVersion: 1,
   revision: SHIPPED_DEFAULT_MENU_REVISION,
   groups: [
-    // COLLAB leads (revision 14 restored the tab; 15 renamed the label — the
-    // id stays `chats`). One childless view item is what makes the group
+    // HOME leads (revision 14 restored the tab, 15 called it Collab, 16 calls
+    // it what it is). One childless view item is what makes the group
     // railless — add a second row here and the surface grows a third pane,
     // which is the arrangement this revision exists to prevent.
-    { id: 'chats', label: 'Collab', items: [{ type: 'view', ref: 'dashboard' }] },
+    { id: 'chats', label: 'Home', items: [{ type: 'view', ref: 'dashboard' }] },
     {
       id: 'workspace',
-      label: 'Work',
+      label: 'Workspace',
       // The whole group comes from ONE spine so the server seeder (migration
       // 125) and this fallback prove the same list — items, order and the
       // caret's children alike.
       items: [...DEFAULT_MENU_WORK_ITEM_SPINE],
     },
-    { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
+    // COLLAB is the SHARED half — the channel collection plus Messages. It sits
+    // third by the contract spine's order (revision 16), ahead of Graph.
     {
       id: 'channels',
-      label: 'Channels',
+      label: 'Collab',
       items: [...DEFAULT_MENU_CHANNELS_SPINE],
     },
+    { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
     // The File browser TAB (user amendment, 2026-08-15). The view left the
     // Work group — menu refs are globally unique — while the `file` KIND
     // stays in the Workspace caret: R9's two file doors, now on two tabs.

@@ -61,7 +61,7 @@ async function openTasksScreen() {
      is skipped when the screen is already there. */
   await waitFor(() => view.getByTestId('space-tab-bar'));
   if (!view.queryByTestId('entity-view')) {
-    fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
+    fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Workspace' }));
     await waitFor(() => view.getByTestId('menu-rail'));
     const rail = within(view.getByTestId('menu-rail'));
     const caret = rail.queryByLabelText('Expand Workspace');
@@ -187,7 +187,7 @@ describe('the menu rail', () => {
     await waitFor(() => view.getByTestId('home-page'));
     /* Revision 12: the rail is the ACTIVE TAB's contents, so the Workspace
        caret and its leaves live on the Work tab now. */
-    fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
+    fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Workspace' }));
     await waitFor(() => view.getByTestId('menu-rail'));
     const rail = view.getByTestId('menu-rail');
     /* Revision 11 flipped the default back to expanded: the redesigned rail is
@@ -219,7 +219,7 @@ describe('the menu rail', () => {
        no group, so there is no rail there to collapse. The walk starts on a
        tab that HAS one — which is also what makes the second boot below land
        somewhere the remembered choice is observable. */
-    fireEvent.click(within(first.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
+    fireEvent.click(within(first.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Workspace' }));
     await waitFor(() => first.getByTestId('menu-rail'));
     fireEvent.click(first.getByRole('button', { name: 'Collapse menu rail' }));
     await waitFor(() =>
