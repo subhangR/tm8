@@ -3,7 +3,7 @@ import { act, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
-import { createChatHomeFixturePort } from './fixtures';
+import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatHomePort, ChatModelOption } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
@@ -204,5 +204,66 @@ describe('Chat Home', () => {
       body: 'Continue from the persisted result.',
     });
     expect(view.getByText('Agent is working')).toBeTruthy();
+  });
+
+  /**
+   * The server writes the assistant message body TWICE: a placeholder when the
+   * turn is claimed, then the final answer when it completes. Both are the
+   * durable projection of the parts for feeds and notifications — the
+   * transcript renders the parts, so printing the body here draws the answer
+   * twice on every re-read and a redundant "Agent turn in progress." bubble
+   * over the thinking pulse. The fixture used to model an assistant body as
+   * `''`, which is why no test could see either.
+   */
+  it('never prints an assistant body the parts already say', async () => {
+    const { port } = createChatHomeFixturePort();
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() => expect(view.getAllByTestId('chat-tool-card')).toHaveLength(1));
+    expect(
+      view.getAllByText(/I mapped the work into three dependency-safe lanes/, {
+        selector: '.tch-transcript *',
+      }),
+    ).toHaveLength(1);
+  });
+
+  it('shows the pulse alone while a claimed turn has produced nothing yet', async () => {
+    const placeholder = structuredClone(CHAT_HOME_FIXTURE_THREAD);
+    placeholder.summary.state = 'streaming';
+    placeholder.turns = [
+      placeholder.turns[0]!,
+      {
+        messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
+        role: 'assistant',
+        author: placeholder.turns[1]!.author,
+        createdAt: '2026-08-13T08:19:30.000Z',
+        body: 'Agent turn in progress.',
+        parts: [],
+      },
+    ];
+    const { port } = createChatHomeFixturePort([placeholder]);
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() => expect(view.getByTestId('chat-thinking')).toBeTruthy());
+    expect(view.queryByText('Agent turn in progress.')).toBeNull();
+  });
+
+  it('says why a running turn cannot be stopped when the port has no interrupt', async () => {
+    const fixture = createChatHomeFixturePort();
+    const { interrupt: _interrupt, ...withoutInterrupt } = fixture.port;
+    const view = render(
+      <ChatHomeScreen port={withoutInterrupt} spaceId={SPACE_ID} models={MODELS} />,
+    );
+    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Read the current context.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+
+    await waitFor(() => expect(view.getByText('Agent is working')).toBeTruthy());
+    const stop = view.getByRole('button', { name: 'Stop this turn' });
+    expect(stop.getAttribute('aria-disabled')).toBe('true');
+    expect(view.getByText(/no chat interrupt operation is exposed/)).toBeTruthy();
   });
 });

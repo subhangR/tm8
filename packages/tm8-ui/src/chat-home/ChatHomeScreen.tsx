@@ -343,6 +343,7 @@ export function ChatHomeScreen({
     [modelId, models],
   );
   const busy = isBusyPhase(phase);
+  const thinking = detail !== null && showThinking(phase, detail);
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
   const selectionUnavailable =
@@ -643,17 +644,18 @@ export function ChatHomeScreen({
                   onOpenEntity={onOpenEntity}
                 />
               ) : null}
-              {detail.turns.map((turn) => (
+              {detail.turns.map((turn, index) => (
                 <Turn
                   key={turn.messageId}
                   turn={turn}
                   mode={detail.summary.config.mode}
+                  pending={thinking && index === detail.turns.length - 1}
                   onOpenEntity={onOpenEntity}
                   resolveEntity={resolveEntity}
                   suppressEntityIds={ownMessageIds}
                 />
               ))}
-              {showThinking(phase, detail) ? (
+              {thinking ? (
                 <div className="tch-thinking" role="status" data-testid="chat-thinking">
                   <span className="tch-dots" aria-hidden><i /><i /><i /></span>
                   {phase === 'streaming' ? 'Agent is thinking…' : 'Sending your message…'}
@@ -745,10 +747,27 @@ export function ChatHomeScreen({
               ) : null}
               <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
               <span className="tch-hint">Enter to send · Shift+Enter for a new line</span>
-              {phase === 'streaming' && port.interrupt ? (
-                <button type="button" className="tch-stop" onClick={() => void interrupt()}>
-                  <span aria-hidden>■</span> Stop
-                </button>
+              {phase === 'streaming' ? (
+                port.interrupt ? (
+                  <button type="button" className="tch-stop" onClick={() => void interrupt()}>
+                    <span aria-hidden>■</span> Stop
+                  </button>
+                ) : (
+                  /* Unavailable ≠ invisible: the catalog has exactly one chat
+                     operation (`chat.threads.start`) and no interrupt, so on a
+                     real node this control used to vanish mid-turn and leave a
+                     running turn looking unstoppable by design. */
+                  <DisabledIconControl
+                    label="Stop this turn"
+                    glyph="■"
+                    reason={{
+                      cause: 'Stopping a turn isn’t available on this node',
+                      remedy: 'no chat interrupt operation is exposed — the turn ends on its own',
+                    }}
+                  >
+                    Stop
+                  </DisabledIconControl>
+                )
               ) : null}
               <button
                 type="button"
@@ -849,12 +868,15 @@ function Selector({
 function Turn({
   turn,
   mode,
+  pending,
   onOpenEntity,
   resolveEntity,
   suppressEntityIds,
 }: {
   turn: ChatThreadDetail['turns'][number];
   mode: ChatMode;
+  /** This turn is the one the pulse is already announcing. */
+  pending?: boolean;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   resolveEntity?: ChatEntityResolver | undefined;
   suppressEntityIds?: ReadonlySet<string> | undefined;
@@ -862,6 +884,20 @@ function Turn({
   const label = turn.author?.displayName ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
   const agent = turn.author?.isAgent ?? turn.role === 'assistant';
+  /**
+   * AN ANSWER IS ITS PARTS. The server writes the assistant message body twice
+   * — 'Agent turn in progress.' when the turn is claimed, the finished text
+   * when it completes — because feeds, previews and notifications have no
+   * parts to read. Here they do, so printing the body alongside them said the
+   * same thing twice: the answer duplicated on every re-read, and a redundant
+   * placeholder bubble under the thinking pulse while the turn ran.
+   *
+   * A turn that carries no parts at all is not a chat turn (every completed
+   * one persists at least its `done`) — it is an ordinary message posted into
+   * this thread, and its body is the only thing it has to say. The one
+   * exception is the claimed-but-silent turn the pulse is already covering.
+   */
+  const bodyIsContent = turn.role !== 'assistant' || (turn.parts.length === 0 && !pending);
   return (
     <article className="tch-turn" data-role={turn.role} data-mode={mode}>
       <header className="tch-turn__byline">
@@ -876,7 +912,7 @@ function Turn({
         <span className="tch-mode-chip" title={`This answer ran in ${mode} mode`}>{mode}</span>
         <Timestamp at={turn.createdAt} />
       </header>
-      {turn.body ? <div className="tch-user-body">{turn.body}</div> : null}
+      {bodyIsContent && turn.body ? <div className="tch-user-body">{turn.body}</div> : null}
       <TurnParts
         parts={turn.parts}
         onOpenEntity={onOpenEntity}
