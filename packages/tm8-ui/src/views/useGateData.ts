@@ -496,6 +496,40 @@ export interface GateData {
   ensureKind: (kind: string) => void;
   /** Switch the active space and hydrate its own menu, channels, and data. */
   selectSpace: (spaceId: SpaceId) => void;
+  /**
+   * THE ADDRESS NAMED A SPACE THIS NODE DOES NOT LIST FOR THIS VIEWER, AND SO
+   * NOTHING WAS OPENED.
+   *
+   * `spaceId` is `''` while this is set — deliberately, and it is the whole
+   * point. The boot used to pick `remembered ?? list[0]` unconditionally, which
+   * meant a link naming a Space the recipient cannot reach dropped them into a
+   * DIFFERENT Space under that Space's address. A deep-link feature whose
+   * failure mode is "you quietly land somewhere else" is worse than no deep
+   * links, so the boot now opens the addressed Space or opens NOTHING.
+   *
+   * ONLY SET FOR ARRIVAL BY ADDRESS (`GateOptions.addressedSpaceId`). A boot
+   * that carried no route keeps the remembered-or-first pick unchanged — see
+   * the boot effect for why the two audiences are ruled apart (R4).
+   */
+  linkSpaceUnavailable: boolean;
+  /**
+   * Open the Space a URL named, or refuse and open nothing.
+   *
+   * SEPARATE FROM `selectSpace` ON PURPOSE. `selectSpace` is a viewer picking
+   * from a list of Spaces the node already told them about — an id it does not
+   * recognise there is a bug in the caller, not a fact about a link, and it
+   * must not raise a link refusal. This verb is the link-arrival lane, and the
+   * unlisted case is its NORMAL outcome.
+   */
+  openLinkedSpace: (spaceId: SpaceId) => void;
+  /**
+   * Clear the link refusal and fall back to the ordinary boot pick.
+   *
+   * AN EXPLICIT USER ACTION AND NOTHING ELSE. Nothing in this hook may call it
+   * on the viewer's behalf: doing so automatically would re-create the exact
+   * implicit substitution the refusal exists to remove.
+   */
+  dismissLinkSpaceRefusal: () => void;
   /** Add and immediately open a Space returned by the onboarding saga. */
   acceptSpace: (space: SpaceSummary) => void;
   /**
@@ -539,6 +573,25 @@ export interface GateOptions {
    * reason: two seams would mean two event streams and one divided cache.
    */
   seam?: Seam;
+  /**
+   * THE SPACE THE ADDRESS BAR ITSELF NAMED AT BOOT, or `null` when this boot
+   * arrived carrying no address.
+   *
+   * READ THROUGH A FUNCTION, not passed as a value, because of WHEN the answer
+   * exists. The host reads the hash in a LAYOUT effect (R3's precedence
+   * guarantee); this hook's boot read is a passive effect that then awaits a
+   * network round trip. So by the time the boot has a Space list in hand the
+   * host has long since settled the address — but on the first render, when a
+   * plain prop would have been captured, it had not. A getter is the honest
+   * shape for "ask me at decision time".
+   *
+   * IT IS THE ADDRESS, NOT THE STORE. A hash carrying no Space is redirected
+   * through `lastActiveSpaceId` before it is parsed, so the nav store's
+   * `spaceId` cannot tell arrival-by-address from arrival-by-memory. That
+   * distinction is the entire basis of ruling R4, so the host resolves it from
+   * the raw hash and hands down only the addressed case.
+   */
+  addressedSpaceId?: () => SpaceId | null;
 }
 
 export function useGateData(options: GateOptions): GateData {
@@ -855,6 +908,24 @@ export function useGateData(options: GateOptions): GateData {
    */
   const seededIds = useRef(new Map<string, string[]>());
 
+  /**
+   * THE LINK REFUSAL — see `GateData.linkSpaceUnavailable`.
+   *
+   * EVERY WRITER, ENUMERATED, because this is newly-live state and a second
+   * quiet writer would put the shell back exactly where it started:
+   *   · the boot read below — the only place it is ever RAISED at boot;
+   *   · `openLinkedSpace` — the same decision for a link that arrives after
+   *     boot (back/forward onto another Space's address);
+   *   · `dismissLinkSpaceRefusal` — cleared, and only by an explicit action;
+   *   · `acceptSpace` — a Space that was just CREATED is now listed, so the
+   *     refusal is stale by construction.
+   * `selectSpace` deliberately does NOT write it (see `openLinkedSpace`).
+   */
+  const [linkSpaceUnavailable, setLinkSpaceUnavailable] = useState(false);
+  /* Read at decision time, never captured — see `GateOptions.addressedSpaceId`. */
+  const addressedSpaceRef = useRef<(() => SpaceId | null) | undefined>(undefined);
+  addressedSpaceRef.current = options.addressedSpaceId;
+
   const [bootError, setBootError] = useState<string | null>(null);
   // Set from the SAME error as `bootError`, at every site, so the message and
   // the code can never describe two different failures. See the field's
@@ -903,6 +974,41 @@ export function useGateData(options: GateOptions): GateData {
           }
           setBootError(null);
           setBootErrorCode(null);
+          /*
+           * AN ADDRESS OUTRANKS A MEMORY, AND A REFUSED ADDRESS OPENS NOTHING.
+           *
+           * This is the fix for the failure the link-refusal surfaces were
+           * built for: the pick below is right for every boot that did not come
+           * from a URL and wrong for every boot that did. A recipient whose
+           * remembered Space is A, following a link into Space B they cannot
+           * reach, was shown A's content under B's address with nothing but a
+           * toast to say so. `list[0]` for a cold browser was the same failure
+           * with no memory to blame.
+           *
+           * RULING R4 — DO NOT DISTINGUISH, AND DO NOT SUBSTITUTE. The host
+           * renders one privacy-preserving refusal for both "no such Space on
+           * this node" and "you are not a member of it", because a stranger
+           * holding a URL is the probing case and "not a member" would CONFIRM
+           * THE SPACE EXISTS. The refusal is the host's to draw; this hook's
+           * whole job is to make sure there is nothing else on screen to draw
+           * instead. Opening the first available Space here is what made the
+           * card impossible to render honestly.
+           *
+           * `spaceId` therefore stays `''` and the space-open effect below
+           * never runs. That is the state the refusal describes: "Nothing else
+           * was opened in its place", true because of this line.
+           */
+          const addressed = addressedSpaceRef.current?.() ?? null;
+          if (addressed) {
+            const named = list.find((space) => space.id === addressed);
+            if (!named) {
+              setLinkSpaceUnavailable(true);
+              return;
+            }
+            setLinkSpaceUnavailable(false);
+            setSpaceId(named.id);
+            return;
+          }
           // THE SPACE THIS BROWSER LAST HAD OPEN ON THIS NODE WINS.
           //
           // `first.id` alone meant every remount landed on the node's first
@@ -912,8 +1018,17 @@ export function useGateData(options: GateOptions): GateData {
           // never an assertion: it is only honoured when the node's own list
           // still contains it, so a deleted or no-longer-visible space falls
           // back to the first exactly as before.
+          //
+          // THE `?? first` FALLBACK IS ARRIVAL BY MEMORY AND IS LEFT ALONE, on
+          // purpose and within a stated boundary. R4's disclosure argument is
+          // about a viewer who arrived BY ADDRESS and may be probing; a viewer
+          // whose own browser remembers a Space already knew it existed, and a
+          // node that no longer lists it has nothing to disclose to them. The
+          // hazard the refusal removes — a link's Space silently swapped for
+          // another — cannot occur on this branch, because no link named one.
           const remembered = readLastSpace(nodeKeyOf(options.serverBaseUrl));
           const chosen = list.find((space) => space.id === remembered) ?? first;
+          setLinkSpaceUnavailable(false);
           setSpaceId(chosen.id);
           return;
         } catch (error: unknown) {
@@ -1049,6 +1164,38 @@ export function useGateData(options: GateOptions): GateData {
     setSpaceId(next);
   }, [spaceId, spaces]);
 
+  /**
+   * A LINK'S SPACE, OPENED OR REFUSED — never traded for another one.
+   *
+   * The post-boot twin of the boot read's addressed branch, for the address
+   * changing under a live shell (back/forward, or a pasted hash). Same two
+   * outcomes and the same prohibition: there is no third branch that picks a
+   * Space the link did not name.
+   */
+  const openLinkedSpace = useCallback((next: SpaceId) => {
+    if (spaces.some((space) => space.id === next)) {
+      setLinkSpaceUnavailable(false);
+      if (next !== spaceId) setSpaceId(next);
+      return;
+    }
+    /* Unlisted: R4's single refusal, with no attempt to say WHICH of "no such
+       Space here" or "not a member" it was. The viewer arrived by address. */
+    setLinkSpaceUnavailable(true);
+  }, [spaceId, spaces]);
+
+  const dismissLinkSpaceRefusal = useCallback(() => {
+    setLinkSpaceUnavailable(false);
+    /* THE ONE PLACE A SPACE MAY BE SUBSTITUTED FOR THE LINK'S, and it is
+       reachable only from the card's button. That is the whole distinction the
+       hazard turns on: the same line called from an effect is the bug, called
+       from a click it is the viewer choosing where to go instead. The pick is
+       the ordinary boot pick, so "open an available Space" lands exactly where
+       a boot with no address would have. */
+    const remembered = readLastSpace(nodeKeyOf(options.serverBaseUrl));
+    const chosen = spaces.find((space) => space.id === remembered) ?? spaces[0];
+    if (chosen) setSpaceId(chosen.id);
+  }, [spaces, options.serverBaseUrl]);
+
   // The one place the choice is recorded, so boot's pick and the tab bar's pick
   // are remembered by the same rule and neither can drift from the other.
   useEffect(() => {
@@ -1062,6 +1209,9 @@ export function useGateData(options: GateOptions): GateData {
       : [...current, space]);
     setBootError(null);
     setBootErrorCode(null);
+    /* A Space the viewer just CREATED is listed by definition, so any standing
+       link refusal is about a question that is no longer being asked. */
+    setLinkSpaceUnavailable(false);
     setSpaceId(space.id);
   }, []);
 
@@ -1995,6 +2145,9 @@ export function useGateData(options: GateOptions): GateData {
       launch,
       ensureKind,
       selectSpace,
+      linkSpaceUnavailable,
+      openLinkedSpace,
+      dismissLinkSpaceRefusal,
       acceptSpace,
       spawn,
       postMessage: postAndRefresh,
@@ -2004,7 +2157,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, linkSpaceUnavailable, openLinkedSpace, dismissLinkSpaceRefusal, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;
