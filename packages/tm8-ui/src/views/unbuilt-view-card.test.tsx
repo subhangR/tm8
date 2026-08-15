@@ -6,14 +6,18 @@
  * different states, and the distinction between them is the entire value:
  *
  *   unbuilt-view          — the ref is REAL, the screen is not built yet
- *   entity-full-view-unbuilt — the ROUTE is real and frozen, the host is not
- *                              built yet (ruling M1)
  *   unrouted-target       — the target is not something this build recognises
  *                              AT ALL, which is a defect and shouts in console
  *
- * Collapse any two and the app starts lying in one direction or the other:
+ * Collapse the two and the app starts lying in one direction or the other:
  * "coming soon" about a bug, or "that's a bug" about a screen we simply have
- * not written. `VIEW_REF_SCREENS` was made a `satisfies` record precisely so
+ * not written.
+ *
+ * THERE WAS A THIRD, `entity-full-view-unbuilt`: the route `e/{id}` was real
+ * and frozen while its host was not built (ruling M1). The host is built, so
+ * the card is gone — a "coming soon" about a screen that has arrived is the
+ * same class of lie, one release later. What survives here is the assertion
+ * that an unbuilt REF does not reach that host by accident. `VIEW_REF_SCREENS` was made a `satisfies` record precisely so
  * a new ref must be classified into one of them — but nothing ever checked
  * that the classification produced the right card, so the table could have
  * been correct and the render switch wrong and no test would have moved.
@@ -103,7 +107,9 @@ describe('the unrecognised card stays reserved for actual defects', () => {
       navStore.getState().navigate({ view: 'feed' });
     });
     await waitFor(() => view.getByTestId('unbuilt-view'));
-    expect(view.queryByTestId('entity-full-view-unbuilt')).toBeNull();
+    /* And it did not reach the Z4 host either: `feed` is a view ref, not an
+       entity route, and the arm that draws entities is first in the chain. */
+    expect(view.queryByTestId('z4-host')).toBeNull();
     view.unmount();
   });
 });

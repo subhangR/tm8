@@ -37,9 +37,25 @@
  * IT DRAWS NOTHING AND NAVIGATES NOWHERE. The recovery — the Space's safe
  * default view, as a history REPLACEMENT so Back cannot restore the broken URL
  * — belongs to the host, which owns the nav store. This only answers.
+ *
+ * ── IT ALSO ANSWERS "WHAT KIND IS IT", AND THAT IS ONE READ, NOT TWO (T7) ───
+ *
+ * `e/{id}` with no `origin` cannot name its companion screen: an opaque id
+ * reveals no kind, and the §2.2 canonical-reload rule resolves the companion
+ * from the entity's registry STRATEGY. So the Z4 host needs the kind — which
+ * is the same `entities.get` this hook was already making for every entity
+ * route. Returning the kind alongside the verdict is what keeps that a fact
+ * this file measured rather than a second, parallel read that could disagree
+ * with the tombstone about whether the entity exists at all.
+ *
+ * THE KIND IS NULL IN EVERY STATE BUT `live`, and that is the honest shape:
+ * `checking` has not asked yet, `dead` has no entity to have a kind, and
+ * `unreadable` is precisely the case where the node did not tell us. A caller
+ * that needs a companion and gets null must draw NO collapse affordance rather
+ * than guess one — see `EntityFullView.companionOf`.
  */
 import { useEffect, useState } from 'react';
-import type { EntityId, SpaceId } from '@tm8/contract';
+import type { EntityId, EntityKind, SpaceId } from '@tm8/contract';
 import { CollabError } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 
@@ -55,6 +71,13 @@ export type LinkedEntityState =
   /** The read failed for a reason that is not an answer about this entity. */
   | 'unreadable';
 
+/** The verdict, plus the one fact the no-origin Z4 route needs from the read. */
+export interface LinkedEntity {
+  readonly state: LinkedEntityState;
+  /** The entity's kind — known only in `live`. See the header. */
+  readonly kind: EntityKind | null;
+}
+
 export interface UseLinkedEntityInput {
   seam: Seam;
   /** The open Space. Empty while boot has not settled one. */
@@ -65,25 +88,33 @@ export interface UseLinkedEntityInput {
   entityId: EntityId | null;
 }
 
-export function useLinkedEntity(input: UseLinkedEntityInput): LinkedEntityState {
+const IDLE: LinkedEntity = { state: 'idle', kind: null };
+
+export function useLinkedEntity(input: UseLinkedEntityInput): LinkedEntity {
   const { seam, spaceId, ready, entityId } = input;
-  const [state, setState] = useState<LinkedEntityState>('idle');
+  const [state, setState] = useState<LinkedEntity>(IDLE);
 
   useEffect(() => {
     if (!entityId || !spaceId || !ready) {
-      setState('idle');
+      setState(IDLE);
       return;
     }
     let cancelled = false;
-    setState('checking');
+    setState({ state: 'checking', kind: null });
     void (async () => {
       try {
-        await seam.entity(entityId);
-        if (!cancelled) setState('live');
+        const entity = await seam.entity(entityId);
+        /* The kind rides the answer, so "it exists" and "what it is" cannot
+           come apart. A node that answers without one is still `live` — the
+           entity is there — and the companion simply stays unresolved. */
+        if (!cancelled) setState({ state: 'live', kind: entity?.kind ?? null });
       } catch (error: unknown) {
         if (cancelled) return;
         const code = error instanceof CollabError ? error.code : null;
-        setState(code === 'not_found' || code === 'forbidden' ? 'dead' : 'unreadable');
+        setState({
+          state: code === 'not_found' || code === 'forbidden' ? 'dead' : 'unreadable',
+          kind: null,
+        });
       }
     })();
     return () => {

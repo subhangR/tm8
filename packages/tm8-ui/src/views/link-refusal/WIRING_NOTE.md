@@ -19,8 +19,13 @@ is unchanged.
   other failure means the node could not answer, and draws no tombstone.
   Recovery is `GateApp`'s `recoverFromDeadEntity`: the Space's `defaultRoute`,
   written as a history REPLACEMENT, with the screen stacks cleared alongside it
-  (the address↔stack sync runs both ways, so a seeded dead id would otherwise
-  re-derive the same route on the next visit to that screen).
+  — an `origin=` link seeds the dead id onto its origin screen, and leaving it
+  there would have that screen open a tombstoned entity on the viewer's next
+  visit, having pressed nothing that asked for it.
+  Since ruling M1 the same read also answers WHAT KIND the entity is, because
+  `e/{id}` with no `origin` resolves its Z4 companion from the registry
+  strategy and that needs a read. One read, two answers, deliberately: a second
+  parallel read could report "live" while this one drew the tombstone.
 - `WrongNodeRefusal` / `NotSpaceMemberRefusal` — still unused, still on purpose.
   The R4 reasoning is written out at `GateApp`'s `addressedSpace`, which is
   where the fact that separates the two audiences (arrival by address vs by

@@ -37,7 +37,17 @@ import { MobileShell } from './MobileShell';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
-import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
+import {
+  allKinds,
+  KindIcon,
+  VIEW_ART,
+  kindOfSlug,
+  landingOfRoute,
+  navViewOfName,
+  routeViewOf,
+} from '../domain';
+import { EntityFullScreen, kindOfResolution, resolutionOf } from './EntityFullScreen';
+import type { EntityArrival, EntityLeaveStep } from './entity-full';
 import type { NavView } from '../routes';
 import { getKind } from '../domain';
 import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
@@ -177,25 +187,15 @@ function isUnbuiltViewRef(ref: string): boolean {
  * sees, and it names the target rather than drawing a screen that was never
  * asked for.
  */
-/**
- * Do these two routes name THE SAME PLACE?
- *
- * Deliberately not a deep equality. The screen→URL sync compares what it would
- * write against what the address already says, and the two are built by
- * different code paths (`parse` vs `routeViewOf`), so the fields they can
- * legitimately disagree about are exactly the ones that must NOT trigger a
- * write: `q`, which only a pasted URL ever carries, and `mode`, which
- * `routeViewOf` echoes back from the target it was handed. Comparing those too
- * would make the loop rewrite the address on arrival — dropping a viewer's
- * filter and re-asserting a collection mode nothing asked it to assert, which
- * is the ruling R22 must stay free to change.
+/*
+ * `sameDestination` LIVED HERE and was deleted with the screen→URL sync it
+ * existed for (ruling M1 — see `openOnScreen`). It was the fixed point of a
+ * two-way loop: the seed reopened what the address named, the sync saw no
+ * change, and neither wrote. With the loop one-way there is no second writer to
+ * compare against, and keeping a comparison nothing calls would suggest a
+ * reconciliation still happens somewhere. `q` and `mode` survive by the same
+ * route for the same reason: nothing rewrites the address behind the viewer.
  */
-function sameDestination(a: NavView, b: NavView): boolean {
-  if (a.view !== b.view) return false;
-  if (a.view === 'entity' && b.view === 'entity') return a.entityId === b.entityId;
-  if (a.view === 'kind' && b.view === 'kind') return a.slug === b.slug;
-  return true;
-}
 
 function UnroutedTargetCard({ target }: { target: MenuTarget | null }) {
   const described = target === null ? 'null' : JSON.stringify(target);
@@ -400,15 +400,22 @@ export function GateApp(props: GateAppProps = {}) {
    *
    * The Space opened, so nothing upstream failed, and every screen in the chain
    * below will draw itself perfectly well around an entity that is not there:
-   * `e/{id}?origin=tasks` lands on Tasks with an empty panel, and the bare form
-   * lands on the not-built-yet card. Both are true sentences about the SCREEN
-   * and neither is an answer about the LINK, which is what the recipient of a
-   * dead link is actually asking.
+   * the Z4 full view would draw its host and an empty panel, which is a true
+   * sentence about the SCREEN and not an answer about the LINK — which is what
+   * the recipient of a dead link is actually asking.
    *
    * Only the `entity` route asks the question. `channel` and `voice` also name
    * an entity, but they address a ROOM whose screen has its own empty and
    * error states; putting a link tombstone over those would be this lane
    * reaching into somebody else's surface.
+   *
+   * IT ALSO ANSWERS THE Z4 HOST'S QUESTION (T7), and that is one read rather
+   * than two. `e/{id}` with no `origin` cannot name its companion screen — an
+   * opaque id reveals no kind and the §2.2 canonical-reload rule resolves the
+   * companion from the entity's registry strategy — so the kind rides back on
+   * the same `entities.get` this hook was already making. A second, parallel
+   * read could disagree with this one about whether the entity exists at all,
+   * which is the failure that would show up as a tombstone over a live entity.
    */
   const linkedEntity = useLinkedEntity({
     seam: data.seam,
@@ -434,11 +441,14 @@ export function GateApp(props: GateAppProps = {}) {
     if (!data.spaceId) return;
     /* THE SEED HAS TO GO WITH THE ADDRESS, or the recovery only half-works.
        An `e/{id}?origin=` link seeds the dead id onto its origin screen's
-       stack, and the address↔stack sync runs BOTH ways: leave it there and the
-       viewer's next visit to that screen re-derives `e/{dead}` from the stack
-       and lands them back on this card, having pressed nothing that asked for
-       it. Clearing the stacks is the same act `leaveSpaceContext` performs for
-       the same reason — stale screen state must not resurrect a destination. */
+       stack; leave it there and the viewer's next visit to that screen opens a
+       tombstoned entity in its aside, having pressed nothing that asked for it.
+       (It used to be worse: while the stack→address sync existed, that screen
+       re-derived `e/{dead}` and landed them back on this card. The sync is gone
+       under ruling M1 — see `openOnScreen` — and this clear is still right for
+       the half of the reason that remains.) Clearing the stacks is the same act
+       `leaveSpaceContext` performs for the same reason — stale screen state
+       must not resurrect a destination. */
     screenStackStore.getState().clearAll();
     const view = defaultRoute(data.spaceId).target;
     navStore.setState((s) => ({ view, history: 'replace', revision: s.revision + 1 }));
@@ -604,6 +614,16 @@ export function GateApp(props: GateAppProps = {}) {
    * half, and the part that makes `e/{id}?origin=tasks` mean what §2.2 says it
    * means: "the Tasks screen, with THAT entity open".
    *
+   * WHAT RULING M1 CHANGED HERE, AND WHY THE SEED SURVIVED IT. `e/{id}` now
+   * draws the Z4 full view (see the entity arm below), so this store no longer
+   * decides what is on screen for that route — which is exactly the reading
+   * under which the seed stops being kind-screen-plus-seed and becomes what it
+   * always described itself as: the COMPANION, prepared. Collapse ⤡ from Z4
+   * lands on the origin screen with that entity already open, so §2.2's
+   * sentence is delivered by the screen it is about rather than by the full
+   * view standing in for it. Deleting the seed would have made collapse land
+   * on a bare list and quietly dropped the `origin=` the link carried.
+   *
    * `landingOfRoute` returns both halves because a route names two things at
    * once; the target drives the render switch above and `openEntity` belongs to
    * `screenStackStore`, which has no `MenuTarget` representation at all.
@@ -617,13 +637,6 @@ export function GateApp(props: GateAppProps = {}) {
    *
    * Keyed on the view rather than done once at mount, so back/forward and a
    * pasted hash re-seed by the same path as the boot did.
-   *
-   * NOT THE LAST WORD ON WHAT `e/{id}` DRAWS. Ruling M1 (2026-08-14) says that
-   * route means the Z4 entity FULL VIEW, and no such host exists in this tree
-   * yet; `landingOfRoute`'s kind-screen-plus-seed is the shape that could be
-   * built today, not the shape the frozen spec asks for. Seeding the stack is
-   * right either way — an entity the address names has to be open somewhere —
-   * so nothing here asserts that the kind screen is the final destination.
    *
    * IT ALSO CARRIES THE SPACE RESET, and the order inside one effect is the
    * point: a route naming a DIFFERENT space is a context switch, and the reset
@@ -661,69 +674,112 @@ export function GateApp(props: GateAppProps = {}) {
   }, [navView, navSpaceId]);
 
   /**
-   * THE OTHER DIRECTION: THE ENTITY A SCREEN HAS OPEN BECOMES PART OF THE
-   * ADDRESS.
+   * THE ENTITY A KIND SCREEN HAS OPEN — READ, NEVER WRITTEN BACK. Ruling M1
+   * made this loop ONE-WAY, and that is a deletion worth reading twice.
    *
-   * Without this the mount is half a feature. `screenStackStore` holds what a
-   * kind screen is showing and nothing ever put it in the URL, so drilling into
-   * a task left the address saying `k/tasks`: the address bar could not be
-   * copied to share what was on screen, and a reload came back to the list.
-   * `routeViewOf`'s `openEntity` parameter exists for exactly this and had no
-   * caller — "what makes an open entity shareable at all", in its own words.
+   * It used to be the seed above, run backwards: `screenStackStore` holds what
+   * a kind screen is showing, and drilling into a task rewrote the address to
+   * `e/{id}?origin=tasks` so the bar could be copied and a reload came back to
+   * the row. That was correct while `e/{id}` MEANT "the tasks screen with that
+   * task open". It no longer does. Under M1 that address means the Z4 FULL
+   * VIEW, so writing it on a row click would promote the click: the list would
+   * vanish into a full-screen panel, contradicting D65 ("Z3 aside on row click,
+   * Z4 full on promote") — and collapsing back would re-derive `e/{id}` from
+   * the still-open stack and bounce straight into Z4 again, a loop with no exit
+   * built out of two individually correct rules.
    *
-   * IT IS THE SAME LOOP AS THE SEED ABOVE, RUN BACKWARDS, so it has to be
-   * idempotent or the two would push history at each other forever.
-   * `sameDestination` is the fixed point: the seed reopens what the address
-   * already named, this sees no change, and neither writes.
+   * SO THE SELECTION IS NOT ADDRESSABLE, and that is a property of the frozen
+   * grammar rather than a shortcut: WLT §2.2 has exactly ONE entity form and
+   * M1 assigns it to Z4. Nothing is lost from the requirement this lane exists
+   * for — `CopyLinkControl` still passes this value explicitly, so "copy a link
+   * to the thing I am reading" emits `e/{id}?origin=tasks` and the recipient
+   * lands in the full view. What is gone is only the address bar CHANGING
+   * under a click that did not ask to navigate.
    *
-   * `q` SURVIVES BY BEING LEFT ALONE. `routeViewOf` always emits `q: null`, so
-   * comparing only the destination means a filtered collection keeps its filter
-   * while an entity is open on top of it. Same for `mode`, deliberately: this
-   * never re-asserts one, which is what keeps R22 open.
+   * R15 WENT WITH IT, to the place that can state it. The first-step-up replace
+   * used to live in this effect because the step up was a store diff here; the
+   * step up is now the Z4 collapse, and `EntityFullView` computes the discipline
+   * from `arrival` and hands it to `onLeave`. See `leaveFullView`.
    */
   const openOnScreen = useScreenStackStore((s) =>
     activeTarget?.type === 'kind' ? topOf(s, screenKeyOf.kind(activeTarget.ref)) : null,
   );
-  /**
-   * R15 — A COLD ENTRY'S FIRST STEP UP IS A REPLACE, NEVER A PUSH.
-   *
-   * Land on a pasted `e/{id}` and there is nothing behind you: history depth is
-   * 1, so the back affordance cannot mean BACK and can only mean UP. If up
-   * pushed, back would return to the entity and the viewer would be trapped
-   * in a two-item loop with no exit — on the EXACT entry path a shared link
-   * creates, which is the one path this whole lane is for.
-   *
-   * Depth comes from the transport because the two cases are indistinguishable
-   * from the address: arriving at `k/tasks` by pasting and by walking up from
-   * an entity produce the same string and opposite meanings for `‹`.
-   *
-   * Spent ONCE. After the first step the viewer has a real history and every
-   * later navigation is an ordinary push. Declared with the mount, which is the
-   * only moment the fact is readable.
-   */
-  useEffect(() => {
-    if (!activeTarget || activeTarget.type !== 'kind') return;
-    /* READ THE STORE, NOT THE RENDERED VALUE — and this is a correctness fix,
-       not a style choice. The seed effect above runs in the same pass as this
-       one and opens the entity the address named; `openOnScreen` is this
-       render's snapshot, so it is still null when this runs. Acting on it would
-       make the mount navigate AWAY from the route it had just landed on, and —
-       worse — spend R15's one-shot concession doing it, so the real step up
-       later would push and trap the viewer anyway.
 
-       `openOnScreen` stays in the deps because it is what WAKES this effect
-       when the stack changes; it is never what the effect acts on. */
-    const open = topOf(screenStackStore.getState(), screenKeyOf.kind(activeTarget.ref));
-    const next = routeViewOf(activeTarget, open);
-    if (!next || sameDestination(navView, next)) return;
-    const steppingUp = navView.view === 'entity' && next.view !== 'entity';
-    if (steppingUp && coldEntry.current) {
-      coldEntry.current = false;
-      navStore.setState((s) => ({ view: next, history: 'replace', revision: s.revision + 1 }));
-      return;
-    }
-    navStore.getState().navigate(next);
-  }, [activeTarget, openOnScreen, navView]);
+  /**
+   * WHICH DOOR THE VIEWER CAME THROUGH — the fact the address cannot carry.
+   *
+   * `e/{id}` is produced by two callers with OPPOSITE correct back behaviour: a
+   * pasted link (nothing behind it; the first step up must REPLACE, R15) and a
+   * promote from the workspace (arrived by a push, with a live panel stack
+   * behind it; the ordinary discipline). The two are indistinguishable from the
+   * address — same string, same store shape — so the distinguishing fact has to
+   * be recorded AT THE MOMENT IT IS TRUE, which is the moment promote runs.
+   *
+   * A ref, not state: nothing renders differently because of it, and making it
+   * state would re-render the whole shell to record something only the next
+   * navigation reads. Reset whenever the route leaves the entity view, so a
+   * promoted-then-collapsed-then-pasted arrival is not still called a promote.
+   */
+  const arrival = useRef<EntityArrival>('link');
+  useEffect(() => {
+    if (navView.view !== 'entity') arrival.current = 'link';
+  }, [navView]);
+
+  /**
+   * LEAVING THE FULL VIEW — where R15 lives now, and the only place that can
+   * spend it.
+   *
+   * `EntityFullView` hands down a computed STEP rather than a destination: it
+   * owns the §2.2 companion rule and the R15 verdict, so this function obeys a
+   * decision instead of re-deriving one. What is left here is what only the
+   * shell can do — turn a slug into a target, seed the companion, and write the
+   * store with the history discipline the step named.
+   *
+   * `replace` STILL COSTS THE ONE-SHOT. `arrival === 'link'` is true of every
+   * address-driven landing, including a back/forward walk onto an entity route
+   * with real history behind it; replacing there would burn an entry the viewer
+   * created and can never get back. `coldEntry` is the fact that separates
+   * them — depth 1 at mount, spent once — so the step's verdict and the
+   * transport's measurement have to agree before an entry is consumed. An
+   * unnecessary push costs one back press; a wrong replace loses a page.
+   */
+  const leaveFullView = useCallback(
+    (entityId: EntityId | null, step: EntityLeaveStep) => {
+      /* No destination is a real answer, not a failure: the `special` and
+         `anchored` strategies have no `k/` view by design, so there is nowhere
+         to collapse TO. `Z4Host` already draws no affordance in that case; this
+         is the same rule stated where the write would have happened. */
+      if (!entityId || !step.destination) return;
+      const kind = kindOfSlug(step.destination.slug);
+      if (!kind) {
+        /* A companion whose slug names no kind is a defect at the source, not a
+           reason to strand the viewer silently — the same posture `navigateTo`
+           takes for a target with no route. */
+        console.error('[nav] no kind for companion slug', step.destination.slug);
+        return;
+      }
+      const target: MenuTarget = {
+        type: 'kind',
+        ref: kind,
+        ...(step.destination.mode ? { mode: step.destination.mode } : {}),
+      };
+      /* THE COMPANION OPENS WITH THIS ENTITY SHOWING — §2.2's sentence, and the
+         same act the address seed performs for an `origin=` link. Collapsing
+         to a bare list would drop the subject the viewer was just reading. */
+      screenStackStore.getState().open(screenKeyOf.kind(kind), entityId);
+      if (step.history === 'replace' && coldEntry.current) {
+        coldEntry.current = false;
+        const view = routeViewOf(target);
+        if (!view) return;
+        setUnroutableTarget(null);
+        navStore.setState((s) => ({ view, history: 'replace', revision: s.revision + 1 }));
+        if (data.spaceId) writeLastTarget(nodeKey, data.spaceId, target);
+        return;
+      }
+      navigateTo(target);
+    },
+    [navigateTo, nodeKey, data.spaceId],
+  );
 
   /**
    * `?session={id}` — THE OTHER HALF OF THE GRAMMAR THAT HAD NO CONSUMER.
@@ -1147,30 +1203,30 @@ export function GateApp(props: GateAppProps = {}) {
       pin: (id) => actions.pin(id),
       unpin: (id) => actions.unpin(id),
       /**
-       * PROMOTE IS REFUSED WHILE Z4 HAS NO HOST, AND REFUSING IS THE FIX.
+       * PROMOTE ⤢ PERFORMS AGAIN — the guard removed, not merely bypassed.
        *
-       * `navStore.promote` clears the id from stack AND pins and sets
+       * It was refused while Z4 had no host, and refusing was the right answer
+       * then: `navStore.promote` clears the id from stack AND pins and sets
        * `{view:'entity', entityId, origin:null}` — from the workspace there is
-       * no `origin` to carry. So the panel was destroyed and the screen was
-       * replaced by the unrecognised card, in one click, with no way back to
-       * either. It is a real regression on this branch: the write is old, but
-       * making `navStore` authoritative (68dc93fd) made it visible, and no test
-       * covered it.
+       * no `origin` to carry — so one click destroyed the panel and replaced
+       * the screen with the unrecognised card, with no way back to either. The
+       * write is old; making `navStore` authoritative (68dc93fd) made it
+       * visible, and nothing covered it.
        *
-       * Doing the state change and drawing an honest card instead would still
-       * destroy the panel, so the guard has to be here, before the store. Said
-       * out loud rather than swallowed: a control that silently does nothing is
-       * the failure mode this codebase keeps removing. It comes back the moment
-       * the M1 host exists, and nothing here presumes what that host looks like.
+       * The host now exists (ruling M1), and `origin: null` is no longer a hole
+       * in the state: it is the canonical-reload case, resolved from the
+       * entity's registry strategy against a read the route already makes. So
+       * the store call is restored as-is — the gap it exposed was the missing
+       * SCREEN, never the write.
+       *
+       * THE ARRIVAL IS RECORDED HERE BECAUSE HERE IS WHERE IT IS TRUE. A
+       * promote arrives BY A PUSH with a live stack behind it, so Back means
+       * back and collapse must not spend R15's replace. One line, and the
+       * difference between "the back button works" and a week of tracing.
        */
-      promote: (_id) => {
-        noticeSink.current({
-          id: 'z4-unbuilt',
-          tone: 'warn',
-          title: 'Full view isn’t built yet',
-          body: 'The panel stays where it is. Opening an entity on its own screen is coming; nothing was lost.',
-          ttlMs: NOTICE_TTL_MS,
-        });
+      promote: (id) => {
+        arrival.current = 'promote';
+        actions.promote(id);
       },
       applyNormalization: (next) => actions.applyNormalization(next),
       surfaceOf: (id) => contentSurface[id] ?? null,
@@ -1490,7 +1546,7 @@ export function GateApp(props: GateAppProps = {}) {
    * STANDALONE, with no origin companion resolved or drawn: the entity is the
    * only thing the link named and the only thing this may speak about.
    */
-  if (linkedEntity === 'dead') {
+  if (linkedEntity.state === 'dead') {
     return (
       <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
         <EntityUnavailableRefusal onOpenSpace={recoverFromDeadEntity} />
@@ -1499,6 +1555,92 @@ export function GateApp(props: GateAppProps = {}) {
     );
   }
 
+  /*
+   * `e/{id}` IS THE Z4 ENTITY FULL VIEW (ruling M1) — ONE DECISION, TWO
+   * ARRANGEMENTS.
+   *
+   * Built HERE, above the shell fork, and rendered by both shells below. That
+   * placement is the law "the shell forks and the router does not" applied to a
+   * screen rather than to the router: the route resolves to the same host, the
+   * same subject and the same companion on a phone as on a desktop, and only
+   * the frame around it differs. Built inside the desktop return it would
+   * simply not exist on a phone — and a shared entity link is opened on a phone
+   * more often than not, so the one path this lane exists for would be the one
+   * that renders "this link doesn't name a screen this build has".
+   *
+   * IT IS NOT DRAWN ABOVE THE FORK, though — that is reserved for the two
+   * REFUSALS, which must not fork because a refusal is a sentence rather than a
+   * screen. This is a screen. Screens fork.
+   *
+   * WHAT REPLACED WHAT. Until now this route drew an honest "not built yet"
+   * card, and `landingOfRoute`'s kind-screen-plus-seed drew the `origin=` form
+   * as a kind screen with the entity seeded onto it. Both are gone: the first
+   * because the host exists, the second because it was the shape that could be
+   * built at the time and M1 rules that the frozen spec wins. The seed itself
+   * survives, doing the job it always described — see the seeding effect.
+   */
+  const entityRouteId = navView.view === 'entity' ? navView.entityId : null;
+  const entityRouteOrigin = navView.view === 'entity' ? navView.origin : null;
+  /**
+   * WHAT "COPY LINK" NAMES WHILE THE FULL VIEW IS ON SCREEN.
+   *
+   * `activeTarget` is null for the bare `e/{id}` form — `landingOfRoute` cannot
+   * map it without a read — and the control's old fallback was
+   * `WORKSPACE_TARGET`. On this route that would have handed the viewer a link
+   * to the WORKSPACE while they looked at an entity: a link that copies
+   * cleanly, pastes cleanly and opens somewhere else, which is the exact
+   * failure this whole lane exists to remove.
+   *
+   * So the entity route names itself. `resolutionOf` is the same rule the host
+   * renders from — origin names the kind, otherwise the read does — so the
+   * link and the screen cannot disagree about which collection this entity
+   * belongs to. Unresolved ⇒ NO CONTROL rather than a wrong link; it is a
+   * transient state that resolves on its own, and a share affordance that
+   * emits the wrong address is worse than one that is not there yet.
+   */
+  const entityRouteKind = entityRouteId
+    ? kindOfResolution(
+        resolutionOf(entityRouteOrigin, linkedEntity, data.detailOf(entityRouteId)?.kind ?? null),
+      )
+    : null;
+  const shareTarget: MenuTarget | null = entityRouteId
+    ? entityRouteKind
+      ? {
+          type: 'kind',
+          ref: entityRouteKind,
+          ...(entityRouteOrigin?.mode ? { mode: entityRouteOrigin.mode } : {}),
+        }
+      : null
+    : activeTarget ?? WORKSPACE_TARGET;
+  const entityFullView =
+    data.ready && entityRouteId ? (
+      <EntityFullScreen
+        data={data}
+        entityId={entityRouteId}
+        origin={entityRouteOrigin}
+        arrival={arrival.current}
+        linked={linkedEntity}
+        reasons={reasons}
+        onNotice={notices.push}
+        onLeave={(step) => leaveFullView(entityRouteId, step)}
+        /* Drilling sideways out of the full view lands where every other
+           screen's drill-through lands — the workspace, with the entity on the
+           panel stack. Z4 is one entity's screen, not a browser. */
+        onOpenEntity={(id) => {
+          navigateTo(WORKSPACE_TARGET);
+          nav.push(id);
+        }}
+        onSpawn={async (input) => {
+          const sessionId = await data.spawn(input);
+          navigateTo(WORKSPACE_TARGET);
+          nav.push(sessionId);
+        }}
+        onLaunchOpen={(id) => launch.open(id)}
+        serverBaseUrl={activeServer.routeBaseUrl}
+        {...(viewerMemberId ? { viewerMemberId } : {})}
+      />
+    ) : null;
+
   if (shell === 'mobile' && data.spaceId) {
     return (
       <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
@@ -1506,8 +1648,10 @@ export function GateApp(props: GateAppProps = {}) {
           data={data}
           spaceId={data.spaceId}
           activeTarget={activeTarget}
+          entityFullView={entityFullView}
+          shareTarget={shareTarget}
           navigateTo={navigateTo}
-          openEntity={openOnScreen}
+          openEntity={entityRouteId ?? openOnScreen}
           serverBaseUrl={activeServer.routeBaseUrl}
           reasons={reasons}
           onNotice={notices.push}
@@ -1563,11 +1707,11 @@ export function GateApp(props: GateAppProps = {}) {
              a button that cannot perform, which is the shape this codebase
              refuses everywhere else. */
           shareSlot={
-            data.spaceId ? (
+            data.spaceId && shareTarget ? (
               <CopyLinkControl
                 spaceId={data.spaceId}
-                target={activeTarget ?? WORKSPACE_TARGET}
-                openEntity={openOnScreen}
+                target={shareTarget}
+                openEntity={entityRouteId ?? openOnScreen}
               />
             ) : undefined
           }
@@ -1603,7 +1747,21 @@ export function GateApp(props: GateAppProps = {}) {
               screen renders the designed error state with retry; the rail and
               tab bar above stay live for navigating away. */}
           <CatchBoundary label="view">
-          {data.ready &&
+          {entityFullView ? (
+            /* FIRST IN THE CHAIN, AND THAT ORDER IS THE RULING.
+
+               `activeTarget` is derived from the route, and for `e/{id}?origin=`
+               it is the ORIGIN's kind — so every arm below would happily draw
+               the Tasks screen for an address that names one task. Testing the
+               route before the target is what makes M1 true for the `origin=`
+               form and not only for the bare one; putting this arm lower would
+               leave the ruling half-applied in the case a shared link most
+               often takes.
+
+               The target stays the origin's kind ON PURPOSE: the rail keeps
+               Tasks lit while you read a task, which is where you are. */
+            <div className="shell-z4-slot">{entityFullView}</div>
+          ) : data.ready &&
             activeTarget?.type === 'entity' &&
             activeTarget.kind === voiceKind.kind ? (
             /* THE MISROUTE FIX. The branch below tested only `type === 'entity'`
@@ -1909,40 +2067,6 @@ export function GateApp(props: GateAppProps = {}) {
                 })
               }
             />
-          ) : data.ready && navView.view === 'entity' ? (
-            /* `e/{id}` IS A SPECIFIED ROUTE WITH NO HOST YET — NOT AN
-               UNRECOGNISED ONE, AND THE DIFFERENCE IS THE WHOLE POINT OF THIS
-               ARM.
-
-               Ruling M1 (2026-08-14): `e/{id}` means the Z4 entity FULL VIEW.
-               That host does not exist anywhere in this tree, and no lane owns
-               building it yet. Until it does, the route can be parsed, carried
-               and shared but not drawn.
-
-               `landingOfRoute` returns null for the no-`origin` form — resolving
-               it needs the entity's KIND, which is a read, so a pure mapping
-               cannot do it — and null lands on the unrecognised card below.
-               That card says "this build has no screen for that", which about a
-               frozen, specified route is simply false: the route is right and
-               the screen is missing. This is the unbuilt-view idiom instead,
-               which is the honest sentence and the one the reader can act on.
-
-               IT IS ALSO WHAT PROMOTE USED TO DESTROY THE SCREEN WITH.
-               `navStore.promote` writes `{view:'entity', origin:null}` and, from
-               the workspace, has no `origin` to carry — so one click on Z4
-               removed the panel AND replaced the whole screen with the loud
-               unrecognised card. Phase 1 did not introduce that write; it made
-               an already-latent one visible by making the store authoritative.
-               The port refuses the promote now (see `nav.promote`), and this arm
-               is the safety net for the same route arriving from a pasted link,
-               where there is no port to refuse it. */
-            <div className="ev-root" data-testid="entity-full-view-unbuilt">
-              <p className="evt-empty" style={{ margin: 24 }}>
-                The full view for a single entity isn’t built yet. This link is a real
-                address and it has been kept — there is just no screen behind it in this
-                build. Open the entity from its collection in the meantime.
-              </p>
-            </div>
           ) : data.ready ? (
             /* NOTHING MATCHED, AND THAT IS NOW SAYABLE. Everything the chain
                above understands has its own arm; reaching here means the target
