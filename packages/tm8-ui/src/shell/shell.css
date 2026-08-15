@@ -799,6 +799,20 @@
 }
 
 /* --- Z4 (§5.6) ------------------------------------------------------------ */
+/*
+ * The region a Z4 host fills. `.shell-z4` is `position:absolute; inset:0`, so
+ * it needs a positioned ancestor or it escapes to the viewport and paints over
+ * the tab bar and the rail — which are live chrome, not part of the full view.
+ * A slot rather than `position:relative` on `.shell-body`, because that would
+ * silently re-parent every other absolutely-positioned descendant of the
+ * workspace.
+ */
+.cv2-root .shell-z4-slot {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
 .cv2-root .shell-z4 {
   position: absolute;
   inset: 0;

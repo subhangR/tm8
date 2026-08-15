@@ -50,6 +50,32 @@ export interface MobileShellProps {
   activeTarget: MenuTarget | null;
   navigateTo(target: MenuTarget): void;
   openEntity: EntityId | null;
+  /**
+   * THE Z4 FULL VIEW FOR `e/{id}`, BUILT BY THE HOST AND PLACED BY THIS SHELL.
+   *
+   * Ruling M1 gave that route one host, and it is the same host on both shells:
+   * the same subject, the same companion, the same collapse. So the element is
+   * constructed ONCE above the fork and each shell only decides where it goes
+   * — which is precisely the two-shell ruling ("a different arrangement of the
+   * same state"), and the reason this is a `ReactNode` rather than a flag that
+   * would have this file assemble a second, drifting copy of the panel.
+   *
+   * Absent on every other route. Present, it OUTRANKS `activeTarget`: an
+   * `e/{id}?origin=tasks` link resolves its target to the Tasks kind, and
+   * drawing that list would be the kind-screen-plus-seed shape M1 replaced.
+   */
+  entityFullView?: ReactNode;
+  /**
+   * What Copy Link NAMES, when it is not simply the active target.
+   *
+   * The bare `e/{id}` form has no target at all (`landingOfRoute` cannot map it
+   * without a read), and the old fallback here was the workspace — a link that
+   * copies and pastes cleanly and opens somewhere else. The host resolves it
+   * once, for both shells; `null` means "not yet resolvable", and the control
+   * is not drawn rather than drawn wrong. Undefined keeps the old behaviour for
+   * every caller that has no opinion.
+   */
+  shareTarget?: MenuTarget | null;
   serverBaseUrl?: string;
   reasons: DetailReasons;
   onNotice(notice: Notice): void;
@@ -86,14 +112,16 @@ export function MobileShell(props: MobileShellProps) {
   /* The link affordance is in the header for the same reason it is in the
      desktop tab bar: the thing being shared is THE PAGE. On a phone it matters
      more, not less — a phone is where links are received and forwarded. */
+  const shareTarget =
+    props.shareTarget === undefined
+      ? activeTarget ?? ({ type: 'view', ref: 'workspace' } as MenuTarget)
+      : props.shareTarget;
   const header = (
     <div className="mobile-header">
       <span className="mobile-header__title">{props.spaceLabel ?? 'tm8'}</span>
-      <CopyLinkControl
-        spaceId={spaceId}
-        target={activeTarget ?? { type: 'view', ref: 'workspace' }}
-        openEntity={props.openEntity}
-      />
+      {shareTarget ? (
+        <CopyLinkControl spaceId={spaceId} target={shareTarget} openEntity={props.openEntity} />
+      ) : null}
     </div>
   );
 
@@ -134,6 +162,10 @@ export function MobileShell(props: MobileShellProps) {
 function screenFor(props: MobileShellProps): ReactNode {
   const { data, activeTarget, reasons, onNotice } = props;
   if (!data.ready) return <div className="mobile-empty">Loading…</div>;
+  /* FIRST, for the reason the desktop chain tests the route before the target:
+     `e/{id}?origin=tasks` resolves its target to the Tasks kind, and the arm
+     below would draw that list for an address that names one entity. */
+  if (props.entityFullView) return <div className="shell-z4-slot">{props.entityFullView}</div>;
   if (!activeTarget) {
     return (
       <div className="mobile-empty" data-testid="mobile-unrouted">

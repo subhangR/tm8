@@ -28,10 +28,25 @@ import type { EntityId, EntityKind } from '@tm8/contract';
  * and "refused". Not "callers should not pass it" — there is no field to put it
  * in. R4 then stops depending on every future caller remembering the rule, which
  * is the only way a privacy rule survives contact with a second author.
+ *
+ * WHY `ready` CAN CARRY A NULL KIND, WHICH IS NOT THE SAME AS `unavailable`.
+ *
+ * The read that answers "is it there" can fail for a reason that is NOT an
+ * answer about this entity — a 503, a node that blinked. `useLinkedEntity`
+ * calls that `unreadable` and refuses to draw it as a tombstone, because a
+ * card saying "deleted" about a node timeout is a lie in the other direction.
+ * The honest rendering is the one the host would have drawn anyway: the panel,
+ * which runs its own read and states its own failure. What is genuinely
+ * missing is only the KIND — so the companion cannot be resolved, and a Z4
+ * with no companion simply draws no collapse affordance (`companionOf`).
+ *
+ * So `ready` means "draw the entity", and a null kind means "and I could not
+ * learn where it collapses to". Four states of one read stay distinct:
+ * resolving · ready-with-kind · ready-without · unavailable.
  */
 export type EntityResolution =
   | { readonly status: 'resolving' }
-  | { readonly status: 'ready'; readonly kind: EntityKind }
+  | { readonly status: 'ready'; readonly kind: EntityKind | null }
   | { readonly status: 'unavailable' };
 
 export interface EntityFullPort {

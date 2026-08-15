@@ -23,7 +23,12 @@
  * same place.
  */
 import type { EntityId } from '@tm8/contract';
-import { EntityDetailPanel, type ControlHost, type DetailReasons } from '../panels';
+import {
+  EntityDetailPanel,
+  type ControlHost,
+  type DetailReasons,
+  type PanelHost,
+} from '../panels';
 import type { ActionContext } from '../domain/types';
 import type { AttachmentsPort } from '../files/port';
 import type { GateData } from './useGateData';
@@ -64,9 +69,24 @@ export interface AuxEntityPanelProps {
   onOpenEntity(id: EntityId): void;
   /** Dismiss the column entirely. The host owns whatever state that clears. */
   onClose(): void;
+  /**
+   * WHICH HOST IS RENDERING IT — width and chrome, never anatomy (§2.3).
+   *
+   * The aux column is `'stack'` and stays the default, so every existing
+   * caller is untouched. Z4 passes `'z4'`, which is the whole reason this
+   * mount was lifted out of `EntityView`: the full view must be the SAME
+   * panel, not a second assembly of it that drifts.
+   */
+  panelHost?: PanelHost;
 }
 
-export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEntityPanelProps) {
+export function AuxEntityPanel({
+  host,
+  entityId,
+  onOpenEntity,
+  onClose,
+  panelHost = 'stack',
+}: AuxEntityPanelProps) {
   const { data, attachments } = host;
   const detail = data.detailOf(entityId) ?? null;
   return (
@@ -74,7 +94,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       detail={detail}
       serverBaseUrl={host.serverBaseUrl}
       loading={!detail}
-      host="stack"
+      host={panelHost}
       reasons={host.reasons}
       ctx={{ ...host.ctx, entityId }}
       controls={host.controls}
