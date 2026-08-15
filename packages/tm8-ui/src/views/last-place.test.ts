@@ -8,7 +8,13 @@
  * depend on — per-node isolation, per-space views, and never crashing boot.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { readLastSpace, readLastTarget, writeLastSpace, writeLastTarget } from './last-place';
+import {
+  clearLastPlace,
+  readLastSpace,
+  readLastTarget,
+  writeLastSpace,
+  writeLastTarget,
+} from './last-place';
 
 /**
  * An in-memory localStorage. The runner's ambient one is Node's own, which is
@@ -97,5 +103,42 @@ describe('hostile storage never reaches boot', () => {
     });
     expect(readLastSpace('local')).toBeNull();
     expect(() => writeLastSpace('local', 'space-a')).not.toThrow();
+  });
+});
+
+describe('what sign-out forgets', () => {
+  /* A remembered place is a preference of the VIEWER and this module could not
+     tell: the record outlived the pass, so the next person to sign in on this
+     browser was restored into the last person's space and onto the last
+     person's entity. `auth/session-reset.ts` calls this on an explicit
+     sign-out. */
+  it('drops the space and every remembered target for the node', () => {
+    writeLastSpace('local', 'space-a');
+    writeLastTarget('local', 'space-a', { type: 'entity', ref: 'ent-1', kind: 'task' });
+
+    clearLastPlace('local');
+
+    expect(readLastSpace('local')).toBeNull();
+    expect(readLastTarget('local', 'space-a')).toBeNull();
+  });
+
+  it('leaves another node’s memory intact, because sign-out is per server', () => {
+    writeLastSpace('local', 'space-a');
+    writeLastSpace('remote-1', 'space-z');
+
+    clearLastPlace('local');
+
+    expect(readLastSpace('local')).toBeNull();
+    expect(readLastSpace('remote-1')).toBe('space-z');
+  });
+
+  it('survives storage that throws on read', () => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new Error('storage disabled by policy');
+      },
+    });
+    expect(() => clearLastPlace('local')).not.toThrow();
   });
 });

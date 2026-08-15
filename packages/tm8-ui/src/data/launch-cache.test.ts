@@ -10,7 +10,13 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { EntitySummary } from '@tm8/contract';
-import { CACHED_LAUNCH_KINDS, nodeKeyOf, readLaunchCache, writeLaunchCache } from './launch-cache';
+import {
+  CACHED_LAUNCH_KINDS,
+  clearLaunchCache,
+  nodeKeyOf,
+  readLaunchCache,
+  writeLaunchCache,
+} from './launch-cache';
 
 const teammate = (id: string, over: Partial<EntitySummary> = {}): EntitySummary =>
   ({
@@ -125,5 +131,37 @@ describe('it cannot break boot', () => {
     expect([...CACHED_LAUNCH_KINDS].sort()).toEqual(['interaction_profile', 'team_member']);
     writeLaunchCache('local', 'space-1', [teammate('t1'), teammate('task-1', { kind: 'task', state: { kind: 'task' } } as Partial<EntitySummary>)]);
     expect(readLaunchCache('local', 'space-1')?.map((r) => r.id)).toEqual(['t1']);
+  });
+});
+
+describe('sign-out forgets it', () => {
+  /* The cache is keyed by node and space, never by ACCOUNT — so it outlived the
+     pass it was read under, and the next viewer on this browser had the last
+     one's teammates and personas seeded into their pickers before the first
+     authoritative read. `auth/session-reset.ts` calls this on an explicit
+     sign-out. */
+  it('drops every space under the node, because sign-out does not know which ones the pass reached', () => {
+    writeLaunchCache('local', 'space-1', [teammate('t1')]);
+    writeLaunchCache('local', 'space-2', [teammate('t2')]);
+
+    clearLaunchCache('local');
+
+    expect(readLaunchCache('local', 'space-1')).toBeNull();
+    expect(readLaunchCache('local', 'space-2')).toBeNull();
+  });
+
+  it('leaves another node alone, because signing out of one server is not signing out of the other', () => {
+    writeLaunchCache('local', 'space-1', [teammate('t1')]);
+    writeLaunchCache('_relay_prod', 'space-1', [teammate('t2')]);
+
+    clearLaunchCache('local');
+
+    expect(readLaunchCache('local', 'space-1')).toBeNull();
+    expect(readLaunchCache('_relay_prod', 'space-1')?.map((r) => r.id)).toEqual(['t2']);
+  });
+
+  it('survives a browser with no storage at all', () => {
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: undefined });
+    expect(() => clearLaunchCache('local')).not.toThrow();
   });
 });
