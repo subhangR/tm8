@@ -186,7 +186,7 @@ describe('Chat Home cross-thread and multiplayer safety', () => {
     await waitFor(() => expect(controls.posts).toHaveLength(1));
 
     // Switch to the new-thread composer while the post-send read is gated.
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
     await waitFor(() => expect(view.getByText(/New conversation — pick a mode/)).toBeTruthy());
     act(() => gated.release());
 
@@ -288,7 +288,7 @@ describe('Chat Home snapshot reconciliation', () => {
     fireEvent.keyDown(view.getByLabelText('Message the chat agent'), { key: 'Enter' });
     await waitFor(() => expect(controls.posts).toHaveLength(1));
 
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
     const composer = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
     fireEvent.change(composer, { target: { value: 'Fresh draft for a new conversation.' } });
     act(() => gated.release());

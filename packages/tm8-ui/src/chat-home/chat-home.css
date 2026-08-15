@@ -591,11 +591,80 @@ button.tch-entity-chip:hover {
   padding: var(--pn-space-2) var(--pn-space-3) 0;
 }
 .tch-sidebar__actions .tch-new { flex: 1; text-align: center; }
-.tch-new--session { background: var(--pn-active); }
-.tch-new--session[aria-disabled='true'] {
+.tch-new--task { background: var(--pn-active); }
+.tch-new--task[aria-disabled='true'] {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+/* D1: the tab strip. Labels only — no counts (D16). */
+.tch-tabs {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  margin: var(--pn-space-2) var(--pn-space-3) 0;
+  padding: 2px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+}
+.tch-tab {
+  flex: 1;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tch-tab:hover { color: var(--pn-ink); }
+.tch-tab--active,
+.tch-tab[aria-selected='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+
+/* A task row and its Run are siblings — Run must not be the row's whole
+   surface, and a button cannot nest a button. */
+.tch-task-row {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  margin: 0 0 3px;
+}
+.tch-task-row .tch-thread { flex: 1; margin: 0; }
+.tch-run {
+  flex: none;
+  align-self: center;
+  padding: 4px 7px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tch-run:hover { background: var(--pn-hover); }
+.tch-thread--task[aria-disabled='true'] { cursor: not-allowed; opacity: 0.7; }
+
+/* REGION B when a task/session is selected (D7): the host's panel takes the
+   conversation's grid cell; the conversation itself stays MOUNTED but
+   display:none (D8) — the attribute selector outranks the pane's own
+   display:flex, which the bare `hidden` attribute would not. */
+.tch-center {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+.tch-center > * { flex: 1; min-width: 0; min-height: 0; }
+.tch-conversation[data-hidden] { display: none; }
 
 .tch-find {
   flex: none;

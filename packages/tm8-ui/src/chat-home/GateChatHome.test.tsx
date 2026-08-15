@@ -104,14 +104,16 @@ describe('dashboard route', () => {
     // column — the conversation LIST is the navigation and the screen owns it.
     expect(view.queryByTestId('menu-rail')).toBeNull();
 
-    // NO WORKING-SET STRIP. The panel is the only conversation selector; the
-    // one tablist on this screen is the shell's top row.
+    // NO WORKING-SET STRIP. The panel is the only conversation selector.
+    // The tablists on this screen are the shell's top row and the left
+    // column's OWN Tasks|Chats|Sessions strip (task 01a006f8 D1) — which
+    // lives in the panel and selects a POPULATION, not a conversation.
     expect(view.queryByRole('tablist', { name: 'Open conversations' })).toBeNull();
     expect(view.getAllByRole('tablist').map((n) => n.getAttribute('aria-label')))
-      .toEqual(['Screens']);
+      .toEqual(['Screens', 'Home lists']);
 
     // And the two panes are both really there.
-    expect(view.getByRole('complementary', { name: 'Conversations' })).toBeTruthy();
+    expect(view.getByRole('complementary', { name: 'Tasks, chats and sessions' })).toBeTruthy();
     expect(view.getByRole('region', { name: 'Conversation' })).toBeTruthy();
   });
 });
