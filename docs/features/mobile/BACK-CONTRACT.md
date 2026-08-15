@@ -1,8 +1,16 @@
 # The Back Contract
 
-**Status:** adopted 2026-08-15. Supersedes the proposal in `MOBILE-DESIGN-BRIEF.md` §6
-("back pops the stack") — see §3, which reaches the same observable behaviour by a
-different mechanism, and says why the mechanism is the part that matters.
+**Status:** adopted 2026-08-15.
+
+**On the mobile design brief.** This contract was asked for against
+`docs/features/mobile/MOBILE-DESIGN-BRIEF.md` §6, whose cross-device acceptance table
+and "`stack` is already a navigation stack, so back pops it" proposal are quoted in the
+task that produced this file. **That brief is not in the tree at this commit** — this
+document is the first file in `docs/features/mobile/`. So §3 and §6 below answer the
+proposal *as it was quoted to me* rather than as I read it, and §6 is written to be a
+standalone acceptance table rather than a diff against one I cannot see. If the brief
+lands later, §3 is the paragraph to reconcile against it: it agrees with §6's
+*observable* behaviour and deliberately differs on the *mechanism*.
 
 **Applies to:** both shells. This is not a mobile rule that desktop happens to
 tolerate; it is one rule, and the phone is simply where it becomes visible.
@@ -68,8 +76,9 @@ entity involved, which is why it was green over this the whole time.
 
 ## 3. Why the address leads, and not the stack
 
-The brief's §6 proposes that back *pops the screen stack*. **Observationally that
-is what happens** — but the mechanism has to be the other way round, and the
+The brief's §6 proposes that back *pops the screen stack* — as quoted in the task;
+the brief itself is not in this tree, see the status note above. **Observationally
+that is what happens** — but the mechanism has to be the other way round, and the
 difference is not academic.
 
 Every screen-stack transition **already writes a browser history entry**.
