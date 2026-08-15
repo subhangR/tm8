@@ -133,6 +133,17 @@ export function PanelHeader({
  * Panel-level controls live beside the tabs, not beside the title. This keeps
  * the identity row entirely available to a long title while preserving the
  * stack controls in the compact second row.
+ *
+ * EACH CONTROL IS DRAWN ONLY WHEN IT CAN PERFORM. Both used to render
+ * unconditionally with `onClick={undefined}` — an enabled-looking button that
+ * swallows the click, which is the honesty failure this codebase keeps
+ * removing everywhere else. It went unnoticed while the only host that omitted
+ * a handler was the aux column (an inert ⤢ beside a live ✕). Z4 is where it
+ * became indefensible: "Open full view" inside the full view, doing nothing.
+ *
+ * Not disabled-with-reason, because there is no reason to give — the host did
+ * not omit the handler as a refusal; the act simply has no meaning in that
+ * arrangement. A control that means nothing here is absent, not greyed.
  */
 export function PanelWindowControls({
   onPromote,
@@ -143,12 +154,16 @@ export function PanelWindowControls({
 }) {
   return (
     <>
-      <IconBtn label="Open full view" onClick={onPromote}>
-        ⤢
-      </IconBtn>
-      <IconBtn label="Close panel" danger onClick={onClose}>
-        ✕
-      </IconBtn>
+      {onPromote ? (
+        <IconBtn label="Open full view" onClick={onPromote}>
+          ⤢
+        </IconBtn>
+      ) : null}
+      {onClose ? (
+        <IconBtn label="Close panel" danger onClick={onClose}>
+          ✕
+        </IconBtn>
+      ) : null}
     </>
   );
 }

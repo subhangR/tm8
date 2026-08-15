@@ -273,10 +273,12 @@ export function EntityFullScreen(props: EntityFullScreenProps) {
           }}
           entityId={entityId}
           onOpenEntity={props.onOpenEntity}
-          /* The panel's own ✕ means the same thing the ⤡ does here: there is
-             no column to close, so closing IS collapsing. Drawn only when
-             there is somewhere to collapse to, by the same rule. */
-          onClose={() => props.onLeave({ destination: null, history: 'push' })}
+          /* NO ✕ HERE. There is no column to close — the panel is the screen —
+             and the one way out is `Z4Host`'s ⤡, which `EntityFullView` wires
+             to the companion and the R15 step it computed. A second control
+             performing the same act would have to re-derive that discipline,
+             which is exactly how two exits come to disagree about whether
+             leaving costs a history entry. */
         />
       }
     />

@@ -67,8 +67,17 @@ export interface AuxEntityPanelProps {
   entityId: EntityId;
   /** Drilling sideways: REPLACE this column's subject. */
   onOpenEntity(id: EntityId): void;
-  /** Dismiss the column entirely. The host owns whatever state that clears. */
-  onClose(): void;
+  /**
+   * Dismiss the column entirely. The host owns whatever state that clears.
+   *
+   * OPTIONAL, for the host that has no column to dismiss: in Z4 the panel IS
+   * the screen, so "close" would have to mean "collapse" — and collapsing is
+   * `Z4Host`'s ⤡, computed from the companion and the R15 step by
+   * `EntityFullView`. Two controls performing one act, one of them re-deriving
+   * the history discipline, is how the two would come to disagree. Omitted
+   * there; `PanelWindowControls` then draws no ✕ at all.
+   */
+  onClose?(): void;
   /**
    * WHICH HOST IS RENDERING IT — width and chrome, never anatomy (§2.3).
    *
