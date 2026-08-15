@@ -174,10 +174,10 @@ async function drive(argv: readonly string[]): Promise<Ran> {
 
 // ── registration ────────────────────────────────────────────────────────────
 
-describe('the six rows this slot owns here', () => {
-  it('task.ts registers exactly the six task commands', async () => {
+describe('the seven rows this slot owns here', () => {
+  it('task.ts registers exactly the seven task commands', async () => {
     const paths = (await taskCommands()).map((m) => m.path.join(' ')).sort();
-    expect(paths).toEqual(['task complete', 'task gate', 'task import-issue', 'task link-commit', 'task link-pr', 'task transition']);
+    expect(paths).toEqual(['task axis', 'task complete', 'task gate', 'task import-issue', 'task link-commit', 'task link-pr', 'task transition']);
   });
 
   it('tracking.ts registers exactly `tracking refresh` and `pr merge`', async () => {
@@ -308,6 +308,89 @@ describe('task transition', () => {
     expect((await drive(['task', 'transition'])).code).toBe(2);
     expect((await drive(['task', 'transition', TASK])).code).toBe(2);
     expect(seen).toHaveLength(0);
+  });
+});
+
+// ── task axis ───────────────────────────────────────────────────────────────
+
+describe('task axis', () => {
+  /** The read the merge stands on: a task already carrying two axes. */
+  const getReply = {
+    status: 200,
+    body: {
+      data: { id: TASK, version: 7, state: { kind: 'task', axes: { type: 'design', size: 'l' } } },
+      requestId: 'req_t',
+    },
+  };
+
+  it('reads, MERGES, then patches — the untouched axis survives the write', async () => {
+    replyFor = (n) => (n === 0 ? getReply : reply);
+    const ran = await drive(['task', 'axis', TASK, 'type', 'code']);
+    expect(ran.code).toBe(0);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject({ method: 'GET', pathname: `/v2/entities/${TASK}` });
+    expect(seen[1]).toMatchObject({ method: 'PATCH', pathname: `/v2/entities/${TASK}` });
+    const body = seen[1]!.body as { expectedVersion: number; content: { axes: unknown } };
+    // The whole point: `update_task_content` replaces the axes jsonb
+    // wholesale, so a write that did not merge would silently drop `size`.
+    expect(body.content.axes).toEqual({ type: 'code', size: 'l' });
+    expect(body.expectedVersion).toBe(7);
+  });
+
+  it('--clear drops the one key and keeps the rest', async () => {
+    replyFor = (n) => (n === 0 ? getReply : reply);
+    const ran = await drive(['task', 'axis', TASK, 'type', '--clear']);
+    expect(ran.code).toBe(0);
+    const body = seen[1]!.body as { content: { axes: unknown } };
+    expect(body.content.axes).toEqual({ size: 'l' });
+  });
+
+  it('--expect-version outranks the version the read returned', async () => {
+    replyFor = (n) => (n === 0 ? getReply : reply);
+    const ran = await drive(['task', 'axis', TASK, 'type', 'code', '--expect-version', '5']);
+    expect(ran.code).toBe(0);
+    expect((seen[1]!.body as { expectedVersion: number }).expectedVersion).toBe(5);
+  });
+
+  it('clearing an axis the task does not carry is a no-op, not a version bump', async () => {
+    replyFor = (n) => (n === 0 ? getReply : reply);
+    const ran = await drive(['task', 'axis', TASK, 'owner', '--clear']);
+    expect(ran.code).toBe(0);
+    // The read happened; NO patch followed — the server cannot tell a
+    // no-op patch from a real one, so the CLI does not spend one.
+    expect(seen).toHaveLength(1);
+    expect(ran.stderr).toContain('nothing to clear');
+  });
+
+  it('a value AND --clear are two intents; refused before any request', async () => {
+    const ran = await drive(['task', 'axis', TASK, 'type', 'code', '--clear']);
+    expect(ran.code).toBe(EXIT_USAGE);
+    expect(seen).toHaveLength(0);
+  });
+
+  it('neither a value nor --clear is refused with the two spellings named', async () => {
+    const ran = await drive(['task', 'axis', TASK, 'type']);
+    expect(ran.code).toBe(EXIT_USAGE);
+    expect(seen).toHaveLength(0);
+    expect(ran.stderr).toContain('--clear');
+  });
+
+  it('NO local vocabulary check — an unknown value is the Server’s to refuse, verbatim', async () => {
+    replyFor = (n) =>
+      n === 0
+        ? getReply
+        : {
+            status: 400,
+            body: {
+              error: { code: 'invalid_input', message: 'invalid value banana for task axis type' },
+              requestId: 'req_t',
+            },
+          };
+    const ran = await drive(['task', 'axis', TASK, 'type', 'banana']);
+    expect(ran.code).not.toBe(0);
+    // The patch WAS attempted — the refusal is the trigger's, not a client copy's.
+    expect(seen).toHaveLength(2);
+    expect(ran.stderr).toContain('invalid value banana for task axis type');
   });
 });
 

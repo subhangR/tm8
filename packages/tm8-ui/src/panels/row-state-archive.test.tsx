@@ -750,3 +750,134 @@ describe('the assigned chip writes an EDGE, one actor at a time', () => {
     expect(strip.textContent).toContain('Ada');
   });
 });
+
+/**
+ * ===========================================================================
+ * W1 (2026-08-16) — the axis chips write `state.axes`, per-space data.
+ *
+ * THE GAP THESE CLOSE. Every space is seeded a `type` axis and the database
+ * enforces it strictly — and 0 of 200 tasks carried a value, because nothing
+ * in the product could write one. The picker below is that write. Its
+ * vocabulary is NOT registry config: the host hands the space's own
+ * `task_axes` rows over as `taskAxes`, so a space with two axes draws two
+ * pickers and a space with none draws none — asserted here, because an empty
+ * picker over a fabricated taxonomy is the L6 lie.
+ * ===========================================================================
+ */
+describe('the axis chips write per-space axes', () => {
+  const TYPE_AXIS = {
+    id: 'axis-type',
+    spaceId: FIXTURE_SPACE_ID,
+    name: 'type',
+    axisValues: ['default', 'code', 'design', 'review', 'test'],
+    kind: 'default' as const,
+    position: 0,
+  };
+
+  const taskWithAxes = (axes: Record<string, string>) => {
+    const live = rowsOfKind('task').find((r) => r.deletedAt == null)!;
+    return { ...live, state: { ...live.state, axes } } as EntitySummary;
+  };
+
+  it('dispatches onSetAxis with the axis NAME the space declared', () => {
+    const onSetAxis = vi.fn();
+    const row = taskWithAxes({});
+    mount('task', { onSetAxis, taskAxes: [TYPE_AXIS] }, [row]);
+    expandFirstRow();
+
+    const select = screen.getAllByTestId('row-axis-select')[0] as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'code' } });
+
+    expect(onSetAxis).toHaveBeenCalledTimes(1);
+    expect(onSetAxis.mock.calls[0]).toEqual([row.id, 'type', 'code', 'Type']);
+  });
+
+  it('clears back to unset as an explicit null — unset is a REACHABLE state here', () => {
+    const onSetAxis = vi.fn();
+    mount('task', { onSetAxis, taskAxes: [TYPE_AXIS] }, [taskWithAxes({ type: 'design' })]);
+    expandFirstRow();
+
+    const select = screen.getAllByTestId('row-axis-select')[0] as HTMLSelectElement;
+    expect(select.value).toBe('design');
+    fireEvent.change(select, { target: { value: '' } });
+    expect(onSetAxis).toHaveBeenCalledWith(expect.any(String), 'type', null, 'Type');
+  });
+
+  it('offers exactly the axis vocabulary in axisValues order, behind a live clear option', () => {
+    mount('task', { onSetAxis: vi.fn(), taskAxes: [TYPE_AXIS] }, [taskWithAxes({})]);
+    expandFirstRow();
+    const select = screen.getAllByTestId('row-axis-select')[0] as HTMLSelectElement;
+    const options = [...select.options];
+    // The FIRST option is the clear — enabled, unlike priority's disabled
+    // empty marker, because clearing an axis is a legal write.
+    expect(options[0]!.value).toBe('');
+    expect(options[0]!.disabled).toBe(false);
+    expect(options.slice(1).map((o) => o.value)).toEqual(TYPE_AXIS.axisValues);
+  });
+
+  it('a space with NO axes renders no axis control and no empty scaffolding', () => {
+    mount('task', { onSetAxis: vi.fn(), taskAxes: [] }, [taskWithAxes({})]);
+    const strip = expandFirstRow();
+    expect(within(strip).queryByTestId('row-axis-select')).toBeNull();
+    expect(strip.querySelector('[data-source^="axis:"]')).toBeNull();
+  });
+
+  it('two axes draw two pickers — the control count is the space’s, not the registry’s', () => {
+    const SIZE_AXIS = { ...TYPE_AXIS, id: 'axis-size', name: 'size', kind: 'manual' as const, axisValues: ['s', 'm', 'l'], position: 1 };
+    mount('task', { onSetAxis: vi.fn(), taskAxes: [TYPE_AXIS, SIZE_AXIS] }, [taskWithAxes({})]);
+    expandFirstRow();
+    expect(screen.getAllByTestId('row-axis-select')).toHaveLength(2);
+  });
+
+  /**
+   * `axisValues: []` means FREE TEXT per the DB's own comment (001:537-550).
+   * A picker cannot offer an open vocabulary, so it refuses with that reason
+   * — an EMPTY select would read as "no legal values", the opposite of what
+   * the axis means. The CLI (`tm8 task axis`) is the free-text write path.
+   */
+  it('refuses a free-text axis with the reason named, never an empty picker', () => {
+    const FREE_AXIS = { ...TYPE_AXIS, id: 'axis-note', name: 'note', kind: 'manual' as const, axisValues: [] };
+    mount('task', { onSetAxis: vi.fn(), taskAxes: [FREE_AXIS] }, [taskWithAxes({ note: 'urgent-q3' })]);
+    const strip = expandFirstRow();
+    expect(within(strip).queryByTestId('row-axis-select')).toBeNull();
+    // The refusal still SHOWS the stored value — hiding the fact with the
+    // control would make the refusal a data hole.
+    expect(strip.querySelector('[data-source="axis:note"]')?.textContent).toBe('urgent-q3');
+  });
+
+  /**
+   * A stored value outside today's vocabulary: the truth is shown, and only
+   * the vocabulary is offerable — the same honesty rule as priority's unset.
+   */
+  it('shows a stored value outside today’s vocabulary as the truth, not as a choice', () => {
+    mount('task', { onSetAxis: vi.fn(), taskAxes: [TYPE_AXIS] }, [taskWithAxes({ type: 'retired-value' })]);
+    expandFirstRow();
+    const select = screen.getAllByTestId('row-axis-select')[0] as HTMLSelectElement;
+    expect(select.value).toBe('retired-value');
+    const stale = [...select.options].find((o) => o.value === 'retired-value');
+    expect(stale?.disabled).toBe(true);
+  });
+
+  it('refuses as not-wired when no host is listening, still showing the value', () => {
+    mount('task', { taskAxes: [TYPE_AXIS] }, [taskWithAxes({ type: 'code' })]);
+    const strip = expandFirstRow();
+    expect(within(strip).queryByTestId('row-axis-select')).toBeNull();
+    expect(strip.querySelector('[data-source="axis:type"]')?.textContent).toBe('code');
+  });
+
+  it('reads unloaded capabilities as CHECKING, refused edit as the edit reason', () => {
+    mount('task', { onSetAxis: vi.fn(), taskAxes: [TYPE_AXIS], capabilitiesOf: () => undefined }, [taskWithAxes({})]);
+    let strip = expandFirstRow();
+    expect(
+      within(strip)
+        .getAllByTestId('checking-permission')
+        .some((el) => el.getAttribute('aria-label')?.includes('Change type')),
+    ).toBe(true);
+
+    document.body.innerHTML = '';
+    mount('task', { onSetAxis: vi.fn(), taskAxes: [TYPE_AXIS], capabilitiesOf: () => CAPS_NONE }, [taskWithAxes({})]);
+    strip = expandFirstRow();
+    expect(within(strip).queryByTestId('row-axis-select')).toBeNull();
+    expect(strip.querySelector('[data-source="axis:type"]')).not.toBeNull();
+  });
+});

@@ -370,6 +370,14 @@ export interface GateData {
   /** Real membership of the active space, never inferred from result authors. */
   members: readonly ActorSummary[];
   /**
+   * The space's task-axis registry, from the same `spaceSettings()` boot read
+   * that carries membership — the axis pickers' vocabulary and the board's
+   * axis group-by options are PER-SPACE DATA, never registry config. Empty
+   * means the space defines none (or the read is not in yet), and the strip
+   * renders no axis controls for it.
+   */
+  taskAxes: readonly import('@tm8/contract').TaskAxis[];
+  /**
    * THE TWO TRIGGER SUBJECTS every rich input in this shell picks from.
    *
    * `mentionOptions` is the space's own membership projected into the picker's
@@ -605,6 +613,7 @@ export function useGateData(options: GateOptions): GateData {
   const [ready, setReady] = useState(false);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const [members, setMembers] = useState<readonly ActorSummary[]>([]);
+  const [taskAxes, setTaskAxes] = useState<readonly import('@tm8/contract').TaskAxis[]>([]);
   const [skillOptions, setSkillOptions] = useState<readonly SkillTriggerOption[] | undefined>(
     undefined,
   );
@@ -851,6 +860,9 @@ export function useGateData(options: GateOptions): GateData {
       const memberActors = (settings.members ?? []).map((member) => member.actor);
       const viewerMemberId = identity?.memberships.find((membership) => membership.spaceId === space)?.memberId;
       setMembers(memberActors);
+      // Same posture as membership: a settings shape from before the axes
+      // projection reads as "none defined", never as a fabricated axis.
+      setTaskAxes(settings.taskAxes ?? []);
       setViewerActor(memberActors.find((member) => member.id === viewerMemberId) ?? null);
       setSpaceDefaultProfileId(settings.defaultInteractionProfileId);
       if (counts) setKindCounts(counts);
@@ -1073,6 +1085,7 @@ export function useGateData(options: GateOptions): GateData {
     setBoards({});
     pendingBoards.current.clear();
     setMembers([]);
+    setTaskAxes([]);
     setViewerActor(null);
     setMenu(resolveMenu(null));
     setLiveIds([]);
@@ -2082,6 +2095,7 @@ export function useGateData(options: GateOptions): GateData {
       spaceId,
       spaces,
       members,
+      taskAxes,
       mentionOptions,
       skillOptions,
       viewerActor,
@@ -2117,7 +2131,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

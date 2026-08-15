@@ -73,6 +73,7 @@ export type TileBadgeSource =
   | 'assignees'
   | 'acceptance'
   | 'dueDate'
+  | 'axes'
   // graph-wide badges (EntityBadges)
   | 'blocked'
   | 'pulls'
@@ -601,6 +602,24 @@ export interface ListConfig {
    * own declaration, for the same reason `valueControls` is not `stateControl`.
    */
   assignControl?: AssignControl;
+  /**
+   * The expanded row's PER-SPACE AXIS pickers (`state.axes`, migration 001's
+   * `task_axes` registry).
+   *
+   * SEPARATE FROM `valueControls` because the vocabulary is not the registry's
+   * to declare: a `ValueControl` carries a static `options` list, while an
+   * axis's legal values are PER-SPACE DATA the host reads from the node
+   * (`spaceSettings().taskAxes`) and hands over as `ControlHost.taskAxes`.
+   * Presence here only marks the kind whose state carries the `axes` record;
+   * a space with no axes renders no control at all, and a second axis arrives
+   * by server data alone — no registry edit, which is the whole point.
+   *
+   * The write is also different from `valueControls`: the server stores axes
+   * as ONE jsonb the patch replaces wholesale (`update_task_content`:
+   * `axes = coalesce(p_axes, axes)`, 038), so the executor merges the record
+   * before writing — one axis moves and the others survive.
+   */
+  axisControls?: { source: 'axes' };
   /**
    * Board mode (A2, doc 06 §1). Presence IS the declaration — a kind without
    * this field keeps its switcher position honestly disabled.

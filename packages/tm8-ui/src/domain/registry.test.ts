@@ -396,6 +396,12 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
          assignment by an edge — three different writes, so they are three
          fields rather than one overloaded `controls`. */
       'valueControls',
+      /* Opened 2026-08-16 with W1: axis pickers are DATA-driven — the field
+         only marks the kind whose state carries `axes`; the vocabulary is the
+         space's own `task_axes` rows, handed over by the host. Not
+         `valueControls` because a ValueControl's options are static registry
+         config and an axis's are per-space server data. */
+      'axisControls',
       'assignControl',
       /* Opened 2026-08-05 with A2: the board is declared per-kind as DATA —
          only the grouping axis, because vocabulary/order/tone stay owned by

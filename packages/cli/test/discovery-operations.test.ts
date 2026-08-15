@@ -260,6 +260,7 @@ describe('the CLI command projection', () => {
   it('`task` is a command noun even though no catalog family is named task', () => {
     expect(NOUNS).toContain('task');
     expect(commandsForNoun('task').map((c) => c.command).sort()).toEqual([
+      'task axis',
       'task complete',
       'task gate',
       'task import-issue',

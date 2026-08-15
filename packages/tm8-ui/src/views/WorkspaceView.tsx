@@ -177,6 +177,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       onSetState: rowLifecycle.setState,
       onArchive: rowLifecycle.archive,
       onSetValue: rowLifecycle.setValue,
+      onSetAxis: rowLifecycle.setAxis,
+      taskAxes: data.taskAxes,
       onAssign: rowLifecycle.assign,
       assignableActors: rowLifecycle.assignable,
       onMembership: rowLifecycle.membership,
@@ -639,6 +641,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
           onSetValue={rowLifecycle.setValue}
+          onSetAxis={rowLifecycle.setAxis}
+          taskAxes={data.taskAxes}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
           onMembership={rowLifecycle.membership}
@@ -764,6 +768,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
           onSetValue={rowLifecycle.setValue}
+          onSetAxis={rowLifecycle.setAxis}
+          taskAxes={data.taskAxes}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
           onMembership={rowLifecycle.membership}

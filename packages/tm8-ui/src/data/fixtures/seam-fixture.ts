@@ -1187,7 +1187,21 @@ export function createFixtureSeam(): FixtureSeam {
           { actor: clone(noor), role: 'member' as const, joinedAt: FIXTURE_NOW },
         ],
         invites,
-        taskAxes: [],
+        // The node seeds every space exactly one axis (001's `task_axes`
+        // seed: `type`, kind 'default', position 0). Mirroring it is what
+        // lets the fixture-backed product actually draw the axis picker; an
+        // empty array here would demo "a space with no axes", which is the
+        // rarer state.
+        taskAxes: [
+          {
+            id: 'axis-type',
+            spaceId: FIXTURE_SPACE_ID,
+            name: 'type',
+            axisValues: ['default', 'code', 'design', 'review', 'test'],
+            kind: 'default' as const,
+            position: 0,
+          },
+        ],
         menu: {
           schemaVersion: 1,
           revision: 1,
@@ -2071,6 +2085,19 @@ export function createFixtureSeam(): FixtureSeam {
           if (s.state.kind === 'task' && 'dueDate' in patched) {
             const due = patched.dueDate;
             s.state.dueDate = typeof due === 'string' ? due : null;
+          }
+          /* `axes` makes the same content→state crossing as `dueDate`, and
+             with the server's own replace-wholesale semantics
+             (`update_task_content`: `axes = coalesce(p_axes, axes)`): a
+             present object REPLACES the stored record — the MERGE is the
+             writer's job — and an absent key changes nothing. A fixture that
+             merged here would pass a writer that forgets to merge, which the
+             real node would quietly data-lose. */
+          if (s.state.kind === 'task' && 'axes' in patched) {
+            const axes = patched.axes;
+            if (axes !== null && typeof axes === 'object') {
+              s.state.axes = { ...(axes as Record<string, string>) };
+            }
           }
         }
         touch(s);
