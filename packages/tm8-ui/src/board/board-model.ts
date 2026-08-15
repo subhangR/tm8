@@ -73,12 +73,18 @@ export interface BoardFilterState {
    * does not care which it was handed.
    */
   people: readonly string[];
+  /**
+   * Actor ENTITY ids whose PERFORMED assignments select a task — the server's
+   * `assignedByIds` filter over 129's provenance. Distinct axis from `people`:
+   * "tasks Ada holds" and "tasks Ada handed out" are different questions.
+   */
+  assignedBy: readonly string[];
 }
 
-export const EMPTY_FILTERS: BoardFilterState = { statuses: [], priorities: [], people: [] };
+export const EMPTY_FILTERS: BoardFilterState = { statuses: [], priorities: [], people: [], assignedBy: [] };
 
 export function anyFilterActive(f: BoardFilterState): boolean {
-  return f.statuses.length > 0 || f.priorities.length > 0 || f.people.length > 0;
+  return f.statuses.length > 0 || f.priorities.length > 0 || f.people.length > 0 || f.assignedBy.length > 0;
 }
 
 /**
@@ -93,6 +99,7 @@ export function buildFilters(f: BoardFilterState): QueryFilter | undefined {
   if (f.statuses.length > 0) out.workStatus = [...f.statuses] as NonNullable<QueryFilter['workStatus']>;
   if (f.priorities.length > 0) out.priority = [...f.priorities] as NonNullable<QueryFilter['priority']>;
   if (f.people.length > 0) out.assigneeIds = [...f.people] as NonNullable<QueryFilter['assigneeIds']>;
+  if (f.assignedBy.length > 0) out.assignedByIds = [...f.assignedBy] as NonNullable<QueryFilter['assignedByIds']>;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
