@@ -166,3 +166,64 @@
   .cv2-root .hp-scroll { padding: 10px 10px 16px; }
   .cv2-root .hp-chat { height: 46vh; min-height: 300px; }
 }
+
+/* --- R4 (2026-08-15): Home IS the chat view ------------------------------ */
+/* Full-bleed variant: the chat fills the canvas WITH its merged conversation
+   column visible (threads + sessions), triage above, the counts strip below.
+   The rules below override the solo-hero block for this variant only. */
+.cv2-root .hp-root--chat {
+  flex-direction: column;
+  min-height: 0;
+}
+.cv2-root .hp-root--chat .hp-needs {
+  flex: none;
+  margin: 10px 14px 0;
+}
+.cv2-root .hp-root--chat .hp-note { margin: 8px 14px 0; }
+.cv2-root .hp-chat--full {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  margin: 10px 14px;
+}
+.cv2-root .hp-chat--full .tch-root {
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+}
+.cv2-root .hp-chat--full .tch-sidebar { display: flex; }
+
+.cv2-root .hp-counts {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  padding: 0 14px 12px;
+}
+.cv2-root .hp-counts__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: 999px;
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.cv2-root .hp-counts__chip:hover { background: var(--pn-hover); }
+.cv2-root .hp-counts__label { font-weight: 600; color: var(--pn-ink); }
+.cv2-root .hp-counts__total { font-family: var(--pn-mono); font-size: 11px; }
+.cv2-root .hp-counts__unseen {
+  color: var(--pn-brand);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+}
+.cv2-root .hp-counts__live {
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+}

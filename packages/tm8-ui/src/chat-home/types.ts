@@ -77,6 +77,32 @@ export interface ChatThreadSummary {
   state: 'idle' | 'streaming' | 'stopped-continuable' | 'error';
 }
 
+/**
+ * A work session row for the merged Home column (R4, 2026-08-15: Home's left
+ * column lists chat threads AND work sessions in one time-grouped list).
+ *
+ * COMPOSED BY THE HOST, not read here: `status` must come from the host's
+ * liveness verdict composed with the stored record — `execution.liveness` is
+ * the only authority for "live", a `running` record with no live process is
+ * stale, and `idle` is a LEGAL LIVE STATE (an idle session is running, just
+ * quiet). This module renders the words; it must not re-derive them.
+ */
+export interface ChatSessionRow {
+  id: string;
+  title: string;
+  /** The host's composed word — rendered verbatim, never re-derived here. */
+  statusWord: string;
+  /** The kit's pill tone vocabulary, chosen by the host's projection. */
+  tone: 'run' | 'wait' | 'block' | 'info' | 'idle' | 'brand';
+  /** True only when the liveness verdict says a process exists right now. */
+  live: boolean;
+  /** e.g. `forge · sonnet-4-5` — whatever the host can truthfully compose. */
+  detail?: string;
+  updatedAt: string;
+  /** Visible but not yours: listing has no owner gate; terminal attach does. */
+  viewOnly?: boolean;
+}
+
 export interface ChatTurn {
   messageId: EntityId;
   role: 'user' | 'assistant';

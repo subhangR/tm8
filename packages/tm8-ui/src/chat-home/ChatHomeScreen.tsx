@@ -17,6 +17,7 @@ import { TurnParts } from './TurnParts';
 import type {
   ChatHomePort,
   ChatModelOption,
+  ChatSessionRow,
   ChatTeammateOption,
   ChatThreadDetail,
   ChatThreadSummary,
@@ -58,6 +59,30 @@ export interface ChatHomeScreenProps {
    * nothing is invoked). `undefined` ⇒ `/` types plain text.
    */
   skillOptions?: readonly TriggerOption[];
+  /**
+   * Work sessions for the MERGED left column (R4, 2026-08-15): one
+   * time-grouped list of conversations, chat threads and sessions alike.
+   * Rows arrive COMPOSED — status word, tone and the live verdict are the
+   * host's (liveness outranks the stored record); this screen renders them.
+   * `undefined` means the host did not wire sessions (older mounts), and the
+   * column shows threads alone — absent is not an empty session list.
+   */
+  sessions?: readonly ChatSessionRow[];
+  /** Opens a session row. Sessions open in the workspace detail — the
+   *  session-as-conversation centre view is not built in this pass. */
+  onOpenSession?: ((id: string) => void) | undefined;
+  /** The `>_ Session` button. Absent ⇒ disabled-with-reason, never hidden. */
+  onNewSession?: (() => void) | undefined;
+  /**
+   * Node slot usage for the column foot — `execution.liveness.capacity`,
+   * passed through. `undefined` renders NOTHING (absent ≠ zero: no snapshot
+   * means nobody measured, not that the node has no slots).
+   */
+  slots?: { used: number; total: number } | undefined;
+  /** The escape hatch at the column foot. */
+  onOpenWorkspace?: (() => void) | undefined;
+  /** The signed-in display name, for the empty-state greeting. */
+  viewerName?: string | undefined;
 }
 
 type ComposerPhase =
@@ -79,6 +104,12 @@ export function ChatHomeScreen({
   resolveEntity,
   attach,
   skillOptions,
+  sessions,
+  onOpenSession,
+  onNewSession,
+  slots,
+  onOpenWorkspace,
+  viewerName,
 }: ChatHomeScreenProps) {
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [teammates, setTeammates] = useState<readonly ChatTeammateOption[]>([]);
@@ -386,6 +417,15 @@ export function ChatHomeScreen({
 
   const sendDisabled = busy || draft.trim() === '' || refusal !== null || attachments.blocked;
 
+  /* The MERGED column (R4): chat threads + work sessions, one list,
+     time-grouped. The filter searches WHAT IS READ — the hydrated thread list
+     and the host's session rows; there is no server-side search behind it. */
+  const [findQuery, setFindQuery] = useState('');
+  const columnGroups = useMemo(
+    () => composeConversationColumn(threads, sessions, findQuery),
+    [threads, sessions, findQuery],
+  );
+
   const send = useCallback(async () => {
     const body = draft.trim();
     if (body === '' || busy || refusal || teammateId === '' || !selectedModel) return;
@@ -533,12 +573,14 @@ export function ChatHomeScreen({
 
   return (
     <main className="tch-root" data-testid="chat-home-screen">
-      <aside className="tch-sidebar" aria-label="Chat threads">
+      <aside className="tch-sidebar" aria-label="Conversations">
         <header className="tch-sidebar__head">
           <span>
-            <strong>Chat</strong>
+            <strong>Conversations</strong>
             <small>{spaceLabel ?? 'this space'}</small>
           </span>
+        </header>
+        <div className="tch-sidebar__actions">
           <button
             type="button"
             className="tch-new"
@@ -550,42 +592,140 @@ export function ChatHomeScreen({
               setSubmitError(null);
             }}
           >
-            <span aria-hidden>＋</span> New
+            <span aria-hidden>＋</span> New chat
           </button>
-        </header>
+          <button
+            type="button"
+            className="tch-new tch-new--session"
+            aria-disabled={onNewSession ? undefined : 'true'}
+            title={
+              onNewSession
+                ? 'Launch a work session'
+                : 'Launching from Home isn’t wired on this surface — use the workspace'
+            }
+            onClick={onNewSession ?? ((event) => event.preventDefault())}
+          >
+            <span aria-hidden>❯_</span> Session
+          </button>
+        </div>
+        <input
+          type="search"
+          className="tch-find"
+          placeholder="Find a conversation…"
+          aria-label="Find a conversation — filters what is already loaded"
+          title="Filters the conversations already loaded here; this is not a server search"
+          value={findQuery}
+          onChange={(event) => setFindQuery(event.target.value)}
+        />
         <div className="tch-thread-list">
           {loading ? <p className="tch-hollow">Reading conversations…</p> : null}
-          {!loading && threads.length === 0 ? (
-            <p className="tch-hollow">No conversations yet. Start with the composer.</p>
+          {!loading && columnGroups.length === 0 ? (
+            <p className="tch-hollow">
+              {findQuery.trim()
+                ? 'Nothing loaded here matches.'
+                : 'No conversations yet. Start with the composer.'}
+            </p>
           ) : null}
           {port.threadListUnavailableReason ? (
             <p className="tch-thread-refusal">{port.threadListUnavailableReason}</p>
           ) : null}
-          {threads.map((thread) => (
-            <button
-              type="button"
-              key={thread.rootId}
-              className="tch-thread"
-              data-active={thread.rootId === selectedRootId || undefined}
-              onClick={() => setSelectedRootId(thread.rootId)}
-            >
-              <span className="tch-thread__title">
-                {thread.state === 'streaming' ? (
-                  <span className="tch-thread__live" title="Agent is working" aria-label="Agent is working" />
-                ) : null}
-                {thread.title}
-              </span>
-              <span className="tch-thread__preview">{thread.preview}</span>
-              <span className="tch-thread__meta">
-                <span>{thread.config.teammateLabel}</span>
-                <span aria-hidden>·</span>
-                <span>{thread.config.modelLabel}</span>
-                <span className="tch-mode-chip">{thread.config.mode}</span>
-                <Timestamp at={thread.updatedAt} />
-              </span>
-            </button>
+          {columnGroups.map((group) => (
+            <div key={group.label} className="tch-group" role="group" aria-label={group.label}>
+              <span className="tch-group__label">{group.label}</span>
+              {group.rows.map((row) =>
+                row.kind === 'thread' ? (
+                  <button
+                    type="button"
+                    key={row.thread.rootId}
+                    className="tch-thread"
+                    data-active={row.thread.rootId === selectedRootId || undefined}
+                    onClick={() => setSelectedRootId(row.thread.rootId)}
+                  >
+                    <span className="tch-thread__title">
+                      {row.thread.state === 'streaming' ? (
+                        <span className="tch-thread__live" title="Agent is working" aria-label="Agent is working" />
+                      ) : null}
+                      {row.thread.title}
+                    </span>
+                    <span className="tch-thread__preview">{row.thread.preview}</span>
+                    <span className="tch-thread__meta">
+                      <span className="tch-mode-chip">{row.thread.config.mode}</span>
+                      <span>{row.thread.config.teammateLabel}</span>
+                      <span aria-hidden>·</span>
+                      <span>{row.thread.config.modelLabel}</span>
+                      <Timestamp at={row.thread.updatedAt} />
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    key={row.session.id}
+                    className="tch-thread tch-thread--session"
+                    title={
+                      onOpenSession
+                        ? 'Opens in the workspace — the session view inside Home isn’t built yet'
+                        : 'Opening sessions isn’t wired on this surface'
+                    }
+                    aria-disabled={onOpenSession ? undefined : 'true'}
+                    onClick={
+                      onOpenSession
+                        ? () => onOpenSession(row.session.id)
+                        : (event) => event.preventDefault()
+                    }
+                  >
+                    <span className="tch-thread__title">
+                      <span className="tch-thread__glyph" aria-hidden>❯_</span>
+                      {row.session.title}
+                    </span>
+                    <span className="tch-thread__meta">
+                      <span className={`tch-session-word tch-session-word--${row.session.tone}`}>
+                        {row.session.live ? <span className="tch-thread__live" aria-hidden /> : null}
+                        {row.session.statusWord}
+                      </span>
+                      {row.session.detail ? (
+                        <>
+                          <span aria-hidden>·</span>
+                          <span>{row.session.detail}</span>
+                        </>
+                      ) : null}
+                      {row.session.viewOnly ? (
+                        <span
+                          className="tch-viewonly"
+                          title="Another member’s session — you can see it; only the owner can attach to its terminal"
+                        >
+                          view only
+                        </span>
+                      ) : null}
+                      <Timestamp at={row.session.updatedAt} />
+                    </span>
+                  </button>
+                ),
+              )}
+            </div>
           ))}
         </div>
+        <footer className="tch-sidebar__foot">
+          {slots ? (
+            <div
+              className="tch-slots"
+              title={`${slots.used} of ${slots.total} node session slots in use`}
+            >
+              <span className="tch-slots__label">session slots</span>
+              <span className="tch-slots__bar" aria-hidden>
+                <span
+                  className="tch-slots__fill"
+                  style={{ width: `${slots.total > 0 ? Math.min(100, (slots.used / slots.total) * 100) : 0}%` }}
+                />
+              </span>
+              <span className="tch-slots__nums">{slots.used}/{slots.total}</span>
+            </div>
+          ) : null}
+          {onOpenWorkspace ? (
+            <button type="button" className="tch-open-workspace" onClick={onOpenWorkspace}>
+              Open full workspace <span aria-hidden>→</span>
+            </button>
+          ) : null}
+        </footer>
       </aside>
 
       <section className="tch-conversation" aria-label="Conversation">
@@ -604,6 +744,10 @@ export function ChatHomeScreen({
               models.find((model) => model.model === (activeConfig?.model ?? modelId))?.provider ?? ''
             }
             pinned={activeConfig !== null}
+            /* A NEW thread's mode and teammate are chosen in the composer
+               (chips + the TO row); drawing the same two selects here as well
+               would be two live controls for one fact. */
+            configInComposer={newThread}
             onTeammate={(id) => setTeammateId(id)}
             onModel={setModelId}
             onMode={setChatMode}
@@ -646,8 +790,8 @@ export function ChatHomeScreen({
           ) : (
             <div className="tch-welcome">
               <span className="tch-welcome__mark" aria-hidden>⌁</span>
-              <h1>What should we work on?</h1>
-              <p>Ask about this space, shape a plan, or delegate work. The agent uses graph tools and keeps every turn in the thread.</p>
+              <h1>{greetingLine(viewerName)}</h1>
+              <p>New conversation — pick a mode and a teammate, or just type. The agent uses graph tools and keeps every turn in the thread.</p>
             </div>
           )}
         </div>
@@ -661,6 +805,26 @@ export function ChatHomeScreen({
             </p>
           ) : null}
           <div className="tch-composer">
+            {newThread ? (
+              <div className="tch-mode-row" role="radiogroup" aria-label="Chat mode">
+                {CHAT_MODES.map((entry) => (
+                  <button
+                    key={entry.mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={chatMode === entry.mode}
+                    className={`tch-mode-choice ${chatMode === entry.mode ? 'tch-mode-choice--active' : ''} ${entry.configOnly ? 'tch-mode-choice--config-only' : ''}`}
+                    title={entry.hint}
+                    onClick={() => setChatMode(entry.mode)}
+                  >
+                    {entry.label}
+                  </button>
+                ))}
+                <span className="tch-mode-hint">
+                  {CHAT_MODES.find((entry) => entry.mode === chatMode)?.hint}
+                </span>
+              </div>
+            ) : null}
             <AttachmentChips attachments={attachments} testId="tch-attachments" />
             <div className="ri-host">
               <textarea
@@ -689,6 +853,34 @@ export function ChatHomeScreen({
               />
             </div>
             <div className="tch-composer__foot">
+              {newThread && teammates.length > 0 ? (
+                /* TO: — pinned when the thread starts, like the mode. NO
+                   `auto` chip on purpose: there is no routing pipeline that
+                   could honour it, and a chip that promises routing nobody
+                   built is exactly the fabrication this surface refuses. */
+                <div className="tch-to-row" role="radiogroup" aria-label="Send to teammate">
+                  <span className="tch-to-label" aria-hidden>to</span>
+                  {teammates.map((teammate) => (
+                    <button
+                      key={teammate.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={teammateId === teammate.id}
+                      className={`tch-to-chip ${teammateId === teammate.id ? 'tch-to-chip--active' : ''}`}
+                      onClick={() => setTeammateId(teammate.id)}
+                    >
+                      <Avatar
+                        actorId={teammate.id}
+                        provenance="agent"
+                        label={teammate.label}
+                        size={15}
+                        src={teammate.avatar ?? undefined}
+                      />
+                      {teammate.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {attach ? (
                 <ChooseFilesControl
                   label="Attach a file"
@@ -763,6 +955,7 @@ function Selector({
   mode,
   provider,
   pinned,
+  configInComposer,
   onTeammate,
   onModel,
   onMode,
@@ -774,40 +967,46 @@ function Selector({
   mode: ChatMode;
   provider: string;
   pinned: boolean;
+  /** True while a NEW thread's mode/teammate render in the composer instead. */
+  configInComposer?: boolean;
   onTeammate(id: EntityId): void;
   onModel(id: string): void;
   onMode(mode: ChatMode): void;
 }) {
   return (
     <div className="tch-selector" data-pinned={pinned || undefined}>
-      <label>
-        <span>Teammate</span>
-        <select
-          aria-label="Chat teammate"
-          disabled={pinned || teammates.length === 0}
-          value={teammateId}
-          onChange={(event) => onTeammate(event.target.value as EntityId)}
-        >
-          {teammates.map((teammate) => (
-            <option key={teammate.id} value={teammate.id}>{teammate.label}</option>
-          ))}
-        </select>
-      </label>
-      <label>
-        <span>Mode</span>
-        <select
-          aria-label="Chat mode"
-          disabled={pinned}
-          value={mode}
-          onChange={(event) => onMode(event.target.value as ChatMode)}
-        >
-          <option value="ask">Ask</option>
-          <option value="explain">Explain</option>
-          <option value="plan">Plan</option>
-          <option value="build">Build</option>
-          <option value="orchestrate">Orchestrate</option>
-        </select>
-      </label>
+      {!configInComposer ? (
+        <label>
+          <span>Teammate</span>
+          <select
+            aria-label="Chat teammate"
+            disabled={pinned || teammates.length === 0}
+            value={teammateId}
+            onChange={(event) => onTeammate(event.target.value as EntityId)}
+          >
+            {teammates.map((teammate) => (
+              <option key={teammate.id} value={teammate.id}>{teammate.label}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {!configInComposer ? (
+        <label>
+          <span>Mode</span>
+          <select
+            aria-label="Chat mode"
+            disabled={pinned}
+            value={mode}
+            onChange={(event) => onMode(event.target.value as ChatMode)}
+          >
+            <option value="ask">Ask</option>
+            <option value="explain">Explain</option>
+            <option value="plan">Plan</option>
+            <option value="build">Build</option>
+            <option value="orchestrate">Orchestrate</option>
+          </select>
+        </label>
+      ) : null}
       <label>
         <span>Model</span>
         <select
@@ -827,6 +1026,88 @@ function Selector({
       {pinned ? <span className="tch-selector__pin">pinned for this thread</span> : null}
     </div>
   );
+}
+
+/**
+ * The composer's mode chips. `configOnly` marks the two modes whose special
+ * behaviour has NO pipeline behind it today (04-DATA-CONTRACT §4): choosing
+ * them is legal — a thread's mode is stored configuration — but the chip must
+ * not look like it triggers machinery nobody built, so it draws dashed and its
+ * hint says exactly what it is.
+ */
+const CHAT_MODES: readonly {
+  mode: ChatMode;
+  label: string;
+  hint: string;
+  configOnly?: boolean;
+}[] = [
+  { mode: 'ask', label: 'ask', hint: 'ask — answers from the graph; changes nothing' },
+  { mode: 'explain', label: 'explain', hint: 'explain — walks the reasoning; changes nothing' },
+  { mode: 'plan', label: 'plan', hint: 'plan — shapes work into steps; changes nothing yet' },
+  {
+    mode: 'build',
+    label: 'build',
+    hint: 'build — configuration only today: no message→task→session pipeline runs from chat',
+    configOnly: true,
+  },
+  {
+    mode: 'orchestrate',
+    label: 'orchestrate°',
+    hint: 'orchestrate — configuration only today: no fan-out pipeline exists',
+    configOnly: true,
+  },
+];
+
+function greetingLine(viewerName?: string): string {
+  const hour = new Date().getHours();
+  const daypart = hour < 5 ? 'Evening' : hour < 12 ? 'Morning' : hour < 18 ? 'Afternoon' : 'Evening';
+  return viewerName ? `${daypart}, ${viewerName}.` : `${daypart}.`;
+}
+
+type ColumnRow =
+  | { kind: 'thread'; thread: ChatThreadSummary; at: string }
+  | { kind: 'session'; session: ChatSessionRow; at: string };
+
+/**
+ * The merged, time-grouped column. Grouping is by calendar day in the
+ * VIEWER's local time — Today, Yesterday, then Earlier — the same buckets the
+ * reference design draws. Sessions and threads interleave by recency.
+ */
+function composeConversationColumn(
+  threads: readonly ChatThreadSummary[],
+  sessions: readonly ChatSessionRow[] | undefined,
+  query: string,
+): { label: string; rows: ColumnRow[] }[] {
+  const q = query.trim().toLowerCase();
+  const rows: ColumnRow[] = [
+    ...threads.map((thread) => ({ kind: 'thread' as const, thread, at: thread.updatedAt })),
+    ...(sessions ?? []).map((session) => ({ kind: 'session' as const, session, at: session.updatedAt })),
+  ]
+    .filter((row) => {
+      if (!q) return true;
+      const text =
+        row.kind === 'thread'
+          ? `${row.thread.title} ${row.thread.preview} ${row.thread.config.teammateLabel}`
+          : `${row.session.title} ${row.session.detail ?? ''} ${row.session.statusWord}`;
+      return text.toLowerCase().includes(q);
+    })
+    .sort((a, b) => b.at.localeCompare(a.at));
+
+  const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const today = startOfDay(new Date());
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  const buckets: { label: string; rows: ColumnRow[] }[] = [];
+  for (const row of rows) {
+    const at = new Date(row.at);
+    const stamp = Number.isNaN(at.getTime()) ? 0 : startOfDay(at);
+    const label = stamp >= today ? 'Today' : stamp >= today - dayMs ? 'Yesterday' : 'Earlier';
+    const bucket = buckets[buckets.length - 1];
+    if (bucket && bucket.label === label) bucket.rows.push(row);
+    else if (!buckets.some((existing) => existing.label === label)) buckets.push({ label, rows: [row] });
+    else buckets.find((existing) => existing.label === label)!.rows.push(row);
+  }
+  return buckets;
 }
 
 function Turn({

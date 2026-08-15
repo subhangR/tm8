@@ -28,11 +28,9 @@
  * (`'liveWork' in state`), and every glyph resolves through the registry.
  */
 import { useMemo, type ReactNode } from 'react';
-import type { EntitySummary } from '@tm8/contract';
 import { HOME_PRESENCE_KIND, HOME_RAIL_KINDS, KindIcon, getKind } from '../domain';
 import {
   composeMyWork,
-  homeRowOf,
   useHomeData,
   type HomeRow,
   type HomeScreenData,
@@ -40,20 +38,21 @@ import {
 } from '../home';
 import './home-page.css';
 
-/** Cards per rail — a glance, not a list. The header opens the whole kind. */
-const RAIL_CARD_CAP = 6;
-
 export interface HomePageProps {
   data: HomeScreenData;
-  /** The solo chat surface — the host mounts it (seam wiring is its business). */
+  /** The chat surface — the host mounts it (seam wiring is its business). */
   chat: ReactNode;
   onOpenEntity(id: string): void;
   onOpenKind(kind: string): void;
   onOpenWorkspace(): void;
+  /**
+   * Per-kind `{ total, unseen }` from `spaces.counts` — the one cheap, real
+   * counts read. `undefined` for a kind means THIS SERVER NEVER COUNTED IT,
+   * and the chip renders no number (absent ≠ zero). Optional so a host
+   * without the read simply shows no counts strip.
+   */
+  countsFor?: (kind: string) => { total: number; unseen: number } | undefined;
 }
-
-const byActivity = (a: EntitySummary, b: EntitySummary): number =>
-  b.activityAt.localeCompare(a.activityAt);
 
 function RowCard({ row, onOpen }: { row: HomeRow; onOpen(id: string): void }) {
   return (
@@ -121,88 +120,64 @@ export function HomePage(props: HomePageProps) {
   }, [home, data.livenessOf, data.activity]);
 
   const presenceRows = data.rowsFor(HOME_PRESENCE_KIND)(undefined);
+  const workingTeammates = presenceRows.filter(
+    (row) => 'liveWork' in row.state && row.state.liveWork,
+  ).length;
 
+  /* R4 (2026-08-15): Home IS the chat view. The chat surface — with its
+     merged conversation column — fills the canvas; triage rides above it,
+     and the foot is one strip of REAL per-kind counts (spaces.counts) with
+     the live-session count from the liveness snapshot. The glance rails and
+     presence row retired to the Work tab, where the inventory framing lives. */
   return (
-    <div className="hp-root" data-testid="home-page">
-      <div className="hp-scroll">
-        <section className="hp-chat" aria-label="Chat">
-          {props.chat}
-        </section>
+    <div className="hp-root hp-root--chat" data-testid="home-page">
+      {needsYou && needsYou.rows.length > 0 ? (
+        <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
+      ) : needsYou && (home.viewerError || home.notificationsError) ? (
+        <p className="hp-note" role="status">{needsYou.emptyNote}</p>
+      ) : null}
 
-        {/* Triage first, and ONLY when it has rows — an inbox-zero space gets
-            a quiet canvas, not an empty amber box. A section empty because a
-            READ failed is a different fact and renders its honest note. */}
-        {needsYou && needsYou.rows.length > 0 ? (
-          <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
-        ) : needsYou && (home.viewerError || home.notificationsError) ? (
-          <p className="hp-note" role="status">{needsYou.emptyNote}</p>
-        ) : null}
+      <section className="hp-chat hp-chat--full" aria-label="Chat">
+        {props.chat}
+      </section>
 
-        {HOME_RAIL_KINDS.map((kind) => {
-          const config = getKind(kind);
-          const rows = [...data.rowsFor(kind)(undefined)].sort(byActivity).slice(0, RAIL_CARD_CAP);
-          return (
-            <section key={kind} className="hp-rail" aria-label={config.labelPlural} data-testid={`hp-rail-${config.slug ?? kind}`}>
-              <div className="hp-rail__head">
-                <button type="button" className="hp-rail__open" onClick={() => props.onOpenKind(kind)}>
-                  <span className="hp-rail__label kit-eyebrow">{config.labelPlural}</span>
-                  <span aria-hidden="true">▸</span>
-                </button>
-              </div>
-              {rows.length > 0 ? (
-                <div className="hp-rail__scroll">
-                  {rows.map((summary) => (
-                    <RowCard
-                      key={summary.id}
-                      row={homeRowOf(summary, {
-                        ...(config.list.liveTreatment
-                          ? { liveness: data.livenessOf(summary.id) }
-                          : {}),
-                        streaming: data.activity[summary.id] === true,
-                        compact: true,
-                      })}
-                      onOpen={props.onOpenEntity}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <p className="hp-note">No {config.labelPlural.toLowerCase()} yet.</p>
-              )}
-            </section>
-          );
-        })}
-
-        {presenceRows.length > 0 ? (
-          <section className="hp-presence" aria-label="Teammates" data-testid="hp-presence">
-            {presenceRows.map((row) => {
-              const liveWork =
-                'liveWork' in row.state && row.state.liveWork ? row.state.liveWork : null;
-              return (
-                <button
-                  key={row.id}
-                  type="button"
-                  className="hp-presence__row"
-                  title={liveWork ? `${row.title} — working: ${liveWork.task.title}` : row.title}
-                  onClick={() => props.onOpenEntity(row.id)}
-                >
-                  <span
-                    className={`hp-presence__dot ${liveWork ? 'hp-presence__dot--working' : ''}`}
-                    aria-hidden="true"
-                  />
-                  <span className="hp-presence__name">{row.title}</span>
-                  {liveWork ? <span className="hp-presence__verb">working</span> : null}
-                </button>
-              );
-            })}
-          </section>
-        ) : null}
-
-        <footer className="hp-foot">
-          <button type="button" className="hp-foot__workspace" onClick={props.onOpenWorkspace}>
-            Open full workspace ⌗
-          </button>
+      {props.countsFor ? (
+        <footer className="hp-counts" aria-label="Space at a glance" data-testid="hp-counts">
+          {[...HOME_RAIL_KINDS, HOME_PRESENCE_KIND].map((kind: string) => {
+            const config = getKind(kind);
+            const counts = props.countsFor!(kind);
+            const live = config.list.liveTreatment ? data.liveIds.length : null;
+            const working = kind === HOME_PRESENCE_KIND ? workingTeammates : null;
+            return (
+              <button
+                key={kind}
+                type="button"
+                className="hp-counts__chip"
+                title={
+                  counts
+                    ? `${counts.total} ${config.labelPlural.toLowerCase()}${counts.unseen > 0 ? `, ${counts.unseen} new to you` : ''}`
+                    : `${config.labelPlural} — this server did not report a count`
+                }
+                onClick={() => props.onOpenKind(kind)}
+              >
+                <KindIcon kind={kind} />
+                <span className="hp-counts__label">{config.labelPlural}</span>
+                {/* Absent ≠ zero: no counts read ⇒ no number, never `0`. */}
+                {counts ? <span className="hp-counts__total">{counts.total}</span> : null}
+                {counts && counts.unseen > 0 ? (
+                  <span className="hp-counts__unseen">{counts.unseen} new</span>
+                ) : null}
+                {live !== null && live > 0 ? (
+                  <span className="hp-counts__live">● {live} live</span>
+                ) : null}
+                {working !== null && working > 0 ? (
+                  <span className="hp-counts__live">● {working} working</span>
+                ) : null}
+              </button>
+            );
+          })}
         </footer>
-      </div>
+      ) : null}
     </div>
   );
 }

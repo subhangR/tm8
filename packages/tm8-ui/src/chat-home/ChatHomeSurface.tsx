@@ -32,6 +32,13 @@ export interface ChatHomeSurfaceProps {
    * `/` types plain text.
    */
   skillOptions?: readonly TriggerOption[];
+  /** Merged-column extras (R4) — all pass through to the screen verbatim. */
+  sessions?: ChatHomeScreenProps['sessions'];
+  onOpenSession?: ChatHomeScreenProps['onOpenSession'];
+  onNewSession?: ChatHomeScreenProps['onNewSession'];
+  slots?: ChatHomeScreenProps['slots'];
+  onOpenWorkspace?: ChatHomeScreenProps['onOpenWorkspace'];
+  viewerName?: ChatHomeScreenProps['viewerName'];
 }
 
 /** Production route boundary: Chat and its markdown renderer stay out of non-Home chunks. */

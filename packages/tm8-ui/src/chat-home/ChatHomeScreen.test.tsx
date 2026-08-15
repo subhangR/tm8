@@ -47,11 +47,16 @@ describe('Chat Home', () => {
       />,
     );
 
-    await waitFor(() => expect(view.getByRole('button', { name: /new/i })).toBeTruthy());
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
-    expect((view.getByLabelText('Chat teammate') as HTMLSelectElement).disabled).toBe(false);
+    await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+    /* R4: a NEW thread's teammate and mode are composer chips (the TO row and
+       the mode radios); the model keeps its header select. */
+    const toRow = view.getByRole('radiogroup', { name: 'Send to teammate' });
+    expect(within(toRow).getAllByRole('radio').length).toBeGreaterThan(0);
     fireEvent.change(view.getByLabelText('Chat model'), { target: { value: 'gpt-5.6-sol' } });
-    fireEvent.change(view.getByLabelText('Chat mode'), { target: { value: 'build' } });
+    fireEvent.click(
+      within(view.getByRole('radiogroup', { name: 'Chat mode' })).getByRole('radio', { name: 'build' }),
+    );
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Audit the release blockers.' },
     });
@@ -85,11 +90,12 @@ describe('Chat Home', () => {
       />,
     );
 
-    await waitFor(() => expect(view.getByRole('button', { name: /new/i })).toBeTruthy());
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
-    const mode = view.getByLabelText('Chat mode') as HTMLSelectElement;
-    expect(within(mode).getByRole('option', { name: 'Explain' })).toBeTruthy();
-    fireEvent.change(mode, { target: { value: 'explain' } });
+    await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+    const modeRow = view.getByRole('radiogroup', { name: 'Chat mode' });
+    const explain = within(modeRow).getByRole('radio', { name: 'explain' });
+    fireEvent.click(explain);
+    expect(explain.getAttribute('aria-checked')).toBe('true');
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Explain the request flow with a diagram.' },
     });

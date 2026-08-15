@@ -40,7 +40,7 @@ describe('dashboard route', () => {
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
     expect(view.queryByTestId('home-screen')).toBeNull();
     expect(await view.findAllByText('Plan the launch sequence')).toHaveLength(2);
-    fireEvent.click(view.getByRole('button', { name: /^New$/ }));
-    expect(await view.findByText('What should we work on?')).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: /^New chat$/ }));
+    expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
   });
 });

@@ -62,7 +62,8 @@ import { useTheme } from '../theme/useTheme';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
-import { ChatHomeSurface } from '../chat-home';
+import { ChatHomeSurface, type ChatSessionRow } from '../chat-home';
+import { homeRowOf } from '../home';
 import { HomePage } from '../home-page';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
@@ -1199,6 +1200,60 @@ export function GateApp(props: GateAppProps = {}) {
     },
   }), [data.seam]);
 
+  /**
+   * Work sessions for Home's MERGED conversation column (R4, 2026-08-15),
+   * composed HERE because the chat module must not re-derive status: the
+   * word/tone come from `homeRowOf` — the registry projection every other
+   * surface uses, where the liveness VERDICT outranks the stored record and
+   * `idle` is a legal live state. Credential login terminals are filtered
+   * OUT (they are plumbing, not conversations).
+   */
+  const homeSessionRows = useMemo<ChatSessionRow[]>(
+    () =>
+      data
+        .rowsFor(LIVE_COUNT_KIND)(undefined)
+        .filter((row) => (row.state as { sessionKind?: string }).sessionKind !== 'credential')
+        .map((row) => {
+          const projected = homeRowOf(row, {
+            liveness: data.livenessOf(row.id),
+            streaming: data.activity[row.id] === true,
+            compact: true,
+          });
+          const state = row.state as { agentTool?: string; model?: string };
+          const detailParts = [state.agentTool, state.model].filter(
+            (part): part is string => typeof part === 'string' && part.length > 0,
+          );
+          /* "Yours" = you spawned it, or one of YOUR agents did. Listing has
+             no owner gate; terminal attach does (owner-only) — this flag only
+             labels the row, the attach refusal itself lives on the session
+             surface. */
+          const mine =
+            viewerMemberId !== undefined &&
+            (row.createdBy.id === viewerMemberId || row.createdBy.ownerMemberId === viewerMemberId);
+          return {
+            id: row.id,
+            title: row.title,
+            statusWord: projected.word ?? '',
+            tone: projected.tone,
+            live: data.livenessOf(row.id) === 'live',
+            ...(detailParts.length > 0 ? { detail: detailParts.join(' · ') } : {}),
+            updatedAt: row.activityAt,
+            ...(mine ? {} : { viewOnly: true }),
+          };
+        }),
+    [data, viewerMemberId],
+  );
+  const homeSlots = useMemo(
+    () =>
+      data.launch.capacity
+        ? {
+            used: data.launch.capacity.slotsTotal - data.launch.capacity.slotsFree,
+            total: data.launch.capacity.slotsTotal,
+          }
+        : undefined,
+    [data.launch.capacity],
+  );
+
   // The same grammar for VOICE: "Voice" is a label, the space's voice_channel
   // entities are the rows. The glyph comes from the REGISTRY row (as
   // `presentKind` does above) rather than being authored here — a second
@@ -1696,6 +1751,10 @@ export function GateApp(props: GateAppProps = {}) {
               }}
               onOpenKind={(kind) => navigateTo({ type: 'kind', ref: kind })}
               onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
+              /* The one cheap real counts read (spaces.counts) — the foot
+                 strip's numbers. A kind the server never counted renders no
+                 number (absent ≠ zero). */
+              countsFor={data.countsFor}
               chat={
                 <ChatHomeSurface
                   seam={data.seam}
@@ -1711,6 +1770,22 @@ export function GateApp(props: GateAppProps = {}) {
                   /* One read per space, shared with every other rich input in
                      the shell — see `useGateData`. */
                   skillOptions={data.skillOptions}
+                  /* R4: the merged conversation column — sessions composed
+                     above (liveness-first), slots from execution capacity.
+                     `onNewSession` is deliberately ABSENT: the launch sheet
+                     needs a subject entity and no subjectless launch exists,
+                     so the button says so instead of pretending. */
+                  sessions={homeSessionRows}
+                  onOpenSession={(id) => {
+                    /* Sessions open in the workspace detail — the
+                       session-as-conversation centre inside Home is not built
+                       in this pass, and the row's title says so. */
+                    navigateTo(WORKSPACE_TARGET);
+                    nav.push(id as EntityId);
+                  }}
+                  slots={homeSlots}
+                  onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
+                  viewerName={data.viewerActor?.displayName}
                   /* Entity chips in the transcript open the detail panel
                      through the SAME handoff every other screen commits. */
                   onOpenEntity={(id) => {

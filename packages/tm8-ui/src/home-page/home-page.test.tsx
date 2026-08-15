@@ -1,33 +1,28 @@
 // @vitest-environment jsdom
 /**
- * HomePage — the merged single home (task 01a0027d).
+ * HomePage — Home IS the chat view (R4, 2026-08-15; formerly the merged
+ * single home of task 01a0027d).
  *
  * What these pin, each against a failure mode the program has shipped once:
- *   - the chat slot IS the hero (the host's surface renders, untouched);
- *   - rails come from `HOME_RAIL_KINDS` via `rowsFor(kind)(undefined)`,
- *     newest activity first, capped — and an empty rail SAYS SO rather than
- *     rendering a silent void;
- *   - the rail header opens the full collection, a card opens its entity —
- *     the glance is never a dead end;
- *   - the presence row reads `state.liveWork` structurally and the working
- *     dot is colour + word, never colour alone (C8/L10);
+ *   - the chat slot fills the canvas (the host's surface renders, untouched);
+ *   - the foot strip shows ONLY real numbers: per-kind totals/unseen from
+ *     `spaces.counts` via `countsFor`, the live count from the liveness
+ *     snapshot — and a kind the server never counted renders NO number,
+ *     never `0` (absent ≠ zero);
+ *   - no `countsFor` at all ⇒ no strip (a host without the read draws
+ *     nothing rather than fabricating);
  *   - a quiet space renders NO needs-you strip (an inbox-zero canvas is
  *     quiet, not an empty amber box).
+ *
+ * The glance rails and the presence row retired to the Work tab with R4 —
+ * their tests went with them.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import type { EntitySummary } from '@tm8/contract';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { HOME_PRESENCE_KIND, HOME_RAIL_KINDS } from '../domain';
-import {
-  FIXTURE_SPACE_ID,
-  docLayoutSpec,
-  sessionLive,
-  taskGuideLines,
-  taskUuidTitle,
-  teamMemberForge,
-  teamMemberScout,
-} from '../fixtures/entities';
+import { FIXTURE_SPACE_ID, teamMemberForge, teamMemberScout } from '../fixtures/entities';
 import type { HomeScreenData } from '../home';
 import { HomePage } from './HomePage';
 
@@ -50,11 +45,14 @@ const seam: Pick<Seam, 'identity' | 'inbox' | 'onEvent'> = {
   onEvent: () => () => undefined,
 };
 
-function makeData(rows: Record<string, readonly EntitySummary[]>): HomeScreenData {
+function makeData(
+  rows: Record<string, readonly EntitySummary[]>,
+  liveIds: readonly string[] = [],
+): HomeScreenData {
   return {
     spaceId: FIXTURE_SPACE_ID,
     seam,
-    liveIds: [],
+    liveIds,
     livenessOf: (): SessionLiveness => 'unknown',
     rowsFor: (kind) => (filter) => (filter === undefined ? rows[kind] ?? [] : []),
     activity: {},
@@ -66,11 +64,12 @@ const [TASK_KIND, SESSION_KIND, DOC_KIND] = HOME_RAIL_KINDS;
 function renderPage(
   rows: Record<string, readonly EntitySummary[]>,
   handlers: Partial<React.ComponentProps<typeof HomePage>> = {},
+  liveIds: readonly string[] = [],
 ) {
   return render(
     <div className="cv2-root">
       <HomePage
-        data={makeData(rows)}
+        data={makeData(rows, liveIds)}
         chat={<div data-testid="chat-slot">the chat hero</div>}
         onOpenEntity={() => undefined}
         onOpenKind={() => undefined}
@@ -81,85 +80,59 @@ function renderPage(
   );
 }
 
-describe('the merged home canvas', () => {
-  it('renders the chat slot as the hero', () => {
+describe('the home chat canvas', () => {
+  it('renders the chat slot as the canvas', () => {
     const { getByTestId } = renderPage({});
     expect(within(getByTestId('home-page')).getByTestId('chat-slot')).toBeTruthy();
   });
 
-  it('rails render cards newest-activity-first and open their entity', () => {
-    const onOpenEntity = vi.fn();
-    // Distinct timestamps, input ordered OLDEST-first, to prove the rail
-    // re-sorts by activity rather than echoing the query order.
-    const older = { ...taskUuidTitle, activityAt: '2026-07-27T08:00:00.000Z' };
-    const { container } = renderPage(
-      { [TASK_KIND!]: [older, taskGuideLines] },
-      { onOpenEntity },
-    );
-    const rail = container.querySelector(`[aria-label="Tasks"]`) as HTMLElement;
-    expect(rail).toBeTruthy();
-    const cards = [...rail.querySelectorAll('.hp-card')];
-    expect(cards.length).toBe(2);
-    expect(cards.map((c) => c.querySelector('.hp-card__title')?.textContent)).toEqual([
-      taskGuideLines.title,
-      older.title,
-    ]);
-    fireEvent.click(cards[0] as HTMLElement);
-    expect(onOpenEntity).toHaveBeenCalledWith(taskGuideLines.id);
+  it('renders NO counts strip when the host has no counts read', () => {
+    // Fabricating a strip with no numbers behind it is the failure this pins.
+    const { queryByTestId } = renderPage({});
+    expect(queryByTestId('hp-counts')).toBeNull();
   });
 
-  it('an empty rail says so — never a silent void', () => {
-    const { container } = renderPage({ [SESSION_KIND!]: [sessionLive] });
-    const docs = container.querySelector(`[data-testid="hp-rail-docs"]`) as HTMLElement;
-    expect(docs?.textContent?.toLowerCase()).toContain('no docs yet');
-    // The populated rail renders cards, not the note.
-    const sessions = container.querySelector(`[aria-label="Sessions"]`) as HTMLElement;
-    expect(sessions.querySelectorAll('.hp-card')).toHaveLength(1);
-  });
-
-  it('the rail header opens the full collection for its kind', () => {
+  it('shows real totals and unseen, renders NOTHING for an uncounted kind, and opens the kind', () => {
     const onOpenKind = vi.fn();
-    const { container } = renderPage({}, { onOpenKind });
-    const docs = container.querySelector(`[data-testid="hp-rail-docs"]`) as HTMLElement;
-    fireEvent.click(within(docs).getByRole('button'));
-    expect(onOpenKind).toHaveBeenCalledWith(DOC_KIND);
+    const countsFor = (kind: string) =>
+      kind === TASK_KIND ? { total: 142, unseen: 12 } : undefined;
+    const { getByTestId } = renderPage({}, { countsFor, onOpenKind });
+    const strip = getByTestId('hp-counts');
+    const tasksChip = within(strip).getByText('Tasks').closest('button') as HTMLElement;
+    expect(tasksChip.textContent).toContain('142');
+    expect(tasksChip.textContent).toContain('12 new');
+    // Docs was never counted by this server: chip exists, NO number, not `0`.
+    const docsChip = within(strip).getByText('Docs').closest('button') as HTMLElement;
+    expect(docsChip.querySelector('.hp-counts__total')).toBeNull();
+    expect(docsChip.textContent).not.toMatch(/\d/);
+    fireEvent.click(tasksChip);
+    expect(onOpenKind).toHaveBeenCalledWith(TASK_KIND);
+    void DOC_KIND;
   });
 
-  it('caps a rail at its glance size', () => {
-    const many = Array.from({ length: 9 }, (_, i) => ({
-      ...docLayoutSpec,
-      id: `doc-${i}`,
-      title: `Doc ${i}`,
-    })) as EntitySummary[];
-    const { container } = renderPage({ [DOC_KIND!]: many });
-    const docs = container.querySelector(`[aria-label="Docs"]`) as HTMLElement;
-    expect(docs.querySelectorAll('.hp-card')).toHaveLength(6);
+  it('carries the live count on the session chip from the liveness snapshot', () => {
+    const countsFor = () => ({ total: 5, unseen: 0 });
+    const { getByTestId } = renderPage({}, { countsFor }, ['s1', 's2', 's3']);
+    const strip = getByTestId('hp-counts');
+    const sessionsChip = within(strip).getByText('Sessions').closest('button') as HTMLElement;
+    expect(sessionsChip.textContent).toContain('3 live');
+    void SESSION_KIND;
   });
 
-  it('the presence row marks working teammates with colour AND word (C8/L10)', () => {
-    const onOpenEntity = vi.fn();
+  it('counts working teammates from liveWork on the teammates chip — colour AND word', () => {
+    const countsFor = () => ({ total: 2, unseen: 0 });
     const { getByTestId } = renderPage(
       { [HOME_PRESENCE_KIND]: [teamMemberForge, teamMemberScout] },
-      { onOpenEntity },
+      { countsFor },
     );
-    const presence = getByTestId('hp-presence');
-    const forgeRow = within(presence).getByText('forge').closest('button') as HTMLElement;
-    // forge carries liveWork: dot filled AND the word rides along.
-    expect(forgeRow.querySelector('.hp-presence__dot--working')).toBeTruthy();
-    expect(forgeRow.textContent).toContain('working');
-    // scout is idle: ring, no word.
-    const scoutRow = within(presence).getByText('scout').closest('button') as HTMLElement;
-    expect(scoutRow.querySelector('.hp-presence__dot--working')).toBeNull();
-    expect(scoutRow.textContent).not.toContain('working');
-    fireEvent.click(forgeRow);
-    expect(onOpenEntity).toHaveBeenCalledWith(teamMemberForge.id);
+    const strip = getByTestId('hp-counts');
+    const chip = within(strip).getByText('Teammates').closest('button') as HTMLElement;
+    // forge carries liveWork; scout is idle — one working teammate.
+    expect(chip.textContent).toContain('1 working');
   });
 
-  it('a quiet space renders NO needs-you strip and the workspace escape hatch', () => {
-    const onOpenWorkspace = vi.fn();
-    const { queryByTestId, getByText } = renderPage({}, { onOpenWorkspace });
+  it('a quiet space renders NO needs-you strip', () => {
+    const { queryByTestId } = renderPage({});
     expect(queryByTestId('hp-needs-you')).toBeNull();
-    fireEvent.click(getByText('Open full workspace ⌗'));
-    expect(onOpenWorkspace).toHaveBeenCalled();
   });
 });
