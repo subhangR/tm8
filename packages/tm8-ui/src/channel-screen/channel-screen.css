@@ -1392,3 +1392,52 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-composer__send { border: 1px solid ButtonText; }
   :where(button, textarea, input):focus-visible { outline: 3px solid Highlight; }
 }
+
+/* --- live tool graph — the collapsible strip above a session feed ---------- */
+
+.chs-livegraph {
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-card);
+}
+
+.chs-livegraph__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  padding: var(--pn-space-1) var(--pn-space-4);
+  cursor: pointer;
+  text-align: left;
+}
+
+.chs-livegraph__toggle:hover { background: var(--pn-hover); }
+
+.chs-livegraph__count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.chs-livegraph__canvas {
+  height: 260px;
+  overflow: hidden;
+  background: var(--pn-paper);
+  border-top: 1px solid var(--pn-line);
+}
+
+/* The most recently touched node breathes once so live growth is visible. */
+.chs-livegraph__cell--fresh .sg-box {
+  stroke: var(--pn-brand);
+  animation: chs-livegraph-fresh var(--pn-dur-slow) var(--pn-ease-standard) 1;
+}
+
+@keyframes chs-livegraph-fresh {
+  from { stroke-width: 2.5; }
+  to { stroke-width: 1; }
+}

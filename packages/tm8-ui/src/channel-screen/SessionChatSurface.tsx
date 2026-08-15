@@ -238,6 +238,7 @@ export function SessionChatSurface({
       onPost={actions.canPost ? post : undefined}
       onLoadEarlier={() => controller.loadOlder()}
       onOpenEntity={onOpenEntity}
+      showLiveGraph
       onSwitchToTerminal={onSwitchToTerminal}
       needsAttention={needsAttention}
       {...(attentionDetail ? { attentionDetail } : {})}

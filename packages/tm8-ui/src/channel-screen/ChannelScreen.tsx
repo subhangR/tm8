@@ -8,6 +8,7 @@ import type { ComposerMentionOption } from './Composer';
 import type { ChatAttachmentUploadTask } from './chat-attachments';
 import type { TriggerOption } from '../rich-input';
 import { FeedRowGroup } from './FeedRow';
+import { LiveToolGraph } from './LiveToolGraph';
 import { ThreadPane } from './ThreadPane';
 import { dayLabel as formatDay, dayStart } from '../kit/time';
 import { groupByOperation, type ChannelPostInput, type ChannelRefusal } from './feed-model';
@@ -88,6 +89,12 @@ export interface ChannelScreenProps {
   onLoadEarlier?: (cursor: Cursor) => Promise<void> | void;
   onOpenEntity?: (id: EntityId) => void;
   /**
+   * Mounts the collapsible live tool graph above the feed — a pure-UI star of
+   * the entities this feed's activity items touched. Opt-in by the host,
+   * because only a session anchor's activity reads as "tool calls".
+   */
+  showLiveGraph?: boolean;
+  /**
    * The surface switch the S07 empty state offers. OPTIONAL AND MEANINGFULLY
    * SO: "the agent's native output lives in Terminal" is true of a session
    * anchor and false of a channel, so the sentence and its button appear only
@@ -160,6 +167,7 @@ export function ChannelScreen({
   onPost,
   onLoadEarlier,
   onOpenEntity,
+  showLiveGraph = false,
   onSwitchToTerminal,
   threads = false,
   anchorTitle,
@@ -330,6 +338,14 @@ export function ChannelScreen({
           `chv-split`/`chv-aside`, solved here so both hosts inherit it. */}
       <div className="chs-columns">
         <div className="chs-main">
+      {showLiveGraph && page ? (
+        <LiveToolGraph
+          items={page.items}
+          anchorId={anchorId}
+          anchorNoun={anchorNoun}
+          onOpenEntity={onOpenEntity}
+        />
+      ) : null}
       <div
         ref={feedElement}
         className="chs-feed"
