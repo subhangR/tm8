@@ -170,8 +170,14 @@ describe.sequential('task assignment provenance (129)', () => {
     database = await createW1ScratchDatabase('assignment_prov');
     const files = migrationFiles();
     const migration = '129_task_assignment_provenance.sql';
-    expect(files.at(-1)).toBe(migration);
-    database.apply(files.filter((file) => file !== migration));
+    // Position-pinned (R15): this suite asserts the chain AT 129, so it
+    // applies the slice BEFORE 129, seeds the legacy edge, then applies 129
+    // itself. `files.at(-1)` was the original pin and broke the moment a
+    // later migration (130, the Board tab) landed — and the filter() it
+    // guarded would have applied 130 *before* 129, out of chain order.
+    const index = files.indexOf(migration);
+    expect(index).toBeGreaterThan(-1);
+    database.apply(files.slice(0, index));
     fixture = await seed();
     legacyCreatedAt = await asOwner(async (client) => {
       const row = (await client.query<{ created_at: Date }>(

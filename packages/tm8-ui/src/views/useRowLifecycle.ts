@@ -115,10 +115,30 @@ export interface RowLifecycle {
    * `source` is the wire field name and titling a notice with it produced
    * "priority could not be changed", lowercase mid-sentence. Both come off the
    * same registry control, so they cannot disagree.
+   *
+   * RETURNS the outcome for the same reason `setState` does: the Board tab
+   * renders refusals INLINE at the refusing column and rolls its optimistic
+   * move back, so it passes `{notify: false}` and consumes the result; every
+   * pre-existing caller ignores the return and keeps its notice.
    */
-  setValue: (entityId: string, source: string, next: string, label: string) => void;
-  /** Bound to `EntityListPanel.onAssign` — ONE actor's edge, added or removed. */
-  assign: (entityId: string, actorId: string, edgeType: string, assigned: boolean) => void;
+  setValue: (
+    entityId: string,
+    source: string,
+    next: string,
+    label: string,
+    opts?: { notify?: boolean },
+  ) => Promise<SetStateOutcome>;
+  /**
+   * Bound to `EntityListPanel.onAssign` — ONE actor's edge, added or removed.
+   * Outcome returned for the board's inline-refusal path, exactly as above.
+   */
+  assign: (
+    entityId: string,
+    actorId: string,
+    edgeType: string,
+    assigned: boolean,
+    opts?: { notify?: boolean },
+  ) => Promise<SetStateOutcome>;
   /**
    * Bound to `EntityListPanel.onMembership` — ONE curated-set membership,
    * added or removed, through the `collections.addItem`/`removeItem` pair
@@ -250,8 +270,15 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
   );
 
   const setValue = useCallback(
-    (entityId: string, source: string, next: string, label: string) => {
+    (
+      entityId: string,
+      source: string,
+      next: string,
+      label: string,
+      opts?: { notify?: boolean },
+    ): Promise<SetStateOutcome> => {
       const id = entityId as EntityId;
+      const notify = opts?.notify ?? true;
       /**
        * THE CACHED VERSION IS THE ONLY VERSION — there is no `entity()`
        * fallback, because in production there is nothing for it to fall back
@@ -270,16 +297,20 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
        */
       const version = data.detailOf(entityId)?.version;
       if (version === undefined) {
-        onNotice({
-          id: `value-unhydrated:${entityId}`,
-          tone: 'error',
-          title: `${label} could not be changed`,
-          body: 'This row’s current version is not loaded, and writing without one could overwrite a change you have not seen. Open the row, then try again.',
-          ttlMs: 6_000,
-        });
-        return;
+        const reason =
+          'This row’s current version is not loaded, and writing without one could overwrite a change you have not seen. Open the row, then try again.';
+        if (notify) {
+          onNotice({
+            id: `value-unhydrated:${entityId}`,
+            tone: 'error',
+            title: `${label} could not be changed`,
+            body: reason,
+            ttlMs: 6_000,
+          });
+        }
+        return Promise.resolve({ ok: false, reason });
       }
-      settle(
+      return settle(
         entityId,
         `${label} could not be changed`,
         // Sparse: the node COALESCEs the fields the patch omits, so one field
@@ -287,24 +318,32 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
         // does its job — a concurrent edit lands as `version_conflict`, which
         // surfaces as a notice rather than a silent overwrite.
         seam.commands.patchEntity(id, { expectedVersion: version, content: { [source]: next } }),
+        notify,
       );
     },
     [data, onNotice, seam, settle],
   );
 
   const assign = useCallback(
-    (entityId: string, actorId: string, edgeType: string, assigned: boolean) => {
+    (
+      entityId: string,
+      actorId: string,
+      edgeType: string,
+      assigned: boolean,
+      opts?: { notify?: boolean },
+    ): Promise<SetStateOutcome> => {
       const id = entityId as EntityId;
+      const notify = opts?.notify ?? true;
 
       if (assigned) {
-        settle(
+        return settle(
           entityId,
           'Could not assign',
           // UPSERT on (src, dst, type) server-side, so a double-click adds
           // nothing twice and needs no read first.
           seam.commands.createEdge({ srcId: id, dstId: actorId as EntityId, type: edgeType }),
+          notify,
         );
-        return;
       }
 
       /**
@@ -325,7 +364,7 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
        * so "absent from the page" and "absent from the node" mean the same
        * thing again. (`ConnectionOpts` in `data/seam.ts` carries them.)
        */
-      settle(
+      return settle(
         entityId,
         'Could not unassign',
         seam
@@ -339,6 +378,7 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
             }
             return seam.commands.deleteEdge(edge.id, commandContext());
           }),
+        notify,
       );
     },
     [seam, settle],

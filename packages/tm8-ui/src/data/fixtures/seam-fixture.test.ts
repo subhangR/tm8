@@ -514,3 +514,57 @@ describe('fixture seam — assignment edges reproject state.assignees', () => {
       .rejects.toSatisfy(isCollabError);
   });
 });
+
+describe('fixture seam — server-parity of the Board wave (PR #253 review findings)', () => {
+  it('a priority patch is a MOVE into state — the returned detail stays contract-valid', async () => {
+    /* The node's `update_task_content` writes `tasks.priority`; `stateOf`
+       projects it and `contentOf` never carries it. A fixture that merged it
+       into content answered every post-patch read with a detail
+       `EntityDetailSchema` refuses — contract-invalid in a way the real
+       server never is. Same law for `dueDate`. */
+    const seam = await openSeam();
+    const before = await seam.entity(taskGuideLines.id);
+    await seam.commands.patchEntity(taskGuideLines.id, {
+      expectedVersion: before.version,
+      content: { priority: 'high', dueDate: '2026-09-01' },
+      clientMutationId: 'cmid-prio-1',
+    });
+    const after = await seam.entity(taskGuideLines.id);
+    expect(after.state.kind === 'task' && after.state.priority).toBe('high');
+    expect(after.state.kind === 'task' && after.state.dueDate).toBe('2026-09-01');
+    expect('priority' in (after.content as Record<string, unknown>)).toBe(false);
+    expect('dueDate' in (after.content as Record<string, unknown>)).toBe(false);
+    expect(EntityDetailSchema.safeParse(after).success).toBe(true);
+  });
+
+  it('an EMPTY filter list is NO constraint, exactly as the server ignores it', async () => {
+    const seam = await openSeam();
+    const bare = await seam.query({ spaceId: FIXTURE_SPACE_ID, kinds: ['task'] });
+    const empties = await seam.query({
+      spaceId: FIXTURE_SPACE_ID, kinds: ['task'],
+      filters: { priority: [], workStatus: [], assigneeIds: [] },
+    });
+    expect(empties.page.items.map((s) => s.id)).toEqual(bare.page.items.map((s) => s.id));
+  });
+
+  it('grouping buckets NON-tasks into the server defaults and hands back server labels', async () => {
+    /* collections.ts groupItems: a non-task row lands in 'open' / 'medium' /
+       Unassigned rather than vanishing from the groups it counts toward, and
+       labels are display words ('High'), not raw keys ('high'). */
+    const seam = await openSeam();
+    const result = await seam.query({ spaceId: FIXTURE_SPACE_ID, groupBy: 'priority', limit: 100 });
+    expect(result.groups).toBeDefined();
+    const groups = result.groups!;
+    // every fetched row is in exactly one priority bucket — none dropped
+    const grouped = groups.reduce((n, g) => n + g.items.length, 0);
+    expect(grouped).toBe(result.page.items.length);
+    const medium = groups.find((g) => g.key === 'medium')!;
+    expect(medium.label).toBe('Medium');
+    // the non-task rows all defaulted into 'medium', so the bucket holds
+    // more than the medium-priority tasks alone
+    const mediumTasks = result.page.items.filter((s) => s.state.kind === 'task' && s.state.priority === 'medium');
+    expect(medium.items.length).toBeGreaterThan(mediumTasks.length);
+    const status = await seam.query({ spaceId: FIXTURE_SPACE_ID, kinds: ['task'], groupBy: 'workStatus', limit: 100 });
+    expect(status.groups!.find((g) => g.key === 'in_review')!.label).toBe('In review');
+  });
+});

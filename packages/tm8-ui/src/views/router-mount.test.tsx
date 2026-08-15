@@ -129,6 +129,16 @@ describe('URL → screen', () => {
     view.unmount();
   });
 
+  it('lands the board route on the Board tab, full-bleed', async () => {
+    /* Board tab wave: `#/s/{s}/board` is a menu VIEW (migration 130), so the
+       link must land on the kanban screen, not the workspace fallback. */
+    const target = createMemoryTarget(`#/s/${SPACE}/board`);
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('board-screen'));
+    expect(view.queryByTestId('workspace-grid')).toBeNull();
+    view.unmount();
+  });
+
   it('reports an unaddressable hash instead of guessing', async () => {
     /* `#/` names no space. `attachRouter` fires `onSpacePicker` and hydrates
        nothing, which is what lets last-place apply — asserted below. */

@@ -213,6 +213,9 @@ const RAILLESS_VIEW_REFS: ReadonlySet<MenuViewRef> = new Set<MenuViewRef>([
   'settings',
   'files',
   'dashboard',
+  // 2026-08-16 (Board tab): the kanban is full-bleed — its columns ARE the
+  // navigation, so a rail beside it could only repeat the tab's own name.
+  'board',
 ]);
 
 /**
@@ -290,4 +293,8 @@ export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: strin
   // (projects, PRs, worktrees ride its caret), and "Git" named the tool
   // rather than the intent. The ref stays `git`.
   git: { label: 'Code', icon: '⎇', art: VIEW_ART.git },
+  // Board tab wave (2026-08-16): the task kanban. Label "Board" — it names
+  // the SURFACE (columns you move cards across), not the kind it presents;
+  // the task collection row in Work already reads "Tasks".
+  board: { label: 'Board', icon: '⫼', art: VIEW_ART.board },
 };

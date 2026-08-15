@@ -1,0 +1,328 @@
+/* THE BOARD TAB — full-bleed kanban. One vertical column of chrome (toolbar,
+   filter rail) above ONE horizontal scroller that owns every column: the
+   PR #66 lesson, a scrolling flex container does not grow its children, so
+   columns pin their own height and scroll their card wells individually
+   while the strip scrolls sideways as a unit. Tokens are the shared --pn-*
+   ramp, so the board cannot drift from the panels beside it. */
+
+.bd {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+}
+
+/* ---- toolbar ---- */
+
+.bd__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.bd__pivots {
+  display: inline-flex;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  overflow: hidden;
+}
+
+.bd__pivot {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.bd__pivot + .bd__pivot {
+  border-left: 1px solid var(--pn-line-2);
+}
+
+.bd__pivot[aria-pressed='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+
+.bd__search {
+  flex: 0 1 260px;
+  min-width: 120px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+.bd__clear {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--pn-brand);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 5px 8px;
+}
+
+/* ---- filter rail ---- */
+
+.bd__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 18px;
+  row-gap: 6px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.bd__axis {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bd__axis-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+  margin-right: 2px;
+}
+
+.bd__axis-empty {
+  font-size: 11px;
+  color: var(--pn-ink-4);
+  font-style: italic;
+}
+
+.bd__chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.bd__chip[aria-pressed='true'] {
+  background: var(--pn-brand-soft);
+  border-color: var(--pn-brand);
+  color: var(--pn-ink);
+}
+
+.bd__chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---- body ---- */
+
+.bd__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+.bd__body:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--pn-brand);
+}
+
+.bd__banner {
+  padding: 6px 14px;
+  font-size: 11px;
+  color: var(--pn-ink-3);
+  background: var(--pn-hover);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.bd__error {
+  padding: 32px 14px;
+  text-align: center;
+  color: var(--pn-ink-2);
+  font-size: 13px;
+}
+
+.bd__retry {
+  appearance: none;
+  margin-top: 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+
+/* One scroller for the whole strip; columns keep their intrinsic width. */
+.bd__cols {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.bd__col {
+  flex: 0 0 272px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+}
+
+.bd__col--focused {
+  border-color: var(--pn-brand);
+}
+
+.bd__col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.bd__col-count {
+  font-size: 11px;
+  color: var(--pn-ink-4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bd__refusal {
+  margin: 8px 10px 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--pn-block);
+  border: 1px solid var(--pn-block);
+  border-radius: var(--pn-r-sm);
+  background: color-mix(in srgb, var(--pn-block) 8%, transparent);
+}
+
+.bd__cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.bd__empty {
+  margin: 4px 2px;
+  font-size: 11px;
+  color: var(--pn-ink-4);
+  font-style: italic;
+}
+
+.bd__skeleton {
+  height: 58px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-hover);
+  animation: bd-shimmer 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes bd-shimmer {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
+
+/* ---- cards ---- */
+
+.bd__card {
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  padding: 8px 10px;
+  cursor: grab;
+  transition: border-color var(--pn-dur-base) var(--pn-ease-out), opacity var(--pn-dur-base) var(--pn-ease-out);
+}
+
+.bd__card:hover {
+  border-color: var(--pn-ink-4);
+}
+
+.bd__card--dragging {
+  opacity: 0.45;
+}
+
+.bd__card--pending {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.bd__card--focused {
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 1px var(--pn-brand);
+}
+
+.bd__card-title {
+  appearance: none;
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
+  line-height: 1.35;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.bd__card-title:hover {
+  color: var(--pn-brand);
+}
+
+.bd__card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.bd__card-due,
+.bd__card-accept {
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  white-space: nowrap;
+}

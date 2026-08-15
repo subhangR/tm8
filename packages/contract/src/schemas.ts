@@ -692,13 +692,15 @@ export const EntityDetailSchema: z.ZodType<EntityDetail> = z.lazy(() => z.object
 const GroupBySchema = z.union([
   z.literal('workStatus'),
   z.literal('assignee'),
-  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "workStatus", "assignee" or "axis:<name>"'),
+  z.literal('priority'),
+  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "workStatus", "assignee", "priority" or "axis:<name>"'),
 ]);
 
 const CollectionFiltersSchema = z.object({
   workStatus: z.array(WorkStatusSchema).optional(),
   axes: z.record(z.array(z.string())).optional(),
   assigneeIds: z.array(EntityIdSchema).optional(),
+  priority: z.array(PrioritySchema).optional(),
   assignedByIds: z.array(EntityIdSchema).optional(),
   edge: z.object({
     type: z.string(),
@@ -723,6 +725,14 @@ const CollectionFiltersSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'workStatus and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
+    });
+  }
+  // Same law for the priority axis: priority is task-only, so pairing it with
+  // sessionStatus is another always-empty conjunction that must refuse.
+  if (f.priority && f.priority.length > 0 && f.sessionStatus && f.sessionStatus.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'priority and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
     });
   }
 });
@@ -1899,7 +1909,8 @@ export const UpdateMemberRoleInputSchema: z.ZodType<UpdateMemberRoleInput> = z.o
 // `files` widened 2026-08-10 in lockstep with the MenuViewRef type (R4 posture).
 // `git` widened 2026-08-12 in the same lockstep (Git UI wave: the project git screen).
 // `messages` widened 2026-08-13 in the same lockstep (the Messages surface).
-export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages']);
+// `board` widened 2026-08-16 in the same lockstep (the task kanban tab).
+export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board']);
 // `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
 // menu-visible, still not menu-creatable (creation stays with the saga).
 // `channel` un-excluded 2026-08-01, same lockstep — it became a collection

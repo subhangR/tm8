@@ -285,6 +285,12 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     where.push(`t.work_status = any(${p.add(f.workStatus)}::text[])`);
   }
 
+  // Board tab wave (2026-08-16): same kind-narrowing semantics as workStatus —
+  // t.priority is NULL for every non-task row, so presence restricts to tasks.
+  if (f.priority && f.priority.length > 0) {
+    where.push(`t.priority = any(${p.add(f.priority)}::text[])`);
+  }
+
   // A22: same kind-narrowing semantics as workStatus — ws.status is NULL for
   // every non-work_session row, and NULL = any(...) is never true, so the
   // filter's presence restricts the result to work_sessions in these statuses.
@@ -419,6 +425,13 @@ const WORK_STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
+const PRIORITY_LABELS: Record<string, string> = {
+  urgent: 'Urgent',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+};
+
 /**
  * Groups partition the PAGE that was fetched, not the whole result set.
  *
@@ -441,6 +454,13 @@ function groupItems(items: EntitySummary[], groupBy: NonNullable<CollectionQuery
     if (groupBy === 'workStatus') {
       const status = item.state.kind === 'task' ? item.state.workStatus : 'open';
       put(status, WORK_STATUS_LABELS[status] ?? status, item);
+      continue;
+    }
+    if (groupBy === 'priority') {
+      // Non-task rows have no priority; 'medium' mirrors the workStatus arm's
+      // 'open' default so the bucket and the SQL total cannot disagree.
+      const priority = item.state.kind === 'task' ? item.state.priority : 'medium';
+      put(priority, PRIORITY_LABELS[priority] ?? priority, item);
       continue;
     }
     if (groupBy === 'assignee') {
@@ -488,7 +508,7 @@ export async function queryCollection(
   const sort = SORTS[sortName];
   if (!sort) throw new CollabError('invalid_input', `unsupported sort: ${String(query.sort)}`);
 
-  if (query.groupBy && !['workStatus', 'assignee'].includes(query.groupBy) && !query.groupBy.startsWith('axis:')) {
+  if (query.groupBy && !['workStatus', 'assignee', 'priority'].includes(query.groupBy) && !query.groupBy.startsWith('axis:')) {
     throw new CollabError('invalid_input', `unsupported groupBy: ${query.groupBy}`);
   }
 
@@ -574,9 +594,11 @@ export async function queryCollection(
         label:
           query.groupBy === 'workStatus'
             ? (WORK_STATUS_LABELS[key] ?? key)
-            : key === ''
-              ? 'Unset'
-              : key,
+            : query.groupBy === 'priority'
+              ? (PRIORITY_LABELS[key] ?? key)
+              : key === ''
+                ? 'Unset'
+                : key,
         items: [],
         total,
       });
@@ -602,6 +624,8 @@ async function groupTotals(
   let extraJoin = '';
   if (groupBy === 'workStatus') {
     keyExpr = `coalesce(t.work_status, 'open')`;
+  } else if (groupBy === 'priority') {
+    keyExpr = `coalesce(t.priority, 'medium')`;
   } else if (groupBy === 'assignee') {
     keyExpr = `coalesce(ag.dst_id::text, '')`;
     extraJoin = `left join public.edges ag on ag.src_id = e.id and ag.type = 'assigned_to'`;

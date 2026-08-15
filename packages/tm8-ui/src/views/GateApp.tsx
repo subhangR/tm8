@@ -39,6 +39,7 @@ import { useShellKind } from '../mobile';
 import { MobileShell } from './MobileShell';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
+import { BoardScreen } from '../board';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { NavView } from '../routes';
@@ -154,6 +155,8 @@ const VIEW_REF_SCREENS = {
   settings: 'mounted',
   git: 'mounted',
   messages: 'mounted',
+  /* The task Board (2026-08-16): the kanban screen, mounted below. */
+  board: 'mounted',
   workspace: 'workspace',
   /* The last genuinely unbuilt view ref. */
   feed: 'unbuilt',
@@ -1655,6 +1658,20 @@ export function GateApp(props: GateAppProps = {}) {
                 /* A lens, not a terminus — leaving a conversation for the
                    entity it lives on lands in the workspace with the panel
                    pushed, the same handoff Git's lane click-through performs. */
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id as EntityId);
+              }}
+            />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'board' ? (
+            /* ▦ Board (Board tab wave) — the task kanban as its own tab, the
+               D65 posture again: full width, no side lists, the columns ARE
+               the navigation. A card is a door — opening one performs the
+               same workspace handoff Git's lane click-through does. */
+            <BoardScreen
+              data={data}
+              viewerMemberId={viewerMemberId}
+              onNotice={notices.push}
+              onOpenEntity={(id) => {
                 navigateTo(WORKSPACE_TARGET);
                 nav.push(id as EntityId);
               }}

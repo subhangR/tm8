@@ -191,6 +191,18 @@ describe('DTO schemas', () => {
     if (!pair.success) {
       expect(JSON.stringify(pair.error.issues)).toContain('kind-disjoint');
     }
+
+    // The priority axis obeys the same law: task-only, so pairing it with
+    // sessionStatus is another always-empty conjunction that must refuse.
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { priority: ['high'] } }).success).toBe(true);
+    const priorityPair = CollectionQuerySchema.safeParse({
+      ...base,
+      filters: { priority: ['high'], sessionStatus: ['running'] },
+    });
+    expect(priorityPair.success).toBe(false);
+    if (!priorityPair.success) {
+      expect(JSON.stringify(priorityPair.error.issues)).toContain('kind-disjoint');
+    }
   });
 
   it('validates recursive message views with nested replies', () => {

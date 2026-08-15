@@ -545,6 +545,12 @@ export interface CollectionQuery {
   parentId?: EntityId | null;
   filters?: {
     workStatus?: WorkStatus[]; axes?: Record<string, string[]>; assigneeIds?: EntityId[];
+    /**
+     * Additive (Board tab wave, 2026-08-16): tasks at any of these priorities.
+     * Same kind-narrowing semantics as `workStatus` — priority lives on the
+     * task arm only, so a non-task row never matches.
+     */
+    priority?: ('low'|'medium'|'high'|'urgent')[];
     /** Tasks with any current assignment performed by one of these actors. */
     assignedByIds?: EntityId[];
     edge?: { type: string; direction: 'incoming'|'outgoing'; entityId: EntityId };
@@ -580,7 +586,8 @@ export interface CollectionQuery {
     deleted?: 'exclude'|'only'|'include';
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
-  groupBy?: 'workStatus'|'assignee'|`axis:${string}`;
+  /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
+  groupBy?: 'workStatus'|'assignee'|'priority'|`axis:${string}`;
   sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'priority';
   cursor?: Cursor; limit?: number;
 }
@@ -1906,7 +1913,11 @@ export type InvitePreview =
  * `message` KIND: `message` stays excluded from `MenuKindRef` because it is
  * anchored, slugless and has no collection list, which is precisely why the
  * conversation surface needs a view ref of its own to be addressable. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages';
+/** `board` added 2026-08-16 (same R4 additive widening) for the task Board —
+ * the full-screen kanban over the task collection (switchable grouping,
+ * priority/assignee filters). A VIEW: it renders the `task` KIND's rows, so
+ * no kind ref moves; the tab is a presentation of an existing collection. */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -2103,6 +2114,12 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // surface's), so nothing else claims it and no space can hold both.
   { serverId: 'chats', clientId: 'chats' },
   { serverId: 'work', clientId: 'workspace' },
+  // 2026-08-16 (Board tab wave, migration 130): the task kanban is its own
+  // full-bleed tab beside Work — a railless group holding the single `board`
+  // VIEW, the same posture as graph/files/chats. It PRESENTS the task
+  // collection; the `task` kind row stays in the Workspace caret, so this is
+  // a second door to tasks, not a move (the R9 two-doors posture files set).
+  { serverId: 'board', clientId: 'board' },
   { serverId: 'graph', clientId: 'graph' },
   { serverId: 'channels', clientId: 'channels' },
   { serverId: 'files', clientId: 'files' },
