@@ -1424,10 +1424,15 @@ export function GateApp(props: GateAppProps = {}) {
                 activeSpaceId={(data.spaceId as SpaceId) || null}
                 collapsed={menuCollapsed}
                 onSelectServer={(id) => {
+                  /* INVARIANT (privacy-lane agreement, 2026-08-15): these two
+                     calls stay TOGETHER and in THIS order wherever the
+                     server-switch control lives. `leaveSpaceContext` is the
+                     one path that clears the space-scoped module stores —
+                     entity ids are space-scoped, so a missed reset does not
+                     throw, it shows someone else's rows. `resetAddress` then
+                     writes last: the remount reads the address, and a Space id
+                     from the Server you just left addresses nothing here. */
                   leaveSpaceContext();
-                  /* See `resetAddress`: the remount reads the address, and a
-                     Space id from the Server you just left addresses nothing
-                     here. */
                   resetAddress();
                   props.onSelectServer?.(id);
                 }}
