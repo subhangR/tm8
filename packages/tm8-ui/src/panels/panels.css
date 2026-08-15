@@ -1717,13 +1717,20 @@
    all four sides, a gapped column, a brand-tinted selected state. Against the
    session list's full-bleed run of hairline-separated rows they read as two
    different products. This block is `pn-st`, rule for rule: one bottom
-   hairline, hover tint plus the brand edge bar, `--pn-active` when selected. */
+   hairline, hover tint plus the brand edge bar, `--pn-active` when selected.
+
+   AND NO FILL AT REST, which is the one place it still disagreed. `pn-st`
+   declares no background at all, so a session row simply shows `--pn-surface`,
+   the panel it sits in. This rule painted `--pn-card`, which is literally
+   #FFFFFF: every list except sessions drew pure white rows on a warm paper
+   panel. Dark is the same defect inverted — there `--pn-card` is LIGHTER than
+   the panel, so the rows read as slabs while session rows stayed flat. The
+   hairline and the hover/selected tints separate rows; a fill never did. */
 .cv2-root .lp__tile {
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--pn-card);
   border: 0;
   border-bottom: 1px solid var(--pn-line);
   border-radius: 0;
