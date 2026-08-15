@@ -7,8 +7,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_MENU_CHATS_SPINE,
+  DEFAULT_MENU_CODE_KIND_SPINE,
   DEFAULT_MENU_GROUP_SPINE,
-  DEFAULT_MENU_LIBRARY_SPINE,
   DEFAULT_MENU_WORKSPACE_KIND_SPINE,
   MenuConfigSchema,
   type MenuConfig,
@@ -46,29 +47,40 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).toEqual(
       DEFAULT_MENU_GROUP_SPINE.map((g) => g.clientId),
     );
-    // The ordered Workspace spine is the second shared parity pin: the client
-    // fallback and SQL seeder each prove their hand-written copy against it.
-    // Revisions 4 and 6 added memory/artifact and channel; revision 7 adds Loop.
+    // The ordered kind spines are the second shared parity pin: the client
+    // fallback and SQL seeder each prove their hand-written copy against them.
+    // Revision 11: `channel` leads (the Chats group precedes Workspace), the
+    // Workspace caret swaps channel→file, and the Code caret carries the old
+    // Tracking collections.
     expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([
+      'channel',
       ...DEFAULT_MENU_WORKSPACE_KIND_SPINE,
-      'file',
-      'spell',
-      'collection',
-      'project',
-      'pull_request',
-      'worktree',
-      'member',
+      ...DEFAULT_MENU_CODE_KIND_SPINE,
     ]);
     expect(DEFAULT_MENU_WORKSPACE_KIND_SPINE).toHaveLength(8);
   });
 
-  it('ships Files, Spells and Collections as first-class Library rows', () => {
-    const library = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'library');
-    expect(library).toEqual({
-      id: 'library',
-      label: 'Library',
-      items: DEFAULT_MENU_LIBRARY_SPINE,
+  it('clusters the conversation surfaces in Chats, pinned to the contract spine', () => {
+    const chats = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'chats');
+    expect(chats).toEqual({
+      id: 'chats',
+      label: 'Chats',
+      items: DEFAULT_MENU_CHATS_SPINE,
     });
+  });
+
+  it('folds the Library into Workspace — file rows stay reachable, spells/collections go palette-only', () => {
+    // Revision 11: no Library group. The Files explorer VIEW rides beside the
+    // Workspace caret and the `file` KIND fills the caret's freed eighth slot
+    // (owner ruling R9 keeps both doors). `spell` and `collection` left the
+    // rail for the palette and the kind switcher — free refs, not deletions.
+    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('library');
+    const workspace = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'workspace');
+    expect(workspace?.items.map((i) => i.ref)).toEqual(['workspace', 'files']);
+    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toContain('file');
+    for (const gone of ['spell', 'collection', 'member']) {
+      expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).not.toContain(gone);
+    }
   });
 
   it('always contains settings (the fail-closed floor)', () => {
@@ -77,40 +89,30 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   /**
-   * Revision 5 (user ruling 2026-08-01): channels left the rail for the Entity
-   * List Panel, and Feed and Inbox left it too, so Home is Dashboard alone.
-   * Both halves are asserted — a surviving `channels` row would be a rail
-   * destination competing with the list panel for the same kind, which is the
-   * two-divergent-homes shape the voice row's docblock already warned about.
+   * Revision 11 (single-home ruling, 2026-08-14): Home is the one landing row.
+   * Messages moved to Chats beside the channel collection; Inbox left the rail
+   * for the top-bar bell (its rows also feed the Home page's NEEDS YOU and
+   * MENTIONS sections, so a rail row was a third door to the same fact).
    */
-  it('puts Dashboard, Messages and Inbox in Home and keeps NO Channels group', () => {
-    // Revision 10 (2026-08-13): Home stopped being Dashboard alone. Messages
-    // is a NEW view ref (the cross-entity conversation browser) and Inbox is an
-    // OLD one whose finished screen had never been mounted — see the constant's
-    // docblock for why both belong here and why neither is a kind row.
+  it('keeps Home as the single landing row', () => {
     const home = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'home');
-    expect(home?.items).toEqual([
-      { type: 'view', ref: 'dashboard' },
-      { type: 'view', ref: 'messages' },
-      { type: 'view', ref: 'inbox' },
-    ]);
+    expect(home?.items).toEqual([{ type: 'view', ref: 'dashboard' }]);
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('channels');
+    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('voice');
   });
 
-  it('leaves feed and channels off the RAIL without dropping them from the union', () => {
+  it('leaves feed, channels and inbox off the RAIL without dropping them from the union', () => {
     // The distinction this test exists to hold: a ref can be unrouted from the
-    // rail without being deleted. `MenuViewRef` still carries both, so the menu
-    // editor can offer them and a deep link still resolves. Channels moved to
-    // the Entity List Panel — see the registry row's `strategy: 'collection'`.
+    // rail without being deleted. `MenuViewRef` still carries all three, so the
+    // menu editor can offer them and a deep link still resolves.
     //
-    // INBOX LEFT THIS LIST on 2026-08-13. It was never unbuilt — the screen sat
-    // finished and unmounted in `src/inbox/` while the rail simply never named
-    // it. Revision 10 points at it, so `feed` is now the only free view ref.
+    // INBOX re-left this list on 2026-08-14: its screen stays mounted and the
+    // top-bar bell points at it — a rail row and a bell would be two doors in
+    // the chrome for one destination.
     const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
     // The VIEW refs are gone; `channels` the view ref is not the same thing as
-    // `channel` the kind ref, which revision 6 put under the Workspace caret.
-    for (const gone of ['feed', 'channels']) expect(refs).not.toContain(gone);
-    expect(refs).toContain('inbox');
+    // `channel` the kind ref, which revision 11 put in the Chats group.
+    for (const gone of ['feed', 'channels', 'inbox']) expect(refs).not.toContain(gone);
     expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toContain('channel');
   });
 
@@ -129,14 +131,15 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(refs).toContain('messages');
   });
 
-  it('keeps depth at exactly ≤1 with Workspace as the one caret VIEW item', () => {
+  it('keeps depth at exactly ≤1 with Workspace and Code as the two caret VIEW items', () => {
     const carets = SHIPPED_DEFAULT_MENU.groups
       .flatMap((g) => g.items)
       .filter((item) => item.type === 'view' && (item.children?.length ?? 0) > 0);
-    expect(carets).toHaveLength(1);
-    expect(carets[0].ref).toBe('workspace');
-    for (const child of carets[0].type === 'view' ? (carets[0].children ?? []) : []) {
-      expect('children' in child).toBe(false);
+    expect(carets.map((c) => c.ref)).toEqual(['workspace', 'git']);
+    for (const caret of carets) {
+      for (const child of caret.type === 'view' ? (caret.children ?? []) : []) {
+        expect('children' in child).toBe(false);
+      }
     }
   });
 
@@ -159,7 +162,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(10);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(11);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });
