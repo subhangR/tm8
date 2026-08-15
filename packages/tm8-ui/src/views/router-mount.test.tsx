@@ -95,10 +95,13 @@ describe('URL → screen', () => {
   it('SEEDS THE SCREEN STACK from e/{id}?origin= — the shared-entity link', async () => {
     const target = createMemoryTarget(`#/s/${SPACE}/e/${TASK}?origin=tasks`);
     const view = mount(target);
-    /* Both halves of the landing: the Tasks screen is what renders, and THAT
-       entity is what it has open. Before the mount, the second half had no
-       consumer at all. */
-    await waitFor(() => view.getByTestId('entity-view'));
+    /* Both halves of the landing. Under ruling M1 the first half is the Z4 FULL
+       VIEW rather than the origin's kind screen — the address names one entity
+       and that is what it draws — and the second half is unchanged and still
+       load-bearing: the origin screen has THAT entity open, waiting behind the
+       full view, which is what makes collapse land on it rather than on a bare
+       list. Before the mount, the second half had no consumer at all. */
+    await waitFor(() => view.getByTestId('z4-host'));
     await waitFor(() =>
       expect(screenStackStore.getState().stacks[screenKeyOf.kind('task')]).toEqual([TASK]),
     );
@@ -178,11 +181,33 @@ describe('screen → URL', () => {
   });
 });
 
-describe('the entity a screen has open is part of the address', () => {
-  it('drilling in writes e/{id}?origin=, and pushes', async () => {
-    /* Before the mount this state lived only in `screenStackStore`: the address
-       bar said `k/tasks` however deep you had drilled, so it could not be
-       copied to share what was on screen and a reload came back to the list. */
+/**
+ * WHAT RULING M1 TOOK OUT OF THIS FILE, AND WHERE IT WENT.
+ *
+ * Two describes lived here: "the entity a screen has open is part of the
+ * address" (drilling in wrote `e/{id}?origin=`) and "R15 — a cold entry steps
+ * UP". Both were correct while `e/{id}` MEANT "the tasks screen with that task
+ * open". M1 rules that it means the Z4 FULL VIEW, and with that one change:
+ *
+ *  · writing that address on a row click would PROMOTE the click — the list
+ *    would vanish into a full-screen panel, contradicting D65 ("Z3 aside on row
+ *    click, Z4 full on promote") — and collapsing back would re-derive the
+ *    address from the still-open stack and bounce into Z4 again. So the sync is
+ *    one-way now; the case below pins that, because a deletion nothing asserts
+ *    is indistinguishable from a regression.
+ *  · the step UP is no longer a store diff observed here. It is the Z4
+ *    collapse, and `EntityFullView` computes the R15 verdict and hands it to
+ *    its host. Both discipline cases moved WHOLE to
+ *    `z4-entity-full-view.test.tsx` — including the one that matters most,
+ *    which is that the OTHER caller (promote) pushes from the same address.
+ *
+ * Sharing is unchanged: `CopyLinkControl` passes the open entity explicitly, so
+ * "copy a link to what I am reading" still emits `e/{id}?origin=tasks`. See
+ * `share-a-link.test.tsx`, which is the case that actually protects the
+ * requirement.
+ */
+describe('a kind screen’s selection is NOT written to the address (M1)', () => {
+  it('leaves the address alone when a row is opened', async () => {
     const target = createMemoryTarget(`#/s/${SPACE}/k/tasks`);
     const view = mount(target);
     await waitFor(() => view.getByTestId('entity-view'));
@@ -193,70 +218,25 @@ describe('the entity a screen has open is part of the address', () => {
     });
     await settle();
 
-    expect(target.getHash()).toBe(`#/s/${SPACE}/e/${TASK}?origin=tasks`);
-    expect(target.entries.length).toBe(before + 1);
+    /* Not a push, not a replace — no write at all. The viewer did not ask to
+       navigate, and under M1 that address would have taken them somewhere. */
+    expect(target.getHash()).toBe(`#/s/${SPACE}/k/tasks`);
+    expect(target.entries.length).toBe(before);
+    expect(view.getByTestId('entity-view')).toBeTruthy();
     view.unmount();
   });
 
   it('does not rewrite the address it just arrived at', async () => {
-    /* The seed and this sync are the same loop run in both directions, so an
-       inexact fixed point would have them pushing history at each other. */
+    /* The seed still runs on arrival (it prepares the companion), so this is
+       still the fixed point that matters: hydrating must not push history at
+       itself. */
     const hash = `#/s/${SPACE}/e/${TASK}?origin=tasks`;
     const target = createMemoryTarget(hash);
     const view = mount(target);
-    await waitFor(() => view.getByTestId('entity-view'));
+    await waitFor(() => view.getByTestId('z4-host'));
     await settle();
     expect(target.getHash()).toBe(hash);
     expect(target.entries.length).toBe(1);
-    view.unmount();
-  });
-});
-
-describe('R15 — a cold entry steps UP, and up is a replace', () => {
-  it('does not trap a pasted link in a two-item loop', async () => {
-    /* Depth 1: nothing is behind this entry, so `‹` cannot mean back and can
-       only mean up. If up PUSHED, back would return to the entity and there
-       would be no way out — on the exact path a shared link creates. */
-    const target = createMemoryTarget(`#/s/${SPACE}/e/${TASK}?origin=tasks`);
-    expect(target.entries.length).toBe(1);
-    const view = mount(target);
-    await waitFor(() => view.getByTestId('entity-view'));
-    await settle();
-
-    /* The store the Esc handler drives — up, one rung. */
-    await act(async () => {
-      screenStackStore.getState().pop(screenKeyOf.kind('task'));
-    });
-    await settle();
-
-    expect(target.getHash()).toBe(`#/s/${SPACE}/k/tasks`);
-    /* REPLACED, NOT PUSHED. The whole assertion. */
-    expect(target.entries.length).toBe(1);
-    expect(target.canGoBack()).toBe(false);
-    view.unmount();
-  });
-
-  it('spends the concession once — the next step up is an ordinary push', async () => {
-    const target = createMemoryTarget(`#/s/${SPACE}/e/${TASK}?origin=tasks`);
-    const view = mount(target);
-    await waitFor(() => view.getByTestId('entity-view'));
-    await act(async () => {
-      screenStackStore.getState().pop(screenKeyOf.kind('task'));
-    });
-    await settle();
-    const afterUp = target.entries.length;
-
-    await act(async () => {
-      screenStackStore.getState().open(screenKeyOf.kind('task'), TASK);
-    });
-    await settle();
-    await act(async () => {
-      screenStackStore.getState().pop(screenKeyOf.kind('task'));
-    });
-    await settle();
-
-    /* Two real navigations once a history exists, not two more replaces. */
-    expect(target.entries.length).toBe(afterUp + 2);
     view.unmount();
   });
 });

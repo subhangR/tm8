@@ -198,7 +198,9 @@ describe('a link to an entity that is gone', () => {
     const view = mount(target);
 
     await waitFor(() => view.getByTestId('entity-unavailable-refusal'));
-    expect(view.queryByTestId('entity-full-view-unbuilt')).toBeNull();
+    /* And the Z4 host is not drawn under it. The tombstone is STANDALONE
+       (§4.14): no companion, no collapsed left panel, nothing behind it. */
+    expect(view.queryByTestId('z4-host')).toBeNull();
   });
 
   it('recovers by REPLACING the broken URL, so Back cannot resurrect it', async () => {
