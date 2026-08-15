@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { Markdown } from '../kit';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
@@ -85,19 +85,51 @@ function ToolCard({
       ),
     [part.args, part.result, suppressEntityIds],
   );
+  /**
+   * THE CHIP IS THE CARD'S DISCLOSURE. It used to be a plain `<header>`: the
+   * most chip-shaped thing in the transcript, and the one thing in it that did
+   * nothing when pressed. Both payloads stay INDEPENDENTLY collapsible — the
+   * chip is a master toggle over them, not a replacement — so each `<details>`
+   * is controlled and reports its own native toggle back. Opening one from its
+   * own summary must not drag the other open, which is why this is two booleans
+   * and not one.
+   */
+  const [openArgs, setOpenArgs] = useState(false);
+  const [openResult, setOpenResult] = useState(false);
+  const expanded = openArgs || openResult;
+  const toggleAll = () => {
+    const next = !expanded;
+    setOpenArgs(next);
+    setOpenResult(next);
+  };
   return (
     <article className="tch-tool" data-state={part.state} data-testid="chat-tool-card">
-      <header className="tch-tool__head">
+      <button
+        type="button"
+        className="tch-tool__head"
+        aria-expanded={expanded}
+        onClick={toggleAll}
+        title={expanded ? 'Hide this call' : 'Show what this call sent and got back'}
+      >
         <span aria-hidden className="tch-tool__mark">⌁</span>
         <code>{part.name}</code>
         <span className="tch-tool__state">{toolStateLabel(part.state)}</span>
-      </header>
-      <details className="tch-tool__detail">
+      </button>
+      <details
+        className="tch-tool__detail"
+        open={openArgs}
+        onToggle={(event) => setOpenArgs(event.currentTarget.open)}
+      >
         <summary>Input</summary>
         <pre>{formatPayload(part.args)}</pre>
       </details>
       {part.result !== undefined ? (
-        <details className="tch-tool__detail" data-error={part.resultIsError || undefined}>
+        <details
+          className="tch-tool__detail"
+          data-error={part.resultIsError || undefined}
+          open={openResult}
+          onToggle={(event) => setOpenResult(event.currentTarget.open)}
+        >
           <summary>{part.resultIsError ? 'Error result' : 'Result'}</summary>
           <pre>{formatPayload(part.result)}</pre>
         </details>
