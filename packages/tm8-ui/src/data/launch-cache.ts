@@ -152,3 +152,35 @@ export function writeLaunchCache(
     // cannot act on.
   }
 }
+
+/**
+ * DROP EVERY SPACE'S CACHE FOR ONE NODE — what an explicit sign-out owes.
+ *
+ * The photograph above is taken of ONE viewer's spaces, and it outlived their
+ * pass: the rows are `team_member` and `interaction_profile` summaries, so the
+ * next person to sign in on this browser had the previous viewer's teammates
+ * and personas seeded into their launch pickers before the first authoritative
+ * read — including for a space the new viewer may not be in at all. The cache
+ * is keyed by node and space, never by account, so there was no key that could
+ * have kept them apart.
+ *
+ * Every space under the node goes, because sign-out does not know which spaces
+ * the pass reached. Other nodes are untouched, matching `clearLastPlace`.
+ */
+export function clearLaunchCache(nodeKey: string): void {
+  const store = storage();
+  if (!store) return;
+  try {
+    const prefix = `${KEY_PREFIX}.${nodeKey}.`;
+    // Snapshot the keys BEFORE removing any: `key(i)` walks a live index, and
+    // deleting mid-walk skips entries.
+    const doomed: string[] = [];
+    for (let i = 0; i < store.length; i += 1) {
+      const key = store.key(i);
+      if (key !== null && key.startsWith(prefix)) doomed.push(key);
+    }
+    for (const key of doomed) store.removeItem(key);
+  } catch {
+    // Storage refused. Nothing cached, nothing to forget.
+  }
+}

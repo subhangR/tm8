@@ -37,6 +37,7 @@ import type {
 } from '@tm8/contract';
 import { createHttpClient, type HttpClient } from '../data/real/http';
 import { readActiveServerId, routeBaseUrlFor } from '../servers/server-key';
+import { endSession } from './session-reset';
 import {
   KNOWN_ACCOUNTS_KEY,
   PASSES_STORAGE_KEY,
@@ -210,6 +211,12 @@ export async function verifyStoredSession(): Promise<SessionVerdict> {
       const current = readServerPass(serverId);
       if (current && current.token === pass.token) {
         clearServerPass(serverId);
+        // A pass that has stopped being anybody's ends a session just as
+        // surely as the button does, and the module-level stores must not
+        // survive it — see `session-reset.ts`. `expired`, so the address is
+        // left alone: the server ended this, the viewer did not ask, and
+        // signing back in should return them to the page they were reading.
+        endSession('expired');
         notify();
       }
       return { state: 'invalid' };
@@ -322,6 +329,13 @@ export async function signInToServer(
  * Exported standalone as well as through the hook because the coordinator's
  * mount may call it from a menu outside the gate's React tree. The
  * subscription below keeps both paths in sync.
+ *
+ * THE PASS WAS NEVER THE WHOLE SESSION, and for a long time this function
+ * behaved as though it were. `navStore` and `screenStackStore` are
+ * module-level, so clearing only the pass left the next viewer on this browser
+ * holding the last one's open panels and screen stacks. `endSession` is the one
+ * reset both ends of a session run; its module states what it forgets, what it
+ * keeps, and why the address goes with it here (D74).
  */
 export function signOutOfServer(): void {
   const { client, serverId } = clientForActiveServer();
@@ -333,6 +347,10 @@ export function signOutOfServer(): void {
       // The pass is gone locally regardless; a lost revoke expires server-side.
     });
     clearServerPass(serverId);
+    // BEFORE `notify`, deliberately: the notification is what swaps the gate
+    // back to its signed-out frame, and no render may run between the pass
+    // going and the state it authorised going with it.
+    endSession('signed-out');
   }
   notify();
 }

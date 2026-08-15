@@ -26,7 +26,8 @@ import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
 import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
 import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../stores/navStore';
-import { createBrowserTarget, type RouterTarget } from '../routes';
+import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../routes';
+import { forgetSpaceScopedPanels } from '../auth/session-reset';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { CopyLinkControl } from '../share';
 import { useShellKind } from '../mobile';
@@ -507,7 +508,7 @@ export function GateApp(props: GateAppProps = {}) {
    * meaningful and `setSpace` rewrites it correctly.
    */
   const resetAddress = useCallback(() => {
-    routerRef.current?.setHash('#/', { replace: true });
+    routerRef.current?.setHash(UNADDRESSED_HASH, { replace: true });
   }, []);
 
   /**
@@ -784,9 +785,13 @@ export function GateApp(props: GateAppProps = {}) {
    * read that effect first.
    */
   const leaveSpaceContext = useCallback(() => {
-    navStore.getState().applyNormalization({ stack: [], pinned: [] });
-    navStore.getState().setSession(null);
-    screenStackStore.getState().clearAll();
+    /* THE BODY MOVED, THE DISCIPLINE DID NOT. `forgetSpaceScopedPanels` is
+       these three lines, verbatim, in `auth/session-reset.ts` — because SIGN-OUT
+       is a fifth entry point into this same act and the natural home for its
+       reset is the module that knows a session ended. This function remains the
+       one path a space/server switch takes; it now shares its body with the one
+       path a session end takes, which is what stops the two from drifting. */
+    forgetSpaceScopedPanels();
     /* REPLACE, NOT `navigate`, AND THE MOUNT IS WHAT MAKES IT MATTER.
        This was `navigate({view:'workspace'})`, which is a PUSH. That was inert
        while nothing mirrored the store to the URL; with the router mounted it
