@@ -40,6 +40,7 @@ import type {
   EntitySummary,
   LiveWork,
   PullState,
+  TaskAssignment,
   Visibility,
   WorkStatus,
 } from '@tm8/contract';
@@ -556,6 +557,12 @@ export interface EntityRelations {
   attention: Map<string, EntityAttentionSummary>;
   /** `assigned_to` targets, per task. */
   assignees: Map<string, string[]>;
+  /** Current assignment edges with their actor/time provenance, per task. */
+  assignments: Map<string, Array<{
+    assigneeId: string;
+    assignedById: string | null;
+    assignedAt: string;
+  }>>;
   /**
    * `has_member` targets, per channel — the roster (080).
    *
@@ -604,6 +611,7 @@ export interface EntityMarks {
 const EMPTY_RELATIONS: EntityRelations = {
   attention: new Map(),
   assignees: new Map(),
+  assignments: new Map(),
   members: new Map(),
   childCounts: new Map(),
   blockedBy: new Map(),
@@ -631,6 +639,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   const relations: EntityRelations = {
     attention: new Map(),
     assignees: new Map(),
+    assignments: new Map(),
     members: new Map(),
     childCounts: new Map(),
     blockedBy: new Map(),
@@ -648,8 +657,10 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     type: string;
     props: Record<string, unknown>;
     created_at: Date | string;
+    assigned_by: string | null;
+    assigned_at: Date | string | null;
   }>(
-    `select id, src_id, dst_id, type, props, created_at
+    `select id, src_id, dst_id, type, props, created_at, assigned_by, assigned_at
        from public.edges
       where (src_id = any($1::uuid[]) and type in ('assigned_to', 'has_member', 'depends_on', 'based_on', 'copy_of', 'completed_by'))
          -- \`contains\` alone filters tombstoned members: itemCount must agree
@@ -709,7 +720,17 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   for (const edge of edgeRows) {
     switch (edge.type) {
       case 'assigned_to':
-        if (wanted.has(edge.src_id)) push(relations.assignees, edge.src_id, edge.dst_id);
+        if (wanted.has(edge.src_id)) {
+          push(relations.assignees, edge.src_id, edge.dst_id);
+          // 129 backfills assigned_at from the edge's creation time, so every
+          // current assignment has a timestamp even when its pre-129 assigner
+          // is unknowable (assigned_by = NULL).
+          push(relations.assignments, edge.src_id, {
+            assigneeId: edge.dst_id,
+            assignedById: edge.assigned_by,
+            assignedAt: iso(edge.assigned_at ?? edge.created_at),
+          });
+        }
         break;
       case 'has_member':
         if (wanted.has(edge.src_id)) push(relations.members, edge.src_id, edge.dst_id);
@@ -1171,6 +1192,13 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         axes: row.task_axes ?? {},
         dueDate: dateOnly(row.due_date),
         assignees: (ctx.relations.assignees.get(row.id) ?? []).map((id) => actorOf(ctx.actors, id)),
+        assignments: (ctx.relations.assignments.get(row.id) ?? []).map((assignment): TaskAssignment => ({
+          assignee: actorOf(ctx.actors, assignment.assigneeId),
+          assignedBy: assignment.assignedById === null
+            ? null
+            : actorOf(ctx.actors, assignment.assignedById),
+          assignedAt: assignment.assignedAt,
+        })),
         acceptance: acceptanceOf(row),
         completionGate: row.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
       };
@@ -1803,6 +1831,12 @@ export async function assembleSummaries(
     r.team_member_owner_id ?? '',
   ]);
   for (const list of relations.assignees.values()) actorIds.push(...list);
+  for (const list of relations.assignments.values()) {
+    for (const assignment of list) {
+      actorIds.push(assignment.assigneeId);
+      if (assignment.assignedById !== null) actorIds.push(assignment.assignedById);
+    }
+  }
   for (const list of relations.members.values()) actorIds.push(...list);
   for (const list of relations.pulls.values()) actorIds.push(...list.map((p) => p.actorId));
   for (const list of relations.workingOn.values()) actorIds.push(...list.map((w) => w.actorId));

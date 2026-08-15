@@ -315,6 +315,14 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     )`);
   }
 
+  if (f.assignedByIds && f.assignedByIds.length > 0) {
+    where.push(`exists (
+      select 1 from public.edges a
+       where a.src_id = e.id and a.type = 'assigned_to'
+         and a.assigned_by = any(${p.add(assertUuids(f.assignedByIds, 'assignedByIds'))}::uuid[])
+    )`);
+  }
+
   if (f.edge) {
     const { type, direction, entityId } = f.edge;
     const self = direction === 'outgoing' ? 'src_id' : 'dst_id';

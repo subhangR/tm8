@@ -115,9 +115,18 @@ export interface EntitySummary {
   badges: EntityBadges;
 }
 
+/** Provenance for one task's current `assigned_to` edge. */
+export interface TaskAssignment {
+  assignee: ActorSummary;
+  assignedBy: ActorSummary | null;
+  assignedAt: string;
+}
+
 export type CoreEntityState =
   | { kind: 'task'; workStatus: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; assignees: ActorSummary[];
+      /** Additive: absent on payloads produced before assignment provenance shipped. */
+      assignments?: TaskAssignment[];
       acceptance: { total: number; completed: number };
       /**
        * 082's opt-in completion gate, ADDITIVE and OPTIONAL. 'pr_merged'
@@ -542,6 +551,8 @@ export interface CollectionQuery {
      * task arm only, so a non-task row never matches.
      */
     priority?: ('low'|'medium'|'high'|'urgent')[];
+    /** Tasks with any current assignment performed by one of these actors. */
+    assignedByIds?: EntityId[];
     edge?: { type: string; direction: 'incoming'|'outgoing'; entityId: EntityId };
     readyToPull?: boolean; inReviewForActorId?: EntityId; mentionedActorId?: EntityId;
     /**
