@@ -80,16 +80,12 @@ describe('reorder', () => {
   });
 
   it('moves an item inside its group without touching siblings', () => {
-    // Home ships ONE item since revision 5, so the sibling-preserving move is
-    // asserted where there are siblings to preserve: the Tracking group
-    // (which leads with the Git view row since the Git UI wave).
-    const d = moveItem(startDraft(BASE), 'tracking', 0, 2);
-    const tracking = draftConfig(d).groups.find((g) => g.id === 'tracking');
-    // Tracking leads with the Git view row since the Git UI wave; moving
-    // index 0 to 2 still only touches the rows it passes. (The stale `files`
-    // expectation this pin carried was red on main — reconciled to the
-    // MEASURED shipped menu.)
-    expect(tracking?.items.map((i) => i.ref)).toEqual(['project', 'pull_request', 'git', 'worktree']);
+    // Revision 11: the multi-item groups are Chats (Channels · Messages) and
+    // Workspace (caret · File browser); the move is asserted where there are
+    // siblings to swap.
+    const d = moveItem(startDraft(BASE), 'chats', 0, 1);
+    const chats = draftConfig(d).groups.find((g) => g.id === 'chats');
+    expect(chats?.items.map((i) => i.ref)).toEqual(['messages', 'channel']);
   });
 
   it('an out-of-range index is a no-op, not a crash or a dropped row', () => {
@@ -118,9 +114,9 @@ describe('rename', () => {
 
 describe('remove', () => {
   it('removes an item', () => {
-    const d = removeItem(startDraft(BASE), 'tracking', 1);
-    const tracking = draftConfig(d).groups.find((g) => g.id === 'tracking');
-    expect(tracking?.items.map((i) => i.ref)).toEqual(['git', 'pull_request', 'worktree']);
+    const d = removeItem(startDraft(BASE), 'workspace', 1);
+    const workspace = draftConfig(d).groups.find((g) => g.id === 'workspace');
+    expect(workspace?.items.map((i) => i.ref)).toEqual(['workspace']);
   });
 
   it('removes a caret child without removing its parent', () => {
@@ -148,24 +144,22 @@ describe('add', () => {
     // of them out of the union, which is what "removed from the rail, not from
     // the app" has to look like from the editor's side.
     //
-    // INBOX LEFT THE FREE SET on 2026-08-13. Revision 10 points a rail row at
-    // it — its screen had been finished and unmounted all along — so the picker
-    // correctly stops offering it, and `messages` (the new ref, also placed)
-    // never enters the free set at all. Feed and Channels remain the two the
-    // editor can put back. Nothing here is hardcoded: `availableViewRefs` is
-    // VIEW_PRESENTATION minus what the draft already places, so this assertion
-    // moves whenever the shipped default does — which is the point of it.
-    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'channels']);
+    // INBOX REJOINED THE FREE SET on 2026-08-14 (revision 11): its rail row
+    // retired for the top-bar bell, and a free ref is exactly what "off the
+    // rail, not out of the app" looks like from the editor's side. Nothing
+    // here is hardcoded: `availableViewRefs` is VIEW_PRESENTATION minus what
+    // the draft already places, so this assertion moves whenever the shipped
+    // default does — which is the point of it.
+    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels']);
   });
 
   it('adds a freed view ref back onto the rail', () => {
     const d = addItem(startDraft(BASE), 'home', { type: 'view', ref: 'feed' });
     expect(draftIssue(d)).toBeNull();
     expect(draftConfig(d).groups.find((g) => g.id === 'home')?.items.map((i) => i.ref))
-      .toEqual(['dashboard', 'messages', 'inbox', 'feed']);
-    // And once used, it stops being on offer. Channels is the only ref left:
-    // Inbox was placed by revision 10, so Feed was the last free one besides it.
-    expect(availableViewRefs(d)).toEqual(['channels']);
+      .toEqual(['dashboard', 'feed']);
+    // And once used, it stops being on offer.
+    expect(availableViewRefs(d)).toEqual(['inbox', 'channels']);
   });
 
   it('offers only refs the rail can actually render, and never a duplicate', () => {
@@ -201,7 +195,8 @@ describe('add', () => {
     const loopIndex = workspace?.type === 'view'
       ? (workspace.children ?? []).findIndex((child) => child.ref === 'loop')
       : -1;
-    expect(loopIndex).toBe(7);
+    // Revision 11: `file` took the eighth slot, so Loop sits seventh.
+    expect(loopIndex).toBe(6);
     const withRoom = removeChild(startDraft(BASE), 'workspace', 0, loopIndex);
     expect(availableKindRefs(withRoom)).toContain('loop');
     const d = addChild(withRoom, 'workspace', 0, { type: 'kind', ref: 'loop' });
@@ -244,11 +239,11 @@ describe('capacity — the caps are the RAIL’s caps, cross-checked not copied'
   it('reports group and item capacity too', () => {
     const d = startDraft(BASE);
     expect(groupCapacity(d)).toEqual({ used: BASE.groups.length, max: MENU_CAPS.groups, full: false });
-    // Home carries three rows since revision 10 (Dashboard · Messages · Inbox).
-    // Derived from BASE rather than typed, so a future Home edit moves this
-    // assertion with it instead of turning it red for the wrong reason.
+    // Home is the single landing row since revision 11. Derived from BASE
+    // rather than typed, so a future Home edit moves this assertion with it
+    // instead of turning it red for the wrong reason.
     const homeItems = BASE.groups.find((g) => g.id === 'home')?.items.length ?? 0;
-    expect(homeItems).toBe(3);
+    expect(homeItems).toBe(1);
     expect(itemCapacity(d, 'home')).toEqual({ used: homeItems, max: MENU_CAPS.items, full: false });
   });
 

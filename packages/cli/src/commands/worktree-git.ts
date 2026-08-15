@@ -281,7 +281,7 @@ async function worktreeMerge(cmd: CommandContext): Promise<ExitCode> {
     `MERGE CONFLICT: ${fromRef} (${result.fromOid}) into ${resolved.branch} ` +
     `(worktree ${resolved.worktreeId}${resolved.sessionId ? `, session ${resolved.sessionId}` : ''}). ` +
     `The merge was ABORTED cleanly; the worktree is unchanged. Conflicted path(s):\n` +
-    result.conflictedPaths.map((p) => `- ${p}`).join('\n') +
+    result.conflictedPaths.map((p: string) => `- ${p}`).join('\n') +
     `\nResolve by merging manually in the worktree, or rebase the branch. Re-run: tm8 worktree merge ${id} --from ${fromRef}`;
   await postReceipt(cmd, anchorId, body);
   const attentionBody: Record<string, unknown> = {
@@ -297,7 +297,7 @@ async function worktreeMerge(cmd: CommandContext): Promise<ExitCode> {
 
   cmd.out.data({ worktreeId: resolved.worktreeId, ...result, surfacedOn: anchorId }, () =>
     `CONFLICT merging ${fromRef} into ${resolved.branch} — aborted cleanly, worktree unchanged.\n` +
-    `conflicted:\n${result.conflictedPaths.map((p) => `  ${p}`).join('\n')}\n` +
+    `conflicted:\n${result.conflictedPaths.map((p: string) => `  ${p}`).join('\n')}\n` +
     `surfaced: durable message + attention on ${anchorId}`);
   throw new CliError(
     `merge conflict: ${result.conflictedPaths.length} path(s); surfaced on ${anchorId}`,
