@@ -938,17 +938,46 @@ export function createFixtureSeam(): FixtureSeam {
    */
   function groupsFor(rows: EntitySummary[], input: CollectionQuery): { groups?: CollectionGroup[] } {
     const groupBy = input.groupBy;
-    if (groupBy !== 'workStatus') return {};
-    const byKey = new Map<string, EntitySummary[]>();
-    for (const row of pageOf(rows, input).items) {
-      if (row.state.kind !== 'task') continue;
-      const key = row.state.workStatus;
-      const bucket = byKey.get(key);
-      if (bucket) bucket.push(row);
-      else byKey.set(key, [row]);
+    if (groupBy !== 'workStatus' && groupBy !== 'priority' && groupBy !== 'assignee') return {};
+    /**
+     * The server's `groupItems` arms, mirrored (collections.ts): a
+     * multi-assignee task appears in EVERY assignee column, no assignee is
+     * the '' / "Unassigned" column, and status/priority labels stay raw keys
+     * here — canonical words and tones are presentation truth the board's
+     * own ColumnSpecs supply.
+     */
+    const keysOf = (row: EntitySummary): readonly (readonly [string, string])[] => {
+      if (row.state.kind !== 'task') return [];
+      if (groupBy === 'workStatus') return [[row.state.workStatus, row.state.workStatus]];
+      if (groupBy === 'priority') return [[row.state.priority, row.state.priority]];
+      const assignees = row.state.assignees;
+      if (assignees.length === 0) return [['', 'Unassigned']];
+      return assignees.map((a) => [a.id, a.displayName] as const);
+    };
+    /**
+     * `total` counts ALL filtered rows (the server's `groupTotals` CTE runs
+     * before LIMIT); `items` stay page-scoped. Off-page groups (total > 0,
+     * empty page slice) are kept for status/priority and dropped for
+     * assignee — the server appends empty groups for closed vocabularies
+     * only, never for the open actor axis.
+     */
+    const byKey = new Map<string, { label: string; items: EntitySummary[]; total: number }>();
+    const paged = new Set(pageOf(rows, input).items.map((r) => r.id));
+    for (const row of rows) {
+      for (const [key, label] of keysOf(row)) {
+        let bucket = byKey.get(key);
+        if (!bucket) {
+          bucket = { label, items: [], total: 0 };
+          byKey.set(key, bucket);
+        }
+        bucket.total += 1;
+        if (paged.has(row.id)) bucket.items.push(row);
+      }
     }
     return {
-      groups: [...byKey].map(([key, items]) => ({ key, label: key, items })),
+      groups: [...byKey]
+        .filter(([, g]) => groupBy !== 'assignee' || g.items.length > 0)
+        .map(([key, g]) => ({ key, label: g.label, items: g.items, total: g.total })),
     };
   }
 
@@ -1261,6 +1290,7 @@ export function createFixtureSeam(): FixtureSeam {
         if (subtree && !subtree.has(s.id)) return false;
         const f = input.filters;
         if (f?.workStatus && !(s.state.kind === 'task' && f.workStatus.includes(s.state.workStatus))) return false;
+        if (f?.priority && !(s.state.kind === 'task' && f.priority.includes(s.state.priority))) return false;
         if (f?.sessionStatus && !(s.state.kind === 'work_session'
           && f.sessionStatus.includes(s.state.status))) return false;
         if (f?.assigneeIds && !(s.state.kind === 'task'
@@ -2064,6 +2094,17 @@ export function createFixtureSeam(): FixtureSeam {
           if (s.state.kind === 'task' && 'dueDate' in patched) {
             const due = patched.dueDate;
             s.state.dueDate = typeof due === 'string' ? due : null;
+          }
+          /**
+           * Same crossing for `priority`: the node's `update_task_content`
+           * writes `tasks.priority` and `stateOf` projects it, so a fixture
+           * that banked it in content alone would let the board's priority
+           * drop report success while every fresh read said 'medium' — an
+           * optimistic move that could never settle NOR roll back.
+           */
+          if (s.state.kind === 'task' && 'priority' in patched) {
+            const p = patched.priority;
+            if (p === 'low' || p === 'medium' || p === 'high' || p === 'urgent') s.state.priority = p;
           }
         }
         touch(s);
