@@ -1393,7 +1393,35 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   :where(button, textarea, input):focus-visible { outline: 3px solid Highlight; }
 }
 
-/* --- live tool graph — the collapsible strip above a session feed ---------- */
+/* --- turn graph — the in-feed row that stands in for a turn's activity ----- */
+
+.chs-turn-graph {
+  list-style: none;
+  margin: var(--pn-space-2) var(--pn-space-4);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-paper);
+  overflow: hidden;
+}
+
+.chs-turn-graph__caption {
+  margin: 0;
+  padding: var(--pn-space-1) var(--pn-space-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+/* Compact: the row shares the strip's canvas but sits inside a transcript,
+   so it takes less height and is never sticky. The fresh-node animation is
+   inside `.chs-root`, whose reduced-motion rule above already stills it. */
+.chs-turn-graph .chs-livegraph__canvas {
+  height: 200px;
+  border-top: 0;
+}
+
+/* --- live graph strip — the collapsible whole-conversation strip ----------- */
 
 /* Sticky: the strip is the first child of a scrolling transcript, so without
    this it scrolls off the top and a live graph becomes invisible the moment
