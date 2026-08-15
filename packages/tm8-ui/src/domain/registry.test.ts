@@ -29,6 +29,7 @@ import {
   EDGES_NOT_HYDRATED_REASON,
   ADDITIONAL_PROJECTS_UNAVAILABLE_REASON,
   PROFILE_PINNED_CAPTION,
+  REASONS,
   describeProfile,
   profileRefusal,
   profileSelectable,
@@ -897,7 +898,6 @@ describe('the ActionRef registry (§2.5)', () => {
   it('gives every R7 deferred member a disabled-with-reason home (§4.2 table)', () => {
     const ids = deferredActions().map((a) => a.id);
     for (const ref of [
-      'graph-view',
       'undo',
       'version-history',
       'leaderboard',
@@ -913,6 +913,31 @@ describe('the ActionRef registry (§2.5)', () => {
       const verdict = resolveAction(ref).availability({ spaceId: 's' });
       expect(verdict.kind).toBe('disabled');
       if (verdict.kind === 'disabled') expect(verdict.reason.length).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * A DEFERRAL NOTICE MUST NOT OUTLIVE THE DEFERRAL (the principle recorded
+   * with #220, which retired the route-side half of this same drift).
+   *
+   * `graph-view` sat in the table above carrying "Graph view isn't available
+   * yet." long after `{ view: 'graph' }` became an addressable route and a
+   * live rail destination — so the palette's R7 discovery block rendered a
+   * disabled row for a screen the viewer could open from the row above it.
+   *
+   * The guard is by IDENTITY, not by reading a string: nothing in the shipped
+   * registry may name Graph as deferred again, and the reason key may not come
+   * back. The palette needs no assertion of its own — its discovery rows are
+   * derived from `deferredActions()`, so the row left when the entry did.
+   */
+  it('no longer carries a deferral for Graph — the feature shipped (#220 principle)', () => {
+    expect(allActions().map((a) => a.id)).not.toContain('graph-view');
+    expect(deferredActions().map((a) => a.id)).not.toContain('graph-view');
+    expect(Object.keys(REASONS)).not.toContain('graphDeferred');
+    // Nor under some other key: no authored copy anywhere in the honesty
+    // vocabulary may still call Graph unavailable.
+    for (const reason of Object.values(REASONS)) {
+      expect(reason.toLowerCase()).not.toContain('graph');
     }
   });
 

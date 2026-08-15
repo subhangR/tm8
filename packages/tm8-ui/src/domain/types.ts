@@ -355,7 +355,10 @@ export type ActionRef =
   // path for a lane, deferred until a forge WRITE client exists.
   | 'merge-pr'
   // R7 deferred discovery rows (§4.2 disposition table)
-  | 'graph-view'
+  //
+  // `graph-view` was a member here until 2026-08-15. Graph shipped as a route
+  // and a rail destination, never as a verb, so retiring its deferral removed
+  // the ref outright instead of promoting it — see `domain/actions.ts`.
   | 'undo'
   | 'version-history'
   | 'leaderboard'

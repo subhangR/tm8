@@ -56,7 +56,14 @@ export const REASONS = {
   handoffWithdrawDeferred:
     'Withdrawing a handoff is deferred: handoffs.withdraw is not in the stamped facade seam, and withdrawal is not reversible once it is.',
   // R7 deferred features (never hidden, never built)
-  graphDeferred: 'Graph view isn’t available yet.',
+  //
+  // `graphDeferred` RETIRED 2026-08-15. It read "Graph view isn't available
+  // yet." while `{ view: 'graph' }` was an addressable route, a live rail
+  // group and a live palette destination — so the palette rendered a disabled
+  // discovery row for a screen the row above it would happily open. The
+  // route-side half of this went with #220; this is its other half. The copy
+  // goes rather than being rewritten, because there is no longer anything for
+  // it to be honest ABOUT: a deferral notice must not outlive the deferral.
   undoDeferred: 'Undo isn’t available yet — actions in this build are not reversible.',
   versionHistoryDeferred: 'Version history isn’t available yet.',
   leaderboardDeferred: 'The leaderboard isn’t available yet.',
@@ -386,7 +393,14 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   },
 
   // R7 disposition table (LLD §4.2) — every deferred member has a home.
-  'graph-view': deferred('graph-view', 'Graph view', '◈', REASONS.graphDeferred),
+  //
+  // `graph-view` LEFT THIS TABLE on 2026-08-15, and it left the `ActionRef`
+  // union with it rather than becoming a live verb. Graph is reached the way
+  // every other screen is reached — through the navigation vocabulary
+  // (`{ view: 'graph' }`, the rail, the palette's view rows), not through a
+  // verb — so there was no live action underneath the deferral waiting to be
+  // uncovered. Keeping the ref as an available no-op would have traded a
+  // stale refusal for an enabled-inert affordance, which is the worse lie.
   undo: deferred('undo', 'Undo', '↶', REASONS.undoDeferred),
   'version-history': deferred('version-history', 'Version history', '⟲', REASONS.versionHistoryDeferred),
   leaderboard: deferred('leaderboard', 'Leaderboard', '☰', REASONS.leaderboardDeferred),

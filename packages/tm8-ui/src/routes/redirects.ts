@@ -18,13 +18,11 @@
  * A deferral notice that outlives the deferral is a lie the app tells with a
  * straight face, so it goes when the feature lands, not later.
  *
- * KNOWN REMAINING DRIFT, deliberately not fixed here: `REASONS.graphDeferred`
- * and the `graph-view` row in the R7 disposition table (`domain/actions.ts`)
- * still describe Graph as unavailable. That is the same staleness seen from the
- * ACTION vocabulary rather than the ROUTE one, and retiring it means editing the
- * `ActionRef` union and the disposition test that asserts every deferred member
- * has a home. It belongs to the actions lane, not this one, and is left standing
- * rather than half-removed.
+ * The drift this comment used to record as REMAINING — `REASONS.graphDeferred`
+ * and the `graph-view` row in the R7 disposition table — was closed on
+ * 2026-08-15 in the actions lane: the reason copy, the table row and the
+ * `ActionRef` member are all gone, so no vocabulary still calls Graph
+ * unavailable.
  */
 import type { SpaceId } from '@tm8/contract';
 

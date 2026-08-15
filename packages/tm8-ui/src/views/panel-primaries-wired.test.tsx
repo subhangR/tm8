@@ -244,7 +244,10 @@ describe('the dispatcher and the registry agree', () => {
     expect(merge.label.endsWith('…')).toBe(true);
     // The retired copy, gone from the reason table entirely.
     expect(Object.keys(REASONS)).not.toContain('mergePrDeferred');
-    expect(deferredActions().map((def) => def.ref)).not.toContain('merge-pr');
+    // `.id`, not `.ref`: `ActionDef` has no `ref`, so the original spelling
+    // mapped every entry to `undefined` and this line could never have
+    // failed — a retirement guard that was itself retired by a typo.
+    expect(deferredActions().map((def) => def.id)).not.toContain('merge-pr');
   });
 
   it('records which primaries survive only on the wiredActions refusal', () => {
