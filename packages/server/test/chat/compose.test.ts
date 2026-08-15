@@ -52,15 +52,28 @@ function fakeDb(workingDir?: string, trust = 'trusted'): Db {
 describe('chat launch composition', () => {
   it('prefers Claude native repo/web tools and keeps TM8-specific MCP tools', () => {
     expect(chatProviderToolPolicy('ask').availableTools).toEqual([
-      'Read', 'Glob', 'Grep', 'Bash', 'WebFetch', 'WebSearch',
+      'Read', 'Glob', 'Grep',
     ]);
-    expect(chatAllowedTools('ask')).toContain('Read(/**)');
+    expect(chatAllowedTools('ask')).toEqual([
+      'Read(/**)',
+      'mcp__tm8__tm8_read',
+      'mcp__tm8__session_transcript',
+    ]);
     expect(chatAllowedTools('ask')).not.toContain('Glob');
     expect(chatAllowedTools('ask')).not.toContain('Grep');
     expect(chatAllowedTools('ask')).not.toContain('mcp__tm8__repo_read_file');
     expect(chatAllowedTools('ask')).not.toContain('mcp__tm8__repo_write');
     expect(chatAllowedTools('plan')).toContain('mcp__tm8__doc_create');
     expect(chatProviderToolPolicy('plan').availableTools).toContain('TodoWrite');
+    expect(chatProviderToolPolicy('explain').availableTools).toEqual(['Read', 'Glob', 'Grep']);
+    expect(chatAllowedTools('explain')).toEqual([
+      'Read(/**)',
+      'mcp__tm8__tm8_read',
+      'mcp__tm8__session_transcript',
+      'mcp__tm8__doc_create',
+      'mcp__tm8__doc_update',
+      'mcp__tm8__artifact_create',
+    ]);
     expect(chatProviderToolPolicy('build').availableTools).toContain('Edit');
     expect(chatAllowedTools('build')).toContain('Edit(/**)');
     expect(chatAllowedTools('build')).not.toContain('Write(/**)');
@@ -74,7 +87,8 @@ describe('chat launch composition', () => {
   });
 
   it('puts the stored mode and its authority in the system prompt', () => {
-    expect(chatSystemPrompt(launch('ask'), true)).toContain('ASK is read-only');
+    expect(chatSystemPrompt(launch('ask'), true)).toContain('ASK is the minimal read-only mode');
+    expect(chatSystemPrompt(launch('explain'), true)).toContain('fenced mermaid block');
     expect(chatSystemPrompt(launch('plan'), true)).toContain('Approve → dispatch');
     expect(chatSystemPrompt(launch('build'), true)).toContain('edits are real');
     expect(chatSystemPrompt(launch('orchestrate'), false)).toContain('no repository');
@@ -135,7 +149,7 @@ describe('chat launch composition', () => {
     };
     expect(config.mcpServers.tm8.env.TM8_CHAT_PROJECT_ROOT).toBeUndefined();
     expect(resolved.systemPrompt).toContain('does not have exactly one trusted linked project');
-    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch']);
+    expect(resolved.availableTools).toEqual([]);
     expect(resolved.allowedTools).not.toContain('Read(/**)');
   });
 

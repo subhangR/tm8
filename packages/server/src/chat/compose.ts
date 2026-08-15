@@ -54,28 +54,30 @@ export interface ChatProviderToolPolicy {
  * duplicates to Claude wastes context and produces inconsistent behavior.
  * `repo_multi_edit` stays visible in Build because Claude has no atomic native
  * equivalent.
- * `Bash` is visible in code modes so Claude's own read-only classifier can use
- * it; it is deliberately not pre-approved. The adapter's `dontAsk` mode denies
- * every Bash call that would otherwise require an interactive approval.
+ * `Bash` is visible in Plan and Build so Claude's own read-only classifier can
+ * use it; it is deliberately not pre-approved. The adapter's `dontAsk` mode
+ * denies every Bash call that would otherwise require interactive approval.
  */
 export function chatProviderToolPolicy(mode: ChatMode, hasProject = true): ChatProviderToolPolicy {
-  const readTools = ['Read', 'Glob', 'Grep', 'Bash', 'WebFetch', 'WebSearch'] as const;
+  const minimalReadTools = ['Read', 'Glob', 'Grep'] as const;
+  const researchTools = [...minimalReadTools, 'Bash', 'WebFetch', 'WebSearch'] as const;
   const availableTools = mode === 'orchestrate'
     ? []
     : !hasProject
-      ? ['WebFetch', 'WebSearch', ...(mode === 'plan' || mode === 'build' ? ['TodoWrite'] : [])]
+      ? mode === 'plan' || mode === 'build' ? ['WebFetch', 'WebSearch', 'TodoWrite'] : []
     : mode === 'build'
-      ? [...readTools, 'Edit', 'Write', 'TodoWrite']
-      : mode === 'plan' ? [...readTools, 'TodoWrite'] : [...readTools];
+      ? [...researchTools, 'Edit', 'Write', 'TodoWrite']
+      : mode === 'plan' ? [...researchTools, 'TodoWrite'] : [...minimalReadTools];
   const nativeAllowed = mode === 'orchestrate'
     ? []
     : !hasProject
-      ? ['WebFetch', 'WebSearch', ...(mode === 'plan' || mode === 'build' ? ['TodoWrite'] : [])]
+      ? mode === 'plan' || mode === 'build' ? ['WebFetch', 'WebSearch', 'TodoWrite'] : []
     : [
         // Claude applies Read path rules to Read, Glob, Grep, and recognized
         // file-reading Bash commands. A leading single slash in a CLI rule is
         // anchored at the original cwd, not the host filesystem root.
-        'Read(/**)', 'WebFetch', 'WebSearch',
+        'Read(/**)',
+        ...(mode === 'plan' || mode === 'build' ? ['WebFetch', 'WebSearch'] : []),
         // Edit path rules cover both Edit and Write. A Write(path) rule is
         // accepted by the CLI but is not consulted and produces a warning.
         ...(mode === 'build' ? ['Edit(/**)', 'TodoWrite'] : []),
@@ -144,12 +146,16 @@ export function chatSystemPrompt(input: ChatLaunchConfigInput, hasProject: boole
     hasProject
       ? 'Claude’s native repository tools and tm8 git tools operate only inside this thread-owned checkout. Use project-relative paths.'
       : 'This Space does not have exactly one trusted linked project, so repository and local git tools will return project_unavailable.',
-    'Call tm8_overview when graph operation discovery is useful. Group tools return only their allowed sub-actions.',
+    'Group tools return only their allowed sub-actions. Use a group tool with no operation when its operation directory is needed.',
     'Your plain text reply IS your chat message to the human. Do not post a graph message merely to answer the current turn.',
   ];
   const variants: Record<ChatMode, readonly string[]> = {
     ask: [
-      'ASK is read-only: inspect the graph, repository, sessions, memory, git, and public web using Claude’s native read/web tools where available. Do not mutate anything.',
+      'ASK is the minimal read-only mode. Use only tm8_read, repository Read/Glob/Grep, and session_transcript. Do not mutate anything or use shell, web, git, memory, messaging, or delegation capabilities.',
+    ],
+    explain: [
+      'EXPLAIN turns graph, repository, and worker-session context into clear explanations. It may create or update docs and static-web artifacts, but it may not edit repository files, mutate tasks or messages, write memory, delegate work, or use shell, web, or git tools.',
+      'For durable flowcharts and diagrams, create a Markdown doc containing a fenced mermaid block. Use artifact_create when an interactive or richer static-web explanation materially helps. Keep artifacts self-contained and explanatory.',
     ],
     plan: [
       'PLAN may additionally use TodoWrite as a session scratchpad and create or update docs and artifacts. Turn the result into a durable plan artifact and finish with an explicit “Approve → dispatch” handoff. Do not edit code or dispatch work.',

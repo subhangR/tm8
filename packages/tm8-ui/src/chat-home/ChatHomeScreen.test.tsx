@@ -74,6 +74,36 @@ describe('Chat Home', () => {
     expect(view.getByText('Agent is working')).toBeTruthy();
   });
 
+  it('offers Explain and persists it in the write-once thread configuration', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const view = render(
+      <ChatHomeScreen
+        port={port}
+        spaceId={SPACE_ID}
+        models={MODELS}
+        newMutationId={(prefix) => `${prefix}:explain-test`}
+      />,
+    );
+
+    await waitFor(() => expect(view.getByRole('button', { name: /new/i })).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new/i }));
+    const mode = view.getByLabelText('Chat mode') as HTMLSelectElement;
+    expect(within(mode).getByRole('option', { name: 'Explain' })).toBeTruthy();
+    fireEvent.change(mode, { target: { value: 'explain' } });
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Explain the request flow with a diagram.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+
+    await waitFor(() => expect(controls.configs).toHaveLength(1));
+    expect(controls.configs[0]).toMatchObject({ mode: 'explain' });
+    await waitFor(() => {
+      expect((view.getByLabelText('Chat mode') as HTMLSelectElement).disabled).toBe(true);
+    });
+    expect((view.getByLabelText('Chat mode') as HTMLSelectElement).value).toBe('explain');
+    expect(view.getByText('pinned for this thread')).toBeTruthy();
+  });
+
   it('appends a streamed part by seq and settles on done', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);

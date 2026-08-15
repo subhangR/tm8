@@ -123,7 +123,7 @@ async function configure(identityId: string, authKind: 'browser' | 'agent', muta
         'gpt-5.6-sol',
         'openai',
         'codex',
-        'ask',
+        'explain',
         randomUUID(),
         `/tmp/tm8-chat-${rootMessageId}`,
         mutationId,
@@ -177,7 +177,7 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
         anchorId: fixture.anchorId,
         teammateId: fixture.teammateId,
         model: 'gpt-5.6-sol',
-        mode: 'ask',
+        mode: 'explain',
         lastReplyAt: null,
       },
     });
@@ -295,7 +295,7 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
           toolCallId: 'call-1',
           tool: 'repo_read_file',
           state: 'running',
-          mode: 'ask',
+          mode: 'explain',
         },
       },
       {
@@ -305,7 +305,7 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
           toolCallId: 'call-1',
           tool: 'repo_read_file',
           state: 'completed',
-          mode: 'ask',
+          mode: 'explain',
         },
       },
     ]);
@@ -322,7 +322,7 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
       anchorId: fixture.anchorId,
       teammateId: fixture.teammateId,
       model: 'gpt-5.6-sol',
-      mode: 'ask',
+      mode: 'explain',
     });
   });
 

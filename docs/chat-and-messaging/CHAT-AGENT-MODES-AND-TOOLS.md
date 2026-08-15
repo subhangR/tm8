@@ -20,9 +20,9 @@ project-controlled hook could execute in the Server process.
 
 Every fallback repository tool resolves a relative path against the clone,
 rejects `.git`, follows no symlink on writes, and applies byte/result caps. The
-same clone persists for the thread: Ask and Plan can read it and Build can edit
-it. Mode is sticky, so the checkout's authority does not change underneath an
-existing conversation. Its sanitized public remote is retained when one
+same clone persists for the thread: Ask, Explain and Plan can read it and Build
+can edit it. Mode is sticky, so the checkout's authority does not change
+underneath an existing conversation. Its sanitized public remote is retained when one
 exists; local paths and embedded credentials are never returned as a git
 remote.
 
@@ -62,17 +62,18 @@ Research was refreshed on 2026-08-14 against primary product documentation:
   selecting tools and instructions.
 
 Decision: adapters map tm8 modes to provider-native tools first. For the
-current Claude Code adapter, Ask and Plan see
-`Read/Glob/Grep/Bash/WebFetch/WebSearch` plus `TodoWrite` as its scratchpad;
-Build additionally sees `Edit/Write`; Orchestrate explicitly disallows every
-known Claude built-in because an empty `--tools` value is not a visibility
-restriction. The runtime always uses `dontAsk`. Read, search, fetch, and Build
-edits are pre-approved by the checkout-anchored `Edit(/**)` rule (which Claude
-also applies to `Write`); file reads, glob, and grep are scoped by the
-checkout-anchored `Read(/**)` rule. Bash is visible but not blanket-approved,
-so Claude's built-in read-only classifier can run safe inspection commands
-while anything that needs an interactive prompt fails closed. tm8 MCP remains primary for
-graph/session/docs/artifacts/memory and structured git/PR operations.
+current Claude Code adapter, Ask and Explain see only `Read/Glob/Grep`. Plan
+adds `Bash/WebFetch/WebSearch/TodoWrite`; Build additionally sees `Edit/Write`;
+Orchestrate explicitly disallows every known Claude built-in because an empty
+`--tools` value is not a visibility restriction. The runtime always uses
+`dontAsk`. File reads, glob, and grep are scoped by the checkout-anchored
+`Read(/**)` rule. Plan and Build web tools are pre-approved, and Build edits are
+pre-approved by the checkout-anchored `Edit(/**)` rule (which Claude also
+applies to `Write`). Bash is visible only in Plan and Build and is not blanket-
+approved, so Claude's built-in read-only classifier can run safe inspection
+commands while anything that needs an interactive prompt fails closed. tm8 MCP
+remains primary for graph/session/docs/artifacts/memory and structured git/PR
+operations.
 
 The MCP repo and web implementations remain registered as provider-neutral
 fallbacks for adapters without equivalent native tools. They are not shown
@@ -146,28 +147,38 @@ safe modal approval channel, so `ask` fails closed with
 `permission_required`; the assistant must ask the human to choose a mode or a
 deployment-specific approval path. `deny` is never overridable by the model.
 
-| Tool family | Ask | Plan | Build | Orchestrate |
-| --- | --- | --- | --- | --- |
-| Graph/entity reads | allow | allow | allow | allow |
-| Native repository read (`Read/Glob/Grep`, read-only `Bash`) | allow | allow | allow | deny |
-| Native `WebFetch/WebSearch` | allow | allow | allow | deny |
-| Native session scratchpad (`TodoWrite`) | deny | allow | allow | deny |
-| Session transcript/tail | allow | allow | allow | allow |
-| Git/PR reads | allow | allow | allow | allow |
-| Docs/artifact writes | deny | allow | allow | deny |
-| Memory write | deny | deny | allow | deny |
-| Graph messages/task mutations | deny | deny | allow | allow |
-| Delegate/follow-up/stop | deny | deny | allow | allow |
-| Native `Edit/Write` | deny | deny | allow | deny |
-| Mutating/exec `Bash` | deny | deny | ask (fails closed headlessly) | deny |
+| Tool family | Ask | Explain | Plan | Build | Orchestrate |
+| --- | --- | --- | --- | --- | --- |
+| `tm8_read` graph/entity reads | allow | allow | allow | allow | allow |
+| Other graph discovery/read groups | deny | deny | allow | allow | allow |
+| Native repository `Read/Glob/Grep` | allow | allow | allow | allow | deny |
+| Native read-only `Bash` | deny | deny | allow | allow | deny |
+| Native `WebFetch/WebSearch` | deny | deny | allow | allow | deny |
+| Native session scratchpad (`TodoWrite`) | deny | deny | allow | allow | deny |
+| Session transcript | allow | allow | allow | allow | allow |
+| Session live tail | deny | deny | allow | allow | allow |
+| Git/PR reads | deny | deny | allow | allow | allow |
+| Docs/artifact writes | deny | allow | allow | allow | deny |
+| Memory search | deny | deny | allow | allow | allow |
+| Memory write | deny | deny | deny | allow | deny |
+| Graph messages/task mutations | deny | deny | deny | allow | allow |
+| Delegate/follow-up/stop | deny | deny | deny | allow | allow |
+| Native `Edit/Write` | deny | deny | deny | allow | deny |
+| Mutating/exec `Bash` | deny | deny | deny | ask (fails closed headlessly) | deny |
 
-Ask is the default and has zero mutation paths. Plan's system prompt requires
-its final durable document to end with an explicit **Approve -> dispatch**
-handoff. Build authorizes direct edits. Orchestrate intentionally has no code
-or web tools: it supervises sessions and changes task/message state.
+Ask is the default, minimal, zero-mutation surface: `tm8_read`, native
+`Read/Glob/Grep`, and `session_transcript` are the only five effective tools in
+a project-backed Claude thread. Explain keeps those five and adds
+`doc_create`, `doc_update`, and `artifact_create`. It produces durable
+flowcharts and diagrams as Mermaid fences in Markdown docs, and uses static-web
+artifacts for richer or interactive explanations; it cannot edit code or
+mutate operational graph state. Plan's system prompt requires its final durable
+document to end with an explicit **Approve -> dispatch** handoff. Build
+authorizes direct edits. Orchestrate intentionally has no code or web tools: it
+supervises sessions and changes task/message state.
 
 Operation-level gates are required for existing hierarchical groups. For
-example, Ask may call `tm8_messages` for `messages.list` but not
+example, Plan may call `tm8_messages` for `messages.list` but not
 `messages.post`; Orchestrate may use task command operations but not arbitrary
 entity deletion. A top-level MCP allowlist alone cannot express this.
 

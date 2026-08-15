@@ -2,7 +2,7 @@ import type { ChatMode } from '@tm8/contract';
 
 export type ToolPermission = 'allow' | 'ask' | 'deny';
 
-export const CHAT_MODES: readonly ChatMode[] = ['ask', 'plan', 'build', 'orchestrate'];
+export const CHAT_MODES: readonly ChatMode[] = ['ask', 'explain', 'plan', 'build', 'orchestrate'];
 
 export const DIRECT_TOOL_NAMES = [
   'repo_read_file', 'repo_glob', 'repo_grep',
@@ -16,7 +16,11 @@ export const DIRECT_TOOL_NAMES = [
 
 export type DirectToolName = (typeof DIRECT_TOOL_NAMES)[number];
 
-const READ_TOOLS = new Set<string>([
+const MINIMAL_READ_TOOLS = new Set<string>([
+  'tm8_read', 'repo_read_file', 'repo_glob', 'repo_grep', 'session_transcript',
+]);
+
+const RESEARCH_READ_TOOLS = new Set<string>([
   'tm8_overview', 'tm8_read', 'repo_read_file', 'repo_glob', 'repo_grep',
   'session_transcript', 'session_tail', 'web_fetch', 'web_search',
   'memory_search', 'git_branch', 'git_status', 'git_diff', 'git_pr',
@@ -38,6 +42,11 @@ export function toolPermission(mode: ChatMode, tool: string, operation?: string)
   if (tool === 'repo_bash') return mode === 'build' ? 'ask' : 'deny';
   if (mode === 'build') return 'allow';
 
+  if (mode === 'ask') return MINIMAL_READ_TOOLS.has(tool) ? 'allow' : 'deny';
+  if (mode === 'explain') {
+    return MINIMAL_READ_TOOLS.has(tool) || PLAN_WRITES.has(tool) ? 'allow' : 'deny';
+  }
+
   if (tool === 'tm8_messages') {
     if (!operation) return 'allow';
     if (operation === 'messages.list' || operation === 'messages.delivery.get') return 'allow';
@@ -56,7 +65,7 @@ export function toolPermission(mode: ChatMode, tool: string, operation?: string)
     return tool === 'tm8_overview' || tool === 'tm8_read' || tool === 'memory_search' ? 'allow' : 'deny';
   }
 
-  if (READ_TOOLS.has(tool)) return 'allow';
+  if (RESEARCH_READ_TOOLS.has(tool)) return 'allow';
   if (mode === 'plan' && PLAN_WRITES.has(tool)) return 'allow';
   if (PLAN_WRITES.has(tool) || BUILD_ONLY.has(tool) || ORCHESTRATION.has(tool)) return 'deny';
   return 'deny';

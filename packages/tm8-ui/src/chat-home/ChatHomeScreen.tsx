@@ -802,6 +802,7 @@ function Selector({
           onChange={(event) => onMode(event.target.value as ChatMode)}
         >
           <option value="ask">Ask</option>
+          <option value="explain">Explain</option>
           <option value="plan">Plan</option>
           <option value="build">Build</option>
           <option value="orchestrate">Orchestrate</option>

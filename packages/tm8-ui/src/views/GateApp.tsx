@@ -10,7 +10,7 @@
  * state and the URL, the panels own anatomy. This file is composition only.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
+import type { ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
   MenuRail,
@@ -523,7 +523,7 @@ export function GateApp(props: GateAppProps = {}) {
     listThreads: async (sid: string) => (await data.seam.home(sid)).chatThreads ?? [],
     configureThread: async (input: {
       rootMessageId: string; teammateId: string; model: string;
-      mode: 'ask' | 'plan' | 'build' | 'orchestrate'; clientMutationId: string;
+      mode: ChatMode; clientMutationId: string;
     }) => {
       const result = await data.seam.commands.startChatThread(input);
       return {

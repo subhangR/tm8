@@ -1,5 +1,6 @@
 import {
   MessagePartSchema,
+  type ChatMode,
   type ChatTurnUsage,
   type MessagePart,
   type MessageView,
@@ -38,7 +39,7 @@ interface ClaimedTurn {
   readonly model: string;
   readonly provider: string;
   readonly agentTool: string;
-  readonly chatMode: 'ask' | 'plan' | 'build' | 'orchestrate';
+  readonly chatMode: ChatMode;
   readonly nativeSessionId: string;
   readonly cwd: string;
   readonly runtimeState: 'cold' | 'live' | 'stopped';

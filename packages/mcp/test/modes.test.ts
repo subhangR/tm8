@@ -12,12 +12,37 @@ describe('chat mode policy', () => {
   });
 
   it('keeps Ask mutation-free and Build edits real but bash approval-gated', () => {
+    expect(exposedToolNames('ask', MCP_TOOL_NAMES)).toEqual([
+      'tm8_read', 'repo_read_file', 'repo_glob', 'repo_grep', 'session_transcript',
+    ]);
     expect(toolPermission('ask', 'repo_read_file')).toBe('allow');
+    expect(toolPermission('ask', 'tm8_read')).toBe('allow');
+    expect(toolPermission('ask', 'session_transcript')).toBe('allow');
+    expect(toolPermission('ask', 'tm8_overview')).toBe('deny');
+    expect(toolPermission('ask', 'session_tail')).toBe('deny');
+    expect(toolPermission('ask', 'web_search')).toBe('deny');
+    expect(toolPermission('ask', 'git_diff')).toBe('deny');
     expect(toolPermission('ask', 'repo_write')).toBe('deny');
     expect(toolPermission('ask', 'tm8_messages', 'messages.post')).toBe('deny');
     expect(toolPermission('build', 'repo_write')).toBe('allow');
     expect(toolPermission('build', 'repo_bash')).toBe('ask');
     expect(exposedToolNames('build', MCP_TOOL_NAMES)).not.toContain('repo_bash');
+  });
+
+  it('keeps Explain focused on reads and explanatory artifacts', () => {
+    expect(exposedToolNames('explain', MCP_TOOL_NAMES)).toEqual([
+      'tm8_read', 'repo_read_file', 'repo_glob', 'repo_grep',
+      'session_transcript', 'doc_create', 'doc_update', 'artifact_create',
+    ]);
+    expect(toolPermission('explain', 'tm8_read')).toBe('allow');
+    expect(toolPermission('explain', 'repo_grep')).toBe('allow');
+    expect(toolPermission('explain', 'session_transcript')).toBe('allow');
+    expect(toolPermission('explain', 'doc_create')).toBe('allow');
+    expect(toolPermission('explain', 'doc_update')).toBe('allow');
+    expect(toolPermission('explain', 'artifact_create')).toBe('allow');
+    expect(toolPermission('explain', 'repo_edit')).toBe('deny');
+    expect(toolPermission('explain', 'web_search')).toBe('deny');
+    expect(toolPermission('explain', 'tm8_messages', 'messages.post')).toBe('deny');
   });
 
   it('narrows hierarchical operations in Orchestrate', () => {
