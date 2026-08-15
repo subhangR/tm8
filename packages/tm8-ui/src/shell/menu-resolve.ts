@@ -14,8 +14,9 @@
  * names no kinds: this resolver, and the view-ref presentation table. The split
  * is data vs. rail behavior.
  */
-import type { MenuConfig, MenuViewRef } from '@tm8/contract';
+import type { MenuConfig, MenuGroup, MenuViewRef } from '@tm8/contract';
 import { SHIPPED_DEFAULT_MENU, VIEW_ART, unrenderableKindRefs, type KindArt } from '../domain';
+import type { MenuTarget } from './MenuRail';
 
 // ---------------------------------------------------------------------------
 // Fail-closed resolution
@@ -155,6 +156,65 @@ export function resolveMenu(raw: MenuConfig | null | undefined, error?: unknown)
   }
 
   return { config: raw, origin: { source: 'server', revision: raw.revision } };
+}
+
+// ---------------------------------------------------------------------------
+// Tab derivation (five-tab ruling R2, 2026-08-15): the menu's GROUPS are the
+// top-level tabs, and the rail renders only the active group's contents.
+// Structural walks over the config — no view or kind literal appears here.
+// ---------------------------------------------------------------------------
+
+/**
+ * The group that owns a target: its items (and caret children) name the
+ * target's ref. Entity targets match through the entity's KIND — a channel
+ * entity belongs to the group carrying the channel collection row. Null when
+ * no group claims the target (e.g. the Inbox view, whose door is the bell,
+ * not a tab) — the honest answer is "no tab is current", never a guess.
+ */
+export function groupIdOfTarget(config: MenuConfig, target: MenuTarget | null | undefined): string | null {
+  if (!target) return null;
+  const wanted =
+    target.type === 'entity' ? { type: 'kind' as const, ref: target.kind } : { type: target.type, ref: target.ref };
+  for (const group of config.groups) {
+    for (const item of group.items) {
+      if (item.type === wanted.type && item.ref === wanted.ref) return group.id;
+      const children = item.type === 'view' ? (item.children ?? []) : [];
+      for (const child of children) {
+        if (child.type === wanted.type && child.ref === wanted.ref) return group.id;
+      }
+    }
+  }
+  return null;
+}
+
+/** Where clicking a tab lands: the group's FIRST item, as a nav target. */
+export function primaryTargetOfGroup(group: MenuGroup): MenuTarget | null {
+  const first = group.items[0];
+  return first ? ({ type: first.type, ref: first.ref } as MenuTarget) : null;
+}
+
+/**
+ * The full-bleed screens: a tab landing on one of these draws NO rail (R2:
+ * "Graph and Settings have no rail"; the Files explorer has the same
+ * full-screen posture). View refs are shell's own territory — the same
+ * jurisdiction VIEW_PRESENTATION claims. `dashboard` (Home) is deliberately
+ * NOT here: its rail is the conversation list of the Home redesign.
+ */
+const RAILLESS_VIEW_REFS: ReadonlySet<MenuViewRef> = new Set<MenuViewRef>(['graph', 'settings', 'files']);
+
+/**
+ * A group draws no rail when its whole content is a single childless
+ * full-bleed view — a rail there could only repeat its own tab. A group with
+ * real rows (Work, Channels) always draws one.
+ */
+export function isRaillessGroup(group: MenuGroup): boolean {
+  if (group.items.length !== 1) return false;
+  const only = group.items[0]!;
+  return (
+    only.type === 'view' &&
+    (only.children?.length ?? 0) === 0 &&
+    RAILLESS_VIEW_REFS.has(only.ref)
+  );
 }
 
 function describeError(error: unknown): string {

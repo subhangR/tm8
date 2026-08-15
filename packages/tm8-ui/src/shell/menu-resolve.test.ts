@@ -18,18 +18,16 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine — the revision-11 intent clusters', () => {
+  it('encodes the shipped group spine — the revision-12 tab row', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       'Home',
-      // Revision 11 (2026-08-14, single-home ruling): Chats clusters the
-      // conversation surfaces; live voice rooms hang beneath it via the
-      // dynamic group, so the items-empty Voice label retired. Library folded
-      // into Workspace; Tracking became the Code caret; Collab's member row
-      // left for the palette and the kind switcher.
-      'Chats',
-      'Workspace',
-      'Code',
+      // Revision 12 (2026-08-15, five-tab ruling + Files amendment): the
+      // groups are the top-level tabs. Code retired into Work (R3);
+      // Chats renamed Channels (R4); the File browser became its own tab.
+      'Work',
       'Graph',
+      'Channels',
+      'Files',
       'Settings',
     ]);
   });
@@ -46,11 +44,13 @@ describe('the shipped default menu', () => {
     expect(children).toHaveLength(8);
   });
 
-  it('carries exactly two caret items — Workspace and Code — depth exactly ≤1', () => {
+  it('carries exactly one caret item — Workspace — depth exactly ≤1', () => {
+    // Revision 12: the Code caret retired with its group (R3); the git view
+    // is a plain childless Work row now (D1).
     const withChildren = SHIPPED_DEFAULT_MENU.groups
       .flatMap((g) => g.items)
       .filter((item) => item.type === 'view' && (item.children?.length ?? 0) > 0);
-    expect(withChildren.map((item) => item.ref)).toEqual(['workspace', 'git']);
+    expect(withChildren.map((item) => item.ref)).toEqual(['workspace']);
   });
 
   it('omits deferred features entirely (R7-5: never rows in the shipped config)', () => {

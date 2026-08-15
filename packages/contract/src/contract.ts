@@ -1957,28 +1957,53 @@ export const DEFAULT_MENU_WORKSPACE_KIND_SPINE = [
 ] as const satisfies readonly MenuKindRef[];
 
 /**
- * The ordered rows in the default Chats group (single-home ruling, 2026-08-14):
- * the conversation surfaces, clustered — the channel collection and the
- * cross-entity Messages browser. Live voice rooms are appended beneath them at
- * runtime (GateApp's dynamic group), exactly as the old Voice group worked.
+ * The ordered rows in the default Channels group (five-tab ruling R2/R4,
+ * 2026-08-15; formerly the Chats group of the single-home ruling): the
+ * conversation surfaces, clustered — the channel collection and the
+ * cross-entity Messages browser (D2: `messages` moved here rather than dying
+ * with the retired `chats` group). Live voice rooms are appended beneath them
+ * at runtime (GateApp's dynamic group), exactly as the old Voice group worked.
  * Same twin-joining job as the other spines: the server seeder and the client
  * fallback each prove their copy against this list.
  */
-export const DEFAULT_MENU_CHATS_SPINE = [
+export const DEFAULT_MENU_CHANNELS_SPINE = [
   { type: 'kind', ref: 'channel' },
   { type: 'view', ref: 'messages' },
 ] as const satisfies readonly MenuItem[];
 
 /**
- * The ordered caret children beneath the default Code row (the `git` view).
- * The dev-tracking collections live under one caret rather than as four
- * always-visible rows — the same trim the Workspace caret already made.
+ * The three dev-tracking collections. R3 (2026-08-15): "code is not a
+ * top-level anything" — the `code` group is retired and these become ordinary
+ * Work rows beside the Workspace caret, with the `git` view surviving as a
+ * plain Work row too (D1). The constant keeps its name because the pre-125
+ * defaults in persisted Space menus still carry it as the Code caret and the
+ * upgrade migrations characterize against that shape.
  */
 export const DEFAULT_MENU_CODE_KIND_SPINE = [
   'project',
   'pull_request',
   'worktree',
 ] as const satisfies readonly MenuKindRef[];
+
+/**
+ * The ordered items of the default Work group under the five-tab ruling
+ * (R2/R3/D1, 2026-08-15): the Workspace caret with its eight kinds, then the
+ * three dev collections as ordinary rows and the git topology view as a plain
+ * row. No `files` view here — the File browser is its own TAB (user
+ * amendment, same day) and menu refs are globally unique, so the row cannot
+ * also live in Work; the `file` KIND stays in the Workspace caret (owner
+ * ruling R9's two doors, now on two tabs). One list so the seeder (migration
+ * 125) and the client fallback prove the whole group against a single truth.
+ */
+export const DEFAULT_MENU_WORK_ITEM_SPINE = [
+  {
+    type: 'view',
+    ref: 'workspace',
+    children: DEFAULT_MENU_WORKSPACE_KIND_SPINE.map((ref) => ({ type: 'kind' as const, ref })),
+  },
+  ...DEFAULT_MENU_CODE_KIND_SPINE.map((ref) => ({ type: 'kind' as const, ref })),
+  { type: 'view', ref: 'git' },
+] satisfies readonly MenuItem[];
 
 /**
  * The ordered rows in the default Library group.
@@ -2022,20 +2047,25 @@ export const DEFAULT_MENU_LIBRARY_SPINE = [
  * Additive export only: no schema, operation, or DTO changes ride on it.
  */
 export const DEFAULT_MENU_GROUP_SPINE = [
-  // 2026-08-14 (single-home ruling): the rail reorganized around INTENTS
-  // rather than kinds — six groups, ~8 always-visible rows. Home is the merged
-  // chat-first landing; Chats clusters the conversation surfaces (channel
-  // collection + Messages + live voice rows via the dynamic group, retiring the
-  // items-empty `voice` group); Workspace absorbs the Library rows behind its
-  // caret; Code is the old Tracking group behind the git row's caret; `collab`
-  // (the `member` row) left the shipped rail for the palette and the kind
-  // switcher. Inbox left the rail for the top-bar bell. Nothing was deleted:
-  // every ref keeps its route, its chord and its menu-editor eligibility.
+  // 2026-08-15 (five-tab ruling R2, plus the same-day Files amendment): the
+  // groups ARE the top-level tabs —
+  //   home | work | graph | channels | files | settings
+  // drawn in the top row by the shell; the rail renders only the ACTIVE
+  // group's contents. R3 retired the `code` group: project / pull_request /
+  // worktree became ordinary Work rows and the git view survives as a plain
+  // Work row (D1). R4 renamed `chats` to `channels` — Home is the chat view,
+  // Channels is the channel kind's own tab (`messages` rides with it, D2).
+  // The File browser view is its own tab (user amendment) — it left Work
+  // because menu refs are globally unique. Nothing was deleted: every ref
+  // keeps its route, its chord and its menu-editor eligibility.
+  //
+  // (The pre-125 rail history — six intent clusters, Chats group, Code caret —
+  // is characterized by migrations 122-124 and their parity tests.)
   { serverId: 'home', clientId: 'home' },
-  { serverId: 'chats', clientId: 'chats' },
   { serverId: 'work', clientId: 'workspace' },
-  { serverId: 'code', clientId: 'code' },
   { serverId: 'graph', clientId: 'graph' },
+  { serverId: 'channels', clientId: 'channels' },
+  { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },
 ] as const;
 

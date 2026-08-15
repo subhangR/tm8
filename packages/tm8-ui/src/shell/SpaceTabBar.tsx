@@ -1,13 +1,25 @@
 /**
- * SpaceTabBar — the compact top bar: product mark, inbox bell, palette hint,
- * copy-link slot, account avatar.
+ * SpaceTabBar — the top row: product mark, the server⋄space switcher slot,
+ * the top-level TABS, inbox bell, palette hint, copy-link slot, account
+ * avatar.
+ *
+ * REVISION 12 (five-tab ruling R1/R2, 2026-08-15): the identity block moved
+ * HERE from the rail head, and the menu's GROUPS render as top-level tabs —
+ * home | work | graph | channels | files | settings. The single-home rule
+ * survives with a new address: identity is still ONE control (`switcherSlot`,
+ * occupied by `SpaceSwitcher`), never a server chip beside a space list — the
+ * old read-only server label is NOT restored. The rail below stops listing
+ * groups and renders only the active tab's contents.
+ *
+ * The tabs are DATA-DRIVEN from the resolved MenuConfig's groups (the host
+ * maps them); this component hardcodes no tab names. `tabs` absent renders no
+ * tablist, so a bar without a host keeps the r11 product-bar shape.
  *
  * REVISION 11 (single-home ruling, 2026-08-14): the server chip and the space
- * tablist LEFT THIS BAR. A (server, space) pair is one fact — the context you
- * stand in — and it now has one home: the rail's identity block
- * (`SpaceSwitcher`), which also absorbed the add-space affordance. The name
- * `SpaceTabBar` survives for continuity of tests and imports; what remains is
- * the product bar.
+ * tablist left this bar for the rail's identity block. R1 moves that block
+ * into the bar — the ruling's ONE-home invariant holds; only the address
+ * changed. The name `SpaceTabBar` survives for continuity of tests and
+ * imports.
  *
  * THE BELL is Inbox's new door. Inbox left the menu rail because its rows
  * already feed the Home page's NEEDS YOU / MENTIONS sections — a rail row, a
@@ -27,7 +39,28 @@
 import type { ReactNode } from 'react';
 import { BrandMark } from '../kit';
 
+/** One top-level tab — a menu GROUP, mapped by the host. */
+export interface ShellTab {
+  id: string;
+  label: string;
+}
+
 export interface SpaceTabBarProps {
+  /**
+   * The identity block — `SpaceSwitcher`, mounted by the host (R1). A slot
+   * for the same reason `accountSlot` is one: the bar has no business knowing
+   * how servers are listed or what a space switch resets. Left undefined the
+   * bar simply has no identity control, which is every pre-R1 test.
+   */
+  switcherSlot?: ReactNode;
+  /**
+   * The top-level tabs, derived from the resolved menu config's groups (R2).
+   * Data, not chrome: the bar never invents a tab. Absent → no tablist.
+   */
+  tabs?: readonly ShellTab[];
+  /** Which tab reads as current — the group owning the active target. */
+  activeTabId?: string | null;
+  onSelectTab?(id: string): void;
   /** Opens the Inbox screen — the bell. Absent, the bell renders disabled. */
   onOpenInbox?(): void;
   /** Account menu — theme's home per D1. */
@@ -66,6 +99,28 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
       <div className="shell-tabbar__mark" aria-label="tm8">
         <BrandMark /> tm8
       </div>
+
+      {props.switcherSlot ?? null}
+
+      {props.tabs && props.tabs.length > 0 ? (
+        <nav className="shell-tabbar__tabs" role="tablist" aria-label="Screens">
+          {props.tabs.map((tab) => {
+            const active = tab.id === props.activeTabId;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`shell-tabbar__tab ${active ? 'shell-tabbar__tab--active' : ''}`}
+                onClick={() => props.onSelectTab?.(tab.id)}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      ) : null}
 
       <div className="shell-tabbar__spacer" />
 

@@ -57,11 +57,15 @@ beforeEach(() => {
 
 async function openTasksScreen() {
   const view = render(<GateApp />);
-  /* Revision 11: Tasks rides the closed Workspace caret. Cases that remount
-     mid-test boot straight onto `k/tasks` from the address (R3), so the rail
-     click is skipped when the screen is already there. */
-  await waitFor(() => view.getByTestId('menu-rail'));
+  /* Revision 12: Tasks rides the closed Workspace caret ON THE WORK TAB —
+     the rail renders only the active tab's contents, so the walk is
+     tab → caret → leaf, the way a person now reaches it. Cases that remount
+     mid-test boot straight onto `k/tasks` from the address (R3), so the walk
+     is skipped when the screen is already there. */
+  await waitFor(() => view.getByTestId('space-tab-bar'));
   if (!view.queryByTestId('entity-view')) {
+    fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
+    await waitFor(() => view.getByTestId('menu-rail'));
     const rail = within(view.getByTestId('menu-rail'));
     const caret = rail.queryByLabelText('Expand Workspace');
     if (caret) fireEvent.click(caret);
@@ -271,9 +275,13 @@ describe('the menu rail', () => {
   it('opens EXPANDED (r11), and collapsing keeps every destination reachable', async () => {
     const view = render(<GateApp />);
     await waitFor(() => view.getByTestId('home-page'));
+    /* Revision 12: the rail is the ACTIVE TAB's contents, so the Workspace
+       caret and its leaves live on the Work tab now. */
+    fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
+    await waitFor(() => view.getByTestId('menu-rail'));
     const rail = view.getByTestId('menu-rail');
     /* Revision 11 flipped the default back to expanded: the redesigned rail is
-       ~8 rows plus the identity block, so first paint shows the whole map. */
+       a handful of rows, so first paint shows the whole map. */
     expect(rail.dataset.collapsed).toBe('false');
 
     fireEvent.click(view.getByRole('button', { name: 'Collapse menu rail' }));

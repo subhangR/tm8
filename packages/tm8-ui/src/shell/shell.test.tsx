@@ -77,25 +77,25 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
    * use it — so this asserts the mechanism still works AND that no channel row
    * or Channels header rides along on the shipped default.
    */
-  it('appends dynamic voice rows beneath the Chats cluster (revision 11)', () => {
+  it('appends dynamic voice rows beneath the Channels cluster (revision 12)', () => {
     const onNavigate = vi.fn();
     const { container, getByText } = renderRail({
       onNavigate,
       dynamicGroups: {
-        chats: {
+        channels: {
           items: [{ id: 'vc-studio', kind: 'voice_channel', label: 'studio', icon: '\u266a', live: 2 }],
         },
       },
     });
 
-    const chats = [...container.querySelectorAll('.shell-rail__group')].find(
-      (group) => group.getAttribute('aria-label') === 'Chats',
+    const channels = [...container.querySelectorAll('.shell-rail__group')].find(
+      (group) => group.getAttribute('aria-label') === 'Channels',
     ) as HTMLElement;
-    expect(chats).toBeDefined();
+    expect(channels).toBeDefined();
     // Authored conversation rows stay \u2014 the dynamic rows APPEND, never replace.
-    expect(within(chats).getByText('Channels')).toBeTruthy();
-    expect(within(chats).getByText('Messages')).toBeTruthy();
-    expect(chats.querySelectorAll('[data-entity-id]')).toHaveLength(1);
+    expect(within(channels).getByText('Channels')).toBeTruthy();
+    expect(within(channels).getByText('Messages')).toBeTruthy();
+    expect(channels.querySelectorAll('[data-entity-id]')).toHaveLength(1);
 
     fireEvent.click(getByText('studio'));
     expect(onNavigate).toHaveBeenCalledWith({ type: 'entity', ref: 'vc-studio', kind: 'voice_channel' });
@@ -154,17 +154,23 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     ]);
   });
 
-  it('gives Code its own caret carrying the dev collections (revision 11)', () => {
-    const { container, getByLabelText, queryByText } = renderRail();
-    expect(queryByText('Pull requests')).toBeNull();
-    fireEvent.click(getByLabelText('Expand Code'));
-    const code = [...container.querySelectorAll('.shell-rail__group')].find(
-      (group) => group.getAttribute('aria-label') === 'Code',
-    );
-    const leaves = [...(code?.querySelectorAll('.shell-rail__leaf') ?? [])];
-    expect(leaves.map((row) => row.querySelector('.shell-rail__label')?.textContent)).toEqual([
-      'Projects', 'Pull requests', 'Worktrees',
+  it('renders the dev collections as ordinary Work rows with the git view beneath (revision 12, R3/D1)', () => {
+    // The Code caret retired with its group: no caret hides these three, and
+    // the git topology view survives as a plain navigating row.
+    const onNavigate = vi.fn();
+    const { container, getByText, queryByLabelText } = renderRail({ onNavigate });
+    expect(queryByLabelText('Expand Code')).toBeNull();
+    const work = [...container.querySelectorAll('.shell-rail__group')].find(
+      (group) => group.getAttribute('aria-label') === 'Work',
+    ) as HTMLElement;
+    const rows = [...work.querySelectorAll('.shell-rail__row')];
+    expect(rows.map((row) => row.querySelector('.shell-rail__label')?.textContent)).toEqual([
+      'Workspace', 'Projects', 'Pull requests', 'Worktrees', 'Code',
     ]);
+    fireEvent.click(within(work).getByText('Pull requests'));
+    expect(onNavigate).toHaveBeenCalledWith({ type: 'kind', ref: 'pull_request' });
+    fireEvent.click(within(work).getByText('Code'));
+    expect(onNavigate).toHaveBeenCalledWith({ type: 'view', ref: 'git' });
   });
 
   it('marks the active target with aria-current, and only that one', () => {

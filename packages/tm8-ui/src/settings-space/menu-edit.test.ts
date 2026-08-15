@@ -80,12 +80,12 @@ describe('reorder', () => {
   });
 
   it('moves an item inside its group without touching siblings', () => {
-    // Revision 11: the multi-item groups are Chats (Channels · Messages) and
-    // Workspace (caret · File browser); the move is asserted where there are
+    // Revision 12: the multi-item groups are Channels (Channels · Messages)
+    // and Work (caret · dev rows · git); the move is asserted where there are
     // siblings to swap.
-    const d = moveItem(startDraft(BASE), 'chats', 0, 1);
-    const chats = draftConfig(d).groups.find((g) => g.id === 'chats');
-    expect(chats?.items.map((i) => i.ref)).toEqual(['messages', 'channel']);
+    const d = moveItem(startDraft(BASE), 'channels', 0, 1);
+    const channels = draftConfig(d).groups.find((g) => g.id === 'channels');
+    expect(channels?.items.map((i) => i.ref)).toEqual(['messages', 'channel']);
   });
 
   it('an out-of-range index is a no-op, not a crash or a dropped row', () => {
@@ -101,7 +101,8 @@ describe('rename', () => {
     const d = renameGroup(startDraft(BASE), 'workspace', 'LIBRARY');
     const g = draftConfig(d).groups.find((x) => x.id === 'workspace');
     expect(g?.label).toBe('LIBRARY');
-    expect(g?.items).toHaveLength(2);
+    // Revision 12: caret · project · pull_request · worktree · git.
+    expect(g?.items).toHaveLength(5);
   });
 
   it('an empty label is REFUSED by the validator, not silently coerced', () => {
@@ -116,7 +117,13 @@ describe('remove', () => {
   it('removes an item', () => {
     const d = removeItem(startDraft(BASE), 'workspace', 1);
     const workspace = draftConfig(d).groups.find((g) => g.id === 'workspace');
-    expect(workspace?.items.map((i) => i.ref)).toEqual(['workspace']);
+    // Revision 12: index 1 is the `project` row; its siblings survive.
+    expect(workspace?.items.map((i) => i.ref)).toEqual([
+      'workspace',
+      'pull_request',
+      'worktree',
+      'git',
+    ]);
   });
 
   it('removes a caret child without removing its parent', () => {

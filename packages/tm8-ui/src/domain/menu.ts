@@ -18,9 +18,8 @@
  * disabled palette-discovery rows (§4.2).
  */
 import {
-  DEFAULT_MENU_CHATS_SPINE,
-  DEFAULT_MENU_CODE_KIND_SPINE,
-  DEFAULT_MENU_WORKSPACE_KIND_SPINE,
+  DEFAULT_MENU_CHANNELS_SPINE,
+  DEFAULT_MENU_WORK_ITEM_SPINE,
   type MenuConfig,
 } from '@tm8/contract';
 import { getKind } from './registry';
@@ -37,41 +36,43 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // whose finished screen was never mounted) join Dashboard under Home.
 // Revision 11 (2026-08-14, single-home ruling): the rail reorganized around
 // intents — Home / Chats / Workspace / Code / Graph / Settings, ~8 visible
-// rows. See `DEFAULT_MENU_GROUP_SPINE` for the full account of what moved
-// where; nothing was deleted, only re-shelved.
-export const SHIPPED_DEFAULT_MENU_REVISION = 11;
+// rows.
+// Revision 12 (2026-08-15, five-tab ruling R2/R3/R4): the groups ARE the
+// top-level tabs — Home / Work / Graph / Channels / Settings. `code` retired
+// into Work (its three kinds become ordinary rows; the git view stays a plain
+// Work row, D1); `chats` renamed Channels. See `DEFAULT_MENU_GROUP_SPINE` for
+// the full account; nothing was deleted, only re-shelved.
+export const SHIPPED_DEFAULT_MENU_REVISION = 12;
 
 /**
- * The single-home rail (revision 11, user ruling 2026-08-14), encoded literally:
+ * The five-tab shell (revision 12, user rulings R2/R3/R4, 2026-08-15),
+ * encoded literally — the GROUPS are the top-row TABS and the rail renders
+ * only the active group's contents:
  *
- *   Home        → the merged chat-first landing (view ref `dashboard`)
- *   Chats       → Channels · Messages, plus live voice rooms injected beneath
- *                 (the dynamic group moved here from the retired Voice group)
- *   Workspace ▾ → (row click = the composed view; caret expands — RULING E)
- *                 Tasks · Sessions · Docs · Teammates · Memories · Artifacts ·
- *                 Loops · Files — plus the File browser view as a sibling row
- *   Code ▾      → the git view; caret expands Projects · Pull requests ·
- *                 Worktrees
- *   Graph       → the space picture
- *   Settings    → Space settings
+ *   Home     → the chat-first landing (view ref `dashboard`)
+ *   Work     → Workspace ▾ (caret: Tasks · Sessions · Docs · Teammates ·
+ *              Memories · Artifacts · Loops · Files) ·
+ *              Projects · Pull requests · Worktrees · Code (the git view)
+ *   Graph    → the space picture (no rail)
+ *   Channels → the channel collection · Messages, plus live voice rooms
+ *              injected beneath (the dynamic group)
+ *   Files    → the File browser view, its own tab (user amendment 2026-08-15)
+ *   Settings → Space settings (no rail)
  *
- * WHAT LEFT THE RAIL, and where it went — nothing was deleted, only
- * re-shelved, and every ref keeps its route, its chord and its menu-editor
- * eligibility:
+ * R3: the `code` GROUP is retired — "code is just part of the workspace" —
+ * so its three kind collections become ordinary Work rows and the git
+ * topology view survives as a plain Work row (reversible default D1: that
+ * surface shipped in #167-#175 and is distinct from the three collections;
+ * it is not deleted). R4: `chats` is renamed Channels — Home is the chat
+ * view, Channels is the channel kind's own tab; `messages` rides with it
+ * (reversible default D2). Nothing was deleted, only re-shelved: every ref
+ * keeps its route, its chord and its menu-editor eligibility.
  *
- *   - INBOX → the top-bar bell (GateApp). Its rows also feed the Home page's
- *     NEEDS YOU / MENTIONS sections, so a rail row was a third door to the
- *     same fact.
- *   - `spell`, `collection`, `member` → the palette and the Entity List
- *     Panel's kind switcher. They are occasional destinations; the rail's
- *     scarce rows go to daily ones.
- *   - The VOICE group label: live rooms now hang beneath Chats, where the
- *     other conversation surfaces are, and an empty space no longer spends a
- *     group label promising rooms it does not have.
- *
- * Workspace and Code are the two caret VIEW items (RULING E) — `type:'view'`
- * MenuItems carrying `children`. Both carets ship CLOSED: the classification
- * is one click away rather than thirty rows tall.
+ * MESSAGES stays a VIEW and not a kind row for two independent reasons: the
+ * `message` registry row is `strategy: 'anchored'` with `slug: null`, so
+ * `isMenuEligibleKind` refuses it and the rail would fail closed; and the
+ * DB's own twin (`internal.w2_normalize_menu_payload`) rejects a kind ref of
+ * `message` outright. There is exactly one door and this is it.
  */
 export const SHIPPED_DEFAULT_MENU: MenuConfig = {
   schemaVersion: 1,
@@ -83,53 +84,23 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
       items: [{ type: 'view', ref: 'dashboard' }],
     },
     {
-      id: 'chats',
-      label: 'Chats',
-      // MESSAGES is a VIEW and not a kind row for two independent reasons: the
-      // `message` registry row is `strategy: 'anchored'` with `slug: null`, so
-      // `isMenuEligibleKind` refuses it and the rail would fail closed; and the
-      // DB's own twin (`internal.w2_normalize_menu_payload`) rejects a kind ref
-      // of `message` outright. There is exactly one door and this is it.
-      items: [...DEFAULT_MENU_CHATS_SPINE],
-    },
-    {
       id: 'workspace',
-      label: 'Workspace',
-      items: [
-        {
-          type: 'view',
-          ref: 'workspace',
-          // The one entity browser. `channel` left this caret for Chats
-          // (revision 11); `file` takes the freed eighth slot, which is what
-          // let the Library group fold in without losing the file rows.
-          children: DEFAULT_MENU_WORKSPACE_KIND_SPINE.map((ref) => ({
-            type: 'kind' as const,
-            ref,
-          })),
-        },
-        // The Files EXPLORER view — browse roots, folders, uploads. Distinct
-        // from the `file` KIND child above, which lists file ENTITIES; owner
-        // ruling R9 keeps BOTH (labels differ: "File browser" vs "Files").
-        { type: 'view', ref: 'files' },
-      ],
-    },
-    {
-      id: 'code',
-      label: 'Code',
-      items: [
-        {
-          // The project git screen — topology, worktree lanes, contention —
-          // is the row; the dev-tracking collections ride its caret.
-          type: 'view',
-          ref: 'git',
-          children: DEFAULT_MENU_CODE_KIND_SPINE.map((ref) => ({
-            type: 'kind' as const,
-            ref,
-          })),
-        },
-      ],
+      label: 'Work',
+      // The whole group comes from ONE spine so the server seeder (migration
+      // 125) and this fallback prove the same list — items, order and the
+      // caret's children alike.
+      items: [...DEFAULT_MENU_WORK_ITEM_SPINE],
     },
     { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
+    {
+      id: 'channels',
+      label: 'Channels',
+      items: [...DEFAULT_MENU_CHANNELS_SPINE],
+    },
+    // The File browser TAB (user amendment, 2026-08-15). The view left the
+    // Work group — menu refs are globally unique — while the `file` KIND
+    // stays in the Workspace caret: R9's two file doors, now on two tabs.
+    { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
     { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
   ],
 };

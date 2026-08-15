@@ -28,10 +28,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
-  DEFAULT_MENU_CHATS_SPINE,
-  DEFAULT_MENU_CODE_KIND_SPINE,
+  DEFAULT_MENU_CHANNELS_SPINE,
   DEFAULT_MENU_GROUP_SPINE,
   DEFAULT_MENU_WORKSPACE_KIND_SPINE,
+  DEFAULT_MENU_WORK_ITEM_SPINE,
 } from '@tm8/contract';
 
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
@@ -86,18 +86,17 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     expect(rows[0]?.ids).toEqual(DEFAULT_MENU_GROUP_SPINE.map((g) => g.serverId));
   });
 
-  it('clusters the conversation surfaces in chats, pinned to the contract spine (122)', async () => {
-    // The voice group retired with 122: live rooms hang beneath `chats`
-    // client-side (the dynamic group), so an items-empty label no longer
-    // ships. The channel collection row and the messages view are the
-    // authored rows.
+  it('clusters the conversation surfaces in channels, pinned to the contract spine (125)', async () => {
+    // 125 renamed `chats` to `channels` (five-tab ruling R4; D2 keeps the
+    // messages view riding with the channel collection). Live rooms still
+    // hang beneath this group id client-side (the dynamic group).
     const rows = await db.query<{ items: Array<{ type: string; ref: string }> }>(
       `select jsonb_agg(jsonb_build_object('type', item->>'type', 'ref', item->>'ref') order by item_ord) as items
          from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
               jsonb_array_elements(g->'items') with ordinality items(item, item_ord)
-        where g->>'id' = 'chats'`,
+        where g->>'id' = 'channels'`,
     );
-    expect(rows[0]?.items).toEqual(DEFAULT_MENU_CHATS_SPINE);
+    expect(rows[0]?.items).toEqual(DEFAULT_MENU_CHANNELS_SPINE);
   });
 
   it('names all eight Workspace kinds in client order, filling but not widening the cap', async () => {
@@ -114,27 +113,38 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     expect(rows[0]?.refs).toHaveLength(8);
   });
 
-  it('rides the Files explorer view beside the Workspace caret (the Library fold, 122)', async () => {
-    const rows = await db.query<{ refs: string[] }>(
-      `select array_agg(item->>'ref' order by item_ord) as refs
+  it('serves the whole Work group pinned to the contract item spine (125 — the retired Code fold, R3/D1)', async () => {
+    // 125: the `code` group retired into Work — the three dev collections are
+    // ORDINARY rows and the git view a plain childless row — and the files
+    // view left for its own tab. Items, order and shape all come from the one
+    // spine both twins prove against.
+    const rows = await db.query<{ items: Array<{ type: string; ref: string }> }>(
+      `select jsonb_agg(jsonb_build_object('type', item->>'type', 'ref', item->>'ref') order by item_ord) as items
          from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
               jsonb_array_elements(g->'items') with ordinality items(item, item_ord)
         where g->>'id' = 'work'`,
     );
-    expect(rows[0]?.refs).toEqual(['workspace', 'files']);
+    expect(rows[0]?.items).toEqual(
+      DEFAULT_MENU_WORK_ITEM_SPINE.map((item) => ({ type: item.type, ref: item.ref })),
+    );
+    // The git row is childless — D1 kept the surface, R3 flattened the caret.
+    const git = await db.query<{ has_children: boolean }>(
+      `select (item ? 'children') as has_children
+         from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
+              jsonb_array_elements(g->'items') items(item)
+        where g->>'id' = 'work' and item->>'ref' = 'git'`,
+    );
+    expect(git[0]?.has_children).toBe(false);
   });
 
-  it('leads Code with the git VIEW row carrying the dev collections as its caret (122)', async () => {
-    const rows = await db.query<{ first: { type: string; ref: string; children?: Array<{ type: string; ref: string }> } }>(
-      `select g->'items'->0 as first
-         from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g
-        where g->>'id' = 'code'`,
+  it('serves the File browser as its own tab group (125 — user amendment)', async () => {
+    const rows = await db.query<{ items: Array<{ type: string; ref: string }> }>(
+      `select jsonb_agg(jsonb_build_object('type', item->>'type', 'ref', item->>'ref') order by item_ord) as items
+         from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
+              jsonb_array_elements(g->'items') with ordinality items(item, item_ord)
+        where g->>'id' = 'files'`,
     );
-    expect(rows[0]?.first?.type).toBe('view');
-    expect(rows[0]?.first?.ref).toBe('git');
-    expect(rows[0]?.first?.children?.map((child) => child.ref)).toEqual([
-      ...DEFAULT_MENU_CODE_KIND_SPINE,
-    ]);
+    expect(rows[0]?.items).toEqual([{ type: 'view', ref: 'files' }]);
   });
 
   it('the guard ACCEPTS the new default — the registry row exists, so the seeder cannot refuse its own payload', async () => {

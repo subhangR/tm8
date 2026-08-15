@@ -18,10 +18,14 @@ import {
   NoticeHost,
   SpaceSwitcher,
   SpaceTabBar,
+  groupIdOfTarget,
+  isRaillessGroup,
+  primaryTargetOfGroup,
   useNotices,
   type KindPresenter,
   type MenuDynamicGroup,
   type MenuTarget,
+  type ShellTab,
 } from '../shell';
 import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
@@ -1327,6 +1331,53 @@ export function GateApp(props: GateAppProps = {}) {
   }, [channelEntities, navigateTo]);
 
   /*
+   * THE FIVE-TAB ROW (ruling R2, 2026-08-15): the resolved menu's GROUPS are
+   * the top-level tabs — home | work | graph | channels | files | settings in
+   * the shipped default — and the rail below renders only the ACTIVE group's
+   * contents. Data-driven throughout: a legacy hand-edited menu (the seeder
+   * only upgrades byte-matching defaults) simply shows ITS groups as tabs.
+   */
+  const shellTabs = useMemo<ShellTab[]>(
+    () => data.menu.config.groups.map((group) => ({ id: group.id, label: group.label })),
+    [data.menu.config],
+  );
+  /* Voice rooms are DYNAMIC rows with no menu item to match, so the group
+     that hosts them (channels; `chats` in pre-125 menus) claims their entity
+     targets here. */
+  const conversationGroupId = useMemo(
+    () => data.menu.config.groups.find((g) => g.id === 'channels' || g.id === 'chats')?.id ?? null,
+    [data.menu.config],
+  );
+  const activeGroupId = useMemo(() => {
+    const direct = groupIdOfTarget(data.menu.config, activeTarget ?? null);
+    if (direct) return direct;
+    if (activeTarget?.type === 'entity' && voiceEntities.some((e) => e.id === activeTarget.ref)) {
+      return conversationGroupId;
+    }
+    /* No group claims the target (e.g. Inbox, whose door is the bell): no
+       tab reads current, and no rail pretends to contain it. */
+    return null;
+  }, [data.menu.config, activeTarget, voiceEntities, conversationGroupId]);
+  const activeGroup = data.menu.config.groups.find((g) => g.id === activeGroupId) ?? null;
+  /* The rail is the active tab's contents. A group that IS its own one screen
+     (Graph, Settings, Files — single childless view item) draws no rail. */
+  const railConfig = useMemo(
+    () =>
+      activeGroup && !isRaillessGroup(activeGroup)
+        ? { ...data.menu.config, groups: [activeGroup] }
+        : null,
+    [data.menu.config, activeGroup],
+  );
+  const openTab = useCallback(
+    (id: string) => {
+      const group = data.menu.config.groups.find((g) => g.id === id);
+      const target = group ? primaryTargetOfGroup(group) : null;
+      if (target) navigateTo(target);
+    },
+    [data.menu.config, navigateTo],
+  );
+
+  /*
    * THE SHELL FORK. Chosen by pointer type and width, never by user agent —
    * `mobile/shell-for.ts` owns that predicate and is unit-tested away from the
    * DOM.
@@ -1368,10 +1419,36 @@ export function GateApp(props: GateAppProps = {}) {
     <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
       <div className="shell-root">
         <SpaceTabBar
-          /* Revision 11: the server chip and the space tablist left this bar
-             for the rail's identity block (SpaceSwitcher below). The bell is
-             Inbox's one chrome door — its rail row retired with the same
-             ruling. */
+          /* R1 (2026-08-15): the identity block lives in the TOP ROW now.
+             Still ONE control — the single-home rule holds, only the address
+             changed; the old read-only server label is not restored. The
+             invariant on onSelectServer (privacy-lane agreement, 2026-08-15):
+             leaveSpaceContext THEN resetAddress, together, in this order,
+             wherever this control lives. */
+          switcherSlot={
+            <SpaceSwitcher
+              servers={props.servers ?? [activeServer]}
+              activeServerId={activeServer.id}
+              spaces={data.spaces}
+              activeSpaceId={(data.spaceId as SpaceId) || null}
+              collapsed={false}
+              onSelectServer={(id) => {
+                leaveSpaceContext();
+                resetAddress();
+                props.onSelectServer?.(id);
+              }}
+              onSelectSpace={(id) => {
+                leaveSpaceContext();
+                data.selectSpace(id);
+              }}
+              onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
+              onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
+            />
+          }
+          /* R2: the menu's groups, as tabs. */
+          tabs={shellTabs}
+          activeTabId={activeGroupId}
+          onSelectTab={openTab}
           onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
@@ -1414,44 +1491,23 @@ export function GateApp(props: GateAppProps = {}) {
         />
 
         <div className="shell-body">
-          <MenuRail
-            config={data.menu.config}
-            collapsed={menuCollapsed}
-            onToggle={() => setMenuCollapsed((c) => !c)}
-            activeTarget={activeTarget}
-            onNavigate={navigateTo}
-            presentKind={presentKind}
-            /* Revision 11: live voice rooms hang beneath the Chats cluster. */
-            dynamicGroups={{ chats: voiceGroup }}
-            identitySlot={
-              <SpaceSwitcher
-                servers={props.servers ?? [activeServer]}
-                activeServerId={activeServer.id}
-                spaces={data.spaces}
-                activeSpaceId={(data.spaceId as SpaceId) || null}
-                collapsed={menuCollapsed}
-                onSelectServer={(id) => {
-                  /* INVARIANT (privacy-lane agreement, 2026-08-15): these two
-                     calls stay TOGETHER and in THIS order wherever the
-                     server-switch control lives. `leaveSpaceContext` is the
-                     one path that clears the space-scoped module stores —
-                     entity ids are space-scoped, so a missed reset does not
-                     throw, it shows someone else's rows. `resetAddress` then
-                     writes last: the remount reads the address, and a Space id
-                     from the Server you just left addresses nothing here. */
-                  leaveSpaceContext();
-                  resetAddress();
-                  props.onSelectServer?.(id);
-                }}
-                onSelectSpace={(id) => {
-                  leaveSpaceContext();
-                  data.selectSpace(id);
-                }}
-                onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
-                onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
-              />
-            }
-          />
+          {/* R2: the rail is the ACTIVE TAB's contents — one group, no
+              group-spine listing. Null when the active group is its own one
+              screen (Graph / Settings / Files) or nothing claims the target.
+              The identity block left the rail head for the top row (R1). */}
+          {railConfig ? (
+            <MenuRail
+              config={railConfig}
+              collapsed={menuCollapsed}
+              onToggle={() => setMenuCollapsed((c) => !c)}
+              activeTarget={activeTarget}
+              onNavigate={navigateTo}
+              presentKind={presentKind}
+              /* Live voice rooms hang beneath the conversation cluster —
+                 `channels` since 125, `chats` in pre-125 hand-edited menus. */
+              dynamicGroups={{ channels: voiceGroup, chats: voiceGroup }}
+            />
+          ) : null}
 
           {/* The REAL error boundary wraps the whole view region: a crashed
               screen renders the designed error state with retry; the rail and
