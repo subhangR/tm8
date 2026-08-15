@@ -2701,6 +2701,30 @@
   font-style: italic;
 }
 
+/* THE COLLAPSED TILE'S STATUS MARK, as a trigger.
+   It must occupy the 16px square `.pn-tt__status` gives it and nothing more:
+   that row's height is pinned by its tallest child, so any padding here would
+   grow every task row. The affordance is therefore a hover/focus ring drawn
+   OUTSIDE the box with `box-shadow`, which takes no layout space. */
+.cv2-root .lp__statedot {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.cv2-root .lp__statedot:hover { box-shadow: 0 0 0 3px var(--pn-hover); }
+.cv2-root .lp__statedot:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+}
+
 /* The wide row-action carries its label.
    `display` IS THE FIX, not the padding. The base `.lp__rowaction` is a
    `grid` with `place-items: center` — sized for exactly one glyph — so a

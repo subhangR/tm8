@@ -24,6 +24,17 @@ export interface MaestroTaskTileProps {
     hollow: boolean;
     streaming: boolean;
   };
+  /**
+   * The status mark as a live CONTROL, when the host has one to give. Absent ⇒
+   * the mark stays the read-only dot it has always been, so a kind whose state
+   * nothing may write cannot end up with a status that looks pressable — which
+   * is the exact defect this prop exists to fix for the kinds that do.
+   *
+   * The control is handed its glyph rather than drawing one: tone and
+   * hollowness are resolved HERE, against the liveness precedence this tile's
+   * host owns, and a refused control must wear the same mark as a live one.
+   */
+  statusControl?: ReactNode;
   assignees: readonly ActorSummary[];
   /**
    * Provenance, shown only when nobody is assigned. Almost every task in a
@@ -62,6 +73,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     onToggleChildren,
     onSelect,
     status,
+    statusControl,
     assignees,
     creator,
     badges,
@@ -116,12 +128,20 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
         )}
         {childCount > 0 ? <span className="pn-tt__arrowCount">{childCount}</span> : null}
 
-        <span className="pn-tt__status" title={status.title ?? status.label}>
-          <MaestroStatusGlyph
-            tone={status.tone}
-            hollow={status.hollow}
-            streaming={status.streaming}
-          />
+        {/* The visually-hidden word stays in BOTH forms: it is the row's own
+            read-out of the fact, and a status a sighted user reads as a dot
+            must not become unreadable to a screen reader merely because the
+            dot has become pressable. The wrapper's `title` does go when a
+            control is present — the control carries its own, and two native
+            tooltips on one 16px target is one too many. */}
+        <span className="pn-tt__status" title={statusControl ? undefined : (status.title ?? status.label)}>
+          {statusControl ?? (
+            <MaestroStatusGlyph
+              tone={status.tone}
+              hollow={status.hollow}
+              streaming={status.streaming}
+            />
+          )}
           <span className="pn-tt__status-text">{status.label}</span>
         </span>
 
@@ -219,7 +239,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
  * started one shows the same dot hollowed out. Tone carries the meaning
  * (`run` is green), so nothing here hard-codes a colour.
  */
-function MaestroStatusGlyph({
+export function MaestroStatusGlyph({
   tone,
   hollow,
   streaming,

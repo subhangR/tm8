@@ -56,9 +56,15 @@ import {
 } from './honesty/DisabledWithReason';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
-import { EntityControlStrip, RowAction, RowMembershipControl, type ControlHost } from './controls/EntityControls';
+import {
+  EntityControlStrip,
+  RowAction,
+  RowMembershipControl,
+  RowStateControl,
+  type ControlHost,
+} from './controls/EntityControls';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
-import { MaestroTaskTile } from './list/MaestroTaskTile';
+import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
@@ -2558,6 +2564,30 @@ export function Tile({
           hollow: statusHollow,
           streaming,
         }}
+        /* The mark becomes the state control — the same one the expanded strip
+           mounts, so the collapsed row writes through exactly the gates and
+           refusals the open row does.
+           NOT when a liveness `treatment` owns the status: there the dot paints
+           the node's verdict, not the record's field, and a picker beside it
+           would offer to write the value the dot is not showing. */
+        statusControl={
+          list.stateControl && !treatment ? (
+            <RowStateControl
+              row={row}
+              props={props}
+              control={list.stateControl}
+              pill={config.panel.statusPill}
+              variant="dot"
+              glyph={
+                <MaestroStatusGlyph
+                  tone={statusTone}
+                  hollow={statusHollow}
+                  streaming={streaming}
+                />
+              }
+            />
+          ) : undefined
+        }
         assignees={controlFacts.assignees}
         creator={controlFacts.creator}
         badges={

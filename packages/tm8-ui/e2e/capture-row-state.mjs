@@ -32,6 +32,67 @@ page.on('pageerror', (e) => errors.push(String(e)));
 await page.goto('http://localhost:4620/e2e/row-state-harness.html', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1200);
 
+// A0) THE COLLAPSED TILE'S STATUS MARK, which is now the same control in a
+//     16px anatomy. Two layout facts jsdom cannot see, and both would ship as
+//     a visible defect:
+//       - the mark sits in a 16px grid slot on a row whose height is set by its
+//         tallest child, so a button with any padding grows EVERY task row;
+//       - `.pn-tt` sets `overflow: hidden` and `container-type`, so a menu that
+//         is not portalled out is clipped to the row it opens on.
+const rowH = await page.evaluate(() =>
+  parseFloat(getComputedStyle(document.querySelector('.cv2-root')).getPropertyValue('--pn-listrow-h')));
+console.log('COLLAPSED MARK:', JSON.stringify(await page.evaluate((rowH) => {
+  const panel = document.querySelector('.harness-panel');
+  const trigger = panel.querySelector('[data-testid="row-state-trigger"]');
+  const box = trigger.getBoundingClientRect();
+  const tallest = [...document.querySelectorAll('.harness-panel .pn-tt__main')]
+    .map((el) => el.getBoundingClientRect().height);
+  return {
+    triggerIsButton: trigger.tagName,
+    triggerBox: [Math.round(box.width), Math.round(box.height)],
+    listRowH: rowH,
+    tallestMainRow: Math.max(...tallest),
+    rowsOverRowH: tallest.filter((h) => h > rowH + 0.5).length,
+  };
+}, rowH)));
+
+await page.locator('[data-testid="row-state-trigger"]').first().click();
+await page.waitForTimeout(250);
+console.log('MENU OPEN:', JSON.stringify(await page.evaluate(() => {
+  const menu = document.querySelector('.lp__assignmenu');
+  if (!menu) return { menu: null };
+  const m = menu.getBoundingClientRect();
+  const tile = document.querySelector('.pn-tt').getBoundingClientRect();
+  return {
+    portalled: menu.closest('.pn-tt') === null,
+    options: [...menu.querySelectorAll('[data-testid="row-state-option"]')].map((b) => b.dataset.state),
+    escapesTile: m.bottom > tile.bottom + 0.5,
+    insideViewport: m.left >= 0 && m.top >= 0
+      && m.right <= innerWidth + 0.5 && m.bottom <= innerHeight + 0.5,
+  };
+})));
+// Viewport-only, NOT fullPage: a fullPage shot scrolls the document, and this
+// menu correctly dismisses on scroll — so the fullPage form photographs its
+// own absence.
+await page.screenshot({ path: `${OUT}/00-collapsed-menu.png` });
+await page.getByTestId('row-state-option').filter({ hasText: 'blocked' }).first().click();
+await page.waitForTimeout(250);
+console.log('COLLAPSED WRITE:',
+  JSON.stringify((await page.locator('.harness-log').first().textContent()).trim()),
+  '| strips opened by the write:', await page.locator('.lp__rowdetail').count());
+
+// The refusal columns wear the TOOLTIP vocabulary here, not the caption one —
+// a caption under a 16px mark would break the single-line row.
+console.log('REFUSALS:', JSON.stringify(await page.evaluate(() =>
+  [...document.querySelectorAll('.harness-col')]
+    .filter((c) => /refused|loading|unwired/.test(c.querySelector('.harness-cap').textContent))
+    .map((c) => ({
+      col: c.querySelector('.harness-cap').textContent,
+      tipsInRow: c.querySelectorAll('.pn-tt__main .hon-tip').length,
+      captionsInRow: c.querySelectorAll('.pn-tt__main .hon-caption').length,
+      triggers: c.querySelectorAll('[data-testid="row-state-trigger"]').length,
+    })))));
+
 // A) THE REAL INTERACTION, once, on one row: hover the tile so the action
 //    cluster un-hides, then click the toggle the way a user would. This is the
 //    half a DOM-level .click() would fake.
