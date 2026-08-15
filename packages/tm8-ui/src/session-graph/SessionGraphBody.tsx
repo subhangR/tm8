@@ -26,8 +26,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, EntitySummary } from '@tm8/contract';
-import { KindIcon, getKind, type StatusSource } from '../domain';
+import { KindIcon, getKind } from '../domain';
 import { Eyebrow, Pill, type PillTone } from '../kit';
+import { renderBadge } from '../panels/list/tile-badges';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import type { Seam } from '../data/seam';
 import { loadSessionGraph, type LoadResult } from './load';
@@ -40,7 +41,7 @@ import {
   type Cell,
   type SessionGraph,
 } from './model';
-import { NODE_H, NODE_W, layoutSessionGraph } from './layout';
+import { cellSize, layoutSessionGraph } from './layout';
 import './session-graph.css';
 
 const POLL_MS = 20_000;
@@ -411,27 +412,36 @@ export function SessionGraphBody({
 }
 
 /**
- * StatusSource → the EntityState member it names. Keyed by SOURCE, never by
- * kind (the chrome.tsx pattern), so a kind added tomorrow gets its status word
- * here without an edit.
+ * WHAT A CARD SAYS ABOUT ITSELF — from the registry, never from a switch here.
+ *
+ * A node drawn with only a title and its kind tells you a task exists, which
+ * you already knew from asking. The facts that make it worth looking at — the
+ * work status, the priority, the model a session runs, a PR's state — are
+ * ALREADY declared per kind as `list.tile.badges` and already resolved by
+ * `renderBadge`, which the list rows use. Reusing both means a kind that gains
+ * a fact gains it on this canvas in the same edit, and `HANDLED_SOURCES`'
+ * coverage test keeps every declared source resolving to something.
+ *
+ * The `avatar` slot is flattened to its label: a face at this size is a smudge,
+ * but the NAME on it is one of the facts most worth carrying.
  */
-const STATUS_FIELD: Record<Exclude<StatusSource, 'none'>, string> = {
-  workStatus: 'workStatus',
-  sessionStatus: 'status',
-  prState: 'state',
-  profileStatus: 'status',
-  memberRole: 'role',
-  equipped: 'equipped',
-};
-
-function statusOf(entity: EntitySummary): { word: string; tone: PillTone } | null {
-  const chip = getKind(entity.kind).chip;
-  if (chip.tintBy === 'none') return null;
-  const raw = (entity.state as unknown as Record<string, unknown>)[STATUS_FIELD[chip.tintBy]];
-  const value =
-    typeof raw === 'string' ? raw : typeof raw === 'boolean' ? (raw ? 'equipped' : 'library') : null;
-  if (value === null) return null;
-  return { word: value.replace(/_/g, ' '), tone: (chip.tones?.[value] ?? 'idle') as PillTone };
+function cardFacts(entity: EntitySummary): {
+  status: { word: string; tone: PillTone } | null;
+  facts: string;
+} {
+  let status: { word: string; tone: PillTone } | null = null;
+  const parts: string[] = [];
+  for (const badge of getKind(entity.kind).list.tile.badges) {
+    const slot = renderBadge(badge.source, entity);
+    if (slot === null) continue;
+    if (slot.slot === 'status') {
+      // First status wins; a kind declaring two would be declaring a conflict.
+      status ??= { word: slot.word, tone: slot.tone };
+    } else if (slot.slot === 'meta') parts.push(slot.text);
+    else if (slot.slot === 'tag') parts.push(slot.label);
+    else parts.push(slot.label);
+  }
+  return { status, facts: parts.join(' · ') };
 }
 
 /** "3 messages, 1 doc" — kind names arrive as DATA and resolve through the registry. */
@@ -459,8 +469,9 @@ function CellNode({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const left = x - NODE_W / 2;
-  const top = y - NODE_H / 2;
+  const { w, h } = cellSize(cell.hop);
+  const left = x - w / 2;
+  const top = y - h / 2;
 
   if (cell.sort === 'fold') {
     const detail = foldSummary(cell.byKind);
@@ -479,14 +490,14 @@ function CellNode({
           }
         }}
       >
-        <rect className="sg-box sg-box--fold" width={NODE_W} height={NODE_H} rx={NODE_H / 2} />
-        <text className="sg-title" x={24} y={27}>
+        <rect className="sg-box sg-box--fold" width={w} height={h} rx={h / 2} />
+        <text className="sg-title" x={26} y={h / 2 - 3}>
           {cell.label}
         </text>
-        <text className="sg-meta" x={24} y={45}>
+        <text className="sg-meta" x={26} y={h / 2 + 15}>
           {truncate(detail, 28)}
         </text>
-        <text className="sg-count" x={NODE_W - 20} y={37} textAnchor="end">
+        <text className="sg-count" x={w - 22} y={h / 2 + 5} textAnchor="end">
           {cell.count}
         </text>
       </g>
@@ -495,8 +506,13 @@ function CellNode({
 
   const { entity } = cell;
   const config = getKind(entity.kind);
-  const status = statusOf(entity);
+  const { status, facts } = cardFacts(entity);
   const focused = cell.sort === 'focus';
+  /* The focus is the taller card, so its rows sit lower and it has one more of
+     them. Written as offsets from the box rather than as two hard-coded
+     ladders — a card is a stack of rows and only its top row is anchored. */
+  const row1 = focused ? 32 : 26;
+  const gap = focused ? 20 : 17;
 
   return (
     <g
@@ -515,46 +531,64 @@ function CellNode({
     >
       <rect
         className="sg-box"
-        width={NODE_W}
-        height={NODE_H}
-        rx={8}
+        width={w}
+        height={h}
+        rx={10}
         data-hop={cell.hop}
         data-hub={cell.hub ? 'true' : 'false'}
         data-unread={cell.degree === null ? 'true' : 'false'}
       />
-      <g className="sg-icon" transform="translate(14 15) scale(1)">
+      <g className="sg-icon" transform={`translate(14 ${row1 - 12})`}>
         {config.iconArt.map((d) => (
           <path key={d} d={d} />
         ))}
       </g>
-      {/* THREE LINES, BECAUSE THERE IS NOW ROOM FOR THREE. The old card had to
-          choose between naming the kind and naming the state, and it chose the
-          state — so a card reading "waiting" told you nothing about WHAT was
-          waiting. Both fit now, and the title gets enough width to be a title
-          rather than a prefix. */}
-      <text className="sg-title" x={40} y={26}>
-        {truncate(entity.title, 25)}
+      {/* FOUR ROWS: what it is called, what it IS, what state it is in, and the
+          facts its kind says matter. The old card had room for a title and one
+          more thing, so it chose the state — and a card reading "waiting" told
+          you nothing about what was waiting. The status word carries the kind's
+          own tone, so a blocked task and a running session do not read alike. */}
+      <text className="sg-title" x={40} y={row1}>
+        {truncate(entity.title, focused ? 28 : 25)}
       </text>
-      <text className="sg-meta" x={40} y={43}>
+      <text className="sg-meta" x={40} y={row1 + gap}>
         {config.label}
+        {status ? (
+          <>
+            {' · '}
+            <tspan className={`sg-state sg-state--${status.tone}`}>
+              {truncate(status.word, 18)}
+            </tspan>
+          </>
+        ) : null}
       </text>
-      {status ? (
-        <text className="sg-meta sg-meta--status" x={40} y={56}>
-          {truncate(status.word, 28)}
+      {facts ? (
+        <text className="sg-facts" x={40} y={row1 + gap * 2}>
+          {truncate(facts, focused ? 34 : 30)}
+        </text>
+      ) : null}
+      {/* The focus paid for a fourth row with its extra height; this is what
+          fills it. Its own degree is the one number that says whether the
+          picture around it is the whole footprint or a slice of one. */}
+      {focused ? (
+        <text className="sg-facts sg-facts--faint" x={40} y={row1 + gap * 3}>
+          {cell.degree === null
+            ? 'connections not read'
+            : `${cell.degree} connection${cell.degree === 1 ? '' : 's'}`}
         </text>
       ) : null}
       {cell.hub ? (
-        <text className="sg-badge" x={NODE_W - 12} y={22} textAnchor="end">
+        <text className="sg-badge" x={w - 12} y={22} textAnchor="end">
           ◈{cell.degree}
         </text>
       ) : null}
       {!cell.hub && cell.withheld > 0 ? (
-        <text className="sg-badge sg-badge--faint" x={NODE_W - 12} y={22} textAnchor="end">
+        <text className="sg-badge sg-badge--faint" x={w - 12} y={22} textAnchor="end">
           +{cell.withheld}
         </text>
       ) : null}
       {cell.degree === null ? (
-        <text className="sg-badge sg-badge--faint" x={NODE_W - 12} y={52} textAnchor="end">
+        <text className="sg-badge sg-badge--faint" x={w - 12} y={h - 12} textAnchor="end">
           ⋯
         </text>
       ) : null}
@@ -574,7 +608,7 @@ function SelectionCard({
   if (cell.sort === 'fold') return null;
   const { entity } = cell;
   const config = getKind(entity.kind);
-  const status = statusOf(entity);
+  const { status, facts } = cardFacts(entity);
   return (
     <aside className="sg-card" data-testid="session-graph-selection">
       <span className="sg-card__kind">
@@ -585,8 +619,9 @@ function SelectionCard({
         {entity.title}
       </span>
       {status ? <Pill tone={status.tone}>{status.word}</Pill> : null}
+      {facts ? <span className="sg-card__facts">{facts}</span> : null}
       <span className="sg-card__facts">
-        {cell.hop === 0 ? 'this session' : `${cell.hop} hop${cell.hop === 1 ? '' : 's'} out`}
+        {cell.hop === 0 ? 'the centre' : `${cell.hop} hop${cell.hop === 1 ? '' : 's'} out`}
         {cell.degree !== null ? ` · ${cell.degree} connections` : ' · connections not read'}
         {cell.hub ? ` · hub, not expanded past ${HUB_DEGREE}` : ''}
       </span>

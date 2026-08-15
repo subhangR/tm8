@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EdgeView, EntitySummary } from '@tm8/contract';
 import { buildSessionGraph } from './model';
-import { NODE_H, NODE_W, layoutSessionGraph } from './layout';
+import { cellSize, layoutSessionGraph } from './layout';
 
 const FOCUS = 'session-1';
 
@@ -105,7 +105,12 @@ function squeezedTree(): Map<string, EdgeView[]> {
   return edgesByNode;
 }
 
-/** Every unordered pair of placed cells that overlap as NODE_W x NODE_H boxes. */
+/**
+ * Every unordered pair of placed cells whose BOXES intersect. Sizes come from
+ * `cellSize`, not from a constant: the focus is drawn larger than its
+ * neighbours, and measuring it at a child's width would let the one card that
+ * overlaps most easily pass.
+ */
 function overlaps(placement: ReturnType<typeof layoutSessionGraph>): string[] {
   const hits: string[] = [];
   const cells = placement.cells;
@@ -113,9 +118,11 @@ function overlaps(placement: ReturnType<typeof layoutSessionGraph>): string[] {
     for (let j = i + 1; j < cells.length; j += 1) {
       const a = cells[i]!;
       const b = cells[j]!;
+      const sa = cellSize(a.cell.hop);
+      const sb = cellSize(b.cell.hop);
       if (
-        Math.abs(a.x - b.x) < NODE_W &&
-        Math.abs(a.y - b.y) < NODE_H
+        Math.abs(a.x - b.x) < (sa.w + sb.w) / 2 &&
+        Math.abs(a.y - b.y) < (sa.h + sb.h) / 2
       ) {
         hits.push(`${a.cell.id}/${b.cell.id}`);
       }
@@ -211,6 +218,18 @@ describe('ring radii are derived from occupancy', () => {
       hops: 3,
     }));
     expect(radii[1]!).toBeGreaterThan(radii[0]! * 3);
+  });
+
+  /**
+   * The focus is drawn larger than its neighbours, and a lone child sits at
+   * EXACTLY its parent's angle — so with one hop-1 cell the first radius is the
+   * only thing holding the two apart, and it is sized against a box no other
+   * pair on the canvas has. A ring floor derived from the child's width alone
+   * would put the first card inside the focus card.
+   */
+  it('clears the focus, which is larger than everything around it', () => {
+    expect(overlaps(busyRing(1))).toEqual([]);
+    expect(overlaps(busyRing(2))).toEqual([]);
   });
 
   it('never draws a ring inside the one before it', () => {

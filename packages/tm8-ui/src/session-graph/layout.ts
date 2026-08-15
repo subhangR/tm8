@@ -30,33 +30,54 @@ import type { Cell, Link, SessionGraph } from './model';
  * which titles stop being guesses.
  */
 export const NODE_W = 216;
-export const NODE_H = 62;
-/** Clear space demanded between two cards sitting side by side on a ring. */
-const RING_GAP = 26;
+export const NODE_H = 72;
 /**
- * Smallest first ring, and smallest step between rings. Both are NODE_W-derived
- * rather than chosen: a child inherits its parent's sector and is placed at the
- * sector's midpoint, so a lone child sits at EXACTLY its parent's angle — and
- * when that angle is horizontal the only thing separating the two cards is the
- * radius. Anything below a card's width therefore overlaps, which is what the
- * old constants did the moment the cards grew (caught by layout.test.ts, not by
- * eye). The floors clear a full card in the worst direction.
+ * THE FOCUS IS BIGGER, because it is the one node the viewer named. Every other
+ * card is a peer of every other card; drawing the subject the same size as its
+ * neighbours made the picture say "here are twenty things", when what was asked
+ * was "here is this thing and what it touches". The extra height carries the
+ * fourth line — see `SessionGraphBody`'s facts row.
  */
-const R1_MIN = NODE_W + RING_GAP;
-const R_STEP_MIN = NODE_W + RING_GAP;
+export const FOCUS_W = 268;
+export const FOCUS_H = 104;
+
+/** The size a cell at this hop is drawn at. The only tier boundary is the centre. */
+export function cellSize(hop: number): { w: number; h: number } {
+  return hop === 0 ? { w: FOCUS_W, h: FOCUS_H } : { w: NODE_W, h: NODE_H };
+}
+
+/** Clear space demanded between two cards, in whichever axis ends up carrying it. */
+const RING_GAP = 26;
 const PAD = 32;
 
 /**
- * Separation two cards on the same ring must achieve between their CENTRES.
+ * The centre-to-centre distance two cards must reach, for cards of the given
+ * half-extents summed.
  *
- * A card is an axis-aligned rectangle, so the honest test is `|Δx| ≥ W` or
- * `|Δy| ≥ H` — never the arc length between them. Two cells near the top of the
- * circle can be a generous arc apart and still sit almost directly above one
- * another in x. Requiring the chord to clear `√2·(W + gap)` makes the weaker of
- * the two axes carry at least `W + gap` on its own, whatever the chord's
- * direction: one of |sin|, |cos| is always ≥ √2/2.
+ * A card is an AXIS-ALIGNED rectangle, so the honest test is `|Δx| ≥ w` or
+ * `|Δy| ≥ h` — never the distance between them, and never the arc. For a
+ * separation of magnitude `d` at direction φ that reads `d·|cos φ| ≥ w` or
+ * `d·|sin φ| ≥ h`; the worst φ is where the two are equal, and there
+ * `d = hypot(w, h)`. So this is exact, not a bound with slack: any shorter
+ * distance has a direction that overlaps, and no longer one is ever needed.
  */
-const CHORD_CLEARANCE = Math.SQRT2 * (NODE_W + RING_GAP);
+function clearance(w: number, h: number): number {
+  return Math.hypot(w + RING_GAP, h + RING_GAP);
+}
+
+/**
+ * Two cards on the same ring, and a parent directly above its own child on the
+ * next ring, are the same problem in different directions — both are a pair of
+ * NODE-sized cards separated by one vector — so both take one number.
+ */
+const CHORD_CLEARANCE = clearance(NODE_W, NODE_H);
+/**
+ * The first ring clears the FOCUS, which is wider and taller than its children.
+ * A lone child sits at exactly its parent's angle, so with the focus as parent
+ * the radius is the only thing separating them.
+ */
+const R1_MIN = clearance((FOCUS_W + NODE_W) / 2, (FOCUS_H + NODE_H) / 2);
+const R_STEP_MIN = CHORD_CLEARANCE;
 
 /**
  * PEER REVIEW, GPT 5.6, 2026-08-15 — `circumference ÷ count` is not a collision
@@ -244,7 +265,7 @@ export function layoutSessionGraph(graph: SessionGraph): Placement {
   }
   const radiusAt = (hop: number): number => (hop === 0 ? 0 : radii[hop - 1] ?? 0);
   const radius = maxHop === 0 ? 0 : radiusAt(maxHop);
-  const half = radius + NODE_W / 2 + PAD;
+  const half = Math.max(radius + NODE_W / 2, FOCUS_W / 2) + PAD;
   const width = half * 2;
   const height = half * 2;
   const centre = { x: half, y: half };
