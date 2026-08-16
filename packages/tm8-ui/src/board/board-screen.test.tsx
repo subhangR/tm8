@@ -10,7 +10,7 @@
  *    lands, and the fresh read AGREES — a card still in its target after
  *    settle is the evidence, because a refused write snaps it home;
  *  · §8.1 — the keyboard path drives the SAME dispatch as a drop;
- *  · the assigned-by axis refusing with its reason instead of not existing.
+ *  · the assigned-by axis narrowing by 129's recorded provenance.
  *
  * Fixture dataset (fixtures/entities.ts), non-deleted tasks:
  *   '4f8c2a9e…'                              in_review / urgent
@@ -187,15 +187,27 @@ describe('the pivots', () => {
   });
 });
 
-describe('honest refusals', () => {
-  it('the assigned-by axis is disabled WITH its reason, not absent', async () => {
-    /* §8.5 — provenance is being recorded by a concurrent backend lane; until
-       it lands, the filter must say why it cannot work rather than silently
-       not existing (indistinguishable from "never designed"). */
+describe('the assigned-by axis (129 provenance)', () => {
+  it('chips render per roster actor and BIND the seam read to who assigned', async () => {
+    /* Once §8.5's backend landed (PR #251), the disabled-with-reason chip
+       became real chips over the same roster as the people axis. The fixture
+       dataset ships NO recorded provenance, so pressing a chip must empty
+       the board — the honest answer, and proof the axis reaches the seam
+       (a chip that stopped binding would leave every card visible). The
+       MATCHING side of the arm is proven at the seam
+       (seam-fixture.test.ts, '129 parity'). */
     const view = await mountBoard();
-    const chip = view.getByTestId('bd-assignedby-disabled');
-    expect((chip as HTMLButtonElement).disabled).toBe(true);
-    expect(chip.getAttribute('title')).toMatch(/provenance/i);
+    const chip = await waitFor(() => view.getByTestId('bd-filter-assignedby-ent-member-ada'));
+    expect(chip.getAttribute('aria-pressed')).toBe('false');
+    expect(view.getAllByTestId('bd-card').length).toBeGreaterThan(0);
+
+    fireEvent.click(chip);
+    await waitFor(() => expect(chip.getAttribute('aria-pressed')).toBe('true'));
+    await waitFor(() => expect(view.queryAllByTestId('bd-card')).toHaveLength(0));
+
+    // Unpressing restores the unfiltered snapshot — same cache key as untouched.
+    fireEvent.click(chip);
+    await waitFor(() => expect(view.getAllByTestId('bd-card').length).toBeGreaterThan(0));
     view.unmount();
   });
 });

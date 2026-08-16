@@ -28,12 +28,17 @@ describe('buildFilters — narrow()\'s law', () => {
        exact cache key `boardFor` uses for the unfiltered read, so the
        untouched board and the just-cleared board share one snapshot. */
     expect(buildFilters(EMPTY_FILTERS)).toBeUndefined();
-    expect(buildFilters({ statuses: ['open'], priorities: [], people: [] })).toEqual({
+    expect(buildFilters({ statuses: ['open'], priorities: [], people: [], assignedBy: [] })).toEqual({
       workStatus: ['open'],
     });
-    expect(buildFilters({ statuses: [], priorities: ['high'], people: ['m-1'] })).toEqual({
+    expect(buildFilters({ statuses: [], priorities: ['high'], people: ['m-1'], assignedBy: [] })).toEqual({
       priority: ['high'],
       assigneeIds: ['m-1'],
+    });
+    // The provenance axis is its own question — who HANDED OUT the work,
+    // not who holds it — and it emits the server's assignedByIds arm.
+    expect(buildFilters({ statuses: [], priorities: [], people: [], assignedBy: ['m-ada'] })).toEqual({
+      assignedByIds: ['m-ada'],
     });
   });
 });
@@ -50,7 +55,7 @@ describe('columnsFor — the column law per pivot', () => {
   });
 
   it('status: narrows to the selected chips — an excluded column must not stay a drop target', () => {
-    const filters: BoardFilterState = { statuses: ['open', 'done'], priorities: [], people: [] };
+    const filters: BoardFilterState = { statuses: ['open', 'done'], priorities: [], people: [], assignedBy: [] };
     const cols = columnsFor('workStatus', [], filters, []);
     expect(cols.map((c) => c.key)).toEqual(['open', 'done']);
   });
@@ -85,7 +90,7 @@ describe('columnsFor — the column law per pivot', () => {
   it('assignee under a people filter: exactly the chosen columns, empties synthesized from the roster', () => {
     /* A person with no tasks still shows their real, empty column — absence
        of a column would read as "not filterable", not "no tasks". */
-    const filters: BoardFilterState = { statuses: [], priorities: [], people: ['m-ada', 'm-idle'] };
+    const filters: BoardFilterState = { statuses: [], priorities: [], people: ['m-ada', 'm-idle'], assignedBy: [] };
     const cols = columnsFor('assignee', [group('m-ada', [row('t1')], { label: 'Ada' })], filters, [
       { id: 'm-ada', label: 'Ada' },
       { id: 'm-idle', label: 'Idle' },

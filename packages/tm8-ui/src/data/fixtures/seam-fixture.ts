@@ -144,6 +144,8 @@ import {
   fixtureDetails,
   fixtureHandoffsBySession,
   fixtureSummaries,
+  memberAda,
+  memberNoor,
   noor,
   sessionCredentialLogin,
   sessionLive,
@@ -1040,6 +1042,33 @@ export function createFixtureSeam(): FixtureSeam {
   }
 
   /**
+   * The performer of an assignment, spoken in the ENTITY id vocabulary.
+   *
+   * This fixture has TWO id spaces for one person — `act-ada` the actor and
+   * `ent-member-ada` the member entity (documented at `spaceSettings` below;
+   * unifying them predates this change and is not its job). The real server
+   * has ONE id, and `assigned_by` resolves through the same entity read as
+   * the assignee, so an `assignments` record whose two arms spoke different
+   * vocabularies would be a parity bug: the roster the assigned-by chips are
+   * drawn from is built on ENTITY rows, and a filter that can never match is
+   * indistinguishable from one that is broken. Every seam-written edge is
+   * authored by the viewer, so the map only needs the humans the identity
+   * can be.
+   */
+  function assignmentAuthor(author: ActorSummary): ActorSummary {
+    const entityId = author.id === ada.id ? memberAda.id : author.id === noor.id ? memberNoor.id : author.id;
+    const entity = summaries.get(entityId);
+    if (!entity || (entity.kind !== 'member' && entity.kind !== 'team_member')) return clone(author);
+    return {
+      id: entity.id,
+      kind: entity.kind,
+      displayName: entity.title,
+      avatar: null,
+      isAgent: entity.kind === 'team_member',
+    };
+  }
+
+  /**
    * Both actor rosters, recomputed from the edges that ARE them: a task's
    * `assigned_to` and a channel's `has_member` (migration 080). Two arms of one
    * function because the projection is identical and the meaning is not — the
@@ -1047,8 +1076,30 @@ export function createFixtureSeam(): FixtureSeam {
    * `relations.assignees` / `relations.members`).
    */
   function projectAssignees(s: EntitySummary): void {
-    if (s.state.kind === 'task') s.state.assignees = projectActorEdges(s, 'assigned_to');
-    else if (s.state.kind === 'channel') s.state.members = projectActorEdges(s, 'has_member');
+    if (s.state.kind === 'task') {
+      s.state.assignees = projectActorEdges(s, 'assigned_to');
+      /* 129's provenance projection: one entry per CURRENT `assigned_to`
+         edge, its `assignedBy` the actor who WROTE that edge — the server
+         projects the same rows out of assigned_by/assigned_at
+         (entity-read.ts). Additive field: a task this function never ran on
+         keeps no `assignments`, exactly as pre-129 rows read NULL. */
+      const group = extrasOf(s.id).connections.outgoing.find((g) => g.type === 'assigned_to');
+      s.state.assignments = (group?.edges ?? []).flatMap((edge) => {
+        const target = summaries.get(edge.target.id);
+        if (!target || (target.kind !== 'member' && target.kind !== 'team_member')) return [];
+        return [{
+          assignee: {
+            id: target.id,
+            kind: target.kind,
+            displayName: target.title,
+            avatar: null,
+            isAgent: target.kind === 'team_member',
+          },
+          assignedBy: assignmentAuthor(edge.createdBy),
+          assignedAt: edge.createdAt,
+        }];
+      });
+    } else if (s.state.kind === 'channel') s.state.members = projectActorEdges(s, 'has_member');
   }
 
   function defaultStateFor(input: CreateEntityInput): EntityState {
@@ -1314,6 +1365,13 @@ export function createFixtureSeam(): FixtureSeam {
           && f.sessionStatus.includes(s.state.status))) return false;
         if (f?.assigneeIds?.length && !(s.state.kind === 'task'
           && s.state.assignees.some((a) => f.assigneeIds!.includes(a.id)))) return false;
+        /* 129's provenance filter: a task matches when ANY of its CURRENT
+           assignments was performed by a listed actor. `assignments` is the
+           additive contract field; a task without it (pre-provenance data)
+           matches nothing, exactly as its rows have NULL assigned_by. */
+        if (f?.assignedByIds?.length && !(s.state.kind === 'task'
+          && (s.state.assignments ?? []).some((a) => a.assignedBy !== null
+            && f.assignedByIds!.includes(a.assignedBy.id)))) return false;
         /* The `edge` clause the server executes as an EXISTS over
            public.edges (collections.ts): keep this row exactly when it has an
            edge of `type` in `direction` whose OTHER endpoint is `entityId`.

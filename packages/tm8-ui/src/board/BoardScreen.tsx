@@ -62,9 +62,6 @@ import './board.css';
 const DETAIL_POLL_TRIES = 20;
 const DETAIL_POLL_MS = 100;
 
-const ASSIGNED_BY_REASON =
-  'Assigned-by filtering needs assignment provenance, which is being recorded by a concurrent backend change — the filter activates when it lands.';
-
 interface BoardScreenProps {
   data: GateData;
   viewerMemberId?: string | null;
@@ -377,18 +374,29 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
         </div>
         <div className="bd__axis" role="group" aria-label="Assigned by">
           <span className="bd__axis-label">Assigned by</span>
-          {/* Foreseeable-refusal posture (§8.5): the axis exists and says why
-              it cannot filter yet, instead of silently not existing. */}
-          <button
-            type="button"
-            className="bd__chip"
-            disabled
-            aria-disabled="true"
-            title={ASSIGNED_BY_REASON}
-            data-testid="bd-assignedby-disabled"
-          >
-            Anyone
-          </button>
+          {roster.length === 0 ? (
+            <span className="bd__axis-empty">roster not loaded yet</span>
+          ) : (
+            roster.map((actor) => (
+              <button
+                key={actor.id}
+                type="button"
+                className="bd__chip bd__chip--person"
+                aria-pressed={filters.assignedBy.includes(actor.id as string)}
+                data-testid={`bd-filter-assignedby-${actor.id}`}
+                onClick={() => toggle('assignedBy', actor.id as string)}
+              >
+                <Avatar
+                  actorId={actor.id}
+                  provenance={actor.isAgent ? 'agent' : 'human'}
+                  label={actor.displayName}
+                  size={15}
+                  src={actor.avatar ?? null}
+                />
+                {actor.displayName}
+              </button>
+            ))
+          )}
         </div>
       </div>
 

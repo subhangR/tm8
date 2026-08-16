@@ -567,4 +567,44 @@ describe('fixture seam — server-parity of the Board wave (PR #253 review findi
     const status = await seam.query({ spaceId: FIXTURE_SPACE_ID, kinds: ['task'], groupBy: 'workStatus', limit: 100 });
     expect(status.groups!.find((g) => g.key === 'in_review')!.label).toBe('In review');
   });
+
+  it('129 parity: assignments record WHO assigned, and assignedByIds selects by it', async () => {
+    const seam = await openSeam();
+    /* Before any seam-made assignment, NO task carries `assignments` — the
+       provenance filter matches nothing, exactly as pre-129 rows read NULL
+       `assigned_by` on the node. */
+    const before = await seam.query({
+      spaceId: FIXTURE_SPACE_ID, kinds: ['task'],
+      filters: { assignedByIds: [memberAda.id] },
+    });
+    expect(before.page.items).toHaveLength(0);
+
+    const result = await seam.commands.createEdge({
+      srcId: taskGuideLines.id, dstId: teamMemberForge.id, type: 'assigned_to',
+    });
+    /* The performer is the VIEWER, projected in the ENTITY id vocabulary —
+       the same one the sibling `assignee` arm and the roster chips speak.
+       (`act-ada` here would be a filter that can never match; the server has
+       one id for both.) */
+    const state = result.patches[0]!.state as {
+      assignments?: { assignee: { id: string }; assignedBy: { id: string } | null; assignedAt: string }[];
+    };
+    expect(state.assignments?.map((a) => [a.assignee.id, a.assignedBy?.id])).toEqual([
+      [teamMemberForge.id, memberAda.id],
+    ]);
+
+    // Her id now selects exactly the task she assigned…
+    const hers = await seam.query({
+      spaceId: FIXTURE_SPACE_ID, kinds: ['task'],
+      filters: { assignedByIds: [memberAda.id] },
+    });
+    expect(hers.page.items.map((s) => s.id)).toEqual([taskGuideLines.id]);
+    // …and the HOLDER's id selects nothing: the axis is provenance, not
+    // possession — "tasks forge holds" is `assigneeIds`' question.
+    const holders = await seam.query({
+      spaceId: FIXTURE_SPACE_ID, kinds: ['task'],
+      filters: { assignedByIds: [teamMemberForge.id] },
+    });
+    expect(holders.page.items).toHaveLength(0);
+  });
 });
