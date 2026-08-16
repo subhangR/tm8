@@ -32,7 +32,7 @@ export function ExplanationToolCard(props: ExplanationToolCardProps) {
   if (durableName) return <DurableOutputCard {...props} name={durableName} />;
   const presentation = explanationPresentation(part.name, part.args, part.result);
   return (
-    <ExplanationFrame part={part} mark={markFor(explainName!)}>
+    <ExplanationFrame part={part}>
       {presentation?.kind === 'diagram' ? (
         <section className="tch-explain__body" data-testid="explain-diagram">
           <PresentationHeading title={presentation.title} eyebrow="Mermaid diagram" />
@@ -71,24 +71,26 @@ export function ExplanationToolCard(props: ExplanationToolCardProps) {
   );
 }
 
+/**
+ * These cards are CONTENT, not tool calls — a diagram, a code excerpt, a file,
+ * a durable document — so they survive the removal of the tool boxes. What does
+ * NOT survive is the tool chrome they wore: an `explain_diagram completed`
+ * header and a "Tool details" payload dump. That is exactly what the transcript
+ * is now rid of everywhere else, and keeping it here would leave the rule true
+ * only where it was easy to keep. Nothing informative went with it — each body
+ * already states its own pending and error wording, and `data-state` still
+ * carries the state to CSS.
+ */
 function ExplanationFrame({
   part,
-  mark,
   children,
 }: {
   part: ToolPart;
-  mark: string;
   children: React.ReactNode;
 }) {
   return (
     <article className="tch-explain" data-state={part.state} data-testid="chat-explanation-card">
-      <header className="tch-explain__toolhead">
-        <span aria-hidden className="tch-explain__mark">{mark}</span>
-        <code>{bareToolName(part.name)}</code>
-        <span className="tch-explain__state">{part.state}</span>
-      </header>
       {children}
-      <RawToolDetails part={part} />
     </article>
   );
 }
@@ -316,7 +318,7 @@ function DurableOutputCard({
   const description = stringOf(args?.description);
   const refs = extractEntityRefs(part.result, part.args).filter((ref) => !suppressEntityIds?.has(ref.id));
   return (
-    <ExplanationFrame part={part} mark={name === 'artifact_create' ? '◇' : '▤'}>
+    <ExplanationFrame part={part}>
       <section className="tch-explain__body tch-durable" data-testid="durable-explanation-output">
         <PresentationHeading
           title={title}
@@ -344,20 +346,6 @@ function DurableOutputCard({
   );
 }
 
-function RawToolDetails({ part }: { part: ToolPart }) {
-  return (
-    <details className="tch-explain__raw">
-      <summary>Tool details</summary>
-      <div><strong>Input</strong><pre>{formatPayload(part.args)}</pre></div>
-      {part.result !== undefined ? (
-        <div data-error={part.resultIsError || undefined}>
-          <strong>{part.resultIsError ? 'Error result' : 'Result'}</strong>
-          <pre>{formatPayload(part.result)}</pre>
-        </div>
-      ) : null}
-    </details>
-  );
-}
 
 type PlacedGraphNode = GraphPresentation['nodes'][number] & { x: number; y: number };
 type PlacedGraphEdge = GraphPresentation['edges'][number] & {
@@ -441,16 +429,7 @@ function highlightLine(line: string, language: string): React.ReactNode {
   return output;
 }
 
-function markFor(name: string): string {
-  if (name === 'explain_diagram') return '⌁';
-  if (name === 'explain_graph') return '◎';
-  if (name === 'explain_code') return '</>';
-  return '◇';
-}
 
-function bareToolName(name: string): string {
-  return name.includes('__') ? name.slice(name.lastIndexOf('__') + 2) : name;
-}
 
 function shorten(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
@@ -472,7 +451,3 @@ function stringOf(raw: unknown): string | null {
   return typeof raw === 'string' && raw.trim() !== '' ? raw : null;
 }
 
-function formatPayload(value: unknown): string {
-  if (typeof value === 'string') return value;
-  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
-}

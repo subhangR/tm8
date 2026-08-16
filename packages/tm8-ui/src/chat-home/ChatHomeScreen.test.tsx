@@ -115,12 +115,13 @@ describe('Chat Home', () => {
     expect(titles()).toEqual(before);
   });
 
-  it('renders a thread, one stateful tool card, and actual usage', async () => {
+  it('renders a thread, the entities its calls touched, and actual usage', async () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
 
-    await waitFor(() => expect(view.getAllByTestId('chat-tool-card')).toHaveLength(1));
-    expect(within(view.getByTestId('chat-tool-card')).getByText('completed')).toBeTruthy();
+    // The tool call itself draws nothing; only what it touched, and the usage.
+    await waitFor(() => expect(view.getAllByTestId('chat-touched-entities')).toHaveLength(1));
+    expect(view.queryByTestId('chat-tool-card')).toBeNull();
     expect(view.getByTestId('chat-usage-card').textContent).toContain('$0.0073');
     expect((view.getByLabelText('Chat teammate') as HTMLSelectElement).disabled).toBe(true);
     expect((view.getByLabelText('Chat mode') as HTMLSelectElement).disabled).toBe(true);
@@ -317,7 +318,7 @@ describe('Chat Home', () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
 
-    await waitFor(() => expect(view.getAllByTestId('chat-tool-card')).toHaveLength(1));
+    await waitFor(() => expect(view.getAllByTestId('chat-touched-entities')).toHaveLength(1));
     expect(
       view.getAllByText(/I mapped the work into three dependency-safe lanes/, {
         selector: '.tch-transcript *',

@@ -291,56 +291,6 @@
 .tch-thinking p { margin: 5px 0 0; padding-left: 10px; border-left: 2px solid var(--pn-line-2); }
 .tch-answer { font-size: 13px; }
 
-.tch-tool {
-  overflow: hidden;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
-  background: var(--pn-surface);
-}
-
-/* A real button now (it discloses the call), so the button chrome is reset back
-   to the header it has always looked like — the press is the only new thing. */
-.tch-tool__head {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  padding: 0 9px;
-  border: 0;
-  border-bottom: 1px solid var(--pn-line);
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.tch-tool__head:hover { background: var(--pn-hover); }
-
-.tch-tool__mark { color: var(--pn-brand-2); }
-.tch-tool code { color: var(--pn-ink-2); font: 10px var(--pn-mono); }
-
-.tch-tool__state {
-  margin-left: auto;
-  color: var(--pn-run);
-  font: 8.5px var(--pn-mono);
-}
-
-.tch-tool[data-state='running'] .tch-tool__state { color: var(--pn-wait); }
-.tch-tool[data-state='error'] .tch-tool__state { color: var(--pn-block); }
-
-.tch-tool__detail {
-  padding: 5px 9px;
-  color: var(--pn-ink-3);
-  font-size: 9px;
-}
-
-.tch-tool__detail + .tch-tool__detail { border-top: 1px solid var(--pn-line); }
-.tch-tool__detail summary { cursor: pointer; font-family: var(--pn-mono); }
-.tch-tool__detail pre { overflow-x: auto; margin: 6px 0 0; color: var(--pn-ink-2); font: 9.5px/1.45 var(--pn-mono); }
-.tch-tool__detail[data-error] { color: var(--pn-block); }
-
 /* Explain-mode presentation tools. Their structured payload is the secondary
    disclosure; the diagram/graph/code/asset is the thing the human asked for. */
 .tch-explain {
@@ -350,22 +300,6 @@
   background: var(--pn-card);
   box-shadow: var(--pn-sh-sm);
 }
-
-.tch-explain__toolhead {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 31px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--pn-line);
-  background: var(--pn-surface);
-}
-
-.tch-explain__mark { color: var(--pn-brand-2); font: 11px var(--pn-mono); }
-.tch-explain__toolhead code { color: var(--pn-ink-3); font: 9px var(--pn-mono); }
-.tch-explain__state { margin-left: auto; color: var(--pn-run); font: 8.5px var(--pn-mono); }
-.tch-explain[data-state='running'] .tch-explain__state { color: var(--pn-wait); }
-.tch-explain[data-state='error'] .tch-explain__state { color: var(--pn-block); }
 
 .tch-explain__body { padding: 14px; }
 .tch-explain__heading { min-width: 0; }
@@ -397,8 +331,7 @@
   color: var(--pn-ink-3);
   font: 9px var(--pn-mono);
 }
-.tch-explain__source summary,
-.tch-explain__raw summary { cursor: pointer; }
+.tch-explain__source summary { cursor: pointer; }
 .tch-explain__source pre {
   overflow-x: auto;
   margin: 7px 0 0;
@@ -408,23 +341,6 @@
   background: var(--pn-surface);
   color: var(--pn-ink-2);
   font: 9px/1.5 var(--pn-mono);
-}
-
-.tch-explain__raw {
-  border-top: 1px solid var(--pn-line);
-  padding: 6px 10px;
-  color: var(--pn-ink-4);
-  font: 8.5px var(--pn-mono);
-}
-.tch-explain__raw > div { margin: 7px 0; }
-.tch-explain__raw > div + div { padding-top: 7px; border-top: 1px solid var(--pn-line); }
-.tch-explain__raw > div[data-error] { color: var(--pn-block); }
-.tch-explain__raw pre {
-  overflow-x: auto;
-  max-height: 240px;
-  margin: 4px 0 0;
-  color: var(--pn-ink-3);
-  font: 8.5px/1.45 var(--pn-mono);
 }
 
 /* Mermaid already owns its safe lazy renderer; this only tunes its frame in a
@@ -583,14 +499,14 @@
 .tch-durable__state[data-state='error'] { color: var(--pn-block); }
 .tch-durable__state[data-state='running'] { color: var(--pn-wait); }
 
-/* Entity chips — graph entities a tool call touched, first-class in the
-   transcript. Same visual family as list rows: kind mark + title + kind word. */
-.tch-tool__entities {
+/* Entity chips — the graph entities a turn touched, and now the ONLY surviving
+   trace of its plain tool calls. Standing free in the transcript instead of
+   inside a card, they carry no border and no card padding: the chips ARE the
+   object. Same visual family as list rows: kind mark + title + kind word. */
+.tch-touched {
   display: flex;
   flex-wrap: wrap;
   gap: var(--pn-space-1);
-  padding: var(--pn-space-1) 9px var(--pn-space-2);
-  border-top: 1px solid var(--pn-line);
 }
 
 .tch-entity-chip {
