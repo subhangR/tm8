@@ -46,15 +46,17 @@ import { isExitCode } from '../src/exit.js';
 // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows — the
 // session git rail behind the facade.
 // 150 -> 152 (2026-08-12): projects.file.history + projects.file.blame (GET reads, with CLI commands).
-const EXPECTED_ROWS = 166; // 163 -> 166 (W4/132): spaces.taskWorkflows list/upsert/delete — MEASURED
+// 166 -> 169 (141): auth.password.change + auth.invite.signup + auth.claim.reissue
+// (the three account-lifecycle ops of FIRST-RUN-CLAIM-DESIGN.md §10) — MEASURED.
+const EXPECTED_ROWS = 169; // 163 -> 166 (W4/132): spaces.taskWorkflows list/upsert/delete — MEASURED
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
 
 describe('the catalog itself is the shape W4 was briefed on', () => {
-  it('164 rows = 162 v1 + 2 reserved, 163 HTTP + 1 WS (measured; +3 W4/132)', () => {
+  it('169 rows = 167 v1 + 2 reserved, 168 HTTP + 1 WS (measured; +3 141 account-lifecycle)', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(164);
+    expect(V1_OPERATIONS.length).toBe(167);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
   });
@@ -130,9 +132,9 @@ describe('every row resolves through the client and the error mapping', () => {
     expect(resolved.size).toBe(EXPECTED_ROWS);
     // 136 HTTP rows produced an honest 8; the single WS row produced usage 2
     // without a request. Both are resolutions; neither is a fall-through.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(165);
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(168);
     expect([...resolved.entries()].filter(([, c]) => c === 2)).toEqual([['events.subscribe', 2]]);
-    expect(requested).toHaveLength(165);
+    expect(requested).toHaveLength(168);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
@@ -165,7 +167,7 @@ describe('every row resolves through the client and the error mapping', () => {
         expect(data.echoed, op.name).toContain(bindPath(op.name, params(op.name)));
       }
     }
-    expect(httpRows).toBe(165);
+    expect(httpRows).toBe(168);
   });
 });
 

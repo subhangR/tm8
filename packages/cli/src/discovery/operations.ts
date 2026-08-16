@@ -235,6 +235,34 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['whoami', 'session', 'token', 'me'],
   },
+  'auth.password.change': {
+    cmd: ['auth', 'password'],
+    syn: 'tm8 auth password --current <current-password> --new <new-password>',
+    sum: 'Change your own account password — the current one is required, so this is never a reset',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['password', 'change', 'rotate', 'credential', 'account', 'me'],
+    notes: [
+      'this is a CHANGE, not a reset: the current password is required and proven inside Postgres, so an open session cannot silently re-credential the account',
+      'every OTHER live session for the account is revoked; the session making the change is kept, so this shell or browser stays signed in',
+      'both passwords travel in the request body — a real deployment needs TLS before using this',
+    ],
+  },
+  'auth.invite.signup': {
+    cmd: ['auth', 'invite', 'signup'],
+    syn: 'tm8 auth invite signup --code <inv_…> --username <username> --password <password> [--display-name <name>] [--email <email>]',
+    sum: 'Redeem a space invite that creates your account and signs you in — the operator never learns your password',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['invite', 'signup', 'join', 'account', 'onboard', 'member'],
+    notes: [
+      'claim-free: the invite code is the authorization — you have no account here until this call',
+      'the account, the membership and the invite consumption happen in ONE transaction, and it can never mint a node admin or an owner',
+      'the password travels in the request body — a real deployment needs TLS before using this',
+    ],
+  },
   // ── first-run node claim (docs/identity/FIRST-RUN-CLAIM-DESIGN.md) ───────
   'auth.claim': {
     cmd: ['auth', 'claim'],
@@ -260,6 +288,20 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'answers without any credential, on purpose: it is the one question a caller can ask before it knows who anybody is',
       'it never reports whether a live claim token exists — that is a fact about the operator\'s filesystem, not about the node',
+    ],
+  },
+  'auth.claim.reissue': {
+    cmd: ['auth', 'claim', 'reissue'],
+    syn: 'tm8 auth claim reissue',
+    sum: 'Rotate this Server\'s first-run claim token and reprint it — on-box only, inert once claimed',
+    authz: 'server',
+    input: 'none',
+    side: 'durable',
+    tags: ['claim', 'reissue', 'rotate', 'first-run', 'setup', 'token', 'recover'],
+    notes: [
+      'ON-BOX BY CONSTRUCTION: only the loopback auto-owner may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
+      'an ordinary restart REPRINTS the live token rather than rotating it, so this is the deliberate act that rotates: reissuing invalidates any previously printed token',
+      'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
     ],
   },
   // ── credentials (Tier B per-member vendor credentials) ───────────────────
@@ -2042,9 +2084,10 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
-  // Re-measured 2026-08-16 (W4/132: + spaces.taskWorkflows.*) — read from the
-  // regenerated conformance manifest, never hand-derived.
-  'sha256:fae705aa16f2296ce88b0b327338e79455373a3ae3ab2569c49f2b5dd17738cd';
+  // Re-measured 141 (+ auth.password.change, auth.invite.signup,
+  // auth.claim.reissue) — read from the regenerated conformance manifest, never
+  // hand-derived.
+  'sha256:69d3df5f1f02ccf9ab38c817c945d0d3ab2ec1e9c2532f3a5c187ff63ecd4e9f';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -2355,10 +2398,38 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 worktree merge <session-id> --from main'],
   }],
+  // `node mode` is SUGAR over `auth.claim.status`, which already reports the
+  // mode — a second, purpose-named spelling, exactly like `worktree status`
+  // over `entities.get`. It is READ-ONLY and adds no catalog row on purpose: the
+  // mode is server config (TM8_NODE_MODE, design D4), converting is an env edit
+  // and a restart, and a command that could flip it over the wire would be
+  // lying about where the switch is. No new operation could honestly do that, so
+  // none is minted.
+  ['node mode', {
+    path: ['node', 'mode'],
+    syntax: 'tm8 node mode',
+    summary: 'Report this Server\'s node mode (single | multi), read-only',
+    notes: [
+      'sugar over auth.claim.status — it adds no catalog operation',
+      'READ-ONLY by design: the mode is server config (TM8_NODE_MODE), not a graph row; converting is an env edit and a restart (D4)',
+    ],
+    // No example: `tm8 node mode` takes no arguments, and every example must
+    // carry a `<placeholder>` (help.test.ts) — a zero-arg command has none.
+    examples: [],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
 COMMAND_ORDER.splice(messageSendIndex < 0 ? COMMAND_ORDER.length : messageSendIndex + 1, 0, 'message reply');
+// `node mode` reads the same operation `auth claim status` does — its
+// availability is exactly that read's.
+COMMAND_OPS.set('node mode', ['auth.claim.status']);
+const authClaimStatusIndex = COMMAND_ORDER.indexOf('auth claim status');
+COMMAND_ORDER.splice(
+  authClaimStatusIndex < 0 ? COMMAND_ORDER.length : authClaimStatusIndex + 1,
+  0,
+  'node mode',
+);
 // `task axis` is as available as the read and the patch it composes. The
 // PATCH leads because the help header derives side-effect and versioning
 // traits from the FIRST operation, and the patch is what this command IS —

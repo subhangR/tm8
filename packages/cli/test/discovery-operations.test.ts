@@ -61,7 +61,8 @@ import { createOutput } from '../src/output.js';
 // 152 -> 163: unledgered upstream bumps (measured on origin/main 9b938647).
 // 163 -> 166 (2026-08-16, W4/132): spaces.taskWorkflows list/set/delete, all
 // public, all with `space task-workflow` commands. MEASURED.
-const EXPECTED_ROWS = 166;
+// 166 -> 169 (141): the three account-lifecycle ops. MEASURED.
+const EXPECTED_ROWS = 169;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -174,7 +175,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
-    expect(histogram).toEqual({ public: 162, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 165, composite: 1, internal: 1, reserved: 2 });
   });
 });
 

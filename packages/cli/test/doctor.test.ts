@@ -177,7 +177,9 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // entities.patch (catalog rows unmoved).
     // 149 -> 152 (2026-08-16, W4/132): space task-workflow list|set|delete —
     // three catalog-driven commands over the new taskWorkflows rows.
-    expect(COMMAND_PATHS).toHaveLength(152);
+    // 152 -> 156 (141): auth password + auth invite signup + auth claim reissue,
+    // plus the node mode alias — none of which moves the catalog count.
+    expect(COMMAND_PATHS).toHaveLength(156);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {

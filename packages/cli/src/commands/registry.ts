@@ -37,6 +37,7 @@ import { KIND_COMMANDS } from './kind.js';
 import { SPACE_COMMANDS } from './space.js';
 import { IDENTITY_COMMANDS } from './identity.js';
 import { AUTH_COMMANDS } from './auth.js';
+import { NODE_COMMANDS } from './node.js';
 import { EDGE_COMMANDS } from './edge.js';
 import { COLLECTION_COMMANDS } from './collection.js';
 import { PLACEMENT_COMMANDS } from './placement.js';
@@ -110,6 +111,7 @@ export const COMMANDS: CommandModule[] = [
   ...SPACE_COMMANDS,
   ...IDENTITY_COMMANDS,
   ...AUTH_COMMANDS,
+  ...NODE_COMMANDS,
   ...EDGE_COMMANDS,
   ...COLLECTION_COMMANDS,
   ...PLACEMENT_COMMANDS,

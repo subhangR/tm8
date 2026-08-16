@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:fae705aa16f2296ce88b0b327338e79455373a3ae3ab2569c49f2b5dd17738cd",
+  "catalogDigest": "sha256:69d3df5f1f02ccf9ab38c817c945d0d3ab2ec1e9c2532f3a5c187ff63ecd4e9f",
   "catalog": {
-    "total": 166,
-    "v1": 164,
+    "total": 169,
+    "v1": 167,
     "reserved": 2,
-    "http": 165,
+    "http": 168,
     "ws": 1,
-    "registerableV1Http": 163,
+    "registerableV1Http": 166,
     "methods": {
       "GET": 60,
-      "POST": 76,
+      "POST": 79,
       "PATCH": 11,
       "DELETE": 11,
       "PUT": 7,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 64,
-      "command": 101,
+      "command": 104,
       "stream": 1
     },
-    "uniqueNames": 166,
-    "uniqueBindings": 166
+    "uniqueNames": 169,
+    "uniqueBindings": 169
   },
   "reservedOperations": [
     "search.query",
@@ -1293,9 +1293,23 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.password.change",
+        "method": "POST",
+        "path": "/v2/auth/password",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "auth.invite.resolve",
         "method": "POST",
         "path": "/v2/auth/invite/resolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.invite.signup",
+        "method": "POST",
+        "path": "/v2/auth/invite/signup",
         "status": "registered",
         "source": "server-router"
       },
@@ -1310,6 +1324,13 @@
         "operation": "auth.claim.status",
         "method": "GET",
         "path": "/v2/auth/claim",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.claim.reissue",
+        "method": "POST",
+        "path": "/v2/auth/claim/reissue",
         "status": "registered",
         "source": "server-router"
       },
@@ -1566,7 +1587,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 135
+    "unimplementedV1Http": 138
   },
   "schemas": {
     "additive": {
@@ -4355,6 +4376,23 @@
         "publicComposite": null
       },
       {
+        "operation": "auth.password.change",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.password.change",
+        "intentTags": [
+          "auth",
+          "password",
+          "change"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "auth.invite.resolve",
         "noun": "auth",
         "exposure": "public",
@@ -4363,6 +4401,23 @@
           "auth",
           "invite",
           "resolve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.invite.signup",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.invite.signup",
+        "intentTags": [
+          "auth",
+          "invite",
+          "signup"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -4396,6 +4451,23 @@
           "auth",
           "claim",
           "status"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.claim.reissue",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.claim.reissue",
+        "intentTags": [
+          "auth",
+          "claim",
+          "reissue"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

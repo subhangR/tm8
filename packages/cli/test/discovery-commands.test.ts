@@ -144,7 +144,11 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // entities.patch — ZERO new catalog rows. Value MEASURED on this tree.
     // 149 -> 152 (W4/132): space task-workflow list|set|delete over the three
     // new catalog rows.
-    expect(COMMAND_PATHS).toHaveLength(152);
+    // 152 -> 156 (141): `auth password`, `auth invite signup`, `auth claim
+    // reissue` over the three new account-lifecycle rows, plus `node mode` — an
+    // ALIAS over `auth.claim.status` (which already reports the mode), ZERO new
+    // catalog rows, the same sugar posture as `worktree status` over entities.get.
+    expect(COMMAND_PATHS).toHaveLength(156);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

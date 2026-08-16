@@ -30,9 +30,11 @@ import type {
   AcceptanceCriterion, ActionDiscoveryResult, ActivateInteractionProfileInput,
   AmendmentErrorReason,
   ActivityItem, ActorSummary, AddMessageAttachmentsInput,
-  AuthAccountView, AuthClaimInput, AuthClaimResult, AuthClaimStatusResult,
+  AuthAccountView, AuthClaimInput, AuthClaimReissueResult, AuthClaimResult, AuthClaimStatusResult,
+  AuthInviteSignupInput, AuthInviteSignupResult,
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
-  AuthLogoutResult, AuthSessionGetResult, AuthSessionView, AuthSignupInput,
+  AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
+  AuthSessionGetResult, AuthSessionView, AuthSignupInput,
   AuthSignupResult, ChannelTab, ChatThreadSummary, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
@@ -1474,6 +1476,53 @@ export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.o
   claimed: z.boolean(),
   mode: z.enum(['single', 'multi']),
   signupPath: z.enum(['claim', 'invite', 'admin']),
+}).strict();
+
+export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z.object({
+  token: z.string().min(1),
+  claimUrl: z.string().min(1),
+  tokenPath: z.string().nullable(),
+}).strict();
+
+/**
+ * `auth.password.change`. Strict, and both fields required: this is CHANGE, so
+ * the current password is not optional. `newPassword` obeys the same 8–1024
+ * floor `auth.signup`/`auth.claim` do; `currentPassword` only has to be a
+ * non-empty string, because whatever the account currently holds is what will
+ * be proven against — refusing a short current password here would just leak
+ * that the stored one is short.
+ */
+export const AuthPasswordChangeInputSchema: z.ZodType<AuthPasswordChangeInput> = z.object({
+  currentPassword: z.string().min(1).max(1024),
+  newPassword: AuthPasswordSchema,
+}).strict();
+
+export const AuthPasswordChangeResultSchema: z.ZodType<AuthPasswordChangeResult> = z.object({
+  accountId: z.string().uuid(),
+  revokedOtherSessions: z.number().int().nonnegative(),
+}).strict();
+
+/**
+ * `auth.invite.signup`. Claim-free, so — like `auth.invite.resolve` — strictness
+ * is the only control on this body and an `actorId`/`clientMutationId` on the
+ * wire is a 400 rather than a field nobody is in a position to check. The
+ * credential rules mirror `auth.signup`/`auth.claim`.
+ */
+export const AuthInviteSignupInputSchema: z.ZodType<AuthInviteSignupInput> = z.object({
+  code: z.string().min(1),
+  username: AuthUsernameSchema,
+  password: AuthPasswordSchema,
+  displayName: z.string().min(1).max(200).optional(),
+  email: z.string().min(3).max(320).optional(),
+  kind: z.enum(['browser', 'cli']).optional(),
+}).strict();
+
+export const AuthInviteSignupResultSchema: z.ZodType<AuthInviteSignupResult> = z.object({
+  token: z.string().min(1),
+  account: AuthAccountViewSchema,
+  session: AuthSessionViewSchema,
+  spaceId: SpaceIdSchema,
+  memberId: EntityIdSchema,
 }).strict();
 
 // ---------------------------------------------------------------------------
