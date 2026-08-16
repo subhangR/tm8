@@ -213,20 +213,36 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
       // This equality check terminates client echo loops. A peer that merely
       // reasserts the current geometry produces no PTY signal and no broadcast.
       //
-      // `force` is the ONE exception, and the client sends it at most once per
-      // attach. A freshly attached browser has rendered the replay and now needs
-      // the agent to redraw over it, but a full-screen TUI only redraws when it
-      // is told to — and on a remount into unchanged window geometry the fitted
-      // size matches exactly, so the guard above swallowed the only signal that
-      // would have asked. That is the "blank until I resize the window" bug:
-      // resizing worked solely because it made the geometry differ.
-      if (unchanged && frame.force !== true) return;
+      // `force` is the ONE exception. A freshly attached browser has rendered
+      // the replay and now needs the agent to redraw over it, but a full-screen
+      // TUI only redraws when it is told to — and on a remount into unchanged
+      // window geometry the fitted size matches exactly, so the guard above
+      // swallowed the only signal that would have asked. That is the "blank
+      // until I resize the window" bug: resizing worked solely because it made
+      // the geometry differ.
+      //
+      // ENFORCED, not trusted: the one-shot budget is spent here, on the
+      // connection, so a peer that spams force:true gets exactly one repaint
+      // like everyone else. See PtyWsConnection.forcedRepaintSpent.
+      const forcing = unchanged && frame.force === true && !origin.forcedRepaintSpent;
+      if (unchanged && !forcing) return;
       if (unchanged) {
+        origin.forcedRepaintSpent = true;
         // TIOCSWINSZ raises SIGWINCH only when the winsize actually CHANGES, so
         // re-asserting the same dimensions is silent. Bounce one row and come
         // straight back: the agent gets its SIGWINCH, re-reads the winsize, and
         // repaints at the real geometry. Stays inside the 1..500 row bound in
         // both directions, and the client's own grid is never touched.
+        //
+        // The short row is not observable to a TUI that reads the winsize when
+        // it HANDLES the signal — both deliveries then report the real size, so
+        // no frame is ever laid out one row short. Measured against a real
+        // child. The residual is a program that reads TIOCGWINSZ from inside
+        // the handler itself (plausible for a Rust or Go agent) and could catch
+        // the intermediate value; it would be corrected by the second signal
+        // one tick later. Signalling the foreground process group directly
+        // would avoid the window entirely and is the better fix if this ever
+        // bites, but it is platform-specific and unverified here.
         pty.resize(sessionId, cols, rows > 1 ? rows - 1 : rows + 1);
       }
       pty.resize(sessionId, cols, rows);

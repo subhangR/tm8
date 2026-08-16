@@ -145,8 +145,41 @@ import {
   type WorkInput,
 } from '@tm8/contract';
 import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
+
 import type { HttpClient, QueryParams } from './http';
 import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
+
+/**
+ * Fill in terminal geometry the caller did not state, so a server-hosted PTY
+ * boots at the real pane width instead of 80x24.
+ *
+ * Resolved PER FIELD with `??` rather than by spread order. `{...measured,
+ * ...input}` reads the same for the common case but is quietly fragile: it
+ * relies on the caller OMITTING the key, so any construction that sets
+ * `cols: undefined` explicitly would blow the measurement away — and because
+ * JSON.stringify drops undefined, the server would then see no geometry at all
+ * and fall back to 80x24. This form cannot be broken that way.
+ */
+function withMeasuredGeometry<T extends object>(
+  input: T,
+): T & { cols?: number; rows?: number } {
+  // Read through a widened view rather than constraining T to carry the two
+  // optional fields: a caller whose literal omits them gives TypeScript nothing
+  // to infer T from, and it collapses to the constraint and rejects every other
+  // property on the object.
+  const stated = input as { cols?: number; rows?: number };
+  const measured = measureSpawnTerminalSize();
+  const cols = stated.cols ?? measured.cols;
+  const rows = stated.rows ?? measured.rows;
+  return {
+    ...input,
+    // Still omitted entirely when neither side has an opinion — the contract
+    // bounds these at >= 1, so sending a 0 would be a validation error where
+    // saying nothing is a clean fall back to the PTY host's default.
+    ...(cols ? { cols } : {}),
+    ...(rows ? { rows } : {}),
+  };
+}
 
 /**
  * `GET /v2/spaces/:spaceId/events` response (server `DurableEventPage`,
@@ -354,17 +387,28 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     /**
      * `credentials.loginSessions.start` — opens the login terminal.
      *
-     * Geometry is deliberately NOT sent: the contract bounds `cols`/`rows` as
-     * the only client input this op accepts, and the terminal we host fits
-     * itself on mount, so sending a guess here would just be a second, wrong
-     * answer to a question the PTY resize already settles.
+     * Geometry IS sent, and the note that used to sit here saying it was
+     * deliberately withheld was wrong on its own terms. It argued that "the
+     * terminal we host fits itself on mount, so sending a guess here would just
+     * be a second, wrong answer to a question the PTY resize already settles" —
+     * but the PTY resize does NOT settle it. A full-screen TUI lays out its
+     * frame for the width it is handed at startup, and the socket suppresses
+     * the corrective resize whenever the fitted size already matches. And the
+     * program on the other end is not a bare device-code prompt:
+     * CREDENTIAL_LOGIN_COMMANDS.anthropic is `claude auth login`, a full-screen
+     * Ink TUI — the exact case that breaks. `cols`/`rows` are the only client
+     * input this op accepts, and they cannot influence which program runs.
      */
     credentialsStartLogin(
       spaceId: SpaceId,
       provider: CredentialProviderName,
     ): Promise<CredentialsLoginSessionStartResult> {
       return http.call<CredentialsLoginSessionStartResult>('credentials.loginSessions.start', {
-        body: { spaceId, provider, clientMutationId: newId('credlogin') },
+        body: withMeasuredGeometry({
+          spaceId,
+          provider,
+          clientMutationId: newId('credlogin'),
+        }),
       });
     },
 
@@ -906,29 +950,39 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
      * Attach the browser's measured terminal geometry so the server-hosted PTY
      * BOOTS at the real pane width instead of 80x24.
      *
-     * Contrast `credentialsStartLogin` above, which deliberately sends nothing
-     * on the grounds that "the PTY resize already settles it". That holds for a
-     * short-lived device-code prompt; it does NOT hold here. A full-screen agent
-     * TUI lays out its entire frame for the width it is handed at STARTUP, and a
-     * later resize only repairs that if the agent actually repaints — which the
-     * PTY socket's echo-loop guard prevents whenever the fitted size already
-     * matches what the PTY has, leaving an 80-column frame frozen on screen
-     * until a human resizes the window. Measuring here makes that unreachable.
+     * A full-screen agent TUI lays out its entire frame for the width it is
+     * handed at STARTUP, and a later resize only repairs that if the agent
+     * actually repaints — which the PTY socket's echo-loop guard prevents
+     * whenever the fitted size already matches what the PTY has, leaving an
+     * 80-column frame frozen on screen until a human resizes the window.
+     * Measuring here makes that unreachable. Every op on this seam that boots a
+     * PTY now does the same thing; there is no principled exception.
      *
      * This lives at the ops choke point every spawn passes through rather than
      * in `buildSpawnInput`, because the domain builder is pure and must stay
-     * callable without a DOM. A caller that already knows its geometry wins: the
-     * spread order leaves an explicit `input.cols` untouched.
+     * callable without a DOM. A caller that already knows its geometry wins —
+     * see `withMeasuredGeometry`, which resolves that per FIELD rather than by
+     * spread order.
      */
     spawn(input: ExecutionSpawnInput): Promise<CommandResult> {
       return http.call<CommandResult>('execution.spawn', {
-        body: { ...measureSpawnTerminalSize(), ...input },
+        body: withMeasuredGeometry(input),
       });
     },
 
-    /** A vanilla terminal (101). Its own op, not `spawn` with nulls. */
+    /**
+     * A vanilla terminal (101). Its own op, not `spawn` with nulls.
+     *
+     * Geometry matters here for the same reason it does on `spawn`: its input
+     * has accepted `cols`/`rows` all along and no caller ever sent them, so a
+     * plain terminal booted 80x24 — and a plain terminal is exactly where
+     * someone types `claude` or `htop` by hand and gets a full-screen TUI laid
+     * out for the wrong width.
+     */
     startTerminal(input: ExecutionTerminalStartInput): Promise<CommandResult> {
-      return http.call<CommandResult>('execution.terminal.start', { body: input });
+      return http.call<CommandResult>('execution.terminal.start', {
+        body: withMeasuredGeometry(input),
+      });
     },
 
     /**
@@ -959,7 +1013,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     resume(id: EntityId, input: ExecutionResumeInput): Promise<CommandResult> {
       return http.call<CommandResult>('execution.resume', {
         params: { id },
-        body: { ...measureSpawnTerminalSize(), ...input },
+        body: withMeasuredGeometry(input),
       });
     },
   };

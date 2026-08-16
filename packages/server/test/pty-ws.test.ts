@@ -320,6 +320,15 @@ describe('PTY WebSocket', () => {
       { cols: 80, rows: 24 },
     ]);
     expect(host.getSize('s-force')).toEqual({ cols: 80, rows: 24 });
+
+    // AND THE BUDGET IS SPENT. "at most once per attach" is a client
+    // convention, so the server must not depend on it: a peer that spams
+    // force:true gets nothing further, because each honoured force costs the
+    // agent a full-screen redraw.
+    for (let i = 0; i < 20; i += 1) send({ type: 'resize', cols: 80, rows: 24, force: true });
+    await new Promise((r) => setTimeout(r, 150));
+    expect(calls).toHaveLength(2);
+    expect(host.getSize('s-force')).toEqual({ cols: 80, rows: 24 });
   });
 
   it('a respawn on the same sessionId replaces the PTY: old socket closes with NO exit frame, new attach gets a different epoch and only the new stream', async () => {

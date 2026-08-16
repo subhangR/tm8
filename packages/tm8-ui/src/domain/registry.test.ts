@@ -620,14 +620,25 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     // an absent statement must stay absent so the measurement still wins.
     const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-sonnet-5' });
     const stated = buildSpawnInput({
-      clientMutationId: 'c', spaceId: 's', config, cols: 173, rows: 44,
+      clientMutationId: 'c', spaceId: 's', config, geometry: { cols: 173, rows: 44 },
     });
     expect(stated.cols).toBe(173);
     expect(stated.rows).toBe(44);
 
+    // Key-ABSENCE, not `undefined`: the ops layer resolves geometry per field
+    // and JSON.stringify drops undefined, so an explicitly-undefined key and a
+    // missing one are the same on the wire but not in the type. Assert the
+    // stronger of the two.
     const silent = buildSpawnInput({ clientMutationId: 'c', spaceId: 's', config });
     expect('cols' in silent).toBe(false);
     expect('rows' in silent).toBe(false);
+
+    // A HALF-stated geometry is unrepresentable — `geometry` is one object with
+    // both fields required, so this is a compile error rather than a value that
+    // gets silently discarded at runtime. Kept as a type-level assertion
+    // because that is where the guarantee lives.
+    // @ts-expect-error partial geometry must not type-check
+    buildSpawnInput({ clientMutationId: 'c', spaceId: 's', config, geometry: { cols: 173 } });
   });
 
   it('D51.4 — extra projects are ADDITIVE and never silently accepted', () => {

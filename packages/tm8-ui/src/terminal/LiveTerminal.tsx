@@ -194,9 +194,13 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
           // Terminal may have been evicted after parsing the last replay byte.
         }
         term.element.style.removeProperty('visibility');
-        // A replay has just been painted into the grid, so the agent is owed a
-        // redraw over it — including after a reconnect, where this runs again.
-        repaintForcedRef.current = false;
+        // Deliberately does NOT re-arm the repaint nudge. It used to, which
+        // meant a normal attach forced TWICE — once from the mount's
+        // scheduleResize and again here — and, because this runs on every
+        // reconnect and every visibility-driver resume, a flapping socket
+        // became a repaint storm. One nudge per mount is enough: the agent's
+        // repaint bytes are live output, so the server's ordering invariant
+        // sequences them AFTER the replay no matter which lands first.
         resizeRetryCountRef.current = 0;
         scheduleResize();
       });
@@ -220,22 +224,27 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       const currentTerm = termRef.current;
       const currentFit = fitRef.current;
       if (!currentTerm || !currentFit || !currentTerm.element) return;
-      // BOTH of the next two guards used to `return` outright, and that is how
-      // a terminal ends up blank until you resize the window. They fire while
-      // the pane is still laying out or is mid-surface-switch — transient
-      // states — but nothing re-arms the fit afterwards: the ResizeObserver
-      // only fires on a SIZE change, and an ancestor becoming visible does not
-      // change this container's size. So the fit was simply dropped, the grid
-      // kept xterm's 80x24 default, and the first thing that changed the box
-      // was a human dragging the window. Retry on the same backoff every other
-      // guard in this function already uses, which self-cancels the moment the
-      // fit succeeds.
+      // THESE TWO GUARDS ARE NOT SYMMETRIC, and treating them as if they were
+      // is a regression. Both return early, but only one of them is stranded.
+      //
+      // A zero rect means an ancestor is `display:none` (panels.css hides
+      // inactive work-session surfaces that way). Going hidden and coming back
+      // CHANGES the box — 0x0 then 600x400 — so the ResizeObserver fires on
+      // both edges and re-arms the fit on its own, in ~12ms. Retrying here
+      // would be worse than useless: a display:none host is 0x0 for as long as
+      // it is hidden, so the retry can never succeed, and because
+      // scheduleResize refuses to queue while a timer is pending, the pending
+      // retry SWALLOWS the ResizeObserver's fire on reveal and turns a 12ms
+      // refit into a ~500ms one. Measured. Leave it alone.
       const rect = container.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) {
-        resizeRetryCountRef.current += 1;
-        scheduleResize();
-        return;
-      }
+      if (rect.width === 0 || rect.height === 0) return;
+      // `visibility:hidden` is the stranded one (shell.css hides the non-board
+      // side panel that way). The box keeps its full size the whole time, so
+      // the ResizeObserver fires on NEITHER edge and there is no backstop at
+      // all — this is where the fit was silently dropped and the terminal
+      // stayed on xterm's 80x24 until a human dragged the window. Retry on the
+      // same backoff every other guard here uses; it self-cancels the moment
+      // the surface is shown and the fit succeeds.
       if (getComputedStyle(container).visibility === 'hidden') {
         resizeRetryCountRef.current += 1;
         scheduleResize();
@@ -253,21 +262,23 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         scheduleResize();
         return;
       }
-      resizeRetryCountRef.current = 0;
       const { cols, rows } = currentTerm;
-      // The last drop path in this function. fit() can succeed without having
-      // resized anything — FitAddon's proposeDimensions bails on a degenerate
-      // box and fit() then returns silently — so a container smaller than one
-      // cell lands here. Retrying rather than returning costs nothing (the
-      // backoff self-cancels the moment a fit produces a real grid) and keeps
-      // the invariant this whole function now holds: NO exit from sendResize
-      // leaves the terminal unfitted with nothing scheduled to try again.
-      // Credit: tm8 UI Builder spotted this one while reading the same path.
+      // fit() can succeed without having resized anything — FitAddon's
+      // proposeDimensions bails on a degenerate box and fit() then returns
+      // silently — so a container smaller than one cell lands here.
+      //
+      // THE RETRY-COUNT RESET MUST STAY BELOW THIS GUARD. Above it, every pass
+      // through would zero the counter and then bump it to 1, `attempts < 5`
+      // would hold forever, and this would be an unbounded rAF loop at refresh
+      // rate running a full fit() measure each frame — not the bounded backoff
+      // the comment claims. The other retry branches sit before the reset and
+      // accumulate correctly; this one has to be sequenced deliberately.
       if (cols <= 0 || rows <= 0) {
         resizeRetryCountRef.current += 1;
         scheduleResize();
         return;
       }
+      resizeRetryCountRef.current = 0;
       clientFittedSessions.add(sessionId);
       // ONE-SHOT REPAINT NUDGE (see ptyTransport.resize). The grid is now
       // correctly fitted and any replay has been parsed; make the AGENT redraw

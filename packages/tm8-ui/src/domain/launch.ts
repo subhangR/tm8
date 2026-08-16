@@ -634,6 +634,11 @@ export function buildSpawnInput(args: {
    * Terminal geometry, when the CALLER knows it. Optional and DOM-free, so this
    * builder stays pure — the ops layer measures a default when this is omitted.
    *
+   * ONE OBJECT, both fields required, precisely so a HALF-stated geometry cannot
+   * be expressed. Two independent optional numbers would let a caller supply
+   * `cols` and forget `rows`, and the only sane thing to do with that is discard
+   * it — silently reintroducing the wrong-width boot this exists to remove.
+   *
    * State it whenever you are spawning without a terminal already on screen. A
    * create-flow ("New Session") is the case that needs it: the ops layer's
    * fallback, `measureSpawnTerminalSize`, returns the last globally fitted size
@@ -642,8 +647,7 @@ export function buildSpawnInput(args: {
    * cold load, nothing at all, and the PTY boots 80x24. Neither is visible at
    * the call site. Passing your real geometry here is the way to not care.
    */
-  cols?: number;
-  rows?: number;
+  geometry?: { cols: number; rows: number };
 }): ExecutionSpawnInput {
   const { config } = args;
   if (!config.teamMemberId) {
@@ -685,12 +689,13 @@ export function buildSpawnInput(args: {
   // Only carried when consent was actually given — the contract types it as
   // `true`, so an absent field and a false one are not the same statement.
   if (config.confirmUntrusted) input.confirmUntrusted = true;
-  // Only when the caller actually stated it. Omitted leaves the field absent so
-  // the ops layer's measurement wins; present, it beats the measurement there
-  // (that spread is ordered `{...measured, ...input}` for exactly this).
-  if (args.cols && args.rows) {
-    input.cols = args.cols;
-    input.rows = args.rows;
+  // Only when the caller actually stated it. Omitted leaves both keys ABSENT
+  // (not `undefined`) so the ops layer's measurement wins; present, it beats
+  // the measurement there. Key-absence is the contract, which is why the test
+  // asserts `'cols' in input === false` rather than a value comparison.
+  if (args.geometry) {
+    input.cols = args.geometry.cols;
+    input.rows = args.geometry.rows;
   }
   return input;
 }
