@@ -449,3 +449,105 @@ describe('W3 — the axis board', () => {
     expect(onSetAxis).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * ===========================================================================
+ * W4 (2026-08-16) — the STATUS board pre-flights a drop against the space's
+ * workflow registry (132). The vocabulary is already in hand — the same
+ * `spaceSettings()` data the strip narrows with — so a drop the row's type
+ * forbids is FORESEEABLE, and §8.5 says a foreseeable refusal is stated at
+ * the refusing column WITHOUT calling the server. Same words as the strip's
+ * disabled option; the database trigger remains the real gate. Axis and
+ * assignee boards are untouched by construction: the pre-flight lives in the
+ * status branch of `dispatchDrop` alone.
+ * ===========================================================================
+ */
+describe('W4 — the status board pre-flights workflow-forbidden drops', () => {
+  const CODE_RULE = {
+    id: 'wf-code',
+    spaceId: FIXTURE_SPACE_ID,
+    typeValue: 'code',
+    statuses: ['open', 'working', 'in_review', 'done'],
+  };
+
+  const typedTask = (workStatus: string, type: string): EntitySummary => {
+    const row = taskOf(workStatus);
+    return { ...row, state: { ...row.state, axes: { type } } as EntitySummary['state'] };
+  };
+
+  function renderWorkflowBoard(opts: {
+    row: EntitySummary;
+    onSetState: (
+      entityId: string,
+      next: string,
+      via: string,
+      o?: { notify?: boolean },
+    ) => void | Promise<{ ok: true } | { ok: false; reason: string }>;
+  }) {
+    return render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={rowsFor([])}
+        ctx={ctx}
+        mode="board"
+        taskWorkflows={[CODE_RULE] as never}
+        boardFor={(() => snapshot({ groups: groups(['open', [opts.row]]) })) as never}
+        onSetState={opts.onSetState as never}
+      />,
+    );
+  }
+
+  it('a forbidden drop refuses INLINE at the refusing column and never calls the server', async () => {
+    const onSetState = vi.fn();
+    const row = typedTask('open', 'code');
+    const { getByTestId, getAllByTestId, findByTestId } = renderWorkflowBoard({ row, onSetState });
+
+    // Mod+ArrowRight aims the open card at pulled — which `code` forbids.
+    fireEvent.keyDown(getByTestId('board-body'), { key: 'ArrowRight', metaKey: true });
+
+    // THE assertion this block exists for: the executor was never invoked.
+    expect(onSetState).not.toHaveBeenCalled();
+    const refusal = await findByTestId('board-refusal');
+    // The strip's words exactly — one sentence for one rule.
+    expect(refusal.textContent).toBe('type code does not allow pulled');
+    const pulled = getAllByTestId('board-column').find(
+      (col) => col.getAttribute('data-column') === 'pulled',
+    )!;
+    expect(within(pulled).getByTestId('board-refusal')).toBeTruthy();
+  });
+
+  it('an allowed drop, an untyped row, and an unruled type all dispatch exactly as before', () => {
+    for (const row of [
+      typedTask('open', 'design'), // no rule for design
+      taskOf('open'), // no axes at all
+    ]) {
+      const onSetState = vi.fn(async () => ({ ok: true }) as const);
+      const view = renderWorkflowBoard({ row, onSetState: onSetState as never });
+      fireEvent.keyDown(view.getByTestId('board-body'), { key: 'ArrowRight', metaKey: true });
+      expect(onSetState).toHaveBeenCalledTimes(1);
+      view.unmount();
+    }
+
+    // And a typed, RULED row moving to an ALLOWED status dispatches too:
+    // working is structural, so no vocabulary can bar it.
+    const onSetState = vi.fn(async () => ({ ok: true }) as const);
+    const row = typedTask('pulled', 'code');
+    const { getByTestId } = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={rowsFor([])}
+        ctx={ctx}
+        mode="board"
+        taskWorkflows={[CODE_RULE] as never}
+        boardFor={(() => snapshot({ groups: groups(['pulled', [row]]) })) as never}
+        onSetState={onSetState as never}
+      />,
+    );
+    // Focus starts on column 0 (open, empty here): step focus onto the pulled
+    // column first, then command the move pulled → working.
+    fireEvent.keyDown(getByTestId('board-body'), { key: 'ArrowRight' });
+    fireEvent.keyDown(getByTestId('board-body'), { key: 'ArrowRight', metaKey: true });
+    expect(onSetState).toHaveBeenCalledTimes(1);
+    expect(onSetState.mock.calls[0]![1]).toBe('working');
+  });
+});

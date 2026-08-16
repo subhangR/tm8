@@ -101,6 +101,14 @@ function fakePort(over: Partial<SettingsPort> = {}): SettingsPort {
     }),
     deleteAxis: async (axisId) => ({ axisId }),
     tasksUsingAxis: async () => [],
+    // W4 — the workflow registry. Empty is a measured "no rules defined";
+    // the section still draws one editor per `type` axis value above.
+    loadWorkflows: async () => [],
+    upsertWorkflow: async (input) => ({
+      id: 'workflow-fake', spaceId: 'specimen-space' as never,
+      typeValue: input.typeValue, statuses: input.statuses,
+    }),
+    deleteWorkflow: async (workflowId) => ({ workflowId }),
     ...over,
   };
 }
@@ -152,6 +160,15 @@ const LIVE_VERBS = [
   /^delete$/,
   /^Create axis$/,
   /^Save axis$/,
+  // Workflows (W4): the nav row plus every live control in the section —
+  // live because `spaces.taskWorkflows.upsert|delete` are real catalog ops
+  // (132) the seam carries verbs for. The STRUCTURAL checkboxes
+  // ({open,working,done}) are NOT here: they render disabled with the schema
+  // reason, exactly as the default axis's delete renders next door.
+  /^Workflows$/,
+  /^.+ allows .+$/,
+  /^Save workflow for /,
+  /^remove workflow for /,
   // Your profile (067): the nav row plus the FOUR live controls — live
   // because `identity.profile.update` is a real executor in seam.commands
   // (Amendment 4), the first write this surface has ever been allowed.

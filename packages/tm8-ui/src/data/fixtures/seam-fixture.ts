@@ -30,6 +30,8 @@ import {
   type SpaceInviteView,
   type TaskAxis,
   type TaskAxisInput,
+  type TaskWorkflow,
+  type TaskWorkflowInput,
   type UpdateMemberRoleInput,
   bindPath,
   CollabError,
@@ -803,6 +805,39 @@ export function createFixtureSeam(): FixtureSeam {
   let axisSeq = 0;
 
   /**
+   * W4 — the task-workflow registry (132), MUTABLE like `taskAxes` above:
+   * one row per (space, `type` value) naming the SUBSET of statuses tasks of
+   * that type may be moved TO. Seeded empty because the node seeds none; the
+   * CRUD verbs below curate it and `spaceSettings()` clones it per read.
+   */
+  const taskWorkflows: TaskWorkflow[] = [];
+  let workflowSeq = 0;
+
+  /**
+   * 132's trigger (`internal.validate_task_workflow`), mirrored refusal for
+   * refusal so a fixture-backed status write refuses exactly like the node:
+   * fires only when the status actually CHANGES; a task with no `type` value
+   * (the trigger reads `new.axes ->> 'type'`), a type with no rule, or a
+   * space with no rules is never touched; moving FROM an illegal status is
+   * free, moving TO one refuses in the trigger's own words (23514 →
+   * invariant_violation through the node's SQLSTATE map).
+   */
+  function requireWorkflowAllows(s: EntitySummary, status: string): void {
+    if (s.state.kind !== 'task') return;
+    if (s.state.workStatus === status) return;
+    const typeValue = (s.state.axes ?? {})['type'];
+    if (typeof typeValue !== 'string' || typeValue === '') return;
+    const rule = taskWorkflows.find((w) => w.typeValue === typeValue);
+    if (!rule) return;
+    if (!(rule.statuses as readonly string[]).includes(status)) {
+      throw new CollabError(
+        'invariant_violation',
+        `workflow for type ${typeValue} does not allow status ${status}`,
+      );
+    }
+  }
+
+  /**
    * The node's own in-use predicate, mirrored: does any task in the space
    * carry a value under this axis NAME (`tasks.axes ? name`)? Used by
    * delete/rename/value-removal exactly as `w2_delete_task_axis` /
@@ -1246,6 +1281,9 @@ export function createFixtureSeam(): FixtureSeam {
         // the same rows the W2 CRUD verbs curate. Position order, exactly as
         // `spaces.settings` answers it.
         taskAxes: [...taskAxes].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
+        // W4 ride-along, exactly as the node answers it: the same settings
+        // round trip that carries the axes carries the workflows keyed on them.
+        taskWorkflows: [...taskWorkflows].sort((a, b) => a.typeValue.localeCompare(b.typeValue)).map((w) => clone(w)),
         menu: {
           schemaVersion: 1,
           revision: 1,
@@ -2332,6 +2370,64 @@ export function createFixtureSeam(): FixtureSeam {
       },
 
       /**
+       * W4 — the workflow registry's writes, mirroring `upsert_task_workflow`
+       * / `delete_task_workflow` (132) refusal for refusal, in the ORDER the
+       * SQL raises them: the RPC's own duplicate check (22023 →
+       * invalid_input) fires before the insert, whose two check constraints
+       * (23514 → invariant_violation) carry Postgres's own message shape. The
+       * admin gate is NOT mirrored: the fixture viewer is the space owner,
+       * exactly as in the axis verbs above.
+       */
+      async upsertTaskWorkflow(spaceId: SpaceId, input: TaskWorkflowInput): Promise<TaskWorkflow> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        const statuses = input.statuses;
+        if (new Set(statuses).size !== statuses.length) {
+          throw new CollabError('invalid_input', 'workflow statuses must be unique');
+        }
+        const seven = ['open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled'];
+        if (statuses.some((v) => !seven.includes(v))) {
+          throw new CollabError(
+            'invariant_violation',
+            'new row for relation "task_workflows" violates check constraint "task_workflows_statuses_valid"',
+          );
+        }
+        if (!(['open', 'working', 'done'] as const).every((v) => (statuses as readonly string[]).includes(v))) {
+          throw new CollabError(
+            'invariant_violation',
+            'new row for relation "task_workflows" violates check constraint "task_workflows_structural_statuses"',
+          );
+        }
+        const typeValue = input.typeValue.trim();
+        const existing = taskWorkflows.find((w) => w.typeValue === typeValue);
+        if (existing) {
+          existing.statuses = [...statuses];
+          return clone(existing);
+        }
+        workflowSeq += 1;
+        const row: TaskWorkflow = {
+          id: `workflow-fixture-${workflowSeq}`,
+          spaceId,
+          typeValue,
+          statuses: [...statuses],
+        };
+        taskWorkflows.push(row);
+        return clone(row);
+      },
+
+      /** Deleting a rule widens the vocabulary back to the seven; no task row changes. */
+      async deleteTaskWorkflow(spaceId: SpaceId, workflowId: string): Promise<{ workflowId: string }> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        const index = taskWorkflows.findIndex((w) => w.id === workflowId);
+        if (index < 0) throw new CollabError('not_found', 'task workflow not found');
+        taskWorkflows.splice(index, 1);
+        return { workflowId };
+      },
+
+      /**
        * The viewer is already a member of the fixture space, so this answers
        * `joined: false` — which is the node's own answer for an existing
        * member and NOT a stub. A fixture cannot mint a second human.
@@ -2369,6 +2465,9 @@ export function createFixtureSeam(): FixtureSeam {
         }
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
         requireVersion(s, input.expectedVersion);
+        // W4 — the 132 trigger mirror: a status write outside the row's type
+        // vocabulary refuses here exactly as `public.tasks`'s trigger does.
+        if (input.workStatus !== undefined) requireWorkflowAllows(s, input.workStatus);
         if (input.title !== undefined) s.title = input.title;
         if (input.workStatus !== undefined) s.state.workStatus = input.workStatus;
         if (input.priority !== undefined) s.state.priority = input.priority;
@@ -2468,6 +2567,9 @@ export function createFixtureSeam(): FixtureSeam {
       async work(id, input: WorkInput) {
         const s = requireSummary(id);
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
+        // W4 — the 132 trigger mirror. `complete` next door is deliberately
+        // unguarded: `done` is structural, so no vocabulary can exclude it.
+        requireWorkflowAllows(s, input.status);
         s.state.workStatus = input.status;
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
