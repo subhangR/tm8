@@ -3156,3 +3156,97 @@
   flex-wrap: wrap;
   gap: 4px 8px;
 }
+
+/* ---------------------------------------------------------------------------
+   THE RELATIONAL PANEL (user ruling 2026-08-16) — relation chips + inline
+   groups. A count badge that names a real collection kind is a BUTTON now:
+   it opens that kind's linked entities under the tile, one group per tile.
+--------------------------------------------------------------------------- */
+.cv2-root .pn-st__count--btn {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  /* WCAG 2.2 §2.5.8: the visual chip stays badge-sized, but the HIT AREA
+     does not — the border box itself clears the 24×24 minimum (min-width /
+     min-height, not negative-margin arithmetic, which never enlarges the
+     target). The negative margin only returns the VISUAL footprint to the
+     badge row's rhythm. */
+  box-sizing: border-box;
+  min-width: 24px;
+  min-height: 24px;
+  justify-content: center;
+  padding: 6px;
+  margin: -6px -4px;
+  border-radius: 4px;
+  transition: background 120ms, color 120ms;
+}
+.cv2-root .pn-st__count--btn:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.cv2-root .pn-st__count--btn:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.cv2-root .pn-st__count--open { color: var(--pn-ink-1); background: var(--pn-active); }
+
+/* The open group: SAME LEVEL as its owner (offset is the hierarchy tree's
+   vocabulary, ruled 2026-08-16), so ownership is said by the thin rail and
+   the eyebrow, not by indent. The rail is deliberately the only geometry. */
+.cv2-root .lp__related {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 6px;
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid var(--pn-line);
+}
+.cv2-root .lp__related-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--pn-ink-4);
+}
+/* The group's own close — the guaranteed collapse when a live update takes
+   the opening chip away (PR #272 review, 4). */
+.cv2-root .lp__related-close {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  /* 24×24 border box — WCAG 2.2 §2.5.8 minimum (re-review). */
+  width: 24px;
+  height: 24px;
+  margin-top: -7px;
+  margin-bottom: -7px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--pn-ink-4);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.cv2-root .lp__related-close:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.cv2-root .lp__related-close:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+/* The standard tile's relation band — its own sub-row so the 17px main-row
+   floor holds (PR #272 review, blocking 2). */
+.cv2-root .lp__tile-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 0 8px 4px 26px;
+}
+.cv2-root .lp__related-note {
+  margin: 0;
+  padding: 2px 0 4px;
+  font-size: 11px;
+  color: var(--pn-ink-4);
+}
