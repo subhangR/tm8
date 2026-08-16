@@ -278,6 +278,7 @@ export function GateApp(props: GateAppProps = {}) {
     // component on the server id, so a server switch remounts with the right
     // store entry anyway.
     getAuthToken: () => authTokenFor(activeServer.id),
+    cursorScope: `${activeServer.id}:${authAccount?.accountId ?? 'anonymous'}`,
     ...(props.seam ? { seam: props.seam } : {}),
   });
   const kinds = useSidePanelKinds({
@@ -293,7 +294,7 @@ export function GateApp(props: GateAppProps = {}) {
   useEffect(() => {
     data.ensureKind(kinds.leftKind);
     data.ensureKind(kinds.rightKind);
-  }, [data, kinds.leftKind, kinds.rightKind]);
+  }, [data.ensureKind, kinds.leftKind, kinds.rightKind]);
 
   // A pass minted from the in-workspace sign-in must be keyed by this server's
   // ORIGIN, not the `name:<id>` fallback. Normally the registry caches the
@@ -1329,7 +1330,7 @@ export function GateApp(props: GateAppProps = {}) {
       }
     }
     return out;
-  }, [paletteQuery, data]);
+  }, [paletteQuery, data.rowsFor]);
 
   const paletteViews = useMemo<PaletteView[]>(
     () => [

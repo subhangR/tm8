@@ -86,6 +86,68 @@ function ev(spaceId: SpaceId, seq: number): DurableWorkspaceEvent {
 // ---------------------------------------------------------------------------
 
 describe('connection: connect — subscribe is ALWAYS followed by resume', () => {
+  it('scans retained pages without dispatching them, then resumes from the tail', async () => {
+    const h = mk({ pollLimit: 2 });
+    h.setPoll(({ since }) => {
+      if (since === 0) return { items: [ev('sp-1', 1), ev('sp-1', 2)], nextCursor: '2' };
+      if (since === 2) return { items: [ev('sp-1', 3)], nextCursor: '3' };
+      return { items: [], nextCursor: String(since) };
+    });
+    await expect(h.conn.prepareSpace('sp-1')).resolves.toBe(3);
+    expect(h.events).toEqual([]);
+    h.conn.openSpace('sp-1');
+    h.pool.last().openIt();
+    expect(h.pool.last().frames()).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 3 },
+    ]);
+  });
+
+  it('uses an epoch-scoped persisted cursor as the scan start', async () => {
+    const h = mk();
+    h.setPoll(({ since }) => ({ items: [], nextCursor: String(since) }));
+    await h.conn.prepareSpace('sp-1', 91);
+    expect(h.polls).toEqual([{ spaceId: 'sp-1', since: 91 }]);
+    expect(h.conn.cursorOf('sp-1')).toBe(91);
+  });
+
+  it('never subscribes from an intermediate cursor in a retained log larger than 64 pages', async () => {
+    const h = mk({ pollLimit: 1 });
+    h.setPoll(({ since }) => since < 70
+      ? { items: [ev('sp-1', since + 1)], nextCursor: String(since + 1) }
+      : { items: [], nextCursor: String(since) });
+    await expect(h.conn.prepareSpace('sp-1')).resolves.toBe(70);
+    expect(h.polls).toHaveLength(71);
+    expect(h.events).toEqual([]);
+  });
+
+  it('checkpoints a non-converging scan and retries without subscribing or rescanning', async () => {
+    const h = mk({ pollLimit: 1, bootstrapPageBudget: 2 });
+    h.setPoll(({ since }) => ({
+      items: [ev('sp-1', since + 1)],
+      nextCursor: String(since + 1),
+    }));
+    await expect(h.conn.prepareSpace('sp-1')).rejects.toThrow('still advancing');
+    expect(h.conn.cursorOf('sp-1')).toBe(2);
+    expect(h.pool.sockets).toHaveLength(0);
+    h.setPoll(({ since }) => ({ items: [], nextCursor: String(since) }));
+    await expect(h.conn.prepareSpace('sp-1')).resolves.toBe(2);
+    expect(h.polls.map((call) => call.since)).toEqual([0, 1, 2]);
+  });
+
+  it('cancels an obsolete space scan between pages', async () => {
+    const h = mk();
+    let resolvePage: ((page: DurableEventPage) => void) | undefined;
+    h.setPoll(() => new Promise<DurableEventPage>((resolve) => { resolvePage = resolve; }));
+    const preparing = h.conn.prepareSpace('sp-1');
+    await flush();
+    h.conn.closeSpace('sp-1');
+    resolvePage?.({ items: [ev('sp-1', 1)], nextCursor: '1' });
+    await expect(preparing).rejects.toThrow('cancelled');
+    expect(h.polls).toHaveLength(1);
+    expect(h.conn.cursorOf('sp-1')).toBe(1);
+  });
+
   it('sends subscribe then resume(0) on a first-ever open', () => {
     const h = mk();
     h.conn.openSpace('sp-1');
@@ -629,6 +691,9 @@ describe('toCursor: explicit coercion, because Number("") is 0', () => {
     expect(toCursor([])).toBeNull();
     expect(toCursor('abc')).toBeNull();
     expect(toCursor(Number.NaN)).toBeNull();
+    expect(toCursor(-1)).toBeNull();
+    expect(toCursor('1.5')).toBeNull();
+    expect(toCursor(Number.MAX_SAFE_INTEGER + 1)).toBeNull();
     // The control: real cursors still parse.
     expect(toCursor('512')).toBe(512);
     expect(toCursor(512)).toBe(512);
