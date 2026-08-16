@@ -641,6 +641,33 @@ button.tch-entity-chip:hover {
 .tch-send[aria-disabled='true'] { opacity: 0.42; cursor: default; }
 .tch-stop { color: var(--pn-block); }
 
+/* The send button carrying the agent-running state: same footprint, plus a
+   spinner. Disabled here means "no interrupt on this node", not "inert UI",
+   so it keeps more presence than a refused send. */
+.tch-send--working {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tch-send--working[aria-disabled='true'] { opacity: 0.72; cursor: default; }
+
+.tch-spin {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--pn-card) 40%, transparent);
+  border-top-color: var(--pn-card);
+  animation: tch-spin 0.8s linear infinite;
+}
+
+@keyframes tch-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tch-spin { animation-duration: 2.4s; }
+}
+
 .tch-loading,
 .tch-thinking {
   display: flex;
