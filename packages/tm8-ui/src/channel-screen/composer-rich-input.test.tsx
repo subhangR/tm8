@@ -139,6 +139,8 @@ describe('paste takes the agent-readable set (R2)', () => {
     const { area } = mount({ onStartAttachmentUpload: start as never });
     fireEvent.paste(area, clipboard([new File(['x'], 'bundle.zip', { type: 'application/zip' })]));
     expect(start).not.toHaveBeenCalled();
-    expect(screen.getByTestId('chs-paste-refusal').textContent).toContain('bundle.zip');
+    // The refusal rides in the shared AttachmentChips (`chs-attachments`),
+    // the same view Chat Home mounts — one chips implementation, not two.
+    expect(screen.getByTestId('chs-attachments').textContent).toContain('bundle.zip');
   });
 });

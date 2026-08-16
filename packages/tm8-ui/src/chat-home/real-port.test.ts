@@ -118,6 +118,43 @@ describe('real chat-home seam adapter', () => {
     ).rejects.toThrow(/not present in the latest space-wide read/);
   });
 
+  it('previews the last settled message, never an in-flight turn placeholder', async () => {
+    const { seam } = seamStub();
+    const message = (id: string, body: string, extra: Record<string, unknown> = {}) => ({
+      id: id as EntityId,
+      kind: 'message',
+      createdAt: '2026-08-13T08:00:00.000Z',
+      createdBy: null,
+      state: { kind: 'message', author: null },
+      content: { kind: 'message', body },
+      ...extra,
+    });
+    (seam as { entity?: unknown }).entity = vi.fn(async () => message(ROOT, 'Plan the launch'));
+    (seam as { messages?: unknown }).messages = vi.fn(async () => ({
+      items: [
+        message('019f0000-0000-7000-8000-000000000204', 'The settled answer.'),
+        // The claimed turn: its body is the server's placeholder, and the
+        // wire marker says so — the preview must not repeat it.
+        message('019f0000-0000-7000-8000-000000000205', 'Agent turn in progress.', { turnInFlight: true }),
+      ],
+    }));
+    const listThreads = vi.fn(async () => [{
+      rootMessageId: ROOT,
+      anchorId: ANCHOR,
+      teammateId: TEAMMATE,
+      model: 'claude-sonnet-4-5',
+      mode: 'ask' as const,
+      createdAt: '2026-08-13T08:00:00.000Z',
+      lastReplyAt: null,
+    }]);
+    const port = createChatHomePortFromSeam(seam, { listThreads });
+    await port.listThreads('space-1');
+
+    const detail = await port.readThread(ROOT);
+    expect(detail.summary.preview).toBe('The settled answer.');
+    expect(detail.turns.at(-1)?.turnInFlight).toBe(true);
+  });
+
   it('seeds the caches at createRoot so a brand-new chat never races the home read', async () => {
     const { seam, postMessage } = seamStub();
     const configureThread = vi.fn(async () => ({ threadRootId: ROOT, teammateId: TEAMMATE, model: 'm', mode: 'ask' as const }));

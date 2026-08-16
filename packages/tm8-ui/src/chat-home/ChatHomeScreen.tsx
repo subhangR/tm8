@@ -8,6 +8,7 @@ import type { FileUploadTask } from '../files/upload';
 import { DisabledIconControl } from '../panels/honesty/DisabledWithReason';
 import {
   AttachmentChips,
+  ComposerCard,
   TriggerPopover,
   skillReference,
   useRichInput,
@@ -147,6 +148,14 @@ export interface ChatHomeScreenProps {
   slots?: { used: number; total: number } | undefined;
   /** The signed-in display name, for the empty-state greeting. */
   viewerName?: string | undefined;
+  /**
+   * The signed-in actor id, for byline sidedness — the viewer's identity
+   * header sits left, everyone else's right. Same source as `viewerName`,
+   * never a separate fetch. Role is NOT a substitute: in a shared thread
+   * another human's turn is also `role: 'user'`, so sidedness must compare
+   * author identity.
+   */
+  viewerId?: string | undefined;
 }
 
 /** One switcher/cell entry: a kind, its plural label, and its singular. */
@@ -191,6 +200,7 @@ export function ChatHomeScreen({
   centerOverride,
   slots,
   viewerName,
+  viewerId,
 }: ChatHomeScreenProps) {
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [teammates, setTeammates] = useState<readonly ChatTeammateOption[]>([]);
@@ -1085,6 +1095,7 @@ export function ChatHomeScreen({
                   turn={turn}
                   mode={detail.summary.config.mode}
                   pending={turn.messageId === pendingTurnId}
+                  viewerId={viewerId}
                   onOpenEntity={onOpenEntity}
                   resolveEntity={resolveEntity}
                   suppressEntityIds={ownMessageIds}
@@ -1115,9 +1126,10 @@ export function ChatHomeScreen({
               Turn stopped · this thread is continuable. Send another message to resume.
             </p>
           ) : null}
-          <div className="tch-composer">
-            <AttachmentChips attachments={attachments} testId="tch-attachments" />
-            <div className="ri-host">
+          <ComposerCard
+            className="tch-composer"
+            above={<AttachmentChips attachments={attachments} testId="tch-attachments" />}
+            field={<>
               <textarea
                 ref={composer}
                 value={draft}
@@ -1142,8 +1154,8 @@ export function ChatHomeScreen({
                 emptyText="No matching skills"
                 testId="tch-skill-picker"
               />
-            </div>
-            <div className="tch-composer__foot">
+            </>}
+            foot={<>
               {attach ? (
                 <ChooseFilesControl
                   label="Attach a file"
@@ -1218,43 +1230,54 @@ export function ChatHomeScreen({
               <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
               <span className="tch-hint">Enter to send · Shift+Enter for a new line</span>
               {phase === 'streaming' ? (
+                /* The agent-running state lives ON the send button: a loader
+                   that is also Stop. Enter still queues a send — the server
+                   accepts turns while one runs — so only the button changes
+                   role mid-turn, not the composer.
+                   Unavailable ≠ invisible: with no interrupt operation on
+                   this node the loader stays, disabled with its reason, so a
+                   running turn never looks unstoppable by design. */
                 port.interrupt ? (
-                  <button type="button" className="tch-stop" onClick={() => void interrupt()}>
-                    <span aria-hidden>■</span> Stop
+                  <button
+                    type="button"
+                    className="tch-send tch-send--working"
+                    data-testid="tch-send-working"
+                    aria-label="Agent is working — stop this turn"
+                    title="Agent is working — click to stop this turn"
+                    onClick={() => void interrupt()}
+                  >
+                    <span className="tch-spin" aria-hidden /> Stop
                   </button>
                 ) : (
-                  /* Unavailable ≠ invisible: the catalog has exactly one chat
-                     operation (`chat.threads.start`) and no interrupt, so on a
-                     real node this control used to vanish mid-turn and leave a
-                     running turn looking unstoppable by design. */
-                  <DisabledIconControl
-                    label="Stop this turn"
-                    glyph="■"
-                    reason={{
-                      cause: 'Stopping a turn isn’t available on this node',
-                      remedy: 'no chat interrupt operation is exposed — the turn ends on its own',
-                    }}
+                  <button
+                    type="button"
+                    className="tch-send tch-send--working"
+                    data-testid="tch-send-working"
+                    aria-disabled="true"
+                    aria-label="Agent is working"
+                    title="Agent is working — no chat interrupt operation is exposed on this node; the turn ends on its own"
                   >
-                    Stop
-                  </DisabledIconControl>
+                    <span className="tch-spin" aria-hidden /> Working
+                  </button>
                 )
-              ) : null}
-              <button
-                type="button"
-                className="tch-send"
-                aria-disabled={sendDisabled}
-                onClick={() => void send()}
-                title={
-                  refusal
-                  ?? (attachments.blocked
-                    ? 'One or more attachments are not ready — wait for uploads to finish, retry failures, or remove them before sending.'
-                    : undefined)
-                }
-              >
-                Send <span aria-hidden>↑</span>
-              </button>
-            </div>
-          </div>
+              ) : (
+                <button
+                  type="button"
+                  className="tch-send"
+                  aria-disabled={sendDisabled}
+                  onClick={() => void send()}
+                  title={
+                    refusal
+                    ?? (attachments.blocked
+                      ? 'One or more attachments are not ready — wait for uploads to finish, retry failures, or remove them before sending.'
+                      : undefined)
+                  }
+                >
+                  Send <span aria-hidden>↑</span>
+                </button>
+              )}
+            </>}
+          />
         </div>
       </section>
     </main>
@@ -1338,6 +1361,7 @@ function Turn({
   turn,
   mode,
   pending,
+  viewerId,
   onOpenEntity,
   resolveEntity,
   suppressEntityIds,
@@ -1347,6 +1371,7 @@ function Turn({
   mode: ChatMode;
   /** This turn is the one the pulse is already announcing. */
   pending?: boolean;
+  viewerId?: string | undefined;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   resolveEntity?: ChatEntityResolver | undefined;
   suppressEntityIds?: ReadonlySet<string> | undefined;
@@ -1355,6 +1380,19 @@ function Turn({
   const label = turn.author?.displayName ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
   const agent = turn.author?.isAgent ?? turn.role === 'assistant';
+  /**
+   * Sidedness is decided by AUTHOR IDENTITY, not role — in a shared thread
+   * another human's turn is also `role: 'user'` and must land right. A null
+   * author on a user turn is your own message rendered optimistically before
+   * the server echo; treating it as self prevents a visible left→right flip
+   * on send. No `viewerId` degrades to the role heuristic — never crash,
+   * never guess.
+   */
+  const isSelf = viewerId
+    ? turn.author
+      ? turn.author.id === viewerId
+      : turn.role === 'user'
+    : turn.role === 'user';
   /**
    * AN ANSWER IS ITS RENDERED PARTS. The server writes the assistant message
    * body twice — 'Agent turn in progress.' when the turn is claimed, the
@@ -1372,11 +1410,17 @@ function Turn({
    * A turn that draws nothing is not an answer: either an ordinary message
    * posted into this thread by a teammate, whose body is all it has to say, or
    * the claimed-but-silent turn the pulse is already covering.
+   *
+   * `turnInFlight` is the server's wire marker for that claim (133 projects
+   * `chat_turns.agent_message_id` onto `messages.list`): while it is set the
+   * body IS the placeholder, on any read — a reload or thread switch mid-turn
+   * included, where the heuristics below have no snapshot to lean on.
    */
   const bodyIsContent =
-    turn.role !== 'assistant' || (projectTurnParts(turn.parts).length === 0 && !pending);
+    (turn.role !== 'assistant' || (projectTurnParts(turn.parts).length === 0 && !pending))
+    && !turn.turnInFlight;
   return (
-    <article className="tch-turn" data-role={turn.role} data-mode={mode}>
+    <article className="tch-turn" data-role={turn.role} data-mode={mode} data-self={isSelf ? 'true' : 'false'}>
       <header className="tch-turn__byline">
         <Avatar
           actorId={actorId}
@@ -1406,7 +1450,9 @@ function phaseLabel(phase: ComposerPhase): string {
     case 'posting-root': return 'Saving the first prompt…';
     case 'configuring': return 'Starting the agent…';
     case 'posting-turn': return 'Saving your message…';
-    case 'streaming': return 'Agent is working';
+    // Streaming is announced by the send button itself (the working loader),
+    // not by a second label fighting the pinned chip for the same row.
+    case 'streaming': return '';
     case 'stopped-continuable': return 'Stopped · continuable';
     default: return '';
   }
@@ -1440,7 +1486,14 @@ function showThinking(phase: ComposerPhase, detail: ChatThreadDetail): boolean {
  * claim — or one that was durable all along and unseen here, since this screen
  * never subscribes to ordinary message additions — is equally new to us.
  *
- * So the last gate is the server's OWN sentinel. `createAgentMessage`
+ * The wire marker now exists and is asked FIRST: migration 133 lets
+ * `messages.list` project `chat_turns.agent_message_id` as
+ * `MessageView.turnInFlight`, so a marked, partless assistant row is the
+ * claimed turn by the server's own record — on any read, including a reload
+ * or thread switch mid-turn where this tab has no snapshot.
+ *
+ * The body sentinel stays as the FALLBACK for reads that predate the marker
+ * (a detail cached before this shipped). `createAgentMessage`
  * (`server/src/chat/orchestrator.ts:369`, pinned by `chat-storage.pg.test.ts`)
  * writes exactly this body when it claims a turn. Matching it is a heuristic
  * and it is deliberately the one whose failure is BOUNDED: the worst it can do
@@ -1449,15 +1502,10 @@ function showThinking(phase: ComposerPhase, detail: ChatThreadDetail): boolean {
  * string, suppression stops and the redundant bubble comes back — a blemish,
  * not data loss. That is the safe direction to fail in.
  *
- * The real fix is a wire marker. The server already HAS one —
- * `bind_chat_agent_message` records `chat_turns.agent_message_id` — and no
- * read path projects it, so no client can ask which row belongs to a turn.
- *
- * Arrival and cardinality still gate on top: only rows new to us, and only
- * when exactly one qualifies. With NO snapshot — a reload or a thread switch
- * mid-turn — nothing is suppressed and the durable body renders. That is the
- * honest outcome while thread liveness is never read back from the server: the
- * body is then the only hint that surface has.
+ * For the fallback, arrival and cardinality still gate on top: only rows new
+ * to us, and only when exactly one qualifies. With NO snapshot — a reload or
+ * a thread switch mid-turn — the fallback suppresses nothing and only the
+ * marker can.
  *
  * Candidacy asks for zero STORED parts, not zero rendered ones: a turn that
  * stored only `done` draws nothing but is plainly finished, and is not what a
@@ -1472,7 +1520,12 @@ function claimedSilentTurnId(
   detail: ChatThreadDetail,
   preTurnIds: ReadonlySet<string> | null,
 ): EntityId | null {
-  if (phase !== 'streaming' || preTurnIds === null) return null;
+  if (phase !== 'streaming') return null;
+  const marked = detail.turns.filter(
+    (turn) => turn.role === 'assistant' && turn.turnInFlight === true && turn.parts.length === 0,
+  );
+  if (marked.length === 1) return marked[0]!.messageId;
+  if (preTurnIds === null) return null;
   const silent = detail.turns.filter(
     (turn) =>
       turn.role === 'assistant' &&

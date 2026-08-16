@@ -944,6 +944,7 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   lastReplyAt: z.string().nullable().optional(),
   replyParticipants: z.array(ActorSummarySchema).optional(),
   parts: z.array(MessagePartSchema).optional(),
+  turnInFlight: z.boolean().optional(),
 }).strict());
 
 export const MessageBatchResultSchema: z.ZodType<MessageBatchResult> = z.lazy(() => z.object({
