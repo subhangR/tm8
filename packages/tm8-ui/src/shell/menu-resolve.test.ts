@@ -18,7 +18,7 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine — the revision-18 tab row', () => {
+  it('encodes the shipped group spine — the revision-19 tab row', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       // Revision 17 (2026-08-16, unified Home — task 01a00932): the Work and
       // Channels groups retired and the conversation tab is renamed HOME.
@@ -28,6 +28,13 @@ describe('the shipped default menu', () => {
       // the redesigned Collab surface (a later feature). The group id under
       // the Home label is still `chats` — ids are wire-stable, labels move.
       'Home',
+      // Revision 19 (2026-08-16, migration 140 — task 01a00b46): WORK returns
+      // second in the row, and it is the three-panel workspace itself. 17
+      // retired a Work group that was a RAIL OF ROWS duplicating Home's
+      // lists; this one holds the single childless `workspace` view, so what
+      // the tab opens is a LAYOUT — side panel · center · side panel — that
+      // Home has no equivalent for. The railless assertion below covers it.
+      'Work',
       'Board',
       // Revision 18 (2026-08-16, Craft P1 — task 01a00a31): the blueprint
       // studio joins between Board and Graph, railless like both.

@@ -107,20 +107,51 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     expect(shape[0]).toEqual({ label: 'Home', ord: 1, has_children: false });
   });
 
-  it('serves NO work or channels group — 134 retired both into the unified Home', async () => {
+  it('serves NO channels group, and NO kind rows anywhere — 134 retired both into the unified Home', async () => {
     // The retirement is the migration's whole point, so its absence is pinned
     // here exactly like a presence: a later seeder rewrite that resurrects
-    // either group must argue with this test, not slip past it.
-    const rows = await db.query<{ ids: string[] }>(
+    // the group must argue with this test, not slip past it.
+    //
+    // `work` LEFT THIS PIN at 140 (task 01a00b46) and the assertion that
+    // replaces it is the one that actually carried 134's meaning. What 134
+    // retired was a rail of kind ROWS — the Workspace caret with its eight
+    // kinds, the three dev kinds, git — every one a second door to a list
+    // Home's root column already owned. 140's Work group has no rows at all:
+    // one childless `workspace` view, i.e. the three-panel split pane, a
+    // LAYOUT Home does not offer. So the group id came back and the property
+    // it was retired for did not, which is what this now pins: the whole
+    // default names zero kind refs, at group level or under any caret.
+    const groups = await db.query<{ ids: string[] }>(
       `select coalesce(array_agg(g->>'id'), '{}') as ids
          from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') t(g)
-        where g->>'id' in ('work', 'channels')`,
+        where g->>'id' = 'channels'`,
     );
-    expect(rows[0]?.ids).toEqual([]);
+    expect(groups[0]?.ids).toEqual([]);
+
+    const kinds = await db.query<{ refs: string[] }>(
+      `select coalesce(array_agg(ref), '{}') as refs from (
+         select item->>'ref' as ref
+           from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
+                jsonb_array_elements(g->'items') item
+          where item->>'type' = 'kind'
+         union all
+         select child->>'ref'
+           from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
+                jsonb_array_elements(g->'items') item,
+                jsonb_array_elements(coalesce(item->'children', '[]'::jsonb)) child
+          where child->>'type' = 'kind'
+       ) t`,
+    );
+    expect(kinds[0]?.refs).toEqual([]);
   });
 
-  it('serves Board, Craft and Graph as single-view tab groups (130/134/137 posture)', async () => {
+  it('serves Work, Board, Craft and Graph as single-view tab groups (130/134/137/140 posture)', async () => {
     for (const [id, ref] of [
+      // 140: Work is the three-panel workspace, and the childless single-item
+      // shape is the entire guarantee — restore the eight caret children the
+      // pre-134 group carried and tm8-ui's `isRaillessGroup` answers false, a
+      // menu rail returns beside the split, and the tab draws four columns.
+      ['work', 'workspace'],
       ['board', 'board'],
       ['craft', 'craft'],
       ['graph', 'graph'],
@@ -459,6 +490,125 @@ describeDb('134 upgrade — existing default menus become the unified Home row, 
       [CUSTOM_SPACE],
     );
     expect(rows[0]?.revision).toBe(44);
+    expect(rows[0]?.payload).toEqual(customPayloadBefore);
+  });
+});
+
+/**
+ * The 140 UPGRADE — the Work tab reaches EXISTING spaces, not just new ones.
+ *
+ * This is the half that fails silently. The seeder tests above prove what a
+ * NEW space gets; nothing there executes the `where payload = <137 verbatim>`
+ * guard, so one wrong byte in that literal matches zero rows and every
+ * existing space keeps a menu with no Work tab while the client ships one —
+ * the 059 shape exactly. The guard is never hand-typed here: the planted row
+ * is the PRE-140 seeder's own output, so a literal that has drifted from what
+ * 137 actually seeded shows up as an unchanged row rather than as a green
+ * test.
+ */
+describeDb('140 upgrade — existing default menus gain the Work tab, customized menus do not move', () => {
+  let db: W1ScratchDatabase;
+  const DEFAULT_SPACE = '00000000-0000-4000-8000-000000000140';
+  const CUSTOM_SPACE = '00000000-0000-4000-8000-000000000141';
+  let customPayloadBefore: unknown;
+
+  beforeAll(async () => {
+    db = await createW1ScratchDatabase('menu-work-upgrade');
+    const files = migrationFiles();
+    const migration = files.find((file) => file.startsWith('140_'));
+    if (!migration) throw new Error('the 140 migration is missing from the chain');
+    const index = files.indexOf(migration);
+    // Split application: the rows must EXIST before 140 runs for its WHERE
+    // clause to be the thing under test.
+    db.apply(files.slice(0, index));
+
+    await db.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.user_profiles(identity_id, display_name)
+         values ('work-default', 'Work default'), ('work-custom', 'Work custom')`,
+      );
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity)
+         values ($1, 'Default menu', 'work-default'), ($2, 'Custom menu', 'work-custom')`,
+        [DEFAULT_SPACE, CUSTOM_SPACE],
+      );
+      // The pre-140 seeder's OWN output — i.e. 137's payload, byte-for-byte,
+      // without this test ever restating it. If 140's guard literal has
+      // drifted from it, this row simply will not match and the assertion
+      // below fails on an unchanged payload.
+      await client.query(
+        `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
+         values ($1, 1, 18, internal.w1_default_menu_payload())`,
+        [DEFAULT_SPACE],
+      );
+      await client.query(
+        `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
+         values ($1, 1, 51,
+                 jsonb_set(internal.w1_default_menu_payload(),
+                           '{groups,0,label}', '"Mission Control"'))`,
+        [CUSTOM_SPACE],
+      );
+    });
+
+    customPayloadBefore = (await db.query<{ payload: unknown }>(
+      `select payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    ))[0]?.payload;
+
+    // THE RED SIDE, measured rather than assumed: before 140 NEITHER row
+    // carries a Work group. Without this the assertion below could pass on a
+    // chain that already had one.
+    const before = await db.query<{ has_work: boolean }>(
+      `select bool_or(payload @> '{"groups":[{"id":"work"}]}') as has_work
+         from public.space_menu_configs`,
+    );
+    expect(before[0]?.has_work).toBe(false);
+
+    db.apply([migration]);
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.destroy();
+  }, 30_000);
+
+  it('the verbatim-default row gained the Work tab, second, and exactly one revision', async () => {
+    const rows = await db.query<{
+      revision: number;
+      ids: unknown;
+      items: unknown;
+      payload: unknown;
+    }>(
+      `select revision,
+              (select jsonb_agg(g->>'id' order by ord)
+                 from jsonb_array_elements(payload->'groups') with ordinality t(g, ord)) as ids,
+              (select jsonb_agg(jsonb_build_object('type', i->>'type', 'ref', i->>'ref') order by ord)
+                 from jsonb_array_elements(payload->'groups') g,
+                      jsonb_array_elements(g->'items') with ordinality t(i, ord)
+                where g->>'id' = 'work') as items,
+              payload
+         from public.space_menu_configs where space_id = $1`,
+      [DEFAULT_SPACE],
+    );
+    expect(rows[0]?.ids).toEqual(['chats', 'work', 'board', 'craft', 'graph', 'files', 'settings']);
+    // ONE childless view item: the shape tm8-ui's `isRaillessGroup` keys on,
+    // and the difference between a three-column tab and a four-column one.
+    expect(rows[0]?.items).toEqual([{ type: 'view', ref: 'workspace' }]);
+    expect(rows[0]?.revision).toBe(19);
+    // And it is the CURRENT seeder output, not merely something Work-shaped —
+    // an upgraded space and a fresh space must be indistinguishable.
+    const seeded = (await db.query<{ payload: unknown }>(
+      `select internal.w1_default_menu_payload() payload`,
+    ))[0]!.payload;
+    expect(rows[0]?.payload).toEqual(seeded);
+  });
+
+  it('the customized row is untouched — payload byte-identical, revision unmoved', async () => {
+    const rows = await db.query<{ revision: number; payload: unknown }>(
+      `select revision, payload from public.space_menu_configs where space_id = $1`,
+      [CUSTOM_SPACE],
+    );
+    expect(rows[0]?.revision).toBe(51);
     expect(rows[0]?.payload).toEqual(customPayloadBefore);
   });
 });

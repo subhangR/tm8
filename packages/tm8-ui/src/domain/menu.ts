@@ -74,7 +74,17 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // eligibility — the 125/126/127 rail-edit posture.
 // 17 → 18 (2026-08-16, Craft P1 / migration 137): the CRAFT group joins
 // between Board and Graph.
-export const SHIPPED_DEFAULT_MENU_REVISION = 18;
+// 18 → 19 (2026-08-16, user ruling / migration 140): a WORK group returns,
+// second in the row —
+//   Home | Work | Board | Craft | Graph | Files | Settings.
+// 17 retired Work because its rail of rows (the Workspace caret plus the dev
+// kinds and git) was a second door to lists Home's root column already owns.
+// That reasoning was about the ROWS, and this group has none: it holds the
+// single childless `workspace` view, so the tab IS the three-panel workspace
+// — side panel, center entity, side panel. Home offers no such layout, so
+// this is a new arrangement rather than a repeated door, and it is railless
+// by the same shape rule as Home/Board/Craft.
+export const SHIPPED_DEFAULT_MENU_REVISION = 19;
 
 /**
  * The tab shell (revision 17, 2026-08-16 — task 01a00932), encoded literally
@@ -129,6 +139,16 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     // group railless — add a second row here and the surface grows a third
     // pane, which is the arrangement this revision exists to prevent.
     { id: 'chats', label: 'Home', items: [{ type: 'view', ref: 'dashboard' }] },
+    // WORK returns (revision 19), and it is the THREE-PANEL WORKSPACE — one
+    // childless `workspace` view item, so the group is railless by the same
+    // shape rule as Home and Board and the surface is exactly the split
+    // pane: side panel · center stage · side panel, nothing else beside it.
+    //
+    // Adding caret children here (the eight kinds the pre-134 Work group
+    // carried) would give the item children, `isRaillessGroup` would answer
+    // false, and a menu rail would appear left of the split — a fourth
+    // column, which is the arrangement this revision exists to prevent.
+    { id: 'work', label: 'Work', items: [{ type: 'view', ref: 'workspace' }] },
     // The task kanban (revision 16). Railless for the same reason as Home:
     // one childless view item — the board's own columns are the navigation.
     { id: 'board', label: 'Board', items: [{ type: 'view', ref: 'board' }] },

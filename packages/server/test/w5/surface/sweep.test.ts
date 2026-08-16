@@ -595,8 +595,17 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // reserve body CREATES fine against a drifted table and only raises 42703
     // when called, which reads as "PTY injection is dead" with a green deploy.
     // Numbered 139 after measuring every remote ref (max was 138).
-    // MEASURED, never arithmetic: `ls db/migrations/*.sql | wc -l` = 130.
-    expect(server.appliedMigrations.length).toBe(130);
+    // 130 -> 131 (2026-08-16): 140 returns the WORK tab — the three-panel
+    // workspace as its own railless group, menu revision 18 -> 19. Payload
+    // half only: `workspace` has been a registered, implemented view ref
+    // since 029, so re-adding a retired tab widens no constraint and inserts
+    // no registry row. Numbered 140 after measuring every ref, remote and
+    // local (max was 139).
+    // MEASURED, never arithmetic: `ls db/migrations/*.sql | wc -l` = 131.
+    // RE-MEASURE ON THE MERGED TREE, not on this branch: this number is the
+    // one thing here that another lane can invalidate without touching this
+    // file, and delta arithmetic across a merge is how it goes wrong.
+    expect(server.appliedMigrations.length).toBe(131);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
