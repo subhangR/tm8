@@ -96,6 +96,8 @@ export type NavView =
   /* The task Board (2026-08-16): a whole-centre kanban screen, flat segment,
      no parameters of its own — same posture as the four above. */
   | { view: 'board' }
+  /* The Craft studio (2026-08-16): whole-centre split pane, flat segment. */
+  | { view: 'craft' }
   /*
    * A VOICE ROOM. Added 2026-08-14 to close a latent break, not to add a
    * feature.

@@ -72,7 +72,9 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // feature). Nothing was deleted: `workspace`, `git`, `messages` and every
 // retired kind ref keep their routes, their chords and their menu-editor
 // eligibility — the 125/126/127 rail-edit posture.
-export const SHIPPED_DEFAULT_MENU_REVISION = 17;
+// 17 → 18 (2026-08-16, Craft P1 / migration 137): the CRAFT group joins
+// between Board and Graph.
+export const SHIPPED_DEFAULT_MENU_REVISION = 18;
 
 /**
  * The tab shell (revision 17, 2026-08-16 — task 01a00932), encoded literally
@@ -130,6 +132,9 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     // The task kanban (revision 16). Railless for the same reason as Home:
     // one childless view item — the board's own columns are the navigation.
     { id: 'board', label: 'Board', items: [{ type: 'view', ref: 'board' }] },
+    // The blueprint studio (revision 18). Railless like Board and Home: one
+    // childless view item — the chat and the canvas are the navigation.
+    { id: 'craft', label: 'Craft', items: [{ type: 'view', ref: 'craft' }] },
     { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
     { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
     { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },

@@ -158,6 +158,8 @@ const VIEW_REF_SCREENS = {
   messages: 'mounted',
   /* The task Board (2026-08-16): the kanban screen, mounted below. */
   board: 'mounted',
+  /* The Craft studio (2026-08-16): the blueprint split pane, mounted below. */
+  craft: 'mounted',
   workspace: 'workspace',
   /* The last genuinely unbuilt view ref. */
   feed: 'unbuilt',

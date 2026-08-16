@@ -111,6 +111,8 @@ export const VIEW_REF_ROUTE = {
   messages: 'messages',
   /* The task Board tab (2026-08-16) — same flat-segment posture. */
   board: 'board',
+  /* The Craft studio (2026-08-16) — same flat-segment posture. */
+  craft: 'craft',
   /* Alias, not a view — see CHANNEL_KIND. Present so the record stays total
      over MenuViewRef; `routeViewOf` never emits it. */
   channels: 'channels',
@@ -211,6 +213,7 @@ export function landingOfRoute(view: NavView): Landing | null {
     case 'git':
     case 'messages':
     case 'board':
+    case 'craft':
       return { target: { type: 'view', ref: refOfRouteView(view.view) }, openEntity: null };
 
     case 'channels':

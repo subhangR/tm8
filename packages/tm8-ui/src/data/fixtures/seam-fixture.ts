@@ -569,6 +569,12 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         prompt: '', config: {},
         nextRunAt: state.nextRunAt, lastRunAt: state.lastRunAt, lastError: state.lastError,
       };
+    case 'graph':
+      // The graph content arm is CLOSED like loop's — produce a whole one.
+      return {
+        kind: 'graph', graphType: state.graphType,
+        nodes: [], edges: [], layout: {}, source: null,
+      };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };

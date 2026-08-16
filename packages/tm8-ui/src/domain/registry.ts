@@ -1452,6 +1452,40 @@ const ROWS: readonly KindConfig[] = [
     palette: { createLabel: 'New memory' },
   },
 
+  // -- graph (Craft P1: ONE ROW holds vertices AND edges — the blueprint) --
+  {
+    kind: 'graph',
+    // NOT launchable in P1: orchestration is an APPROVAL posted into the
+    // craft thread (the agent then delegates), not a session spawned on the
+    // row. The Craft tab is where a graph is worked.
+    launchable: false,
+    label: 'Graph',
+    labelPlural: 'Graphs',
+    icon: '⬡',
+    iconArt: KIND_ART.graph,
+    slug: 'graphs',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⬡', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      // The generic placeholder flow CAN mint a graph: title + the 'entity'
+      // default type is a valid empty blueprint the craft chat then grows.
+      quickCreate: true,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    /*
+     * GENERIC: the CANVAS is the graph's real body and it lives on the Craft
+     * screen, not in the side panel. The panel's job here is the envelope —
+     * type, size, containers — plus the door to the studio.
+     */
+    panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'GRAPH' }, COLLECTIONS_BLOCK] },
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Launch flow' },
+    ],
+  },
+
   // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --
   {
     kind: 'loop',

@@ -216,6 +216,9 @@ const RAILLESS_VIEW_REFS: ReadonlySet<MenuViewRef> = new Set<MenuViewRef>([
   // 2026-08-16 (Board tab): the kanban is full-bleed — its columns ARE the
   // navigation, so a rail beside it could only repeat the tab's own name.
   'board',
+  // 2026-08-16 (Craft P1): the blueprint studio is full-bleed — the chat
+  // thread and the canvas are the navigation, same posture as board.
+  'craft',
 ]);
 
 /**
@@ -297,4 +300,7 @@ export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: strin
   // the SURFACE (columns you move cards across), not the kind it presents;
   // the task collection row in Work already reads "Tasks".
   board: { label: 'Board', icon: '⫼', art: VIEW_ART.board },
+  // Craft P1 (2026-08-16): the blueprint studio. Label "Craft" — it names the
+  // ACTIVITY (sketching a flow with a teammate), not the graph kind it edits.
+  craft: { label: 'Craft', icon: '✎', art: VIEW_ART.craft },
 };

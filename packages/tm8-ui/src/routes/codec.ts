@@ -293,6 +293,9 @@ function parseTarget(
     case 'board':
       /* The task Board (2026-08-16) — same flat whole-centre posture. */
       return { view: 'board' };
+    case 'craft':
+      /* The Craft studio (2026-08-16) — same flat whole-centre posture. */
+      return { view: 'craft' };
     case 'voice': {
       /* Shaped like `channel/{id}`, because a voice room is addressed the same
          way one channel is: an id in the path, no collection view behind it. A
@@ -378,6 +381,8 @@ function pathOf(route: Route): string {
       return `${base}/messages`;
     case 'board':
       return `${base}/board`;
+    case 'craft':
+      return `${base}/craft`;
     case 'voice':
       /* Must match `registry.ts`'s voice `routeBuilder` exactly — that builder
          is the authority and has been emitting this shape all along. */

@@ -161,6 +161,20 @@ export const KIND_ART = {
   loop: ['M8 3.2a4.8 4.8 0 1 0 4.53 3.2M12.8 3.2v3.2h-3.2'],
   memory: ['M4.4 3.4a1.4 1.4 0 0 1 1.4-1.4h4.4a1.4 1.4 0 0 1 1.4 1.4v10.2L8 11.2l-3.6 2.4z'],
 
+  /**
+   * Three nodes in an L, joined by edges — one row holding vertices AND the
+   * flow between them (Craft P1). Deliberately NOT `VIEW_ART.graph`'s
+   * triangle: that mark means the whole-space graph VIEW; this one means one
+   * blueprint entity.
+   */
+  graph: [
+    'M4.3 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z',
+    'M11.7 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z',
+    'M11.7 13.6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z',
+    'M6.1 4.2h3.8',
+    'M11.7 7.8v2.2',
+  ],
+
   /** A sealed package — an artifact is a published bundle, bytes and all. */
   artifact: ['M8 2.4 13.4 5.3v5.4L8 13.6 2.6 10.7V5.3z', 'M2.6 5.3 8 8.2l5.4-2.9', 'M8 8.2v5.4'],
 
@@ -257,6 +271,17 @@ export const VIEW_ART = {
     'M2.6 3.4a.8.8 0 0 1 .8-.8h1.2a.8.8 0 0 1 .8.8v9.2a.8.8 0 0 1-.8.8H3.4a.8.8 0 0 1-.8-.8z',
     'M6.6 3.4a.8.8 0 0 1 .8-.8h1.2a.8.8 0 0 1 .8.8v5.2a.8.8 0 0 1-.8.8H7.4a.8.8 0 0 1-.8-.8z',
     'M10.6 3.4a.8.8 0 0 1 .8-.8h1.2a.8.8 0 0 1 .8.8v3.2a.8.8 0 0 1-.8.8h-1.2a.8.8 0 0 1-.8-.8z',
+  ],
+  /**
+   * A pencil over a node — sketching a blueprint (Craft P1, 2026-08-16).
+   * Deliberately NOT `VIEW_ART.graph` (the whole-space graph view) and NOT
+   * `KIND_ART.graph` (one blueprint entity): this mark means the STUDIO —
+   * the surface where a graph is drawn, not the graph itself.
+   */
+  craft: [
+    'M3.9 5.9a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z',
+    'M13.2 5.4 10.6 2.8 4.6 8.8v2.6h2.6z',
+    'M9.4 4l2.6 2.6',
   ],
   /**
    * A gear, drawn as a real toothed outline rather than as radial ticks
