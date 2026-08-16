@@ -777,39 +777,26 @@
 .set-absent__head { font-size: 11.5px; color: var(--pn-ink-3); }
 .set-absent__why { font-family: var(--pn-mono); font-size: 9px; line-height: 1.5; color: var(--pn-ink-4); }
 
-/* The 18px was already the gutter; it is now SAID to be, so a lane that
-   changes the gutter moves the stack with it instead of leaving it 18px
-   beside a head that has moved.
+/* --- `.set-stack` / `.set-kv*` — REMOVED 2026-08-16 ----------------------
+   These were the generic body-stack and key/value pair the pre-frame
+   sections shared. They had one real defect: `.set-stack` carries its own
+   `12px var(--set-gutter)`, so nested inside `SectionFrame`'s
+   `.set-section__pad` the body indented 36px under an 18px title. Three
+   lanes measured it independently (account, models, workflows).
 
-   It keeps its own gutter because it predates `SectionFrame` and is still
-   used standalone (settings-credentials, identity-profile). */
-.set-stack { display: flex; flex-direction: column; gap: 6px; padding: 12px var(--set-gutter); }
+   It is deleted rather than fixed, because by the time the fix was written
+   it had no consumers left: every section that used to render `.set-stack`
+   had moved to its own grouped layout in its own stylesheet, and two lanes
+   went further and wrote tests asserting `.set-stack` is ABSENT inside the
+   frame pad (`danger-section.test.tsx`, `space-profile.test.tsx`). A
+   `.set-section__pad .set-stack { padding-inline: 0 }` override would have
+   shipped a rule matching nothing.
 
-/* ...BUT NOT TWICE. Reported with a measurement by the account lane
-   2026-08-16, on merged main: a `.set-stack` inside a default-padded
-   `SectionFrame` gets 18px from `.set-section__pad` AND 18px of its own, so
-   the body text indents 36px while the section title above it indents 18px —
-   visibly out of line on the two sections that render it that way
-   (`ProfileSection`, `DangerSection`).
+   Verified before deleting: zero `className="…set-stack…"` and zero
+   `className="…set-kv…"` across every .tsx in packages/tm8-ui/src.
+   The lesson worth keeping is in SECTION-CONTRACT.md, not in a rule: a
+   shared class that pads itself cannot be nested inside a padded frame. -- */
 
-   Fixed HERE rather than by passing `pad={false}` in those two components,
-   for three reasons: it fixes every future section that reaches for the
-   stack, it does not require editing two files that other lanes own right
-   now, and `pad={false}` would ALSO drop the vertical padding, which is not
-   what is wrong. Only the horizontal gutter is doubled. */
-.set-section__pad .set-stack { padding-inline: 0; }
-.set-kv { display: flex; align-items: baseline; gap: 10px; font-size: 12px; }
-.set-kv__k {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--pn-ink-4);
-  width: 96px;
-  flex: none;
-  text-transform: uppercase;
-}
-.set-kv__v { color: var(--pn-ink); min-width: 0; }
 
 /* --- Your profile (identity display, 067) — REMOVED 2026-08-16 ------------
    The `.set-profile__*` block (11 rules) lived here. The account lane moved

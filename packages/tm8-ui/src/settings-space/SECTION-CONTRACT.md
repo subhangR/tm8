@@ -107,6 +107,28 @@ an editor), that pane must have a **bounded height of its own** — a `height`,
 a `max-height`, or a grid track — and must not be `flex: 1` inside the outer
 scroller.
 
+## 3b. A shared class that pads itself cannot be nested in a padded frame
+
+The `.set-stack` lesson, kept because it cost three lanes a measurement each.
+
+`.set-stack` carried its own `12px var(--set-gutter)`. Dropped inside a
+default-padded `SectionFrame` it produced a 36px body gutter under an 18px
+title — every section that used it was visibly out of line with its own
+heading, and nobody noticed until the frame gave the sections a real gutter to
+be out of line WITH.
+
+So: **if you borrow a class from `settings.css`, check whether it pads itself.**
+If it does, either turn the frame's `pad` off and let the class own the gutter,
+or do not borrow it — write your own. Never let both apply.
+
+The same trap is live in the other direction: `.set-invite*` pad to 16px
+because they sit inside `.set-panel`, which is itself inset. Borrowed straight
+into a section body they land 2px inside `--set-gutter`.
+
+`.set-stack` and `.set-kv*` no longer exist — every section moved to its own
+grouped layout, which is the better answer anyway. A key/value dump of a DTO is
+rarely the right arrangement for a record a person reads.
+
 ## 4. The four numbers
 
 Declared on `.set-root` in `settings.css`. Use the variable, never the literal:
