@@ -2083,14 +2083,14 @@ export function GateApp(props: GateAppProps = {}) {
                   <span className="shell-welcome__eyebrow">Welcome to tm8</span>
                   <h1 className="shell-welcome__title">Create your first Space</h1>
                   <p className="shell-welcome__body">
-                    A Space is where your work lives — its own graph of tasks, docs, and
-                    people, with its own members and chat. Everything you and your agents
-                    make belongs to one, and you can make more anytime.
+                    A Space is a sharing boundary — its own graph of tasks and docs, its
+                    own members, and its own tabs. Everything you and your agents make
+                    lives in one, and you can create more anytime.
                   </p>
                   <p className="shell-welcome__body">
                     Connecting a project folder points the Space at a directory on this
                     machine, so the work your agents do is saved there as real files you
-                    can open.
+                    can open. A Space works without one — you can add a project later.
                   </p>
                   {projectOnboardingPort ? (
                     <button

@@ -3,9 +3,27 @@
  *
  * "Today tm8 silently auto-signs-in on localhost. The moment it leaves one
  * machine: first boot serves three steps" (oracle L29). Step 1 is REAL inside
- * the gate — auth.signup + auth.login against the active server. Steps 2 and
- * 3 still have no executor (see reasons.ts) and refuse their terminal act;
- * the step navigation between them is real client nav.
+ * the gate — auth.claim on an unclaimed node, auth.signup otherwise, then
+ * auth.login. Steps 2 and 3 still have no executor (see reasons.ts) and refuse
+ * their terminal act; the step navigation between them is real client nav.
+ *
+ * WHERE THE THREE STEPS ACTUALLY LIVE (design §10.1, ruled 2026-08-16). The
+ * oracle drew a three-step gate wizard; the truthful build is a ONE-step gate
+ * plus the app's own onboarding, and that is deliberate, not unfinished:
+ *   · 1a (you) is the gate's whole job — and claiming SIGNS YOU IN, so the
+ *     gate closes here by design (§3.2). The counter is hidden in the live
+ *     gate for exactly that reason (see FrameClaim).
+ *   · 1c (first space) is delivered by the app's post-claim ZERO-SPACES
+ *     WELCOME (views/GateApp.tsx) handing off to the existing, far more
+ *     capable NewSpaceProjectDialog (creates the Space, optionally connects a
+ *     project, records a memory). A gate-internal 1c would be a strictly worse
+ *     DUPLICATE of that surface, so it hands off instead of re-implementing.
+ *   · 1b (name the server) has NO backing operation — nothing in the catalog
+ *     sets the local node's own name (serverConnections.* name only REMOTE
+ *     routes). So it is never promised in the live gate; wiring a local-only
+ *     field that pretended to persist would be the lie this module refuses.
+ * 1b and 1c stay on the REVIEW BOARD as the oracle's drawings, refusing as
+ * built — that is the design record, and it is not a live promise.
  */
 import { useState } from 'react';
 import {

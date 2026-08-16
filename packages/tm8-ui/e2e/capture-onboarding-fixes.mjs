@@ -101,38 +101,58 @@ for (const theme of ['light', 'dark']) {
     await context.close();
   }
 
-  // DEFECT 1 — the zero-spaces WELCOME, reached by signing in for real. The
-  // scratch node genuinely has a Space, so the space LIST read is fulfilled
-  // empty to reach the zero-spaces state; the welcome component is driven only
-  // by that emptiness, so the render is the shipping one. (Stated for honesty.)
+  // DEFECT 1 + DEFECT 4 — the zero-spaces WELCOME and its hand-off to the one
+  // existing Space-creation surface. The welcome is a PURE-UI state driven only
+  // by the empty-spaces bootError, so its render is the shipping one. Two
+  // things are simulated in the BROWSER (never the node), stated for honesty:
+  //   · a signed-in session is seeded in localStorage — the shared scratch
+  //     node's samrivera credentials are being mutated by other lanes (seen
+  //     returning 500 then 401 mid-run), so a real sign-in is non-deterministic
+  //     here. A real end-to-end sign-in WAS exercised earlier in this lane.
+  //   · GET /v2/spaces is fulfilled empty (the scratch node has a Space), which
+  //     is the only input the welcome depends on.
   {
     const emptySpaces = [
       '**/v2/spaces',
       (route) => {
         const u = new URL(route.request().url());
         if (route.request().method() === 'GET' && u.pathname === '/v2/spaces') {
-          return route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({ data: [] }),
-          });
+          return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
         }
         return route.continue();
       },
     ];
-    const { context, page } = await freshPage({ theme, routes: [emptySpaces] });
+    // Keep the seeded pass "signed in": let auth.session.get be unreachable, so
+    // useAuthSession holds the session rather than revoking it.
+    const sessionUnreachable = ['**/v2/auth/session', (route) => route.abort()];
+    const { context, page } = await freshPage({
+      theme,
+      init: () => {
+        try {
+          localStorage.setItem('tm8ui.auth.passes.v1', JSON.stringify({
+            [location.origin]: {
+              token: 'tm8s_sim.sim',
+              account: { handle: 'samrivera', displayName: 'Sam Rivera', accountId: 'acc-sim', identityId: 'id-sim', isOwner: true, isNodeAdmin: true },
+              sessionId: 'sim', expiresAt: '2099-01-01T00:00:00Z', signedInAt: '2026-08-16T00:00:00Z',
+            },
+          }));
+        } catch {}
+      },
+      routes: [emptySpaces, sessionUnreachable],
+    });
     await page.goto(app, { waitUntil: 'domcontentloaded' });
-    await page.getByLabel('HANDLE').waitFor({ timeout: 20000 });
-    await page.getByLabel('HANDLE').fill(HANDLE);
-    await page.getByLabel('PASSWORD').fill(PASSWORD);
-    await page.getByRole('button', { name: /^sign in$/i }).click();
     const welcome = page.getByTestId('welcome-no-spaces');
     try {
       await welcome.waitFor({ timeout: 25000 });
-      console.log('  reached the zero-spaces welcome');
+      console.log('  reached the zero-spaces welcome (seeded session)');
       await shot(page, `welcome-${theme}`);
-    } catch {
-      console.log('  DID NOT reach welcome — capturing whatever rendered for honesty');
+      // DEFECT 4 — prove the welcome CTA hands off to NewSpaceProjectDialog.
+      await page.getByRole('button', { name: /create space & add project/i }).click();
+      await page.getByRole('dialog').waitFor({ timeout: 10000 });
+      console.log('  welcome CTA opened NewSpaceProjectDialog');
+      await shot(page, `handoff-dialog-${theme}`);
+    } catch (err) {
+      console.log('  DID NOT reach welcome/handoff — capturing whatever rendered:', String(err).split('\n')[0]);
       await shot(page, `welcome-MISS-${theme}`);
     }
     await context.close();
