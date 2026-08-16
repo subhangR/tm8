@@ -389,6 +389,38 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(slot?.getAttribute('data-teammate-id')).toBe('tm_fable');
     expect(slot?.querySelector('.pn-agent__tool')?.textContent).toBe('✦');
     expect(slot?.querySelector('.kit-avatar')?.getAttribute('aria-label')).toBe('Fable · codex');
+    // No children on this row, so the third corner stays EMPTY rather than
+    // printing a zero — having no sub-sessions is not a count of them.
+    expect(slot?.querySelector('.pn-agent__kids')).toBeNull();
+  });
+
+  it('carries the sub-session count as the icon’s THIRD fact, not a second copy beside the chevron', () => {
+    const parent = {
+      ...sessions[0]!,
+      id: 'ws_parent',
+      parentId: null,
+      state: {
+        kind: 'work_session', status: 'running', agentTool: 'claude-code', model: null,
+        shareMode: 'none', startedAt: null, exitedAt: null,
+        teammate: {
+          id: 'tm_fable', kind: 'team_member', displayName: 'Fable', avatar: null,
+          role: null, isAgent: true,
+        },
+      },
+    } as unknown as EntitySummary;
+    const child = { ...sessions[1]!, id: 'ws_child', parentId: 'ws_parent' } as EntitySummary;
+    const { container } = render(
+      <EntityListPanel kind="work_session" rowsFor={rowsFor([parent, child])} ctx={ctx} />,
+    );
+    const slot = container.querySelector('[data-teammate-id="tm_fable"]');
+    expect(slot?.querySelector('.pn-agent__kids')?.textContent).toBe('1');
+    // ONE number, ONE place: the chevron's count element is GONE, not merely
+    // hidden. It was already `display:none` in this stylesheet, so leaving the
+    // node behind would keep a second, invisible copy to drift from.
+    expect(container.querySelector('.pn-st__arrowCount')).toBeNull();
+    // The pill is decorative; the accessible name is where the count is said.
+    expect(slot?.querySelector('.kit-avatar')?.getAttribute('aria-label'))
+      .toBe('Fable · claude-code · 1 sub-session');
   });
 
   it('a run with no persona keeps the tool-only mark — no monogram is invented for it', () => {

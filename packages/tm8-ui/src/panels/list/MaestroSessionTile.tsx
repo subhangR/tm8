@@ -117,13 +117,12 @@ export function MaestroSessionTile({
         >
           <SessionIcon name="chevron" />
         </button>
-        {childCount > 0 ? <span className="pn-st__arrowCount">{childCount}</span> : null}
-
         <span className="pn-st__title lp__title" title={`${title} · ${id}`}>
           <AgentTile
             tool={agentTool}
             shell={sessionKind === 'shell'}
             teammate={teammate ?? null}
+            childCount={childCount}
             live={!archived && live}
             streaming={!archived && live && streaming}
             title={statusTitle ?? status}
@@ -215,15 +214,20 @@ export function MaestroSessionTile({
 }
 
 /**
- * WHO ran this, and WHAT they ran it with — two different facts, one slot.
+ * THREE FACTS, ONE ICON: who ran it, what they ran it with, how many
+ * sub-sessions it owns.
  *
  * The tool mark used to own this slot alone, so two sessions on the same tool
  * were indistinguishable at a glance no matter which teammate was driving.
- * When a persona is known it takes the slot as an avatar and the tool mark
- * demotes to a corner badge on it; the pre-existing tool-only rendering is
- * what an unattributed run still gets, unchanged.
+ * The persona now takes the FACE; the tool marks the TOP-LEFT corner and the
+ * sub-session count the BOTTOM-RIGHT, which is why the count no longer prints
+ * beside the chevron — one number, one place.
+ *
+ * Corners, not stacking: an unattributed run (a shell, or a session no
+ * team_member participates in) has no face to badge, so its tool mark stays
+ * centred exactly as before and only the count rides the corner.
  */
-function AgentTile({ tool, shell, teammate, live, streaming, title }: { tool: string | null; shell?: boolean; teammate: ActorSummary | null; live: boolean; streaming: boolean; title: string }) {
+function AgentTile({ tool, shell, teammate, childCount, live, streaming, title }: { tool: string | null; shell?: boolean; teammate: ActorSummary | null; childCount: number; live: boolean; streaming: boolean; title: string }) {
   // A vanilla terminal is not an agent whose tool we failed to record, and the
   // fallback below would have called it one — `(tool || 'agent')`, glyph and
   // aria-label alike. It gets its own mark instead.
@@ -249,17 +253,25 @@ function AgentTile({ tool, shell, teammate, live, streaming, title }: { tool: st
       className={className}
       data-agent-kind={normalized}
       data-teammate-id={persona?.id}
+      data-children={childCount > 0 ? childCount : undefined}
       aria-label={persona ? undefined : toolName}
-      title={persona ? `${persona.displayName} · ${toolName} · ${title}` : title}
+      title={[
+        persona ? `${persona.displayName} · ${toolName}` : null,
+        childCount > 0 ? `${childCount} sub-session${childCount === 1 ? '' : 's'}` : null,
+        title,
+      ].filter(Boolean).join(' · ')}
     >
       {persona ? (
-        // The Avatar is the only element here with a role, so it carries BOTH
-        // facts as its accessible name — the corner mark is decorative and a
-        // second aria-label on the wrapper would only double-announce.
+        // The Avatar is the only element here with a role, so it carries every
+        // fact as its accessible name — the corner badges are decorative, and
+        // a second aria-label on the wrapper would only double-announce.
         <Avatar
           actorId={persona.id}
           provenance="agent"
-          label={`${persona.displayName} · ${toolName}`}
+          label={[
+            `${persona.displayName} · ${toolName}`,
+            childCount > 0 ? `${childCount} sub-session${childCount === 1 ? '' : 's'}` : null,
+          ].filter(Boolean).join(' · ')}
           initials={persona.displayName.charAt(0)}
           src={persona.avatar}
           size={15}
@@ -269,6 +281,9 @@ function AgentTile({ tool, shell, teammate, live, streaming, title }: { tool: st
       {/* Keeps `pn-agent__mark` in both shapes so the per-tool colour, live
           and streaming rules stay one set of selectors. */}
       <span className={`pn-agent__mark${persona ? ' pn-agent__tool' : ''}`} aria-hidden>{label}</span>
+      {childCount > 0 ? (
+        <span className="pn-agent__kids" aria-hidden>{childCount}</span>
+      ) : null}
     </span>
   );
 }
