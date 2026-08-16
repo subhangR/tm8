@@ -32,7 +32,11 @@ import {
   useAuthSession,
 } from './index';
 import { defaultSignedOutFrame } from './AuthGate';
-import { NODE_CLAIM_CACHE_KEY } from './session';
+import {
+  AUTO_OWNER_CACHE_KEY,
+  NODE_CLAIM_CACHE_KEY,
+  isAutoOwnerSuppressed,
+} from './session';
 
 function installStorage(): void {
   // The realSeamFlag.test.ts pattern — LOAD-BEARING under this runner, whose
@@ -77,6 +81,14 @@ interface FakeAuthServer {
    * the fake and the real server agree on the one fact the gate branches on.
    */
   claimToken: string | null;
+  /**
+   * The loopback auto-owner this node resolves a CREDENTIAL-FREE caller to, or
+   * null when the arm is off (`multi` mode, or a remote origin). Mirrors the
+   * real `auth.session.get`: with no bearer and this set, the node answers
+   * `authKind: 'auto-owner'` with a null session; with it null it answers
+   * `unauthenticated`. Off by default so every existing suite is unaffected.
+   */
+  autoOwner: FakeAccount | null;
 }
 
 /** What the boot log would have printed. */
@@ -117,6 +129,7 @@ function installFakeAuthServer(): FakeAuthServer {
     sessions: new Map(),
     requests: [],
     claimToken: FAKE_CLAIM_TOKEN,
+    autoOwner: null,
   };
   let minted = 0;
 
@@ -244,7 +257,21 @@ function installFakeAuthServer(): FakeAuthServer {
     if (method === 'GET' && path === '/v2/auth/session') {
       const username = server.sessions.get(bearer);
       const account = username ? server.accounts.get(username) : undefined;
-      if (!account) return refusal(401, 'unauthenticated', 'authentication is required');
+      if (!account) {
+        // No bearer. On a loopback single-player node the server resolves the
+        // credential-free caller as the auto-owner (no session row); with the
+        // arm off it refuses, and the gate shows sign-in.
+        if (server.autoOwner) {
+          return json(200, {
+            data: {
+              authKind: 'auto-owner',
+              account: { ...accountView(server.autoOwner), isOwner: true, isNodeAdmin: true },
+              session: null,
+            },
+          });
+        }
+        return refusal(401, 'unauthenticated', 'authentication is required');
+      }
       const sessionId = bearer.slice('tm8s_'.length).split('.')[0]!;
       return json(200, {
         data: {
@@ -400,6 +427,165 @@ describe('leg 1 — unauthenticated, the app is NOT on screen', () => {
       </AuthGate>,
     );
     expect(seen).toEqual([]); // not hidden, not mounted — never rendered
+  });
+});
+
+/**
+ * THE LOOPBACK AUTO-OWNER — the owner on the node's own machine gets no gate.
+ *
+ * FIRST-RUN-CLAIM-DESIGN D3 / journey §5.1 step 3, verbatim: "Day to day on the
+ * box: localhost:8888 → loopback → no gate, straight into the app." The server
+ * already resolves a credential-free loopback caller as the owner
+ * (`auth.session.get` → `authKind: 'auto-owner'`, null session). These suites
+ * are the gate finally ASKING — the completion of §4.2's lane, which fixed
+ * WHICH card to show and left WHETHER to show one to a browser-local read.
+ *
+ * The fake's `autoOwner` arm is the node's `TM8_NODE_MODE=single` behaviour:
+ * set, it answers auto-owner to a bare `auth.session.get`; null, it refuses
+ * exactly as `multi` mode does. Every assertion here is therefore driven by the
+ * SERVER'S answer, never by a browser inference about loopback.
+ */
+const OWNER_ACCOUNT = {
+  username: 'owner',
+  password: '',
+  displayName: 'The Owner',
+  accountId: 'acct_owner',
+  identityId: 'id_owner',
+};
+
+/** The GateAccount shape the auto-owner cache holds, for warm-browser tests. */
+const OWNER_CACHED = {
+  handle: 'owner',
+  displayName: 'The Owner',
+  accountId: 'acct_owner',
+  identityId: 'id_owner',
+  isOwner: true,
+  isNodeAdmin: true,
+};
+
+describe('the loopback auto-owner — no gate on the box, the whole point of D3', () => {
+  it('signs the owner straight into the app on a cold browser — and NO card ever flashes', async () => {
+    localStorage.removeItem(NODE_CLAIM_CACHE_KEY); // a genuinely COLD browser
+    server.autoOwner = { ...OWNER_ACCOUNT };
+
+    // The reload no-flash proof, pointed at first-run: the gate must never have
+    // been mounted on the way in. A password prompt for an account that needs
+    // none is the exact false promise this lane removes.
+    let gateAppeared = false;
+    const observer = new MutationObserver((records) => {
+      for (const r of records) {
+        for (const node of r.addedNodes) {
+          if (node instanceof HTMLElement && node.querySelector?.('[data-testid="auth-frame"]')) {
+            gateAppeared = true;
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    render(<AuthGate>{APP}</AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+    observer.takeRecords().forEach((r) => {
+      for (const node of r.addedNodes) {
+        if (node instanceof HTMLElement && node.querySelector?.('[data-testid="auth-frame"]')) {
+          gateAppeared = true;
+        }
+      }
+    });
+    observer.disconnect();
+
+    expect(gateAppeared, 'a password card flashed before the app on the owner’s own machine').toBe(false);
+    expect(screen.queryByTestId('auth-frame')).toBeNull();
+  });
+
+  it('a warm browser that has been here renders the app on the FIRST paint, no round trip', () => {
+    localStorage.setItem(AUTO_OWNER_CACHE_KEY, JSON.stringify({ local: OWNER_CACHED }));
+    server.autoOwner = { ...OWNER_ACCOUNT };
+    render(<AuthGate>{APP}</AuthGate>);
+    // Synchronous — the no-flash mechanism the stored pass uses, extended to the
+    // auto-owner arm. No `waitFor`: if this needed a round trip it would flash.
+    expect(screen.getByTestId('the-app')).toBeTruthy();
+    expect(screen.queryByTestId('auth-frame')).toBeNull();
+  });
+
+  it('does NOT render an UNREACHABLE node as auto-owner — the mirror of an unclaimed one', async () => {
+    localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
+    // The node is down: every call rejects. Rendering it as auto-owner would
+    // promise an app that cannot load, exactly the lie the claim path refuses
+    // when it declines to offer a ceremony to an unreachable node.
+    Object.defineProperty(globalThis, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: () => Promise.reject(new Error('ECONNREFUSED')),
+    });
+    render(<AuthGate>{APP}</AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame')).toBeTruthy());
+    expect(screen.queryByTestId('the-app')).toBeNull();
+    expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1d');
+  });
+
+  it('keeps the gate in MULTI mode — driven by the server’s refusal, not the browser', async () => {
+    // autoOwner stays null: the node refuses a credential-free caller, which is
+    // precisely what TM8_NODE_MODE=multi does server-side. A claimed node makes
+    // the honest card sign-in.
+    localStorage.setItem(
+      NODE_CLAIM_CACHE_KEY,
+      JSON.stringify({ local: { claimed: true, mode: 'multi', signupPath: 'invite' } }),
+    );
+    server.accounts.set('amber', {
+      username: 'amber',
+      password: PASSWORD,
+      displayName: 'amber',
+      accountId: 'acct_amber',
+      identityId: 'id_amber',
+    });
+    render(<AuthGate>{APP}</AuthGate>);
+    await waitFor(() =>
+      expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1d'),
+    );
+    expect(screen.queryByTestId('the-app')).toBeNull();
+  });
+
+  it('does NOT probe the loopback arm on a named server — it can never be the loopback peer', async () => {
+    localStorage.setItem('tm8-ui:active-server', 'staging');
+    localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
+    server.autoOwner = { ...OWNER_ACCOUNT }; // even if the fake would answer, a named server must not ask
+    render(<AuthGate>{APP}</AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('auth-frame')).toBeTruthy());
+    expect(screen.queryByTestId('the-app')).toBeNull();
+    expect(server.requests.some((r) => r.path === '/v2/auth/session')).toBe(false);
+  });
+
+  it('sign-out RETURNS to the gate and does NOT instantly sign you back in', async () => {
+    localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
+    server.autoOwner = { ...OWNER_ACCOUNT };
+    render(<AuthGate>{APP}</AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+
+    act(() => signOut());
+
+    // The gate comes back and STAYS — the "signed out on purpose" flag stops
+    // the very next loopback resolution from undoing the act. Without it,
+    // sign-out is a no-op on the one machine it matters most.
+    await waitFor(() => expect(screen.getByTestId('auth-frame')).toBeTruthy());
+    expect(screen.queryByTestId('the-app')).toBeNull();
+    expect(isAutoOwnerSuppressed()).toBe(true);
+  });
+
+  it('claiming after that sign-out lifts the opt-out and lands back in the app', async () => {
+    localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
+    server.autoOwner = { ...OWNER_ACCOUNT };
+    render(<AuthGate>{APP}</AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+
+    act(() => signOut());
+    await waitFor(() => expect(screen.getByTestId('auth-frame')).toBeTruthy());
+    expect(isAutoOwnerSuppressed()).toBe(true);
+
+    // The deliberate sign-IN — a claim here, the card an unclaimed node shows —
+    // is the one act that says "resume me". It clears the opt-out.
+    await createAccountThroughTheUI();
+    expect(isAutoOwnerSuppressed()).toBe(false);
+    expect(screen.getByTestId('the-app')).toBeTruthy();
   });
 });
 

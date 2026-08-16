@@ -16,7 +16,11 @@ import { AuthSessionContext } from './gate-context';
 import {
   claimNodeOnServer,
   createServerAccount,
+  fetchAutoOwnerSession,
+  isAutoOwnerSuppressed,
+  loopbackAutoOwnerPossible,
   readActiveAccount,
+  readCachedAutoOwner,
   readKnownAccountsHere,
   readStoredSession,
   signInToServer,
@@ -56,6 +60,15 @@ export interface AuthSessionState {
   /** The last failed credential attempt, for the frames to render. */
   failure: AuthFailure | null;
   busy: boolean;
+  /**
+   * The loopback auto-owner probe is in flight and this browser has no cached
+   * answer yet — so whether it is signed in is not yet known. The gate blanks
+   * on this rather than flashing a sign-in card it may have to retract when the
+   * node answers `auto-owner`. False the instant the probe cannot apply
+   * (suppressed, not the local node) or has settled, and never true once a
+   * cached auto-owner has already put the viewer in. See `AuthGate`.
+   */
+  checkingLoopback: boolean;
 
   createAccount(name: string, password: string): Promise<boolean>;
   /**
@@ -110,22 +123,33 @@ export function useAuthSession(options: UseAuthSessionOptions = {}): AuthSession
 function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): AuthSessionState {
   const { resolveIdentity } = options;
 
-  // Read synchronously. This is the whole no-flash mechanism.
+  // Read synchronously. This is the whole no-flash mechanism — for the stored
+  // pass AND for the auto-owner arm: a warm browser that has seen this loopback
+  // node before renders the app on the first paint from the cached answer,
+  // exactly as it renders from the stored pass, and the live probe below
+  // re-verifies it. A deliberate sign-out (`isAutoOwnerSuppressed`) withholds
+  // it so the gate is not instantly re-entered.
   const [snapshot, setSnapshot] = useState(() => ({
     account: readActiveAccount(),
     accounts: readKnownAccountsHere(),
     session: readStoredSession(),
+    autoOwner: isAutoOwnerSuppressed() ? null : readCachedAutoOwner(),
   }));
   const [failure, setFailure] = useState<AuthFailure | null>(null);
   const [busy, setBusy] = useState(false);
   const [serverIdentity, setServerIdentity] = useState<AuthIdentity | null>(null);
   const [identityError, setIdentityError] = useState<string | null>(null);
+  // Distinct from `autoOwner === null`: "not asked yet" and "asked, not the
+  // auto-owner" render differently — a cold browser must blank rather than
+  // flash the sign-in card. See `checkingLoopback` and the probe below.
+  const [autoOwnerSettled, setAutoOwnerSettled] = useState(false);
 
   const refresh = useCallback(() => {
     setSnapshot({
       account: readActiveAccount(),
       accounts: readKnownAccountsHere(),
       session: readStoredSession(),
+      autoOwner: isAutoOwnerSuppressed() ? null : readCachedAutoOwner(),
     });
   }, []);
 
@@ -134,16 +158,24 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
   useEffect(() => subscribeToSession(refresh), [refresh]);
   useEffect(() => watchCrossTabSignOut(), []);
 
-  const status: AuthStatus = snapshot.session ? 'signed-in' : 'signed-out';
+  // Signed in via EITHER a stored pass OR the loopback auto-owner arm. The two
+  // are different facts — a bearer session the server can revoke, versus a
+  // sessionless identity the server resolves from the loopback peer — but they
+  // land the viewer in the same place, and the gate renders the app for both.
+  const status: AuthStatus = snapshot.session || snapshot.autoOwner ? 'signed-in' : 'signed-out';
 
   /**
    * THE RELOAD CHECK — the server's word on the stored pass. An 'invalid'
    * verdict has already cleared the store and notified, so `refresh` (via the
    * subscription) flips the gate closed; nothing more to do here. Keyed on
    * the handle so a sign-in as someone else re-verifies as them.
+   *
+   * Keyed on the PASS, not on `status`: the auto-owner arm carries no pass, and
+   * running this check for it would call `auth.session.get` under a token that
+   * does not exist. The loopback arm has its own reload check below.
    */
   useEffect(() => {
-    if (inert || status !== 'signed-in') return;
+    if (inert || !snapshot.session) return;
     let live = true;
     void verifyStoredSession().then((verdict) => {
       if (!live) return;
@@ -165,6 +197,52 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       live = false;
     };
   }, [inert, status, snapshot.session?.handle, resolveIdentity, refresh]);
+
+  /**
+   * THE LOOPBACK RELOAD CHECK — `auth.session.get` with no pass, the mirror of
+   * the check above. It discovers the auto-owner on a cold browser AND
+   * re-verifies it on a warm one, and it never runs while a real pass is held
+   * (the pass is the stronger fact) nor for a named server (the auto-owner arm
+   * only resolves the local loopback peer) nor after a deliberate sign-out
+   * (`loopbackAutoOwnerPossible` folds both in). See `fetchAutoOwnerSession`
+   * for how the three verdicts map.
+   */
+  const canProbeLoopback = !inert && !snapshot.session && loopbackAutoOwnerPossible();
+  useEffect(() => {
+    if (!canProbeLoopback) {
+      // No probe to run — settle immediately so the gate stops blanking on it.
+      setAutoOwnerSettled(true);
+      return;
+    }
+    let live = true;
+    void fetchAutoOwnerSession().then((verdict) => {
+      if (!live) return;
+      if (verdict.state === 'auto-owner') {
+        // Do not clobber a pass that arrived while the probe was in flight —
+        // an explicit sign-in mid-probe is the stronger fact.
+        setSnapshot((s) => (s.session ? s : { ...s, autoOwner: verdict.account }));
+        if (!resolveIdentity) {
+          setServerIdentity({
+            username: verdict.account.handle,
+            displayName: verdict.account.displayName,
+            avatar: null,
+            isOwner: verdict.account.isOwner,
+          });
+        }
+      } else if (verdict.state === 'gated') {
+        // The node will not vouch for a credential-free caller now. A warm
+        // browser that rendered the app from a stale cache is signed out HERE,
+        // exactly as a revoked pass closes the gate on reload.
+        setSnapshot((s) => (s.autoOwner ? { ...s, autoOwner: null } : s));
+      }
+      // 'unreachable' → left as it stands: a cold browser stays signed out, a
+      // warm one stays in on its cached answer. Reachability is not identity.
+      setAutoOwnerSettled(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [canProbeLoopback, resolveIdentity]);
 
   // Resolve the host's richer identity only while signed in, and drop the
   // result if the session ends before it lands — otherwise a slow node could
@@ -252,16 +330,26 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
 
   const clearFailure = useCallback(() => setFailure(null), []);
 
+  // True only while a COLD loopback probe is still outstanding: the browser
+  // has no answer yet (no pass, no cached auto-owner) but one may be coming. A
+  // warm browser (cached auto-owner) is already signed in and never reports
+  // this; a browser where the probe cannot apply settles instantly.
+  const checkingLoopback = canProbeLoopback && !snapshot.autoOwner && !autoOwnerSettled;
+
   return useMemo(
     () => ({
       status,
-      account: snapshot.account,
+      // The pass account when there is one, else the auto-owner the node
+      // vouched for — the account menu and identity read the same field either
+      // way.
+      account: snapshot.account ?? snapshot.autoOwner,
       accounts: snapshot.accounts,
-      handle: snapshot.session?.handle ?? null,
+      handle: snapshot.session?.handle ?? snapshot.autoOwner?.handle ?? null,
       serverIdentity,
       identityError,
       failure,
       busy,
+      checkingLoopback,
       createAccount,
       claimNode,
       signIn,
@@ -275,6 +363,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       identityError,
       failure,
       busy,
+      checkingLoopback,
       createAccount,
       claimNode,
       signIn,
