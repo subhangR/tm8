@@ -1702,6 +1702,19 @@
 }
 .cv2-root .pn-agent[data-agent-kind='gemini'] .pn-agent__mark { color: var(--pn-info); }
 .cv2-root .pn-agent[data-agent-kind='hermes'] .pn-agent__mark { color: var(--pn-wait); }
+/* WHO over WHAT: the teammate's avatar takes the slot and the tool mark rides
+   its top-right corner. The mark is POSITIONED, not laid out — the slot's
+   `place-items: center` would otherwise centre it over the monogram — and it
+   stays INSIDE the slot box, because `.pn-st__title` clips and that overflow
+   is the title's ellipsis, not ours to relax for a badge. */
+.cv2-root .pn-agent--persona { position: relative; width: 19px; height: 19px; }
+.cv2-root .pn-agent__tool {
+  position: absolute; top: 0; right: 0;
+  font-size: 10px;
+  /* Reads against whatever the avatar tone happens to be, without a second
+     colour rule per tool. */
+  text-shadow: 0 0 2px var(--pn-card), 0 0 2px var(--pn-card), 0 0 2px var(--pn-card);
+}
 .cv2-root .pn-stat { display: inline-grid; place-items: center; flex: 0 0 auto; color: var(--pn-idle); }
 .cv2-root .pn-stat--running, .cv2-root .pn-stat--working, .cv2-root .pn-stat--exited, .cv2-root .pn-stat--done { color: var(--pn-run); }
 .cv2-root .pn-stat--spawning, .cv2-root .pn-stat--pulled, .cv2-root .pn-stat--in_review { color: var(--pn-info); }

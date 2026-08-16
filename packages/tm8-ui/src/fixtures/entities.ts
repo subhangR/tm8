@@ -265,6 +265,11 @@ export const sessionLive = summary({
     shareMode: 'space',
     startedAt: T.morning,
     exitedAt: null,
+    /* The persona behind the run. Its neighbours below deliberately carry
+       none, on the same reasoning as `sessionKind`: absence is a shape the
+       server really produces, and a roster where every session is attributed
+       would let a renderer that assumes one pass the whole suite. */
+    teammate: forge,
   },
 });
 

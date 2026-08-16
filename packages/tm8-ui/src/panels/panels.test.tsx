@@ -367,6 +367,48 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(container.querySelector('[data-agent-kind]')?.getAttribute('data-agent-kind')).toBe('agent');
   });
 
+  it('names the TEAMMATE and the TOOL together — the avatar takes the slot, the tool marks its corner', () => {
+    const attributed = {
+      ...sessions[0]!,
+      id: 'ws_attributed',
+      state: {
+        kind: 'work_session', status: 'running', agentTool: 'codex', model: null,
+        shareMode: 'none', startedAt: null, exitedAt: null,
+        teammate: {
+          id: 'tm_fable', kind: 'team_member', displayName: 'Fable', avatar: null,
+          role: null, isAgent: true,
+        },
+      },
+    } as unknown as EntitySummary;
+    const { container } = render(
+      <EntityListPanel kind="work_session" rowsFor={rowsFor([attributed])} ctx={ctx} />,
+    );
+    const slot = container.querySelector('[data-agent-kind]');
+    // The tool did not move out of the slot, it moved INTO the corner: two
+    // sessions on the same tool are now told apart by whose face is on them.
+    expect(slot?.getAttribute('data-teammate-id')).toBe('tm_fable');
+    expect(slot?.querySelector('.pn-agent__tool')?.textContent).toBe('✦');
+    expect(slot?.querySelector('.kit-avatar')?.getAttribute('aria-label')).toBe('Fable · codex');
+  });
+
+  it('a run with no persona keeps the tool-only mark — no monogram is invented for it', () => {
+    const unattributed = {
+      ...sessions[0]!,
+      id: 'ws_unattributed',
+      state: {
+        kind: 'work_session', status: 'running', agentTool: 'claude-code', model: null,
+        shareMode: 'none', startedAt: null, exitedAt: null, teammate: null,
+      },
+    } as unknown as EntitySummary;
+    const { container } = render(
+      <EntityListPanel kind="work_session" rowsFor={rowsFor([unattributed])} ctx={ctx} />,
+    );
+    const slot = container.querySelector('[data-agent-kind]');
+    expect(slot?.querySelector('.kit-avatar')).toBeNull();
+    expect(slot?.querySelector('.pn-agent__mark')?.textContent).toBe('✳');
+    expect(slot?.getAttribute('aria-label')).toBe('claude-code');
+  });
+
   it('R5 #9: the unwired half of the pair refuses with a reason, it is not drawn live', () => {
     // `Terminal` commits and `Launch session ▸` does not, because the sheet
     // needs a launch SUBJECT the header has no way to name. That asymmetry has

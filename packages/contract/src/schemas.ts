@@ -308,6 +308,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // explicit null checkoutBranch = measured absence (no repo/detached HEAD).
     checkoutBranch: z.string().nullable().optional(),
     workdirMode: WorkSessionWorkdirModeSchema.optional(),
+    // The persona this run acts as, from its latest `participates_in` edge.
+    // Absent = a node that predates the field; explicit null = a run with no
+    // persona, which renders the tool alone. See the DTO note in contract.ts.
+    teammate: ActorSummarySchema.nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),

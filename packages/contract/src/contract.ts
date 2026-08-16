@@ -223,7 +223,21 @@ export type CoreEntityState =
        * be a lie about attribution.
        */
       checkoutBranch?: string | null;
-      workdirMode?: WorkSessionWorkdirMode }
+      workdirMode?: WorkSessionWorkdirMode;
+      /**
+       * WHO IS RUNNING THIS SESSION — the persona resolved through the
+       * session's most recent `participates_in` edge, the SAME hop
+       * `loadActors` attributes messages by. Carried on the summary so a
+       * session row can name the teammate and the tool together without a
+       * second graph read.
+       *
+       * ADDITIVE AND OPTIONAL, and its two absences are different claims.
+       * A MISSING KEY is a node that predates this field. An explicit `null`
+       * is a measured absence: a run with no participating team_member — a
+       * human at a terminal, or a shell — for which a consumer renders the
+       * tool alone and invents no persona.
+       */
+      teammate?: ActorSummary | null }
   | { kind: 'collection'; collectionType: string; itemCount: number }
   | { kind: 'project'; projectId: ProjectId; materializedVersion: number }
   | { kind: 'interaction_profile'; status: InteractionProfileStatus;

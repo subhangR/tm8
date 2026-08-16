@@ -2992,7 +2992,7 @@ export function createFixtureSeam(): FixtureSeam {
         throw new CollabError('not_implemented', 'fixture data cannot execute artifact previews');
       },
       async spawn(input: ExecutionSpawnInput) {
-        requireSummary(input.teamMemberId);
+        const teamMember = requireSummary(input.teamMemberId);
         const tasks = (input.taskIds ?? []).map(requireSummary);
         const startedAt = tick();
         const s = insertSummary({
@@ -3005,6 +3005,14 @@ export function createFixtureSeam(): FixtureSeam {
             kind: 'work_session', status: 'running',
             agentTool: input.agentTool ?? 'claude-code', model: input.model ?? null,
             shareMode: 'space', startedAt, exitedAt: null,
+            /* The persona the run acts as — the node projects it from the
+               session's `participates_in` edge. A spawn HAS a team member by
+               construction, so omitting it here would give the fixture the one
+               shape the server never produces: an agent session nobody runs. */
+            teammate: {
+              id: teamMember.id, kind: 'team_member', displayName: teamMember.title,
+              avatar: null, isAgent: true,
+            },
           },
         });
         extras.set(s.id, {

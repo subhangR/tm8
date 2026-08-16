@@ -2652,6 +2652,22 @@ function resolvePulses(
  * vocabulary. One tile implementation; a copy is how the control-card's
  * chips drifted dead once already (D67).
  */
+/**
+ * An `ActorSummary` off a loosely-typed state bag, or null.
+ *
+ * Structural, not kind-tested: §15.2 forbids a component from naming a kind,
+ * and the question here is only "did the server send an actor" — a payload
+ * from a node that predates the field sends nothing, and null is the answer
+ * for that as much as for a run with no persona.
+ */
+function actorSummaryOrNull(value: unknown): ActorSummary | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const actor = value as Partial<ActorSummary>;
+  return typeof actor.id === 'string' && typeof actor.displayName === 'string'
+    ? (actor as ActorSummary)
+    : null;
+}
+
 export function Tile({
   row,
   depth = 0,
@@ -2738,6 +2754,10 @@ export function Tile({
     // Passed through so the tile can tell a vanilla terminal from an agent
     // whose tool was never recorded (101). Absent stays absent — see the prop.
     const sessionKind = typeof state.sessionKind === 'string' ? state.sessionKind : null;
+    // The persona behind the run, when the server resolved one. Read off the
+    // summary rather than the graph so the tile's identity cannot flicker on a
+    // page that happened to miss the `participates_in` edge.
+    const teammate = actorSummaryOrNull(state.teammate);
     const model = typeof state.model === 'string' ? state.model : null;
     const live = verdict === 'live';
     // The lane facts ride the summary state (107) — no edge read needed, so
@@ -2749,6 +2769,7 @@ export function Tile({
         title={row.title || 'Session'}
         agentTool={agentTool}
         sessionKind={sessionKind}
+        teammate={teammate}
         model={model}
         status={recordedStatus}
         attention={attention}

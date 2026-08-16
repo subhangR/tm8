@@ -548,6 +548,20 @@ export function actorOf(actors: Map<string, ActorSummary>, id: string | null): A
   return actors.get(id) ?? unknownActor(id);
 }
 
+/**
+ * The persona a SESSION id resolves to, or null.
+ *
+ * `loadActors` already answers this — a session with a `participates_in`
+ * persona comes back kinded `team_member`, one without comes back kinded
+ * `work_session`. This narrows that to the question a session summary asks:
+ * null for "no persona to name", never `unknownActor`, because a run at a
+ * human's terminal has no teammate and a placeholder would invent one.
+ */
+function personaOf(actors: Map<string, ActorSummary>, sessionId: string): ActorSummary | null {
+  const actor = actors.get(sessionId);
+  return actor && actor.kind === 'team_member' ? actor : null;
+}
+
 // ---------------------------------------------------------------------------
 // Relations, batched
 // ---------------------------------------------------------------------------
@@ -1287,6 +1301,12 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         row.ws_workdir_mode === 'scratch'
           ? { workdirMode: row.ws_workdir_mode }
           : {}),
+        // The persona, via the SAME resolver that attributes this session's
+        // messages — `loadActors` keyed by the session's own id already does
+        // the `participates_in` hop. A session with no persona resolves to a
+        // `work_session`-kinded summary there, and that is the honest null
+        // here: no teammate to name, not a teammate we failed to look up.
+        teammate: personaOf(ctx.actors, row.id),
       };
     case 'collection':
       return {
@@ -1829,6 +1849,10 @@ export async function assembleSummaries(
     r.created_by,
     r.author_id ?? '',
     r.team_member_owner_id ?? '',
+    // A work_session's OWN id, so `loadActors` runs its `participates_in` hop
+    // for it and the summary can name the persona behind the run. Free when
+    // the page has no sessions; one extra batched query when it does.
+    r.kind === 'work_session' ? r.id : '',
   ]);
   for (const list of relations.assignees.values()) actorIds.push(...list);
   for (const list of relations.assignments.values()) {
