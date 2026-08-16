@@ -202,6 +202,14 @@ export function createDomainStore(
           entities = merged.entities;
           details = merged.details ?? details;
         }
+        // NO PATCHES ⇒ NOTHING CLONED, and handing `state.entities` to the
+        // sweep as a draft would let it delete keys out of LIVE STATE in
+        // place — a mutation Zustand cannot see and no subscriber is told
+        // about. There is nothing to bound in that case anyway; the caller
+        // still gets its pending marker.
+        if (entities === state.entities && details === state.details) {
+          return { pendingMutations: { ...state.pendingMutations, [clientMutationId]: true } };
+        }
         // AN OPTIMISTIC ROW IS RETAINED BY DEFINITION: it is on screen because
         // the user just acted on it, and the journal holds a rollback entry
         // that names it. Evicting it here would make `rollback` restore a

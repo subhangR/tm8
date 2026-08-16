@@ -353,3 +353,43 @@ describe('reduceEvent and reduceEvents agree', () => {
     expect(batched.notifications).toEqual(sequential.notifications);
   });
 });
+
+describe('BLOCKER B — an edge a retained endpoint renders is never collateral', () => {
+  it('declines to evict an entity whose edge reaches a retained node', () => {
+    // Review finding: transitive eviction deleted A–B to evict non-retained A,
+    // while retained B's open Connections tab was rendering that very edge.
+    // `selectConnectionsOf(B)` reads the normalized edge family, so the
+    // relation would vanish from an open panel. Retention reaches ONE HOP OUT.
+    const link = edge('edge_ab', 'e0', 'kept');
+    const state = stateWithEntities(ENTITY_CACHE_CAP + 2, {
+      edges: { edge_ab: link },
+      edgeIdsByEntity: { e0: ['edge_ab'], kept: ['edge_ab'] },
+    });
+    const draft: Parameters<typeof enforceCacheBounds>[1] = {};
+    enforceCacheBounds(state, draft, new Set(['kept']));
+
+    // e0 is the oldest and is NOT itself retained — but it is one hop from a
+    // node that is, so it stays and the sweep takes the next candidate.
+    expect(draft.entities?.['e0']).toBeDefined();
+    expect(draft.edges?.['edge_ab'] ?? state.edges['edge_ab']).toBeDefined();
+    expect(
+      (draft.edgeIdsByEntity ?? state.edgeIdsByEntity)['kept'],
+    ).toEqual(['edge_ab']);
+    expect(draft.entities?.['e1']).toBeUndefined();
+  });
+
+  it('still evicts an entity whose edges reach only unretained nodes', () => {
+    // The one-hop rule must not become "any entity with an edge is immortal".
+    const link = edge('edge_ab', 'e0', 'e1');
+    const state = stateWithEntities(ENTITY_CACHE_CAP + 1, {
+      edges: { edge_ab: link },
+      edgeIdsByEntity: { e0: ['edge_ab'], e1: ['edge_ab'] },
+    });
+    const draft: Parameters<typeof enforceCacheBounds>[1] = {};
+    enforceCacheBounds(state, draft, new Set(['unrelated']));
+
+    expect(draft.entities?.['e0']).toBeUndefined();
+    expect(draft.edges?.['edge_ab']).toBeUndefined();
+    expect(draft.edgeIdsByEntity?.['e1']).toEqual([]);
+  });
+});

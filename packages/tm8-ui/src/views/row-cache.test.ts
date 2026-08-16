@@ -145,3 +145,49 @@ describe('evictRowKeys', () => {
     expect(retained.size).toBe(ROW_QUERY_CACHE_CAP);
   });
 });
+
+describe('BLOCKER A — a cache may not be the reason it is allowed to grow', () => {
+  /**
+   * Review finding, reproduced as arithmetic rather than as a React test.
+   *
+   * `retainedEntityIds` fed `Object.keys(messagesByAnchor)` into the set that
+   * message eviction then SKIPS. Every anchor that survived one render became
+   * permanently unevictable: the anchor cap died under slow accretion, and the
+   * unbounded key population fed back into the ENTITY sweep's protected set —
+   * re-opening the exact defect the row-query LRU exists to close.
+   *
+   * These two cases are the fixed point in each direction, and the assertion
+   * that matters is that the protected set no longer grows with the very cache
+   * it protects.
+   */
+  const retainedFrom = (
+    rows: Record<string, { ids: readonly EntityId[] }>,
+    details: Record<string, unknown>,
+    messagesByAnchor: Record<string, unknown>,
+    includeAnchors: boolean,
+  ) =>
+    new Set([
+      ...Object.values(rows).flatMap((p) => p.ids),
+      ...Object.keys(details),
+      ...(includeAnchors ? Object.keys(messagesByAnchor) : []),
+    ]);
+
+  it('the OLD shape grows the protected set with the anchor cache', () => {
+    const anchors: Record<string, unknown> = {};
+    for (let i = 0; i < 5_000; i++) anchors[`anchor_${i}`] = [];
+    const before = retainedFrom({}, {}, anchors, true);
+    expect(before.size).toBe(5_000);
+  });
+
+  it('the SHIPPED shape does not — it is bounded by rows and details alone', () => {
+    const anchors: Record<string, unknown> = {};
+    for (let i = 0; i < 5_000; i++) anchors[`anchor_${i}`] = [];
+    const details = { open_anchor: {} };
+    const after = retainedFrom({}, details, anchors, false);
+
+    expect(after.size).toBe(1);
+    // And the open thread is still pinned — via its DETAIL, which `pull`
+    // fetches alongside the thread and re-arms when either half is missing.
+    expect(after.has('open_anchor')).toBe(true);
+  });
+});

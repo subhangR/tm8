@@ -176,12 +176,38 @@ export function enforceCacheBounds(
     for (const id of Object.keys(draft.entities ?? state.entities)) {
       if (remaining <= 0) break;
       if (retained.has(id)) continue;
+
+      const touching = (draft.edgeIdsByEntity ?? state.edgeIdsByEntity)[id];
+      // RETENTION REACHES ONE HOP OUT, and it has to.
+      //
+      // Evicting this entity deletes its edges — including an edge whose FAR
+      // endpoint is retained, i.e. an edge some open Connections tab is
+      // rendering right now. `selectConnectionsOf(B)` reads the normalized
+      // edge family, so deleting A–B to evict A silently removes a relation
+      // from B's open panel. The pre-existing edge trim already refused any
+      // edge with EITHER endpoint retained; the transitive sweep has to honour
+      // the same rule, and the only way to honour it without leaving a
+      // dangling edge behind is to decline the ENTITY.
+      //
+      // The cost is honest: an entity one hop from anything on screen is
+      // unevictable, so the cap stays best-effort — the same posture it
+      // already has toward directly-retained ids. Bounded, because the edge
+      // family is itself capped.
+      if (touching?.length) {
+        const edges = draft.edges ?? state.edges;
+        const pinnedByFarEndpoint = touching.some((edgeId) => {
+          const link = edges[edgeId];
+          return link !== undefined
+            && (retained.has(link.source.id) || retained.has(link.target.id));
+        });
+        if (pinnedByFarEndpoint) continue;
+      }
+
       const entities = (draft.entities ??= { ...state.entities });
       delete entities[id];
       remaining -= 1;
       const details = draft.details ?? state.details;
       if (details[id]) delete (draft.details ??= { ...state.details })[id];
-      const touching = (draft.edgeIdsByEntity ?? state.edgeIdsByEntity)[id];
       if (touching) {
         // Copy: `dropEdge` rewrites the very list being walked.
         for (const edgeId of [...touching]) dropEdge(edgeId);

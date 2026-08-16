@@ -831,12 +831,26 @@ export function useGateData(options: GateOptions): GateData {
    * while an event burst renders at frame rate. It is now recomputed only when
    * one of the four caches it reads actually changes.
    *
-   * Every input is itself bounded — `rows` by `ROW_QUERY_CACHE_CAP` (see
-   * `row-cache.ts` for why that bound is what makes the entity cap reachable),
-   * `nodeIds` by `GRAPH_NODE_LIMIT`, `details` by `DETAIL_CACHE_CAP`,
-   * `messagesByAnchor` by `MESSAGE_ANCHOR_CACHE_CAP`. A retained set built from
-   * an unbounded input protects an unbounded number of entities, which is the
-   * same as having no cap at all.
+   * EVERY INPUT MUST BE BOUNDED BY SOMETHING THAT IS NOT THIS SET — `rows` by
+   * `ROW_QUERY_CACHE_CAP` (see `row-cache.ts`), `nodeIds` by
+   * `GRAPH_NODE_LIMIT`, `details` by `DETAIL_CACHE_CAP`. A retained set built
+   * from an unbounded input protects an unbounded number of entities, which is
+   * the same as having no cap at all.
+   *
+   * `messagesByAnchor` IS DELIBERATELY ABSENT, and leaving it in was a real
+   * defect found in review. Its cap skips retained keys, so including its own
+   * keys here made every anchor that survived one render permanently
+   * unevictable: `MESSAGE_ANCHOR_CACHE_CAP` died under slow accretion — each
+   * entry up to `MESSAGES_CAP` full `MessageView`s — and the resulting
+   * unbounded key population fed straight back into the ENTITY sweep's
+   * protected set, re-opening the exact defect this whole change exists to
+   * close. A cache may not be the reason it is allowed to grow.
+   *
+   * THE OPEN THREAD IS STILL PINNED, via `details`. `pull` reads an anchor's
+   * detail and its thread TOGETHER and re-arms either half whose cache entry
+   * has gone (`pull`'s first lines), so an anchor with a thread on screen has
+   * a cached detail by construction — and if that ever stops being true, the
+   * re-arm refetches rather than leaving the panel empty.
    */
   const retainedEntityIds = useMemo(
     () =>
@@ -844,9 +858,8 @@ export function useGateData(options: GateOptions): GateData {
         ...Object.values(rows).flatMap((page) => page.ids),
         ...graphLoad.nodeIds,
         ...Object.keys(details),
-        ...Object.keys(messagesByAnchor),
       ]),
-    [rows, graphLoad.nodeIds, details, messagesByAnchor],
+    [rows, graphLoad.nodeIds, details],
   );
   // The store reads this ref synchronously at commit time, from outside React.
   retainedEntityIdsRef.current = retainedEntityIds;
