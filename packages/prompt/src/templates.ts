@@ -326,12 +326,69 @@ export interface IncomingMessageFacts {
    */
   parentBody?: string;
   parentAuthorDisplay?: string;
+  /**
+   * The files the sender attached to THIS message copy. A manifest, never
+   * contents: ids and names, so the agent can fetch what it needs with
+   * `tm8 file download`. Absent and empty render identically (`count="0"`) —
+   * an element that is sometimes missing is one a model stops looking for.
+   */
+  attachments?: readonly SessionInputAttachment[];
+}
+
+/**
+ * One attached file, as the delivery names it.
+ *
+ * `name` is AUTHOR-CONTROLLED and still rides in the trusted block, as an
+ * escaped attribute — the same treatment §18 already gives a skill's `name` and
+ * a teammate's roster name. What makes that safe is the split it preserves: the
+ * block carries the file's IDENTITY (a validated entity id, its declared mime,
+ * the name it was uploaded under), never a byte of its CONTENT. Content is
+ * fetched later, by a command the agent chooses to run, and arrives as tool
+ * output — untrusted, like every other read.
+ */
+export interface SessionInputAttachment {
+  fileEntityId: string;
+  name: string;
+  mime?: string | null;
 }
 
 /** Excerpt ceiling for the parent-message block — keeps the worst case well
  * inside the 16,384-byte incomingMessageInjection budget. Do not raise the
  * budget instead. */
 const PARENT_EXCERPT_MAX_CHARS = 1500;
+
+/**
+ * The manifest is bounded twice over. 16 is the contract's own ceiling
+ * (`attachmentIds` is a 0..16 unique array), so a longer list means a caller
+ * built the facts by hand; it is clamped rather than trusted, and the surplus
+ * is DECLARED rather than dropped in silence. The name cap is what keeps a
+ * 4KB filename from pushing an otherwise-deliverable message over its byte
+ * budget — where the dispatch loop's only move is to skip the delivery, which
+ * is the exact silent drop this element exists to end.
+ */
+const ATTACHMENT_MANIFEST_MAX = 16;
+const ATTACHMENT_NAME_MAX_CHARS = 200;
+
+function attachmentsBlock(f: IncomingMessageFacts): string[] {
+  const all = f.attachments ?? [];
+  if (all.length === 0) return ['  <attachments count="0" />'];
+  const shown = all.slice(0, ATTACHMENT_MANIFEST_MAX);
+  const omitted = all.length - shown.length;
+  const open =
+    `  <attachments count="${all.length}"` +
+    (omitted > 0 ? ` omitted="${omitted}"` : '') +
+    ' fetch_with="tm8 file download &lt;file-entity-id&gt; --output &lt;path&gt;">';
+  return [
+    open,
+    ...shown.map((file) => {
+      const name = file.name.length > ATTACHMENT_NAME_MAX_CHARS
+        ? `${file.name.slice(0, ATTACHMENT_NAME_MAX_CHARS)}…`
+        : file.name;
+      return `    <file entity_id="${attr(file.fileEntityId)}" name="${attr(name)}" mime="${attr(file.mime)}" />`;
+    }),
+    '  </attachments>',
+  ];
+}
 
 export function incomingMessageInjection(f: IncomingMessageFacts): string {
   const context = f.contextAnchors?.length
@@ -348,6 +405,7 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
     `  <to session_id="${attr(f.destinationSessionId)}" />`,
     `  <source anchor_id="${attr(f.sourceAnchorId)}" anchor_kind="${attr(f.sourceAnchorKind)}" message_id="${attr(f.sourceMessageId)}" />`,
     ...context,
+    ...attachmentsBlock(f),
     `  <thread parent_message_id="${attr(f.threadParentMessageId)}" root_message_id="${attr(f.threadRootMessageId ?? f.sourceMessageId)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/reply" context_message_id="${attr(f.messageId)}" anchor_id="${attr(f.sourceAnchorId)}" parent_message_id="${attr(f.sourceMessageId)}" />`,
     `  <delivery transport="pty" stored="true" attempt="${attr(f.deliveryAttemptNo)}" status_source="session_message_deliveries" />`,

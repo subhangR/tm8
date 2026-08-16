@@ -539,6 +539,106 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
     });
   });
 
+  // THE ATTACHMENT MANIFEST. `messages.post` validated, stored and returned a
+  // message's files — and delivered the body alone. The sender saw two chips
+  // on a message the teammate was handed with no hint either file existed, and
+  // nothing in the stack said so: the drop was three layers of "this type has
+  // no field for that". These tests pin the copy's own attachments onto the
+  // copy's own delivery, and pin the empty case to `count="0"` rather than to
+  // silence.
+  describe('attachments reach the delivered envelope', () => {
+    function attachmentSetup(attachments: unknown) {
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => {
+        if (name === 'w2_post_message_batch') {
+          return { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T;
+        }
+        return [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          messageBatchId: 'batch-1',
+          senderActorId: IDS.author,
+          senderActorKind: 'member',
+          sourceAnchorId: IDS.anchor,
+          sourceAnchorKind: 'channel',
+          sourceMessageId: IDS.message,
+          threadParentMessageId: null,
+          threadRootMessageId: IDS.message,
+          body: 'stored body',
+          addressingKind: 'channel_mention',
+          contextAnchors: [],
+          rollingControlMaxBytes: 16_384,
+          sessionInputAllowed: true,
+        }] as T;
+      };
+      db.queryImpl = async <R>(sql) => {
+        if (sql.includes('profile_display_name')) {
+          return [{
+            id: IDS.author, kind: 'member', space_id: IDS.space,
+            member_display_name: 'Message Author', member_role: 'owner',
+            team_member_name: null, team_member_avatar: null, team_member_owner_id: null,
+            profile_display_name: 'Message Author', profile_avatar: null,
+          }] as R[];
+        }
+        if (sql.includes('left join public.messages msg')) {
+          return [messageRow({ message_attachments: attachments })] as R[];
+        }
+        return [];
+      };
+      const contents: string[] = [];
+      const registry = new HandlerRegistry();
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+        messageDelivery: {
+          reserve: async (intent) => {
+            contents.push(String(intent.content));
+            return {
+              deliveryId: IDS.delivery,
+              messageId: IDS.message,
+              targetWorkSessionId: IDS.targetSession,
+              reservationVersion: 3,
+              expiresAt: '2026-07-26T12:15:00.000Z',
+              content: String(intent.content),
+              mode: 'send',
+            };
+          },
+          principalFor: (reservation) => ({ reserved: reservation.deliveryId }),
+          adapter: { dispatch: async () => ({ outcome: 'delivered' }) },
+        },
+      });
+      return { registry, contents };
+    }
+
+    function post(registry: HandlerRegistry) {
+      return handler(registry, 'messages.post')(request('messages.post', {
+        body: {
+          clientMutationId: 'batch-1',
+          actorId: IDS.author,
+          anchorIds: [IDS.anchor],
+          body: 'stored body',
+          attachmentIds: [IDS.file],
+        },
+      }));
+    }
+
+    it('names the stored file in the envelope the teammate is handed', async () => {
+      const { registry, contents } = attachmentSetup([
+        { fileEntityId: IDS.file, name: 'proof.txt', mime: 'text/plain' },
+      ]);
+      await post(registry);
+      expect(contents).toHaveLength(1);
+      expect(contents[0]).toContain('<attachments count="1"');
+      expect(contents[0]).toContain(`entity_id="${IDS.file}"`);
+      expect(contents[0]).toContain('name="proof.txt"');
+    });
+
+    it('says count="0" for a message with no files, rather than saying nothing', async () => {
+      const { registry, contents } = attachmentSetup([]);
+      await post(registry);
+      expect(contents[0]).toContain('<attachments count="0" />');
+    });
+  });
+
   // SENDER ATTRIBUTION — the `attribution=` label in the delivered
   // `<trusted_control>` envelope. It was a hardcoded `'verified'` literal, so
   // every PTY-delivered message claimed the protocol's highest trust label

@@ -567,7 +567,12 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // top of the 121-vs-116 merge union this comment block already records.
     // Same rule again: both sides carried a pin, neither was the answer, the
     // MERGED tree was asked. `ls db/migrations/*.sql | wc -l` = 123.
-    expect(server.appliedMigrations.length).toBe(123);
+    // 123 -> 124 (2026-08-16): 133_chat_turn_attachments joins the chain --
+    // `claim_next_chat_turn` now projects the turn message's `attachments`, so
+    // a file the human attached reaches the teammate instead of stopping at
+    // the chip. MEASURED on this tree, never arithmetic:
+    // `ls db/migrations/*.sql | wc -l` = 124.
+    expect(server.appliedMigrations.length).toBe(124);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

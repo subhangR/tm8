@@ -28,7 +28,7 @@
  *     or disguise the message command.
  */
 
-import { incomingMessageInjection, utf8Bytes } from '@tm8/prompt';
+import { incomingMessageInjection, utf8Bytes, type SessionInputAttachment } from '@tm8/prompt';
 
 /**
  * Only the two fields the parent-excerpt render reads. Structural rather than
@@ -74,6 +74,21 @@ export interface MessageDeliveryPort {
 export interface DispatchOptions {
   readonly routes: readonly DispatchableRoute[];
   readonly parentsById: ReadonlyMap<string, ParentMessageExcerpt>;
+  /**
+   * The attachment manifest per DELIVERED COPY, keyed by `targetMessageId`.
+   *
+   * It arrives beside the routes rather than inside them for the same reason
+   * `parentsById` does: the route JSON is built by a SECURITY DEFINER RPC, and
+   * the copy's files are already loaded in the caller's transaction under the
+   * VIEWER's claims. Adding a field to the route type that the RPC never fills
+   * would read as "the database sends this" and rot the first time someone
+   * checked.
+   *
+   * Absent means "this caller has no attachment facts" — rendered as
+   * `count="0"`, the honest degraded mode for the background nudge path, which
+   * posts bodies and never files.
+   */
+  readonly attachmentsByMessageId?: ReadonlyMap<string, readonly SessionInputAttachment[]>;
   readonly requestId: string;
   /**
    * The AUTHORING session, null exactly when attribution is `recorded_only`.
@@ -87,8 +102,15 @@ export interface DispatchOptions {
 const PREVIEW_DELIVERY_ID = '00000000-0000-4000-8000-000000000000';
 
 export async function dispatchSessionMessages(options: DispatchOptions): Promise<void> {
-  const { routes, parentsById, requestId, sourceWorkSessionId, senderAttribution, delivery } =
-    options;
+  const {
+    routes,
+    parentsById,
+    attachmentsByMessageId,
+    requestId,
+    sourceWorkSessionId,
+    senderAttribution,
+    delivery,
+  } = options;
 
   for (const route of routes) {
     if (!route.sessionInputAllowed || route.targetWorkSessionId === sourceWorkSessionId) continue;
@@ -114,6 +136,7 @@ export async function dispatchSessionMessages(options: DispatchOptions): Promise
         threadParentMessageId: route.threadParentMessageId,
         threadRootMessageId: route.threadRootMessageId,
         body: route.body,
+        attachments: attachmentsByMessageId?.get(route.targetMessageId) ?? [],
         ...(parent
           ? {
               parentBody: parent.content.body,
