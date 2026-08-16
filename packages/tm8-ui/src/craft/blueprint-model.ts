@@ -57,10 +57,46 @@ export interface BlueprintView {
   height: number;
 }
 
-interface RawNode { key?: unknown; id?: unknown; spec?: { kind?: unknown; title?: unknown; hint?: unknown } }
+interface RawNode {
+  key?: unknown; id?: unknown; ref?: unknown; entityId?: unknown;
+  spec?: { kind?: unknown; title?: unknown; hint?: unknown };
+}
 interface RawEdge { src?: unknown; dst?: unknown; type?: unknown; note?: unknown }
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+
+const ENTITY_ID_FORM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * THE PINNED SHAPE, resolved in ONE place (see `GraphNode` in contract.ts).
+ *
+ * A node is a REFERENCE iff it carries `ref` (or its legacy alias `entityId`).
+ * Otherwise it is a SPEC. Entity-hood is NEVER inferred from `id` — `id` is
+ * the row-local key, which is what every writer actually uses it for, and
+ * reading it as an entity id is what made every spec card render as a broken
+ * reference.
+ *
+ * Exported because `CraftScreen` resolves reference titles from the same
+ * answer: if these two ever disagree about what a reference is, the canvas
+ * draws one thing and the network fetches another — which is the bug, again.
+ */
+export function nodeRefId(node: RawNode): EntityId | null {
+  const ref = str(node.ref) ?? str(node.entityId);
+  if (ref) return ref as EntityId;
+  /* A spec is a spec. The legacy branch below never overrides an explicit one. */
+  if (node.spec && typeof node.spec === 'object') return null;
+  /* LEGACY (pre-pin rows): bare `id` in entity-id form meant the reference. */
+  const bare = str(node.id) ?? str(node.key);
+  return bare && ENTITY_ID_FORM.test(bare) ? (bare as EntityId) : null;
+}
+
+/**
+ * The row-local key edges name. `key` wins when present — it is the key old
+ * edges were written against — otherwise `id`, the pinned spelling.
+ */
+export function nodeKey(node: RawNode, index: number): string {
+  return str(node.key) ?? str(node.id) ?? nodeRefId(node) ?? `#${index}`;
+}
 
 /** Resolved titles for reference nodes, keyed by entity id (the host reads them). */
 export type RefTitles = ReadonlyMap<string, { kind: string; title: string }>;
@@ -74,8 +110,8 @@ export function blueprintView(content: unknown, refTitles?: RefTitles): Blueprin
   const layout = (c['layout'] ?? {}) as Record<string, { x?: unknown; y?: unknown }>;
 
   const cards: BlueprintCard[] = rawNodes.map((node, index) => {
-    const refId = str(node.id);
-    const key = str(node.key) ?? refId ?? `#${index}`;
+    const refId = nodeRefId(node);
+    const key = nodeKey(node, index);
     const spec = node.spec && typeof node.spec === 'object' ? node.spec : null;
     const resolved = refId ? refTitles?.get(refId) : undefined;
     const placed = layout[key];
