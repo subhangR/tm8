@@ -132,7 +132,9 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   },
   {
     name: 'explain_code',
-    description: 'Present an exact repository excerpt or clearly-labelled illustrative code inline with line numbers, syntax colour, highlights and annotations.',
+    description: 'Present an exact repository excerpt or clearly-labelled illustrative code inline with line numbers, syntax colour, highlights and annotations. Supply exactly one of path or code.',
+    // OpenAI custom tools reject oneOf/allOf/anyOf at the input-schema root.
+    // `explainCode` preserves the XOR invariant at the execution boundary.
     inputSchema: {
       type: 'object',
       properties: {
@@ -152,7 +154,6 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
           }, ['startLine', 'endLine']),
         },
       },
-      oneOf: [{ required: ['path'] }, { required: ['code'] }],
       additionalProperties: false,
     },
     annotations: annotations(true),
