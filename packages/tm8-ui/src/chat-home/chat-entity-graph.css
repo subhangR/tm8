@@ -9,11 +9,17 @@
   margin: 0 0 12px;
 }
 
+.ceg__head {
+  display: flex;
+  align-items: center;
+}
+
 .ceg__toggle {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 8px 12px;
   border: 0;
   background: transparent;
@@ -26,6 +32,27 @@
 }
 
 .ceg__toggle:hover { background: var(--pn-hover); }
+
+/* Fullscreen trigger (plan 01a0094b step 4) — quiet until hovered, like the
+   toggle it sits beside. */
+.ceg__expand {
+  flex: none;
+  margin-right: 6px;
+  padding: 5px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.ceg__expand:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink-2);
+}
 
 .ceg__count {
   color: var(--pn-ink-3);
@@ -62,4 +89,98 @@
 
 .ceg-line__labels {
   font-size: 10px;
+}
+
+/* ---------------------------------------------------------------------------
+   FULLSCREEN (plan 01a0094b step 4) — the PromptsOverlay/CommandPalette scrim
+   contract, rendered inside the shell subtree, never a document.body portal. */
+
+.cv2-root .ceg-full__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  padding: 18px;
+  background: color-mix(in srgb, var(--pn-ink) 28%, transparent);
+  overscroll-behavior: contain;
+}
+
+.ceg-full {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--pn-line);
+  border-radius: 12px;
+  background: var(--pn-surface);
+  outline: none;
+  overflow: hidden;
+}
+
+.ceg-full__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.ceg-full__title {
+  font-size: 13px;
+  color: var(--pn-ink);
+}
+
+.ceg-full__caption {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+
+.ceg-full__controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ceg-full__zoom {
+  min-width: 42px;
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+}
+
+.ceg-full__btn {
+  padding: 4px 9px;
+  border: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.ceg-full__btn:hover { background: var(--pn-hover); }
+
+.ceg-full__close { border: 0; }
+
+.ceg-full__canvas {
+  flex: 1;
+  min-height: 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.ceg-full__canvas:active { cursor: grabbing; }
+
+.ceg-full__canvas .sg-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }

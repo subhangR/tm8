@@ -18,13 +18,14 @@
  * 01a0094b D3), resolves late titles, and hands the drawing to the shared
  * `InducedGraphCanvas` the fullscreen view reuses.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import type { ConnectionsReader } from '../session-graph/load';
 import '../session-graph/session-graph.css';
 import './chat-entity-graph.css';
 import { resolveChatEntity, type ChatEntityResolver } from './EntityChip';
 import type { ChatEntityRef } from './entity-refs';
+import { ChatEntityGraphFullscreen } from './ChatEntityGraphFullscreen';
 import { foldGraphSeeds } from './graph-seeds';
 import { buildInducedGraph } from './induced-graph';
 import { InducedGraphCanvas } from './InducedGraphCanvas';
@@ -42,6 +43,14 @@ export interface ChatEntityGraphProps {
   /** Shared lazy title resolution (R7c) for ids no edge payload named. */
   resolveEntity?: ChatEntityResolver | undefined;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
+  /**
+   * FULLSCREEN IS A URL (plan 01a0094b D2): the host maps `?graph=full` here
+   * and `onExpandedChange` navigates the param on/off — this component never
+   * owns the open state, so Back closes and a reload restores. Hosts without
+   * routing simply omit the pair and get the inline strip unchanged.
+   */
+  expanded?: boolean | undefined;
+  onExpandedChange?: ((open: boolean) => void) | undefined;
 }
 
 export function ChatEntityGraph({
@@ -50,6 +59,8 @@ export function ChatEntityGraph({
   connections,
   resolveEntity,
   onOpenEntity,
+  expanded,
+  onExpandedChange,
 }: ChatEntityGraphProps) {
   const [open, setOpen] = useState(true);
   const { drawn, overflow } = useMemo(
@@ -88,6 +99,14 @@ export function ChatEntityGraph({
 
   const placement = useMemo(() => layoutInducedGraph(graph), [graph]);
 
+  /* Focus returns to Expand when the fullscreen dialog closes (step 4). */
+  const expandRef = useRef<HTMLButtonElement | null>(null);
+  const wasExpanded = useRef(false);
+  useEffect(() => {
+    if (wasExpanded.current && !expanded) expandRef.current?.focus();
+    wasExpanded.current = expanded === true;
+  }, [expanded]);
+
   /* R12 — degenerate cases. Zero seeds: nothing at all, not even a header. */
   if (drawn.length === 0) return null;
 
@@ -103,16 +122,38 @@ export function ChatEntityGraph({
 
   return (
     <div className="ceg" data-testid="chat-entity-graph">
-      <button
-        type="button"
-        className="ceg__toggle"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        title="Entities this conversation referenced, and the relations they hold in the graph"
-      >
-        {`${open ? '▾' : '▸'} Entity graph`}
-        <span className="ceg__count">{caption}</span>
-      </button>
+      <div className="ceg__head">
+        <button
+          type="button"
+          className="ceg__toggle"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+          title="Entities this conversation referenced, and the relations they hold in the graph"
+        >
+          {`${open ? '▾' : '▸'} Entity graph`}
+          <span className="ceg__count">{caption}</span>
+        </button>
+        {onExpandedChange ? (
+          <button
+            type="button"
+            className="ceg__expand"
+            ref={expandRef}
+            title="Open the graph fullscreen"
+            onClick={() => onExpandedChange(true)}
+          >
+            ⛶ Expand
+          </button>
+        ) : null}
+      </div>
+      {expanded && onExpandedChange ? (
+        <ChatEntityGraphFullscreen
+          graph={graph}
+          caption={caption}
+          late={late}
+          onOpenEntity={onOpenEntity}
+          onClose={() => onExpandedChange(false)}
+        />
+      ) : null}
       {open ? (
         <div className="ceg__canvas">
           {allIsolated ? (

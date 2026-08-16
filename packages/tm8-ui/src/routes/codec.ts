@@ -249,7 +249,15 @@ function parseTarget(
         return { view: 'home', root: { type: 'kind', slug: rest[2] } };
       }
       if (rest[1] === 'chat') {
-        return { view: 'home', root: { type: 'chats', threadId: rest[2] ?? null } };
+        /* `?graph=full` opens the conversation's entity graph fullscreen
+           (plan 01a0094b D2). Deliberately NOT a drop-notice param: any other
+           value is a stale or foreign link and silently renders the plain
+           conversation — lossy-tolerant, per the fullscreen ruling. */
+        const graph = query.get('graph') === 'full' ? ('full' as const) : null;
+        return {
+          view: 'home',
+          root: { type: 'chats', threadId: rest[2] ?? null, ...(graph ? { graph } : {}) },
+        };
       }
       return { view: 'home' };
     }
@@ -337,7 +345,10 @@ function pathOf(route: Route): string {
       if (root?.type === 'kind') return `${base}/home/k/${enc(root.slug)}`;
       if (root?.type === 'chats' && root.threadId) return `${base}/home/chat/${enc(root.threadId)}`;
       /* `chats` with no thread is the default root: `/home` IS that address,
-         so the canonical form drops the segment (normalize agrees). */
+         so the canonical form drops the segment (normalize agrees) — UNLESS
+         the fullscreen graph param needs the `/chat` segment to survive a
+         round-trip, since bare `/home` does not read `graph`. */
+      if (root?.type === 'chats' && root.graph) return `${base}/home/chat`;
       return `${base}/home`;
     }
     case 'feed':
@@ -400,7 +411,9 @@ export function build(route: Route): BuildOutcome {
   const t = route.target;
 
   const viewParams: Param[] = [];
-  if (t.view === 'kind') {
+  if (t.view === 'home') {
+    if (t.root?.type === 'chats' && t.root.graph) viewParams.push(['graph', t.root.graph]);
+  } else if (t.view === 'kind') {
     if (t.mode) viewParams.push(['mode', t.mode]);
   } else if (t.view === 'entity') {
     if (t.origin) {
@@ -491,12 +504,15 @@ export function normalize(route: Route): Route {
     if (open.has(id)) contentSurface[id] = surface;
   }
 
-  /* Canonical Home root: `chats` with no thread IS the bare `/home` form. */
+  /* Canonical Home root: `chats` with no thread IS the bare `/home` form —
+     unless the fullscreen graph param is set, which only the `/chat` segment
+     carries (bare `/home` does not read `graph`, so collapsing would lose it). */
   const target: NavView =
     route.target.view === 'home' &&
     route.target.root &&
     route.target.root.type === 'chats' &&
-    route.target.root.threadId === null
+    route.target.root.threadId === null &&
+    !route.target.root.graph
       ? { view: 'home' }
       : route.target;
 
