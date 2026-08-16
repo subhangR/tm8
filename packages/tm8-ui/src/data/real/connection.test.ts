@@ -727,6 +727,35 @@ describe('connection: closeSpace / dispose', () => {
     expect(lastFrame(h.pool.last())).toEqual({ type: 'resume', spaceId: 'sp-1', since: 12 });
   });
 
+  it('an obsolete fallback poll cannot checkpoint after close, clear and re-open', async () => {
+    const h = mk();
+    let resolveOldPoll: ((page: DurableEventPage) => void) | undefined;
+    h.setPoll(() => new Promise<DurableEventPage>((resolve) => { resolveOldPoll = resolve; }));
+
+    h.conn.openSpace('sp-1');
+    const oldSocket = h.pool.last();
+    oldSocket.openIt();
+    oldSocket.drop();
+    await flush();
+    expect(h.polls).toEqual([{ spaceId: 'sp-1', since: 0 }]);
+
+    h.conn.closeSpace('sp-1');
+    h.conn.clearCursor('sp-1');
+    h.conn.openSpace('sp-1');
+    const currentSocket = h.pool.last();
+    expect(currentSocket).not.toBe(oldSocket);
+
+    // The space is open again when the old generation returns, so an
+    // `open.has` check alone would accept and persist this poisoned cursor.
+    resolveOldPoll?.({ items: [ev('sp-1', 900)], nextCursor: '900' });
+    await flush();
+    expect(h.conn.cursorOf('sp-1')).toBe(0);
+    expect(h.cursorUpdates).toEqual([]);
+
+    currentSocket.openIt();
+    expect(lastFrame(currentSocket)).toEqual({ type: 'resume', spaceId: 'sp-1', since: 0 });
+  });
+
   it('dispose closes the socket, cancels every timer and delivers nothing more', async () => {
     const h = mk();
     h.conn.openSpace('sp-1');

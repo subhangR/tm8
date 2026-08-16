@@ -534,8 +534,14 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     if (r.pollInFlight) return;
     r.pollInFlight = true;
     const since = cursors.get(spaceId) ?? 0;
+    const epoch = prepareEpochs.get(spaceId) ?? 0;
     try {
       const page = await deps.poll(spaceId, since, cfg.pollLimit);
+      // The request belongs to the space generation that started it. A
+      // close/clear/re-open can make the space open again before this response
+      // lands, so `open.has` alone is insufficient: the epoch keeps an old
+      // boot's cursor from being checkpointed into the new boot.
+      if (disposed || !open.has(spaceId) || (prepareEpochs.get(spaceId) ?? 0) !== epoch) return;
       let highWater = since;
       for (const raw of page?.items ?? []) {
         if (typeof raw?.seq === 'number' && raw.seq > highWater) highWater = raw.seq;
