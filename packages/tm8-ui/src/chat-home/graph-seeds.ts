@@ -22,12 +22,17 @@
  * an understatement. Tool names are used here for classification ONLY; none
  * ever reaches the surface (R8).
  *
- * CAP (open question Q2, decided): `MAX_GRAPH_SEEDS = 64` — the session
- * graph's `MAX_CELLS`, beyond which that canvas already ruled a drawing
- * unreadable. FIRST-SEEN wins, not recency: evicting a settled node
+ * CAP (Q2, amended 2026-08-16): the cap is a DRAW cap, not a fold cap. The
+ * fold keeps every seed it saw — folding is pure array work and the 64 never
+ * protected it — and splits the result at `limit` into `drawn` (first-seen,
+ * default `MAX_GRAPH_SEEDS = 64`, the session graph's `MAX_CELLS`) and the
+ * undrawn overflow. FIRST-SEEN wins, not recency: evicting a settled node
  * mid-stream would move every card after it (violating the R9 stability
  * rule), and first-reference order is the one order that never changes under
- * streaming. The overflow is counted and captioned, never silent.
+ * streaming. Discarding the overflow instead of returning it made every
+ * count computed over the fold a lie at scale — a kind facet over a
+ * truncated set reports 18 tasks when the thread referenced 30 — so the
+ * overflow now carries its seeds and a per-kind breakdown, never silence.
  */
 import { extractEntityRefs } from './entity-refs';
 import type { GraphSeed } from './induced-graph';
@@ -76,18 +81,26 @@ function refsOf(turn: ChatTurn): readonly RawSeedRef[] {
 }
 
 export interface GraphSeedFold {
-  /** First-reference order, capped at `MAX_GRAPH_SEEDS`. */
+  /** EVERY distinct entity the thread referenced, first-reference order —
+   *  nothing discarded. Facet counts are computed over THIS. */
   seeds: readonly GraphSeed[];
-  /** Distinct entities the cap kept off the canvas. */
+  /** The first `limit` seeds — the set the canvas draws and the only set
+   *  whose connections are ever read. */
+  drawn: readonly GraphSeed[];
+  /** `seeds.length - drawn.length` — entities the draw cap keeps off canvas. */
   overflow: number;
+  /** The undrawn seeds broken down by kind (`'entity'` when unknown), so a
+   *  facet can say `task 30 (12 not drawn)` instead of lying. */
+  overflowByKind: ReadonlyMap<string, number>;
 }
 
 export function foldGraphSeeds(
   turns: readonly ChatTurn[],
   suppressEntityIds?: ReadonlySet<string>,
+  opts?: { limit?: number },
 ): GraphSeedFold {
+  const limit = opts?.limit ?? MAX_GRAPH_SEEDS;
   const byId = new Map<string, GraphSeed>();
-  const overflowIds = new Set<string>();
   for (const turn of turns) {
     for (const ref of refsOf(turn)) {
       if (suppressEntityIds?.has(ref.id)) continue;
@@ -97,12 +110,17 @@ export function foldGraphSeeds(
         if (ref.title && !existing.title) existing.title = ref.title;
         if (ref.kind && !existing.kind) existing.kind = ref.kind;
         if (ref.mutated) existing.mutated = true;
-      } else if (byId.size < MAX_GRAPH_SEEDS) {
-        byId.set(ref.id, { id: ref.id, kind: ref.kind, title: ref.title, mutated: ref.mutated });
       } else {
-        overflowIds.add(ref.id);
+        byId.set(ref.id, { id: ref.id, kind: ref.kind, title: ref.title, mutated: ref.mutated });
       }
     }
   }
-  return { seeds: [...byId.values()], overflow: overflowIds.size };
+  const seeds = [...byId.values()];
+  const drawn = seeds.slice(0, limit);
+  const overflowByKind = new Map<string, number>();
+  for (const seed of seeds.slice(limit)) {
+    const kind = seed.kind ?? 'entity';
+    overflowByKind.set(kind, (overflowByKind.get(kind) ?? 0) + 1);
+  }
+  return { seeds, drawn, overflow: seeds.length - drawn.length, overflowByKind };
 }
