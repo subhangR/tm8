@@ -46,24 +46,55 @@
 -- accepted, and it is exactly the state a human already reaches by pressing
 -- Start and closing their laptop. The live half stays derived and self-clearing.
 --
--- WHY IT RECORDS `work.changed` (owner ruling). Identical verb and summary
--- shape to `set_work_state` (060:71), so a reader of the task's feed sees the
--- same event whether a human pressed Start or a spawn did it for them. `via`
--- distinguishes the two, mirroring 111's `props.via = 'spawn'` on the
--- assignment. A status that changes with no trace is the worse failure.
+-- WHY IT RECORDS `work.changed` (owner ruling). Same VERB as `set_work_state`
+-- (060:71), so a reader of the task's feed sees a status change whether a human
+-- pressed Start or a spawn did it for them. A status that changes with no trace
+-- is the worse failure.
+--
+-- It is NOT byte-identical to 060's row, and both differences reach clients, so
+-- they are stated here rather than discovered:
+--   - `summary` carries an extra `via: 'spawn'` key. That is deliberate — it
+--     mirrors 111's `props.via = 'spawn'` on the assignment and is how a reader
+--     tells a spawn-authored change from a human one.
+--   - `ref_id` is NULL here; 060 passes the `working_on` edge it just wrote.
+--     `activity.ref_id` is projected on the wire as `refId` by four read paths
+--     (handlers/activity.ts:145, w2/feed-context.ts:586, and
+--     w2/entities-commands-tracking.ts:765 and :1622), so this is a visible
+--     difference, not an internal one. It is DEFERRED, not considered
+--     unimportant: the `working_on` insert above is `on conflict do nothing`
+--     with no `returning`, so capturing the edge id needs a `returning ... into`
+--     plus a select fallback for the conflict case. Nobody has asked for the
+--     edge on this row yet; if a consumer does, that is the change to make.
 --
 -- The `if found` gate is what keeps the feed honest: `FOUND` after an UPDATE
 -- reflects the `where` clause, so a task that was already `working`, or was
--- `blocked`, records nothing at all.
+-- `blocked`, records nothing at all. See the ADJACENCY warning at the gate
+-- itself — `FOUND` is set by the LAST statement executed, and two edge inserts
+-- sit immediately above the UPDATE.
 --
 -- The body below is 111's, unchanged except for the marked block.
 --
--- ⚠ MERGE HAZARD. `origin/feat/assigned-by-provenance` (unmerged as of
--- 2026-08-16) ALSO issues `create or replace function public.execution_spawn`,
--- in its own `129_task_assignment_provenance.sql`. Whichever of the two lands
--- second silently reverts the first — there is no conflict marker for this,
--- because the two files never touch. Whoever merges second must union the two
--- bodies rather than take either whole.
+-- ⚠ MERGE HAZARD, and the detector that catches it.
+-- `origin/feat/assigned-by-provenance` (unmerged as of 2026-08-16) ALSO issues
+-- `create or replace function public.execution_spawn`, in its own
+-- `129_task_assignment_provenance.sql`, and it edits the very `assigned_to`
+-- insert below (changing `on conflict do nothing` to `on conflict ... do update
+-- set assigned_by = excluded.assigned_by`). So the two edits are adjacent lines
+-- of one loop. Whichever lands second reverts the first, and GIT WILL SHOW NO
+-- CONFLICT, because the two files never touch. Whoever merges second must union
+-- the two bodies rather than take either whole.
+--
+-- That revert is silent in git only. It is NOT silent in CI: if 129 lands second
+-- and reverts this, `spawn-starts-the-task.pg.test.ts` goes red; if this lands
+-- second and reverts 129, 129's own suite goes red. CI runs `*.pg.test.ts`
+-- against a real PostgreSQL, so both detectors actually execute. The guard is
+-- those two suites, not anyone's memory.
+--
+-- Which is why the test file asserts every CUMULATIVE fact of this body — 048's
+-- `working_on` edge and 111's `assigned_to` edge as well as 131's own status
+-- write. Any future `create or replace` that drops ANY arm goes red, not just
+-- the arms that happen to have an owner watching today. Extend that list when
+-- you extend this body.
 
 create or replace function public.execution_spawn(
   p_space_id uuid, p_team_member_id uuid, p_task_ids uuid[] default '{}'::uuid[],
@@ -163,6 +194,12 @@ begin
        set work_status = 'working', updated_at = now()
      where entity_id = task_id
        and work_status in ('open', 'pulled');
+    -- ⚠ KEEP THIS ADJACENT TO THE UPDATE ABOVE. `FOUND` reflects the LAST
+    -- statement executed, not the last UPDATE. The two edge inserts above both
+    -- set it, so a statement inserted between the UPDATE and this `if` turns
+    -- the honesty gate into a lie that no test would catch: the cases below
+    -- assert the count of `work.changed` rows, and a gate reading a preceding
+    -- insert's FOUND would still satisfy most of them.
     if found then
       perform internal.record_activity(p_space_id, task_id, actor, 'work.changed', null,
         jsonb_build_object('status', 'working', 'via', 'spawn'));

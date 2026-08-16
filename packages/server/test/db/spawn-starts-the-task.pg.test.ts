@@ -244,8 +244,15 @@ describe('131: a spawn starts the task it is spawned on', () => {
     const { patches } = await spawnOn(taskId);
 
     const patched = patches.find((p) => p.id === taskId);
-    // Presence alone would pass even if the update ran after the patch was
-    // built. The resolved content is what proves the ordering.
+    // What this proves is CLIENT-VISIBLE, not an ordering fact. `patches` is a
+    // uuid[] that internal.command_result (007:49) expands through
+    // internal.command_entity at the moment it is CALLED — after the loop — so
+    // the resolved content reads `working` regardless of whether the UPDATE ran
+    // before or after `patches := patches || task_id`. No in-transaction
+    // assertion can separate those two, because there is no observation point
+    // between them. The property worth having is this: the spawn RESPONSE
+    // already carries the new status, so a client applying it does not render
+    // `open` and then correct itself on the next read.
     expect(patched?.content.work_status).toBe('working');
   });
 
@@ -260,6 +267,24 @@ describe('131: a spawn starts the task it is spawned on', () => {
       [taskId, fixture.teamMemberId],
     );
     expect(rows).toEqual([{ via: 'spawn' }]);
+  });
+
+  it('still writes 048 working_on alongside the status', async () => {
+    // The cumulative-facts check. `execution_spawn` is redefined by
+    // create-or-replace migrations that git cannot show a conflict for, so this
+    // file asserts EVERY arm the current body owes — 048's live edge, 111's
+    // assignment, 131's status — and not only the arm this migration added.
+    // A future replace that silently drops any one of them goes red here.
+    const taskId = await taskInStatus('open');
+
+    const { sessionId } = await spawnOn(taskId);
+
+    const rows = await database.query<{ count: string }>(
+      `select count(*)::text count from public.edges
+        where src_id = $1 and dst_id = $2 and type = 'working_on'`,
+      [sessionId, taskId],
+    );
+    expect(rows).toEqual([{ count: '1' }]);
   });
 });
 
