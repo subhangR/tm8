@@ -3122,3 +3122,49 @@
   flex-wrap: wrap;
   gap: 4px 8px;
 }
+
+/* ---------------------------------------------------------------------------
+   THE RELATIONAL PANEL (user ruling 2026-08-16) — relation chips + inline
+   groups. A count badge that names a real collection kind is a BUTTON now:
+   it opens that kind's linked entities under the tile, one group per tile.
+--------------------------------------------------------------------------- */
+.cv2-root .pn-st__count--btn {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  margin: -2px -1px;
+  border-radius: 4px;
+  transition: background 120ms, color 120ms;
+}
+.cv2-root .pn-st__count--btn:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.cv2-root .pn-st__count--open { color: var(--pn-ink-1); background: var(--pn-active); }
+
+/* The open group: SAME LEVEL as its owner (offset is the hierarchy tree's
+   vocabulary, ruled 2026-08-16), so ownership is said by the thin rail and
+   the eyebrow, not by indent. The rail is deliberately the only geometry. */
+.cv2-root .lp__related {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 6px;
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid var(--pn-line);
+}
+.cv2-root .lp__related-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--pn-ink-4);
+}
+.cv2-root .lp__related-note {
+  margin: 0;
+  padding: 2px 0 4px;
+  font-size: 11px;
+  color: var(--pn-ink-4);
+}

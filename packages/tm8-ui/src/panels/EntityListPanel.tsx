@@ -39,6 +39,7 @@ import {
   REASONS,
   toRowFacts,
   VIEWER_ACTOR,
+  allKinds,
   collectionKinds,
   countLabel,
   getKind,
@@ -72,12 +73,32 @@ import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-req
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
 import { TileCountBadges, hasTileCounts } from './list/TileCountBadges';
+import { relatedOfKind } from './list/related';
+import { RelatedGroup } from './list/RelatedGroup';
 import { routeMessagePulse, type PulseSegment } from './list/message-pulse';
 import type { MessagePulse } from './list/useMessagePulses';
 import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
 import { newLaunchMutationId } from '../domain/launch';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
+
+/**
+ * The live-session kind for the tile's LEADING relation chip, selected by
+ * CAPABILITY (the one kind with a `liveTreatment`), never by name — the same
+ * §15.2 rule WorkspaceView uses for its empty-centre roster.
+ */
+const SESSION_CHIP_KIND = allKinds().find((kind) => kind.list.liveTreatment != null)?.kind;
+
+/**
+ * A relation chip may expand only into a real collection kind — registry
+ * DATA, so the message tallies (whose `human-message` / `agent-message`
+ * badge kinds resolve to no collection) stay counts, exactly the v1 ruling.
+ */
+const EXPANDABLE_KINDS: ReadonlySet<string> = new Set(
+  collectionKinds().map((config) => config.kind),
+);
+const isExpandableKind = (kind: string): boolean => EXPANDABLE_KINDS.has(kind);
+const NO_LINKED: readonly EntitySummary[] = Object.freeze([]);
 
 /**
  * EntityListPanel — the other universal primitive (L3).
@@ -162,6 +183,14 @@ export interface EntityListPanelProps {
   onNeedDetail?: (entityId: string) => void;
   /** Real `working_on` targets for session tiles, projected by the shell. */
   linkedTasksOf?: (id: string) => readonly EntitySummary[];
+  /**
+   * The inverse projection: `working_on` SOURCES per target, from the same
+   * gate-graph edges. This is what lets a task tile carry its sessions chip
+   * BEFORE anyone hydrates the row's connections — the workspace already
+   * holds these edges, so the count is free and live (user ruling
+   * 2026-08-16: sessions ride the tile, leading position).
+   */
+  linkedSessionsOf?: (id: string) => readonly EntitySummary[];
   /** Tracked PR facts from the graph/entity projection, live by entity id. */
   linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
 
@@ -2661,6 +2690,7 @@ export function Tile({
   childCount = 0,
   expanded = false,
   onToggleChildren,
+  path,
 }: {
   row: EntitySummary;
   depth?: number;
@@ -2670,6 +2700,13 @@ export function Tile({
   childCount?: number;
   expanded?: boolean;
   onToggleChildren?: () => void;
+  /**
+   * The relation-traversal path: every entity id this tile hangs UNDER via
+   * open relation groups, so an edge pointing back at an ancestor is
+   * suppressed rather than drawn as a loop (user ruling 2026-08-16 —
+   * parent → child → parent renders once). Absent at the top level.
+   */
+  path?: ReadonlySet<string>;
 }) {
   const list = config.list;
   const controlCard = list.tile.anatomy === 'control-card';
@@ -2688,6 +2725,36 @@ export function Tile({
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   /** Bounds for the expand's outside-click dismissal — the trigger lives here too. */
   const tileRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * THE RELATIONAL PANEL (user ruling 2026-08-16): the tile's relation chips
+   * open the linked entities of ONE kind inline under the row. One group per
+   * tile — clicking another chip REPLACES the open one (the accordion the
+   * ruling chose); clicking the open chip closes it. Row-local for the same
+   * reason `flowRef` is: outside state would need an "only one open"
+   * register this panel has no owner for.
+   */
+  const [openRelation, setOpenRelation] = useState<string | null>(null);
+  const connections = props.connectionsOf?.(row.id);
+  /** This tile's own id joins the path its expansion hands down. */
+  const nestedPath = useMemo<ReadonlySet<string>>(() => {
+    const ids = new Set(path ?? []);
+    ids.add(row.id);
+    return ids;
+  }, [path, row.id]);
+  const linkedSessions =
+    (SESSION_CHIP_KIND ? props.linkedSessionsOf?.(row.id) : undefined) ?? NO_LINKED;
+  const sessionRows = SESSION_CHIP_KIND
+    ? relatedOfKind(row.id, connections, SESSION_CHIP_KIND, linkedSessions, path)
+    : NO_LINKED;
+  const toggleRelation = (kind: string): void => {
+    /* Opening asks for the row's detail exactly like the control strip does —
+       `connectionsOf` is backed by hydration, so an unhydrated row would
+       otherwise say "loading" forever. The fill is idempotent (see
+       `onNeedDetail`), so a re-click cannot stampede the seam. */
+    if (openRelation !== kind && connections === undefined) props.onNeedDetail?.(row.id);
+    setOpenRelation((prev) => (prev === kind ? null : kind));
+  };
 
   const streaming = Boolean(
     list.tile.pulse && props.activity?.[row.id] && treatment?.streamingLabel,
@@ -2731,6 +2798,93 @@ export function Tile({
   // PRs through its working_on task's tracks edges.
   const linkedPullRequests = (controlCard || sessionTree) ? (props.linkedPullRequestsOf?.(row.id) ?? []) : [];
 
+  /**
+   * The LEADING sessions chip (user ruling 2026-08-16: "sessions also, at the
+   * start, with terminal icons and number"). Counted from the graph
+   * projection UNION the row's connections, path-suppressed — the same read
+   * the open group renders from, so the chip can never promise a row the
+   * group refuses to draw.
+   */
+  const sessionChip = SESSION_CHIP_KIND && sessionRows.length > 0 ? (
+    <button
+      type="button"
+      className={
+        openRelation === SESSION_CHIP_KIND
+          ? 'pn-st__count pn-st__count--btn pn-st__count--open'
+          : 'pn-st__count pn-st__count--btn'
+      }
+      data-testid="session-chip"
+      data-count-kind={SESSION_CHIP_KIND}
+      title={`${sessionRows.length} linked ${getKind(SESSION_CHIP_KIND).label.toLowerCase()}${sessionRows.length === 1 ? '' : 's'} — click to show them under this row`}
+      aria-expanded={openRelation === SESSION_CHIP_KIND}
+      onClick={(event) => {
+        event.stopPropagation();
+        toggleRelation(SESSION_CHIP_KIND);
+      }}
+    >
+      <KindIcon kind={SESSION_CHIP_KIND} size={12} />
+      {sessionRows.length}
+    </button>
+  ) : null;
+
+  /** ONE badge sub-row for both carrying anatomies: sessions chip first,
+      then PR chips, then the count badges — now doors where a count names a
+      real collection kind. Clickability requires a wired `connectionsOf`;
+      without the projection an opened group could never fill. */
+  const tileBadges =
+    sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters) ? (
+      <>
+        {sessionChip}
+        {linkedPullRequests.length > 0 ? (
+          <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
+        ) : null}
+        <TileCountBadges
+          counters={row.counters}
+          humanAuthors={row.badges.humanMessageAuthors}
+          openKind={openRelation}
+          onToggleKind={props.connectionsOf ? toggleRelation : undefined}
+          expandableKind={isExpandableKind}
+        />
+      </>
+    ) : undefined;
+
+  /**
+   * The open relation group, rendered AFTER the tile at the tile's own level
+   * — offset stays the hierarchy tree's vocabulary; a thin rail marks
+   * ownership instead (see RelatedGroup). Rows are REAL tiles of their own
+   * kind (the 2026-08-13 rule), so a session under a task is the same
+   * MaestroSessionTile the sessions list draws, liveness and terminate
+   * included — and each nested tile carries its own chips, which is what
+   * makes the graph traversable in the panel itself.
+   */
+  const relatedRows = openRelation
+    ? relatedOfKind(
+        row.id,
+        connections,
+        openRelation,
+        openRelation === SESSION_CHIP_KIND ? linkedSessions : NO_LINKED,
+        nestedPath,
+      )
+    : NO_LINKED;
+  const relatedBlock = openRelation ? (
+    <RelatedGroup
+      kind={openRelation}
+      label={getKind(openRelation).labelPlural}
+      count={relatedRows.length}
+      loading={connections === undefined}
+    >
+      {relatedRows.map((related) => (
+        <Tile
+          key={related.id}
+          row={related}
+          props={props}
+          config={getKind(related.kind)}
+          path={nestedPath}
+        />
+      ))}
+    </RelatedGroup>
+  ) : null;
+
   if (sessionTree) {
     const state = row.state as unknown as Record<string, unknown>;
     const recordedStatus = typeof state.status === 'string' ? state.status : 'idle';
@@ -2744,6 +2898,7 @@ export function Tile({
     // the badge cannot flicker when the bounded graph page misses an edge.
     const lane = sessionLaneOf(row.state);
     return (
+      <>
       <MaestroSessionTile
         id={row.id}
         title={row.title || 'Session'}
@@ -2759,18 +2914,12 @@ export function Tile({
         streaming={streaming}
         statusTone={statusTone}
         statusTitle={statusTitle}
-        tasks={props.linkedTasksOf?.(row.id) ?? []}
+        /* Path-suppressed: a session expanded UNDER a task must not offer
+           that same task as a chip one level down — the loop the ruling
+           names (parent → child → parent renders once). */
+        tasks={(props.linkedTasksOf?.(row.id) ?? []).filter((task) => !(path?.has(task.id) ?? false))}
         lane={lane !== null ? <SessionLaneLine lane={lane} /> : undefined}
-        badges={
-          linkedPullRequests.length > 0 || hasTileCounts(row.counters) ? (
-            <>
-              {linkedPullRequests.length > 0 ? (
-                <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
-              ) : null}
-              <TileCountBadges counters={row.counters} humanAuthors={row.badges.humanMessageAuthors} />
-            </>
-          ) : undefined
-        }
+        badges={tileBadges}
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
@@ -2778,11 +2927,14 @@ export function Tile({
         onClose={props.onTerminate ? () => props.onTerminate?.(row.id) : undefined}
         detail={<EntityControlStrip row={row} props={props} config={config} />}
       />
+      {relatedBlock}
+      </>
     );
   }
 
   if (controlCard && controlFacts) {
     return (
+      <>
       <MaestroTaskTile
         rootRef={tileRef}
         id={row.id}
@@ -2829,16 +2981,7 @@ export function Tile({
         }
         assignees={controlFacts.assignees}
         creator={controlFacts.creator}
-        badges={
-          linkedPullRequests.length > 0 || hasTileCounts(row.counters) ? (
-            <>
-              {linkedPullRequests.length > 0 ? (
-                <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
-              ) : null}
-              <TileCountBadges counters={row.counters} humanAuthors={row.badges.humanMessageAuthors} />
-            </>
-          ) : undefined
-        }
+        badges={tileBadges}
         actions={[
           ...(list.rowActions ?? []).map((ref) => (
             <RowAction
@@ -2924,6 +3067,8 @@ export function Tile({
           <Timestamp className="pn-tt__time" at={row.activityAt} prefix="active" title="last activity" />
         </div>
       </MaestroTaskTile>
+      {relatedBlock}
+      </>
     );
   }
 

@@ -12,6 +12,13 @@ import { AvatarStack } from '../../kit';
  * `domain/tile-counts.ts` — §15.2: this component renders rows and knows no
  * kind. The glyphs are the registry's own marks (KindIcon), so the badge
  * and the entity list agree about what a doc looks like.
+ *
+ * SINCE THE RELATIONAL PANEL (user ruling 2026-08-16) a badge can also be a
+ * DOOR: when the host supplies `onToggleKind` and its `expandableKind`
+ * predicate admits the badge's kind, the badge renders as a button that
+ * opens that kind's relation group under the tile. Which kinds expand is the
+ * HOST's judgment from registry data (a real collection kind expands; the
+ * message tallies stay counts) — this component keeps knowing no kind.
  */
 export function hasTileCounts(counters: EntityCounters): boolean {
   // A JSX element is truthy even when it renders null, so mounts ask this
@@ -19,29 +26,64 @@ export function hasTileCounts(counters: EntityCounters): boolean {
   return tileCountBadgesOf(counters).length > 0;
 }
 
-export function TileCountBadges({ counters, humanAuthors }: {
+export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind, expandableKind }: {
   counters: EntityCounters;
   humanAuthors?: EntityBadges['humanMessageAuthors'];
+  /** The kind whose relation group is open under this tile, if any. */
+  openKind?: string | null;
+  /** Present ⇒ expandable badges become toggles for their relation group. */
+  onToggleKind?: (kind: string) => void;
+  /** The host's registry-derived answer to "can this kind expand at all?". */
+  expandableKind?: (kind: string) => boolean;
 }) {
   const badges = tileCountBadgesOf(counters);
   if (badges.length === 0) return null;
 
   return (
     <span className="pn-st__counts" data-testid="tile-count-badges">
-      {badges.map((badge) => (
-        <span
-          key={badge.kind}
-          className={`pn-st__count${badge.emphasis === 'human' ? ' pn-st__count--human' : ''}`}
-          data-count-kind={badge.kind}
-          title={`${badge.count} ${badge.label}${badge.count === 1 ? '' : 's'}`}
-        >
-          <KindIcon kind={badge.kind.endsWith('-message') ? 'message' : badge.kind} size={12} />
-          {badge.kind === 'human-message' && humanAuthors
-            ? <AvatarStack actors={humanAuthors.actors} total={humanAuthors.total} />
-            : null}
-          {badge.count}
-        </span>
-      ))}
+      {badges.map((badge) => {
+        const body = (
+          <>
+            <KindIcon kind={badge.icon} size={12} />
+            {badge.emphasis === 'human' && humanAuthors
+              ? <AvatarStack actors={humanAuthors.actors} total={humanAuthors.total} />
+              : null}
+            {badge.count}
+          </>
+        );
+        const open = openKind === badge.kind;
+        const classes = [
+          'pn-st__count',
+          badge.emphasis === 'human' ? 'pn-st__count--human' : '',
+          open ? 'pn-st__count--open' : '',
+        ].filter(Boolean).join(' ');
+        const plural = `${badge.count} ${badge.label}${badge.count === 1 ? '' : 's'}`;
+        return onToggleKind && expandableKind?.(badge.kind) ? (
+          <button
+            key={badge.kind}
+            type="button"
+            className={`${classes} pn-st__count--btn`}
+            data-count-kind={badge.kind}
+            title={`${plural} — click to show them under this row`}
+            aria-expanded={open}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleKind(badge.kind);
+            }}
+          >
+            {body}
+          </button>
+        ) : (
+          <span
+            key={badge.kind}
+            className={classes}
+            data-count-kind={badge.kind}
+            title={plural}
+          >
+            {body}
+          </span>
+        );
+      })}
     </span>
   );
 }
