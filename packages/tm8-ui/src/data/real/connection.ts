@@ -534,8 +534,14 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     if (r.pollInFlight) return;
     r.pollInFlight = true;
     const since = cursors.get(spaceId) ?? 0;
+    const epoch = prepareEpochs.get(spaceId) ?? 0;
     try {
       const page = await deps.poll(spaceId, since, cfg.pollLimit);
+      // The request belongs to the space generation that started it. A
+      // close/clear/re-open can make the space open again before this response
+      // lands, so `open.has` alone is insufficient: the epoch keeps an old
+      // boot's cursor from being checkpointed into the new boot.
+      if (disposed || !open.has(spaceId) || (prepareEpochs.get(spaceId) ?? 0) !== epoch) return;
       let highWater = since;
       for (const raw of page?.items ?? []) {
         if (typeof raw?.seq === 'number' && raw.seq > highWater) highWater = raw.seq;
@@ -576,6 +582,19 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       : { phase: 'offline', disconnectedSince: sinceIso() });
   }
 
+  /**
+   * A prepare generation may be superseded while its HTTP page is in flight.
+   * Check immediately after every await, before that response can checkpoint
+   * the process-wide cursor. JavaScript runs the following calculation and
+   * write atomically, so this guard is the generation's commit barrier.
+   */
+  function assertPrepareCurrent(spaceId: SpaceId, epoch: number): void {
+    if (disposed) throw new Error('connection disposed');
+    if ((prepareEpochs.get(spaceId) ?? 0) !== epoch) {
+      throw new Error(`event bootstrap cancelled for ${spaceId}`);
+    }
+  }
+
   // -- public surface --------------------------------------------------------
 
   return {
@@ -592,6 +611,10 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
         // the main thread; keep walking until the cursor stops advancing.
         for (let pageNumber = 0;; pageNumber += 1) {
           const page = await deps.poll(spaceId, cursor, cfg.pollLimit);
+          // `closeSpace`/`clearCursor` may have advanced the epoch while the
+          // request was in flight. An obsolete response must not move the
+          // cursor (or its persisted mirror) past a newer generation's tail.
+          assertPrepareCurrent(spaceId, epoch);
           let observed = cursor;
           for (const event of page.items ?? []) {
             if (typeof event?.seq === 'number' && Number.isSafeInteger(event.seq) && event.seq >= 0) {
@@ -599,16 +622,17 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
             }
           }
           const next = toCursor(page.nextCursor);
-          const advanced = Math.max(observed, next ?? cursor);
+          // `prepareSpace` is normally awaited before `openSpace`, but the
+          // manager's public surface must preserve its own high-water law even
+          // if a direct consumer opens early and WS/poll dispatch advances the
+          // shared cursor while this page is in flight.
+          const advanced = Math.max(observed, next ?? cursor, cursors.get(spaceId) ?? 0);
           if (advanced <= cursor) break;
           cursor = advanced;
           // A completed page is a safe progress checkpoint. Cancellation or
           // a later network failure resumes here instead of scanning it again.
           cursors.set(spaceId, cursor);
           deps.onCursor?.(spaceId, cursor);
-          if ((prepareEpochs.get(spaceId) ?? 0) !== epoch) {
-            throw new Error(`event bootstrap cancelled for ${spaceId}`);
-          }
           // Under a producer that outruns every 500-row poll, tail may never
           // converge. Surface that honestly and retry from the checkpoint;
           // never subscribe from the known intermediate cursor.
@@ -618,7 +642,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
             );
           }
         }
-        if (disposed) throw new Error('connection disposed');
+        assertPrepareCurrent(spaceId, epoch);
         cursors.set(spaceId, cursor);
         deps.onCursor?.(spaceId, cursor);
         return cursor;
