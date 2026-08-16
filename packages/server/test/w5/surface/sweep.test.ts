@@ -576,7 +576,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // add. Both sides carried a pin — 124 here, 124 there — and NEITHER was
     // the answer: a count pin is DERIVED, only the merged tree can be asked.
     // MEASURED, never arithmetic: `ls db/migrations/*.sql | wc -l` = 125.
-    expect(server.appliedMigrations.length).toBe(125);
+    // 125 -> 128 (2026-08-16, Craft P1): THREE files in one lane — 135 mints
+    // the `graph` kind (registry + detail table + doors), 136 widens
+    // chat_mode to `craft`, 137 adds the Craft tab (menu revision 18). Three
+    // and not one because each is separately revertible: a disliked tab comes
+    // out without unminting the kind. Numbers taken ABOVE 134 after measuring
+    // ALL remote refs (their max was 134). MEASURED on this tree, never
+    // arithmetic: `ls db/migrations/*.sql | wc -l` = 128.
+    expect(server.appliedMigrations.length).toBe(128);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
