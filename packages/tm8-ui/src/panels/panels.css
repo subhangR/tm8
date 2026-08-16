@@ -1634,12 +1634,22 @@
    by hand and drifting. Sessions define it; tasks follow it. */
 .cv2-root { --pn-listrow-h: 29px; }
 .cv2-root .pn-st__main { position: relative; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px 6px 7px; cursor: pointer; }
+/* IN FLOW, NOT OVER THE ICON (was: absolute at the icon's own origin, z-index
+   3, faded in on hover). That overlay silently cost a parent row its agent
+   glyph — every row WITH sub-sessions showed a chevron where its tool mark
+   should have been — and it cannot coexist with an icon that now carries three
+   facts. The chevron takes its own 16px column; `--empty` keeps the column on
+   leaf rows so nothing re-indents. */
 .cv2-root .pn-st__arrow {
-  position: absolute; top: 6px; left: 7px; z-index: 3; width: 16px; height: 16px; display: grid; place-items: center;
+  flex: 0 0 auto; width: 16px; height: 16px; display: grid; place-items: center;
   padding: 0; color: var(--pn-ink-4); background: var(--pn-hover); border: none; border-radius: 4px; cursor: pointer;
   opacity: 0;
   transition: opacity var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast), background var(--pn-dur-fast);
 }
+/* A chevron that owns a column must not vanish on a row that HAS children —
+   invisible-but-clickable was tolerable while it overlaid the icon and the
+   count printed elsewhere; it is the only disclosure affordance now. */
+.cv2-root .pn-st__arrow:not(.pn-st__arrow--empty) { opacity: 0.55; }
 .cv2-root .pn-st:hover .pn-st__arrow:not(.pn-st__arrow--empty),
 .cv2-root .pn-st:focus-within .pn-st__arrow:not(.pn-st__arrow--empty),
 .cv2-root .pn-st__arrow--expanded { opacity: 1; }
@@ -1647,7 +1657,6 @@
 .cv2-root .pn-st__arrow svg { width: 13px; height: 13px; transition: transform 140ms; }
 .cv2-root .pn-st__arrow--expanded svg { transform: rotate(90deg); }
 .cv2-root .pn-st__arrow--empty { color: var(--pn-line); }
-.cv2-root .pn-st__arrowCount { display: none; }
 .cv2-root .pn-st__title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; cursor: pointer; }
 .cv2-root .pn-st__titleText { min-width: 0; overflow: hidden; color: var(--pn-ink); font-size: 12.5px; font-weight: 600; letter-spacing: -0.005em; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .cv2-root .pn-st__model { max-width: 88px; flex: 0 1 auto; overflow: hidden; color: var(--pn-ink-3); font-family: var(--pn-mono); font-size: 9px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
@@ -1702,6 +1711,31 @@
 }
 .cv2-root .pn-agent[data-agent-kind='gemini'] .pn-agent__mark { color: var(--pn-info); }
 .cv2-root .pn-agent[data-agent-kind='hermes'] .pn-agent__mark { color: var(--pn-wait); }
+/* THREE FACTS, ONE ICON: the teammate's face, the tool on the top-left corner,
+   the sub-session count on the bottom-right. Both badges are POSITIONED, not
+   laid out — the slot's `place-items: center` would otherwise stack them over
+   the monogram — and both stay INSIDE the slot box, because `.pn-st__title`
+   clips and that overflow is the title's ellipsis, not ours to relax. */
+.cv2-root .pn-agent { position: relative; }
+.cv2-root .pn-agent--persona { width: 19px; height: 19px; }
+.cv2-root .pn-agent__tool {
+  position: absolute; top: -1px; left: -1px;
+  font-size: 9px;
+  /* Reads against whatever the avatar tone happens to be, without a second
+     colour rule per tool. */
+  text-shadow: 0 0 2px var(--pn-card), 0 0 2px var(--pn-card), 0 0 2px var(--pn-card);
+}
+.cv2-root .pn-agent__kids {
+  position: absolute; right: 0; bottom: 0;
+  min-width: 9px; height: 9px; padding: 0 1.5px;
+  box-sizing: border-box; border-radius: 999px;
+  background: var(--pn-ink-2); color: var(--pn-card);
+  font-size: 7px; line-height: 9px; font-weight: 700; text-align: center;
+  /* A count is compared down a column, so its digits must not shift width. */
+  font-variant-numeric: tabular-nums;
+  /* Separates the pill from the face it sits on, in either theme. */
+  box-shadow: 0 0 0 1.5px var(--pn-card);
+}
 .cv2-root .pn-stat { display: inline-grid; place-items: center; flex: 0 0 auto; color: var(--pn-idle); }
 .cv2-root .pn-stat--running, .cv2-root .pn-stat--working, .cv2-root .pn-stat--exited, .cv2-root .pn-stat--done { color: var(--pn-run); }
 .cv2-root .pn-stat--spawning, .cv2-root .pn-stat--pulled, .cv2-root .pn-stat--in_review { color: var(--pn-info); }
