@@ -144,6 +144,7 @@ import {
   type TrackingPrMergeResult,
   type WorkInput,
 } from '@tm8/contract';
+import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 import type { HttpClient, QueryParams } from './http';
 import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
 
@@ -901,8 +902,28 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    /**
+     * Attach the browser's measured terminal geometry so the server-hosted PTY
+     * BOOTS at the real pane width instead of 80x24.
+     *
+     * Contrast `credentialsStartLogin` above, which deliberately sends nothing
+     * on the grounds that "the PTY resize already settles it". That holds for a
+     * short-lived device-code prompt; it does NOT hold here. A full-screen agent
+     * TUI lays out its entire frame for the width it is handed at STARTUP, and a
+     * later resize only repairs that if the agent actually repaints — which the
+     * PTY socket's echo-loop guard prevents whenever the fitted size already
+     * matches what the PTY has, leaving an 80-column frame frozen on screen
+     * until a human resizes the window. Measuring here makes that unreachable.
+     *
+     * This lives at the ops choke point every spawn passes through rather than
+     * in `buildSpawnInput`, because the domain builder is pure and must stay
+     * callable without a DOM. A caller that already knows its geometry wins: the
+     * spread order leaves an explicit `input.cols` untouched.
+     */
     spawn(input: ExecutionSpawnInput): Promise<CommandResult> {
-      return http.call<CommandResult>('execution.spawn', { body: input });
+      return http.call<CommandResult>('execution.spawn', {
+        body: { ...measureSpawnTerminalSize(), ...input },
+      });
     },
 
     /** A vanilla terminal (101). Its own op, not `spawn` with nulls. */
@@ -934,8 +955,12 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('execution.terminate', { params: { id }, body: input });
     },
 
+    /** A resume re-spawns the PTY, so it carries the same geometry as `spawn`. */
     resume(id: EntityId, input: ExecutionResumeInput): Promise<CommandResult> {
-      return http.call<CommandResult>('execution.resume', { params: { id }, body: input });
+      return http.call<CommandResult>('execution.resume', {
+        params: { id },
+        body: { ...measureSpawnTerminalSize(), ...input },
+      });
     },
   };
 }

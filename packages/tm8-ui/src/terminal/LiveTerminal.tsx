@@ -133,6 +133,8 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   const resizeTimeoutRef = useRef<number | null>(null);
   const resizeRetryCountRef = useRef(0);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  /** One-shot: has this view already asked the agent to repaint? */
+  const repaintForcedRef = useRef(false);
   const fontsReadyRef = useRef(false);
   const readOnlyRef = useRef(!live);
   const onResizeRef = useRef(onResize);
@@ -149,6 +151,8 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   useEffect(() => {
     const container = hostRef.current;
     if (!container || termRef.current) return;
+    // The ref outlives a sessionId change; a new terminal is owed its own nudge.
+    repaintForcedRef.current = false;
 
     const term = new Terminal({
       allowProposedApi: true,
@@ -190,6 +194,11 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
           // Terminal may have been evicted after parsing the last replay byte.
         }
         term.element.style.removeProperty('visibility');
+        // A replay has just been painted into the grid, so the agent is owed a
+        // redraw over it — including after a reconnect, where this runs again.
+        repaintForcedRef.current = false;
+        resizeRetryCountRef.current = 0;
+        scheduleResize();
       });
     };
     const hydrateReplay = (data: string) => {
@@ -211,9 +220,27 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       const currentTerm = termRef.current;
       const currentFit = fitRef.current;
       if (!currentTerm || !currentFit || !currentTerm.element) return;
+      // BOTH of the next two guards used to `return` outright, and that is how
+      // a terminal ends up blank until you resize the window. They fire while
+      // the pane is still laying out or is mid-surface-switch — transient
+      // states — but nothing re-arms the fit afterwards: the ResizeObserver
+      // only fires on a SIZE change, and an ancestor becoming visible does not
+      // change this container's size. So the fit was simply dropped, the grid
+      // kept xterm's 80x24 default, and the first thing that changed the box
+      // was a human dragging the window. Retry on the same backoff every other
+      // guard in this function already uses, which self-cancels the moment the
+      // fit succeeds.
       const rect = container.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-      if (getComputedStyle(container).visibility === 'hidden') return;
+      if (rect.width === 0 || rect.height === 0) {
+        resizeRetryCountRef.current += 1;
+        scheduleResize();
+        return;
+      }
+      if (getComputedStyle(container).visibility === 'hidden') {
+        resizeRetryCountRef.current += 1;
+        scheduleResize();
+        return;
+      }
       if (!fontsReadyRef.current || !isXtermRendererReady(currentTerm)) {
         resizeRetryCountRef.current += 1;
         scheduleResize();
@@ -230,6 +257,14 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       const { cols, rows } = currentTerm;
       if (cols <= 0 || rows <= 0) return;
       clientFittedSessions.add(sessionId);
+      // ONE-SHOT REPAINT NUDGE (see ptyTransport.resize). The grid is now
+      // correctly fitted and any replay has been parsed; make the AGENT redraw
+      // over it, because a full-screen TUI repaints only when something tells
+      // it to. Decided BEFORE the no-op early-return below, because the case
+      // that needs the nudge most is exactly the one that returns there: a
+      // remount into unchanged window geometry, where the fitted size already
+      // equals the PTY's and nothing would otherwise be sent at all.
+      const forceRepaint = !repaintForcedRef.current;
       // RECLAIM ON ACTIVATION (maestro 0539726): read the shared PTY's last-
       // known truth BEFORE this view overwrites it with its own just-fitted
       // size. A DIFFERENT hidden/inactive view may have shipped a resize
@@ -242,10 +277,11 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       serverPtySizes.set(sessionId, { cols, rows });
       setLastFittedSize({ cols, rows });
       const last = lastSizeRef.current;
-      if (last && last.cols === cols && last.rows === rows && !ptyDiffers) return;
+      if (last && last.cols === cols && last.rows === rows && !ptyDiffers && !forceRepaint) return;
+      if (forceRepaint) repaintForcedRef.current = true;
       lastSizeRef.current = { cols, rows };
       onResizeRef.current?.(sessionId, { cols, rows });
-      ptyTransport.resize(sessionId, cols, rows);
+      ptyTransport.resize(sessionId, cols, rows, forceRepaint);
     };
 
     const scheduleResize = () => {

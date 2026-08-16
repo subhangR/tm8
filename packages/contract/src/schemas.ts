@@ -2415,6 +2415,14 @@ export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion(
 ]);
 
 const SpawnUuidSchema = z.string().uuid();
+
+/**
+ * Terminal geometry a client may hand the spawn/resume path. The 1..1000 bound
+ * is PtyHostService's own clamp, restated here so a nonsense value is refused
+ * at the edge with a contract error rather than silently collapsing to the
+ * 80x24 default deep inside the PTY host.
+ */
+const SpawnDimSchema = z.number().int().min(1).max(1000).optional();
 const CredentialSourceSchema = z.enum(['member', 'node']);
 const CredentialSourcesSchema = z.object({
   anthropic: CredentialSourceSchema.optional(),
@@ -2445,6 +2453,8 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
+  cols: SpawnDimSchema,
+  rows: SpawnDimSchema,
 }).strict();
 
 /**
@@ -2513,6 +2523,8 @@ export const ExecutionTerminateInputSchema: z.ZodType<ExecutionTerminateInput> =
 export const ExecutionResumeInputSchema: z.ZodType<ExecutionResumeInput> = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
+  cols: SpawnDimSchema,
+  rows: SpawnDimSchema,
 }).strict();
 
 export const ExecutionStreamsAttachInputSchema: z.ZodType<ExecutionStreamsAttachInput> = z.object({

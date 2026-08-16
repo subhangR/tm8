@@ -3014,6 +3014,18 @@ export interface ExecutionSpawnInput extends CommandContext {
    * `remembers` set; nothing is written to the graph.
    */
   memoryIds?: EntityId[];
+  /**
+   * The terminal geometry the client has measured for the pane this session
+   * will be shown in, so the PTY BOOTS at the real width instead of the 80x24
+   * default. Load-bearing, not cosmetic: a full-screen agent TUI lays its
+   * entire frame out for the width it is given at startup, and the browser can
+   * only correct that afterwards via a resize round trip — which the PTY socket
+   * suppresses when the fitted size happens to match what it already has,
+   * leaving the 80-column frame frozen on screen until a human resizes the
+   * window. Omitted (a headless or non-visual caller) keeps the 80x24 default.
+   */
+  cols?: number;
+  rows?: number;
 }
 
 /**
@@ -3134,6 +3146,9 @@ export interface ExecutionTerminateInput extends CommandContext {
  */
 export interface ExecutionResumeInput extends CommandContext {
   clientMutationId: string;
+  /** Same geometry contract as `ExecutionSpawnInput` — a resume re-spawns the PTY. */
+  cols?: number;
+  rows?: number;
 }
 
 /**
