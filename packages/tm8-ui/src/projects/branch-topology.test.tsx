@@ -147,4 +147,59 @@ describe('ProjectBranchesSection', () => {
     await waitFor(() => expect(broken.getByTestId('projects-error')).toBeTruthy());
     expect(broken.getByTestId('projects-error').textContent).toContain('not a member');
   });
+
+  /**
+   * THE LAYOUT REGRESSION. Measured in Chrome (SECTION-CONTRACT §8) before the
+   * fix, at BOTH 1508x882 and 900x600:
+   *
+   *   - the section's content was 1123px wide inside an 1080px card, and
+   *     1123px inside an 868px card at 900x600;
+   *   - `refresh`, `show branches` and `hide branches` all rendered OUTSIDE the
+   *     card's right edge — the section's only controls were unreachable;
+   *   - `.brt-section` carried `overflow: auto`, a second scroller nested
+   *     inside the frame's `.set-section__scroll` (contract §3);
+   *   - the widest line of prose was 1105px against an 860px measure.
+   *
+   * jsdom does no layout, so this test holds the STRUCTURE those numbers came
+   * from rather than the numbers: one scroller, and the long monospace path out
+   * of the row that carries the buttons. Both are the actual causes — a path is
+   * ~100 monospace characters and, as a flex item with the default
+   * `min-width: auto`, it could not shrink, so it pushed the buttons off.
+   */
+  it('is framed by SectionFrame — one scroller, and the working dir is not in the button row', async () => {
+    const r = render(<ProjectBranchesSection port={port()} />);
+    await waitFor(() => expect(r.getByTestId('project-branches-row')).toBeTruthy());
+
+    // The frame supplies the head and the ONE scroller; the section no longer
+    // rolls its own. Two scrollers is the bug §3 exists to prevent.
+    expect(r.container.querySelectorAll('.set-section__scroll').length).toBe(1);
+    expect(r.getByTestId('project-branches-scroll')).toBeTruthy();
+    expect(r.container.querySelector('.brt-section__head')).toBeNull();
+    expect(r.container.querySelector('.set-section__head')!.textContent).toContain('Linked projects');
+
+    // The path is a SIBLING of the head, not a member of it, so the controls
+    // no longer share a row with an unshrinkable 100-character string.
+    const head = r.container.querySelector('.brt-project__head')!;
+    expect(head.querySelector('.brt-project__dir')).toBeNull();
+    expect(r.container.querySelector('.brt-project__dir')!.textContent).toContain('/fixture/tm8-ui');
+
+    // …and every control sits in the non-shrinking actions box.
+    for (const btn of Array.from(r.container.querySelectorAll('.brt-project__btn'))) {
+      expect(btn.closest('.brt-project__actions')).not.toBeNull();
+    }
+  });
+
+  it('zero projects and a failed read are both a real SectionAbsent, not a blank pane', async () => {
+    const empty = render(<ProjectBranchesSection port={port({ projects: vi.fn().mockResolvedValue([]) })} />);
+    await waitFor(() => expect(empty.getByTestId('projects-empty')).toBeTruthy());
+    expect(empty.getByTestId('projects-empty').classList.contains('set-absent')).toBe(true);
+
+    const broken = render(
+      <ProjectBranchesSection
+        port={port({ projects: vi.fn().mockRejectedValue(new CollabError('forbidden', 'denied')) })}
+      />,
+    );
+    await waitFor(() => expect(broken.getByTestId('projects-error')).toBeTruthy());
+    expect(broken.getByTestId('projects-error').classList.contains('set-absent')).toBe(true);
+  });
 });

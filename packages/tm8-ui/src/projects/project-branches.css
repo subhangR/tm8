@@ -1,0 +1,122 @@
+/* LINKED PROJECTS — the settings section only.
+ *
+ * Split out of `branch-topology.css` because that file is shared: the git
+ * screen (`git/ProjectGitScreen.tsx`) renders `BranchTopologyList` and so
+ * carries every `.brt__*` rule. Nothing in THIS file is used outside the
+ * settings section, so it is safe to change without measuring the git screen.
+ *
+ * `.brt-section` no longer scrolls. `SectionFrame` owns the one scroller
+ * (`.set-section__scroll`); the `overflow: auto` that used to live here was a
+ * second scroller nested inside it — SECTION-CONTRACT §3.
+ *
+ * Every colour resolves through a token (§6 hex ban).
+ */
+
+.brt-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-4);
+  /* No padding: `.set-section__pad` supplies the gutters, and no overflow:
+     `.set-section__scroll` is the scroller. */
+  min-width: 0;
+}
+
+.brt-section__note {
+  margin: 0;
+  font: var(--pn-fs-sm) / var(--pn-lh-body) var(--pn-ui);
+  color: var(--pn-ink-3);
+}
+
+.brt-section__projects {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--pn-space-4);
+  min-width: 0;
+}
+
+/* Each linked project is a CARD, not a run of stacked lines. Six branch rows
+   under two projects read as one twelve-row list without an enclosing edge. */
+.brt-project {
+  min-width: 0;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  padding: var(--pn-space-3);
+}
+
+.brt-project__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+.brt-project__glyph {
+  color: var(--pn-ink-3);
+  flex: 0 0 auto;
+}
+
+.brt-project__name {
+  font: 600 var(--pn-fs-body) / var(--pn-lh-snug) var(--pn-ui);
+  color: var(--pn-ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The controls never shrink and never wrap: they are the only way into the
+   section, and they were the thing measured off the card. */
+.brt-project__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex: 0 0 auto;
+}
+
+/* The working directory on its OWN line. A real worktree path is ~100
+   monospace characters; sharing a row with the name and two buttons is what
+   pushed the buttons off the card. */
+.brt-project__dir {
+  margin-top: 2px;
+  min-width: 0;
+  /* The glyph's box plus the head's gap, so the path lines up under the name
+     rather than under the glyph. */
+  padding-left: calc(1em + var(--pn-space-2));
+}
+
+.brt-project__dir-path {
+  display: block;
+  color: var(--pn-ink-3);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Ellipsis at the END loses the leaf directory, which is the part that
+     identifies the worktree. Clipping from the LEFT keeps it. */
+  direction: rtl;
+  text-align: left;
+}
+
+/* `direction: rtl` on the box would reorder the leading slash; the inner run
+   is restored to ltr so only the OVERFLOW side flips. */
+.brt-project__dir-path::before {
+  content: '\200E';
+}
+
+.brt-project__btn {
+  font: var(--pn-fs-label) / var(--pn-lh-snug) var(--pn-ui);
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 2px var(--pn-space-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.brt-project__btn:hover {
+  background: var(--pn-hover);
+}

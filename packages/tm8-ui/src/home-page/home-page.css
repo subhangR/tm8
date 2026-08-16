@@ -228,16 +228,21 @@
 /* Entities only, collapsed by default at 72px with the word UNDER the mark
    (the #269 law: collapsed keeps the word). Expanded, rows widen to
    icon-beside-word with group eyebrows. Leftmost in the row, before A. */
+/* The 72/172 literals moved to `HomeView`'s `RAIL_COLLAPSED`/`RAIL_EXPANDED`
+   and arrive as `--hp-rail` (task 01a00ac2). The solver has to subtract this
+   rail before it can tell whether A + B still fit beside C, and a floor that
+   lives in two places is a floor that disagrees with itself. The fallbacks
+   keep the rail honest if the host ever mounts it without the variable. */
 .cv2-root .hr-rail {
   display: flex;
   flex-direction: column;
   flex: none;
-  width: 72px;
+  width: var(--hp-rail, 72px);
   min-height: 0;
   border-right: 1px solid var(--pn-line);
   background: var(--pn-surface);
 }
-.cv2-root .hr-rail:not(.hr-rail--collapsed) { width: 172px; }
+.cv2-root .hr-rail:not(.hr-rail--collapsed) { width: var(--hp-rail, 172px); }
 .cv2-root .hr-rail__scroll {
   flex: 1;
   min-height: 0;
@@ -398,6 +403,108 @@
    workspace list, whose tree, lifecycle tabs and in-panel search were cut
    for ~320px — and the chat rows simply enjoy the room. */
 .cv2-root .hp-chat--full .tch-root {
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  /* Was `minmax(300px, 380px)` — a fluid track nobody could move. It is now
+     the width the viewer set, solved and clamped by `HomeView` and handed
+     down as `--hp-list` (task 01a00ac2). The fallback is the ruled default.
+
+     A FIXED TRACK, NOT A `minmax`. The clamp that used to live here now lives
+     in the solver, which is the only place that knows the rail's width, B's
+     floor and whether C is open — three facts CSS cannot see. Leaving a
+     `minmax` here as well would let the track disagree with the number the
+     separator is publishing through `aria-valuenow`. */
+  grid-template-columns: var(--hp-list, 340px) minmax(0, 1fr);
 }
 .cv2-root .hp-chat--full .tch-sidebar { display: flex; }
+
+/* --- column A's separator and the collapsed reveal (task 01a00ac2) -------- */
+/* The section is the positioning context: it starts and ends exactly where
+   column A does, so `left: var(--hp-list)` lands the handle on A's edge
+   without this file knowing anything about the grid inside it. */
+.cv2-root .hp-chat--full { position: relative; }
+
+/* Kit resizers are flex children everywhere else; here the thing being
+   resized is a grid track two levels down, so the handle is positioned over
+   the seam instead of occupying a track of its own. Centred ON the edge —
+   half its 8px sits either side — so the pointer target matches the line the
+   eye sees. */
+.cv2-root .hp-listsep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--hp-list, 340px);
+  width: 8px;
+  margin-left: -4px;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.cv2-root .hp-listsep .kit-resizer {
+  position: absolute;
+  inset: 0;
+  width: 8px;
+}
+
+/* The chevron rides the top of the seam rather than its middle: a control
+   pinned at 50% height sits over whatever row of the list happens to be
+   there, and on a short viewport that is the row you are reading. */
+.cv2-root .hp-listsep__collapse,
+.cv2-root .hp-listreveal {
+  position: absolute;
+  top: 8px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-surface);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-root .hp-listsep__collapse { left: -4px; }
+/* THE COLLAPSE CHEVRON HIDES UNTIL WANTED; THE REVEAL ONE NEVER DOES.
+   They are not the same control in two states: while A is open the panel
+   itself is the affordance and a permanent chevron is chrome over a list;
+   while A is collapsed this button is the ONLY way back, and a way back you
+   have to hover to find is the hover-reveal arrangement Subhang ruled out. */
+.cv2-root .hp-chat--full:hover .hp-listsep__collapse,
+.cv2-root .hp-listsep__collapse:focus-visible,
+.cv2-root .hp-listsep:hover .hp-listsep__collapse {
+  opacity: 1;
+}
+.cv2-root .hp-listsep__collapse:hover,
+.cv2-root .hp-listreveal:hover {
+  color: var(--pn-ink);
+  border-color: var(--pn-brand);
+}
+
+/* The 10px strip that is the whole of column A when focus mode is on. */
+.cv2-root .hp-listreveal {
+  left: 0;
+  top: 8px;
+  opacity: 1;
+  border-left: none;
+  border-radius: 0 var(--pn-r-xs) var(--pn-r-xs) 0;
+}
+
+/* FOCUS MODE — rail and column A collapsed as one (the ruled single toggle).
+   The rail is unmounted by the host, so there is nothing to hide there; A is
+   a grid track inside a surface this page does not own, so it collapses to a
+   single 10px column that holds the reveal button and nothing else. */
+.cv2-root .hp-root--chat[data-focus='true'] .hp-chat--full .tch-root {
+  grid-template-columns: 10px minmax(0, 1fr);
+}
+.cv2-root .hp-root--chat[data-focus='true'] .hp-chat--full .tch-sidebar {
+  /* Not `display: none`: the list keeps its scroll position, its loaded page
+     and any in-flight request across a collapse, exactly as the conversation
+     pane stays MOUNTED behind a centre override (D8). Unmounting it would
+     re-fetch on every toggle. */
+  visibility: hidden;
+}

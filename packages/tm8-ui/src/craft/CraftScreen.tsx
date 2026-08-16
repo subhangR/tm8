@@ -27,7 +27,7 @@ import type { ChatHomeL2Bridge } from '../chat-home/real-port';
 import { ChatHomeSurface } from '../chat-home/ChatHomeSurface';
 import type { TriggerOption } from '../rich-input';
 import { Mermaid } from '../kit/Mermaid';
-import { blueprintView, type RefTitles } from './blueprint-model';
+import { blueprintView, nodeRefId, type RefTitles } from './blueprint-model';
 import { BlueprintCanvas } from './BlueprintCanvas';
 import '../session-graph/session-graph.css';
 import '../chat-home/chat-entity-graph.css';
@@ -146,8 +146,11 @@ export function CraftScreen({
   const content = detail?.content;
   useEffect(() => {
     if (!content || (content as { kind?: string }).kind !== 'graph') return;
-    const nodes = (content as { nodes?: { id?: string }[] }).nodes ?? [];
-    const wanted = [...new Set(nodes.map((node) => node.id).filter((id): id is string => typeof id === 'string'))]
+    /* Resolve through the SAME pin the canvas folds with (`nodeRefId`): a spec's
+       row-local key is not an entity id, and fetching it was what printed
+       "unavailable entity" on every spec card. */
+    const nodes = (content as { nodes?: Parameters<typeof nodeRefId>[0][] }).nodes ?? [];
+    const wanted = [...new Set(nodes.map((node) => nodeRefId(node)).filter((id): id is EntityId => id !== null))]
       .filter((id) => !refTitles.has(id))
       .slice(0, 24);
     if (wanted.length === 0) return;
