@@ -38,7 +38,10 @@ import { attachmentsFor } from '../files/port';
 import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
-import { useHomeRegion, type HomeTab } from '../stores/homeRegionStore';
+import { useHomeRegion, type HomeRoot } from '../stores/homeRegionStore';
+import { CHATS_ROOT, DEFAULT_HOME_KIND, homeRailGroups, homeRootKinds } from '../domain';
+import type { HomeRootOption } from '../chat-home/ChatHomeScreen';
+import { HomeRail } from './HomeRail';
 import type { Notice } from '../shell';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { useLaunchPort } from './useLaunchPort';
@@ -58,8 +61,6 @@ const HOME_MIN = 420;
 /** The 8px separator track plus the aside's own 1px border — this package sets
     no global `border-box`, so that border ADDS to the declared width. */
 const ASIDE_CHROME = 8 + 1;
-/** The Sessions tab's kind — same literal law as GateApp's LIVE_COUNT_KIND. */
-const HOME_SESSION_KIND = 'work_session';
 
 export interface HomeViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -91,28 +92,34 @@ export interface HomeViewProps {
 
 /** What the host's chat mount needs from this screen's region state. */
 export interface HomeChatRegions {
-  tab: HomeTab;
-  onTab(tab: HomeTab): void;
-  /** Region B's entity occupant, for A's honest per-tab highlight (D9). */
+  /** The active root — `CHATS_ROOT` or a collection kind (task 01a00932 R3). */
+  root: HomeRoot;
+  onRoot(root: HomeRoot): void;
+  /** What the header's kind cell names (R5) — the current kind root, or the
+   *  remembered one while Chats is the root. */
+  kindCell: HomeRootOption;
+  /** The switcher's kind list — the rail flattened (R4). */
+  rootKindOptions: readonly HomeRootOption[];
+  /** Region B's entity occupant, for A's honest per-root highlight (D9). */
   selectedEntityId: EntityId | null;
-  /** SELECTING (D7): a task/session row puts its entity in B. */
+  /** SELECTING (D7): a row puts its entity in B. */
   onSelectEntity(id: string): void;
   /** A chat row (or ＋ New chat) returns B to the conversation. */
   onShowChat(): void;
-  /** D2/D3: the create-immediately new-task flow, when available. */
-  onNewTask?: (() => void) | undefined;
-  newTaskUnavailable: { cause: string; remedy: string } | null;
+  /** D2/D3 generalized (R5): create-immediately for the kind cell's kind. */
+  onNewEntity?: (() => void) | undefined;
+  newEntityUnavailable: { cause: string; remedy: string } | null;
   /** B's non-chat occupant, rendered inside the chat grid (D8). */
   centerOverride?: ReactNode;
   /**
-   * The Tasks/Sessions tab CONTENT: the WORKSPACE's own `EntityListPanel` —
+   * A KIND root's list CONTENT: the WORKSPACE's own `EntityListPanel` —
    * the exact tree, tiles, lifecycle tabs, sort and in-panel search the
    * workspace list draws (user ruling 2026-08-16: "exact tree structure,
    * reuse the same components full"). Composed here because the control
    * executor (`rowLifecycle` through `ControlHost`) is this screen's
-   * singleton. Returns null for tabs this host does not take over (Chats).
+   * singleton. Returns null for the Chats root (the screen's own list).
    */
-  renderTabList?: (tab: HomeTab) => ReactNode;
+  renderRootList?: (root: HomeRoot) => ReactNode;
 }
 
 export function HomeView(props: HomeViewProps) {
@@ -123,9 +130,33 @@ export function HomeView(props: HomeViewProps) {
   const drillId = screen.selected;
   const openEntity = useCallback((id: EntityId) => screen.open(id), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* B + A's tab — module-level per space (D15; D11 writes from GateApp). */
+  /* B + A's root — module-level per space (D15; D11 writes from GateApp). */
   const region = useHomeRegion(data.spaceId);
   const centerId = region.center;
+  const root = region.root;
+
+  /* THE KIND CELL'S MEMORY (R5): while Chats is the root, the cell keeps
+     naming the kind the viewer would return to — the last kind root this
+     mount saw, defaulting to tasks. In-memory only: the ROOT is what
+     persists (D15), the cell is presentation. */
+  const lastKindRef = useRef<string>(DEFAULT_HOME_KIND);
+  if (root !== CHATS_ROOT) lastKindRef.current = root;
+  const cellKind = root === CHATS_ROOT ? lastKindRef.current : root;
+  const cellConfig = getKind(cellKind);
+  const kindCell = useMemo<HomeRootOption>(
+    () => ({ kind: cellConfig.kind, label: cellConfig.labelPlural, single: cellConfig.label }),
+    [cellConfig],
+  );
+  /* R4: the switcher IS the rail flattened — both render `homeRailGroups()`. */
+  const rootKindOptions = useMemo<HomeRootOption[]>(
+    () =>
+      homeRootKinds().map((config) => ({
+        kind: config.kind,
+        label: config.labelPlural,
+        single: config.label,
+      })),
+    [],
+  );
 
   const notifyActionFailed = useCallback(
     (_verb: ActionRef, _entityId: string, error: unknown) => {
@@ -207,27 +238,34 @@ export function HomeView(props: HomeViewProps) {
   if (drillId && !data.detailOf(drillId)) data.pull?.(drillId);
   if (centerId && !data.detailOf(centerId)) data.pull?.(centerId);
 
-  /* D2/D3 — ＋ New task: create an "Untitled task" immediately, select it
-     into B, title focused in the panel. No compose form. */
-  const taskKind = getKind('task');
-  const newTask = useNewTask({
+  /* D2/D3 generalized (R5) — the kind cell's ＋: create an "Untitled {kind}"
+     immediately, select it into B, title focused in the panel. No compose
+     form. A kind whose registry row refuses quick-create renders the ＋
+     disabled-with-reason instead — never hidden, never a dead button. */
+  const newEntity = useNewTask({
     spaceId: data.spaceId,
-    kind: taskKind.kind,
-    placeholderTitle: placeholderNameFor(taskKind, placeholderTitleFor(taskKind.label)),
+    kind: cellConfig.kind,
+    placeholderTitle: placeholderNameFor(cellConfig, placeholderTitleFor(cellConfig.label)),
     commands: data.seam.commands,
     onCreated: (id) => region.selectCenter(id),
+    refusal: cellConfig.list.quickCreate
+      ? null
+      : {
+          cause: `${cellConfig.labelPlural} aren’t created from here`,
+          remedy: 'they are made by their own flow',
+        },
   });
   useEffect(() => {
-    if (newTask.state.phase !== 'refused') return;
+    if (newEntity.state.phase !== 'refused') return;
     onNotice({
-      id: 'home-new-task-refused',
+      id: 'home-new-entity-refused',
       tone: 'error',
-      title: newTask.state.failure.cause,
-      body: newTask.state.failure.detail,
+      title: newEntity.state.failure.cause,
+      body: newEntity.state.failure.detail,
       ttlMs: 8_000,
     });
-    newTask.dismiss();
-  }, [newTask, onNotice]);
+    newEntity.dismiss();
+  }, [newEntity, onNotice]);
 
   /* THE C COLUMN IS DRAGGABLE, clamped against B's floor. D13: when the
      window cannot afford all three regions, C keeps its width and OVERLAYS B
@@ -293,18 +331,19 @@ export function HomeView(props: HomeViewProps) {
     />
   ) : undefined;
 
-  /* THE TASKS AND SESSIONS TABS ARE THE WORKSPACE LIST (user ruling
-     2026-08-16): the SAME `EntityListPanel` the workspace and the entity
-     screens mount — its tree (children, expand, depth), its tiles with the
-     changeable-status expand, its lifecycle tabs, sort and its own in-panel
-     search. Composed here because every executor it needs is this screen's
-     singleton set; the chat column just gives it the tab's space. The mount
-     mirrors `EntityView`'s, minus the header verbs no Home executor owns
-     (they render their honest not-wired refusal). */
-  const renderTabList = useCallback(
-    (tab: HomeTab): ReactNode => {
-      if (tab === 'chats') return null;
-      const kind = tab === 'tasks' ? taskKind.kind : HOME_SESSION_KIND;
+  /* EVERY KIND ROOT IS THE WORKSPACE LIST (user ruling 2026-08-16,
+     generalized by task 01a00932 R3): the SAME `EntityListPanel` the
+     workspace and the entity screens mount — its tree (children, expand,
+     depth), its tiles with the changeable-status expand, its lifecycle tabs,
+     sort and its own in-panel search. Composed here because every executor
+     it needs is this screen's singleton set; the chat column just gives it
+     the root's space. The mount mirrors `EntityView`'s, minus the header
+     verbs no Home executor owns (they render their honest not-wired
+     refusal). */
+  const renderRootList = useCallback(
+    (listRoot: HomeRoot): ReactNode => {
+      if (listRoot === CHATS_ROOT) return null;
+      const kind = listRoot;
       return (
         <EntityListPanel
           kind={kind}
@@ -337,20 +376,33 @@ export function HomeView(props: HomeViewProps) {
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [taskKind.kind, data, ctx, centerId, rowLifecycle, launchPort],
+    [data, ctx, centerId, rowLifecycle, launchPort],
   );
 
   const regions: HomeChatRegions = {
-    tab: region.tab,
-    onTab: region.setTab,
+    root,
+    onRoot: region.setRoot,
+    kindCell,
+    rootKindOptions,
     selectedEntityId: centerId,
     onSelectEntity: (id) => region.selectCenter(id as EntityId),
     onShowChat: () => region.selectCenter(null),
-    ...(newTask.unavailable === null ? { onNewTask: () => void newTask.create() } : {}),
-    newTaskUnavailable: newTask.unavailable,
+    ...(newEntity.unavailable === null ? { onNewEntity: () => void newEntity.create() } : {}),
+    newEntityUnavailable: newEntity.unavailable,
     ...(centerOverride !== undefined ? { centerOverride } : {}),
-    renderTabList,
+    renderRootList,
   };
+
+  /* THE ICON RAIL (R4) — the switcher's twin: same groups, same select, no
+     view rows. No row is active while Chats is the root; chats live in the
+     list header's own cell, not the rail. */
+  const rail = (
+    <HomeRail
+      groups={homeRailGroups()}
+      activeKind={root === CHATS_ROOT ? null : root}
+      onSelect={(kind) => region.setRoot(kind)}
+    />
+  );
 
   /* REGION C. Chips inside it REPLACE its subject (auxPanel's ruling —
      drilling sideways, never a fourth column). The workspace hand-off is
@@ -406,6 +458,7 @@ export function HomeView(props: HomeViewProps) {
       <HomePage
         data={data}
         chat={props.chat(openEntity, regions)}
+        rail={rail}
         {...(aside ? { aside } : {})}
         /* A NEEDS YOU card opens where a chip does. They are the same gesture
            — "show me that" — from two places on one screen. */

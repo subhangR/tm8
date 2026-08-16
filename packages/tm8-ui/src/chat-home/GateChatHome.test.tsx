@@ -108,11 +108,11 @@ describe('dashboard route', () => {
 
     // NO WORKING-SET STRIP. The panel is the only conversation selector.
     // The tablists on this screen are the shell's top row and the left
-    // column's OWN Tasks|Chats|Sessions strip (task 01a006f8 D1) — which
-    // lives in the panel and selects a POPULATION, not a conversation.
+    // column's OWN root header (task 01a00932 R5: [Chats ＋][Kind ＋ ▾]) —
+    // which lives in the panel and selects a POPULATION, not a conversation.
     expect(view.queryByRole('tablist', { name: 'Open conversations' })).toBeNull();
     expect(view.getAllByRole('tablist').map((n) => n.getAttribute('aria-label')))
-      .toEqual(['Screens', 'Home lists']);
+      .toEqual(['Screens', 'Home roots']);
 
     // And the two panes are both really there.
     expect(view.getByRole('complementary', { name: 'Tasks, chats and sessions' })).toBeTruthy();

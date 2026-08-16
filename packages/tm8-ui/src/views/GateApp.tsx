@@ -63,13 +63,9 @@ import { useTheme } from '../theme/useTheme';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
-import { ChatHomeSurface, type ChatSessionRow, type ChatTaskRow } from '../chat-home';
-import { homeRowOf } from '../home';
+import { ChatHomeSurface } from '../chat-home';
 import { HomeView } from './HomeView';
 import { homeRegionStore } from '../stores/homeRegionStore';
-import { LinkedPullRequestChips } from '../pull-requests';
-import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
-import { TileCountBadges, hasTileCounts } from '../panels/list/TileCountBadges';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
@@ -113,14 +109,6 @@ const DEFAULT_RIGHT_KIND = 'work_session';
  * for. Named for what it is instead.
  */
 const LIVE_COUNT_KIND = 'work_session';
-/** Home's Tasks tab population (task 01a006f8, Q1 provisional). */
-const HOME_TASK_KIND = 'task';
-/** Open-first ordering: a settled task sinks below every open one. The two
- *  closed statuses mirror the registry's `TASK_CLOSED_STATUSES`. */
-function isSettledWorkStatus(state: unknown): boolean {
-  const status = (state as { workStatus?: string }).workStatus;
-  return status === 'done' || status === 'cancelled';
-}
 
 /** The three-panel workspace — the handoff destination entity opens use. */
 const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
@@ -959,7 +947,7 @@ export function GateApp(props: GateAppProps = {}) {
            Sessions. Everywhere else keeps the workspace hand-off. */
         if (activeTarget?.type === 'view' && activeTarget.ref === 'dashboard') {
           homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
-          homeRegionStore.getState().setTab(data.spaceId, 'sessions');
+          homeRegionStore.getState().setRoot(data.spaceId, LIVE_COUNT_KIND);
         } else {
           navigateTo(WORKSPACE_TARGET);
           nav.push(sessionId);
@@ -1225,122 +1213,6 @@ export function GateApp(props: GateAppProps = {}) {
     },
   }), [data.seam]);
 
-  /**
-   * Work sessions for Home's MERGED conversation column (R4, 2026-08-15),
-   * composed HERE because the chat module must not re-derive status: the
-   * word/tone come from `homeRowOf` — the registry projection every other
-   * surface uses, where the liveness VERDICT outranks the stored record and
-   * `idle` is a legal live state. Credential login terminals are filtered
-   * OUT (they are plumbing, not conversations).
-   */
-  const homeSessionRows = useMemo<ChatSessionRow[]>(
-    () =>
-      data
-        .rowsFor(LIVE_COUNT_KIND)(undefined)
-        .filter((row) => (row.state as { sessionKind?: string }).sessionKind !== 'credential')
-        .map((row) => {
-          const projected = homeRowOf(row, {
-            liveness: data.livenessOf(row.id),
-            streaming: data.activity[row.id] === true,
-            compact: true,
-          });
-          const state = row.state as { agentTool?: string; model?: string };
-          const detailParts = [state.agentTool, state.model].filter(
-            (part): part is string => typeof part === 'string' && part.length > 0,
-          );
-          /* "Yours" = you spawned it, or one of YOUR agents did. Listing has
-             no owner gate; terminal attach does (owner-only) — this flag only
-             labels the row, the attach refusal itself lives on the session
-             surface. */
-          const mine =
-            viewerMemberId !== undefined &&
-            (row.createdBy.id === viewerMemberId || row.createdBy.ownerMemberId === viewerMemberId);
-          /* THE WORKSPACE TILE'S OWN BADGE SUB-ROW, reused verbatim: the
-             lane facts (⎇ branch + worktree/shared/scratch, riding the
-             summary state per 107), the PR chips resolved through the same
-             index the tiles read, and the glyph counts. The chat module
-             renders the node; nothing is re-derived there. */
-          const lane = sessionLaneOf(row.state);
-          const pullRequests = data.linkedPullRequestsOf?.(row.id) ?? [];
-          const badges =
-            lane !== null || pullRequests.length > 0 || hasTileCounts(row.counters) ? (
-              <>
-                {lane !== null ? <SessionLaneLine lane={lane} /> : null}
-                {pullRequests.length > 0 ? (
-                  <LinkedPullRequestChips pullRequests={pullRequests} placement="tile" />
-                ) : null}
-                <TileCountBadges
-                  counters={row.counters}
-                  humanAuthors={row.badges.humanMessageAuthors}
-                />
-              </>
-            ) : undefined;
-          return {
-            id: row.id,
-            title: row.title,
-            statusWord: projected.word ?? '',
-            tone: projected.tone,
-            live: data.livenessOf(row.id) === 'live',
-            ...(detailParts.length > 0 ? { detail: detailParts.join(' · ') } : {}),
-            updatedAt: row.activityAt,
-            ...(mine ? {} : { viewOnly: true }),
-            ...(badges !== undefined ? { badges } : {}),
-          };
-        }),
-    [data, viewerMemberId],
-  );
-  /**
-   * Tasks for Home's TASKS TAB (task 01a006f8 D1; Q1 provisional pending
-   * Subhang's answer): every task the viewer can see, open-first then by
-   * recent activity. Same law as the session rows — the word/tone come from
-   * `homeRowOf`, the registry projection, and the CHAT MODULE re-derives
-   * nothing. `rowsFor` issues its own query on first read, so no ensureKind
-   * bootstrap is needed here.
-   */
-  const homeTaskRows = useMemo<ChatTaskRow[]>(
-    () =>
-      [...data.rowsFor(HOME_TASK_KIND)(undefined)]
-        .sort((a, b) => {
-          const aDone = isSettledWorkStatus(a.state);
-          const bDone = isSettledWorkStatus(b.state);
-          if (aDone !== bDone) return aDone ? 1 : -1;
-          return b.activityAt.localeCompare(a.activityAt);
-        })
-        .map((row) => {
-          const projected = homeRowOf(row, {
-            liveness: data.livenessOf(row.id),
-            streaming: data.activity[row.id] === true,
-            compact: true,
-          });
-          const priority = (row.state as { priority?: string }).priority;
-          /* Same badge sub-row as the workspace task tiles: PR chips through
-             the tracks index + the entity glyph counts (docs, messages,
-             memories). One vocabulary; the chat module renders it verbatim. */
-          const pullRequests = data.linkedPullRequestsOf?.(row.id) ?? [];
-          const badges =
-            pullRequests.length > 0 || hasTileCounts(row.counters) ? (
-              <>
-                {pullRequests.length > 0 ? (
-                  <LinkedPullRequestChips pullRequests={pullRequests} placement="tile" />
-                ) : null}
-                <TileCountBadges
-                  counters={row.counters}
-                  humanAuthors={row.badges.humanMessageAuthors}
-                />
-              </>
-            ) : undefined;
-          return {
-            id: row.id,
-            title: row.title,
-            statusWord: projected.word ?? '',
-            tone: projected.tone,
-            ...(typeof priority === 'string' && priority.length > 0 ? { detail: priority } : {}),
-            updatedAt: row.activityAt,
-            ...(badges !== undefined ? { badges } : {}),
-          };
-        }),
-    [data],
-  );
   const homeSlots = useMemo(
     () =>
       data.launch.capacity
@@ -1879,10 +1751,10 @@ export function GateApp(props: GateAppProps = {}) {
               onNotice={notices.push}
               onSpawn={async (input) => {
                 /* D11: a spawn committed on Home STAYS on Home — the session
-                   takes region B and the column flips to Sessions. */
+                   takes region B and the column flips to the sessions root. */
                 const sessionId = await data.spawn(input);
                 homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
-                homeRegionStore.getState().setTab(data.spaceId, 'sessions');
+                homeRegionStore.getState().setRoot(data.spaceId, LIVE_COUNT_KIND);
               }}
               onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
               /* D12: the ONE route out of Home — region C's explicit header
@@ -1917,23 +1789,21 @@ export function GateApp(props: GateAppProps = {}) {
                   /* One read per space, shared with every other rich input in
                      the shell — see `useGateData`. */
                   skillOptions={data.skillOptions}
-                  /* The three-tab column (task 01a006f8): sessions keep the
-                     R4 composition (liveness-first, credential terminals
-                     filtered, "view only" labels), tasks are composed above
-                     under the same registry-projection law. There is NO New
-                     session button any more (D2): a session is created by
-                     RUNNING a task, which is `onRunTask` → the launch sheet. */
-                  sessions={homeSessionRows}
-                  tasks={homeTaskRows}
-                  onRunTask={(id) => launch.open(id as EntityId)}
-                  renderTabList={regions.renderTabList}
-                  tab={regions.tab}
-                  onTab={regions.onTab}
+                  /* The root column (tasks 01a006f8/01a00932): every kind
+                     root mounts the workspace's own list through
+                     `renderRootList`; there is NO New session button (D2) —
+                     a session is created by RUNNING a task, whose Run lives
+                     on the hosted tile itself. */
+                  renderRootList={regions.renderRootList}
+                  root={regions.root}
+                  onRoot={regions.onRoot}
+                  kindCell={regions.kindCell}
+                  rootKindOptions={regions.rootKindOptions}
                   selectedEntityId={regions.selectedEntityId}
                   onSelectEntity={regions.onSelectEntity}
                   onShowChat={regions.onShowChat}
-                  onNewTask={regions.onNewTask}
-                  newTaskUnavailable={regions.newTaskUnavailable}
+                  onNewEntity={regions.onNewEntity}
+                  newEntityUnavailable={regions.newEntityUnavailable}
                   centerOverride={regions.centerOverride}
                   slots={homeSlots}
                   viewerName={data.viewerActor?.displayName}

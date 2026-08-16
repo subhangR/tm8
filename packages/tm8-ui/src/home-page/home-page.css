@@ -224,6 +224,95 @@
   z-index: 30;
   box-shadow: var(--pn-sh-pop);
 }
+/* --- the icon rail (task 01a00932 R4) ------------------------------------ */
+/* Entities only, collapsed by default at 72px with the word UNDER the mark
+   (the #269 law: collapsed keeps the word). Expanded, rows widen to
+   icon-beside-word with group eyebrows. Leftmost in the row, before A. */
+.cv2-root .hr-rail {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 72px;
+  min-height: 0;
+  border-right: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.cv2-root .hr-rail:not(.hr-rail--collapsed) { width: 172px; }
+.cv2-root .hr-rail__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 6px;
+}
+.cv2-root .hr-rail__group { display: flex; flex-direction: column; gap: 2px; }
+.cv2-root .hr-rail__group + .hr-rail__group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--pn-line);
+}
+.cv2-root .hr-rail__eyebrow {
+  padding: 2px 6px 4px;
+  color: var(--pn-ink-4);
+  font: 8.5px var(--pn-mono);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+}
+.cv2-root .hr-rail__row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11.5px;
+  cursor: pointer;
+  text-align: left;
+}
+/* Collapsed: the word stays, UNDER the mark, at caption size. */
+.cv2-root .hr-rail--collapsed .hr-rail__row {
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 2px;
+}
+.cv2-root .hr-rail--collapsed .hr-rail__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 8.5px;
+}
+.cv2-root .hr-rail__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .hr-rail__glyph { display: inline-flex; flex: none; }
+.cv2-root .hr-rail__row:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-root .hr-rail__row[aria-current='true'] {
+  border-color: var(--pn-line);
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+.cv2-root .hr-rail__toggle {
+  flex: none;
+  margin: 6px;
+  padding: 3px 0;
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  background: var(--pn-card);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.cv2-root .hr-rail__toggle:hover { color: var(--pn-ink); background: var(--pn-hover); }
+
 /* D12: C's chrome carries the ONE explicit route out of Home. */
 .cv2-root .hp-aside__bar {
   display: flex;
