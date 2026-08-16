@@ -141,6 +141,9 @@ export interface ChatTurn {
   /** The ordinary durable message body. Rich assistant output may instead be in parts. */
   body: string;
   parts: ChatTurnPart[];
+  /** Server wire marker: this is a chat turn's agent message and the turn has
+   *  not completed, so `body` is the claim placeholder, not content. */
+  turnInFlight?: boolean;
 }
 
 export interface ChatThreadDetail {

@@ -146,6 +146,7 @@ export function createChatHomePortFromSeam(
           parts: message.parts
             ? message.parts.map(turnPartFromMessagePart)
             : bridge.readParts ? [...await bridge.readParts(message.id)] : [],
+          ...(message.turnInFlight ? { turnInFlight: true } : {}),
         })),
       );
       return {

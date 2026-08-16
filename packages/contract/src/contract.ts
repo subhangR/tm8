@@ -662,6 +662,14 @@ export interface MessageView extends EntitySummary {
   lastReplyAt?: string | null; replyParticipants?: ActorSummary[];
   /** Structured runtime output, appended durably in stream order. */
   parts?: MessagePart[];
+  /**
+   * True while this message is a chat turn's agent message and that turn has
+   * not completed (`chat_turns.state` in `queued`/`running`). The stored body
+   * is then the claim placeholder, not content — parts-aware surfaces should
+   * draw the streaming parts and suppress the body. Server-set; absent
+   * everywhere else.
+   */
+  turnInFlight?: boolean;
 }
 
 // ---------------------------------------------------------------------------
