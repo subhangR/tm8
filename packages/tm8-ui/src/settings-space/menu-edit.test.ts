@@ -187,10 +187,12 @@ describe('add', () => {
     // editor no longer offers it. The round trip is the assertion's whole
     // value — it moved twice without anyone touching this list, because
     // `availableViewRefs` is VIEW_PRESENTATION minus what the draft places.
-    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels']);
+    // …and 'craft' joined it with revision 18 (Craft P1): the rowed BASE
+    // predates the tab, so the editor offers the ref as an add.
+    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels', 'craft']);
   });
 
-  it('the revision-17 shipped default frees the whole retired set — unrouted, not deleted', () => {
+  it('the revision-18 shipped default frees the whole retired set — unrouted, not deleted', () => {
     // Task 01a00932: Work and Channels retired from the tab row, so their
     // view refs joined the free set. A viewer who wants a Work group back
     // can author one — this is the editor-side proof the flip deleted
@@ -206,7 +208,7 @@ describe('add', () => {
     expect(draftConfig(d).groups.find((g) => g.id === 'graph')?.items.map((i) => i.ref))
       .toEqual(['graph', 'feed']);
     // And once used, it stops being on offer.
-    expect(availableViewRefs(d)).toEqual(['inbox', 'channels']);
+    expect(availableViewRefs(d)).toEqual(['inbox', 'channels', 'craft']);
   });
 
   it('offers only refs the rail can actually render, and never a duplicate', () => {
