@@ -97,6 +97,56 @@ describe('enforceCacheBounds — reference-safe eviction', () => {
     expect(draft.edgeIdsByEntity?.['far']).toEqual([]);
   });
 
+  it('survives TWO co-evicted entities sharing one edge', () => {
+    // The sweep mutates `edgeIdsByEntity` while walking it: dropping e0's edge
+    // filters that same edge out of e1's list, and e1 is the very next
+    // eviction candidate. If the second pass re-walked a stale list it would
+    // call `dropEdge` on an id already gone; if it walked the live list
+    // without a copy it would mutate mid-iteration.
+    const shared = edge('edge_shared', 'e0', 'e1');
+    const state = stateWithEntities(ENTITY_CACHE_CAP + 2, {
+      edges: { edge_shared: shared },
+      edgeIdsByEntity: { e0: ['edge_shared'], e1: ['edge_shared'] },
+    });
+    const draft: Parameters<typeof enforceCacheBounds>[1] = {};
+    enforceCacheBounds(state, draft, new Set());
+
+    expect(draft.entities?.['e0']).toBeUndefined();
+    expect(draft.entities?.['e1']).toBeUndefined();
+    expect(draft.edges?.['edge_shared']).toBeUndefined();
+    // Neither endpoint may leave an index entry behind.
+    expect(draft.edgeIdsByEntity?.['e0']).toBeUndefined();
+    expect(draft.edgeIdsByEntity?.['e1']).toBeUndefined();
+    // And the sweep still stopped at exactly the excess.
+    expect(Object.keys(draft.entities ?? {})).toHaveLength(ENTITY_CACHE_CAP);
+  });
+
+  it('leaves no edge naming an entity the store has forgotten', () => {
+    // The invariant in one assertion, over a sweep that evicts many at once:
+    // every surviving edge has both endpoints still in `entities`, and every
+    // index entry names only surviving edges.
+    const edges: DomainState['edges'] = {};
+    const edgeIdsByEntity: DomainState['edgeIdsByEntity'] = {};
+    const total = ENTITY_CACHE_CAP + 50;
+    for (let i = 0; i < total - 1; i++) {
+      const id = `edge_${i}`;
+      edges[id] = edge(id, `e${i}`, `e${i + 1}`);
+      edgeIdsByEntity[`e${i}`] = [...(edgeIdsByEntity[`e${i}`] ?? []), id];
+      edgeIdsByEntity[`e${i + 1}`] = [...(edgeIdsByEntity[`e${i + 1}`] ?? []), id];
+    }
+    const state = stateWithEntities(total, { edges, edgeIdsByEntity });
+    const draft: Parameters<typeof enforceCacheBounds>[1] = {};
+    enforceCacheBounds(state, draft, new Set());
+
+    const survivingEdges = draft.edges ?? state.edges;
+    const index = draft.edgeIdsByEntity ?? state.edgeIdsByEntity;
+    for (const [entityId, list] of Object.entries(index)) {
+      for (const edgeId of list) {
+        expect(survivingEdges[edgeId], `${entityId} indexes a dropped edge`).toBeDefined();
+      }
+    }
+  });
+
   it('never evicts a retained id, even when that leaves the cache over cap', () => {
     const over = 4;
     const retained = new Set(
