@@ -31,7 +31,7 @@
 # not run. Reviving it was considered and ruled against on 2026-08-12: tm8 uses
 # the system Postgres, and this script is what puts it there.
 #
-# THE ELEVEN THINGS A WORKING tm8 NEEDS, none of which were automated
+# THE TWELVE THINGS A WORKING tm8 NEEDS, none of which were automated
 #
 #   1  node 22 + bun + a Postgres server and client of the same major
 #   2  a running cluster on the slot's port, loopback-only
@@ -44,6 +44,9 @@
 #   9  the data and workspace directories
 #  10  the 90-odd migrations applied — the server does NOT migrate at boot
 #  11  something to keep the process alive
+#  12  an agent CLI (claude or codex) the host is LOGGED IN to — tm8 stores no
+#      agent credential, so a spawned session runs the host's login or nothing.
+#      Checked in PHASE 1 (warn, never block) and authoritatively by `tm8 doctor`.
 #
 # Seeding is the one thing that already worked and still needs no step: once the
 # schema is current and the server boots, the loopback auto-owner creates the
@@ -857,6 +860,57 @@ else
   warn "no pg_dump beside $PSQL — backups before a migration will not be possible"
 fi
 
+# The AGENT CLI — the twelfth thing a working tm8 needs, and the one that was
+# invisible here. tm8 never asks for, stores or checks an agent credential: a
+# spawned session runs the HOST's `claude` or `codex` and inherits whatever
+# login the machine already has (or does not). So a node can pass every check
+# above — cluster, migrations, build, a real catalog read — and still not run a
+# single agent, and the failure is QUIET: the session sits at "running" while
+# only the terminal carries the refusal.
+#
+# WARN, never block. tm8 is useful without an agent (browsing the graph, the
+# CLI, message history), and refusing to install over a missing agent CLI would
+# be a worse outcome than saying so loudly. The authoritative check — presence
+# AND login, honouring TM8_AGENT_CMD — is `tm8 doctor`; this phase runs before
+# the CLI is built, so it is the early, cheap surfacing of the same fact, and it
+# points there.
+if [[ -n "${TM8_AGENT_CMD:-}" ]]; then
+  acmd_bin="${TM8_AGENT_CMD%% *}"
+  if command -v "$acmd_bin" >/dev/null 2>&1 || [[ -x "$acmd_bin" ]]; then
+    ok "agent CLI: TM8_AGENT_CMD=$TM8_AGENT_CMD (found)"
+  else
+    warn "TM8_AGENT_CMD=$TM8_AGENT_CMD but '$acmd_bin' is not on PATH — every spawn would die with exit 127"
+  fi
+else
+  agent_found=0
+  if command -v claude >/dev/null 2>&1; then
+    agent_found=1
+    if [[ -f "$HOME/.claude.json" ]] && grep -q '"oauthAccount"' "$HOME/.claude.json" 2>/dev/null; then
+      ok "agent CLI: claude ($(command -v claude)) — authenticated"
+    else
+      # Claude Code can keep its token in the login Keychain, which is not
+      # cheaply readable here, so unknown is reported as unknown, not as broken.
+      ok "agent CLI: claude ($(command -v claude)) — present; login state unknown (verify: tm8 doctor)"
+    fi
+  fi
+  if command -v codex >/dev/null 2>&1; then
+    agent_found=1
+    if [[ -f "${CODEX_HOME:-$HOME/.codex}/auth.json" ]]; then
+      ok "agent CLI: codex ($(command -v codex)) — authenticated"
+    else
+      warn "agent CLI: codex ($(command -v codex)) — present but NOT authenticated (run: codex login)"
+    fi
+  fi
+  if (( ! agent_found )); then
+    warn "no agent CLI found (claude or codex) — tm8 will install fine but cannot run an agent."
+    info "a tm8 session runs the host's claude/codex; with neither installed every spawn"
+    info "sits at \"running\" and never finishes, the refusal visible only in the terminal."
+    info "install one and log in, then re-check with 'tm8 doctor':"
+    printf '        npm i -g @anthropic-ai/claude-code    # then run: claude       (to log in)\n'
+    printf '        npm i -g @openai/codex                 # then run: codex login\n'
+  fi
+fi
+
 # --- PHASE 2: the cluster ----------------------------------------------------
 phase "Postgres cluster on $TM8_ENV_PG_PORT"
 
@@ -1438,3 +1492,11 @@ else
 fi
 printf '  status:    %s --env %s --status\n' "$0" "$SLOT"
 printf '  env file:  %s\n' "$TM8_ENV_ENVFILE"
+# The agent login is the one prerequisite this installer can only WARN about, so
+# it earns a line in the summary: a healthy node with no logged-in agent spawns
+# sessions that sit at "running" forever. `tm8 doctor` reports presence AND login.
+if [[ -x "$TM8_ENV_CHECKOUT/packages/cli/dist/tm8" ]]; then
+  printf '  agents:    %s/packages/cli/dist/tm8 doctor   (claude/codex installed AND logged in? tm8 stores no agent login)\n' "$TM8_ENV_CHECKOUT"
+else
+  printf '  agents:    tm8 doctor   (claude/codex installed AND logged in? tm8 stores no agent login)\n'
+fi
