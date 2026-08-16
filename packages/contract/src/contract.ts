@@ -1808,6 +1808,12 @@ export interface TaskAxisInput extends CommandContext {
   position: number;
 }
 
+/** POST /v2/spaces/:spaceId/task-workflows — upsert on (space, typeValue). */
+export interface TaskWorkflowInput extends CommandContext {
+  typeValue: string;
+  statuses: WorkStatus[];
+}
+
 export interface SavedViewInput extends CommandContext {
   name: string;
   shareMode: 'private'|'space';
@@ -2235,6 +2241,26 @@ export interface TaskAxis {
   position: number;
 }
 
+/**
+ * GET /v2/spaces/:spaceId/task-workflows (W4, 132).
+ *
+ * One row per (space, `type` value): the SUBSET of work statuses tasks of
+ * that type may be moved TO. `{open, working, done}` are STRUCTURAL — the
+ * schema requires them in every vocabulary (creation, the spawn door, and
+ * completion must never be authorable out of existence) — so the narrowable
+ * set is exactly {pulled, in_review, blocked, cancelled}. Enforcement is a
+ * trigger on `tasks`; a task whose status falls outside its type's
+ * vocabulary (after a type change) is off-workflow: a DERIVED fact, flagged
+ * by clients, never stored and never rewritten.
+ */
+export interface TaskWorkflow {
+  id: string;
+  spaceId: SpaceId;
+  /** The `type` AXIS value this rule governs (strictly `type`, by ruling). */
+  typeValue: string;
+  statuses: WorkStatus[];
+}
+
 /** GET /v2/spaces/:spaceId/leaderboard */
 export interface LeaderboardRow { actor: ActorSummary; score: number; rank: number }
 
@@ -2257,6 +2283,12 @@ export interface SpaceSettings {
   /** `role` (118) is the role redemption confers — 'admin' or 'member', never 'owner'. */
   invites: Array<{ id: string; code: string; role: Exclude<SpaceMemberRole, 'owner'>; maxUses: number; uses: number; expiresAt: string | null; revoked: boolean }>;
   taskAxes: TaskAxis[];
+  /**
+   * W4 ride-along: the same one settings round trip that carries `taskAxes`
+   * carries the workflows keyed on them — the two are curated together and
+   * read together. Optional so pre-132 fixtures read as "none defined".
+   */
+  taskWorkflows?: TaskWorkflow[];
 }
 
 /** Member-authorized settings projection returned by A03 and settings reads. */

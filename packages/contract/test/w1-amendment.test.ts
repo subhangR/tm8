@@ -82,8 +82,13 @@ describe('W1 adopted catalog target', () => {
     // guarded write door to the forge.
     // 158 -> 159 (2026-08-13, merge union): chat.threads.start — MEASURED on
     // the merged tree; both sides moved this pin independently.
-    expect(OPERATIONS).toHaveLength(163);
-    expect(V1_OPERATIONS).toHaveLength(161);
+    // 159 -> 163: (unledgered upstream bumps — measured 163 on origin/main
+    // 9b938647; the literal had moved without its notes).
+    // 163 -> 166 (2026-08-16, W4/132): spaces.taskWorkflows.list (GET read) +
+    // .upsert (POST command) + .delete (DELETE command) — per-type status
+    // vocabularies. MEASURED per PIN RULE v3, never carried.
+    expect(OPERATIONS).toHaveLength(166);
+    expect(V1_OPERATIONS).toHaveLength(164);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -103,12 +108,15 @@ describe('W1 adopted catalog target', () => {
     // auth.claim (POST command) join auth.invite.resolve (POST-with-kind-read,
     // so an invite code never reaches a URL) and spaces.members.updateRole
     // (PATCH). GET 58->59, POST 73->75, PATCH 10->11.
-    }).toEqual({ GET: 59, POST: 75, PATCH: 11, DELETE: 10, PUT: 7, WS: 1 });
+    // W4/132 (2026-08-16): GET 59->60 (taskWorkflows.list), POST 75->76
+    // (.upsert), DELETE 10->11 (.delete). MEASURED from the failing run.
+    }).toEqual({ GET: 60, POST: 76, PATCH: 11, DELETE: 11, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 63 /* +1 109: auth.invite.resolve */, command: 99 /* +1 109: spaces.members.updateRole; +1 2026-08-13: tracking.pr.merge */, stream: 1 });
+    // W4/132: read +1, command +2. MEASURED.
+    }).toEqual({ read: 64, command: 101, stream: 1 });
   });
 });
 
