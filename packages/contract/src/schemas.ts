@@ -130,6 +130,9 @@ export const CoreEntityKindSchema = z.enum([
   'worktree',
   'artifact',
   'loop',
+  // Craft P1 (2026-08-16): the graph/blueprint kind — one row holding
+  // vertices AND edges, content-discriminated by graphType (R1/R3).
+  'graph',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -139,6 +142,43 @@ export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
 
 export const EntityKindSchema: z.ZodType<EntityKind> =
   z.union([CoreEntityKindSchema, CustomEntityKindSchema]);
+
+/**
+ * Craft P1 — the lean blueprint vocabulary (rulings R1-R3), SOFT by design.
+ * A node is a reference (`id`) or a spec (`{kind,title,hint?}`); an edge is
+ * `{src,dst,type,note?}` intent. `passthrough` everywhere: the orchestrating
+ * agent interprets, the schema only keeps the shapes recognizably graph-ish.
+ */
+export const GraphNodeInputSchema = z.object({
+  key: z.string().min(1).optional(),
+  id: EntityIdSchema.optional(),
+  spec: z.object({
+    kind: z.string().min(1).optional(),
+    title: z.string().optional(),
+    hint: z.string().optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
+export const GraphEdgeInputSchema = z.object({
+  src: z.string().min(1).optional(),
+  dst: z.string().min(1).optional(),
+  type: z.string().optional(),
+  note: z.string().optional(),
+}).passthrough();
+
+/**
+ * What `entities.create`/`entities.patch` accept as a `graph` row's content —
+ * the door-side twin of the read arm below. Everything optional: a patch may
+ * carry only the members it changes, and a graphType this schema has never
+ * heard of is a future type, not an error (R3).
+ */
+export const GraphContentInputSchema = z.object({
+  graphType: z.string().min(1).optional(),
+  nodes: z.array(GraphNodeInputSchema).optional(),
+  edges: z.array(GraphEdgeInputSchema).optional(),
+  layout: z.record(z.object({ x: z.number(), y: z.number() }).passthrough()).nullable().optional(),
+  source: z.string().nullable().optional(),
+}).passthrough();
 
 export const WorkStatusSchema = z.enum(['open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled']);
 export const VisibilitySchema = z.enum(['space', 'restricted']);
@@ -360,6 +400,12 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     nextRunAt: z.string().nullable(),
     lastRunAt: z.string().nullable(),
     lastError: z.string().nullable(),
+  }).strict(),
+  z.object({
+    kind: z.literal('graph'),
+    graphType: z.string().min(1),
+    nodeCount: z.number().int().nonnegative(),
+    edgeCount: z.number().int().nonnegative(),
   }).strict(),
   z.object({
     kind: z.literal('artifact'),
@@ -648,6 +694,17 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     lastRunAt: z.string().nullable(),
     lastError: z.string().nullable(),
   }).strict(),
+  // Craft P1: LEAN BY LAW (R2) — nodes and edges are sketches the
+  // orchestrating agent interprets, so members beyond the discriminants stay
+  // open (`passthrough`) and nothing here grows into a program schema.
+  z.object({
+    kind: z.literal('graph'),
+    graphType: z.string().min(1),
+    nodes: z.array(GraphNodeInputSchema),
+    edges: z.array(GraphEdgeInputSchema),
+    layout: z.record(z.object({ x: z.number(), y: z.number() }).passthrough()),
+    source: z.string().nullable(),
+  }).passthrough(),
   z.object({
     kind: z.literal('artifact'),
     description: z.string().nullable(),
@@ -899,7 +956,7 @@ export const ChatThreadSummarySchema: z.ZodType<ChatThreadSummary> = z.object({
   anchorId: EntityIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),
-  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate']),
+  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
   createdAt: IsoTimestamp,
   lastReplyAt: IsoTimestamp.nullable(),
   title: z.string().nullable().optional(),
@@ -910,7 +967,7 @@ export const StartChatThreadInputSchema: z.ZodType<StartChatThreadInput> = z.obj
   rootMessageId: EntityIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),
-  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate']),
+  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
   clientMutationId: z.string().min(1),
 }).strict();
 
@@ -1927,7 +1984,7 @@ export const UpdateMemberRoleInputSchema: z.ZodType<UpdateMemberRoleInput> = z.o
 // `git` widened 2026-08-12 in the same lockstep (Git UI wave: the project git screen).
 // `messages` widened 2026-08-13 in the same lockstep (the Messages surface).
 // `board` widened 2026-08-16 in the same lockstep (the task kanban tab).
-export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board']);
+export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board', 'craft']);
 // `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
 // menu-visible, still not menu-creatable (creation stays with the saga).
 // `channel` un-excluded 2026-08-01, same lockstep — it became a collection
