@@ -255,7 +255,19 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       }
       resizeRetryCountRef.current = 0;
       const { cols, rows } = currentTerm;
-      if (cols <= 0 || rows <= 0) return;
+      // The last drop path in this function. fit() can succeed without having
+      // resized anything — FitAddon's proposeDimensions bails on a degenerate
+      // box and fit() then returns silently — so a container smaller than one
+      // cell lands here. Retrying rather than returning costs nothing (the
+      // backoff self-cancels the moment a fit produces a real grid) and keeps
+      // the invariant this whole function now holds: NO exit from sendResize
+      // leaves the terminal unfitted with nothing scheduled to try again.
+      // Credit: tm8 UI Builder spotted this one while reading the same path.
+      if (cols <= 0 || rows <= 0) {
+        resizeRetryCountRef.current += 1;
+        scheduleResize();
+        return;
+      }
       clientFittedSessions.add(sessionId);
       // ONE-SHOT REPAINT NUDGE (see ptyTransport.resize). The grid is now
       // correctly fitted and any replay has been parsed; make the AGENT redraw
