@@ -151,9 +151,17 @@ export const EntityKindSchema: z.ZodType<EntityKind> =
  * aliases. `passthrough` everywhere: the orchestrating agent interprets, and
  * the schema only keeps the shapes recognizably graph-ish.
  *
- * The ONE thing this door refuses is the mistake that caused the defect: a
- * `ref` that is not an entity id. `ref` is now the sole word meaning "this
+ * The ONE thing the WRITE DOOR refuses is the mistake that caused the defect:
+ * a `ref` that is not an entity id. `ref` is now the sole word meaning "this
  * exists", so it must be typed, or the ambiguity walks straight back in.
+ *
+ * THE READ ARM DOES NOT REFUSE IT, and the asymmetry is the whole point. A
+ * door may reject what you hand it; a read must never reject what is ALREADY
+ * STORED. Validating `ref` on the read path would mean a row written before
+ * this pin — or by any future writer we have not met — fails to parse, and
+ * because `EntityContentSchema` is one union over the whole entity, that does
+ * not degrade one card: it fails the ENTIRE entity read. Unreadable is
+ * strictly worse than untidy. Tighten doors, never mirrors.
  */
 const ENTITY_ID_FORM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -162,11 +170,10 @@ export const GraphNodeRefSchema = z.string().regex(
   '`ref` must be an entity id — use `id` for the row-local key edges name',
 );
 
-export const GraphNodeInputSchema = z.object({
+/** Shared by both arms; only `ref`/`entityId` differ in strictness. */
+const graphNodeShape = {
   /** Row-local key — the edge namespace. NOT an entity id. */
   id: z.string().min(1).optional(),
-  /** Present ⇔ this node references a real entity. */
-  ref: GraphNodeRefSchema.optional(),
   spec: z.object({
     kind: z.string().min(1).optional(),
     title: z.string().optional(),
@@ -174,8 +181,26 @@ export const GraphNodeInputSchema = z.object({
   }).passthrough().optional(),
   /** @deprecated legacy alias for `id`; honored, and it wins over `id`. */
   key: z.string().min(1).optional(),
+};
+
+/** WRITE DOOR — `ref` must be a well-formed entity id. */
+export const GraphNodeInputSchema = z.object({
+  ...graphNodeShape,
+  /** Present ⇔ this node references a real entity. */
+  ref: GraphNodeRefSchema.optional(),
   /** @deprecated legacy alias for `ref`. */
   entityId: GraphNodeRefSchema.optional(),
+}).passthrough();
+
+/**
+ * READ ARM — deliberately permissive. See the asymmetry note above: a stored
+ * row must always read back, whatever a past writer put in `ref`. The UI's
+ * `nodeRefId` is what decides meaning; this only has to let the bytes through.
+ */
+export const GraphNodeSchema = z.object({
+  ...graphNodeShape,
+  ref: z.string().min(1).optional(),
+  entityId: z.string().min(1).optional(),
 }).passthrough();
 
 export const GraphEdgeInputSchema = z.object({
@@ -719,7 +744,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   z.object({
     kind: z.literal('graph'),
     graphType: z.string().min(1),
-    nodes: z.array(GraphNodeInputSchema),
+    /* The READ arm — permissive by law; see GraphNodeSchema's note. */
+    nodes: z.array(GraphNodeSchema),
     edges: z.array(GraphEdgeInputSchema),
     layout: z.record(z.object({ x: z.number(), y: z.number() }).passthrough()),
     source: z.string().nullable(),
