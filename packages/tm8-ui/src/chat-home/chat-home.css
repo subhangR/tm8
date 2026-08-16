@@ -721,11 +721,30 @@ button.tch-entity-chip:hover {
 /* THE ROOT HEADER (task 01a00932 R5): [Chats ＋][Kind ＋ ▾]. Two segmented
    cells sharing one strip — the label half switches the root, the ＋ half
    creates, the caret opens the kind menu. Labels only — no counts (D16). */
+/* THE ROOT HEADER LINE — the segmented tablist, plus the hosted list's layout
+   switcher pinned to the right. The margin moved OFF `.tch-roots` and onto
+   this bar so both halves share one line box; the tablist keeps its own
+   border and background, which is what makes the switcher read as beside the
+   segmented control rather than inside it. */
+.tch-rootbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  min-width: 0;
+  margin: var(--pn-space-2) var(--pn-space-3) 0;
+}
+/* The tablist takes the slack and the switcher takes its natural width: the
+   kind label already ellipsizes (`.tch-rootcell__label`), so a long plural
+   like "Work sessions" shortens itself rather than pushing the switcher out
+   of the 280px column. */
+.tch-rootbar > .tch-roots { flex: 1; min-width: 0; }
+.tch-rootbar > .lp__views { flex: none; }
+
 .tch-roots {
   display: flex;
   gap: 4px;
   flex: none;
-  margin: var(--pn-space-2) var(--pn-space-3) 0;
   padding: 2px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);

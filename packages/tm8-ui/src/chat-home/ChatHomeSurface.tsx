@@ -50,6 +50,7 @@ export interface ChatHomeSurfaceProps {
   graphFilters?: ChatHomeScreenProps['graphFilters'];
   onGraphFiltersChange?: ChatHomeScreenProps['onGraphFiltersChange'];
   renderRootList?: ChatHomeScreenProps['renderRootList'];
+  renderRootAside?: ChatHomeScreenProps['renderRootAside'];
   centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];
   viewerName?: ChatHomeScreenProps['viewerName'];
