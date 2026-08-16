@@ -71,6 +71,18 @@ export const CLAIM = {
   gateAction: 'Create account',
   gateBody:
     'This creates a real account on the tm8 node (auth.signup) and signs you in (auth.login). Account creation is the node admin’s act: from the server’s own machine it is authorized automatically; on a shared server it may be refused — ask the operator for an account and a space invite.',
+  /**
+   * The UNCLAIMED first-run body — and a different act from `gateBody`. On a
+   * node nobody has claimed the card performs `auth.claim`, authorized by the
+   * setup TOKEN, not by a node-admin session. That path works from ANY machine
+   * — it is the entire point of the claim lane (design §3.2, §5.1) — so the
+   * copy must not repeat `gateBody`'s "on a shared server it may be refused"
+   * dead end, which describes the door this lane was built to remove. Contains
+   * "on the tm8 node" because that is literally where the credential is set.
+   */
+  claimTitle: 'Claim this node.',
+  claimBody:
+    'No one owns this node yet. The setup token printed at first boot authorizes you to claim it — from any machine, not just the server’s own (auth.claim). Pick an owner handle and password; they’re set on the tm8 node, you’re signed in, and you hold full admin over accounts, projects, and spaces.',
   handleHintTail: 'how agents and members mention you',
   nameHintEmpty: 'your handle is derived from this name',
   gatePasswordHint: '8+ characters · sent to this server, stored only as a hash — use HTTPS off this machine',
@@ -121,6 +133,13 @@ export const LOGIN = {
   toPassword: 'use a password instead',
   footer:
     'No self-serve signup — accounts on forge are created by invite. Have a link? It opens flow C.',
+  /* GATE COPY — not oracle. The oracle footer names "forge" (a specimen
+     server) and "flow C" (reviewer vocabulary), neither of which a real
+     signed-out viewer should be shown. The live gate says what is actually
+     true of THIS node: sign-in mints a session (auth.login), and a new
+     account here is a node-admin act, not self-serve. */
+  gateFooter:
+    'No self-serve signup here — a node admin creates accounts. Signing in starts a session on this node (auth.login).',
 } as const;
 
 /**

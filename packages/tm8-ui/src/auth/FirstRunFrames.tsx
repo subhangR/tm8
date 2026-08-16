@@ -23,6 +23,7 @@ import {
   AuthTitle,
 } from './AuthCard';
 import { useAuthActions } from './gate-context';
+import { activeNodeLabel } from '../servers/server-key';
 import { failureCopy } from './failures';
 import { handleFrom } from './session';
 import { CLAIM, FIRST_SPACE, NAME_STEP, SERVER } from './specimen';
@@ -123,7 +124,13 @@ export function FrameClaim(props: FrameProps) {
     : () => void actions?.createAccount(name, password);
 
   return (
-    <AuthStage meta={SERVER.unclaimedMeta}>
+    // Defect fix: on the review board the chrome carries the oracle's own
+    // specimen line; the LIVE gate carries the node's REAL origin. Showing
+    // `SERVER.unclaimedMeta` ('tm8-server v0.9.2 · localhost:8787') to a real
+    // operator told them the wrong host, wrong port and an invented version at
+    // the exact moment they were handing over ownership. `activeNodeLabel()`
+    // reads the node this browser is actually pointed at.
+    <AuthStage meta={actions ? activeNodeLabel() : SERVER.unclaimedMeta}>
       <AuthCard>
         <div className="auth-card__head">
           <AuthEyebrow>{actions ? 'FIRST RUN' : 'FIRST RUN · STEP 1 OF 3'}</AuthEyebrow>
@@ -131,10 +138,27 @@ export function FrameClaim(props: FrameProps) {
           {actions ? null : <AuthSteps of={3} at={1} />}
         </div>
         <AuthTitle>
-          {another ? CLAIM.anotherTitle : actions ? CLAIM.gateTitle : CLAIM.title}
+          {another
+            ? CLAIM.anotherTitle
+            : !actions
+              ? CLAIM.title
+              : unclaimed
+                ? CLAIM.claimTitle
+                : CLAIM.gateTitle}
         </AuthTitle>
+        {/* The body has to describe the act the card actually performs. On an
+            unclaimed node that is `auth.claim` (token-authorized, works from
+            any machine); the old copy described `auth.signup` and its shared-
+            server dead end — the very door the claim lane removes. See
+            `unclaimed` above: it is the node's own answer, not an inference. */}
         <AuthBody>
-          {!actions ? CLAIM.body : another ? CLAIM.anotherBody : CLAIM.gateBody}
+          {!actions
+            ? CLAIM.body
+            : another
+              ? CLAIM.anotherBody
+              : unclaimed
+                ? CLAIM.claimBody
+                : CLAIM.gateBody}
         </AuthBody>
 
         {failure ? (
