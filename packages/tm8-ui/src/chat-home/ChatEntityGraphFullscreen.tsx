@@ -50,6 +50,23 @@ import { CARD_W, GAP_X, PAD, layoutInducedGraph } from './induced-layout';
 
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 4;
+
+/**
+ * THE FULLSCREEN DRAW CAP (step 7) — measurement-gated, per D3: the per-seed
+ * `entities.connections` reads are the real cost of a bigger canvas, and the
+ * number was measured before this was committed (2026-08-16, live local
+ * server, browser-realistic HTTP/1.1 concurrency of 6, limit=60 pages):
+ *
+ *   ·  64 reads: 0.44s wall — today's inline worst case
+ *   · 256 reads: 2.4s wall, p50 34ms/read, p95 153ms, 0 failures, ~6 MiB
+ *
+ * 2.4s to full settle, arriving PROGRESSIVELY (each read lands its edges as
+ * it settles), against a canvas whose 256 cards are all placed synchronously
+ * from the fold — so nothing moves while edges arrive (R9). That is
+ * comfortable; 256 stands. Entities past it stay in the fold and keep their
+ * honest not-drawn counts — never silently discarded.
+ */
+export const MAX_DRAWN_FULL = 256;
 /** Fullscreen column range: never narrower than inline, never absurd. */
 const MIN_PER_ROW = 4;
 const MAX_PER_ROW = 12;

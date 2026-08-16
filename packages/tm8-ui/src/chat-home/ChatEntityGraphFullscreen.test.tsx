@@ -12,11 +12,11 @@
  */
 import { useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { EdgeView, EntityId, Page } from '@tm8/contract';
 import type { ConnectionsReader } from '../session-graph/load';
 import { ChatEntityGraph } from './ChatEntityGraph';
-import { MAX_ZOOM, perRowForViewport } from './ChatEntityGraphFullscreen';
+import { MAX_DRAWN_FULL, MAX_ZOOM, perRowForViewport } from './ChatEntityGraphFullscreen';
 import { CARD_W, GAP_X, PAD } from './induced-layout';
 import { measuredConnections, measuredSeeds, T1 } from './induced-graph.fixture';
 import type { ChatTurn, ChatTurnPart } from './types';
@@ -305,5 +305,57 @@ describe('the inline echo (step 5: read-only, counts stay honest)', () => {
     expect(document.querySelectorAll('.ceg .ceg__canvas .ceg-cell')).toHaveLength(3);
     // Read-only: the inline strip offers no filter controls.
     expect(screen.queryByLabelText(/^Tasks/)).toBeNull();
+  });
+});
+
+describe('the fullscreen draw cap (step 7, measurement-gated)', () => {
+  const wideId = (n: number) => `01900000-00dd-7000-8000-${String(n).padStart(12, '0')}`;
+  const wideTurns = (): ChatTurn[] => [
+    turnOf(Array.from({ length: 70 }, (_, i) => call('tm8_read', { id: wideId(i + 1) })).flat()),
+  ];
+  const countingReader = () => {
+    const calls: string[] = [];
+    const read: ConnectionsReader = (id) => {
+      calls.push(id);
+      return Promise.resolve({ items: [], nextCursor: null } as unknown as Page<EdgeView>);
+    };
+    return { read, calls };
+  };
+
+  it('inline draws 64 and reads 64; fullscreen widens BOTH to the full thread', async () => {
+    const { read, calls } = countingReader();
+    const { rerender } = render(
+      <ChatEntityGraph
+        turns={wideTurns()}
+        connections={read}
+        expanded={false}
+        onExpandedChange={() => {}}
+      />,
+    );
+    expect(document.querySelectorAll('.ceg__canvas .ceg-cell')).toHaveLength(64);
+    expect(screen.getByText(/\+6 more not drawn/)).toBeDefined();
+    // Reads stay scoped to the drawn 64 until the viewer actually expands —
+    // the reads are the cost the cap protects (D3).
+    expect(new Set(calls).size).toBe(64);
+
+    rerender(
+      <ChatEntityGraph
+        turns={wideTurns()}
+        connections={read}
+        expanded
+        onExpandedChange={() => {}}
+      />,
+    );
+    expect(fullCards()).toHaveLength(70);
+    await waitFor(() => expect(new Set(calls).size).toBe(70));
+    // The dialog states its own drawing: nothing undrawn at 70 < 256.
+    expect(screen.getByTestId('ceg-full-summary').textContent).toContain('Showing 70 of 70 drawn');
+    expect(screen.getByRole('dialog').getAttribute('aria-label')).not.toContain('not drawn');
+    // The inline strip behind it still draws its calm 64 (D3: no regression).
+    expect(document.querySelectorAll('.ceg__canvas .ceg-cell')).toHaveLength(64);
+  });
+
+  it('MAX_DRAWN_FULL stands at the measured 256', () => {
+    expect(MAX_DRAWN_FULL).toBe(256);
   });
 });
