@@ -245,12 +245,22 @@
   pointer-events: auto;
 }
 
-/* While spawning, the host is already painted at full size behind the veil —
-   dimmed rather than hidden, so its geometry is real and measurable. */
+/*
+ * FULLY OPAQUE THE MOMENT THE TRANSITION STARTS — the screen BECOMES the
+ * terminal, and the status text then sits on top of it.
+ *
+ * The first version dimmed this to 0.35 and put the steps on the page behind
+ * it. Photographed, that was a muddy grey wash that read as broken rather than
+ * loading — a near-black terminal at a third opacity over light paper is not a
+ * dark surface, it is a dead one. Full opacity also strengthens the geometry
+ * guarantee: the host is not merely non-zero, it is exactly what the user is
+ * about to interact with.
+ */
+.nsx-root[data-phase='minting'] .nsx-terminal-layer,
 .nsx-root[data-phase='spawning'] .nsx-terminal-layer,
 .nsx-root[data-phase='attaching'] .nsx-terminal-layer {
-  opacity: 0.35;
-  transform: scale(0.995);
+  opacity: 1;
+  transform: none;
 }
 
 /* ---------------------------------------------------------------- the veil */
@@ -269,6 +279,11 @@
   gap: 10px;
   justify-content: center;
   align-items: center;
+  /* ITS OWN SCRIM, in the always-dark scope the host wraps it in, so the steps
+     read as light-on-dark over the terminal in BOTH themes without a single
+     literal colour. Opaque enough to own the frame, translucent enough that
+     the terminal is visibly underneath rather than replaced. */
+  background: color-mix(in srgb, var(--pn-paper) 88%, transparent);
   opacity: 0;
   pointer-events: none;
   transition: opacity 200ms ease;

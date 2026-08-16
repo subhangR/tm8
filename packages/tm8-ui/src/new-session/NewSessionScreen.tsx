@@ -4,13 +4,18 @@ import { getKind } from '../domain';
 import {
   buildSpawnInput,
   canLaunch,
-  defaultLaunchTarget,
+  type LaunchCapacity,
   type LaunchConfig,
+  type LaunchProject,
+  type LaunchProjectOption,
+  type LaunchTeammate,
   type WorkdirMode,
 } from '../domain/launch';
 import { createdIdOf, newEntityInput } from '../authoring';
-import { LiveTerminal, TerminalHost } from '../terminal';
-import type { CommandResult, CreateEntityInput, EntityId, ExecutionSpawnInput, SpaceId } from '@tm8/contract';
+import { AlwaysDark, LiveTerminal, TerminalHost } from '../terminal';
+import type {
+  CommandResult, CreateEntityInput, EntityId, ExecutionSpawnInput, ProjectId, SpaceId,
+} from '@tm8/contract';
 import type { TriggerOption } from '../rich-input';
 import type { FileUploadTask } from '../files/upload';
 import { NewSessionComposer } from './NewSessionComposer';
@@ -78,11 +83,21 @@ export interface NewSessionScreenProps {
   } | null;
   /** `data.spawn` — resolves to the new session's entity id. */
   spawn: (input: ExecutionSpawnInput) => Promise<EntityId>;
-  /** The launch resources the spawn needs; `data.launch`. */
+  /**
+   * The launch resources the spawn needs — `data.launch`, in ITS OWN TYPES.
+   *
+   * Spelled with the real `LaunchTeammate`/`LaunchProject` rather than a
+   * hand-written structural echo, because the echo is how the two project
+   * shapes got confused: `LaunchProject` carries `id`, while `canLaunch` wants
+   * `LaunchProjectOption` with `projectId`. A local shape plus a cast compiled
+   * happily and would have refused every project-backed launch at runtime with
+   * "that project is not linked to this space". `projectOptionsOf` below does
+   * the conversion once, in the open.
+   */
   launch: {
-    teammates: readonly { id: string; name: string; model: string; agentTool: string }[];
-    projects: readonly { id: string; name: string; trusted: boolean; untrustedReason?: string }[];
-    capacity?: { slotsFree: number; slotsTotal: number };
+    teammates: readonly LaunchTeammate[];
+    projects: readonly LaunchProject[];
+    capacity?: LaunchCapacity;
   };
   /** Where the session opens once it is live. */
   onSessionReady: (sessionId: EntityId) => void;
@@ -110,7 +125,21 @@ export function NewSessionScreen({
   const inFlight = useRef(false);
 
   const teammate = launch.teammates[0] ?? null;
-  const project = launch.projects.find((candidate) => candidate.trusted) ?? null;
+  /* The ONE conversion between the two project vocabularies — see the props
+     docblock. Done here so `canLaunch` and the target are built from the same
+     rows, and neither can be fed the wrong shape. */
+  const projectOptions = useMemo<readonly LaunchProjectOption[]>(
+    () => launch.projects
+      .filter((candidate) => !candidate.scratch)
+      .map((candidate) => ({
+        projectId: candidate.id as ProjectId,
+        name: candidate.name,
+        trusted: candidate.trusted,
+        ...(candidate.reason ? { untrustedReason: candidate.reason } : {}),
+      })),
+    [launch.projects],
+  );
+  const project = projectOptions.find((candidate) => candidate.trusted) ?? null;
 
   /*
    * The config the spawn will use. Rendered under the composer at all times —
@@ -128,7 +157,7 @@ export function NewSessionScreen({
     reasoningEffort: null,
     accessMode: 'fullAccess',
     mode: 'worker',
-    target: defaultLaunchTarget(project?.id as never),
+    target: project ? { kind: 'project', projectId: project.projectId } : { kind: 'scratch' },
     workdirMode,
   }), [teammate, project, workdirMode]);
 
@@ -138,11 +167,11 @@ export function NewSessionScreen({
 
   const refusal = useMemo(() => {
     if (commands === null) return 'This node cannot create tasks, so a session cannot be started here.';
-    const verdict = canLaunch(config, { projects: launch.projects as never, capacity: launch.capacity });
+    const verdict = canLaunch(config, { projects: projectOptions, capacity: launch.capacity });
     if (!verdict.ok) return verdict.reason;
     if (!canDeriveTitle(draft)) return null; // Empty is not an error, it is just not ready.
     return null;
-  }, [commands, config, launch.projects, launch.capacity, draft]);
+  }, [commands, config, projectOptions, launch.capacity, draft]);
 
   const title = deriveTitle(draft);
   const ready = canDeriveTitle(draft) && refusal === null && commands !== null;
@@ -274,13 +303,22 @@ export function NewSessionScreen({
           ) : (
             /* The pre-spawn host: a real, measurable `.term-host` at final
                size. Same component the session panel uses for `spawning`, so
-               the box the user sees never changes shape. */
-            <TerminalHost placeholder={'▉ preparing the session\nno PTY yet'} />
+               the box the user sees never changes shape.
+               DELIBERATELY NO PLACEHOLDER TEXT: the veil's steps are centred
+               over this box and say the same thing better. Photographed with
+               one, the host's centred hint rendered THROUGH the step list and
+               both became unreadable. The box is here for its geometry, not
+               its words. */
+            <TerminalHost />
           )}
         </div>
       ) : null}
 
       {transitioning ? (
+        /* ALWAYS-DARK, because the veil sits ON the terminal: the scope
+           re-declares the dark ramp so `--pn-paper`/`--pn-ink` resolve to
+           light-on-dark in BOTH themes, with no literal colour anywhere. */
+        <AlwaysDark>
         <div className="nsx-veil" data-testid="nsx-veil">
           <p className="nsx-veil__title">{title}</p>
           <ul className="nsx-steps">
@@ -299,6 +337,7 @@ export function NewSessionScreen({
             </p>
           ) : null}
         </div>
+        </AlwaysDark>
       ) : null}
     </div>
   );
