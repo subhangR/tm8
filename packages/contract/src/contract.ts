@@ -2244,6 +2244,29 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // their routes, their chords and their menu-editor eligibility — the same
   // rail-edit posture as 125/126/127.
   { serverId: 'chats', clientId: 'chats' },
+  // 2026-08-16 LATER STILL (user ruling, migration 140): a WORK tab returns
+  // beside Home —
+  //   chats(Home) | work | board | craft | graph | files | settings
+  // 134 retired the group on the reasoning that Home's root column already
+  // lists every collection kind, so Work was a second door to the same
+  // lists. That was true of 134's Work group, which was a RAIL of rows
+  // (Workspace caret + the three dev kinds + git). It is not true of this
+  // one: the group holds the single childless `workspace` VIEW, so the tab
+  // is the three-panel workspace itself — left panel, center entity, right
+  // panel — which is a LAYOUT Home does not offer, not a duplicate list.
+  //
+  // The group is re-minted rather than restored, so its id is `work` on BOTH
+  // sides. The historical `work`/`workspace` divergence noted above belongs
+  // to the pre-134 group; nothing persists under the old client id, so there
+  // is no reason to carry the asymmetry into a group being created fresh.
+  //
+  // Railless BY SHAPE: one childless view item, so tm8-ui's
+  // `isRaillessGroup` answers true and the workspace renders full-bleed
+  // beside the tab row ('workspace' joined RAILLESS_VIEW_REFS in the same
+  // change). Pre-134 menus that still carry the OLD Work group are
+  // untouched by that set — their `workspace` item has eight caret
+  // children, and the rule keys on the shape, so they keep their rail.
+  { serverId: 'work', clientId: 'work' },
   // 2026-08-16 (Board tab wave, migration 130): the task kanban is its own
   // full-bleed tab — a railless group holding the single `board` VIEW, the
   // same posture as graph/files/chats. It PRESENTS the task collection; the

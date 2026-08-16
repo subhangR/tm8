@@ -33,9 +33,9 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(unrenderableKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([]);
   });
 
-  it('encodes the revision-18 tab row, pinned to the contract spine', () => {
+  it('encodes the revision-19 tab row, pinned to the contract spine', () => {
     // DEFAULT_MENU_GROUP_SPINE is the ONE truth this default and the server
-    // seeder (db/migrations/137, tested by
+    // seeder (db/migrations/140, tested by
     // packages/server/test/db/menu-seeder-parity.pg.test.ts) are both pinned
     // to. Before the spine existed the two carried unjoined hand-copies, and
     // migration 059 dropped the voice group with every suite green — the
@@ -54,15 +54,22 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     // caps could ever name. A kind row reappearing here would be a second
     // door beside a complete one.
     expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([]);
-    // The retired GROUPS are really gone…
+    // Revision 19 (migration 140): a WORK group returns, and the assertion
+    // above is exactly why it can. What 17 retired was a rail of ROWS — the
+    // Workspace caret with its eight kinds, the three dev kinds, git — and
+    // every one of those was a kind door Home already owned. The group that
+    // came back carries NO kind rows at all: one childless `workspace` VIEW,
+    // which is the three-panel split pane, a layout Home does not offer.
+    // So `work` and `workspace` leave the retired lists below while the
+    // no-kind-rows rule that motivated 17 stays fully intact.
     const ids = SHIPPED_DEFAULT_MENU.groups.map((g) => g.id);
-    for (const gone of ['workspace', 'work', 'channels', 'library', 'code', 'voice']) {
+    for (const gone of ['workspace', 'channels', 'library', 'code', 'voice']) {
       expect(ids).not.toContain(gone);
     }
     // …and the retired VIEW refs are unrouted from the rail, not deleted:
     // the frozen DTO still accepts a space putting any of them back.
     const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
-    for (const gone of ['workspace', 'git', 'messages', 'feed', 'inbox', 'channels']) {
+    for (const gone of ['git', 'messages', 'feed', 'inbox', 'channels']) {
       expect(refs).not.toContain(gone);
     }
     expect(
@@ -115,8 +122,14 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(chats?.items[0]?.type === 'view' && chats.items[0].children).toBeUndefined();
   });
 
-  it('keeps Board, Graph, Files and Settings as railless single-view tabs', () => {
+  it('keeps Work, Board, Graph, Files and Settings as railless single-view tabs', () => {
     for (const [id, ref] of [
+      // Revision 19: Work is the three-panel workspace, and it holds the
+      // `workspace` VIEW alone. The childless single-item shape is the whole
+      // guarantee — give this item the eight caret children the pre-134 group
+      // carried and `isRaillessGroup` answers false, a menu rail appears left
+      // of the split, and the tab draws FOUR columns instead of three.
+      ['work', 'workspace'],
       ['board', 'board'],
       ['graph', 'graph'],
       ['files', 'files'],
@@ -145,7 +158,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(18);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(19);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

@@ -219,6 +219,17 @@ const RAILLESS_VIEW_REFS: ReadonlySet<MenuViewRef> = new Set<MenuViewRef>([
   // 2026-08-16 (Craft P1): the blueprint studio is full-bleed — the chat
   // thread and the canvas are the navigation, same posture as board.
   'craft',
+  // 2026-08-16 (Work tab returns, revision 19): the workspace is the split
+  // pane ITSELF — its own side panels are the navigation, and a menu rail
+  // beside them would be a fourth column repeating the tab's own name.
+  //
+  // THIS DOES NOT DISTURB THE PRE-134 WORK GROUP. `isRaillessGroup` keys on
+  // the SHAPE first: that group's `workspace` item carries eight caret
+  // children, so it fails the childless test before this set is consulted
+  // and keeps drawing its rail — correctly, because an operator with rows
+  // in a group must see them. Only a group whose whole content is a lone
+  // childless `workspace` goes full-bleed, which is exactly the new default.
+  'workspace',
 ]);
 
 /**

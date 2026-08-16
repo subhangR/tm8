@@ -192,13 +192,21 @@ describe('add', () => {
     expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels', 'craft']);
   });
 
-  it('the revision-18 shipped default frees the whole retired set — unrouted, not deleted', () => {
+  it('the revision-19 shipped default frees the whole retired set — unrouted, not deleted', () => {
     // Task 01a00932: Work and Channels retired from the tab row, so their
     // view refs joined the free set. A viewer who wants a Work group back
     // can author one — this is the editor-side proof the flip deleted
     // nothing.
+    //
+    // Revision 19 (task 01a00b46, migration 140) took `workspace` back OUT of
+    // the free set, and by the only mechanism that should ever remove a ref
+    // from it: the shipped default now USES it, as the Work tab's single
+    // item. The editor offers exactly the refs nothing has claimed, so a ref
+    // leaving this list is the signal that it went back on the rail — not
+    // that it was deleted. `git` and `messages`, the other two refs the old
+    // Work group carried, are still free and still authorable.
     expect([...availableViewRefs(startDraft(SHIPPED_DEFAULT_MENU))].sort()).toEqual(
-      ['channels', 'feed', 'git', 'inbox', 'messages', 'workspace'].sort(),
+      ['channels', 'feed', 'git', 'inbox', 'messages'].sort(),
     );
   });
 
