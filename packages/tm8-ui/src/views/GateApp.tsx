@@ -65,7 +65,8 @@ import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
 import { ChatHomeSurface } from '../chat-home';
 import { HomeView } from './HomeView';
-import { homeRegionStore } from '../stores/homeRegionStore';
+import { rememberHomeRoot } from '../stores/homeRegionStore';
+import { slugOfKind } from '../domain';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
@@ -946,8 +947,13 @@ export function GateApp(props: GateAppProps = {}) {
            the new session takes region B and the left column flips to
            Sessions. Everywhere else keeps the workspace hand-off. */
         if (activeTarget?.type === 'view' && activeTarget.ref === 'dashboard') {
-          homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
-          homeRegionStore.getState().setRoot(data.spaceId, LIVE_COUNT_KIND);
+          /* Route-owned now (task 01a00932 D1): the session ROOTS the centre
+             trail and the address flips to the sessions root. */
+          rememberHomeRoot(data.spaceId, LIVE_COUNT_KIND);
+          navStore
+            .getState()
+            .navigate({ view: 'home', root: { type: 'kind', slug: slugOfKind(LIVE_COUNT_KIND) ?? '' } });
+          navStore.getState().openCenter(sessionId as EntityId);
         } else {
           navigateTo(WORKSPACE_TARGET);
           nav.push(sessionId);
@@ -1753,8 +1759,12 @@ export function GateApp(props: GateAppProps = {}) {
                 /* D11: a spawn committed on Home STAYS on Home — the session
                    takes region B and the column flips to the sessions root. */
                 const sessionId = await data.spawn(input);
-                homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
-                homeRegionStore.getState().setRoot(data.spaceId, LIVE_COUNT_KIND);
+                /* Route-owned now (task 01a00932 D1). */
+                rememberHomeRoot(data.spaceId, LIVE_COUNT_KIND);
+                navStore
+                  .getState()
+                  .navigate({ view: 'home', root: { type: 'kind', slug: slugOfKind(LIVE_COUNT_KIND) ?? '' } });
+                navStore.getState().openCenter(sessionId as EntityId);
               }}
               onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
               /* D12: the ONE route out of Home — region C's explicit header
@@ -1804,6 +1814,8 @@ export function GateApp(props: GateAppProps = {}) {
                   onShowChat={regions.onShowChat}
                   onNewEntity={regions.onNewEntity}
                   newEntityUnavailable={regions.newEntityUnavailable}
+                  routeThreadId={regions.routeThreadId}
+                  onThreadSelected={regions.onThreadSelected}
                   centerOverride={regions.centerOverride}
                   slots={homeSlots}
                   viewerName={data.viewerActor?.displayName}

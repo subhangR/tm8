@@ -1,30 +1,37 @@
 /**
- * HomeView — Home's three regions (task 01a006f8, ruled 2026-08-16).
+ * HomeView — the unified Home's three regions (task 01a006f8, generalized by
+ * task 01a00932; selection model re-seated by its D1 ruling).
  *
- *   A · the left column (buttons, tabs, search, list) — drawn by
- *       ChatHomeScreen, fed through the host's render prop.
- *   B · the centre: the SELECTION. The chat conversation by default; a task
- *       or session selected from A replaces what B SHOWS while the chat stays
- *       MOUNTED but hidden (D8) — unmounting it would tear down a streaming
- *       thread. B's entity occupant is the same `AuxEntityPanel` mount C
- *       uses, so a session in B gets the real terminal (or its honest
- *       owner-only refusal) with no second panel implementation.
- *   C · the drill-in: a chip or link ANYWHERE in B opens here, beside B,
- *       never in the Workspace (D12). A chip pressed inside C REPLACES C's
- *       subject. Esc closes C, then B back to the chat (D14). Going to the
- *       Workspace is an explicit action in C's chrome only.
+ *   A · the left column (root header, list) — drawn by ChatHomeScreen, fed
+ *       through the host's render prop.
+ *   B · the centre: the SELECTION, now the route's `p` TRAIL. The chat
+ *       conversation when the trail is empty; a row selected from A restarts
+ *       the trail (`openCenter`); an IN-TREE click inside B grows it
+ *       (`push` — R6: hierarchy navigates in place) while the chat stays
+ *       MOUNTED but hidden (D8). The trail renders as B's breadcrumb (R7).
+ *   C · the right panel: the route's `r` TRAIL. A RELATED entity clicked in
+ *       B — different kind, or same kind outside the root's tree — opens
+ *       here, beside B, never in the Workspace (D12/R6). A chip inside C
+ *       pushes onto its trail (same panel, longer crumb). "Open here"
+ *       PROMOTES C's subject to B's root and moves the list selection (R6).
+ *       Esc pops C first, then B (D14 generalized to the trails).
+ *
+ * THE ROUTE OWNS ALL OF IT (D1, the LLD's central reconciliation): both
+ * trails live in `navStore` and therefore in the URL, so a Home deep link
+ * reproduces the whole arrangement and the back button walks it. What the
+ * old module-level stores held is gone — `homeRegionStore` keeps only the
+ * remembered ROOT (D15), and GateApp's D11 spawn flip writes `navStore`.
+ *
+ * "IN THE TREE" is one definition (R6): the clicked entity's parent chain,
+ * walked through `detailOf`, reaches B's trail root. An unloaded parent
+ * chain falls back to the RIGHT panel — sideways is the reversible default;
+ * silently re-rooting the centre is not.
  *
  * WHY THE PORTS ARE BUILT HERE AND NOT IN `auxPanel`: every one of them —
  * `primaries`, `membership`, `launchPort`, `rowLifecycle`, `attachments` — is
  * a per-SCREEN singleton shared by BOTH mounts (B's entity occupant and C).
  * Two executors that disagree about what a write means is the failure
  * `auxPanel`'s docblock names. One screen, one set.
- *
- * THE SELECTIONS OUTLIVE THE MOUNT. C lives in `screenStackStore` under
- * `view:dashboard` (as before); B's occupant and the active tab live in
- * `homeRegionStore` — module-level because switching rail items unmounts this
- * view, and because D11's spawn path writes them from OUTSIDE it (GateApp
- * puts the new session in B and flips A to Sessions).
  */
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
@@ -37,11 +44,22 @@ import { getKind } from '../domain';
 import { attachmentsFor } from '../files/port';
 import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
-import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
-import { useHomeRegion, type HomeRoot } from '../stores/homeRegionStore';
-import { CHATS_ROOT, DEFAULT_HOME_KIND, homeRailGroups, homeRootKinds } from '../domain';
+import { navStore, useNavStore } from '../stores/navStore';
+import { loadHomeRoot, rememberHomeRoot, type HomeRoot } from '../stores/homeRegionStore';
+import {
+  CHATS_ROOT,
+  DEFAULT_HOME_KIND,
+  homeRailGroups,
+  homeRootKinds,
+  isHomeRootKind,
+  kindOfSlug,
+  slugOfKind,
+} from '../domain';
+import type { NavView } from '../routes/types';
 import type { HomeRootOption } from '../chat-home/ChatHomeScreen';
 import { HomeRail } from './HomeRail';
+import { HomeTrail } from './HomeTrail';
+import { inTreeOf } from './home-tree';
 import type { Notice } from '../shell';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { useLaunchPort } from './useLaunchPort';
@@ -111,6 +129,11 @@ export interface HomeChatRegions {
   newEntityUnavailable: { cause: string; remedy: string } | null;
   /** B's non-chat occupant, rendered inside the chat grid (D8). */
   centerOverride?: ReactNode;
+  /** The conversation the ADDRESS names (`/home/chat/{id}`), for the screen
+   *  to adopt — back/forward and shared links land on the right thread. */
+  routeThreadId?: EntityId | null;
+  /** The screen's thread selection, so the address can carry it (D1). */
+  onThreadSelected?(id: EntityId | null): void;
   /**
    * A KIND root's list CONTENT: the WORKSPACE's own `EntityListPanel` —
    * the exact tree, tiles, lifecycle tabs, sort and in-panel search the
@@ -122,18 +145,46 @@ export interface HomeChatRegions {
   renderRootList?: (root: HomeRoot) => ReactNode;
 }
 
+/** The `NavView` a Home root addresses (the inverse lives in the resolver below). */
+function homeViewOf(root: HomeRoot): NavView {
+  if (root === CHATS_ROOT) return { view: 'home', root: { type: 'chats', threadId: null } };
+  const slug = slugOfKind(root);
+  return slug ? { view: 'home', root: { type: 'kind', slug } } : { view: 'home' };
+}
+
 export function HomeView(props: HomeViewProps) {
   const { data, reasons, onNotice } = props;
 
-  /* C — the drill-in stack, unchanged from the aux-column pass. */
-  const screen = useScreenStack(screenKeyOf.view('dashboard'));
-  const drillId = screen.selected;
-  const openEntity = useCallback((id: EntityId) => screen.open(id), []); // eslint-disable-line react-hooks/exhaustive-deps
+  /* THE TRAILS — route state, read live (D1). B is the stack; C is `r`. */
+  const navView = useNavStore((s) => s.view);
+  const stack = useNavStore((s) => s.stack);
+  const rightTrail = useNavStore((s) => s.right);
+  const centerId = stack.length > 0 ? stack[stack.length - 1]! : null;
+  const drillId = rightTrail.length > 0 ? rightTrail[rightTrail.length - 1]! : null;
+  const openEntity = useCallback((id: EntityId) => navStore.getState().openRight(id), []);
 
-  /* B + A's root — module-level per space (D15; D11 writes from GateApp). */
-  const region = useHomeRegion(data.spaceId);
-  const centerId = region.center;
-  const root = region.root;
+  /* THE ROOT: the address wins; a bare `/home` falls back to the remembered
+     root (D15). An unregistered slug is not a root we can list — the memory
+     answers, never a blank. */
+  const routeRoot = navView.view === 'home' ? (navView.root ?? null) : null;
+  const routeRootKind = routeRoot?.type === 'kind' ? kindOfSlug(routeRoot.slug) : null;
+  const root: HomeRoot =
+    routeRoot?.type === 'chats'
+      ? CHATS_ROOT
+      : routeRootKind && isHomeRootKind(routeRootKind)
+        ? routeRootKind
+        : loadHomeRoot(data.spaceId);
+  const routeThreadId = routeRoot?.type === 'chats' ? routeRoot.threadId : null;
+
+  /* Switching the root is BROWSING (D6): it renames the address's root and
+     touches neither trail. Remembered so a bare `/home` returns here. */
+  const setRoot = useCallback(
+    (next: HomeRoot) => {
+      rememberHomeRoot(data.spaceId, next);
+      navStore.getState().navigate(homeViewOf(next));
+    },
+    [data.spaceId],
+  );
 
   /* THE KIND CELL'S MEMORY (R5): while Chats is the root, the cell keeps
      naming the kind the viewer would return to — the last kind root this
@@ -156,6 +207,34 @@ export function HomeView(props: HomeViewProps) {
         single: config.label,
       })),
     [],
+  );
+
+  /* R6's click rule at its one seam: in-tree grows B's trail (in place);
+     everything else opens beside it. `inTreeOf` is the shared definition —
+     see views/home-tree.ts and its decision table. */
+  const treeRootId = stack.length > 0 ? stack[0]! : null;
+  const openFromCenter = useCallback(
+    (id: EntityId) => {
+      const nav = navStore.getState();
+      const parentOf = (cursor: EntityId) =>
+        (data.detailOf(cursor)?.parentId ?? null) as EntityId | null;
+      if (inTreeOf(treeRootId, id, parentOf)) nav.push(id);
+      else nav.openRight(id);
+    },
+    [treeRootId, data],
+  );
+
+  /* Trail crumbs resolve titles through the same read the panels use. */
+  const titleOf = useCallback(
+    (id: EntityId) => {
+      const detail = data.detailOf(id);
+      if (!detail) {
+        data.pull?.(id);
+        return null;
+      }
+      return { title: detail.title, kind: detail.kind };
+    },
+    [data],
   );
 
   const notifyActionFailed = useCallback(
@@ -247,7 +326,7 @@ export function HomeView(props: HomeViewProps) {
     kind: cellConfig.kind,
     placeholderTitle: placeholderNameFor(cellConfig, placeholderTitleFor(cellConfig.label)),
     commands: data.seam.commands,
-    onCreated: (id) => region.selectCenter(id),
+    onCreated: (id) => navStore.getState().openCenter(id),
     refusal: cellConfig.list.quickCreate
       ? null
       : {
@@ -286,10 +365,11 @@ export function HomeView(props: HomeViewProps) {
     ? Math.min(Math.max(ASIDE_MIN, pref.width), Math.max(ASIDE_MIN, outerWidth - 48))
     : Math.min(Math.max(ASIDE_MIN, pref.width), Math.max(ASIDE_MIN, asideMax));
 
-  /* Esc walks DOWN one region per press: C first, then B back to the chat
-     (D14). The launch sheet's own capture-phase Esc handler consumes its key
-     before this listener can see it, and `defaultPrevented` honours any other
-     surface that claimed the press (a focused terminal, the doc editor). */
+  /* Esc walks DOWN one step per press: C's trail first, then B's, until the
+     chat is back (D14, generalized to the trails). The launch sheet's own
+     capture-phase Esc handler consumes its key before this listener can see
+     it, and `defaultPrevented` honours any other surface that claimed the
+     press (a focused terminal, the doc editor). */
   const hasDrill = drillId !== null;
   const hasCenter = centerId !== null;
   useEffect(() => {
@@ -297,12 +377,12 @@ export function HomeView(props: HomeViewProps) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();
-      if (hasDrill) screen.pop();
-      else region.selectCenter(null);
+      const nav = navStore.getState();
+      if (hasDrill) nav.popRight();
+      else nav.pop();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasDrill, hasCenter]);
 
   const hostBundle = {
@@ -319,16 +399,25 @@ export function HomeView(props: HomeViewProps) {
     viewerMemberId: props.viewerMemberId,
   };
 
-  /* REGION B's entity occupant. Chips inside it open C (D12) — reading
-     sideways lands BESIDE the selection, not over it. Closing it returns B
-     to the chat. */
+  /* REGION B's entity occupant, under its trail crumb (R7). Clicks inside it
+     split by R6: in-tree grows THIS trail (in place); relations open C —
+     sideways lands BESIDE the selection, not over it. Closing returns B to
+     the chat. */
   const centerOverride = centerId ? (
-    <AuxEntityPanel
-      host={hostBundle}
-      entityId={centerId}
-      onOpenEntity={openEntity}
-      onClose={() => region.selectCenter(null)}
-    />
+    <div className="hp-trail-host" data-testid="hp-center-trail-host">
+      <HomeTrail
+        trail={stack}
+        label="Centre trail"
+        titleOf={titleOf}
+        onCrumb={(id) => navStore.getState().stackTo(id)}
+      />
+      <AuxEntityPanel
+        host={hostBundle}
+        entityId={centerId}
+        onOpenEntity={openFromCenter}
+        onClose={() => navStore.getState().clearStack()}
+      />
+    </div>
   ) : undefined;
 
   /* EVERY KIND ROOT IS THE WORKSPACE LIST (user ruling 2026-08-16,
@@ -361,7 +450,8 @@ export function HomeView(props: HomeViewProps) {
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
           onNeedDetail={(id) => data.pull?.(id)}
           selectedId={centerId}
-          onSelect={(id) => region.selectCenter(id as EntityId)}
+          /* R6a: a LIST click ROOTS the centre — the trail restarts here. */
+          onSelect={(id) => navStore.getState().openCenter(id as EntityId)}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
           onSetValue={rowLifecycle.setValue}
@@ -381,15 +471,23 @@ export function HomeView(props: HomeViewProps) {
 
   const regions: HomeChatRegions = {
     root,
-    onRoot: region.setRoot,
+    onRoot: setRoot,
     kindCell,
     rootKindOptions,
     selectedEntityId: centerId,
-    onSelectEntity: (id) => region.selectCenter(id as EntityId),
-    onShowChat: () => region.selectCenter(null),
+    onSelectEntity: (id) => navStore.getState().openCenter(id as EntityId),
+    onShowChat: () => navStore.getState().clearStack(),
     ...(newEntity.unavailable === null ? { onNewEntity: () => void newEntity.create() } : {}),
     newEntityUnavailable: newEntity.unavailable,
     ...(centerOverride !== undefined ? { centerOverride } : {}),
+    routeThreadId,
+    /* The open conversation is part of the address (`/home/chat/{id}`), so
+       back/forward walk threads and a conversation can be linked to. */
+    onThreadSelected: (id) =>
+      navStore.getState().navigate({
+        view: 'home',
+        root: { type: 'chats', threadId: id },
+      }),
     renderRootList,
   };
 
@@ -400,13 +498,29 @@ export function HomeView(props: HomeViewProps) {
     <HomeRail
       groups={homeRailGroups()}
       activeKind={root === CHATS_ROOT ? null : root}
-      onSelect={(kind) => region.setRoot(kind)}
+      onSelect={setRoot}
     />
   );
 
-  /* REGION C. Chips inside it REPLACE its subject (auxPanel's ruling —
-     drilling sideways, never a fourth column). The workspace hand-off is
-     C's explicit chrome action and exists nowhere else on this screen. */
+  /* R6's PROMOTE — "open here": C's subject becomes B's ROOT, the left list
+     follows it (selection AND, when its kind differs, the root list), and
+     both trails settle. The explicit escape hatch out of sideways reading. */
+  const promoteDrill = useCallback(() => {
+    if (!drillId) return;
+    const nav = navStore.getState();
+    const kind = data.detailOf(drillId)?.kind;
+    if (kind && isHomeRootKind(kind) && kind !== root) {
+      rememberHomeRoot(data.spaceId, kind);
+      nav.navigate(homeViewOf(kind));
+    }
+    nav.openCenter(drillId);
+    nav.closeRight();
+  }, [drillId, data, root]);
+
+  /* REGION C. Chips inside it PUSH onto its trail (drilling sideways, never
+     a fourth column — the crumb is how you walk back, R7). The workspace
+     hand-off and Promote are C's explicit chrome actions and exist nowhere
+     else on this screen. */
   const aside = drillId ? (
     <>
       {overlay ? null : (
@@ -427,8 +541,16 @@ export function HomeView(props: HomeViewProps) {
         aria-label="Entity details"
         data-testid="hp-aside"
       >
-        {props.onOpenInWorkspace ? (
-          <div className="hp-aside__bar">
+        <div className="hp-aside__bar">
+          <button
+            type="button"
+            className="hp-aside__workspace"
+            title="Make this entity the centre's root — the list follows it"
+            onClick={promoteDrill}
+          >
+            ⇤ Open here
+          </button>
+          {props.onOpenInWorkspace ? (
             <button
               type="button"
               className="hp-aside__workspace"
@@ -437,13 +559,19 @@ export function HomeView(props: HomeViewProps) {
             >
               Open in Workspace <span aria-hidden>→</span>
             </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
+        <HomeTrail
+          trail={rightTrail}
+          label="Side panel trail"
+          titleOf={titleOf}
+          onCrumb={(id) => navStore.getState().rightTo(id)}
+        />
         <AuxEntityPanel
           host={hostBundle}
           entityId={drillId}
           onOpenEntity={openEntity}
-          onClose={() => screen.clear()}
+          onClose={() => navStore.getState().closeRight()}
         />
       </aside>
     </>

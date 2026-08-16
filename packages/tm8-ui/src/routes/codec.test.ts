@@ -357,3 +357,94 @@ describe('the 2048 cap and its ordered atomic drops', () => {
     expect(parse(hash).route).not.toBeNull();
   });
 });
+
+describe('the unified Home root and the right trail (task 01a00932)', () => {
+  it('round-trips /home/k/{slug} — a kind root is addressable', () => {
+    const route = routeOf({ target: { view: 'home', root: { type: 'kind', slug: 'tasks' } } });
+    const { hash } = build(route);
+    expect(hash).toContain('/home/k/tasks');
+    const back = parse(hash).route!;
+    expect(back.target).toEqual({ view: 'home', root: { type: 'kind', slug: 'tasks' } });
+  });
+
+  it('round-trips /home/chat/{id} — the open conversation is addressable', () => {
+    const route = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: 'th-1' } },
+    });
+    const { hash } = build(route);
+    expect(hash).toContain('/home/chat/th-1');
+    const back = parse(hash).route!;
+    expect(back.target).toEqual({ view: 'home', root: { type: 'chats', threadId: 'th-1' } });
+  });
+
+  it('canonicalizes chats-with-no-thread to bare /home — one address per place', () => {
+    const denormal = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: null } },
+    });
+    expect(normalize(denormal).target).toEqual({ view: 'home' });
+    expect(build(normalize(denormal)).hash.endsWith('/home')).toBe(true);
+    // And a hand-typed /home/chat parses to that same denormal form.
+    expect(parse('#/s/sp/home/chat').route?.target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: null },
+    });
+  });
+
+  it('round-trips the right trail through r=, dot-joined like p=', () => {
+    const route = normalize(
+      routeOf({ panels: { ...emptyPanels(), stack: ['a', 'b'], right: ['c', 'd'] } }),
+    );
+    const { hash } = build(route);
+    expect(hash).toContain('r=c.d');
+    expect(parse(hash).route?.panels.right).toEqual(['c', 'd']);
+  });
+
+  it('a malformed r is discarded atomically under its own drop class', () => {
+    const { route, dropped } = parse('#/s/sp/home?r=');
+    expect(route?.panels.right).toEqual([]);
+    expect(dropped).toContain('right');
+  });
+
+  it('normalize dedupes the right trail within itself, never against the stack', () => {
+    const route = routeOf({
+      panels: { ...emptyPanels(), stack: ['a'], right: ['a', 'b', 'b'] },
+    });
+    // The same entity open centre AND beside it is an honest viewer state.
+    expect(normalize(route).panels.right).toEqual(['a', 'b']);
+    expect(normalize(route).panels.stack).toEqual(['a']);
+  });
+
+  it('keeps tab state for a right-panel id — right ids are open ids', () => {
+    const route = routeOf({
+      panels: {
+        ...emptyPanels(),
+        right: ['c'],
+        tabs: { c: 'activity' as PanelTab },
+      },
+    });
+    expect(normalize(route).panels.tabs).toEqual({ c: 'activity' });
+  });
+
+  it('drops the right trail after the t tier and before pins', () => {
+    const stack = ['keep'];
+    const right = Array.from({ length: 60 }, (_, i) => `panel-entity-${i}-abcdefghijklmnopqrstuvwxyz`);
+    const pinned = ['pin-1'];
+    const route = routeOf({
+      panels: {
+        ...emptyPanels(),
+        stack,
+        right,
+        pinned,
+        tabs: { keep: 'activity' as PanelTab },
+      },
+    });
+    const { hash, dropped } = build(route);
+    expect(hash.length).toBeLessThanOrEqual(MAX_HASH_LENGTH);
+    // The right trail went; the pins and the centre stack survived it.
+    expect(dropped).toContain('right');
+    expect(dropped).not.toContain('pins');
+    expect(dropped).not.toContain('stack');
+    expect(hash).toContain('pin=');
+    expect(hash).toContain('p=');
+  });
+});

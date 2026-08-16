@@ -313,11 +313,60 @@
 }
 .cv2-root .hr-rail__toggle:hover { color: var(--pn-ink); background: var(--pn-hover); }
 
+/* --- trails (task 01a00932 R7): the crumb IS the route's p/r state -------- */
+.cv2-root .hp-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  font-size: 11px;
+}
+.cv2-root .hp-trail__seg { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+.cv2-root .hp-trail__sep { color: var(--pn-ink-4); padding: 0 2px; }
+.cv2-root .hp-trail__crumb,
+.cv2-root .hp-trail__here {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+}
+.cv2-root .hp-trail__crumb { cursor: pointer; }
+.cv2-root .hp-trail__crumb:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-root .hp-trail__here { color: var(--pn-ink); font-weight: 600; }
+.cv2-root .hp-trail__glyph { display: inline-flex; flex: none; }
+
+/* B's trail host: crumb on top, the panel filling the rest. */
+.cv2-root .hp-trail-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.cv2-root .hp-trail-host > *:last-child { flex: 1; min-height: 0; }
+/* The aside's every-child flex:1 must not stretch its crumb strip. */
+.cv2-root .hp-aside > .hp-trail { flex: none; }
+
 /* D12: C's chrome carries the ONE explicit route out of Home. */
 .cv2-root .hp-aside__bar {
   display: flex;
   flex: none;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 6px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--pn-line);
 }

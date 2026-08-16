@@ -46,10 +46,12 @@ export type PanelHost = 'stack' | 'pinned' | 'peek' | 'z4';
 export interface NavState {
   spaceId: SpaceId;
   view: NavView;
-  /** bottom → top. */
+  /** bottom → top. On Home the stack is the centre TRAIL (task 01a00932). */
   stack: EntityId[];
   /** pin order. */
   pinned: EntityId[];
+  /** Home's right-panel trail, bottom → top (`r`). Empty ⇒ no right panel. */
+  right: EntityId[];
   tabs: Record<EntityId, PanelTab>;
   contentSurface: Record<EntityId, ContentSurface>;
   session: EntityId | null;
@@ -108,6 +110,28 @@ export interface NavActions {
    * settle" true.
    */
   applyNormalization(next: { stack: EntityId[]; pinned: EntityId[] }): void;
+  /**
+   * HOME'S TRAILS (task 01a00932 R6/R7). The centre trail is `stack` and the
+   * right trail is `right`; these verbs are the crumb/relation gestures —
+   * every one is USER navigation (history: push).
+   */
+  /**
+   * A LIST click roots the centre (R6a): the trail RESTARTS at this entity.
+   * Distinct from `push`, which grows the trail — an in-place tree hop.
+   */
+  openCenter(id: EntityId): void;
+  /** Open an entity in the right panel: raise if present, else push. */
+  openRight(id: EntityId): void;
+  /** Crumb click: truncate the right trail so `id` is its top. No-op if absent. */
+  rightTo(id: EntityId): void;
+  /** Esc/✕ on the right panel: pop its top; empty trail is a no-op. */
+  popRight(): void;
+  /** Close the right panel entirely. */
+  closeRight(): void;
+  /** Crumb click on the centre trail: truncate so `id` is the top. */
+  stackTo(id: EntityId): void;
+  /** Return the centre to its resting state (Home: the conversation). */
+  clearStack(): void;
 }
 
 export type NavStore = NavState & NavActions;
@@ -117,6 +141,7 @@ const INITIAL: NavState = {
   view: { view: 'home' },
   stack: [],
   pinned: [],
+  right: [],
   tabs: {},
   contentSurface: {},
   session: null,
@@ -184,7 +209,7 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
     const s = get();
     if (s.stack.length === 0) return;
     const stack = s.stack.slice(0, -1);
-    const open = new Set([...stack, ...s.pinned]);
+    const open = new Set([...stack, ...s.pinned, ...s.right]);
     set({ stack, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
   },
 
@@ -193,7 +218,7 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
     if (!s.stack.includes(id) && !s.pinned.includes(id)) return;
     const stack = s.stack.filter((x) => x !== id);
     const pinned = s.pinned.filter((x) => x !== id);
-    const open = new Set([...stack, ...pinned]);
+    const open = new Set([...stack, ...pinned, ...s.right]);
     set({ stack, pinned, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
   },
 
@@ -225,7 +250,7 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
     const s = get();
     const stack = s.stack.filter((x) => x !== id);
     const pinned = s.pinned.filter((x) => x !== id);
-    const open = new Set([...stack, ...pinned]);
+    const open = new Set([...stack, ...pinned, ...s.right]);
     // `origin` is preserved across the promotion so the Z4 screen knows the
     // companion to return to (WLT §2.2 canonical-reload rule).
     const origin =
@@ -272,7 +297,7 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
   applyNormalization(next) {
     const s = get();
     if (sameIds(s.stack, next.stack) && sameIds(s.pinned, next.pinned)) return;
-    const open = new Set([...next.stack, ...next.pinned]);
+    const open = new Set([...next.stack, ...next.pinned, ...s.right]);
     set({
       stack: [...next.stack],
       pinned: [...next.pinned],
@@ -280,6 +305,67 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
       history: 'replace',
       revision: s.revision + 1,
     });
+  },
+
+  openCenter(id) {
+    const s = get();
+    if (s.stack.length === 1 && s.stack[0] === id) {
+      set({ history: 'push', revision: s.revision + 1 });
+      return;
+    }
+    const stack = [id];
+    const open = new Set([...stack, ...s.pinned, ...s.right]);
+    set({ stack, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
+  },
+
+  openRight(id) {
+    const s = get();
+    const right = [...s.right.filter((x) => x !== id), id];
+    if (sameIds(s.right, right)) {
+      set({ history: 'push', revision: s.revision + 1 });
+      return;
+    }
+    set({ right, history: 'push', revision: s.revision + 1 });
+  },
+
+  rightTo(id) {
+    const s = get();
+    const at = s.right.indexOf(id);
+    if (at === -1 || at === s.right.length - 1) return;
+    const right = s.right.slice(0, at + 1);
+    const open = new Set([...s.stack, ...s.pinned, ...right]);
+    set({ right, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
+  },
+
+  popRight() {
+    const s = get();
+    if (s.right.length === 0) return;
+    const right = s.right.slice(0, -1);
+    const open = new Set([...s.stack, ...s.pinned, ...right]);
+    set({ right, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
+  },
+
+  closeRight() {
+    const s = get();
+    if (s.right.length === 0) return;
+    const open = new Set([...s.stack, ...s.pinned]);
+    set({ right: [], ...pruned(s, open), history: 'push', revision: s.revision + 1 });
+  },
+
+  stackTo(id) {
+    const s = get();
+    const at = s.stack.indexOf(id);
+    if (at === -1 || at === s.stack.length - 1) return;
+    const stack = s.stack.slice(0, at + 1);
+    const open = new Set([...stack, ...s.pinned, ...s.right]);
+    set({ stack, ...pruned(s, open), history: 'push', revision: s.revision + 1 });
+  },
+
+  clearStack() {
+    const s = get();
+    if (s.stack.length === 0) return;
+    const open = new Set([...s.pinned, ...s.right]);
+    set({ stack: [], ...pruned(s, open), history: 'push', revision: s.revision + 1 });
   },
 }));
 
@@ -366,6 +452,7 @@ export function routeOf(s: NavState): Route {
   const panels: PanelState = {
     stack: s.stack,
     pinned: s.pinned,
+    right: s.right,
     tabs: s.tabs,
     contentSurface: s.contentSurface,
     session: s.session,

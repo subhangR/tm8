@@ -119,6 +119,21 @@ export interface ChatHomeScreenProps {
    */
   renderRootList?: ((root: HomeRoot) => ReactNode) | undefined;
   /**
+   * The conversation the ADDRESS names (`/home/chat/{id}`, task 01a00932
+   * D1). Adopted when it differs from the current selection — back/forward
+   * and shared links land on the right thread. `null` means the address is
+   * bare; the screen keeps its own selection (the cold-start auto-open stays
+   * viewer-local and writes no history).
+   */
+  routeThreadId?: EntityId | null;
+  /**
+   * USER thread selection, reported so the address can carry it: a row
+   * click, ＋ New chat (null — back to the composer), and the send that
+   * creates a root. The auto-open deliberately does NOT report — a default
+   * is not a navigation.
+   */
+  onThreadSelected?: ((id: EntityId | null) => void) | undefined;
+  /**
    * Region B when it is NOT the chat (D7/D8): the host's entity panel,
    * rendered in the conversation pane's place while the conversation stays
    * MOUNTED but hidden — unmounting it would tear down a streaming thread.
@@ -170,6 +185,8 @@ export function ChatHomeScreen({
   onShowChat,
   onNewEntity,
   newEntityUnavailable,
+  routeThreadId,
+  onThreadSelected,
   renderRootList,
   centerOverride,
   slots,
@@ -228,6 +245,14 @@ export function ChatHomeScreen({
   useEffect(() => {
     detailRef.current = detail;
   }, [detail]);
+
+  /* ADOPT the addressed conversation (D1): back/forward and shared links win
+     over the current selection; a bare address changes nothing. The select
+     effect below owns loading whatever this lands on. */
+  useEffect(() => {
+    if (!routeThreadId) return;
+    setSelectedRootId((current) => (current === routeThreadId ? current : routeThreadId));
+  }, [routeThreadId]);
 
   const refreshThreads = useCallback(async (preferRoot?: EntityId) => {
     const next = await port.listThreads(spaceId);
@@ -667,6 +692,7 @@ export function ChatHomeScreen({
       expectingMarkRef.current = frameSeqRef.current;
       preTurnIdsRef.current = new Set();
       setSelectedRootId(root.threadRootId);
+      onThreadSelected?.(root.threadRootId);
       setPhase('streaming');
       await refreshThreads(root.threadRootId);
     } catch (error) {
@@ -801,6 +827,7 @@ export function ChatHomeScreen({
                    composer) AND switches the column to its own root. */
                 onShowChat?.();
                 setRoot(CHATS_ROOT);
+                onThreadSelected?.(null);
               }}
             >
               <span aria-hidden>＋</span>
@@ -943,6 +970,7 @@ export function ChatHomeScreen({
                         /* D7: selecting a chat puts the conversation in B. */
                         setSelectedRootId(thread.rootId);
                         onShowChat?.();
+                        onThreadSelected?.(thread.rootId);
                       }}
                     >
                       <span className="tch-thread__title">
