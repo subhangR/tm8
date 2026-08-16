@@ -180,40 +180,47 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     expect(current[0]?.textContent).toContain('Channels');
   });
 
-  it('is DISCRETE: 165 expanded, 48 collapsed, nothing between', () => {
+  it('is DISCRETE: 165 expanded, 72 collapsed, nothing between', () => {
     const { container: expanded } = renderRail({ collapsed: false });
     const { container: collapsed } = renderRail({ collapsed: true });
     expect((expanded.querySelector('[data-testid="menu-rail"]') as HTMLElement).style.width).toBe(
       '165px',
     );
+    // 72, not 48: the collapsed rail keeps each destination's word under its
+    // mark, and 48px fits a glyph and nothing else.
     expect((collapsed.querySelector('[data-testid="menu-rail"]') as HTMLElement).style.width).toBe(
-      '48px',
+      '72px',
     );
   });
 
   /**
-   * REWRITTEN, and the rename records what changed. This used to assert that
-   * LEAVES GO when the rail collapses, and that was survivable only while the
-   * rail opened expanded — collapsing was then a deliberate act by someone who
-   * knew what they were hiding. The rail now opens COLLAPSED, and the shipped
-   * default hangs eight destinations (Tasks, Sessions, Docs, Channels,
-   * Teammates, Memories, Artifacts, Loops) off one caret row: dropping leaves
-   * would make the first paint of the product unable to reach any of them.
+   * REWRITTEN TWICE, and both rewrites are the same correction arriving in two
+   * steps. It first asserted that LEAVES GO when the rail collapses; that was
+   * survivable only while the rail opened expanded, and stopped being so once
+   * the shipped default hung eight destinations (Tasks, Sessions, Docs,
+   * Teammates, Memories, Artifacts, Loops, Files) off one caret row. It then
+   * asserted ICONS ONLY — which kept every destination but made each one
+   * identifiable only by hovering for a tooltip.
    *
-   * What a 48px rail has no room for is the WORD, not the row. So the law the
-   * assertions below hold is the one that was always meant: collapsed renders
-   * ICONS ONLY. Every label goes; nothing navigable goes with it.
+   * The law now is the one that was always meant: collapsed loses the rail's
+   * WIDTH, not its legibility. Every row keeps its word, printed under its
+   * mark; what goes is the group eyebrow, the caret and the inline counts.
    */
-  it('collapsed renders icons only — labels and headers go, destinations do not', () => {
-    const { container, queryByText, getByRole } = renderRail({ collapsed: true });
-    // No WORDS anywhere: not on the row, not on the leaf.
-    expect(queryByText('Tasks')).toBeNull();
-    expect(container.querySelectorAll('.shell-rail__label')).toHaveLength(0);
+  it('collapsed keeps every word under its icon — chrome goes, destinations do not', () => {
+    const { container, getByText, getByRole } = renderRail({ collapsed: true });
+    // The caption is the SAME element the expanded rail uses; only its
+    // geometry changes, which is what keeps the two states from drifting.
+    const labels = [...container.querySelectorAll('.shell-rail__label')].map((n) => n.textContent);
+    expect(labels).toContain('Workspace');
+    expect(labels).toContain('Tasks');
+    getByText('Settings');
+    // What a narrow rail genuinely has no room for: the printed group eyebrow
+    // (it degrades to a divider) and the caret.
     expect(container.querySelectorAll('.shell-rail__header')).toHaveLength(0);
-    // Group headers degrade to dividers rather than vanishing.
+    expect(container.querySelectorAll('.shell-rail__caret')).toHaveLength(0);
     expect(container.querySelectorAll('.shell-rail__divider').length).toBeGreaterThan(0);
     // The leaf is still THERE, still navigable, and still says what it is to
-    // assistive tech — an icon whose only name is a tooltip is not a control.
+    // assistive tech — the composed name carries the counts the caption cannot.
     expect(container.querySelectorAll('.shell-rail__leaf').length).toBeGreaterThan(0);
     expect(getByRole('button', { name: /^Tasks/ })).toBeTruthy();
   });

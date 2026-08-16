@@ -55,7 +55,12 @@ async function openTasksScreen() {
   await waitFor(() => view.getByTestId('home-page'));
   fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
   const rail = within(view.getByTestId('menu-rail'));
-  fireEvent.click(rail.getByLabelText('Expand Workspace'));
+  /* The caret is an EXPANDED-rail control and the rail now boots collapsed,
+     where every leaf is drawn regardless of it. Click it when it is there,
+     skip it when it is not: Tasks is reachable either way, which is exactly
+     what the collapsed rail promises. */
+  const caret = rail.queryByLabelText('Expand Workspace');
+  if (caret) fireEvent.click(caret);
   fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
   await waitFor(() => view.getByTestId('entity-view'));
   return view;

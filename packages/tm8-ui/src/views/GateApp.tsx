@@ -330,23 +330,22 @@ export function GateApp(props: GateAppProps = {}) {
   /**
    * THE MENU RAIL STARTS COLLAPSED, and remembers what the viewer did next.
    *
-   * Two halves, both asked for. The rail already rendered ICON-ONLY at 48px
-   * when collapsed — every view and kind row carries a vector icon precisely so
-   * that state is legible — but it opened expanded on every load and the choice
-   * to collapse it was unpersisted `useState`, so every reload threw it away.
-   * Collapsed-by-default gives the screen its 117px back; persistence is what
-   * makes the ⌘\ toggle and the footer control mean something beyond this tab.
-   *
    * The solver reads this as `menuCollapsedByUser` and never re-expands a rail
    * the viewer collapsed (geometry.ts §5.1 step 1) — so the default has to be a
    * PREFERENCE rather than a solved state, which is why it lives here and not
    * in the geometry module.
+   *
+   * Revision 11 flipped this to EXPANDED with an argument that only held while
+   * COLLAPSED MEANT ICON-ONLY: a rail of unlabelled 48px glyphs is a rail you
+   * have to learn, so paying 117px for legible navigation was the better deal.
+   * The collapsed rail now keeps every word under its mark at 72px (owner
+   * ruling, 2026-08-16), which settles that trade the other way — the whole map
+   * is still readable on first paint and the screen keeps 93px.
+   *
+   * The viewer's persisted choice still wins; this is only where a fresh
+   * profile starts.
    */
-  /* Revision 11 flips the default back to EXPANDED: the redesigned rail is ~8
-     rows plus the identity block, so the 117px it costs buys the whole
-     navigation being legible on first paint. The viewer's persisted choice
-     still wins — this is only the value a fresh profile starts from. */
-  const [menuCollapsed, setMenuCollapsed] = usePanelFlag('menu-rail-collapsed', false);
+  const [menuCollapsed, setMenuCollapsed] = usePanelFlag('menu-rail-collapsed', true);
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);

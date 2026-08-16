@@ -492,7 +492,10 @@
   background: var(--pn-line);
 }
 
-/* Collapsed 48px: icons only, counts demoted to corner marks. */
+/* Collapsed 72px: the icon leads and its WORD sits underneath, counts demoted
+   to corner marks. The row flips from a horizontal strip to a centred column —
+   that flip is the whole mechanism, which is why `MenuRail` renders the same
+   `.shell-rail__label` element in both states and branches on nothing. */
 .cv2-root .shell-rail--collapsed .shell-rail__scroll {
   display: flex;
   flex-direction: column;
@@ -523,12 +526,32 @@
 }
 .cv2-root .shell-rail--collapsed .shell-rail__server-divider { width: 26px; margin: 6px auto; }
 .cv2-root .shell-rail--collapsed .shell-rail__row {
-  width: 40px;
-  height: 38px;
+  width: 64px;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  padding: 0;
+  gap: 3px;
+  /* Auto height: the caption may take a second line ("Pull requests"), and a
+     fixed height would clip the half of the word that makes the row legible. */
+  min-height: 48px;
+  padding: 5px 2px;
   border-left: 0;
   border-radius: 7px;
+}
+/* The caption. Two lines at most: the vocabulary's longest entries are two
+   words ("Pull requests", "Voice channels", "Interaction profiles") and a
+   third line would make one row twice the height of its neighbours. */
+.cv2-root .shell-rail--collapsed .shell-rail__label {
+  flex: none;
+  width: 100%;
+  font-size: 9.5px;
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 .cv2-root .shell-rail--collapsed .shell-rail__row--active {
   background: var(--pn-active);
@@ -549,22 +572,32 @@
   font-size: 14px;
 }
 /* Collapsed, a LEAF is just a row one shade quieter. The 34px indent it
-   carries expanded exists to say "this belongs to the row above"; on a 48px
+   carries expanded exists to say "this belongs to the row above"; on a centred
    icon rail there is no indent to say it with, so the leaf takes the row's own
    geometry and keeps only a slightly dimmer icon to mark the depth. Without
    this it would keep its `padding-left: 34px` and paint its icon off the edge
    of the rail. */
 .cv2-root .shell-rail--collapsed .shell-rail__leaf {
-  width: 40px;
-  height: 32px;
+  width: 64px;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  padding: 0;
+  gap: 3px;
+  min-height: 46px;
+  padding: 4px 2px;
   border-left: 0;
   border-radius: 7px;
 }
 .cv2-root .shell-rail--collapsed .shell-rail__leaf .shell-rail__icon {
   font-size: 12.5px;
   color: var(--pn-ink-3);
+}
+/* Stated explicitly rather than left to source order: the expanded rule
+   `.shell-rail__leaf .shell-rail__label` has the same specificity as the
+   collapsed caption's, so which one wins would otherwise depend on where in
+   this file each happens to sit. */
+.cv2-root .shell-rail--collapsed .shell-rail__leaf .shell-rail__label {
+  font-size: 9px;
 }
 .cv2-root .shell-rail--collapsed .shell-rail__leaf--active {
   background: var(--pn-active);
@@ -604,12 +637,17 @@
    pulse here would claim streaming knowledge the UI cannot have. (2) §13 —
    status is never conveyed by motion alone. (3) C8/L10 — status is colour +
    word, so a bare dot cannot carry it.
-   It sits BOTTOM-right because the badge corner owns top-right: two numeric
-   pills 1-2px apart were unreadable, and a row may legitimately carry both. */
+   It sits TOP-LEFT. It used to sit bottom-right, which was correct while the
+   collapsed row was a bare 48px square: the badge corner owns top-right and two
+   numeric pills 1-2px apart are unreadable, so the far corner was the only
+   other free one. The caption now OCCUPIES the bottom of the row, and a pill
+   pinned there lands on top of the word — measured, on `Sessions`. Both marks
+   therefore ride the ICON BAND, one at each end of it, and the caption's line
+   is left clear across the row's full width. */
 .cv2-root .shell-rail__live-corner {
   position: absolute;
-  bottom: 3px;
-  right: 3px;
+  top: 4px;
+  left: 3px;
   font-family: var(--pn-mono);
   /* T0-1 type floor is 8.5px; the canvas uses 8px nowhere. */
   font-size: 8.5px;
@@ -622,7 +660,10 @@
 }
 
 /* Visually hidden, still announced. Carries the WORD that C8/L10 requires
-   beside a status colour where the 48px rail has no room to print it. */
+   beside a status colour. The collapsed rail now prints the DESTINATION's word
+   under its icon, but the corner marks are still bare numbers on a colour —
+   "3" in green is not "3 live" — so this is still the only place that word is
+   said. */
 .cv2-root .shell-vh {
   position: absolute;
   width: 1px;

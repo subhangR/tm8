@@ -182,7 +182,7 @@ describe('the entity screen resizes its detail column', () => {
 });
 
 describe('the menu rail', () => {
-  it('opens EXPANDED (r11), and collapsing keeps every destination reachable', async () => {
+  it('opens COLLAPSED, with every destination named and reachable', async () => {
     const view = render(<GateApp />);
     await waitFor(() => view.getByTestId('home-page'));
     /* Revision 12: the rail is the ACTIVE TAB's contents, so the Workspace
@@ -190,50 +190,57 @@ describe('the menu rail', () => {
     fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
     await waitFor(() => view.getByTestId('menu-rail'));
     const rail = view.getByTestId('menu-rail');
-    /* Revision 11 flipped the default back to expanded: the redesigned rail is
-       a handful of rows, so first paint shows the whole map. */
-    expect(rail.dataset.collapsed).toBe('false');
+    /* A fresh profile starts collapsed (owner ruling 2026-08-16) — which is
+       only a defensible default because the collapsed rail still prints every
+       word, so the whole map is legible on first paint. */
+    expect(rail.dataset.collapsed).toBe('true');
 
-    fireEvent.click(view.getByRole('button', { name: 'Collapse menu rail' }));
-    await waitFor(() => expect(rail.dataset.collapsed).toBe('true'));
-
-    // Icons only — no words anywhere in the rail…
-    expect(rail.querySelectorAll('.shell-rail__label')).toHaveLength(0);
-    // …and yet the caret leaves are still there, still named, still navigable
-    // — collapsed shows EVERY leaf regardless of caret state, because the
+    // The caret leaves are there, named, and navigable WITHOUT opening a caret
+    // — collapsed shows every leaf regardless of caret state, because the
     // caret control itself only renders expanded. Without this pairing a
-    // closed caret would strand its children at 48px.
+    // closed caret would strand its children on the shipped default.
+    const captions = [...rail.querySelectorAll('.shell-rail__label')].map((n) => n.textContent);
+    expect(captions).toContain('Tasks');
+    expect(captions).toContain('Docs');
     expect(within(rail).getByRole('button', { name: /^Tasks/ })).toBeTruthy();
-    expect(within(rail).getByRole('button', { name: /^Docs/ })).toBeTruthy();
 
     fireEvent.click(within(rail).getByRole('button', { name: /^Tasks/ }));
     await waitFor(() => view.getByTestId('entity-view'));
 
+    // And the toggle still works in the other direction.
+    fireEvent.click(view.getByRole('button', { name: 'Expand menu rail' }));
+    await waitFor(() => expect(rail.dataset.collapsed).toBe('false'));
+
     view.unmount();
   });
 
-  it('remembers being collapsed — the choice outlives the tab', async () => {
+  it('remembers being EXPANDED — the choice outlives the tab', async () => {
+    /* The direction is deliberate. Collapsed is now the shipped default, so a
+       walk that collapses and then finds a collapsed rail proves nothing: it
+       passes identically against a flag nothing persists. Expanding is the
+       choice that DIFFERS from the default, so it is the only one whose
+       survival is evidence. */
     const first = render(<GateApp />);
     await waitFor(() => first.getByTestId('home-page'));
     /* Revision 13 (conversation-axis ruling): the landing surface belongs to
-       no group, so there is no rail there to collapse. The walk starts on a
-       tab that HAS one — which is also what makes the second boot below land
+       no group, so there is no rail there to toggle. The walk starts on a tab
+       that HAS one — which is also what makes the second boot below land
        somewhere the remembered choice is observable. */
     fireEvent.click(within(first.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
     await waitFor(() => first.getByTestId('menu-rail'));
-    fireEvent.click(first.getByRole('button', { name: 'Collapse menu rail' }));
+    fireEvent.click(first.getByRole('button', { name: 'Expand menu rail' }));
     await waitFor(() =>
-      expect(first.getByTestId('menu-rail').dataset.collapsed).toBe('true'),
+      expect(first.getByTestId('menu-rail').dataset.collapsed).toBe('false'),
     );
     first.unmount();
 
-    expect(window.localStorage.getItem('tm8ui.panel-flag.menu-rail-collapsed')).toBe('1');
+    expect(window.localStorage.getItem('tm8ui.panel-flag.menu-rail-collapsed')).toBe('0');
 
     // The address left behind by the walk outranks last-place at boot (R3), so
     // the second mount comes up on the Work tab with its rail already drawn.
     const second = render(<GateApp />);
     await waitFor(() => second.getByTestId('menu-rail'));
-    expect(second.getByTestId('menu-rail').dataset.collapsed).toBe('true');
+    expect(second.getByTestId('menu-rail').dataset.collapsed).toBe('false');
     second.unmount();
   });
 });
