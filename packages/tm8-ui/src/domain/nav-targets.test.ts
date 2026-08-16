@@ -38,6 +38,14 @@ const ALL_ROUTE_VIEWS: NavView[] = [
   { view: 'files' },
   { view: 'git' },
   { view: 'messages' },
+  /* `board` was missing from this list — a pre-existing gap, added here
+     because a hand-written exhaustiveness list that omits a member silently
+     stops guarding it, which is the one failure mode this list has. */
+  { view: 'board' },
+  /* New Session (2026-08-16): the create screen. The ONLY member whose
+     landing has `target: null` — a real screen with no rail seat — so it is
+     also the case that proves the two nulls are distinguished. */
+  { view: 'newSession' },
   { view: 'settings', section: null },
   { view: 'kind', slug: 'tasks', mode: null, q: null },
   { view: 'entity', entityId: ENTITY, origin: { slug: 'tasks', mode: null } },

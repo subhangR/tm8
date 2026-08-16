@@ -258,6 +258,10 @@ function parseTarget(
     case 'board':
       /* The task Board (2026-08-16) — same flat whole-centre posture. */
       return { view: 'board' };
+    case 'new-session':
+      /* Hyphenated in the URL, camel in the union: the segment is read by
+         people and the member is read by TypeScript. */
+      return { view: 'newSession' };
     case 'voice': {
       /* Shaped like `channel/{id}`, because a voice room is addressed the same
          way one channel is: an id in the path, no collection view behind it. A
@@ -334,6 +338,8 @@ function pathOf(route: Route): string {
       return `${base}/messages`;
     case 'board':
       return `${base}/board`;
+    case 'newSession':
+      return `${base}/new-session`;
     case 'voice':
       /* Must match `registry.ts`'s voice `routeBuilder` exactly — that builder
          is the authority and has been emitting this shape all along. */

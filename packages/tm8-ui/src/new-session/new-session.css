@@ -1,0 +1,366 @@
+/*
+ * NEW SESSION — the create screen and its transition into a live terminal.
+ *
+ * THE ONE HARD RULE IN THIS FILE, and the reason for several odd-looking
+ * choices: the terminal host must be FULL-SIZE AND VISIBLE from the moment it
+ * mounts. `sendResize` (terminal/LiveTerminal.tsx:212-216) returns WITHOUT
+ * scheduling a retry when the host has a zero-size rect or computed
+ * `visibility: hidden`, delegating recovery to a ResizeObserver that a
+ * visibility change does not even fire. So this transition animates with
+ * `opacity` and `transform` ONLY. No `display: none`, no `visibility: hidden`,
+ * no zero height, no `scale(0)` on any ancestor of `.term-host` — every one of
+ * those is a blank terminal on the money shot.
+ *
+ * `box-sizing` is set explicitly wherever padding meets a width: this package
+ * has no border-box reset (see the textarea rule and `.nsx-composer`).
+ */
+
+/* ---------------------------------------------------------------- the stage */
+
+.nsx-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* The composer half. Centred as a PAIR with the greeting — the same reading
+   as Chat Home's empty state: one invitation in the middle of the canvas,
+   rather than a heading floating above a box parked at the bottom. */
+.nsx-stage {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 0;
+  padding: var(--pn-space-3);
+  /* Composited properties only — see the file header. */
+  transition: opacity 220ms cubic-bezier(0.4, 0, 0.2, 1),
+              transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* THE LIFT. On submit the stage recedes upward and back, so the composer
+   reads as handing off to what replaces it rather than being deleted.
+   `pointer-events: none` because it is still painted while fading. */
+.nsx-root[data-phase='minting'] .nsx-stage,
+.nsx-root[data-phase='spawning'] .nsx-stage,
+.nsx-root[data-phase='attaching'] .nsx-stage,
+.nsx-root[data-phase='live'] .nsx-stage {
+  opacity: 0;
+  transform: translateY(-14px) scale(0.985);
+  pointer-events: none;
+}
+
+.nsx-greeting {
+  width: min(760px, calc(100% - 32px));
+  margin: 0 auto var(--pn-space-2);
+  color: var(--pn-ink);
+  font: 600 20px/1.3 var(--pn-ui);
+}
+
+.nsx-greeting__sub {
+  margin: 4px 0 0;
+  color: var(--pn-ink-4);
+  font: 12px/1.5 var(--pn-ui);
+  font-weight: 400;
+}
+
+/* -------------------------------------------------------------- the composer */
+
+.nsx-composer-wrap {
+  flex: none;
+  width: min(760px, calc(100% - 32px));
+  margin: 0 auto;
+  /* Query container so the foot degrades by the COMPOSER's width, not the
+     viewport's. Same reasoning as `.tch-composer-wrap`. */
+  container-type: inline-size;
+}
+
+.nsx-composer {
+  box-sizing: border-box;
+  /* VISIBLE, not hidden: the skill popover pins above the field from
+     `.ri-host`, and `hidden` clips an absolutely positioned descendant. */
+  overflow: visible;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-md);
+  transition: border-color 140ms ease, box-shadow 220ms ease;
+}
+
+.nsx-composer:focus-within {
+  border-color: var(--pn-brand);
+  box-shadow: var(--pn-sh-md);
+}
+
+.nsx-composer[data-busy] { border-color: color-mix(in srgb, var(--pn-brand) 45%, var(--pn-line-2)); }
+
+.nsx-composer textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 76px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--pn-ink);
+  font: 13px/1.45 var(--pn-ui);
+  padding: 12px 13px 4px;
+}
+
+.nsx-composer textarea::placeholder { color: var(--pn-ink-4); }
+
+.nsx-composer .ri-attachments { padding: 9px 11px 0; }
+
+/* The live title. Monospace because it is a VALUE the system derived, not
+   prose the user wrote — the same signal the resolved line uses. */
+.nsx-title-preview {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+  margin: 0;
+  padding: 2px 13px 0;
+  overflow: hidden;
+}
+
+.nsx-title-preview__label {
+  flex: none;
+  color: var(--pn-ink-4);
+  font: 9px/1.6 var(--pn-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nsx-title-preview__value {
+  overflow: hidden;
+  color: var(--pn-ink-2);
+  font: 11px/1.6 var(--pn-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nsx-composer__foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 4px 7px 7px 11px;
+}
+
+.nsx-workdir { display: flex; gap: 4px; }
+
+.nsx-chip {
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-4);
+  font: 11px var(--pn-ui);
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+
+.nsx-chip:hover:not(:disabled) { color: var(--pn-ink); }
+
+.nsx-chip--active {
+  border-color: var(--pn-brand);
+  background: color-mix(in srgb, var(--pn-brand) 12%, transparent);
+  color: var(--pn-ink);
+}
+
+/* A disabled chip must LOOK disabled: `.set-chip` shipped without this once
+   and a dead control read as merely unselected. */
+.nsx-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.nsx-send {
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  /* Exactly `.tch-send`'s pair: the card colour ON the deeper brand, which is
+     how this package draws a primary button in both themes. A literal white
+     would also trip §14's package-wide ban on raw hex in stylesheets. */
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
+  font: 600 12px var(--pn-ui);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.nsx-send:active:not([aria-disabled='true']) { transform: scale(0.97); }
+.nsx-send[aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
+
+.nsx-resolved {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 7px 2px 0;
+  color: var(--pn-ink-4);
+  font: 10px/1.5 var(--pn-mono);
+}
+
+.nsx-resolved__arrow { color: var(--pn-brand); }
+.nsx-resolved__dot { opacity: 0.5; }
+
+.nsx-refusal {
+  margin: 6px 2px 0;
+  color: var(--pn-wait);
+  font: 10px/1.5 var(--pn-ui);
+}
+
+/* ------------------------------------------------------- the terminal layer */
+
+/*
+ * FULL-SIZE AND VISIBLE FROM FIRST PAINT. It is stacked UNDER the veil and
+ * revealed by fading the veil out — never by toggling this element's
+ * visibility or size. See the file header for why that distinction is the
+ * whole design.
+ */
+.nsx-terminal-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  opacity: 0;
+  transform: scale(0.985);
+  transition: opacity 260ms cubic-bezier(0.4, 0, 0.2, 1),
+              transform 260ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* Not interactive until it is the thing on screen, so a click during the
+     transition cannot land in a terminal the user cannot yet see. */
+  pointer-events: none;
+}
+
+/* The terminal becomes the screen. `scale(1)` lands it, and only now does it
+   take pointer events. */
+.nsx-root[data-phase='live'] .nsx-terminal-layer {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* While spawning, the host is already painted at full size behind the veil —
+   dimmed rather than hidden, so its geometry is real and measurable. */
+.nsx-root[data-phase='spawning'] .nsx-terminal-layer,
+.nsx-root[data-phase='attaching'] .nsx-terminal-layer {
+  opacity: 0.35;
+  transform: scale(0.995);
+}
+
+/* ---------------------------------------------------------------- the veil */
+
+/*
+ * The staged status. Every beat is driven by a REAL milestone — never a
+ * timer — so a slow spawn stretches this instead of completing into an empty
+ * terminal. That honesty is the point: a transition that finishes early is
+ * worse than no transition, because it claims something that has not happened.
+ */
+.nsx-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+
+.nsx-root[data-phase='minting'] .nsx-veil,
+.nsx-root[data-phase='spawning'] .nsx-veil,
+.nsx-root[data-phase='attaching'] .nsx-veil {
+  opacity: 1;
+}
+
+.nsx-veil__title {
+  max-width: min(560px, calc(100% - 48px));
+  margin: 0;
+  color: var(--pn-ink);
+  font: 13px/1.5 var(--pn-mono);
+  text-align: center;
+  animation: nsx-rise 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.nsx-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nsx-step {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--pn-ink-4);
+  font: 11px/1.6 var(--pn-mono);
+  opacity: 0.45;
+  transition: opacity 200ms ease, color 200ms ease;
+}
+
+.nsx-step[data-state='active'] { opacity: 1; color: var(--pn-ink); }
+.nsx-step[data-state='done'] { opacity: 0.8; color: var(--pn-ink-4); }
+
+.nsx-step__mark {
+  display: inline-block;
+  width: 1ch;
+  color: var(--pn-brand);
+}
+
+/* The active beat breathes. Opacity only — no layout, no paint of a new box. */
+.nsx-step[data-state='active'] .nsx-step__mark {
+  animation: nsx-pulse 1s ease-in-out infinite;
+}
+
+@keyframes nsx-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@keyframes nsx-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* A spawn that is taking unusually long says so rather than pulsing forever. */
+.nsx-veil__slow {
+  margin: 0;
+  color: var(--pn-wait);
+  font: 10px/1.5 var(--pn-ui);
+  animation: nsx-rise 260ms ease both;
+}
+
+.nsx-veil__error {
+  max-width: min(560px, calc(100% - 48px));
+  margin: 0;
+  color: var(--pn-wait);
+  font: 11px/1.55 var(--pn-ui);
+  text-align: center;
+}
+
+/*
+ * MOTION IS A PREFERENCE. Everything above is decorative timing; the state
+ * machine underneath is unchanged, so removing the motion removes nothing but
+ * the motion. The terminal layer still ends up opaque and interactive.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .nsx-stage,
+  .nsx-terminal-layer,
+  .nsx-veil,
+  .nsx-composer {
+    transition-duration: 1ms;
+  }
+  .nsx-veil__title,
+  .nsx-veil__slow { animation: none; }
+  .nsx-step[data-state='active'] .nsx-step__mark { animation: none; opacity: 1; }
+}

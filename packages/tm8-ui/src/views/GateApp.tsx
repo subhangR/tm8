@@ -40,6 +40,7 @@ import { MobileShell } from './MobileShell';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
+import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { NavView } from '../routes';
@@ -601,7 +602,7 @@ export function GateApp(props: GateAppProps = {}) {
     /* Only a kind screen can host one today: `landingOfRoute` produces an
        `openEntity` for the `entity` route alone, and that route's target is
        always a kind. Narrowed rather than assumed. */
-    if (landing.target.type !== 'kind') return;
+    if (!landing.target || landing.target.type !== 'kind') return;
     screenStackStore.getState().open(screenKeyOf.kind(landing.target.ref), landing.openEntity);
   }, [navView, navSpaceId]);
 
@@ -1671,7 +1672,36 @@ export function GateApp(props: GateAppProps = {}) {
               screen renders the designed error state with retry; the rail and
               tab bar above stay live for navigating away. */}
           <CatchBoundary label="view">
-          {data.ready &&
+          {/*
+            NEW SESSION is matched on the ROUTE, not on `activeTarget`, and it
+            is the only arm in this chain that is. That is deliberate: every
+            other screen here is a `MenuViewRef` — a rail destination — and
+            `activeTarget` is derived from `landingOfRoute(...).target`, which
+            can only speak that vocabulary. New Session is reached from a quick
+            action and from the sessions empty state, never from the rail, so
+            making it a `MenuViewRef` would mean a contract enum, a menu
+            revision and a DB migration bought purely to satisfy this lookup —
+            and would then put a seat in the rail nobody asked for.
+            `landingOfRoute` returns `target: null` for it (a real screen with
+            no rail representation), so nothing highlights and no stack is
+            touched, which is exactly right.
+          */}
+          {data.ready && navView.view === 'newSession' ? (
+            <NewSessionScreen
+              spaceId={data.spaceId as SpaceId}
+              commands={data.seam.commands}
+              spawn={data.spawn}
+              launch={data.launch}
+              serverBaseUrl={activeServer.routeBaseUrl}
+              onSessionReady={(sessionId) => {
+                /* REPLACE, not push: the prompt this screen carried has been
+                   consumed, so Back must return where the user came FROM
+                   rather than to a create screen that would re-create it. */
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(sessionId);
+              }}
+            />
+          ) : data.ready &&
             activeTarget?.type === 'entity' &&
             activeTarget.kind === voiceKind.kind ? (
             /* THE MISROUTE FIX. The branch below tested only `type === 'entity'`
