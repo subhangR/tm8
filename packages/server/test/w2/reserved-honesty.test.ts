@@ -136,7 +136,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(162);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(165);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
