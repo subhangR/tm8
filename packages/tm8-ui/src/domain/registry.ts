@@ -1480,7 +1480,12 @@ const ROWS: readonly KindConfig[] = [
      * screen, not in the side panel. The panel's job here is the envelope —
      * type, size, containers — plus the door to the studio.
      */
-    panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'GRAPH' }, COLLECTIONS_BLOCK] },
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'GRAPH' }, COLLECTIONS_BLOCK],
+      /* §15.1: declared fields must be reachable — edit is the door. */
+      primaries: ['edit'],
+    },
     editFields: [
       { target: 'title', label: 'Title', required: true, placeholder: 'Launch flow' },
     ],

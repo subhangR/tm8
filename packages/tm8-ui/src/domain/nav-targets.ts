@@ -304,6 +304,7 @@ export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = nu
         case 'git':
         case 'messages':
         case 'board':
+        case 'craft':
           return { view };
         case 'settings':
           return { view: 'settings', section: null };

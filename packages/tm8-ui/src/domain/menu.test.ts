@@ -33,9 +33,9 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(unrenderableKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([]);
   });
 
-  it('encodes the revision-17 tab row, pinned to the contract spine', () => {
+  it('encodes the revision-18 tab row, pinned to the contract spine', () => {
     // DEFAULT_MENU_GROUP_SPINE is the ONE truth this default and the server
-    // seeder (db/migrations/134, tested by
+    // seeder (db/migrations/137, tested by
     // packages/server/test/db/menu-seeder-parity.pg.test.ts) are both pinned
     // to. Before the spine existed the two carried unjoined hand-copies, and
     // migration 059 dropped the voice group with every suite green — the
@@ -145,7 +145,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(17);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(18);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

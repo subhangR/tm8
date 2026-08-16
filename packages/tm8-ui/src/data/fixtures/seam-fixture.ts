@@ -1261,6 +1261,15 @@ export function createFixtureSeam(): FixtureSeam {
           doesNotEstablish: (c.doesNotEstablish as string) ?? '',
           measuredAt: (c.measuredAt as string | null) ?? null,
         };
+      case 'graph':
+        // Craft P1: counts mirror what the create carried; the row's real
+        // body lives in content, exactly as the server projects it.
+        return {
+          kind: 'graph',
+          graphType: (c.graphType as string) ?? 'entity',
+          nodeCount: Array.isArray(c.nodes) ? c.nodes.length : 0,
+          edgeCount: Array.isArray(c.edges) ? c.edges.length : 0,
+        };
       default:
         throw new CollabError('invalid_input', `kind ${kind} is not client-creatable`);
     }
@@ -2222,6 +2231,24 @@ export function createFixtureSeam(): FixtureSeam {
           ...(input.kind === 'memory' ? { excerpt: derivedTitle } : {}),
           state: defaultStateFor(input),
         });
+        if (input.kind === 'graph') {
+          /* The row IS the graph (Craft P1 R1): the create's content is the
+             body a detail read must hand back, so it cannot be synthesized
+             from state alone the way the light kinds are. */
+          const c = (input.content ?? {}) as Record<string, unknown>;
+          extras.set(s.id, {
+            content: {
+              kind: 'graph',
+              graphType: (c.graphType as string) ?? 'entity',
+              nodes: Array.isArray(c.nodes) ? (c.nodes as never[]) : [],
+              edges: Array.isArray(c.edges) ? (c.edges as never[]) : [],
+              layout: (c.layout as Record<string, { x: number; y: number }>) ?? {},
+              source: (c.source as string | null) ?? null,
+            },
+            connections: clone(NO_CONNECTIONS),
+            capabilities: { ...CAPS_FULL },
+          });
+        }
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
       },

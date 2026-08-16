@@ -73,6 +73,10 @@ export function CraftScreen({
   const refreshList = useCallback(async () => {
     const result = await seam.query({ spaceId, kinds: ['graph'], sort: 'activityAt_desc', limit: 50 });
     setGraphs(result.page.items);
+    /* A studio with nothing selected adopts the first graph that exists —
+       the crafted-from-chat row appears without a manual pick. */
+    const first = result.page.items[0]?.id as EntityId | undefined;
+    if (first !== undefined && selectedRef.current === null) setSelectedId(first);
     return result.page.items;
   }, [seam, spaceId]);
 
