@@ -4,9 +4,9 @@
  *
  * WHY ITS OWN PACKAGE. The prompt must be composed in TWO places that must not
  * depend on each other:
- *   - `@tm8/execution` composes it at SPAWN time and embeds it in the agent's
- *     command line, so the prompt exists at the agent's first token — before it
- *     could possibly run a CLI;
+ *   - `@tm8/execution` composes it at SPAWN time, puts the system half in the
+ *     provider command, and queues the task half through the PTY's verified
+ *     first-turn submit — before the agent could possibly run a CLI;
  *   - `@tm8/cli` composes it for `tm8 worker init`, so an agent can re-read its
  *     own briefing.
  * `@tm8/cli` cannot import `@tm8/execution` (that would drag `node-pty` and
@@ -114,6 +114,11 @@ export interface PromptManifest {
         priority?: string | undefined;
         workStatus?: string | undefined;
         acceptanceCriteria?: readonly unknown[] | undefined;
+        attachments?: ReadonlyArray<{
+          fileEntityId: string;
+          name: string;
+          mime?: string | null | undefined;
+        }> | undefined;
         /** Thread-derived tasks (064/099): the live thread's root and channel. */
         threadRootMessageId?: string | null | undefined;
         threadChannelId?: string | null | undefined;
@@ -882,6 +887,7 @@ export function composePrompt(
       destinationSessionId: sessionId ?? 'none',
       replyAnchorId: coordinatorSessionId,
       body,
+      attachments: task.attachments,
       threadRootMessageId: task.threadRootMessageId ?? null,
       threadChannelId: task.threadChannelId ?? null,
     }));

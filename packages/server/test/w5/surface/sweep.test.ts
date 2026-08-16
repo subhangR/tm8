@@ -572,7 +572,13 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // a file the human attached reaches the teammate instead of stopping at
     // the chip. MEASURED on this tree, never arithmetic:
     // `ls db/migrations/*.sql | wc -l` = 124.
-    expect(server.appliedMigrations.length).toBe(124);
+    // 124 -> 126 (2026-08-16): 134 makes attachment manifests canonical on
+    // session-message route rows; 135 removes the wake-budget table, counter,
+    // reset/cleanup functions and copied delivery pin after re-deriving the
+    // surviving row-level concurrency contract. This is a fresh measurement of
+    // THIS tree, not previous-plus-two: `ls db/migrations/*.sql | wc -l` = 126.
+    // Whole-chain digest measured by the command above: cbd409964ce31245.
+    expect(server.appliedMigrations.length).toBe(126);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

@@ -19,10 +19,9 @@ const CLAIM_KEYS = [
   'deliveryId',
   'messageId',
   'targetWorkSessionId',
-  'reservationVersion',
   'expiresAt',
 ] as const;
-const BINDING_KEYS = CLAIM_KEYS.slice(0, 4);
+const BINDING_KEYS = CLAIM_KEYS.slice(0, 3);
 const INVALID_CLAIMS_MESSAGE = 'invalid system delivery principal claims';
 
 const mintedPrincipals = new WeakSet<object>();
@@ -42,10 +41,6 @@ function isOpaqueId(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.trim() === value;
 }
 
-function isReservationVersion(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 0;
-}
-
 function isExpiry(value: unknown): value is string {
   return typeof value === 'string' && Number.isFinite(Date.parse(value));
 }
@@ -57,7 +52,6 @@ function isClaims(value: unknown): value is SystemDeliveryPrincipalClaims {
     isOpaqueId(value.deliveryId) &&
     isOpaqueId(value.messageId) &&
     isOpaqueId(value.targetWorkSessionId) &&
-    isReservationVersion(value.reservationVersion) &&
     isExpiry(value.expiresAt)
   );
 }
@@ -68,8 +62,7 @@ function isBinding(value: unknown): value is SystemDeliveryPrincipalBinding {
     hasExactOwnKeys(value, BINDING_KEYS) &&
     isOpaqueId(value.deliveryId) &&
     isOpaqueId(value.messageId) &&
-    isOpaqueId(value.targetWorkSessionId) &&
-    isReservationVersion(value.reservationVersion)
+    isOpaqueId(value.targetWorkSessionId)
   );
 }
 
@@ -89,7 +82,6 @@ export function mintSystemDeliveryPrincipal(
     deliveryId: input.deliveryId,
     messageId: input.messageId,
     targetWorkSessionId: input.targetWorkSessionId,
-    reservationVersion: input.reservationVersion,
     expiresAt: input.expiresAt,
   });
   const principal = Object.freeze({
@@ -131,7 +123,6 @@ export function isSystemDeliveryPrincipalFor(
     Date.parse(candidateClaims.expiresAt) > nowMs &&
     candidateClaims.deliveryId === expected.deliveryId &&
     candidateClaims.messageId === expected.messageId &&
-    candidateClaims.targetWorkSessionId === expected.targetWorkSessionId &&
-    candidateClaims.reservationVersion === expected.reservationVersion
+    candidateClaims.targetWorkSessionId === expected.targetWorkSessionId
   );
 }

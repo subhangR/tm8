@@ -1149,7 +1149,7 @@ There is no `tm8 push`. Git push is not a graph operation. A governed product op
 3. `entities.commands.work(status='done')` returns `invariant_violation/use_complete_command` and creates no status, completion, relationship, activity, or award change.
 4. `task complete` with incomplete criteria refuses atomically; with satisfied criteria it alone writes `done`, completer relationships, activity and awards.
 5. A 16-anchor × 16-attachment batch is refused by the 64-edge product bound before any row; a product of exactly 64 succeeds when all other limits pass.
-6. Two concurrent explicit reply wakes at the cap serialize on one durable wake-budget row; at most one reserves a write.
+6. Two concurrent reservations for the same `(message,target,attempt)` produce one durable delivery identity; concurrent claim/settle calls serialize on that row.
 7. Generic edge mutation refuses message-owned attachments and materialized `selected_profile`; their guarded owner/repair commands remain functional.
 8. Member-personal inbox queries exclude Teammate-recipient rows owned by that Member; owner-inspection and Teammate feeds retain independent read state.
 

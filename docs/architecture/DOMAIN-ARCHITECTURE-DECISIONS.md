@@ -383,7 +383,7 @@ The post-freeze amendment dossier must define exact DDL for:
 - `interaction_profile` kind registry row and restricted detail/lifecycle storage
 - `interaction_profiles`, `work_session_interaction_pins`, and `work_session_view_preferences`
 - guarded `participates_in` and immutable recorder-owned `authored_from` edge rows, plus nullable `messages.message_batch_id`
-- `session_message_deliveries` plus unordered-pair `session_wake_budgets` with row-locked reservation/reset/cleanup
+- `session_message_deliveries` with unique logical-attempt identity and row-locked claim/settle transitions; the former unordered-pair wake budget was retired by migrations `120`/`135`
 - nullable `notifications.recipient_team_member_id` plus recipient/read-state indexes
 - `in_project` and `shared_into` edge registry rows with origin guards
 - Project projection materializer functions
@@ -468,7 +468,7 @@ This is implementation status, not a reduction of the target contract.
 | Terminal | Execution and terminal transplant exists | TerminalPool-backed work-session Content renderer |
 | Chat/feed | One message/activity baseline; no `entities.feed` | One-store Chat/Discussion projections with versioned named scopes; request-only `default` resolves to a concrete name and is never pinnable |
 | Interaction Profile | Absent | Restricted entity + immutable resolved session pin; static templates remain registry assets |
-| Message delivery | Public `execution.prompt` handler exists; no durable delivery/budget tables | Stored-first messages, internal-only prompt adapter, durable delivery attempts and universal unordered-pair budget |
+| Message delivery | Public `execution.prompt` handler exists; no durable delivery table | Stored-first messages, internal-only prompt adapter, and durable delivery attempts; the former unordered-pair budget was retired by `120`/`135` |
 | Share to agent | Prompt/composer mechanics only | At-most-once typed handoff command and durable record |
 | Remote | Not built | Phase-2 separate design; local domain unchanged |
 

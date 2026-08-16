@@ -256,6 +256,8 @@ export interface TaskAssignmentFacts {
   body: string;
   truncated?: boolean;
   fetchRef?: string | null;
+  /** Files attached directly to the task; manifest identity only, never bytes. */
+  attachments?: readonly SessionInputAttachment[];
   /**
    * When the task was DERIVED from a thread message (064/099): the thread's
    * root message id, rendered into <source>/<thread> so the assignment names
@@ -268,12 +270,14 @@ export interface TaskAssignmentFacts {
 
 export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
   const replyAnchorId = f.replyAnchorId ?? f.taskId;
+  const attachments = attachmentManifest(f.attachments ?? []);
   const control = [
     `<trusted_control type="tm8.session-input" version="1" kind="task_assignment" message_id="${attr(f.messageId)}" message_batch_id="none" delivery_attempt_id="none">`,
     `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution ?? 'recorded_only'}" />`,
     `  <to session_id="${attr(f.destinationSessionId)}" />`,
     `  <source anchor_id="${attr(f.taskId)}" anchor_kind="task" message_id="${attr(f.threadRootMessageId)}"${f.threadChannelId ? ` channel_id="${attr(f.threadChannelId)}"` : ''} />`,
     '  <context />',
+    ...attachments.control,
     `  <thread parent_message_id="none" root_message_id="${attr(f.threadRootMessageId)}" />`,
     `  <task id="${attr(f.taskId)}" version="${attr(f.taskVersion)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/send" anchor_id="${attr(replyAnchorId)}" parent_message_id="none" />`,
@@ -286,7 +290,8 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
     ...(f.truncated === undefined ? {} : { truncated: f.truncated }),
     ...(f.fetchRef === undefined ? {} : { fetchRef: f.fetchRef }),
   });
-  return `${control}\n${data}`;
+  const attachmentNames = attachments.names === '' ? '' : `\n${attachments.names}`;
+  return `${control}\n${data}${attachmentNames}`;
 }
 
 // -- §14.4 incoming message ---------------------------------------------------
@@ -338,13 +343,11 @@ export interface IncomingMessageFacts {
 /**
  * One attached file, as the delivery names it.
  *
- * `name` is AUTHOR-CONTROLLED and still rides in the trusted block, as an
- * escaped attribute — the same treatment §18 already gives a skill's `name` and
- * a teammate's roster name. What makes that safe is the split it preserves: the
- * block carries the file's IDENTITY (a validated entity id, its declared mime,
- * the name it was uploaded under), never a byte of its CONTENT. Content is
- * fetched later, by a command the agent chooses to run, and arrives as tool
- * output — untrusted, like every other read.
+ * `name` is AUTHOR-CONTROLLED. §18.2 explicitly classifies user-supplied labels
+ * and paths as untrusted, so names render in a sibling `attachment-names`
+ * untrusted-data block. The control manifest carries only server-validated
+ * entity ids and declared mime values. File CONTENT is fetched later, by a
+ * command the agent chooses to run, and arrives as untrusted tool output.
  */
 export interface SessionInputAttachment {
   fileEntityId: string;
@@ -369,28 +372,36 @@ const PARENT_EXCERPT_MAX_CHARS = 1500;
 const ATTACHMENT_MANIFEST_MAX = 16;
 const ATTACHMENT_NAME_MAX_CHARS = 200;
 
-function attachmentsBlock(f: IncomingMessageFacts): string[] {
-  const all = f.attachments ?? [];
-  if (all.length === 0) return ['  <attachments count="0" />'];
+function attachmentManifest(all: readonly SessionInputAttachment[]): {
+  control: string[];
+  names: string;
+} {
+  if (all.length === 0) return { control: ['  <attachments count="0" />'], names: '' };
   const shown = all.slice(0, ATTACHMENT_MANIFEST_MAX);
   const omitted = all.length - shown.length;
   const open =
     `  <attachments count="${all.length}"` +
     (omitted > 0 ? ` omitted="${omitted}"` : '') +
     ' fetch_with="tm8 file download &lt;file-entity-id&gt; --output &lt;path&gt;">';
-  return [
-    open,
-    ...shown.map((file) => {
+  const named = shown.map((file) => {
       const name = file.name.length > ATTACHMENT_NAME_MAX_CHARS
         ? `${file.name.slice(0, ATTACHMENT_NAME_MAX_CHARS)}…`
         : file.name;
-      return `    <file entity_id="${attr(file.fileEntityId)}" name="${attr(name)}" mime="${attr(file.mime)}" />`;
-    }),
-    '  </attachments>',
-  ];
+      return { fileEntityId: file.fileEntityId, name };
+    });
+  return {
+    control: [
+      open,
+      ...shown.map((file) =>
+        `    <file entity_id="${attr(file.fileEntityId)}" mime="${attr(file.mime)}" />`),
+      '  </attachments>',
+    ],
+    names: untrustedData({ type: 'attachment-names', body: JSON.stringify(named) }),
+  };
 }
 
 export function incomingMessageInjection(f: IncomingMessageFacts): string {
+  const attachments = attachmentManifest(f.attachments ?? []);
   const context = f.contextAnchors?.length
     ? [
         '  <context>',
@@ -405,7 +416,7 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
     `  <to session_id="${attr(f.destinationSessionId)}" />`,
     `  <source anchor_id="${attr(f.sourceAnchorId)}" anchor_kind="${attr(f.sourceAnchorKind)}" message_id="${attr(f.sourceMessageId)}" />`,
     ...context,
-    ...attachmentsBlock(f),
+    ...attachments.control,
     `  <thread parent_message_id="${attr(f.threadParentMessageId)}" root_message_id="${attr(f.threadRootMessageId ?? f.sourceMessageId)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/reply" context_message_id="${attr(f.messageId)}" anchor_id="${attr(f.sourceAnchorId)}" parent_message_id="${attr(f.sourceMessageId)}" />`,
     `  <delivery transport="pty" stored="true" attempt="${attr(f.deliveryAttemptNo)}" status_source="session_message_deliveries" />`,
@@ -417,6 +428,7 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
     ...(f.truncated === undefined ? {} : { truncated: f.truncated }),
     ...(f.fetchRef === undefined ? {} : { fetchRef: f.fetchRef }),
   });
+  const attachmentNames = attachments.names === '' ? '' : `\n${attachments.names}`;
   let parent = '';
   if (f.parentBody !== undefined && f.parentBody !== '') {
     const cut = f.parentBody.length > PARENT_EXCERPT_MAX_CHARS;
@@ -430,7 +442,10 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
       },
     })}`;
   }
-  return assertWithinBudget('incomingMessageInjection', `${control}\n${data}${parent}`);
+  return assertWithinBudget(
+    'incomingMessageInjection',
+    `${control}\n${data}${attachmentNames}${parent}`,
+  );
 }
 
 // -- §14.6 entity handoff -----------------------------------------------------

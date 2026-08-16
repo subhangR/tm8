@@ -38,7 +38,6 @@ export interface SystemDeliveryPrincipalClaims {
   readonly deliveryId: string;
   readonly messageId: string;
   readonly targetWorkSessionId: string;
-  readonly reservationVersion: number;
   readonly expiresAt: string;
 }
 
@@ -47,7 +46,6 @@ export interface SystemDeliveryPrincipalBinding {
   readonly deliveryId: string;
   readonly messageId: string;
   readonly targetWorkSessionId: string;
-  readonly reservationVersion: number;
 }
 
 /*

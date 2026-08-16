@@ -144,6 +144,7 @@ interface TaskRow {
   priority: string;
   work_status: string;
   acceptance_criteria: unknown;
+  attachments: unknown;
   /** Set when the task was derived from a thread message (064/099): the
    * thread's root message and the channel it lives on, for the prompt
    * envelope's <source>/<thread> elements. */
@@ -408,6 +409,7 @@ export class DbGraphPort implements GraphPort {
               // covers pre-099 rows whose dst may be a reply.
               `select t.entity_id, e.version, t.title, t.description, t.priority, t.work_status,
                       t.acceptance_criteria,
+                      coalesce(ta.attachments, '[]'::jsonb) as attachments,
                       dm.root_id as thread_root_message_id,
                       dm.anchor_id as thread_channel_id
                  from public.tasks t
@@ -420,6 +422,22 @@ export class DbGraphPort implements GraphPort {
                     where d.src_id = t.entity_id and d.type = 'derived_from'
                     limit 1
                  ) dm on true
+                 left join lateral (
+                   select jsonb_agg(
+                            jsonb_build_object(
+                              'fileEntityId', f.entity_id,
+                              'name', f.name,
+                              'mime', f.mime_type
+                            ) order by f.entity_id
+                          ) as attachments
+                     from public.edges a
+                     join public.entities fe
+                       on fe.id = a.src_id and fe.kind = 'file'
+                      and fe.space_id = e.space_id and fe.deleted_at is null
+                     join public.files f on f.entity_id = fe.id
+                    where a.type = 'attached_to'
+                      and a.dst_id = t.entity_id
+                 ) ta on true
                 where t.entity_id = any($1::uuid[])
                   and e.space_id = $2 and e.deleted_at is null`,
               [taskIds, input.spaceId],
@@ -459,6 +477,21 @@ export class DbGraphPort implements GraphPort {
             priority: t.priority,
             workStatus: t.work_status,
             acceptanceCriteria: Array.isArray(t.acceptance_criteria) ? t.acceptance_criteria : [],
+            attachments: Array.isArray(t.attachments)
+              ? t.attachments.flatMap((value) => {
+                  if (!value || typeof value !== 'object') return [];
+                  const item = value as Record<string, unknown>;
+                  return typeof item.fileEntityId === 'string' &&
+                    typeof item.name === 'string' &&
+                    typeof item.mime === 'string'
+                    ? [{
+                        fileEntityId: item.fileEntityId,
+                        name: item.name,
+                        mime: item.mime,
+                      }]
+                    : [];
+                })
+              : [],
             threadRootMessageId: t.thread_root_message_id ?? null,
             threadChannelId: t.thread_channel_id ?? null,
           })),
@@ -1193,7 +1226,9 @@ export interface ExecutionRuntime {
    * can `awaitOutcome` a deliveryId instead of settling on admission — see
    * `PromptSettlementWaiter`'s own docs in `@tm8/execution` for why
    * construction order forces this instance to be built here, before the
-   * delivery service exists, rather than by the delivery service itself.
+   * delivery service exists, rather than by the delivery service itself. The
+   * same bridge is handed to SpawnService: `running` is not written until the
+   * initial task turn has settled through the PTY closed loop.
    */
   promptSettlement: PromptSettlementWaiter;
   spawnService: SpawnService;
@@ -1271,6 +1306,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
   spawnService = new SpawnService({
     graph,
     pty,
+    promptSettlement,
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,

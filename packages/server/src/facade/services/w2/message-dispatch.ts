@@ -28,7 +28,12 @@
  *     or disguise the message command.
  */
 
-import { incomingMessageInjection, utf8Bytes, type SessionInputAttachment } from '@tm8/prompt';
+import {
+  BudgetExceededError,
+  incomingMessageInjection,
+  utf8Bytes,
+  type SessionInputAttachment,
+} from '@tm8/prompt';
 
 /**
  * Only the two fields the parent-excerpt render reads. Structural rather than
@@ -53,6 +58,11 @@ export interface DispatchableRoute {
   readonly threadParentMessageId: string | null;
   readonly threadRootMessageId: string;
   readonly body: string;
+  /**
+   * The stored manifest on THIS delivered message copy. The route RPC owns it:
+   * every producer therefore supplies the field, including background jobs.
+   */
+  readonly attachments: readonly SessionInputAttachment[];
   readonly addressingKind: 'channel_mention' | 'direct_message' | 'anchored_message';
   readonly contextAnchors: ReadonlyArray<{ id: string; kind: string }>;
   readonly rollingControlMaxBytes: number;
@@ -67,28 +77,17 @@ export interface MessageDeliveryPort {
     mode: 'send' | 'paste';
     requestId: string;
   }): Promise<({ deliveryId: string } & Record<string, unknown>) | null | undefined>;
-  adapter: { dispatch(attempt: Record<string, unknown>): Promise<unknown> };
+  adapter: {
+    dispatch(attempt: Record<string, unknown>): Promise<unknown>;
+    /** Claim and settle an attempt without a terminal write. */
+    reject(attempt: Record<string, unknown>): Promise<unknown>;
+  };
   principalFor(reservation: Record<string, unknown>): unknown;
 }
 
 export interface DispatchOptions {
   readonly routes: readonly DispatchableRoute[];
   readonly parentsById: ReadonlyMap<string, ParentMessageExcerpt>;
-  /**
-   * The attachment manifest per DELIVERED COPY, keyed by `targetMessageId`.
-   *
-   * It arrives beside the routes rather than inside them for the same reason
-   * `parentsById` does: the route JSON is built by a SECURITY DEFINER RPC, and
-   * the copy's files are already loaded in the caller's transaction under the
-   * VIEWER's claims. Adding a field to the route type that the RPC never fills
-   * would read as "the database sends this" and rot the first time someone
-   * checked.
-   *
-   * Absent means "this caller has no attachment facts" — rendered as
-   * `count="0"`, the honest degraded mode for the background nudge path, which
-   * posts bodies and never files.
-   */
-  readonly attachmentsByMessageId?: ReadonlyMap<string, readonly SessionInputAttachment[]>;
   readonly requestId: string;
   /**
    * The AUTHORING session, null exactly when attribution is `recorded_only`.
@@ -100,12 +99,30 @@ export interface DispatchOptions {
 }
 
 const PREVIEW_DELIVERY_ID = '00000000-0000-4000-8000-000000000000';
+const ENVELOPE_BUDGET_EXCEEDED = 'delivery_envelope_budget_exceeded';
+const ENVELOPE_RENDER_FAILED = 'delivery_envelope_render_failed';
+
+function logDispatchFailure(
+  route: Pick<DispatchableRoute, 'targetMessageId' | 'targetWorkSessionId'>,
+  stage: string,
+  error: unknown,
+): void {
+  const candidate = error as { name?: unknown; message?: unknown };
+  console.error(JSON.stringify({
+    component: 'w2-message-dispatch',
+    level: 'error',
+    event: stage,
+    messageId: route.targetMessageId,
+    targetWorkSessionId: route.targetWorkSessionId,
+    errorType: typeof candidate?.name === 'string' ? candidate.name : typeof error,
+    errorMessage: typeof candidate?.message === 'string' ? candidate.message : String(error),
+  }));
+}
 
 export async function dispatchSessionMessages(options: DispatchOptions): Promise<void> {
   const {
     routes,
     parentsById,
-    attachmentsByMessageId,
     requestId,
     sourceWorkSessionId,
     senderAttribution,
@@ -136,7 +153,7 @@ export async function dispatchSessionMessages(options: DispatchOptions): Promise
         threadParentMessageId: route.threadParentMessageId,
         threadRootMessageId: route.threadRootMessageId,
         body: route.body,
-        attachments: attachmentsByMessageId?.get(route.targetMessageId) ?? [],
+        attachments: route.attachments,
         ...(parent
           ? {
               parentBody: parent.content.body,
@@ -144,6 +161,28 @@ export async function dispatchSessionMessages(options: DispatchOptions): Promise
             }
           : {}),
       });
+
+    const rejectBeforeWrite = async (reason: string): Promise<void> => {
+      // `reserve` stores identity/state, not these bytes. A bounded diagnostic
+      // string avoids re-running the render that just failed and gives the
+      // returned reservation a valid non-empty content field.
+      const reservation = await delivery.reserve({
+        messageId: route.targetMessageId,
+        targetWorkSessionId: route.targetWorkSessionId,
+        content: reason,
+        mode: 'send',
+        requestId,
+      });
+      // Null means SQL already wrote a terminal reservation-time refusal (for
+      // example `session_not_live`). There is nothing left to settle.
+      if (!reservation) return;
+      await delivery.adapter.reject({
+        ...reservation,
+        requestId,
+        principal: delivery.principalFor(reservation),
+        reason,
+      });
+    };
 
     try {
       // Rendered twice on purpose: the size must be checked against the real
@@ -154,8 +193,23 @@ export async function dispatchSessionMessages(options: DispatchOptions): Promise
       // `rollingControlMaxBytes` is NOT the wake budget and did not go with it
       // (migration 120). It is the target session's own interaction-profile
       // prompt policy: one envelope's ceiling, not a count of deliveries.
-      const preview = render(PREVIEW_DELIVERY_ID);
-      if (utf8Bytes(preview) > route.rollingControlMaxBytes) continue;
+      let preview: string;
+      try {
+        preview = render(PREVIEW_DELIVERY_ID);
+      } catch (error) {
+        const reason = error instanceof BudgetExceededError
+          ? ENVELOPE_BUDGET_EXCEEDED
+          : ENVELOPE_RENDER_FAILED;
+        await rejectBeforeWrite(reason);
+        if (!(error instanceof BudgetExceededError)) {
+          logDispatchFailure(route, 'delivery envelope render failed', error);
+        }
+        continue;
+      }
+      if (utf8Bytes(preview) > route.rollingControlMaxBytes) {
+        await rejectBeforeWrite(ENVELOPE_BUDGET_EXCEEDED);
+        continue;
+      }
       const reservation = await delivery.reserve({
         messageId: route.targetMessageId,
         targetWorkSessionId: route.targetWorkSessionId,
@@ -172,14 +226,16 @@ export async function dispatchSessionMessages(options: DispatchOptions): Promise
           requestId,
           principal: delivery.principalFor(reservation),
         })
-        .catch(() => {
+        .catch((error) => {
           // The durable row remains pending/dispatching for the existing
           // maintenance owner to expire or recover. Stored-first means an
           // adapter outage cannot roll back or disguise the message command.
+          logDispatchFailure(route, 'delivery dispatch failed', error);
         });
-    } catch {
+    } catch (error) {
       // `reserve()` itself failing is the one case caught synchronously here;
       // dispatch()'s own failures are caught on its own promise above.
+      logDispatchFailure(route, 'delivery reserve or rejection failed', error);
     }
   }
 }

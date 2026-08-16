@@ -305,6 +305,7 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
         threadParentMessageId: null,
         threadRootMessageId: IDS.message,
         body: 'stored body',
+        attachments: [],
         addressingKind: 'channel_mention',
         contextAnchors: [],
         rollingControlMaxBytes: 16_384,
@@ -327,7 +328,6 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
             deliveryId: IDS.delivery,
             messageId: IDS.message,
             targetWorkSessionId: IDS.targetSession,
-            reservationVersion: 3,
             expiresAt: '2026-07-26T12:15:00.000Z',
             content: String(intent.content),
             mode: 'send',
@@ -408,6 +408,7 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
           threadParentMessageId: options.threadParentMessageId,
           threadRootMessageId: IDS.message,
           body: 'stored body',
+          attachments: [],
           addressingKind: 'channel_mention',
           contextAnchors: [],
           rollingControlMaxBytes: 16_384,
@@ -461,7 +462,6 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
               deliveryId: IDS.delivery,
               messageId: IDS.message,
               targetWorkSessionId: IDS.targetSession,
-              reservationVersion: 3,
               expiresAt: '2026-07-26T12:15:00.000Z',
               content: String(intent.content),
               mode: 'send',
@@ -547,7 +547,7 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
   // copy's own delivery, and pin the empty case to `count="0"` rather than to
   // silence.
   describe('attachments reach the delivered envelope', () => {
-    function attachmentSetup(attachments: unknown) {
+    function attachmentSetup(attachments: unknown, rollingControlMaxBytes = 16_384) {
       const db = new FakeDb();
       db.rpcImpl = async <T>(name) => {
         if (name === 'w2_post_message_batch') {
@@ -565,9 +565,10 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
           threadParentMessageId: null,
           threadRootMessageId: IDS.message,
           body: 'stored body',
+          attachments,
           addressingKind: 'channel_mention',
           contextAnchors: [],
-          rollingControlMaxBytes: 16_384,
+          rollingControlMaxBytes,
           sessionInputAllowed: true,
         }] as T;
       };
@@ -581,11 +582,15 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
           }] as R[];
         }
         if (sql.includes('left join public.messages msg')) {
-          return [messageRow({ message_attachments: attachments })] as R[];
+          // Deliberately disagree with the route. The route RPC is the
+          // canonical delivery projection; a posting-viewer side reload must
+          // not be a second, caller-optional attachment source.
+          return [messageRow({ message_attachments: [] })] as R[];
         }
         return [];
       };
       const contents: string[] = [];
+      const rejections: Array<Record<string, unknown>> = [];
       const registry = new HandlerRegistry();
       registerW2MessagesHandoffsHandlers(registry, deps(db), {
         resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
@@ -596,17 +601,22 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
               deliveryId: IDS.delivery,
               messageId: IDS.message,
               targetWorkSessionId: IDS.targetSession,
-              reservationVersion: 3,
               expiresAt: '2026-07-26T12:15:00.000Z',
               content: String(intent.content),
               mode: 'send',
             };
           },
           principalFor: (reservation) => ({ reserved: reservation.deliveryId }),
-          adapter: { dispatch: async () => ({ outcome: 'delivered' }) },
+          adapter: {
+            dispatch: async () => ({ outcome: 'delivered' }),
+            reject: async (attempt) => {
+              rejections.push(attempt);
+              return { outcome: 'refused', reason: String(attempt.reason) };
+            },
+          },
         },
       });
-      return { registry, contents };
+      return { registry, contents, rejections };
     }
 
     function post(registry: HandlerRegistry) {
@@ -629,13 +639,31 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
       expect(contents).toHaveLength(1);
       expect(contents[0]).toContain('<attachments count="1"');
       expect(contents[0]).toContain(`entity_id="${IDS.file}"`);
-      expect(contents[0]).toContain('name="proof.txt"');
+      expect(contents[0]).toContain('&quot;name&quot;:&quot;proof.txt&quot;');
+      expect(contents[0]!.indexOf('proof.txt')).toBeGreaterThan(
+        contents[0]!.indexOf('</trusted_control>'),
+      );
     });
 
     it('says count="0" for a message with no files, rather than saying nothing', async () => {
       const { registry, contents } = attachmentSetup([]);
       await post(registry);
       expect(contents[0]).toContain('<attachments count="0" />');
+    });
+
+    it('settles an envelope over the target profile budget instead of silently skipping it', async () => {
+      const { registry, contents, rejections } = attachmentSetup([], 1);
+      await post(registry);
+
+      // Reserve receives the bounded reason, not an envelope the renderer has
+      // already proved the target cannot admit.
+      expect(contents).toEqual(['delivery_envelope_budget_exceeded']);
+      expect(rejections).toHaveLength(1);
+      expect(rejections[0]).toMatchObject({
+        messageId: IDS.message,
+        targetWorkSessionId: IDS.targetSession,
+        reason: 'delivery_envelope_budget_exceeded',
+      });
     });
   });
 
@@ -668,6 +696,7 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
           threadParentMessageId: null,
           threadRootMessageId: IDS.message,
           body: 'stored body',
+          attachments: [],
           addressingKind: 'channel_mention',
           contextAnchors: [],
           rollingControlMaxBytes: 16_384,
@@ -687,7 +716,6 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
               deliveryId: IDS.delivery,
               messageId: IDS.message,
               targetWorkSessionId: IDS.targetSession,
-              reservationVersion: 3,
               expiresAt: '2026-07-26T12:15:00.000Z',
               content: String(intent.content),
               mode: 'send',

@@ -1,6 +1,6 @@
 /**
  * W2 G11 — execution and session lifecycle: B1's internal prompt authority and
- * B2's durable unordered pair budget.
+ * the durable three-RPC delivery protocol.
  *
  * TWO ADOPTED LAWS LIVE HERE, AND THEY ARE THE SAME LAW SEEN TWICE.
  *
@@ -16,33 +16,16 @@
  * blocklist of caller shapes: the positive half is unforgeable, so the negative
  * half does not have to enumerate anything.
  *
- * B2 — one durable unordered pair record per Teammate-authored live delivery.
- * Nothing in this file counts wakes. That is deliberate and it is the whole
- * design: `public.reserve_session_message_delivery` derives the pair with
- * `least()/greatest()`, takes `for update` on the pair row, increments
- * `consecutive_agent_wakes` and bumps `version`. A process-local counter here
- * would be a SECOND copy of that state that a restart resets — which is
- * precisely what "DURABLE" forbids. So this file's B2 responsibility is narrow
- * and total: hold NO wake state, and route every reservation through the RPC so
- * the count survives this process.
- *
- * THE CAP THIS PARAGRAPH USED TO DESCRIBE IS GONE — migration `120`, 2026-08-14.
- * Until then the same RPC refused the fifth consecutive attempt on a pair as
- * `failed_permanent`/`automated_wake_limit`, and that refusal was the reason
- * the count existed. `120` deleted the refusal branch and dropped the 0..4
- * check; a session may now wake another as many times as the work needs.
- *
- * What did NOT change, and is the reason none of the code below moved: the pair
- * row is still created, still locked, and still versioned on every reservation,
- * because `version` is the optimistic pin threaded through reserve → claim →
- * settle and asserted by `internal.require_delivery_principal`. The count is
- * now telemetry. `reserve()` still returns null for a non-pending reservation —
- * that path is live, it is just reached by `session_not_live` now rather than
- * by a budget refusal.
+ * Migration 135 removes the wake counter, unordered-pair table and copied
+ * version pin. The pin was not delivery-row optimistic concurrency: it never
+ * changed after reserve, and claim/settle never revisited the pair. Delivery
+ * concurrency remains owned by the exact delivery/message/target tuple, the
+ * delivery row's `FOR UPDATE` lock and its legal status transitions. This file
+ * therefore carries no pair state or surrogate version at all.
  *
  * WHY A SECOND DATABASE CONNECTION EXISTS IN THIS FILE.
- * `internal.require_delivery_principal` demands `session_user` or `role` be
- * `tm8_delivery_worker`, plus five `tm8.delivery_*` settings, plus that
+ * `internal.require_delivery_principal` demands authenticated `session_user` be
+ * `tm8_delivery_worker`, plus four `tm8.delivery_*` settings, plus that
  * `internal.actor_id()` and `internal.acting_as()` are both null. The frozen
  * `Db` seam binds exactly four claims and never sets a role, and pg_catalog
  * confirms `tm8_app` is not a member of `tm8_delivery_worker` (it is `noinherit
@@ -71,6 +54,7 @@ import type {
   MessageDeliveryDispatchOutcome,
   MessageDeliveryReservationIntent,
   PreReservedMessageDeliveryAdapter,
+  RejectedMessageDeliveryAttempt,
   ReservedMessageDelivery,
   ReservedMessageDeliveryAttempt,
 } from './messages-handoffs.js';
@@ -154,7 +138,7 @@ export interface InternalPromptDelivery extends SystemDeliveryPrincipalBinding {
  *
  * THE SEAM DID NOT FIT, AND THIS IS WHERE IT IS MADE TO. `isSystemDeliveryPrincipalFor`
  * validates its `expected` argument with an EXACT-OWN-KEYS check over exactly
- * four keys. `W2MessageDeliveryAdapter`'s `bindingOf` returns SIX — it adds
+ * three keys. `W2MessageDeliveryAdapter`'s `bindingOf` returns FIVE — it adds
  * `requestId` and `expiresAt`. So passing the adapter's binding straight to the
  * guard, which is literally what `w2-message-delivery.ts:43` documents ("G11
  * supplies the closed `isSystemDeliveryPrincipalFor` guard here"), makes the
@@ -166,7 +150,7 @@ export interface InternalPromptDelivery extends SystemDeliveryPrincipalBinding {
  * sites, one layer in: a defence with no invocation is a comment, and a seam
  * with no traffic is a drawing.
  *
- * The projection is narrowing, never widening — the four identity fields are
+ * The projection is narrowing, never widening — the three identity fields are
  * passed through untouched. `expiresAt` is then compared EXPLICITLY rather than
  * dropped: it is the lease this same attempt sends to the database as
  * `tm8.delivery_expires_at`, so letting the attempt claim a longer life than
@@ -179,7 +163,6 @@ function authorizeDeliveryPrincipal(
     deliveryId: string;
     messageId: string;
     targetWorkSessionId: string;
-    reservationVersion: number;
     expiresAt: string;
   },
 ): boolean {
@@ -187,7 +170,6 @@ function authorizeDeliveryPrincipal(
     deliveryId: binding.deliveryId,
     messageId: binding.messageId,
     targetWorkSessionId: binding.targetWorkSessionId,
-    reservationVersion: binding.reservationVersion,
   };
   if (!isSystemDeliveryPrincipalFor(principal, identity)) return false;
   return principal.claims.expiresAt === binding.expiresAt;
@@ -235,7 +217,6 @@ export async function promptInternal(
     deliveryId: delivery.deliveryId,
     messageId: delivery.messageId,
     targetWorkSessionId: delivery.targetWorkSessionId,
-    reservationVersion: delivery.reservationVersion,
   };
   if (!isSystemDeliveryPrincipalFor(principal, binding)) {
     throw new CollabError('forbidden', 'a valid system delivery principal is required', {
@@ -293,21 +274,12 @@ export type DeliverySettlementStatus =
   | 'failed_permanent'
   | 'unknown';
 
-/**
- * One minted authority's coordinates, as the RPCs want them.
- *
- * `pairBudgetVersion` is `null` for a delivery with no source session — a
- * Member-authored message consumes no wake budget, so 015 stores NULL and
- * `require_delivery_principal` compares NULL. It is a distinct value from 0,
- * which never occurs for a real pair (reserve bumps `version` before writing
- * the row, so a paired delivery is always >= 1).
- */
+/** One minted authority's exact delivery coordinates, as the RPCs want them. */
 export interface DeliveryPrincipalLease {
   readonly deliveryId: string;
   readonly messageId: string;
   readonly targetWorkSessionId: string;
   readonly expiresAt: string;
-  readonly pairBudgetVersion: number | null;
 }
 
 export interface StoredDelivery {
@@ -316,7 +288,6 @@ export interface StoredDelivery {
   readonly targetWorkSessionId: string;
   readonly status: StoredDeliveryStatus;
   readonly attemptNo: number;
-  readonly pairBudgetVersion: number | null;
   readonly failureReason: string | null;
 }
 
@@ -343,7 +314,6 @@ interface DeliveryRowJson {
   target_work_session_id: string;
   status: string;
   attempt_no: number;
-  pair_budget_version: number | null;
   failure_reason: string | null;
 }
 
@@ -354,13 +324,12 @@ function storedDeliveryOf(row: DeliveryRowJson): StoredDelivery {
     targetWorkSessionId: row.target_work_session_id,
     status: row.status as StoredDeliveryStatus,
     attemptNo: row.attempt_no,
-    pairBudgetVersion: row.pair_budget_version,
     failureReason: row.failure_reason,
   };
 }
 
 /**
- * The five delivery claims, bound `SET LOCAL` for one transaction.
+ * The four delivery claims, bound `SET LOCAL` for one transaction.
  *
  * `set local role tm8_delivery_worker` is issued unconditionally rather than
  * assumed from the connection. It succeeds when the pool already authenticates
@@ -378,24 +347,18 @@ const SET_DELIVERY_CLAIMS = `
          set_config('tm8.delivery_id', $1, true),
          set_config('tm8.delivery_message_id', $2, true),
          set_config('tm8.delivery_target_work_session_id', $3, true),
-         set_config('tm8.delivery_expires_at', $4, true),
-         set_config('tm8.delivery_pair_budget_version', $5, true)`;
+         set_config('tm8.delivery_expires_at', $4, true)`;
 
 /**
    * Refuse a delivery URL that is not AUTHENTICATED as `tm8_delivery_worker`.
    *
    * ## Why `session_user` and not `current_user`
    *
-   * `internal.require_delivery_principal` (015:1346-1347) raises only if
-   * session_user is not the worker AND `current_setting('role')` is not either.
-   * It is an AND, so satisfying one limb passes — and this service issues
-   * `set local role tm8_delivery_worker` unconditionally. A SUPERUSER MAY
-   * ASSUME ANY ROLE, so a superuser URL satisfies the second limb and the
-   * database accepts it. Measured: as `tm8`, after the set, `current_user` and
-   * `current_setting('role')` both read `tm8_delivery_worker` while
-   * `session_user` still reads `tm8`. Only `session_user` survives SET ROLE, so
-   * it is the one value the assumed-role trick cannot forge. A check written
-   * against `current_user` would pass in exactly the case it exists to catch.
+   * `internal.require_delivery_principal` (migration 039, copied forward by
+   * 135) checks `session_user`. A SUPERUSER MAY ASSUME ANY ROLE, so
+   * `current_user` and `current_setting('role')` can both read
+   * `tm8_delivery_worker` while `session_user` still names the authenticated
+   * login. Only that last value survives SET ROLE and closes the impersonation.
    *
    * `rolsuper` is asserted too, in the same round trip, because "the role is
    * named tm8_delivery_worker" is an assumption about a role a deployment can
@@ -415,10 +378,9 @@ const SET_DELIVERY_CLAIMS = `
    * loudly wrong" for "does nothing, silently" is a worse outcome than the
    * defect. So this is awaited at startup, above the swallow, and fails the boot.
    *
-   * MITIGATION, NOT A FIX. It protects THIS wiring only. 015:1346-1347 still
-   * admits any principal permitted to assume the role — a maintenance script, a
-   * second node, a psql session. Nothing here constrains what an operator puts
-   * in the URL; only whether this node will run with it.
+   * This startup check protects the wiring before stored-first delivery catches
+   * can hide a configuration error; the database guard independently enforces
+   * the authenticated worker role on every RPC.
    */
 export async function verifyDeliveryPrincipal(connectionString: string): Promise<void> {
   const pool = new Pool({ connectionString, max: 1 });
@@ -475,7 +437,6 @@ export class PgW2DeliveryRpcPort implements W2DeliveryRpcPort {
         lease.messageId,
         lease.targetWorkSessionId,
         lease.expiresAt,
-        lease.pairBudgetVersion === null ? '' : String(lease.pairBudgetVersion),
       ]);
       const result = await fn(client);
       await client.query('commit');
@@ -506,8 +467,8 @@ export class PgW2DeliveryRpcPort implements W2DeliveryRpcPort {
   async claim(lease: DeliveryPrincipalLease): Promise<StoredDelivery> {
     return this.withPrincipal(lease, async (client) => {
       const result = await client.query<{ row: DeliveryRowJson }>(
-        `select public.claim_session_message_delivery($1, $2, $3, $4) as row`,
-        [lease.deliveryId, lease.messageId, lease.targetWorkSessionId, lease.pairBudgetVersion],
+        `select public.claim_session_message_delivery($1, $2, $3) as row`,
+        [lease.deliveryId, lease.messageId, lease.targetWorkSessionId],
       );
       return storedDeliveryOf(result.rows[0]!.row);
     });
@@ -520,12 +481,11 @@ export class PgW2DeliveryRpcPort implements W2DeliveryRpcPort {
   ): Promise<StoredDelivery> {
     return this.withPrincipal(lease, async (client) => {
       const result = await client.query<{ row: DeliveryRowJson }>(
-        `select public.settle_session_message_delivery($1, $2, $3, $4, $5, $6) as row`,
+        `select public.settle_session_message_delivery($1, $2, $3, $4, $5) as row`,
         [
           lease.deliveryId,
           lease.messageId,
           lease.targetWorkSessionId,
-          lease.pairBudgetVersion,
           status,
           failureReason,
         ],
@@ -598,9 +558,8 @@ interface InFlight {
  * this stays assignable from `MessageDeliveryReservationIntent` and the seam
  * G04 declared still type-checks against this service unchanged.
  *
- * A retry does NOT get a fresh allowance: reserving attempt 2 takes the same
- * pair row's `for update` lock and increments the same counter, which is what
- * makes "one durable budget" survive retrying.
+ * A retry is a new durable row with a new delivery id. The logical attempt
+ * coordinate remains protected by the database unique constraint.
  */
 export interface W2DeliveryReservationIntent extends MessageDeliveryReservationIntent {
   readonly attemptNo?: number;
@@ -615,7 +574,6 @@ export interface W2DeliveryReservationIntent extends MessageDeliveryReservationI
  * retry the message deserves. The permanent refusal in this design is the one
  * SQL writes for itself at reservation time (`session_not_live`, for an exited
  * or failed target) — this server never gets to decide it, which is the point.
- * The wake-limit refusal used to be the other one; `120` removed it.
  */
 function settlementFor(outcome: W2DeliveryOutcome): {
   status: DeliverySettlementStatus;
@@ -634,7 +592,7 @@ function settlementFor(outcome: W2DeliveryOutcome): {
 /**
  * The B2 delivery path: reserve → mint → claim → one write → settle.
  *
- * It holds NO wake state. The only map it owns is `inFlight`, which lives for
+ * The only map it owns is `inFlight`, which lives for
  * the duration of one dispatch and exists because G04's adapter hands
  * `writeAttempt` a binding rather than the principal — so the principal is
  * carried across that call and RE-VALIDATED by `promptInternal` against the
@@ -692,7 +650,7 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
   }
 
   /**
-   * Reserve one attempt, charging the DURABLE pair record.
+   * Reserve one durable attempt.
    *
    * Returns `null` — never an error, never a byte — when SQL hands back a
    * reservation it has already settled, which arrives as a settled row rather
@@ -712,7 +670,6 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
       messageId: intent.messageId,
       targetWorkSessionId: intent.targetWorkSessionId,
       expiresAt: new Date(this.now() + this.leaseMs).toISOString(),
-      pairBudgetVersion: null,
     };
     let stored: StoredDelivery;
     try {
@@ -734,9 +691,6 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
       deliveryId: lease.deliveryId,
       messageId: lease.messageId,
       targetWorkSessionId: lease.targetWorkSessionId,
-      // 0 means "no pair budget applies" (see DeliveryPrincipalLease). The
-      // real value goes to the RPCs through `inFlight`, never through here.
-      reservationVersion: stored.pairBudgetVersion ?? 0,
       expiresAt: lease.expiresAt,
       content: intent.content,
       mode: intent.mode,
@@ -749,7 +703,6 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
       deliveryId: reservation.deliveryId,
       messageId: reservation.messageId,
       targetWorkSessionId: reservation.targetWorkSessionId,
-      reservationVersion: reservation.reservationVersion,
       expiresAt: reservation.expiresAt,
     });
   }
@@ -760,10 +713,6 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
       messageId: attempt.messageId,
       targetWorkSessionId: attempt.targetWorkSessionId,
       expiresAt: attempt.expiresAt,
-      // `reservationVersion` 0 encodes "no pair"; anything else is the stored
-      // `pair_budget_version` and must be sent back verbatim or the RPC's
-      // tuple check refuses.
-      pairBudgetVersion: attempt.reservationVersion === 0 ? null : attempt.reservationVersion,
     };
     this.inFlight.set(attempt.deliveryId, { lease, principal: attempt.principal });
     try {
@@ -772,7 +721,6 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
         requestId: attempt.requestId,
         messageId: attempt.messageId,
         targetWorkSessionId: attempt.targetWorkSessionId,
-        reservationVersion: attempt.reservationVersion,
         expiresAt: attempt.expiresAt,
         principal: attempt.principal,
         content: attempt.content,
@@ -787,6 +735,52 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
       throw error;
     } finally {
       this.inFlight.delete(attempt.deliveryId);
+    }
+  }
+
+  /**
+   * Claim and settle a pre-reserved attempt without touching the PTY.
+   *
+   * Oversize envelopes used to disappear before reserve (or throw a swallowed
+   * `BudgetExceededError`), leaving no delivery row to explain the absence.
+   * This uses the existing authenticated claim -> settle RPC pair, not a fourth
+   * database verb, and records a permanent readable reason because the stored
+   * message and this session's interaction-profile pin are immutable.
+   */
+  async reject(attempt: RejectedMessageDeliveryAttempt): Promise<MessageDeliveryDispatchOutcome> {
+    const lease: DeliveryPrincipalLease = {
+      deliveryId: attempt.deliveryId,
+      messageId: attempt.messageId,
+      targetWorkSessionId: attempt.targetWorkSessionId,
+      expiresAt: attempt.expiresAt,
+    };
+    const binding = {
+      deliveryId: attempt.deliveryId,
+      requestId: attempt.requestId,
+      messageId: attempt.messageId,
+      targetWorkSessionId: attempt.targetWorkSessionId,
+      expiresAt: attempt.expiresAt,
+    };
+    if (!authorizeDeliveryPrincipal(attempt.principal, binding)) {
+      throw new CollabError('forbidden', 'a valid system delivery principal is required', {
+        details: { reason: PUBLIC_PROMPT_REFUSAL_REASON },
+      });
+    }
+    if (attempt.reason.length === 0) {
+      throw new CollabError('invalid_input', 'delivery rejection reason must not be empty');
+    }
+
+    try {
+      await this.rpc.claim(lease);
+      await this.rpc.settle(lease, 'failed_permanent', attempt.reason);
+      return { outcome: 'refused', reason: attempt.reason };
+    } catch (error) {
+      this.logger?.error?.(
+        'w2 delivery: pre-write rejection failed',
+        error instanceof Error ? error : undefined,
+        failureFacts(error, lease),
+      );
+      throw error;
     }
   }
 
@@ -823,7 +817,6 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
       deliveryId: attempt.deliveryId,
       messageId: attempt.messageId,
       targetWorkSessionId: attempt.targetWorkSessionId,
-      reservationVersion: attempt.reservationVersion,
       content: attempt.content,
       mode: attempt.mode,
     });

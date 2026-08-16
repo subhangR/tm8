@@ -219,6 +219,13 @@ export interface TaskContext {
   priority: string;
   workStatus: string;
   acceptanceCriteria: unknown[];
+  /** File entities attached directly to this task. Identity/metadata only;
+   * bytes remain behind the authenticated `tm8 file download` command. */
+  attachments?: Array<{
+    fileEntityId: string;
+    name: string;
+    mime: string;
+  }>;
   /**
    * Set when the task was derived from a thread message (064/099): the thread
    * root and the channel it is anchored on. Rendered into the assignment

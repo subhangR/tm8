@@ -40,7 +40,6 @@ export interface ReservedMessageDelivery {
   readonly deliveryId: string;
   readonly messageId: string;
   readonly targetWorkSessionId: string;
-  readonly reservationVersion: number;
   readonly expiresAt: string;
   readonly content: string;
   readonly mode: 'send' | 'paste';
@@ -62,6 +61,15 @@ export interface ReservedMessageDeliveryAttempt extends ReservedMessageDelivery 
   readonly principal: unknown;
 }
 
+/**
+ * A pre-reserved attempt that is settled WITHOUT touching the PTY. Used when
+ * the target session's pinned prompt policy cannot admit the rendered
+ * envelope. It still carries the same minted principal as a real dispatch.
+ */
+export interface RejectedMessageDeliveryAttempt extends ReservedMessageDeliveryAttempt {
+  readonly reason: string;
+}
+
 export interface MessageDeliveryDispatchOutcome {
   readonly outcome: 'delivered' | 'refused' | 'unknown';
   readonly reason?: string;
@@ -69,6 +77,7 @@ export interface MessageDeliveryDispatchOutcome {
 
 export interface PreReservedMessageDeliveryAdapter {
   dispatch(attempt: ReservedMessageDeliveryAttempt): Promise<MessageDeliveryDispatchOutcome>;
+  reject(attempt: RejectedMessageDeliveryAttempt): Promise<MessageDeliveryDispatchOutcome>;
 }
 
 export interface HandoffDispatch {
@@ -136,6 +145,11 @@ interface SessionReplyRoute {
   readonly threadParentMessageId: string | null;
   readonly threadRootMessageId: string;
   readonly body: string;
+  readonly attachments: ReadonlyArray<{
+    fileEntityId: string;
+    name: string;
+    mime?: string | null;
+  }>;
   readonly addressingKind: 'channel_mention' | 'direct_message' | 'anchored_message';
   readonly contextAnchors: ReadonlyArray<{ id: string; kind: string }>;
   readonly rollingControlMaxBytes: number;
@@ -459,26 +473,7 @@ export class W2MessagesHandoffsService {
       const parentViews =
         parentIds.length > 0 ? await loadMessageViewsByIds(q, parentIds, viewerIdentityId) : [];
       const parentsById = new Map(parentViews.map((view) => [view.id, view]));
-      // THE ATTACHMENT MANIFEST, per delivered copy.
-      //
-      // `messages` is every copy this batch just minted, reloaded under the
-      // viewer's claims, and `content.attachments` on each is the same
-      // `[{fileEntityId,name,mime}]` the API returns and the UI renders as a
-      // chip. Every route targets a message of THIS batch (the routes RPC
-      // selects only from `result.messageIds`), so this map covers each route
-      // and no extra query is needed.
-      //
-      // Before this, that array stopped here: it was stored, returned, and
-      // drawn, and the delivery rendered the body alone. The teammate was
-      // handed a message whose sender could see two files attached to it and
-      // had no way to learn either existed — the silent drop this closes.
-      const attachmentsByMessageId = new Map(
-        messages.map((view) => [
-          view.id,
-          view.content.kind === 'message' ? view.content.attachments : [],
-        ]),
-      );
-      return { result, messages, routes, parentsById, attachmentsByMessageId };
+      return { result, messages, routes, parentsById };
     }));
 
     // The transaction above has committed. Dispatch may block on a PTY write,
@@ -505,7 +500,6 @@ export class W2MessagesHandoffsService {
       await dispatchSessionMessages({
         routes: stored.routes,
         parentsById: stored.parentsById,
-        attachmentsByMessageId: stored.attachmentsByMessageId,
         requestId: ctx.requestId,
         sourceWorkSessionId,
         senderAttribution: senderAttributionFor(sourceWorkSessionId),

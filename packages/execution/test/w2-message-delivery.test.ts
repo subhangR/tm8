@@ -12,7 +12,6 @@ const IDENTITY: W2DeliveryBinding = {
   requestId: 'request-1',
   messageId: '11111111-1111-4111-8111-111111111111',
   targetWorkSessionId: '22222222-2222-4222-8222-222222222222',
-  reservationVersion: 3,
   expiresAt: '2026-07-26T12:15:00.000Z',
 };
 
@@ -125,7 +124,6 @@ describe('W2.G04 pre-reserved PTY delivery adapter', () => {
       { requestId: 'changed-request' },
       { messageId: 'changed-message' },
       { targetWorkSessionId: 'changed-target' },
-      { reservationVersion: 4 },
       { expiresAt: '2026-07-26T12:16:00.000Z' },
       { content: 'changed-content' },
       { mode: 'paste' as const },

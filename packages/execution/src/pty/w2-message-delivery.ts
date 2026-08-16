@@ -14,7 +14,6 @@ export interface W2DeliveryBinding {
   readonly requestId: string;
   readonly messageId: string;
   readonly targetWorkSessionId: string;
-  readonly reservationVersion: number;
   readonly expiresAt: string;
 }
 
@@ -66,9 +65,6 @@ function bindingOf(attempt: W2DeliveryAttempt): W2DeliveryBinding {
   requireOpaque(attempt.requestId, 'requestId');
   requireOpaque(attempt.messageId, 'messageId');
   requireOpaque(attempt.targetWorkSessionId, 'targetWorkSessionId');
-  if (!Number.isSafeInteger(attempt.reservationVersion) || attempt.reservationVersion < 0) {
-    throw new TypeError('reservationVersion must be a non-negative safe integer');
-  }
   if (!Number.isFinite(Date.parse(attempt.expiresAt))) {
     throw new TypeError('expiresAt must be an ISO timestamp');
   }
@@ -80,7 +76,6 @@ function bindingOf(attempt: W2DeliveryAttempt): W2DeliveryBinding {
     requestId: attempt.requestId,
     messageId: attempt.messageId,
     targetWorkSessionId: attempt.targetWorkSessionId,
-    reservationVersion: attempt.reservationVersion,
     expiresAt: attempt.expiresAt,
   });
 }
@@ -91,7 +86,6 @@ function fingerprint(attempt: W2DeliveryAttempt): string {
     attempt.requestId,
     attempt.messageId,
     attempt.targetWorkSessionId,
-    attempt.reservationVersion,
     attempt.expiresAt,
     attempt.content,
     attempt.mode,
