@@ -32,19 +32,20 @@ export interface ChatHomeSurfaceProps {
    * `/` types plain text.
    */
   skillOptions?: readonly TriggerOption[];
-  /** Three-tab column + region-B extras (task 01a006f8) — all pass through
-   *  to the screen verbatim. */
-  sessions?: ChatHomeScreenProps['sessions'];
-  tasks?: ChatHomeScreenProps['tasks'];
-  tab?: ChatHomeScreenProps['tab'];
-  onTab?: ChatHomeScreenProps['onTab'];
+  /** Root column + region-B extras (tasks 01a006f8/01a00932) — all pass
+   *  through to the screen verbatim. */
+  root?: ChatHomeScreenProps['root'];
+  onRoot?: ChatHomeScreenProps['onRoot'];
+  kindCell?: ChatHomeScreenProps['kindCell'];
+  rootKindOptions?: ChatHomeScreenProps['rootKindOptions'];
   selectedEntityId?: ChatHomeScreenProps['selectedEntityId'];
   onSelectEntity?: ChatHomeScreenProps['onSelectEntity'];
   onShowChat?: ChatHomeScreenProps['onShowChat'];
-  onNewTask?: ChatHomeScreenProps['onNewTask'];
-  newTaskUnavailable?: ChatHomeScreenProps['newTaskUnavailable'];
-  onRunTask?: ChatHomeScreenProps['onRunTask'];
-  renderTabList?: ChatHomeScreenProps['renderTabList'];
+  onNewEntity?: ChatHomeScreenProps['onNewEntity'];
+  newEntityUnavailable?: ChatHomeScreenProps['newEntityUnavailable'];
+  routeThreadId?: ChatHomeScreenProps['routeThreadId'];
+  onThreadSelected?: ChatHomeScreenProps['onThreadSelected'];
+  renderRootList?: ChatHomeScreenProps['renderRootList'];
   centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];
   viewerName?: ChatHomeScreenProps['viewerName'];

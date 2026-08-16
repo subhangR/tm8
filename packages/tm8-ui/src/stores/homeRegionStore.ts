@@ -1,94 +1,62 @@
 /**
- * homeRegionStore — Home's three-region selection state (task 01a006f8,
- * D5–D8/D10/D11/D15).
+ * homeRegionStore — Home's remembered ROOT (task 01a006f8 D15, generalized
+ * by task 01a00932; trimmed by its D1 ruling).
  *
- * Two facts per space, and WHY they are module-level rather than component
- * state:
+ * ONE fact per space survives here: which population Home's left column
+ * lists when the address does not say — `CHATS_ROOT` or a collection kind.
+ * It round-trips localStorage because a root NAME cannot go stale, and it is
+ * what keeps a bare `/home` link personal (R10: first visit opens on Chats,
+ * remembered thereafter).
  *
- *  - `tab`: which of Home's left-column tabs (Chats | Tasks | Sessions) is
- *    active. D15 says it persists PER SPACE and the first visit opens on
- *    Chats — so it round-trips localStorage, unlike the screen stacks (whose
- *    in-memory-only ruling is about entity IDS, which go stale on reload;
- *    a tab name cannot go stale).
- *  - `center`: the entity occupying region B, or null when B shows the chat.
- *    In-memory only, same reasoning as `screenStackStore`: switching rail
- *    items unmounts HomeView, and D11's spawn path writes this from OUTSIDE
- *    the view (GateApp's launch submit puts the new session in B and flips
- *    the tab to Sessions) — component state could do neither.
+ * EVERYTHING ELSE THIS STORE HELD MOVED TO THE ROUTE (D1, the LLD's central
+ * reconciliation): region B's occupant is the centre trail (`p`, stack top
+ * renders) and the drill-in is the right trail (`r`) — both `navStore`'s,
+ * both in the URL, so a Home deep link reproduces the whole arrangement and
+ * the back button walks it. The old `centers` map and the module-level
+ * selection writes (GateApp's D11 spawn flip included) now go through
+ * `navStore`; this module deliberately cannot express a selection at all.
  *
- * Keyed by space id so switching spaces cannot carry one space's selection
- * into another — the same bleed `screenStackStore.clearAll` exists for, made
- * structural instead of swept.
+ * Legacy stored values from the tab era ('tasks', 'sessions') still resolve
+ * to the kinds they meant.
  */
-import { useStore } from 'zustand';
-import { createStore, type StoreApi } from 'zustand/vanilla';
-import type { EntityId } from '@tm8/contract';
+import {
+  CHATS_ROOT,
+  LEGACY_HOME_TAB_KINDS,
+  isHomeRootKind,
+  type HomeRoot,
+} from '../domain';
 
-export type HomeTab = 'tasks' | 'chats' | 'sessions';
+export type { HomeRoot };
 
-const TAB_VALUES: readonly HomeTab[] = ['tasks', 'chats', 'sessions'];
-/** D15: the default active tab is Chats (the ORDER is Chats | Tasks | Sessions,
- *  re-ruled by Subhang 2026-08-16). */
-export const DEFAULT_HOME_TAB: HomeTab = 'chats';
+/** D15: the default root is Chats (R10 — land on the conversation surface). */
+export const DEFAULT_HOME_ROOT: HomeRoot = CHATS_ROOT;
 
+/* The key deliberately keeps the tab-era name: stored legacy values are
+   readable and `normalizeHomeRoot` maps them forward. */
 const storageKey = (spaceId: string) => `tm8.home.tab:${spaceId}`;
+
+/** A stored or incoming root name → a root this build can list. */
+export function normalizeHomeRoot(raw: string | null): HomeRoot {
+  if (raw === CHATS_ROOT) return CHATS_ROOT;
+  if (raw === null) return DEFAULT_HOME_ROOT;
+  const mapped = LEGACY_HOME_TAB_KINDS[raw] ?? raw;
+  return isHomeRootKind(mapped) ? mapped : DEFAULT_HOME_ROOT;
+}
 
 /** localStorage may be absent or refused (gate tests run without it). A read
  *  that throws or holds junk is the same as no preference: the default. */
-function loadTab(spaceId: string): HomeTab {
+export function loadHomeRoot(spaceId: string): HomeRoot {
   try {
-    const raw = window.localStorage.getItem(storageKey(spaceId));
-    return TAB_VALUES.includes(raw as HomeTab) ? (raw as HomeTab) : DEFAULT_HOME_TAB;
+    return normalizeHomeRoot(window.localStorage.getItem(storageKey(spaceId)));
   } catch {
-    return DEFAULT_HOME_TAB;
+    return DEFAULT_HOME_ROOT;
   }
 }
 
-export interface HomeRegionStore {
-  /** Per-space tab overrides made THIS session; misses fall back to storage. */
-  tabs: Readonly<Record<string, HomeTab>>;
-  /** Per-space region-B subject. Absent/null = the chat occupies B (D7/D8). */
-  centers: Readonly<Record<string, EntityId | null>>;
-  setTab(spaceId: string, tab: HomeTab): void;
-  /** Put an entity in region B (null returns B to the chat). */
-  selectCenter(spaceId: string, id: EntityId | null): void;
-}
-
-export const homeRegionStore: StoreApi<HomeRegionStore> = createStore<HomeRegionStore>()(
-  (set, get) => ({
-    tabs: {},
-    centers: {},
-    setTab(spaceId, tab) {
-      set({ tabs: { ...get().tabs, [spaceId]: tab } });
-      try {
-        window.localStorage.setItem(storageKey(spaceId), tab);
-      } catch {
-        // No storage ⇒ the choice lives for the session only. Still a choice.
-      }
-    },
-    selectCenter(spaceId, id) {
-      set({ centers: { ...get().centers, [spaceId]: id } });
-    },
-  }),
-);
-
-export function tabOf(state: Pick<HomeRegionStore, 'tabs'>, spaceId: string): HomeTab {
-  return state.tabs[spaceId] ?? loadTab(spaceId);
-}
-
-export function centerOf(state: Pick<HomeRegionStore, 'centers'>, spaceId: string): EntityId | null {
-  return state.centers[spaceId] ?? null;
-}
-
-/** The view-side handle: current tab + B subject and the two writes. */
-export function useHomeRegion(spaceId: string) {
-  const tab = useStore(homeRegionStore, (s) => tabOf(s, spaceId));
-  const center = useStore(homeRegionStore, (s) => centerOf(s, spaceId));
-  const store = homeRegionStore.getState();
-  return {
-    tab,
-    center,
-    setTab: (next: HomeTab) => store.setTab(spaceId, next),
-    selectCenter: (id: EntityId | null) => store.selectCenter(spaceId, id),
-  };
+export function rememberHomeRoot(spaceId: string, root: HomeRoot): void {
+  try {
+    window.localStorage.setItem(storageKey(spaceId), normalizeHomeRoot(root));
+  } catch {
+    // No storage ⇒ the choice lives in the address alone. Still a choice.
+  }
 }

@@ -53,6 +53,12 @@ export interface HomePageProps {
    * to be its SIBLING, not something inside it.
    */
   aside?: ReactNode;
+  /**
+   * The icon rail (task 01a00932 R4) — the host builds it (its state is the
+   * host's root selection); this page only seats it leftmost in the row,
+   * exactly as it makes room for the aside.
+   */
+  rail?: ReactNode;
   onOpenEntity(id: string): void;
   onOpenWorkspace(): void;
 }
@@ -128,6 +134,7 @@ export function HomePage(props: HomePageProps) {
      to the Work tab, where the inventory framing lives. */
   return (
     <div className="hp-root hp-root--chat" data-testid="home-page" data-aside={props.aside ? 'open' : undefined}>
+      {props.rail ?? null}
       <div className="hp-page">
       {needsYou && needsYou.rows.length > 0 ? (
         <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />

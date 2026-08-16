@@ -101,11 +101,8 @@ async function rememberTarget(target: unknown): Promise<void> {
      the Workspace caret on the WORK TAB now (revision 12), so switch tab
      first. The caret is an EXPANDED-rail control and the rail boots collapsed,
      where every leaf is already drawn. */
-  fireEvent.click(within(first.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
-  const rail = within(first.getByTestId('menu-rail'));
-  const caret = rail.queryByLabelText('Expand Workspace');
-  if (caret) fireEvent.click(caret);
-  fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+  fireEvent.keyDown(window, { key: 'g' });
+  fireEvent.keyDown(window, { key: 't' });
   await waitFor(() => first.getByTestId('entity-view'));
   first.unmount();
 

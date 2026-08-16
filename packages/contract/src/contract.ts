@@ -2158,16 +2158,24 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // The id is `chats` on both sides. It is free: 125 RENAMED the old `chats`
   // group to `channels` (it was the channel collection's group, never this
   // surface's), so nothing else claims it and no space can hold both.
+  // 2026-08-16 LATER (unified Home, task 01a00932, migration 134): the
+  // `work` and `channels` GROUPS retire and `chats` is relabelled HOME —
+  //   chats(Home) | board | graph | files | settings
+  // Home's screen lists chat threads OR any collection kind (the root
+  // column + registry-driven icon rail), so a Work tab beside it would be a
+  // second door to every list Home already owns, and Channels' contents
+  // await the redesigned Collab surface (a later feature). Nothing was
+  // deleted: `workspace`, `git`, `messages` and every retired kind ref keep
+  // their routes, their chords and their menu-editor eligibility — the same
+  // rail-edit posture as 125/126/127.
   { serverId: 'chats', clientId: 'chats' },
-  { serverId: 'work', clientId: 'workspace' },
   // 2026-08-16 (Board tab wave, migration 130): the task kanban is its own
-  // full-bleed tab beside Work — a railless group holding the single `board`
-  // VIEW, the same posture as graph/files/chats. It PRESENTS the task
-  // collection; the `task` kind row stays in the Workspace caret, so this is
-  // a second door to tasks, not a move (the R9 two-doors posture files set).
+  // full-bleed tab — a railless group holding the single `board` VIEW, the
+  // same posture as graph/files/chats. It PRESENTS the task collection; the
+  // `task` kind stays a Home root, so this is a second door to tasks, not a
+  // move (the R9 two-doors posture files set).
   { serverId: 'board', clientId: 'board' },
   { serverId: 'graph', clientId: 'graph' },
-  { serverId: 'channels', clientId: 'channels' },
   { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },
 ] as const;

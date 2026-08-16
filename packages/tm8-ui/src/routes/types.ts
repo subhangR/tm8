@@ -33,9 +33,20 @@ export interface QValue {
   groupBy?: GroupByKey;
 }
 
+/**
+ * The unified Home's ROOT (task 01a00932, UNIFIED-HOME-DESIGN.md D1): which
+ * population its left column lists — one collection kind (by slug, the same
+ * registry-validated vocabulary `origin` uses) or the chat threads, with the
+ * open conversation optionally addressed. Absent ⇒ the viewer's remembered
+ * root (D15 memory), which is what keeps a bare `/home` link personal.
+ */
+export type HomeRootTarget =
+  | { type: 'kind'; slug: string }
+  | { type: 'chats'; threadId: EntityId | null };
+
 /** Where the view host points. One member per WLT §2.2 route line. */
 export type NavView =
-  | { view: 'home' }
+  | { view: 'home'; root?: HomeRootTarget | null }
   | { view: 'feed' }
   | { view: 'inbox' }
   | { view: 'workspace' }
@@ -86,10 +97,17 @@ export type NavView =
 
 /** The panel-engine state the URL mirrors (LLD §11: the URL owns all of it). */
 export interface PanelState {
-  /** `p` — bottom→top. */
+  /** `p` — bottom→top. On Home the stack IS the centre TRAIL: the top
+   *  renders, the rest are its breadcrumb (task 01a00932 R7/D2). */
   stack: EntityId[];
   /** `pin` — pin order. */
   pinned: EntityId[];
+  /**
+   * `r` — Home's RIGHT-PANEL trail, bottom→top, same encoding as `p`
+   * (task 01a00932 R6/R7). The top renders in the right panel; the rest are
+   * its breadcrumb. Empty ⇒ no right panel. Other views carry it verbatim.
+   */
+  right: EntityId[];
   /** `t` — omitted pairs default to `content`. */
   tabs: Record<EntityId, PanelTab>;
   /** `contentSurface` — preserved verbatim, including Phase-2 `chat` (D12). */
@@ -108,10 +126,20 @@ export interface Route {
  * The classes a drop notice may name. R4-7: the notice names the CLASS, never
  * a raw ID, and one notice covers a whole settle.
  */
-export type DropClass = 'tabs' | 'pins' | 'stack' | 'query' | 'origin' | 'mode' | 'session' | 'anchor';
+export type DropClass =
+  | 'tabs'
+  | 'right'
+  | 'pins'
+  | 'stack'
+  | 'query'
+  | 'origin'
+  | 'mode'
+  | 'session'
+  | 'anchor';
 
 export const DROP_CLASS_COPY: Readonly<Record<DropClass, string>> = {
   tabs: 'tab and surface state',
+  right: 'the side panel',
   pins: 'pinned panels',
   stack: 'open panels',
   query: 'filter state',
@@ -195,5 +223,5 @@ export const MAX_HASH_LENGTH = 2048;
 export const UNADDRESSED_HASH = '#/';
 
 export function emptyPanels(): PanelState {
-  return { stack: [], pinned: [], tabs: {}, contentSurface: {}, session: null };
+  return { stack: [], pinned: [], right: [], tabs: {}, contentSurface: {}, session: null };
 }

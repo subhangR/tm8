@@ -59,13 +59,10 @@ async function openTasksScreen() {
   /* Revision 12: no-memory boots land on the merged Home; Tasks rides the
      Workspace caret ON THE WORK TAB — the rail is the active tab's contents. */
   await waitFor(() => view.getByTestId('home-page'));
-  fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
-  const rail = within(view.getByTestId('menu-rail'));
-  /* The caret is an EXPANDED-rail control and the rail boots collapsed, where
-     every leaf is drawn regardless of it. */
-  const caret = rail.queryByLabelText('Expand Workspace');
-  if (caret) fireEvent.click(caret);
-  fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+  /* Revision 17: the Work tab retired — the guaranteed `g t` chord is the
+     door to the Tasks screen now. */
+  fireEvent.keyDown(window, { key: 'g' });
+  fireEvent.keyDown(window, { key: 't' });
   await waitFor(() => view.getByTestId('entity-view'));
   return view;
 }

@@ -577,6 +577,50 @@ describe('T2-1d — redeem landing', () => {
 
 describe('T2-3 — the menu editor', () => {
   const MENU = resolveMenu(null);
+  /* The ROW-BEARING fixture: revision 17's shipped default is five railless
+     single-view groups, so reorder/rename/caret cases exercise a
+     server-authored config that still carries rows — the editor must keep
+     editing those. */
+  const ROWED = resolveMenu({
+    schemaVersion: 1,
+    revision: 16,
+    groups: [
+      { id: 'chats', label: 'Collab', items: [{ type: 'view', ref: 'dashboard' }] },
+      {
+        id: 'workspace',
+        label: 'Work',
+        items: [
+          {
+            type: 'view',
+            ref: 'workspace',
+            children: [
+              { type: 'kind', ref: 'task' },
+              { type: 'kind', ref: 'work_session' },
+              { type: 'kind', ref: 'doc' },
+              { type: 'kind', ref: 'team_member' },
+              { type: 'kind', ref: 'memory' },
+              { type: 'kind', ref: 'artifact' },
+              { type: 'kind', ref: 'loop' },
+              { type: 'kind', ref: 'file' },
+            ],
+          },
+          { type: 'kind', ref: 'project' },
+          { type: 'kind', ref: 'pull_request' },
+          { type: 'kind', ref: 'worktree' },
+          { type: 'view', ref: 'git' },
+        ],
+      },
+      {
+        id: 'channels',
+        label: 'Channels',
+        items: [
+          { type: 'kind', ref: 'channel' },
+          { type: 'view', ref: 'messages' },
+        ],
+      },
+      { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
+    ],
+  } as never);
 
   it('Save is ALWAYS refused, and the reason names the seam ruling', () => {
     render(<MenuEditor menu={MENU} spaceName="atelier" />);
@@ -586,10 +630,10 @@ describe('T2-3 — the menu editor', () => {
   });
 
   it('the preview mirrors the draft, and a keyboard reorder moves it', () => {
-    render(<MenuEditor menu={MENU} spaceName="atelier" />);
+    render(<MenuEditor menu={ROWED} spaceName="atelier" />);
     const preview = () => screen.getByTestId('menu-preview').textContent ?? '';
     const before = preview();
-    expect(before).toMatch(/File browser/);
+    expect(before).toMatch(/Messages/);
 
     // Messages, not Home: Home ships a SINGLE item, and moving the only row
     // in a group is correctly a no-op — which would make this test assert
@@ -604,7 +648,7 @@ describe('T2-3 — the menu editor', () => {
   });
 
   it('discard is dead until there is something to discard, then restores', () => {
-    render(<MenuEditor menu={MENU} spaceName="atelier" />);
+    render(<MenuEditor menu={ROWED} spaceName="atelier" />);
     const discard = screen.getByRole('button', { name: 'discard' }) as HTMLButtonElement;
     expect(discard.disabled).toBe(true);
 
@@ -618,7 +662,7 @@ describe('T2-3 — the menu editor', () => {
   });
 
   it('renaming a group commits on ⏎ and cancels on esc', () => {
-    render(<MenuEditor menu={MENU} spaceName="atelier" />);
+    render(<MenuEditor menu={ROWED} spaceName="atelier" />);
     // Revision 12: the group label is "Work" (the tab name).
     fireEvent.click(screen.getByRole('button', { name: 'rename Work' }));
     const input = screen.getByLabelText('rename Work') as HTMLInputElement;
@@ -667,7 +711,7 @@ describe('T2-3 — the menu editor', () => {
   });
 
   it('the child cap control states its own numbers when full', () => {
-    render(<MenuEditor menu={MENU} spaceName="atelier" />);
+    render(<MenuEditor menu={ROWED} spaceName="atelier" />);
     // The Workspace caret ships at the frozen 8-child cap, so ITS control is
     // honest about being unavailable from the first render. (The Code caret
     // ships with three children, so a LIVE add-child legitimately exists
