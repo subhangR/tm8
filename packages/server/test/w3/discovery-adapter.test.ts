@@ -22,7 +22,7 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {135/133/134/132}: the four credentials.* rows.
         // -> {137/135/136/134}: projects.files.list/attach.
         // -> {138/136/137/135} (2026-08-09, merge): execution.dispatch.
-        total: 163,
+        total: 166, // +3 W4/132
         v1: 161,
         reserved: 2,
         http: 162,

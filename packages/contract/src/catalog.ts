@@ -52,6 +52,11 @@ export const OPERATIONS = [
   { name: 'spaces.taskAxes.create',  method: 'POST',   path: '/v2/spaces/:spaceId/task-axes',               kind: 'command', status: 'v1' },
   { name: 'spaces.taskAxes.update',  method: 'PATCH',  path: '/v2/spaces/:spaceId/task-axes/:axisId',       kind: 'command', status: 'v1' },
   { name: 'spaces.taskAxes.delete',  method: 'DELETE', path: '/v2/spaces/:spaceId/task-axes/:axisId',       kind: 'command', status: 'v1' },
+  // W4 (132): per-type status vocabularies. Upsert, not create+update — the
+  // natural key is (space, type value) and the UI edits one row per value.
+  { name: 'spaces.taskWorkflows.list',   method: 'GET',    path: '/v2/spaces/:spaceId/task-workflows',             kind: 'read',    status: 'v1' },
+  { name: 'spaces.taskWorkflows.upsert', method: 'POST',   path: '/v2/spaces/:spaceId/task-workflows',             kind: 'command', status: 'v1' },
+  { name: 'spaces.taskWorkflows.delete', method: 'DELETE', path: '/v2/spaces/:spaceId/task-workflows/:workflowId', kind: 'command', status: 'v1' },
   { name: 'spaces.leaderboard',      method: 'GET',    path: '/v2/spaces/:spaceId/leaderboard',             kind: 'read',    status: 'v1' },
   { name: 'spaces.awards',           method: 'GET',    path: '/v2/spaces/:spaceId/awards',                  kind: 'read',    status: 'v1' },
 

@@ -175,7 +175,9 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 143 -> 144 (2026-08-13, forge write): `pr merge` (catalog row tracking.pr.merge).
     // 148 -> 149 (2026-08-16): `task axis`, an alias over entities.get +
     // entities.patch (catalog rows unmoved).
-    expect(COMMAND_PATHS).toHaveLength(149);
+    // 149 -> 152 (2026-08-16, W4/132): space task-workflow list|set|delete —
+    // three catalog-driven commands over the new taskWorkflows rows.
+    expect(COMMAND_PATHS).toHaveLength(152);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {

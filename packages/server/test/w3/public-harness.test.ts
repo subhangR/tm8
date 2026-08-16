@@ -43,7 +43,7 @@ describe.sequential('W3 production-Server public harness', () => {
       // projects.branches.list makes it 128.
       // Tier 4 adds two more mounted HTTP routes.
       // 136 -> 137 (2026-08-09, merge): execution.dispatch, mounted.
-      operations: 162,
+      operations: 165, // +3 W4/132: routes
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
     // design so it keeps catching the next drift; never a range or a live value.

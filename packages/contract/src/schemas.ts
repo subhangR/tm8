@@ -93,7 +93,7 @@ import type {
   SessionFileChange, SessionFileChanges, SessionFileHunk,
   SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
   SessionTranscriptStuck,
-  ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
+  ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput, TaskWorkflow, TaskWorkflowInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingPrMergeInput, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
@@ -1845,6 +1845,14 @@ export const TaskAxisInputSchema: z.ZodType<TaskAxisInput> = z.object({
   position: z.number().finite(),
 }).strict();
 
+export const TaskWorkflowInputSchema: z.ZodType<TaskWorkflowInput> = z.object({
+  ...commandContextShape,
+  typeValue: z.string().min(1),
+  // The structural {open, working, done} rule is the DATABASE's constraint;
+  // duplicating it here would be a second copy free to drift.
+  statuses: z.array(WorkStatusSchema),
+}).strict();
+
 export const SavedViewInputSchema: z.ZodType<SavedViewInput> = z.object({
   ...commandContextShape,
   name: z.string().min(1),
@@ -3137,6 +3145,13 @@ export const TaskAxisSchema: z.ZodType<TaskAxis> = z.object({
   position: z.number(),
 }).strict();
 
+export const TaskWorkflowSchema: z.ZodType<TaskWorkflow> = z.object({
+  id: z.string(),
+  spaceId: SpaceIdSchema,
+  typeValue: z.string(),
+  statuses: z.array(WorkStatusSchema),
+}).strict();
+
 export const LeaderboardRowSchema: z.ZodType<LeaderboardRow> = z.object({
   actor: ActorSummarySchema,
   score: z.number(),
@@ -3171,6 +3186,7 @@ export const SpaceSettingsSchema: z.ZodType<SpaceSettings> = z.lazy(() => z.obje
     revoked: z.boolean(),
   }).strict()),
   taskAxes: z.array(TaskAxisSchema),
+  taskWorkflows: z.array(TaskWorkflowSchema).optional(),
 }).strict());
 
 export const SpaceSettingsViewSchema: z.ZodType<SpaceSettingsView> = z.lazy(() => z.object({
@@ -3190,6 +3206,7 @@ export const SpaceSettingsViewSchema: z.ZodType<SpaceSettingsView> = z.lazy(() =
     revoked: z.boolean(),
   }).strict()),
   taskAxes: z.array(TaskAxisSchema),
+  taskWorkflows: z.array(TaskWorkflowSchema).optional(),
   menu: MenuConfigSchema,
   defaultChannelId: EntityIdSchema.nullable(),
   defaultInteractionProfileId: EntityIdSchema.nullable(),

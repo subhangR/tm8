@@ -498,6 +498,36 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'unbound',
   },
+  'spaces.taskWorkflows.list': {
+    cmd: ['space', 'task-workflow', 'list'],
+    syn: 'tm8 space task-workflow list [<space-id>]',
+    sum: 'List the per-type status vocabularies this Space enforces',
+    authz: 'space',
+    input: 'none',
+    notes: [
+      'a type value with no row keeps the full seven-status vocabulary; open, working, and done are structural in every row',
+    ],
+  },
+  'spaces.taskWorkflows.upsert': {
+    cmd: ['space', 'task-workflow', 'set'],
+    syn: 'tm8 space task-workflow set <type-value> [--space <space-id>] --status <status>... [--mutation-id <id>]',
+    sum: 'Create or replace the status vocabulary for one `type` axis value',
+    authz: 'space',
+    input: 'bound',
+    notes: [
+      'upsert on (space, type value) — the whole vocabulary is stated each time, never patched',
+      'open, working, and done are required members (schema constraint); the narrowable set is pulled|in_review|blocked|cancelled',
+    ],
+    examples: ['tm8 space task-workflow set <type-value> --status open --status working --status in_review --status done'],
+  },
+  'spaces.taskWorkflows.delete': {
+    cmd: ['space', 'task-workflow', 'delete'],
+    syn: 'tm8 space task-workflow delete <workflow-id> [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: 'Remove a per-type vocabulary — the type returns to all seven statuses',
+    authz: 'space',
+    input: 'unbound',
+    notes: ['never data loss: no task row changes; the vocabulary simply widens back'],
+  },
   'spaces.leaderboard': {
     cmd: ['space', 'leaderboard', 'get'],
     syn: 'tm8 space leaderboard get [<space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -2012,7 +2042,9 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
-  'sha256:4f48f15d8ac03dfcc5fce979ba12b627d2fe1af7ebd8028c397c0631eb7ed3ce';
+  // Re-measured 2026-08-16 (W4/132: + spaces.taskWorkflows.*) — read from the
+  // regenerated conformance manifest, never hand-derived.
+  'sha256:fae705aa16f2296ce88b0b327338e79455373a3ae3ab2569c49f2b5dd17738cd';
 
 export const GRAMMAR_VERSION = '2';
 

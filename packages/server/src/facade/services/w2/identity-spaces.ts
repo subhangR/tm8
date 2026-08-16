@@ -10,6 +10,7 @@ import {
   type SpaceSettings,
   type SpaceSettingsView,
   type TaskAxis,
+  type TaskWorkflow,
 } from '@tm8/contract';
 
 import type { DbClaims, Querier } from '../../../db/types.js';
@@ -84,6 +85,17 @@ interface InviteMutationResult {
 
 interface AxisMutationResult {
   axis: TaskAxisRow;
+}
+
+interface TaskWorkflowRow {
+  id: string;
+  space_id: string;
+  type_value: string;
+  statuses: TaskWorkflow['statuses'];
+}
+
+interface WorkflowMutationResult {
+  workflow: TaskWorkflowRow;
 }
 
 interface LeaderboardDbRow {
@@ -187,6 +199,15 @@ function toInvite(row: InviteRow): InviteView {
   };
 }
 
+function toTaskWorkflow(row: TaskWorkflowRow): TaskWorkflow {
+  return {
+    id: row.id,
+    spaceId: row.space_id,
+    typeValue: row.type_value,
+    statuses: row.statuses,
+  };
+}
+
 function toTaskAxis(row: TaskAxisRow): TaskAxis {
   return {
     id: row.id,
@@ -280,6 +301,17 @@ async function loadInvites(q: Querier, spaceId: string): Promise<InviteView[]> {
   return rows.map(toInvite);
 }
 
+async function loadTaskWorkflows(q: Querier, spaceId: string): Promise<TaskWorkflow[]> {
+  const rows = await q.query<TaskWorkflowRow>(
+    `select id, space_id, type_value, statuses
+       from public.task_workflows
+      where space_id = $1
+      order by type_value asc, id asc`,
+    [spaceId],
+  );
+  return rows.map(toTaskWorkflow);
+}
+
 async function loadTaskAxes(q: Querier, spaceId: string): Promise<TaskAxis[]> {
   const rows = await q.query<TaskAxisRow>(
     `select id, space_id, name, axis_values, kind, position
@@ -347,6 +379,7 @@ export class W2IdentitySpacesService {
       const members = await loadMembers(q, spaceId);
       const invites = await loadInvites(q, spaceId);
       const taskAxes = await loadTaskAxes(q, spaceId);
+      const taskWorkflows = await loadTaskWorkflows(q, spaceId);
       const menuRows = await q.query<MenuRow>(
         `select schema_version, revision, payload
            from public.space_menu_configs
@@ -367,6 +400,7 @@ export class W2IdentitySpacesService {
         members,
         invites,
         taskAxes,
+        taskWorkflows,
         menu,
         defaultChannelId: space.default_channel_id,
         defaultInteractionProfileId: space.default_interaction_profile_id,
@@ -558,6 +592,46 @@ export class W2IdentitySpacesService {
       [spaceId, axisId, clientMutationId],
     );
     return { axisId };
+  };
+
+  readonly spacesTaskWorkflowsList: OperationHandler = async (ctx) => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const claims = claimsFor(owner, ctx);
+    return this.deps.db.tx(claims, async (q) => {
+      await requireMembership(q, spaceId, claims);
+      return loadTaskWorkflows(q, spaceId);
+    });
+  };
+
+  readonly spacesTaskWorkflowsUpsert: OperationHandler = async (ctx) => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const body = bodyObject(ctx.body);
+    const clientMutationId = requireMutationId(body);
+    optionalActorId(body);
+    const result = await this.deps.db.rpc<WorkflowMutationResult>(
+      claimsFor(owner, ctx, commandEnvelope(ctx)),
+      'upsert_task_workflow',
+      [spaceId, body.typeValue, body.statuses, clientMutationId],
+    );
+    return toTaskWorkflow(result.workflow);
+  };
+
+  readonly spacesTaskWorkflowsDelete: OperationHandler = async (ctx) => {
+    const owner = await this.deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const workflowId = requireUuidParam(ctx, 'workflowId');
+    const body = bodyObject(ctx.body);
+    assertStrictKeys(body, ['actorId', 'clientMutationId']);
+    const clientMutationId = requireMutationId(body);
+    optionalActorId(body);
+    await this.deps.db.rpc(
+      claimsFor(owner, ctx, commandEnvelope(ctx)),
+      'delete_task_workflow',
+      [spaceId, workflowId, clientMutationId],
+    );
+    return { workflowId };
   };
 
   readonly spacesLeaderboard: OperationHandler = async (ctx) => {

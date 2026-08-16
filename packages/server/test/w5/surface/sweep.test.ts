@@ -303,9 +303,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // credentials.* add four mounted operations.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(SURFACE).toHaveLength(160);
-    expect(rows).toHaveLength(160);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(160);
+    // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
+    expect(SURFACE).toHaveLength(163);
+    expect(rows).toHaveLength(163);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(163);
   });
 
   /**
@@ -537,8 +538,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 113 -> 114: 123 persists chat mode and audits chat tool calls; it was
     // renumbered from 122 after the single-home migration landed on main.
     // 114 -> 115: 124 widens that write-once authority to Explain mode.
-    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 115.
-    expect(server.appliedMigrations.length).toBe(115);
+    // 115 -> 116 (2026-08-16): 132_task_workflows joins the chain.
+    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 116.
+    expect(server.appliedMigrations.length).toBe(116);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -795,6 +797,11 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'spaces.menu.update',
   'spaces.taskAxes.create',
   'spaces.taskAxes.update',
+  // W4/132: the synthetic `statuses` array satisfies the zod schema but not
+  // the DATABASE's structural {open, working, done} constraint — the refusal
+  // is the RPC's, reached through the handler. Handler evidence, not a :166
+  // gate rejection.
+  'spaces.taskWorkflows.upsert',
   'spaces.update',
   'teamMembers.interactionProfile.setDefault',
 ];
