@@ -47,6 +47,10 @@ export interface ChatHomeSurfaceProps {
   newEntityUnavailable?: ChatHomeScreenProps['newEntityUnavailable'];
   routeThreadId?: ChatHomeScreenProps['routeThreadId'];
   onThreadSelected?: ChatHomeScreenProps['onThreadSelected'];
+  /** Craft's solo conversation + the two publishes a hosted picker needs. */
+  soloConversation?: ChatHomeScreenProps['soloConversation'];
+  onThreadsChange?: ChatHomeScreenProps['onThreadsChange'];
+  onSelectionChange?: ChatHomeScreenProps['onSelectionChange'];
   graphFull?: ChatHomeScreenProps['graphFull'];
   onGraphFullChange?: ChatHomeScreenProps['onGraphFullChange'];
   graphFilters?: ChatHomeScreenProps['graphFilters'];

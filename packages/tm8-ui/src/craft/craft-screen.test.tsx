@@ -179,3 +179,86 @@ describe('the craft studio', () => {
     view.unmount();
   });
 });
+
+/**
+ * TWO PANES (task 01a00b4e). The studio used to READ as three columns, and
+ * only one of them was Craft's: the chat surface brought its own thread
+ * sidebar, so `CraftScreen`'s two panes plus that column made three.
+ *
+ * jsdom sees no widths, so nothing here claims geometry — the columns, their
+ * order and the resizer's arithmetic are the pixel harness's to prove
+ * (`e2e/craft-harness.html`). What IS testable here is the structure: which
+ * regions exist, and that the chat surface's own selector is gone rather than
+ * merely hidden.
+ */
+describe('the two-pane studio', () => {
+  it('hosts the conversation SOLO — no thread sidebar inside the chat pane', async () => {
+    const { view } = await mountStudio();
+    await waitFor(() => view.container.querySelector('.tch-root'));
+    /* The chat surface renders its conversation and nothing else. */
+    expect(view.container.querySelector('.tch-root--solo')).toBeTruthy();
+    expect(view.container.querySelector('.tch-sidebar')).toBeNull();
+    /* Not merely display:none — a hidden tablist and a second searchbox would
+       still be in the a11y tree, offering a selector the screen won't honour. */
+    expect(view.queryByRole('complementary', { name: 'Tasks, chats and sessions' })).toBeNull();
+    expect(view.queryByRole('tablist', { name: 'Home roots' })).toBeNull();
+    view.unmount();
+  });
+
+  it('puts the conversation picker and ＋ on the chat pane, and the graph picker on the canvas', async () => {
+    const { view } = await mountStudio();
+    await waitFor(() => view.getByTestId('crf-chat-picker'));
+    /* Both panes carry a header, each naming the pane beneath it. */
+    expect(view.getByTestId('crf-chat-picker')).toBeTruthy();
+    expect(view.getByTestId('crf-new-chat')).toBeTruthy();
+    expect(view.getByTestId('crf-picker')).toBeTruthy();
+    expect(view.getByTestId('crf-new')).toBeTruthy();
+    /* And the divider between them is a real separator, not a border. */
+    expect(view.getByTestId('panel-resizer-left')).toBeTruthy();
+    view.unmount();
+  });
+
+  it('opens the conversation popover with its search, and closes it on Escape', async () => {
+    const { view } = await mountStudio();
+    await waitFor(() => view.getByTestId('crf-chat-picker'));
+    expect(view.queryByTestId('crf-chat-pop')).toBeNull();
+
+    fireEvent.click(view.getByTestId('crf-chat-picker'));
+    await waitFor(() => view.getByTestId('crf-chat-pop'));
+    /* The find box came WITH the list — it is what makes a space-wide
+       population usable from a header control. */
+    expect(view.getByRole('searchbox')).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(view.queryByTestId('crf-chat-pop')).toBeNull());
+    view.unmount();
+  });
+
+  it('scopes the picker to THIS blueprint, and says what it is hiding', async () => {
+    const { view } = await mountStudio();
+    await waitFor(() => view.getByTestId('crf-chat-picker'));
+    fireEvent.click(view.getByTestId('crf-chat-picker'));
+    await waitFor(() => view.getByTestId('crf-chat-pop'));
+
+    /* The fixture's threads are anchored elsewhere and are not craft-mode, so
+       the scoped list is legitimately empty — and the escape hatch is the
+       difference between an empty state and a dead end. */
+    expect(view.getByTestId('crf-chat-empty')).toBeTruthy();
+    const scope = view.getByTestId('crf-chat-scope');
+    expect(scope.textContent).toContain('on this blueprint');
+
+    fireEvent.click(scope);
+    await waitFor(() => expect(view.getByTestId('crf-chat-scope').textContent).toContain('Showing all'));
+    view.unmount();
+  });
+
+  it('draws NO entity column until a chip is pressed, and none at all without a shell to build one', async () => {
+    /* Absent the shell bundle there is no region C to open into, and the
+       screen says so by rendering nothing rather than an empty aside. */
+    const { view } = await mountStudio();
+    await waitFor(() => view.getByTestId('craft-screen'));
+    expect(view.queryByTestId('crf-detail')).toBeNull();
+    expect(view.queryByTestId('panel-resizer-right')).toBeNull();
+    view.unmount();
+  });
+});

@@ -8,6 +8,14 @@
   background: var(--pn-paper);
 }
 
+/* SOLO (Craft): the thread column is hosted outside this screen, so the grid
+   is the conversation alone. One column, not a zero-width first track — a
+   collapsed track still resolves `minmax()` against the sidebar's `min-width`
+   and would leave a sliver of border down the pane. */
+.tch-root--solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .tch-sidebar {
   display: flex;
   flex-direction: column;

@@ -70,6 +70,64 @@ describe('blueprintView — the entity-type fold', () => {
     expect(view.height).toBeGreaterThanOrEqual(PAD + 40 + CARD_H);
   });
 
+  /**
+   * THE BOUNDING BOX, which is a different question from the extent.
+   *
+   * `width`/`height` measure from a pinned 0,0 origin. That is what the canvas
+   * used to fit to, and it is why a blueprint with one outlying card rendered
+   * shrunk into the top-left corner while most of the pane stayed empty — and
+   * why a card at a negative coordinate was not drawn small but not drawn AT
+   * ALL. `bounds` answers what is actually drawn.
+   */
+  describe('bounds — what is actually drawn, not the extent from the origin', () => {
+    it('starts at the top-left-most card, not at the origin', () => {
+      const view = blueprintView(entityContent({ layout: { a: { x: -400, y: -200 } } }));
+      /* The placed card lands at PAD-400 / PAD-200; the box opens PAD before it. */
+      expect(view.bounds.minX).toBeLessThanOrEqual(PAD - 400);
+      expect(view.bounds.minY).toBeLessThanOrEqual(PAD - 200);
+      /* The pinned-origin extent cannot express this at all — which was the bug. */
+      expect(view.bounds.minX).toBeLessThan(0);
+    });
+
+    it('spans every drawn card, however far out the row places it', () => {
+      const view = blueprintView(entityContent({ layout: { b: { x: 1400, y: 640 } } }));
+      const right = view.bounds.minX + view.bounds.width;
+      const bottom = view.bounds.minY + view.bounds.height;
+      expect(right).toBeGreaterThanOrEqual(PAD + 1400 + CARD_W);
+      expect(bottom).toBeGreaterThanOrEqual(PAD + 640 + CARD_H);
+    });
+
+    it('contains every bow and label anchor, not just the card rectangles', () => {
+      /* On the fallback grid a bow stays inside the union of the two cards it
+         joins, so this asserts CONTAINMENT rather than that the curve escapes.
+         The escape case is the irregular one — two connected cards placed far
+         apart by `layout`, below — and the containment invariant is what makes
+         the fit safe on both. */
+      const view = blueprintView(entityContent({ layout: { a: { x: 900, y: 500 } } }));
+      const right = view.bounds.minX + view.bounds.width;
+      const bottom = view.bounds.minY + view.bounds.height;
+      expect(view.lines.length).toBeGreaterThan(0);
+      for (const line of view.lines) {
+        for (const x of [line.x1, line.x2, line.cx, line.lx]) {
+          expect(x).toBeGreaterThanOrEqual(view.bounds.minX);
+          expect(x).toBeLessThanOrEqual(right);
+        }
+        for (const y of [line.y1, line.y2, line.cy, line.ly]) {
+          expect(y).toBeGreaterThanOrEqual(view.bounds.minY);
+          expect(y).toBeLessThanOrEqual(bottom);
+        }
+      }
+    });
+
+    it('answers a finite box for an empty blueprint rather than ±Infinity', () => {
+      const view = blueprintView({ kind: 'graph', graphType: 'entity', nodes: [], edges: [] });
+      expect(Number.isFinite(view.bounds.minX)).toBe(true);
+      expect(Number.isFinite(view.bounds.minY)).toBe(true);
+      expect(Number.isFinite(view.bounds.width)).toBe(true);
+      expect(Number.isFinite(view.bounds.height)).toBe(true);
+    });
+  });
+
   it('COUNTS an edge naming an unknown key instead of dropping it silently', () => {
     const view = blueprintView(
       entityContent({ edges: [{ src: 'b', dst: 'ghost', type: 'depends_on' }] }),

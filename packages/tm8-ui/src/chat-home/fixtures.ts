@@ -27,10 +27,13 @@ const AGENT: ActorSummary = {
 };
 
 const ROOT_ID = '019f0000-0000-7000-8000-000000000010' as EntityId;
+/** The fixture channel every fixture thread hangs off — bare Home's anchor. */
+const ANCHOR_ID = '019f0000-0000-7000-8000-000000000001' as EntityId;
 
 export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
   summary: {
     rootId: ROOT_ID,
+    anchorId: ANCHOR_ID,
     title: 'Plan the launch sequence',
     preview: 'I mapped the work into three dependency-safe lanes.',
     updatedAt: '2026-08-13T08:20:00.000Z',
@@ -174,6 +177,7 @@ export function createChatHomeFixturePort(
         details.set(rootId, {
           summary: {
             rootId,
+            anchorId: input.anchorId,
             title: input.body,
             preview: input.body,
             updatedAt: new Date().toISOString(),

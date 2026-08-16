@@ -1684,9 +1684,25 @@ export function GateApp(props: GateAppProps = {}) {
               skillOptions={data.skillOptions}
               viewerName={data.viewerActor?.displayName}
               viewerId={data.viewerActor?.id}
-              onOpenEntity={(id) => {
-                navigateTo(WORKSPACE_TARGET);
-                nav.push(id as EntityId);
+              /* A chip press opens region C INSIDE Craft now, so no
+                 `onOpenEntity` is passed: the old handler navigated to the
+                 workspace, which unmounted the studio and took the selected
+                 graph, thread and glow baseline with it. Nothing is stubbed in
+                 its place — passing no handler is how a host says it has
+                 nothing to do, and a stub is banned outright. */
+              panelHost={{
+                data,
+                reasons,
+                serverBaseUrl: activeServer.routeBaseUrl,
+                viewerMemberId,
+                onNotice: (text) =>
+                  notices.push({
+                    id: `crf:${Date.now()}`,
+                    tone: 'info',
+                    title: 'Craft',
+                    body: text,
+                    ttlMs: 6000,
+                  }),
               }}
               onNotice={(text) =>
                 notices.push({
