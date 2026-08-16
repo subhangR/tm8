@@ -16,6 +16,7 @@ import { LiveGraphStrip } from '../channel-screen/LiveToolGraph';
 import { mergeChatTurnFrame, projectTurnParts, reconcileDetails } from './turn-model';
 import { foldTurnGraph } from './turn-graph';
 import type { ChatEntityResolver } from './EntityChip';
+import { ComposerSelect } from './ComposerSelect';
 import { TurnParts } from './TurnParts';
 import type {
   ChatHomePort,
@@ -461,6 +462,45 @@ export function ChatHomeScreen({
         ? 'No model is available from the launch catalog.'
         : null;
   const refusal = startUnavailable ?? selectionUnavailable;
+
+  /**
+   * THE THREAD'S THREE WRITE-ONCE FACTS, as the composer's drop-ups read them.
+   *
+   * A configured thread shows what it was STARTED with and refuses edits; a new
+   * thread shows the pending selection and takes them. The two lists carry the
+   * config's own label when the catalog no longer offers it — a teammate can
+   * leave the space and a model can be retired from the launch catalog after a
+   * thread pinned it, and a trigger reading "—" would hide the very fact the
+   * thread is pinned to.
+   */
+  const pinned = activeConfig !== null;
+  const shownTeammateId = activeConfig?.teammateId ?? teammateId;
+  const shownModelId = activeConfig?.model ?? modelId;
+  const shownMode = activeConfig?.mode ?? chatMode;
+  const teammateOptions = useMemo(() => {
+    const base = teammates.map((teammate) => ({
+      id: teammate.id,
+      label: teammate.label,
+      actor: { id: teammate.id, avatar: teammate.avatar },
+    }));
+    return activeConfig && !base.some((option) => option.id === activeConfig.teammateId)
+      ? [{
+          id: activeConfig.teammateId,
+          label: activeConfig.teammateLabel,
+          actor: { id: activeConfig.teammateId, avatar: null },
+        }, ...base]
+      : base;
+  }, [teammates, activeConfig]);
+  const modelOptions = useMemo(() => {
+    const base = models.map((model) => ({
+      id: model.model,
+      label: model.label,
+      hint: model.provider,
+    }));
+    return activeConfig && !base.some((option) => option.id === activeConfig.model)
+      ? [{ id: activeConfig.model, label: activeConfig.modelLabel }, ...base]
+      : base;
+  }, [models, activeConfig]);
 
   /**
    * THE COMPOSER IS THE SHARED RICH INPUT (chip placement, R4).
@@ -1064,24 +1104,6 @@ export function ChatHomeScreen({
             <strong>{detail?.summary.title ?? 'New conversation'}</strong>
             <span>{activeConfig ? `with ${activeConfig.teammateLabel}` : 'Work with your graph from one place'}</span>
           </div>
-          <Selector
-            teammates={teammates}
-            models={models}
-            teammateId={activeConfig?.teammateId ?? teammateId}
-            modelId={activeConfig?.model ?? modelId}
-            mode={activeConfig?.mode ?? chatMode}
-            provider={
-              models.find((model) => model.model === (activeConfig?.model ?? modelId))?.provider ?? ''
-            }
-            pinned={activeConfig !== null}
-            /* A NEW thread's mode and teammate are chosen in the composer
-               (chips + the TO row); drawing the same two selects here as well
-               would be two live controls for one fact. */
-            configInComposer={newThread}
-            onTeammate={(id) => setTeammateId(id)}
-            onModel={setModelId}
-            onMode={setChatMode}
-          />
         </header>
 
         <div className="tch-transcript" aria-live="polite">
@@ -1145,26 +1167,6 @@ export function ChatHomeScreen({
             </p>
           ) : null}
           <div className="tch-composer">
-            {newThread ? (
-              <div className="tch-mode-row" role="radiogroup" aria-label="Chat mode">
-                {CHAT_MODES.map((entry) => (
-                  <button
-                    key={entry.mode}
-                    type="button"
-                    role="radio"
-                    aria-checked={chatMode === entry.mode}
-                    className={`tch-mode-choice ${chatMode === entry.mode ? 'tch-mode-choice--active' : ''}`}
-                    title={entry.hint}
-                    onClick={() => setChatMode(entry.mode)}
-                  >
-                    {entry.label}
-                  </button>
-                ))}
-                <span className="tch-mode-hint">
-                  {CHAT_MODES.find((entry) => entry.mode === chatMode)?.hint}
-                </span>
-              </div>
-            ) : null}
             <AttachmentChips attachments={attachments} testId="tch-attachments" />
             <div className="ri-host">
               <textarea
@@ -1193,34 +1195,6 @@ export function ChatHomeScreen({
               />
             </div>
             <div className="tch-composer__foot">
-              {newThread && teammates.length > 0 ? (
-                /* TO: — pinned when the thread starts, like the mode. NO
-                   `auto` chip on purpose: there is no routing pipeline that
-                   could honour it, and a chip that promises routing nobody
-                   built is exactly the fabrication this surface refuses. */
-                <div className="tch-to-row" role="radiogroup" aria-label="Send to teammate">
-                  <span className="tch-to-label" aria-hidden>to</span>
-                  {teammates.map((teammate) => (
-                    <button
-                      key={teammate.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={teammateId === teammate.id}
-                      className={`tch-to-chip ${teammateId === teammate.id ? 'tch-to-chip--active' : ''}`}
-                      onClick={() => setTeammateId(teammate.id)}
-                    >
-                      <Avatar
-                        actorId={teammate.id}
-                        provenance="agent"
-                        label={teammate.label}
-                        size={15}
-                        src={teammate.avatar ?? undefined}
-                      />
-                      {teammate.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
               {attach ? (
                 <ChooseFilesControl
                   label="Attach a file"
@@ -1258,6 +1232,40 @@ export function ChatHomeScreen({
                   <span aria-hidden>/</span>
                 </button>
               ) : null}
+              {/* The thread's configuration lives HERE and nowhere else. NO
+                  `auto` teammate on purpose: there is no routing pipeline that
+                  could honour it, and an option that promises routing nobody
+                  built is exactly the fabrication this surface refuses. */}
+              <span className="tch-picks">
+                <ComposerSelect
+                  label="Chat mode"
+                  testId="tch-mode"
+                  options={MODE_OPTIONS}
+                  value={shownMode}
+                  onChange={(id) => setChatMode(id as ChatMode)}
+                  disabled={pinned}
+                  emptyNote="No chat mode is available."
+                />
+                <ComposerSelect
+                  label="Chat teammate"
+                  testId="tch-teammate"
+                  options={teammateOptions}
+                  value={shownTeammateId}
+                  onChange={(id) => setTeammateId(id as EntityId)}
+                  disabled={pinned}
+                  emptyNote="No agent teammate is available in this space."
+                />
+                <ComposerSelect
+                  label="Chat model"
+                  testId="tch-model"
+                  options={modelOptions}
+                  value={shownModelId}
+                  onChange={setModelId}
+                  disabled={pinned}
+                  emptyNote="No model is available from the launch catalog."
+                />
+                {pinned ? <span className="tch-pinned">pinned for this thread</span> : null}
+              </span>
               <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
               <span className="tch-hint">Enter to send · Shift+Enter for a new line</span>
               {phase === 'streaming' ? (
@@ -1304,108 +1312,25 @@ export function ChatHomeScreen({
   );
 }
 
-function Selector({
-  teammates,
-  models,
-  teammateId,
-  modelId,
-  mode,
-  provider,
-  pinned,
-  configInComposer,
-  onTeammate,
-  onModel,
-  onMode,
-}: {
-  teammates: readonly ChatTeammateOption[];
-  models: readonly ChatModelOption[];
-  teammateId: EntityId | '';
-  modelId: string;
-  mode: ChatMode;
-  provider: string;
-  pinned: boolean;
-  /** True while a NEW thread's mode/teammate render in the composer instead. */
-  configInComposer?: boolean;
-  onTeammate(id: EntityId): void;
-  onModel(id: string): void;
-  onMode(mode: ChatMode): void;
-}) {
-  return (
-    <div className="tch-selector" data-pinned={pinned || undefined}>
-      {!configInComposer ? (
-        <label>
-          <span>Teammate</span>
-          <select
-            aria-label="Chat teammate"
-            disabled={pinned || teammates.length === 0}
-            value={teammateId}
-            onChange={(event) => onTeammate(event.target.value as EntityId)}
-          >
-            {teammates.map((teammate) => (
-              <option key={teammate.id} value={teammate.id}>{teammate.label}</option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-      {!configInComposer ? (
-        <label>
-          <span>Mode</span>
-          <select
-            aria-label="Chat mode"
-            disabled={pinned}
-            value={mode}
-            onChange={(event) => onMode(event.target.value as ChatMode)}
-          >
-            <option value="ask">Ask</option>
-            <option value="explain">Explain</option>
-            <option value="plan">Plan</option>
-            <option value="build">Build</option>
-            <option value="orchestrate">Orchestrate</option>
-          </select>
-        </label>
-      ) : null}
-      <label>
-        <span>Model</span>
-        <select
-          aria-label="Chat model"
-          disabled={pinned || models.length === 0}
-          value={modelId}
-          onChange={(event) => onModel(event.target.value)}
-        >
-          {models.map((model) => (
-            <option key={`${model.agentTool}:${model.model}`} value={model.model}>
-              {model.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <span className="tch-selector__provider">{provider || 'provider unavailable'}</span>
-      {pinned ? <span className="tch-selector__pin">pinned for this thread</span> : null}
-    </div>
-  );
-}
-
 /**
- * The composer's mode chips.
+ * The composer's mode drop-up.
  *
  * Every mode carries the same tool surface (`toolPermission` in @tm8/mcp); the
  * mode states how the teammate works, not what it may touch. So these hints
  * describe intent and must never promise safety — the earlier "changes
  * nothing" copy on ask/explain/plan would now be a lie, because those modes
- * can edit the thread checkout and mutate the graph like any other. The
- * `configOnly` dashed treatment is gone with it: build and orchestrate reach
- * real repository and delegation tools through MCP.
+ * can edit the thread checkout and mutate the graph like any other.
+ *
+ * The hints are the menu rows' second line rather than a sentence beside a chip
+ * row: read on the row it describes, each one is legible; parked at the end of
+ * the bar, only the selected mode's was, and it set the composer's width.
  */
-const CHAT_MODES: readonly {
-  mode: ChatMode;
-  label: string;
-  hint: string;
-}[] = [
-  { mode: 'ask', label: 'ask', hint: 'ask — answers your question; acts only when you ask it to' },
-  { mode: 'explain', label: 'explain', hint: 'explain — walks the reasoning with inline diagrams, graphs and code' },
-  { mode: 'plan', label: 'plan', hint: 'plan — shapes work into steps and a durable plan to approve' },
-  { mode: 'build', label: 'build', hint: 'build — does the work; edits this thread’s checkout for real' },
-  { mode: 'orchestrate', label: 'orchestrate', hint: 'orchestrate — dispatches and steers worker sessions' },
+const MODE_OPTIONS: readonly { id: ChatMode; label: string; hint: string }[] = [
+  { id: 'ask', label: 'ask', hint: 'answers your question; acts only when you ask it to' },
+  { id: 'explain', label: 'explain', hint: 'walks the reasoning with inline diagrams, graphs and code' },
+  { id: 'plan', label: 'plan', hint: 'shapes work into steps and a durable plan to approve' },
+  { id: 'build', label: 'build', hint: 'does the work; edits this thread’s checkout for real' },
+  { id: 'orchestrate', label: 'orchestrate', hint: 'dispatches and steers worker sessions' },
 ];
 
 function greetingLine(viewerName?: string): string {
