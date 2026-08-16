@@ -583,7 +583,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // out without unminting the kind. Numbers taken ABOVE 134 after measuring
     // ALL remote refs (their max was 134). MEASURED on this tree, never
     // arithmetic: `ls db/migrations/*.sql | wc -l` = 128.
-    expect(server.appliedMigrations.length).toBe(128);
+    // 128 -> 129 (2026-08-16, same lane): 138 repairs 132's missing PUBLIC
+    // revoke on the task-workflow definer functions — found because the
+    // tm8_delivery_worker surface enumeration was red on every PR.
+    // MEASURED: `ls db/migrations/*.sql | wc -l` = 129.
+    expect(server.appliedMigrations.length).toBe(129);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
