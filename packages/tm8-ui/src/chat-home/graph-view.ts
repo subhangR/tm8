@@ -56,6 +56,57 @@ export function anyGraphFilterActive(f: GraphFilterState): boolean {
   );
 }
 
+/**
+ * THE `gf` PARAM'S VOCABULARY (plan 01a0094b step 5 + D2). Semicolon-joined
+ * segments: `k:<kind>,…` kept kinds · `e:<type>,…` kept relation types ·
+ * `m` edited-here · `i` hide-isolated · `u` hide-unread. Members are
+ * URI-encoded individually so a future kind slug cannot break the framing.
+ *
+ * SEARCH IS DELIBERATELY NOT SERIALISED: it is a transient highlight, and a
+ * URL written per keystroke would spray history entries (`navigate` pushes).
+ * The chips and toggles — the state worth sharing and restoring — persist.
+ *
+ * `decodeGraphFilters` is LENIENT, matching the route layer's ruling: an
+ * unknown segment or an undecodable member is skipped, never a crash and
+ * never a notice — a stale link degrades to fewer filters.
+ */
+export function encodeGraphFilters(f: GraphFilterState): string | null {
+  const parts: string[] = [];
+  if (f.kinds.size > 0) parts.push(`k:${[...f.kinds].map(encodeURIComponent).join(',')}`);
+  if (f.edgeTypes.size > 0) parts.push(`e:${[...f.edgeTypes].map(encodeURIComponent).join(',')}`);
+  if (f.mutatedOnly) parts.push('m');
+  if (f.hideIsolated) parts.push('i');
+  if (f.hideUnread) parts.push('u');
+  return parts.length > 0 ? parts.join(';') : null;
+}
+
+export function decodeGraphFilters(raw: string | null | undefined): GraphFilterState {
+  const kinds = new Set<string>();
+  const edgeTypes = new Set<string>();
+  let mutatedOnly = false;
+  let hideIsolated = false;
+  let hideUnread = false;
+  const members = (list: string, into: Set<string>) => {
+    for (const token of list.split(',')) {
+      if (token === '') continue;
+      try {
+        into.add(decodeURIComponent(token));
+      } catch {
+        /* Undecodable member: skipped, per the lossy-tolerance ruling. */
+      }
+    }
+  };
+  for (const segment of (raw ?? '').split(';')) {
+    if (segment === 'm') mutatedOnly = true;
+    else if (segment === 'i') hideIsolated = true;
+    else if (segment === 'u') hideUnread = true;
+    else if (segment.startsWith('k:')) members(segment.slice(2), kinds);
+    else if (segment.startsWith('e:')) members(segment.slice(2), edgeTypes);
+    /* Anything else is a stale or foreign segment: ignored. */
+  }
+  return { kinds, edgeTypes, mutatedOnly, hideIsolated, hideUnread, search: '' };
+}
+
 export interface GraphFacets {
   /** Per kind, split into drawn and not-drawn — counted over the WHOLE fold. */
   kinds: readonly { kind: string; drawn: number; undrawn: number }[];

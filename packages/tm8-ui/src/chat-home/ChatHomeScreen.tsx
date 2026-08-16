@@ -142,6 +142,10 @@ export interface ChatHomeScreenProps {
    */
   graphFull?: boolean | undefined;
   onGraphFullChange?: ((open: boolean) => void) | undefined;
+  /** `?gf=` — the graph's serialised filter state, route-owned like
+   *  `graphFull` and opaque at this layer (graph-view.ts decodes it). */
+  graphFilters?: string | null | undefined;
+  onGraphFiltersChange?: ((encoded: string | null) => void) | undefined;
   /**
    * Region B when it is NOT the chat (D7/D8): the host's entity panel,
    * rendered in the conversation pane's place while the conversation stays
@@ -206,6 +210,8 @@ export function ChatHomeScreen({
   onThreadSelected,
   graphFull,
   onGraphFullChange,
+  graphFilters,
+  onGraphFiltersChange,
   renderRootList,
   centerOverride,
   slots,
@@ -1100,6 +1106,8 @@ export function ChatHomeScreen({
                 onOpenEntity={onOpenEntity}
                 expanded={graphFull}
                 onExpandedChange={onGraphFullChange}
+                graphFilters={graphFilters}
+                onGraphFiltersChange={onGraphFiltersChange}
               />
               {detail.turns.map((turn) => (
                 <Turn

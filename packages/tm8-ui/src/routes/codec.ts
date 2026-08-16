@@ -254,9 +254,18 @@ function parseTarget(
            value is a stale or foreign link and silently renders the plain
            conversation — lossy-tolerant, per the fullscreen ruling. */
         const graph = query.get('graph') === 'full' ? ('full' as const) : null;
+        /* `gf` rides OPAQUELY: graph-view.ts owns the vocabulary and decodes
+           leniently, so this layer only requires a decodable non-empty string. */
+        const gfRaw = query.get('gf');
+        const graphFilters = gfRaw === null ? null : dec(gfRaw);
         return {
           view: 'home',
-          root: { type: 'chats', threadId: rest[2] ?? null, ...(graph ? { graph } : {}) },
+          root: {
+            type: 'chats',
+            threadId: rest[2] ?? null,
+            ...(graph ? { graph } : {}),
+            ...(graphFilters ? { graphFilters } : {}),
+          },
         };
       }
       return { view: 'home' };
@@ -348,7 +357,7 @@ function pathOf(route: Route): string {
          so the canonical form drops the segment (normalize agrees) — UNLESS
          the fullscreen graph param needs the `/chat` segment to survive a
          round-trip, since bare `/home` does not read `graph`. */
-      if (root?.type === 'chats' && root.graph) return `${base}/home/chat`;
+      if (root?.type === 'chats' && (root.graph || root.graphFilters)) return `${base}/home/chat`;
       return `${base}/home`;
     }
     case 'feed':
@@ -413,6 +422,9 @@ export function build(route: Route): BuildOutcome {
   const viewParams: Param[] = [];
   if (t.view === 'home') {
     if (t.root?.type === 'chats' && t.root.graph) viewParams.push(['graph', t.root.graph]);
+    if (t.root?.type === 'chats' && t.root.graphFilters) {
+      viewParams.push(['gf', enc(t.root.graphFilters)]);
+    }
   } else if (t.view === 'kind') {
     if (t.mode) viewParams.push(['mode', t.mode]);
   } else if (t.view === 'entity') {
@@ -512,7 +524,8 @@ export function normalize(route: Route): Route {
     route.target.root &&
     route.target.root.type === 'chats' &&
     route.target.root.threadId === null &&
-    !route.target.root.graph
+    !route.target.root.graph &&
+    !route.target.root.graphFilters
       ? { view: 'home' }
       : route.target;
 
