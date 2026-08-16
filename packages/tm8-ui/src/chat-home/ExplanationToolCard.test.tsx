@@ -30,7 +30,10 @@ describe('Explain-mode presentation tools', () => {
     expect(view.getByText('Delegation flow')).toBeTruthy();
     expect(view.getByTestId('chat-mermaid')).toBeTruthy();
     expect(view.getByText('One visible handoff.')).toBeTruthy();
-    expect(view.getByText('Tool details').closest('details')?.open).toBe(false);
+    // The diagram is the content, so the card stays — but it wears no tool
+    // chrome any more: no tool name, no raw "Tool details" payload dump.
+    expect(view.queryByText('Tool details')).toBeNull();
+    expect(view.container.textContent).not.toContain('explain_diagram');
   });
 
   it('draws verified persisted and inferred graph links differently and opens real entity nodes', () => {
