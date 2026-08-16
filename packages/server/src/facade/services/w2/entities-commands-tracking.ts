@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import {
   CollabError,
+  GraphContentInputSchema,
   decodeCursor,
   encodeCursor,
   isCollabError,
@@ -920,6 +921,22 @@ async function kindFor(q: Querier, id: string): Promise<string> {
  * An EXISTING stamp on a still-done criterion is PRESERVED, never refreshed:
  * it records when the condition was met, not when the row was last patched.
  */
+/**
+ * Craft P1: the graph door's SOFT gate. Container shapes only (R2 — lean by
+ * law): a malformed member is refused by name here, before the RPC, so the
+ * caller sees `invalid_input` with zod's path rather than a bare SQLSTATE;
+ * everything the schema does not name passes through untouched.
+ */
+function softGraphContent(content: Record<string, unknown>) {
+  const parsed = GraphContentInputSchema.safeParse(content);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new CollabError('invalid_input',
+      `graph content: ${issue ? `${issue.path.join('.')}: ${issue.message}` : 'malformed'}`);
+  }
+  return parsed.data;
+}
+
 function acceptanceCriteria(
   content: Record<string, unknown>,
   actorId: string | null,
@@ -1130,6 +1147,19 @@ export class W2EntitiesCommandsTrackingService {
             content.enabled ?? true, content.nextRunAt ?? null,
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
+        case 'graph': {
+          // Craft P1 (135): SOFT validation by law (R2) — the schema asserts
+          // node/edge/layout container shapes and passes unknown members
+          // through; it must never grow into a program schema. The same 056
+          // posture as memory/loop: zero new catalog rows.
+          const graph = softGraphContent(content);
+          raw = await q.rpc('create_graph_entity', [input.spaceId, input.title, envelope.actorId ?? null,
+            graph.graphType ?? 'entity',
+            JSON.stringify(graph.nodes ?? []), JSON.stringify(graph.edges ?? []),
+            JSON.stringify(graph.layout ?? {}), graph.source ?? null,
+            input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          break;
+        }
         default:
           if (!input.kind.startsWith('c:')) {
             throw new CollabError('forbidden', `entities.create is owned by the ${input.kind} lifecycle`);
@@ -1260,6 +1290,20 @@ export class W2EntitiesCommandsTrackingService {
               null, null, false,
               envelope.clientMutationId ?? null]);
             break;
+          case 'graph': {
+            // Craft P1: `null` MERGES (a patch carries only what it changes —
+            // the one-guarded-patch-per-turn crafting flow), and an explicit
+            // `source: null` is the clear signal, the loop pattern exactly.
+            const graph = softGraphContent(content);
+            raw = await q.rpc('update_graph_entity', [id, input.expectedVersion, envelope.actorId ?? null,
+              input.title ?? null, graph.graphType ?? null,
+              graph.nodes === undefined ? null : JSON.stringify(graph.nodes),
+              graph.edges === undefined ? null : JSON.stringify(graph.edges),
+              graph.layout === undefined || graph.layout === null ? null : JSON.stringify(graph.layout),
+              graph.source ?? null, graph.source === null,
+              envelope.clientMutationId ?? null]);
+            break;
+          }
           case 'worktree': {
             // The door accepts EXACTLY a status transition (+ an optional
             // preflight token). Everything else is refused BY NAME with
