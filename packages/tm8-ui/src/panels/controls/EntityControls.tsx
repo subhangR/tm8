@@ -49,6 +49,7 @@ import type {
   EntityKind,
   EntitySummary,
   TaskAxis,
+  TaskWorkflow,
 } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type {
@@ -61,7 +62,16 @@ import type {
   StatusPillSpec,
   ValueControl,
 } from '../../domain';
-import { KindIcon, REASONS, getKind, resolveAction } from '../../domain';
+import {
+  KindIcon,
+  REASONS,
+  getKind,
+  offWorkflowType,
+  resolveAction,
+  workflowRefusalText,
+  workflowTypeOf,
+  workflowVocabularyOf,
+} from '../../domain';
 import { Avatar, useMenuAnchor, type PillTone } from '../../kit';
 import {
   CheckingPermission,
@@ -156,6 +166,16 @@ export interface ControlHost {
    * no axis controls at all (an empty picker would fabricate a taxonomy).
    */
   taskAxes?: readonly TaskAxis[];
+  /**
+   * The space's workflow registry (W4, 132) — PER-SPACE DATA riding the same
+   * `spaceSettings()` read as `taskAxes`, hydrated by the host the same way.
+   * The state control uses it to NARROW for usability only: an option outside
+   * the row's type vocabulary renders disabled-with-reason (never hidden —
+   * "the control does not change shape"), and a CURRENT value outside it
+   * draws the derived off-workflow mark. The DATABASE trigger remains the
+   * gate; absent or empty means nothing narrows, which is today exactly.
+   */
+  taskWorkflows?: readonly TaskWorkflow[];
   onAssign?: (entityId: string, actorId: string, edgeType: string, assigned: boolean) => void;
   assignableActors?: readonly ActorSummary[];
   /**
@@ -1043,6 +1063,28 @@ export function RowStateControl({
     </span>
   );
 
+  /**
+   * W4 — the workflow NARROWING, usability only (the trigger of 132 is the
+   * gate). `vocabulary` is null when nothing narrows this row — no `type`
+   * value, no rule for it, or no workflows at all — which is today exactly.
+   * A forbidden option renders DISABLED-WITH-REASON, never hidden: the
+   * registry's own ruling is that when a workflow lands "it narrows THIS
+   * list; the control does not change shape".
+   */
+  const vocabulary = workflowVocabularyOf(props.taskWorkflows, row.state);
+  const typeValue = workflowTypeOf(row.state);
+  const barred = (id: string): boolean =>
+    vocabulary !== null && id !== current && !vocabulary.includes(id);
+  /**
+   * OFF-WORKFLOW is a DERIVED fact (owner ruling): the CURRENT status sits
+   * outside the type's vocabulary — reachable by re-typing — and is flagged,
+   * never stored, never rewritten, never refused. The refusal FORM follows
+   * the anatomy exactly as `refuse` above: a caption under the strip's
+   * select, title text on the 16px tile mark.
+   */
+  const offType = offWorkflowType(props.taskWorkflows, row.state, current);
+  const offWords = offType === null ? null : `off workflow — ${workflowRefusalText(offType, current)}`;
+
   if (control.readOnlyReason) {
     return refuse(toReason(control.readOnlyReason), currentPill);
   }
@@ -1081,11 +1123,13 @@ export function RowStateControl({
           data-testid="row-state-trigger"
           /* The trigger carries the CURRENT value in its name and its tooltip,
              so a value the registry does not list — which the menu has no row
-             for — is still stated rather than silently unrepresented. */
-          title={`${word} — change state`}
+             for — is still stated rather than silently unrepresented. The
+             off-workflow fact rides the same tooltip: a 16px mark has no room
+             for a caption, so the tile's refusal form is title text. */
+          title={offWords === null ? `${word} — change state` : `${word} — change state · ${offWords}`}
           aria-expanded={open}
           aria-haspopup="true"
-          aria-label={`${label}, currently ${word}`}
+          aria-label={offWords === null ? `${label}, currently ${word}` : `${label}, currently ${word}, ${offWords}`}
           onClick={(e) => {
             e.stopPropagation();
             setOpen((v) => !v);
@@ -1106,6 +1150,7 @@ export function RowStateControl({
               >
                 {control.options.map((o) => {
                   const on = o.id === current;
+                  const off = barred(o.id);
                   return (
                     <button
                       key={o.id}
@@ -1115,8 +1160,16 @@ export function RowStateControl({
                       data-testid="row-state-option"
                       data-state={o.id}
                       aria-checked={on}
+                      /* W4 — disabled-with-reason, never hidden: aria-disabled
+                         (not `disabled`) so a keyboard user can still reach
+                         the row and hear WHY, exactly as the honesty kit's
+                         refusals do. The menu stays open on the dead click so
+                         the tooltip can be read. */
+                      aria-disabled={off ? 'true' : undefined}
+                      title={off ? workflowRefusalText(typeValue!, o.id) : undefined}
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (off) return;
                         setOpen(false);
                         if (on) return;
                         // The option's own `via` wins, exactly as in the
@@ -1146,9 +1199,10 @@ export function RowStateControl({
   }
 
   return (
-    // The wrapper exists ONLY to own the caret: see `.lp__statewrap::after`.
-    // The select cannot draw its own, because the pill tone class it carries
-    // sets the `background` shorthand and would reset any background-image.
+    <>
+    {/* The wrapper exists ONLY to own the caret: see `.lp__statewrap::after`.
+        The select cannot draw its own, because the pill tone class it carries
+        sets the `background` shorthand and would reset any background-image. */}
     <span className="lp__statewrap">
     <select
       id={selectId}
@@ -1171,13 +1225,29 @@ export function RowStateControl({
       {!control.options.some((o) => o.id === current) && current !== '' ? (
         <option value={current}>{wordFor(current)}</option>
       ) : null}
+      {/* W4 — an option outside the row's type vocabulary is DISABLED with
+          the reason in its title, never hidden: "the control does not change
+          shape" (the registry's own ruling), and the database trigger is the
+          real gate behind this usability narrowing. */}
       {control.options.map((o) => (
-        <option key={o.id} value={o.id}>
+        <option
+          key={o.id}
+          value={o.id}
+          disabled={barred(o.id)}
+          title={barred(o.id) ? workflowRefusalText(typeValue!, o.id) : undefined}
+        >
           {wordFor(o.id)}
         </option>
       ))}
     </select>
     </span>
+    {/* W4 — the derived off-workflow mark: caption voice, honesty kit. */}
+    {offWords !== null ? (
+      <span className="hon-caption" role="note" data-testid="row-state-offworkflow">
+        {offWords}
+      </span>
+    ) : null}
+    </>
   );
 }
 

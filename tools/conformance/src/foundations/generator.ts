@@ -347,17 +347,23 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 155 -> 156 (2026-08-13, merge): execution.terminal.start joins from main (#161).
   // 157 -> 158 (2026-08-13, forge write): tracking.pr.merge (POST command) —
   // the one guarded write door to the forge.
-  assertEqual(names.length, 163, 'catalog total');
+  // 158 -> 163: unledgered upstream bumps (measured on origin/main 9b938647).
+  // 163 -> 166 (2026-08-16, W4/132): spaces.taskWorkflows.list (GET read) +
+  // .upsert (POST command) + .delete (DELETE command).
+  assertEqual(names.length, 166, 'catalog total');
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
-  assertEqual(V1_OPERATIONS.length, 161, 'v1 total');
+  // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
+  assertEqual(V1_OPERATIONS.length, 164, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
   assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');
-  assertEqual(methods, { GET: 59, POST: 75, PATCH: 11, DELETE: 10, PUT: 7, WS: 1 }, 'method accounting');
-  assertEqual(kinds, { read: 63, command: 99, stream: 1 }, 'kind accounting');
-  assertEqual(router.http.length, 162, 'server router HTTP total');
+  // W4/132: GET 59->60, POST 75->76, DELETE 10->11; read 63->64, command 99->101.
+  assertEqual(methods, { GET: 60, POST: 76, PATCH: 11, DELETE: 11, PUT: 7, WS: 1 }, 'method accounting');
+  assertEqual(kinds, { read: 64, command: 101, stream: 1 }, 'kind accounting');
+  // W4/132: 162 -> 165, the three taskWorkflows routes.
+  assertEqual(router.http.length, 165, 'server router HTTP total');
   assertEqual(router.ws.length, 1, 'server router WS total');
   // These four are SNAPSHOT self-checks (the frozen W1 registry boundary) and
   // never move with an amendment; A21's live handler shows up only in the

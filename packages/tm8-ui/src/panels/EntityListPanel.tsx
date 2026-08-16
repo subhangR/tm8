@@ -44,6 +44,9 @@ import {
   getKind,
   needsViewer,
   resolveAction,
+  workflowRefusalText,
+  workflowTypeOf,
+  workflowVocabularyOf,
 } from '../domain';
 import { Avatar, Timestamp, type PillTone } from '../kit';
 import {
@@ -186,6 +189,16 @@ export interface EntityListPanelProps {
   boardFor?: (filter: QueryFilter, groupBy: GroupByKey) => BoardSnapshot | undefined;
 
   /**
+   * W3 — the board's GROUPING choice, wired exactly like `mode`: the route
+   * holds it (`q.groupBy`), the shell passes the pair down, and local state
+   * remains the uncontrolled fallback seeded from the registry's
+   * `board.groupBy` default. The choice is among `workStatus`, `assignee`,
+   * and `axis:<name>` for each axis the space defines (`taskAxes`).
+   */
+  groupBy?: GroupByKey;
+  onGroupBy?: (groupBy: GroupByKey) => void;
+
+  /**
    * Focus handle for the D36 `list.search` command (`f`). The keyboard
    * controller emits the command and consumes the event; it never touches the
    * DOM — the shell calls this on the FOCUSED panel.
@@ -292,7 +305,13 @@ export interface EntityListPanelProps {
    * replaces the whole axes jsonb, so the host folds this one change into the
    * stored record. See `ControlHost.onSetAxis`.
    */
-  onSetAxis?: (entityId: string, axisName: string, next: string | null, label: string) => void;
+  onSetAxis?: (
+    entityId: string,
+    axisName: string,
+    next: string | null,
+    label: string,
+    opts?: { notify?: boolean },
+  ) => void | Promise<SetStateOutcome>;
 
   /**
    * The space's axis registry — per-space DATA from `spaceSettings().taskAxes`,
@@ -300,6 +319,14 @@ export interface EntityListPanelProps {
    * kinds whose registry declares `axisControls`; empty draws none.
    */
   taskAxes?: readonly import('@tm8/contract').TaskAxis[];
+
+  /**
+   * The space's workflow registry (W4, 132) — per-space DATA from
+   * `spaceSettings().taskWorkflows`, hydrated by the host beside `taskAxes`.
+   * The state control narrows its options with it, and the STATUS board
+   * pre-flights a drop against it; the database trigger stays the real gate.
+   */
+  taskWorkflows?: readonly import('@tm8/contract').TaskWorkflow[];
 
   /**
    * Add or remove ONE assignment on an expanded row.
@@ -386,6 +413,12 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const [localMode, setLocalMode] = useState<CollectionMode>(config.defaultMode);
   const mode = props.mode ?? localMode;
   const setMode = props.onMode ?? setLocalMode;
+  /* W3 — same §1.1 shape for the board's grouping: route-held when the host
+     passes the pair, local fallback otherwise, seeded from the registry
+     DEFAULT (`board.groupBy` stays the seed, no longer the pin). */
+  const [localGroupBy, setLocalGroupBy] = useState<GroupByKey | null>(null);
+  const groupBy = props.groupBy ?? localGroupBy ?? list.board?.groupBy ?? 'workStatus';
+  const setGroupBy = props.onGroupBy ?? setLocalGroupBy;
 
   const activeTier = list.lifecycle?.find((t) => t.id === tierId) ?? null;
   const members = props.members ?? EMPTY_MEMBERS;
@@ -542,6 +575,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
             config={config}
             tier={activeTier}
             onTier={setTierId}
+            groupBy={groupBy}
+            onGroupBy={setGroupBy}
             filter={
               bandFilter(
                 activeTier?.filter ?? {},
@@ -1611,8 +1646,16 @@ interface BoardColumnSpec {
   key: string;
   label: string;
   tone: PillTone;
-  /** How a drop here dispatches. `null` ⇒ not a legal drop target. */
+  /** How a STATUS drop here dispatches. `null` ⇒ not a status drop target. */
   option: StateOption | null;
+  /**
+   * How an AXIS drop here dispatches (W3): the value this column means, with
+   * `null` for the explicit no-value column (a drop there CLEARS the axis).
+   * `undefined` ⇒ this is not an axis column. A drop is one dimension or the
+   * other, never both — the board must never write a status while its
+   * columns say something else (W3/4).
+   */
+  axisValue?: string | null;
   /** The §1.3 Done sink — a drop target, never a fetched column. */
   sink: boolean;
 }
@@ -1676,11 +1719,69 @@ function boardColumns(
   return columns;
 }
 
+/** User copy for an axis whose NAME is data — same rule as the W1 picker. */
+function axisLabelOf(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/**
+ * Columns for an AXIS board (W3): the explicit no-value column first — it is
+ * where every untyped task lives, and a drop there CLEARS the axis — then the
+ * axis's own vocabulary in `axisValues` order (never alphabetical, never the
+ * server's arrival order), then any group key outside today's vocabulary
+ * appended raw and undroppable, same §1.3 posture as the status board.
+ */
+function axisBoardColumns(
+  axis: { name: string; axisValues: readonly string[] },
+  groups: readonly CollectionGroup[],
+): BoardColumnSpec[] {
+  const columns: BoardColumnSpec[] = [
+    { key: '', label: `no ${axis.name}`, tone: 'idle', option: null, axisValue: null, sink: false },
+    ...axis.axisValues.map((value) => ({
+      key: value,
+      label: value,
+      tone: 'idle' as PillTone,
+      option: null,
+      axisValue: value,
+      sink: false,
+    })),
+  ];
+  for (const group of groups) {
+    if (!columns.some((c) => c.key === group.key)) {
+      columns.push({ key: group.key, label: group.label || group.key, tone: 'idle', option: null, sink: false });
+    }
+  }
+  return columns;
+}
+
+/**
+ * Columns for the ASSIGNEE board: the server's groups verbatim (key = actor
+ * id, '' = Unassigned), every one UNDROPPABLE — owner ruling 2026-08-16
+ * (W3/4): drag-to-reassign is out of scope, and a drop that silently wrote a
+ * status under assignee columns is the exact lie this workstream exists to
+ * prevent. The board states the refusal in its header note.
+ */
+function assigneeBoardColumns(groups: readonly CollectionGroup[]): BoardColumnSpec[] {
+  const columns = groups.map((g): BoardColumnSpec => ({
+    key: g.key,
+    label: g.label || g.key,
+    tone: 'idle',
+    option: null,
+    sink: false,
+  }));
+  // The server only emits buckets rows landed in; an assignee board with no
+  // unassigned tasks still deserves the column NOT to appear invented, so
+  // nothing is added here — absent groups are absent columns.
+  return columns;
+}
+
 function BoardBody({
   props,
   config,
   tier,
   onTier,
+  groupBy,
+  onGroupBy,
   filter,
   query,
 }: {
@@ -1688,12 +1789,17 @@ function BoardBody({
   config: KindConfig;
   tier: LifecycleTier | null;
   onTier: (tierId: string) => void;
+  groupBy: GroupByKey;
+  onGroupBy: (groupBy: GroupByKey) => void;
   filter: QueryFilter;
   query: string;
 }) {
   const list = config.list;
-  const board = list.board as NonNullable<typeof list.board>;
   const stateControl = list.stateControl;
+  /** The axis this board groups by, resolved from per-space DATA — or null
+      for the status/assignee dimensions. */
+  const axisName = groupBy.startsWith('axis:') ? groupBy.slice('axis:'.length) : null;
+  const axis = axisName === null ? null : (props.taskAxes ?? []).find((a) => a.name === axisName) ?? null;
   /** Cards completed via the sink THIS view session — its only body (§1.3). */
   const [completedHere, setCompletedHere] = useState<readonly EntitySummary[]>([]);
   /** The §1.5 inline refusal: rendered at the refusing column's header. */
@@ -1719,7 +1825,59 @@ function BoardBody({
     );
   }
 
-  const snapshot = props.boardFor?.(filter, board.groupBy);
+  const snapshot = props.boardFor?.(filter, groupBy);
+
+  /**
+   * The GROUP-BY PICKER (W3, D2 made true): `workStatus`, `assignee`, and one
+   * `axis:<name>` per axis the SPACE defines — per-space data, not registry
+   * config, exactly like the W1 pickers. Rendered on every board state
+   * (loading, error, even an unresolvable axis) so the user can always
+   * choose their way out.
+   */
+  const groupByPicker = (
+    <select
+      className="lp__statesel lp__statesel--live lp__board-groupby"
+      aria-label="Group board by"
+      data-testid="board-groupby"
+      value={groupBy}
+      onChange={(e) => onGroupBy(e.target.value as GroupByKey)}
+    >
+      <option value="workStatus">by status</option>
+      <option value="assignee">by assignee</option>
+      {(props.taskAxes ?? []).map((a) => (
+        <option key={a.id} value={`axis:${a.name}`}>
+          by {a.name}
+        </option>
+      ))}
+      {/* A route can carry an axis this space no longer defines (or one not
+          loaded): keep it selectABLE as the current value so the select shows
+          the truth rather than snapping to status. */}
+      {axisName !== null && axis === null ? (
+        <option value={groupBy} disabled>
+          by {axisName} (not defined here)
+        </option>
+      ) : null}
+    </select>
+  );
+
+  /* A route naming an axis the space does not define: the board cannot render
+     honest columns for it. Refuse with the reason and keep the picker — the
+     way out is one choice away. */
+  if (axisName !== null && axis === null) {
+    return (
+      <div className="lp__board lp__board--off" data-testid="board-axis-missing">
+        {groupByPicker}
+        <DisabledAction
+          label="Board"
+          reason={toReason(
+            `This space defines no task axis named ${axisName} — pick another grouping, or define the axis in Settings > Task axes.`,
+          )}
+        >
+          Board
+        </DisabledAction>
+      </div>
+    );
+  }
 
   // No source wired: say so. A board that silently renders nothing is
   // indistinguishable from an empty tier, and only one of those is true.
@@ -1749,7 +1907,12 @@ function BoardBody({
   }
 
   const loading = snapshot === undefined;
-  const columns = boardColumns(config, tier, snapshot?.groups ?? []);
+  const columns =
+    axis !== null
+      ? axisBoardColumns(axis, snapshot?.groups ?? [])
+      : groupBy === 'assignee'
+        ? assigneeBoardColumns(snapshot?.groups ?? [])
+        : boardColumns(config, tier, snapshot?.groups ?? []);
   const groupOf = new Map((snapshot?.groups ?? []).map((g) => [g.key, g] as const));
   const itemsOf = (column: BoardColumnSpec): readonly EntitySummary[] =>
     column.sink ? matching(completedHere, query) : matching(groupOf.get(column.key)?.items ?? [], query);
@@ -1757,11 +1920,57 @@ function BoardBody({
   // §8.4 — quick-add ONLY on the column whose status is the kind's creation
   // status: the FIRST stateControl option (creation IS that state; a quick-add
   // elsewhere would silently create a card belonging to another column).
-  const creationKey = stateControl?.options[0]?.id;
+  const creationKey = groupBy === 'workStatus' ? stateControl?.options[0]?.id : undefined;
 
+  /**
+   * A drop WRITES THE GROUPING DIMENSION (W3/4) — the single highest-risk
+   * behaviour in this workstream. On the status board it dispatches the state
+   * verb exactly as before; on an axis board it writes THE AXIS through the
+   * version-guarded content patch; on the assignee board no column is a drop
+   * target at all (ruling: reassign-by-drag is out of scope), so this cannot
+   * fire there. It must never silently write a status while the columns say
+   * something else.
+   */
   const dispatchDrop = (row: EntitySummary, column: BoardColumnSpec): void => {
-    if (!column.option || !stateControl || !props.onSetState) return;
     if (!column.sink && itemsOf(column).some((r) => r.id === row.id)) return;
+
+    if (column.axisValue !== undefined) {
+      if (axis === null || !props.onSetAxis) return;
+      setRefusal(null);
+      setPendingId(row.id);
+      const outcome = props.onSetAxis(row.id, axis.name, column.axisValue, axisLabelOf(axis.name), {
+        notify: false,
+      });
+      void Promise.resolve(outcome).then((result) => {
+        setPendingId(null);
+        if (result && result.ok === false) {
+          setRefusal({ column: column.key, reason: result.reason });
+        }
+      });
+      return;
+    }
+
+    if (!column.option || !stateControl || !props.onSetState) return;
+
+    /**
+     * W4 — the PRE-FLIGHT workflow refusal, at the refusing column, WITHOUT
+     * calling the server: the vocabulary is already in hand (the same
+     * `spaceSettings()` data the strip narrows with), so a drop the row's
+     * type forbids is foreseeable and §8.5 says a foreseeable refusal is
+     * stated rather than attempted. Same words as the strip's disabled
+     * option; the database trigger (132) remains the real gate for every
+     * writer that is not this board.
+     */
+    const vocabulary = workflowVocabularyOf(props.taskWorkflows, row.state);
+    if (vocabulary !== null && !vocabulary.includes(column.option.id)) {
+      setPendingId(null);
+      setRefusal({
+        column: column.key,
+        reason: workflowRefusalText(workflowTypeOf(row.state)!, column.option.id),
+      });
+      return;
+    }
+
     setRefusal(null);
     setPendingId(row.id);
     const outcome = props.onSetState(
@@ -1796,7 +2005,7 @@ function BoardBody({
     const move = (delta: number): void => {
       if (!focused) return;
       const target = columns[col + delta];
-      if (!target || !target.option) return;
+      if (!target || (!target.option && target.axisValue === undefined)) return;
       dispatchDrop(focused, target);
     };
 
@@ -1838,6 +2047,18 @@ function BoardBody({
       tabIndex={0}
       onKeyDown={onKeyDown}
     >
+      {groupByPicker}
+
+      {/* Ruling 2026-08-16 (W3/4): the assignee board is READ-ONLY — the
+          named reason, stated up front, because undraggable cards with no
+          words are indistinguishable from broken ones. */}
+      {groupBy === 'assignee' ? (
+        <div className="lp__board-banner" data-testid="board-assignee-note">
+          Drag is off on this board — reassigning from a drop is not built; use a card&rsquo;s
+          Assigned control instead.
+        </div>
+      ) : null}
+
       {/* §1.4 — the honesty banner. Groups are page-scoped and no total is
           returned, so column heights are not complete counts and the board
           says so whenever a further page exists. */}
@@ -1910,7 +2131,9 @@ function BoardColumn({
   createSlot?: ReactNode;
   doneTierLink?: () => void;
 }) {
-  const droppable = Boolean(column.option && props.onSetState);
+  const droppable = Boolean(
+    (column.option && props.onSetState) || (column.axisValue !== undefined && props.onSetAxis),
+  );
 
   return (
     <section

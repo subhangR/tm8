@@ -45,7 +45,7 @@ import {
 import { AttentionInbox } from '../attention/AttentionInbox';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
-import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
+import type { ActionContext, ActionRef, CollectionMode, GroupByKey } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
@@ -128,6 +128,13 @@ export interface EntityViewProps {
    */
   mode?: CollectionMode;
   onMode?(mode: CollectionMode): void;
+  /**
+   * W3 — the board's grouping, route state exactly like `mode`: the shell
+   * holds it and this screen passes it through. Absent ⇒ the panel's local
+   * fallback seeded from registry.
+   */
+  groupBy?: GroupByKey;
+  onGroupBy?(groupBy: GroupByKey): void;
 }
 
 /**
@@ -398,6 +405,7 @@ export function EntityView(props: EntityViewProps) {
       onSetValue: rowLifecycle.setValue,
       onSetAxis: rowLifecycle.setAxis,
       taskAxes: data.taskAxes,
+      taskWorkflows: data.taskWorkflows,
       onAssign: rowLifecycle.assign,
       assignableActors: rowLifecycle.assignable,
       onMembership: rowLifecycle.membership,
@@ -873,6 +881,8 @@ export function EntityView(props: EntityViewProps) {
           boardFor={data.boardFor(kind) as never}
           mode={mode}
           onMode={setMode}
+          groupBy={props.groupBy}
+          onGroupBy={props.onGroupBy}
           members={data.members}
           ctx={ctx}
           createSlot={
@@ -909,6 +919,7 @@ export function EntityView(props: EntityViewProps) {
           onSetValue={rowLifecycle.setValue}
           onSetAxis={rowLifecycle.setAxis}
           taskAxes={data.taskAxes}
+          taskWorkflows={data.taskWorkflows}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
           onMembership={rowLifecycle.membership}

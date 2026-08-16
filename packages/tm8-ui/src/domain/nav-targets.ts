@@ -221,7 +221,14 @@ export function landingOfRoute(view: NavView): Landing | null {
       const kind = kindOfSlug(view.slug);
       if (!kind) return null;
       return {
-        target: { type: 'kind', ref: kind, ...(view.mode ? { mode: view.mode } : {}) },
+        target: {
+          type: 'kind',
+          ref: kind,
+          ...(view.mode ? { mode: view.mode } : {}),
+          /* W3: the board's grouping rides `q` — the codec already parsed and
+             validated it (`q.ts`), this just stops dropping it on the floor. */
+          ...(view.q?.groupBy ? { groupBy: view.q.groupBy } : {}),
+        },
         openEntity: null,
       };
     }
@@ -309,7 +316,9 @@ export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = nu
       if (openEntity) {
         return { view: 'entity', entityId: openEntity, origin: { slug, mode } };
       }
-      return { view: 'kind', slug, mode, q: null };
+      /* W3: a grouped board is shareable — the choice travels as `q.groupBy`,
+         the union `q.ts` already validates on the way back in. */
+      return { view: 'kind', slug, mode, q: target.groupBy ? { v: 1, groupBy: target.groupBy } : null };
     }
 
     case 'entity':

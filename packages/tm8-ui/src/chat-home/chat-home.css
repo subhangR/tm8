@@ -69,6 +69,11 @@
 }
 
 .tch-thread-list {
+  /* GROWS, so the column foot (slots + workspace link) pins to the bottom on
+     the Chats tab exactly as the hosted panel pins it on Tasks/Sessions — a
+     foot that floats mid-column on one tab and sits at the bottom on the
+     others reads as two different screens. */
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: var(--pn-space-2);
@@ -664,6 +669,29 @@ button.tch-entity-chip:hover {
   flex: none;
   width: min(760px, calc(100% - 32px));
   margin: 0 auto var(--pn-space-3);
+  /* A query container, so the foot degrades by the COMPOSER's width, not the
+     viewport's — the pane beside a 380px column and an open aside is far
+     narrower than the window. The skill popover is unaffected: its containing
+     block is .ri-host (position: relative), not this ancestor. */
+  container-type: inline-size;
+}
+/* The keyboard hint is the first thing to go when the foot runs out of room —
+   losing a tip beats the Send button wrapping onto its own line. */
+@container (max-width: 620px) {
+  .tch-hint { display: none; }
+}
+
+/* THE EMPTY STATE CENTRES THE PAIR (ref mockup 02-home-empty): greeting and
+   composer read as ONE invitation in the middle of the canvas — a greeting
+   floating alone with the box parked at the bottom is a dashboard, not a
+   prompt. The two `auto` margins split the free space; once a thread exists
+   the composer returns to the bottom, as the conversation mockup draws it. */
+.tch-conversation[data-empty] .tch-transcript {
+  flex: 0 1 auto;
+  margin-top: auto;
+}
+.tch-conversation[data-empty] .tch-composer-wrap {
+  margin: 0 auto auto;
 }
 
 .tch-refusal {

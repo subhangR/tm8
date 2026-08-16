@@ -378,6 +378,13 @@ export interface GateData {
    */
   taskAxes: readonly import('@tm8/contract').TaskAxis[];
   /**
+   * The space's workflow registry (W4, 132), off the SAME `spaceSettings()`
+   * read — one row per `type` value naming the statuses its tasks may move
+   * to. The strip narrows its options with it and the status board
+   * pre-flights drops against it; empty means nothing narrows.
+   */
+  taskWorkflows: readonly import('@tm8/contract').TaskWorkflow[];
+  /**
    * Re-read the axis registry NOW — after Settings > Axes lands a write, so a
    * new axis appears as a W1 picker (and a W3 group-by option) without a
    * reload. Axis writes emit no workspace event (`task_axes` rows are not
@@ -621,6 +628,7 @@ export function useGateData(options: GateOptions): GateData {
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const [members, setMembers] = useState<readonly ActorSummary[]>([]);
   const [taskAxes, setTaskAxes] = useState<readonly import('@tm8/contract').TaskAxis[]>([]);
+  const [taskWorkflows, setTaskWorkflows] = useState<readonly import('@tm8/contract').TaskWorkflow[]>([]);
   const [skillOptions, setSkillOptions] = useState<readonly SkillTriggerOption[] | undefined>(
     undefined,
   );
@@ -870,6 +878,8 @@ export function useGateData(options: GateOptions): GateData {
       // Same posture as membership: a settings shape from before the axes
       // projection reads as "none defined", never as a fabricated axis.
       setTaskAxes(settings.taskAxes ?? []);
+      // W4 rides the same read with the same posture.
+      setTaskWorkflows(settings.taskWorkflows ?? []);
       setViewerActor(memberActors.find((member) => member.id === viewerMemberId) ?? null);
       setSpaceDefaultProfileId(settings.defaultInteractionProfileId);
       if (counts) setKindCounts(counts);
@@ -2100,7 +2110,13 @@ export function useGateData(options: GateOptions): GateData {
     if (!spaceId) return;
     void seam
       .spaceSettings(spaceId)
-      .then((settings) => setTaskAxes(settings.taskAxes ?? []))
+      .then((settings) => {
+        setTaskAxes(settings.taskAxes ?? []);
+        // W4 — the workflows ride the SAME round trip, so the one refresh
+        // keeps both registries current together (a workflow write from
+        // Settings reuses this exact callback).
+        setTaskWorkflows(settings.taskWorkflows ?? []);
+      })
       .catch(() => undefined);
   }, [seam, spaceId]);
 
@@ -2112,6 +2128,7 @@ export function useGateData(options: GateOptions): GateData {
       spaces,
       members,
       taskAxes,
+      taskWorkflows,
       refreshTaskAxes,
       mentionOptions,
       skillOptions,
@@ -2148,7 +2165,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, taskAxes, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

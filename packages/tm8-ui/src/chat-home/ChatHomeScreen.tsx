@@ -700,17 +700,12 @@ export function ChatHomeScreen({
   }, [port, selectedRootId]);
 
   return (
-    <main
-      className="tch-root"
-      data-testid="chat-home-screen"
-      /* A hosted workspace list needs the rail's width, not the chat
-         column's — the layout grid reads this to widen column A. */
-      data-hosted-list={hostedList != null || undefined}
-    >
+    <main className="tch-root" data-testid="chat-home-screen">
       {/*
         THE NAVIGATION AXIS (task 01a006f8, 2026-08-16, superseding R4's
         merged list). This panel is the full inventory AND the only selector,
-        as one time-grouped THREE-TAB column: Tasks | Chats | Sessions (D1).
+        as one time-grouped THREE-TAB column: Chats | Tasks | Sessions (D1,
+        order re-ruled 2026-08-16).
         Switching a tab is BROWSING — it re-lists this column only (D6);
         clicking a row is SELECTING — it puts that entity in region B (D7).
         The two ＋ buttons above the tabs are the single exception to D6:
@@ -783,7 +778,7 @@ export function ChatHomeScreen({
             <span aria-hidden>＋</span> New task
           </button>
         </div>
-        {/* D1: Tasks | Chats | Sessions, in that order. Labels only (D16). */}
+        {/* Chats | Tasks | Sessions (re-ruled order). Labels only (D16). */}
         <div className="tch-tabs" role="tablist" aria-label="Home lists">
           {HOME_TAB_STRIP.map((entry) => (
             <button
@@ -1008,19 +1003,30 @@ export function ChatHomeScreen({
         )}
         <footer className="tch-sidebar__foot">
           {slots ? (
-            <div
-              className="tch-slots"
-              title={`${slots.used} of ${slots.total} node session slots in use`}
-            >
-              <span className="tch-slots__label">session slots</span>
-              <span className="tch-slots__bar" aria-hidden>
-                <span
-                  className="tch-slots__fill"
-                  style={{ width: `${slots.total > 0 ? Math.min(100, (slots.used / slots.total) * 100) : 0}%` }}
-                />
-              </span>
-              <span className="tch-slots__nums">{slots.used}/{slots.total}</span>
-            </div>
+            slots.total >= UNCAPPED_SESSION_TOTAL ? (
+              /* An uncapped node reports int4-max as its total (the spawn
+                 guard has no word for "unlimited" — execution-handlers.ts,
+                 UNLIMITED_SESSION_CAP). A fraction of a sentinel reads as
+                 "9/2147483647"; the honest render is the used count alone. */
+              <div className="tch-slots" title={`${slots.used} node session slots in use — this node has no session cap`}>
+                <span className="tch-slots__label">session slots</span>
+                <span className="tch-slots__nums">{slots.used} in use · no cap</span>
+              </div>
+            ) : (
+              <div
+                className="tch-slots"
+                title={`${slots.used} of ${slots.total} node session slots in use`}
+              >
+                <span className="tch-slots__label">session slots</span>
+                <span className="tch-slots__bar" aria-hidden>
+                  <span
+                    className="tch-slots__fill"
+                    style={{ width: `${slots.total > 0 ? Math.min(100, (slots.used / slots.total) * 100) : 0}%` }}
+                  />
+                </span>
+                <span className="tch-slots__nums">{slots.used}/{slots.total}</span>
+              </div>
+            )
           ) : null}
           {onOpenWorkspace ? (
             <button type="button" className="tch-open-workspace" onClick={onOpenWorkspace}>
@@ -1048,6 +1054,10 @@ export function ChatHomeScreen({
         aria-label="Conversation"
         data-hidden={centerOverride != null ? 'true' : undefined}
         hidden={centerOverride != null || undefined}
+        /* The new-conversation state centres greeting + composer as one
+           invitation (ref mockup 02); an open thread pins the composer to
+           the bottom. Layout only — the CSS pair reads this. */
+        data-empty={newThread || undefined}
       >
         <header className="tch-conversation__head">
           <div className="tch-title">
@@ -1411,10 +1421,19 @@ function greetingLine(viewerName?: string): string {
   return viewerName ? `${daypart}, ${viewerName}.` : `${daypart}.`;
 }
 
-/** D1's strip, in D1's order. Labels only — no counts (D16). */
+/** The server's "no cap" sentinel: an uncapped node saturates its session cap
+ *  at int4 max because the spawn guard cannot express "unlimited"
+ *  (`UNLIMITED_SESSION_CAP`, server execution-handlers.ts). A total at or
+ *  above it is a sentinel, not a measurement — never a denominator. */
+const UNCAPPED_SESSION_TOTAL = 2_147_483_647;
+
+/** D1's strip. ORDER re-ruled by Subhang 2026-08-16 ("it should be
+ *  chats | tasks | sessions"), superseding D1's Tasks-first order. Chats
+ *  leads — it is also the default tab, so the first visit opens on the
+ *  first tab. Labels only — no counts (D16). */
 const HOME_TAB_STRIP: readonly { tab: HomeTab; label: string }[] = [
-  { tab: 'tasks', label: 'Tasks' },
   { tab: 'chats', label: 'Chats' },
+  { tab: 'tasks', label: 'Tasks' },
   { tab: 'sessions', label: 'Sessions' },
 ];
 

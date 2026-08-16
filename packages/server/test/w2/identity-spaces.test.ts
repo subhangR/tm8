@@ -43,6 +43,11 @@ const G01_OPERATIONS = [
   'spaces.taskAxes.create',
   'spaces.taskAxes.update',
   'spaces.taskAxes.delete',
+  // W4/132: the per-type status vocabularies, curated beside the axes they
+  // key on and registered by the same module.
+  'spaces.taskWorkflows.list',
+  'spaces.taskWorkflows.upsert',
+  'spaces.taskWorkflows.delete',
   'spaces.leaderboard',
   'spaces.awards',
 ] as const;
@@ -452,6 +457,16 @@ describe('W2.G01 identity and Spaces handler seam', () => {
           axis_values: ['default', 'code'],
           kind: 'default',
           position: 0,
+        }];
+      }
+      if (sql.includes('from public.task_workflows')) {
+        // W4/132: the settings snapshot carries the workflows beside the axes
+        // they key on.
+        return [{
+          id: AXIS_ID,
+          space_id: SPACE_ID,
+          type_value: 'code',
+          statuses: ['open', 'working', 'done'],
         }];
       }
       if (sql.includes('from public.space_menu_configs')) {

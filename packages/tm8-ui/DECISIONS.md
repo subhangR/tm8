@@ -29,6 +29,8 @@ Ruling: T5-2's board-layout grouping picker ("axis: status ▾") IS built — a 
 
 Rationale: Distinguishes the in-canvas board control (required for the Board collection layout) from the deferred saved-views feature; R7's "disabled-with-reason, never hidden" applies only to the latter.
 
+Amendment (2026-08-16, W3): for most of this record's life the claim "IS built" was FALSE — `registry.ts` pinned `board: { groupBy: 'workStatus' }` and nothing rendered a picker. W3 made it true, and wider than drawn: the picker offers `workStatus`, `assignee`, and one `axis:<name>` per axis the space defines (per-space data, not registry config); the choice persists in the route as `q.groupBy`; and a drop writes the GROUPING dimension — the axis value on an axis board, with an explicit no-value column that clears it. The assignee board is read-only by owner ruling (drag-to-reassign out of scope), stated in its own banner. D19 is unchanged: no doc-like kind gained a board, because `axisControls` is declared only by the task kind.
+
 ## D3 — Four detail-panel tabs everywhere; T5-7 three-tab mocks are abbreviation (2026-07-28)
 
 Source: Round-2 design-compliance review, T5-7 nit, forwarded by master coordinator.
