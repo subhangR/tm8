@@ -250,4 +250,22 @@ describe('Home three-tab column', () => {
     );
     expect(view.getByText('Tasks aren’t wired on this surface.')).toBeTruthy();
   });
+
+  it('the slots foot draws a real cap as a fraction, and absence as nothing', () => {
+    const view = renderHome({ slots: { used: 3, total: 8 } });
+    expect(view.getByText('3/8')).toBeTruthy();
+    expect(view.container.querySelector('.tch-slots__bar')).not.toBeNull();
+
+    const bare = renderHome();
+    expect(bare.container.querySelector('.tch-slots')).toBeNull();
+  });
+
+  it('an uncapped node (int4-max sentinel total) never renders the sentinel as a denominator', () => {
+    const view = renderHome({ slots: { used: 9, total: 2_147_483_647 } });
+    // The honest render: the used count alone, worded as uncapped…
+    expect(view.getByText('9 in use · no cap')).toBeTruthy();
+    // …with no meaningless bar-against-infinity and no raw sentinel anywhere.
+    expect(view.container.querySelector('.tch-slots__bar')).toBeNull();
+    expect(view.container.textContent).not.toContain('2147483647');
+  });
 });
