@@ -250,6 +250,170 @@ describe('focus and search helpers', () => {
   });
 });
 
+describe('the time window', () => {
+  const windowed = (windowMs: number | null, extra: Partial<Parameters<typeof buildGraphModel>[0]> = {}) =>
+    buildGraphModel({
+      nodes: graphFixtureNodes,
+      edges: graphFixtureEdges,
+      kindFilter: null,
+      edgeTypeFilter: null,
+      now: GRAPH_FIXTURE_NOW,
+      lens: 'all',
+      windowMs,
+      ...extra,
+    });
+
+  it('defaults to no window, so omitting it changes nothing', () => {
+    expect(windowed(null).outOfWindow).toBe(0);
+    expect(windowed(null).placed.length).toBe(model().placed.length);
+  });
+
+  it('excludes entities older than the window and says how many', () => {
+    // The fixture clock is 12:00; `old` is 17.5h back and `morning` 2h45m back.
+    const hour = windowed(60 * 60_000);
+    expect(hour.outOfWindow).toBeGreaterThan(0);
+    const day = windowed(24 * 60 * 60_000);
+    // A wider window can never exclude more than a narrower one.
+    expect(day.outOfWindow).toBeLessThan(hour.outOfWindow);
+    expect(day.outOfWindow).toBe(0);
+    for (const p of hour.placed) {
+      expect(Date.parse(GRAPH_FIXTURE_NOW) - Date.parse(p.entity.activityAt)).toBeLessThanOrEqual(
+        60 * 60_000,
+      );
+    }
+  });
+
+  it('keeps the accounting law with a window in play', () => {
+    const m = windowed(60 * 60_000);
+    expect(
+      m.placed.length + m.shelf.length + m.foldedCount + m.truncated + m.outOfLens + m.outOfWindow,
+    ).toBe(graphFixtureNodes.length);
+    expect(m.visibleTotal).toBe(graphFixtureNodes.length);
+  });
+
+  it('never lets the window hide what the user is pointing at', () => {
+    // `spellDeploy` is old enough to fall out of a one-hour window...
+    const stale = graphFixtureNodes.find(
+      (n) => Date.parse(GRAPH_FIXTURE_NOW) - Date.parse(n.activityAt) > 60 * 60_000,
+    )!;
+    const base = windowed(60 * 60_000);
+    const drawn = (m: ReturnType<typeof windowed>): boolean =>
+      m.placed.some((p) => p.entity.id === stale.id) || m.shelf.some((s) => s.id === stale.id);
+    expect(drawn(base)).toBe(false);
+    // ...but a search hit, a pin or the liveness snapshot outranks the window.
+    for (const key of ['matchIds', 'pinnedIds', 'liveIds'] as const) {
+      const m = windowed(60 * 60_000, { [key]: new Set([stale.id]) });
+      expect(drawn(m)).toBe(true);
+      expect(m.outOfWindow).toBe(base.outOfWindow - 1);
+    }
+  });
+});
+
+describe('hubs bridge clusters instead of welding them', () => {
+  /** Two independent 3-chains, both hanging off one node of degree 17. */
+  const starred = (
+    hubStop: boolean,
+    extra: Partial<Parameters<typeof buildGraphModel>[0]> = {},
+  ) => {
+    const proto = graphFixtureNodes[0];
+    const node = (id: string): EntitySummary => ({ ...proto, id, title: id });
+    const hub = node('hub');
+    const nodes = [hub];
+    const edges: EdgeView[] = [];
+    const link = (a: EntitySummary, b: EntitySummary): void => {
+      edges.push({ ...graphFixtureEdges[0], id: `e-${a.id}-${b.id}`, source: a, target: b });
+    };
+    for (const chain of ['a', 'b']) {
+      const c = [node(`${chain}1`), node(`${chain}2`), node(`${chain}3`)];
+      nodes.push(...c);
+      link(c[0], c[1]);
+      link(c[1], c[2]);
+      link(hub, c[1]);
+    }
+    // Filler so the hub's degree clears HUB_DEGREE (2 chains + 15 = 17).
+    for (let i = 0; i < 15; i += 1) {
+      const f = node(`f${i}`);
+      nodes.push(f);
+      link(hub, f);
+    }
+    return buildGraphModel({
+      nodes,
+      edges,
+      kindFilter: null,
+      edgeTypeFilter: null,
+      now: GRAPH_FIXTURE_NOW,
+      lens: 'all',
+      fold: false,
+      hubStop,
+      ...extra,
+    });
+  };
+
+  it('splits the chains apart when hub-stopping is on, and fuses them when off', () => {
+    const clustered = starred(true);
+    const fused = starred(false);
+    // Same nodes drawn either way — this rule changes the PARTITION, not the
+    // membership. Nothing is hidden by it.
+    expect(clustered.placed.length).toBe(fused.placed.length);
+    expect(fused.componentCount).toBe(1);
+    expect(clustered.componentCount).toBeGreaterThan(1);
+    const componentOf = (id: string): number =>
+      clustered.placed.find((p) => p.entity.id === id)!.componentId;
+    expect(componentOf('a1')).toBe(componentOf('a3'));
+    expect(componentOf('a1')).not.toBe(componentOf('b1'));
+  });
+
+  it('draws the hub, names its degree, and never shelves it', () => {
+    const m = starred(true);
+    const hub = m.placed.find((p) => p.entity.id === 'hub')!;
+    expect(hub.hub).toBe(true);
+    expect(hub.degree).toBe(17);
+    expect(m.hubCount).toBe(1);
+    expect(m.shelf.map((s) => s.id)).not.toContain('hub');
+    // The hub's edges are still drawn — the clusters are visibly linked, they
+    // are simply not claimed to be the same thread.
+    expect(m.edges.filter((e) => e.sourceId === 'hub' || e.targetId === 'hub').length).toBe(17);
+    // And it sits WITH a cluster rather than alone.
+    expect(m.placed.filter((p) => p.componentId === hub.componentId).length).toBeGreaterThan(1);
+  });
+
+  it('leaves ordinary nodes unflagged', () => {
+    for (const p of starred(true).placed) {
+      if (p.entity.id !== 'hub') expect(p.hub).toBe(false);
+    }
+  });
+
+  /**
+   * Degree cannot tell a SHARED CONNECTOR from a BUSY THING THE VIEWER ASKED
+   * FOR. Both have high degree; demoting the second one re-parents it into an
+   * arbitrary neighbor's island and the canvas loses the entity the question
+   * was about. The naming sets are the discriminator the rule needs.
+   */
+  it('never demotes the entity the viewer named, however high its degree', () => {
+    for (const named of [
+      { focusId: 'hub' },
+      { matchIds: new Set(['hub']) },
+      { pinnedIds: new Set(['hub']) },
+    ]) {
+      const m = starred(true, named);
+      const hub = m.placed.find((p) => p.entity.id === 'hub')!;
+      expect(hub.hub).toBe(false);
+      expect(hub.degree).toBe(17);
+      expect(m.hubCount).toBe(0);
+      // It anchors rather than being attached to someone else's thread: with
+      // the welder re-enabled, everything it touches is one island again.
+      expect(m.componentCount).toBe(1);
+    }
+  });
+
+  /** ...and an unnamed connector of the same degree still stops clustering. */
+  it('still hub-stops an intermediary the viewer did not name', () => {
+    const m = starred(true, { focusId: 'a1' });
+    expect(m.placed.find((p) => p.entity.id === 'hub')!.hub).toBe(true);
+    expect(m.componentCount).toBeGreaterThan(1);
+  });
+});
+
 describe('the honest cap', () => {
   it('truncates whole islands past RENDER_CAP and REPORTS the count', () => {
     const big: EntitySummary[] = [];

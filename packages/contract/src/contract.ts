@@ -583,6 +583,24 @@ export interface CollectionQuery {
      * zero is worse than a refusal that names the mechanism.
      */
     sessionStatus?: WorkSessionStatus[];
+    /**
+     * Additive: entities whose `activityAt` is at or after this instant — a
+     * TIME WINDOW, expressed as an absolute ISO timestamp rather than a
+     * duration so the server never has to agree with the caller about "now".
+     *
+     * The graph canvas is why this exists. `activityAt_desc` is already the
+     * default sort, so a bounded read has always returned a RANK window ("the
+     * newest N"), and a rank window cannot answer "what happened today" — the
+     * caller learns how many things it got, never how far back they reach. A
+     * clock predicate makes the window a property of the QUERY, so a client
+     * offering "last hour / last day / last week" is describing what it asked
+     * for instead of describing what happened to arrive.
+     *
+     * Still bounded by `limit` like every other read: a window wider than the
+     * page returns its most recent page, and a full page is the caller's
+     * signal that more of the window exists.
+     */
+    activeSince?: string;
     deleted?: 'exclude'|'only'|'include';
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';

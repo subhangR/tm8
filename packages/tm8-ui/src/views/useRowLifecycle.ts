@@ -129,6 +129,19 @@ export interface RowLifecycle {
     opts?: { notify?: boolean },
   ) => Promise<SetStateOutcome>;
   /**
+   * Bound to `EntityListPanel.onSetAxis` — ONE axis of the row's `state.axes`
+   * record, set or cleared (`null`).
+   *
+   * NOT `setValue` with a different field name, because the write differs in
+   * shape: the server stores axes as ONE jsonb that `update_task_content`
+   * replaces wholesale (`axes = coalesce(p_axes, axes)`, 038:389), so this
+   * executor MERGES the change into the stored record before patching — one
+   * axis moves, the others survive. The version guard is what keeps the
+   * read-merge-write honest: a concurrent axis write lands as
+   * `version_conflict` and is reported, never silently overwritten.
+   */
+  setAxis: (entityId: string, axisName: string, next: string | null, label: string) => void;
+  /**
    * Bound to `EntityListPanel.onAssign` — ONE actor's edge, added or removed.
    * Outcome returned for the board's inline-refusal path, exactly as above.
    */
@@ -324,6 +337,45 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
     [data, onNotice, seam, settle],
   );
 
+  const setAxis = useCallback(
+    (entityId: string, axisName: string, next: string | null, label: string) => {
+      const id = entityId as EntityId;
+      /* Same unreachable-case refusal as `setValue`, for the same reason:
+         the control gates on capabilities, which implies the detail (and so
+         the version AND the current axes record) is cached. */
+      const detail = data.detailOf(entityId);
+      if (detail === undefined) {
+        onNotice({
+          id: `value-unhydrated:${entityId}`,
+          tone: 'error',
+          title: `${label} could not be changed`,
+          body: 'This row’s current version is not loaded, and writing without one could overwrite a change you have not seen. Open the row, then try again.',
+          ttlMs: 6_000,
+        });
+        return;
+      }
+      const version = detail.version;
+      /* Structural read (§15.2): the axes record is addressed by name, never
+         by narrowing the state union to a kind. Non-string values (a state
+         with no axes member, or junk) contribute nothing. */
+      const stored = (detail.state as unknown as Record<string, unknown>).axes;
+      const axes: Record<string, string> = {};
+      if (stored !== null && typeof stored === 'object') {
+        for (const [name, value] of Object.entries(stored as Record<string, unknown>)) {
+          if (typeof value === 'string') axes[name] = value;
+        }
+      }
+      if (next === null) delete axes[axisName];
+      else axes[axisName] = next;
+      settle(
+        entityId,
+        `${label} could not be changed`,
+        seam.commands.patchEntity(id, { expectedVersion: version, content: { axes } }),
+      );
+    },
+    [data, onNotice, seam, settle],
+  );
+
   const assign = useCallback(
     (
       entityId: string,
@@ -490,5 +542,5 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
     [data, setKinds],
   );
 
-  return { setState, archive, setValue, assign, assignable, membership, membershipSets };
+  return { setState, archive, setValue, setAxis, assign, assignable, membership, membershipSets };
 }

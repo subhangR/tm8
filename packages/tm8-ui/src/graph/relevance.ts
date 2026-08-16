@@ -126,6 +126,50 @@ const W_DISTANCE = 0.12;
  */
 const EXPANSION_FANOUT = 6;
 
+/**
+ * Degree past which a node is a HUB: still drawn, still linked, but never used
+ * to JOIN two nodes into the same cluster. Read by the component partition in
+ * `model.ts`, which is the only place the distinction can be expressed.
+ *
+ * WHY THE FAN-OUT CAP ABOVE IS NOT ENOUGH. It bounds how many neighbors one hop
+ * admits; it does not stop a hub from WELDING unrelated work together, because
+ * six neighbors of a project node are still six different threads.
+ *
+ * Measured on this space (2026-08-16, 3,917 entities / 7,434 edges): ONE
+ * connected component covers 98% of the all-time edge set, 97% at 7 days and
+ * 88% at 24 hours — and 93% even with messages excluded. There are no natural
+ * disjoint sets to show. The welders are hubs: at 7 days the top degrees are a
+ * `work_session` at 237, a `team_member` at 130 and a `project` at 112, and
+ * dropping one edge type alone (`created_in`) takes the 7-day component count
+ * from 51 to 189.
+ *
+ * Refusing to CLUSTER through them is what makes disjoint sets exist. Neither
+ * axis works alone: a 24-hour window on its own gives 195 nodes whose giant
+ * component is 171; 7 days with this rule gives 2,006 nodes in 100 components,
+ * unusable. Together they give 183 nodes, largest component 19, and 22 clusters
+ * of 7–19 that each turn out to be one real work thread — a task, its session,
+ * its PR and commits, its messages. 12 of those 22 contain exactly one task and
+ * 14 exactly one session, which is why a cluster can be NAMED after the task it
+ * is about without inventing an entity to hold the name.
+ *
+ * A HUB IS CONTEXT, NOT NOISE. It is drawn, its edges are drawn, and it joins
+ * the cluster of its most interesting neighbor — deleting the teammate and the
+ * project would give the same clusters and a lying picture in which nobody owns
+ * the work.
+ *
+ * THE DEGREE IS INDUCED, NOT ABSOLUTE. It counts a node's neighbors AMONG THE
+ * NODES THIS CANVAS HOLDS, after the window and the lens have run — so the same
+ * project reads as a welder on an all-time canvas and stops being one in the
+ * last hour, when it is only holding six things together. That is a DIFFERENT
+ * universe from `session-graph`'s HUB_DEGREE, which counts a node's full
+ * incident connection count as the server reports it. The threshold is shared
+ * because both were tuned on this space; the quantities they compare are not
+ * the same quantity, and the two are free to diverge.
+ *
+ * A larger space may want it lifted; it is one named export.
+ */
+export const HUB_DEGREE = 12;
+
 const FRESH_MS = 2 * 60_000;
 const WARM_MS = 45 * 60_000;
 

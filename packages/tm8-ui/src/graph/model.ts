@@ -20,6 +20,7 @@
 import type { EdgeView, EntityId, EntitySummary } from '@tm8/contract';
 import {
   DEFAULT_LENS,
+  HUB_DEGREE,
   computeRelevance,
   foldLeaves,
   lensSpec,
@@ -44,6 +45,45 @@ const EMPTY_SET: ReadonlySet<string> = new Set();
 
 export type Heat = 'fresh' | 'warm' | 'rest';
 
+// --------------------------------------------------------------------------
+// The time window — WHICH entities are on the canvas at all.
+// --------------------------------------------------------------------------
+
+export interface WindowSpec {
+  id: string;
+  label: string;
+  /** Age limit in ms, or null for "no limit". */
+  ms: number | null;
+  hint: string;
+}
+
+/**
+ * A window is the answer to "why am I looking at three thousand things?", and
+ * it is a different question from the lens. The LENS asks what KIND of interest
+ * puts a node on screen (running, worked-on, anything); the WINDOW asks how
+ * recently the space touched it. They are orthogonal and both apply.
+ *
+ * The measured distribution on this space (2026-08-16) is what makes a window
+ * worth having at all: 1 hour selects 31 entities, 24 hours 195, 7 days 2,111,
+ * all time 3,917. Two weeks earlier the same space held 435 entities of which
+ * ~80% were inside a day — recency genuinely could not discriminate then, which
+ * is why `seedsFor` still refuses to seed a lens on it. The space grew 9x; the
+ * ruling did not rot, the data moved out from under it. Recency now separates
+ * 5% from 95%, so it earns a control of its own.
+ */
+export const GRAPH_WINDOWS: readonly WindowSpec[] = [
+  { id: '1h', label: 'Last hour', ms: 60 * 60_000, hint: 'What the space touched in the last hour.' },
+  { id: '24h', label: 'Last day', ms: 24 * 60 * 60_000, hint: 'What the space touched in the last 24 hours.' },
+  { id: '7d', label: 'Last week', ms: 7 * 24 * 60 * 60_000, hint: 'What the space touched in the last 7 days.' },
+  { id: 'all', label: 'All time', ms: null, hint: 'Every entity this session has loaded, however old.' },
+];
+
+export const DEFAULT_WINDOW = '24h';
+
+export function windowSpec(id: string): WindowSpec {
+  return GRAPH_WINDOWS.find((w) => w.id === id) ?? GRAPH_WINDOWS[GRAPH_WINDOWS.length - 1];
+}
+
 export interface GraphModelInput {
   nodes: EntitySummary[];
   edges: EdgeView[];
@@ -58,6 +98,24 @@ export interface GraphModelInput {
    * budget always buys the most relevant reachable subgraph.
    */
   lens?: LensId;
+  /**
+   * Age limit in ms against `now`: an entity whose `activityAt` is older is not
+   * on this canvas, and is reported as `outOfWindow`. Omitted or null means no
+   * limit — the model's own default is the whole space, because the model is
+   * the honest computation and the product default belongs to the surface.
+   *
+   * Nodes the user is pointing at (live, searched, pinned, focused) are EXEMPT:
+   * a window is about clearing away what nobody asked for, and it must never be
+   * the reason a search hit is missing.
+   */
+  windowMs?: number | null;
+  /**
+   * Stop clustering AT hubs: a node of degree > HUB_DEGREE is drawn and linked
+   * but never used to merge two clusters into one. Default true — see
+   * HUB_DEGREE for the measurements. Set false to partition on the raw edge
+   * set, which on this space yields one component holding 98% of it.
+   */
+  hubStop?: boolean;
   /** The liveness snapshot's verdict — the only honest source of "running". */
   liveIds?: ReadonlySet<string>;
   /** Search hits: they raise interest AND exempt a node from folding. */
@@ -100,6 +158,19 @@ export interface PlacedNode {
   folded?: FoldedInto;
   /** This node's degree-of-interest — what won it a place in the budget. */
   interest: number;
+  /**
+   * This node's observed degree over the filtered edge set. On a hub the card
+   * shows it, because "27 things hang off this" is the reason the clusters
+   * around it are drawn apart.
+   */
+  degree: number;
+  /**
+   * True when `degree > HUB_DEGREE` and hub-stopping is on: this node did not
+   * merge the clusters it touches. It is drawn like anything else — the flag
+   * exists so the card can SAY that, rather than leaving the reader to wonder
+   * why two visibly linked groups sit apart.
+   */
+  hub: boolean;
 }
 
 export interface PlacedEdge {
@@ -132,6 +203,17 @@ export interface GraphModel {
    */
   outOfLens: number;
   /**
+   * Nodes the TIME WINDOW excluded — a third reason, with a third remedy
+   * (widen the window, not the lens and not the cap). Counted before the lens
+   * ever ran, so these nodes appear in no other bucket.
+   */
+  outOfWindow: number;
+  /**
+   * How many PLACED nodes were treated as hubs. Nothing was hidden by this —
+   * it is the count the toolbar needs to explain why the canvas is in pieces.
+   */
+  hubCount: number;
+  /**
    * True when a seeded lens found no seeds — `Live` with nothing running. The
    * canvas must say so rather than silently showing the whole space.
    */
@@ -144,7 +226,8 @@ export interface GraphModel {
   foldedCount: number;
   /**
    * How many nodes the kind filter let through. The accounting law:
-   * placed + shelf + folded + truncated + outOfLens === visibleTotal.
+   * placed + shelf + folded + truncated + outOfLens + outOfWindow
+   *   === visibleTotal.
    */
   visibleTotal: number;
   /** The lens this model was built under. */
@@ -340,7 +423,9 @@ function placeWithFrozen(
   blockedIds: Set<EntityId>,
   frozen: Readonly<Record<string, { x: number; y: number }>>,
   now: string,
-  decorate: (entity: EntitySummary) => Pick<PlacedNode, 'interest'> & { folded?: FoldedInto },
+  decorate: (
+    entity: EntitySummary,
+  ) => Pick<PlacedNode, 'interest' | 'degree' | 'hub'> & { folded?: FoldedInto },
 ): { placed: PlacedNode[]; pendingRelayout: number } {
   const placedIds: EntityId[] = [];
   const componentOf = new Map<EntityId, number>();
@@ -490,6 +575,28 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
   const kindVisible = input.nodes.filter((n) => kindFilter === null || kindFilter.has(n.kind));
 
   // ------------------------------------------------------------------------
+  // TIME WINDOW. Applied before scoring, because it is a question about
+  // MEMBERSHIP, not about rank: an entity nobody has touched this week is not
+  // a low-scoring member of today's picture, it is not in it. Everything the
+  // user is actively pointing at survives regardless — a window must never be
+  // the reason a search hit or a running session is missing.
+  // ------------------------------------------------------------------------
+  const windowMs = input.windowMs ?? null;
+  const nowMs = Date.parse(now);
+  const exempt = (id: string): boolean =>
+    liveIds.has(id) || matchIds.has(id) || pinnedIds.has(id) || id === input.focusId;
+  const inWindow =
+    windowMs === null || !Number.isFinite(nowMs)
+      ? kindVisible
+      : kindVisible.filter((n) => {
+          if (exempt(n.id)) return true;
+          const age = nowMs - Date.parse(n.activityAt);
+          // An unparseable timestamp is not evidence of staleness — keep it.
+          return !Number.isFinite(age) || age <= windowMs;
+        });
+  const outOfWindow = kindVisible.length - inWindow.length;
+
+  // ------------------------------------------------------------------------
   // RELEVANCE PASS. Score, fold, then select — before any layout runs, so the
   // layout only ever sees the subgraph that earned the canvas. This replaces
   // the old behavior of laying out EVERYTHING and cutting by island order.
@@ -498,7 +605,7 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
     (e) => edgeTypeFilter === null || edgeTypeFilter.has(e.type),
   );
   const relevance = computeRelevance({
-    nodes: kindVisible,
+    nodes: inWindow,
     edges: scopeEdges,
     liveIds,
     matchIds,
@@ -509,10 +616,10 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
 
   const fold = input.fold ?? true;
   const folds = fold
-    ? foldLeaves(kindVisible, relevance)
+    ? foldLeaves(inWindow, relevance)
     : { groups: new Map<string, FoldedInto>(), foldedIds: new Set<string>() };
 
-  const unfolded = kindVisible.filter((n) => !folds.foldedIds.has(n.id));
+  const unfolded = inWindow.filter((n) => !folds.foldedIds.has(n.id));
   const seeds = seedsFor(lens, unfolded, liveIds);
   const selection = selectByInterest(
     unfolded.map((n) => n.id),
@@ -552,23 +659,66 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
     };
   });
 
-  // Components over the filtered edge set.
+  // ------------------------------------------------------------------------
+  // COMPONENTS, WITH HUBS AS BRIDGES RATHER THAN WELDS.
+  //
+  // Union over the filtered edge set, EXCEPT that an edge incident to a hub
+  // does not merge — otherwise the teammate everyone reports to and the project
+  // everything was created in fuse the whole space into one blob (measured: one
+  // component holding 98% of it). Hub edges are still DRAWN; they simply stop
+  // being evidence that two threads are the same thread.
+  //
+  // The hub itself is then attached to its most interesting neighbor's cluster,
+  // so it is never left floating on the shelf and the picture still shows who
+  // owns the work.
+  //
+  // A NODE THE VIEWER NAMED IS NEVER A HUB. Degree alone cannot tell a shared
+  // connector (the project everything hangs off) from a busy thing the viewer
+  // is looking AT (a task with thirty sessions, a searched session). Both have
+  // high degree; only one should stop being an anchor. Without this, focusing a
+  // degree-38 task demotes it and `rootFor` re-parents it into an arbitrary
+  // neighbor's island — the picture loses the very thing that was asked for.
+  // The exemption is the naming sets, NOT `liveIds`: liveness is the space's
+  // opinion, and a live session is the archetypal connector here.
+  // ------------------------------------------------------------------------
+  const hubStop = input.hubStop ?? true;
+  const degreeOf = (id: EntityId): number => relevance.degree.get(id) ?? 0;
+  const named = (id: string): boolean =>
+    id === input.focusId || matchIds.has(id) || pinnedIds.has(id);
+  const isHub = (id: EntityId): boolean =>
+    hubStop && !named(id) && degreeOf(id) > HUB_DEGREE;
+
   const uf = new UnionFind();
   const connected = new Set<EntityId>();
   for (const e of edges) {
-    uf.union(e.sourceId, e.targetId);
     connected.add(e.sourceId);
     connected.add(e.targetId);
+    if (isHub(e.sourceId) || isHub(e.targetId)) continue;
+    uf.union(e.sourceId, e.targetId);
   }
 
   const shelf = visible
     .filter((n) => !connected.has(n.id))
     .sort((a, b) => a.title.localeCompare(b.title));
 
+  // A hub joins the cluster of its highest-interest non-hub neighbor. Ties and
+  // hub-only neighborhoods fall back to the hub's own root, which gives it an
+  // island of its own rather than a silent disappearance.
+  const rootFor = (id: EntityId): string => {
+    if (!isHub(id)) return uf.find(id);
+    const best = (relevance.adjacency.get(id) ?? [])
+      .filter((n) => visibleIds.has(n) && !isHub(n))
+      .sort(
+        (a, b) =>
+          (relevance.doi.get(b) ?? 0) - (relevance.doi.get(a) ?? 0) || (a < b ? -1 : 1),
+      )[0];
+    return best === undefined ? uf.find(id) : uf.find(best);
+  };
+
   const componentsByRoot = new Map<string, EntityId[]>();
   for (const n of visible) {
     if (!connected.has(n.id)) continue;
-    const root = uf.find(n.id);
+    const root = rootFor(n.id);
     if (!componentsByRoot.has(root)) componentsByRoot.set(root, []);
     componentsByRoot.get(root)!.push(n.id);
   }
@@ -588,10 +738,14 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
   // slot in around them; otherwise pack whole islands into rows.
   // What every placed card carries beyond its geometry: the leaves that folded
   // onto it, and the interest that won it its place.
-  const decorate = (entity: EntitySummary): Pick<PlacedNode, 'interest'> & { folded?: FoldedInto } => {
+  const decorate = (
+    entity: EntitySummary,
+  ): Pick<PlacedNode, 'interest' | 'degree' | 'hub'> & { folded?: FoldedInto } => {
     const group = folds.groups.get(entity.id);
     return {
       interest: relevance.doi.get(entity.id) ?? 0,
+      degree: degreeOf(entity.id),
+      hub: isHub(entity.id),
       ...(group ? { folded: group } : {}),
     };
   };
@@ -648,12 +802,16 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
     componentCount: placedComponents.length,
     truncated,
     outOfLens,
+    outOfWindow,
+    hubCount: placed.filter((p) => p.hub).length,
     lensEmpty: selection.lensEmpty,
     foldedCount: folds.foldedIds.size,
-    // The accounting law, asserted in model.test.ts: everything the filters let
-    // through is either placed, shelved, folded onto a hub, cut by the budget
-    // (`truncated`) or left outside the lens (`outOfLens`). Nothing is ever
-    // dropped silently, and each bucket names the REASON it is in.
+    // The accounting law, asserted in model.test.ts: everything the KIND filter
+    // let through is either placed, shelved, folded onto a hub, cut by the
+    // budget (`truncated`), left outside the lens (`outOfLens`) or older than
+    // the window (`outOfWindow`). Nothing is ever dropped silently, and each
+    // bucket names the REASON it is in — three exclusions that read alike on a
+    // count and have three different remedies.
     visibleTotal: kindVisible.length,
     lens,
     pendingRelayout,

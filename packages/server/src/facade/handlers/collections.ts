@@ -334,6 +334,13 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     )`);
   }
 
+  if (f.activeSince) {
+    // The clock window. `activity_at` is the same column `activityAt_desc`
+    // orders by, so a windowed read is the default ordering with a floor under
+    // it rather than a second notion of recency the client has to reconcile.
+    where.push(`e.activity_at >= ${p.add(f.activeSince)}::timestamptz`);
+  }
+
   if (f.readyToPull) {
     where.push(`t.work_status in ('open','pulled')`);
     where.push(UNBLOCKED_PREDICATE);

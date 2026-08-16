@@ -13,6 +13,7 @@
  *      asserted against the transport's own per-session base URL rather than
  *      the current origin.
  */
+import { TM8_CLIENT_HEADER, TM8_CLIENT_HEADER_VALUE } from '@tm8/contract';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { uploadClipboardFile } from './clipboardUpload';
@@ -91,6 +92,24 @@ describe('uploadClipboardFile', () => {
        no signature, so the extension is the server's only evidence of what a
        `text/plain`-looking file actually is. */
     expect(init.headers['x-tm8-filename']).toBe('image1.png');
+  });
+
+  /**
+   * This upload deliberately bypasses the shared JSON client. Without the
+   * explicit client header, the browser still attaches its same-origin tm8
+   * session cookie and S6 rejects every pasted file as a CSRF-shaped POST.
+   */
+  it('identifies the raw upload as a tm8 client request for S6', async () => {
+    ptyTransport.openSession(SESSION, '');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ path: '/x.png', filename: 'x.png', mimeType: 'image/png', bytes: 4 }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await uploadClipboardFile(file, SESSION);
+
+    expect(fetchMock.mock.calls[0][1].headers[TM8_CLIENT_HEADER]).toBe(TM8_CLIENT_HEADER_VALUE);
   });
 
   it('omits a filename the header cannot carry safely', async () => {

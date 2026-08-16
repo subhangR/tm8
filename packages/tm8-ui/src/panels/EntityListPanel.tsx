@@ -56,9 +56,15 @@ import {
 } from './honesty/DisabledWithReason';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
-import { EntityControlStrip, RowAction, RowMembershipControl, type ControlHost } from './controls/EntityControls';
+import {
+  EntityControlStrip,
+  RowAction,
+  RowMembershipControl,
+  RowStateControl,
+  type ControlHost,
+} from './controls/EntityControls';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
-import { MaestroTaskTile } from './list/MaestroTaskTile';
+import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
@@ -278,6 +284,22 @@ export interface EntityListPanelProps {
    * Absent ⇒ the picker renders DISABLED WITH REASON, never enabled-inert.
    */
   onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
+
+  /**
+   * Set or clear (`null`) ONE axis of an expanded row's `state.axes` record.
+   * Its own prop for the same reason `onSetValue` is: the write is a
+   * version-guarded content patch, and additionally a MERGE — the server
+   * replaces the whole axes jsonb, so the host folds this one change into the
+   * stored record. See `ControlHost.onSetAxis`.
+   */
+  onSetAxis?: (entityId: string, axisName: string, next: string | null, label: string) => void;
+
+  /**
+   * The space's axis registry — per-space DATA from `spaceSettings().taskAxes`,
+   * hydrated by the host. The axis pickers draw one control per entry for
+   * kinds whose registry declares `axisControls`; empty draws none.
+   */
+  taskAxes?: readonly import('@tm8/contract').TaskAxis[];
 
   /**
    * Add or remove ONE assignment on an expanded row.
@@ -2558,6 +2580,30 @@ export function Tile({
           hollow: statusHollow,
           streaming,
         }}
+        /* The mark becomes the state control — the same one the expanded strip
+           mounts, so the collapsed row writes through exactly the gates and
+           refusals the open row does.
+           NOT when a liveness `treatment` owns the status: there the dot paints
+           the node's verdict, not the record's field, and a picker beside it
+           would offer to write the value the dot is not showing. */
+        statusControl={
+          list.stateControl && !treatment ? (
+            <RowStateControl
+              row={row}
+              props={props}
+              control={list.stateControl}
+              pill={config.panel.statusPill}
+              variant="dot"
+              glyph={
+                <MaestroStatusGlyph
+                  tone={statusTone}
+                  hollow={statusHollow}
+                  streaming={streaming}
+                />
+              }
+            />
+          ) : undefined
+        }
         assignees={controlFacts.assignees}
         creator={controlFacts.creator}
         badges={

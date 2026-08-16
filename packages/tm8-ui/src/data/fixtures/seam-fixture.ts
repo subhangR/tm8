@@ -1283,7 +1283,21 @@ export function createFixtureSeam(): FixtureSeam {
           { actor: clone(noor), role: 'member' as const, joinedAt: FIXTURE_NOW },
         ],
         invites,
-        taskAxes: [],
+        // The node seeds every space exactly one axis (001's `task_axes`
+        // seed: `type`, kind 'default', position 0). Mirroring it is what
+        // lets the fixture-backed product actually draw the axis picker; an
+        // empty array here would demo "a space with no axes", which is the
+        // rarer state.
+        taskAxes: [
+          {
+            id: 'axis-type',
+            spaceId: FIXTURE_SPACE_ID,
+            name: 'type',
+            axisValues: ['default', 'code', 'design', 'review', 'test'],
+            kind: 'default' as const,
+            position: 0,
+          },
+        ],
         menu: {
           schemaVersion: 1,
           revision: 1,
@@ -1372,6 +1386,13 @@ export function createFixtureSeam(): FixtureSeam {
         if (f?.assignedByIds?.length && !(s.state.kind === 'task'
           && (s.state.assignments ?? []).some((a) => a.assignedBy !== null
             && f.assignedByIds!.includes(a.assignedBy.id)))) return false;
+        /* The clock window (`collections.ts`: `e.activity_at >= $n`). Honoured
+           here because the graph canvas's whole scope is this predicate — a
+           fixture that ignored it would hand back the entire space and let a
+           test prove a window that does nothing. Compared as strings: `tick()`
+           and the caller both produce `toISOString()`, which is always UTC and
+           fixed-width, so lexical order IS chronological order. */
+        if (f?.activeSince && s.activityAt < f.activeSince) return false;
         /* The `edge` clause the server executes as an EXISTS over
            public.edges (collections.ts): keep this row exactly when it has an
            edge of `type` in `direction` whose OTHER endpoint is `entityId`.
@@ -2183,6 +2204,19 @@ export function createFixtureSeam(): FixtureSeam {
             const p = patched.priority;
             if (p === 'low' || p === 'medium' || p === 'high' || p === 'urgent') s.state.priority = p;
           }
+          /* `axes` makes the same content→state crossing as `dueDate`, and
+             with the server's own replace-wholesale semantics
+             (`update_task_content`: `axes = coalesce(p_axes, axes)`): a
+             present object REPLACES the stored record — the MERGE is the
+             writer's job — and an absent key changes nothing. A fixture that
+             merged here would pass a writer that forgets to merge, which the
+             real node would quietly data-lose. */
+          if (s.state.kind === 'task' && 'axes' in patched) {
+            const axes = patched.axes;
+            if (axes !== null && typeof axes === 'object') {
+              s.state.axes = { ...(axes as Record<string, string>) };
+            }
+          }
           /**
            * And the crossing is a MOVE, not a copy: the node's `contentOf`
            * never carries these state-projected keys (task content is
@@ -2190,11 +2224,18 @@ export function createFixtureSeam(): FixtureSeam {
            * a fixture that left them merged into content would hand back a
            * detail `EntityDetailSchema` refuses — contract-invalid in a way
            * the real server never is.
+           *
+           * `axes` joins that list on the merge: it is an EntityState field
+           * with no home in the strict task content, so the block main added
+           * above has to clear it here for the same reason the other two are
+           * cleared. Leaving it would make every axis write hand back a
+           * contract-invalid detail.
            */
           if (s.state.kind === 'task') {
             const c = e.content as Record<string, unknown>;
             delete c.priority;
             delete c.dueDate;
+            delete c.axes;
           }
         }
         touch(s);
