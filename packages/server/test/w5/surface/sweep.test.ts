@@ -537,8 +537,18 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 113 -> 114: 123 persists chat mode and audits chat tool calls; it was
     // renumbered from 122 after the single-home migration landed on main.
     // 114 -> 115: 124 widens that write-once authority to Explain mode.
-    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 115.
-    expect(server.appliedMigrations.length).toBe(115);
+    // 115 -> 116 on 2026-08-16: 131_spawn_starts_the_task.sql — a session
+    // spawned on a task moves that task to `working`, the durable twin of the
+    // derived `workingActors` badge, written in the same `execution_spawn`
+    // task loop as 111's assignment. Numbered 131 and not 125 by the rule every
+    // entry above restates: 129 and 130 are already claimed on branches that
+    // have not landed (129 TWICE OVER — assigned-by-provenance and a menu
+    // lane), so the next number ABOVE the highest claimed file is 131. Taking
+    // 125 would sort BELOW files a live deployment has already applied, which
+    // is precisely what the sorted-order assertion below exists to catch and
+    // precisely what a fresh test database can never notice.
+    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 116.
+    expect(server.appliedMigrations.length).toBe(116);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
