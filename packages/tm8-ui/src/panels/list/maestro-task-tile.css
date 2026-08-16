@@ -134,8 +134,7 @@
   min-width: 0;
   overflow: hidden;
   border: 0;
-  border-bottom: 1px solid var(--pn-line);
-  border-radius: 0;
+  border-radius: var(--pn-r-sm);
   box-shadow: none;
   transition: background 120ms;
 }
@@ -193,19 +192,26 @@
   cursor: pointer;
 }
 .cv2-root .pn-tt__arrow {
-  position: relative;
+  position: absolute;
+  top: 6px;
+  left: calc(7px + var(--tt-indent));
+  z-index: 3;
   width: 16px;
   height: 16px;
-  flex: 0 0 auto;
   display: grid;
   place-items: center;
   padding: 0;
   color: var(--pn-ink-4);
-  background: none;
+  background: var(--pn-hover);
   border: none;
   border-radius: 4px;
   line-height: 0;
+  opacity: 0;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast), background var(--pn-dur-fast);
 }
+.cv2-root .pn-tt:hover .pn-tt__arrow:not(.pn-tt__arrow--empty),
+.cv2-root .pn-tt:focus-within .pn-tt__arrow:not(.pn-tt__arrow--empty),
+.cv2-root .pn-tt__arrow--expanded { opacity: 1; }
 .cv2-root .pn-tt__arrow:hover { color: var(--pn-ink-2); background: var(--pn-active); }
 .cv2-root .pn-tt__arrow svg {
   width: 13px;
@@ -216,11 +222,7 @@
 .cv2-root .pn-tt__arrow--expanded svg { transform: rotate(90deg); }
 .cv2-root .pn-tt__arrow--empty { color: var(--pn-line); }
 .cv2-root .pn-tt__arrowCount {
-  margin-left: 1px;
-  font-family: var(--pn-mono);
-  font-size: 8.5px;
-  font-weight: 600;
-  color: var(--pn-ink-3);
+  display: none;
 }
 .cv2-root .pn-tt__status {
   width: 16px;
@@ -282,7 +284,8 @@
    and session row-height parity stays untouched. */
 .cv2-root .pn-tt__badges {
   min-width: 0;
-  padding: 0 8px 5px 45px;
+  /* 7px row inset + 16px status mark + 6px gap = title start. */
+  padding: 0 8px 5px 29px;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -392,7 +395,7 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 1px 10px 10px calc(33px + var(--tt-indent));
+  padding: 1px 10px 10px calc(29px + var(--tt-indent));
 }
 .cv2-root .pn-tt__metarow {
   display: flex;
@@ -466,6 +469,10 @@
     padding-inline: calc(30px + var(--tt-indent)) 9px;
   }
 
+  .cv2-root .pn-tt__badges {
+    padding-inline: calc(30px + var(--tt-indent)) 9px;
+  }
+
 }
 
 @container task-tile (max-width: 360px) {
@@ -488,6 +495,10 @@
 
   /* 6px pad + 16px caret + 5px gap. */
   .cv2-root .pn-tt__meta {
+    padding-inline: calc(27px + var(--tt-indent)) 8px;
+  }
+
+  .cv2-root .pn-tt__badges {
     padding-inline: calc(27px + var(--tt-indent)) 8px;
   }
 
