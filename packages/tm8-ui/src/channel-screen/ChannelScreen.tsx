@@ -8,7 +8,8 @@ import type { ComposerMentionOption } from './Composer';
 import type { ChatAttachmentUploadTask } from './chat-attachments';
 import type { TriggerOption } from '../rich-input';
 import { FeedRowGroup } from './FeedRow';
-import { LiveToolGraph } from './LiveToolGraph';
+import { TurnGraph } from './LiveToolGraph';
+import { segmentTurnGraphs, type TurnSegment } from './live-graph-model';
 import { ThreadPane } from './ThreadPane';
 import { dayLabel as formatDay, dayStart } from '../kit/time';
 import { groupByOperation, type ChannelPostInput, type ChannelRefusal } from './feed-model';
@@ -89,11 +90,16 @@ export interface ChannelScreenProps {
   onLoadEarlier?: (cursor: Cursor) => Promise<void> | void;
   onOpenEntity?: (id: EntityId) => void;
   /**
-   * Mounts the collapsible live tool graph above the feed — a pure-UI star of
-   * the entities this feed's activity items touched. Opt-in by the host,
-   * because only a session anchor's activity reads as "tool calls".
+   * PER-TURN GRAPH MODE — Session Chat's presentation of activity. When true,
+   * each maximal consecutive run of activity items between messages renders as
+   * ONE compact inline entity graph at that position, and raw activity rows
+   * are not drawn at all. The boundary is the MESSAGE, deterministically —
+   * `logicalOperationId` is null in the server projection today, and turns are
+   * never inferred from timestamps. Opt-in by the host, because only a session
+   * anchor's activity reads as "tool side-effects"; Channel Chat keeps its
+   * activity rows unchanged.
    */
-  showLiveGraph?: boolean;
+  turnGraphs?: boolean;
   /**
    * The surface switch the S07 empty state offers. OPTIONAL AND MEANINGFULLY
    * SO: "the agent's native output lives in Terminal" is true of a session
@@ -167,7 +173,7 @@ export function ChannelScreen({
   onPost,
   onLoadEarlier,
   onOpenEntity,
-  showLiveGraph = false,
+  turnGraphs = false,
   onSwitchToTerminal,
   threads = false,
   anchorTitle,
@@ -200,8 +206,21 @@ export function ChannelScreen({
   const replyTo = threads ? null : armedReplyTo;
   const setReplyTo = replyState ? replyState.onChange : setLocalReplyTo;
 
-  const groups = useMemo(() => groupByOperation(page?.items ?? []), [page]);
-  const plan = useMemo(() => planRows(groups, newSinceItemId, threads), [groups, newSinceItemId, threads]);
+  /*
+   * THE RENDER UNITS. Channel Chat keeps the operation grouping byte-for-byte.
+   * In per-turn mode, activity items never reach the row renderer: each
+   * message-bounded run becomes one `turn` unit (possibly empty — an
+   * anchorless run draws nothing but still marks a boundary), and every other
+   * item passes through as a single group.
+   */
+  const units = useMemo<PlanUnit[]>(() => {
+    const items = page?.items ?? [];
+    if (!turnGraphs) return groupByOperation(items);
+    return segmentTurnGraphs(items, anchorId).map((segment) =>
+      segment.kind === 'item' ? { kind: 'single' as const, item: segment.item } : segment,
+    );
+  }, [anchorId, page, turnGraphs]);
+  const plan = useMemo(() => planRows(units, newSinceItemId, threads), [units, newSinceItemId, threads]);
   const loadedMessages = useMemo(() => new Map(
     (page?.items ?? [])
       .filter((item): item is Extract<FeedItem, { itemKind: 'message' }> => item.itemKind === 'message')
@@ -338,14 +357,6 @@ export function ChannelScreen({
           `chv-split`/`chv-aside`, solved here so both hosts inherit it. */}
       <div className="chs-columns">
         <div className="chs-main">
-      {showLiveGraph && page ? (
-        <LiveToolGraph
-          items={page.items}
-          anchorId={anchorId}
-          anchorNoun={anchorNoun}
-          onOpenEntity={onOpenEntity}
-        />
-      ) : null}
       <div
         ref={feedElement}
         className="chs-feed"
@@ -421,19 +432,30 @@ export function ChannelScreen({
                     <span className="chs-day__label">{row.dayLabel}</span>
                   </li>
                 ) : null}
-                <FeedRowGroupWithMark
-                  mark={newSinceItemId === row.firstId}
-                  group={row.group}
-                  clustered={row.clustered}
-                  anchorId={anchorId}
-                  onPost={onPost}
-                  onOpenEntity={onOpenEntity}
-                  onReply={setReplyTo}
-                  onFocusMessage={focusMessage}
-                  loadedMessages={loadedMessages}
-                  threads={threads}
-                  onOpenThread={onOpenThread}
-                />
+                {row.kind === 'turn' ? (
+                  <>
+                    {newSinceItemId === row.firstId ? <NewSinceMark /> : null}
+                    <TurnGraph
+                      model={row.segment.model}
+                      anchorNoun={anchorNoun}
+                      onOpenEntity={onOpenEntity}
+                    />
+                  </>
+                ) : (
+                  <FeedRowGroupWithMark
+                    mark={newSinceItemId === row.firstId}
+                    group={row.group}
+                    clustered={row.clustered}
+                    anchorId={anchorId}
+                    onPost={onPost}
+                    onOpenEntity={onOpenEntity}
+                    onReply={setReplyTo}
+                    onFocusMessage={focusMessage}
+                    loadedMessages={loadedMessages}
+                    threads={threads}
+                    onOpenThread={onOpenThread}
+                  />
+                )}
               </Fragment>
             ))}
           </ul>
@@ -503,25 +525,51 @@ export function ChannelScreen({
  * facts of its own that live in the byline — a reply target, an edit, a
  * pending state or any delivery facet all break the run, because collapsing
  * a row would otherwise hide the place those facts are shown.
+ *
+ * A `turn` unit plans as its own row when its fold touched anything, and as
+ * NOTHING when it did not — but either way it breaks the author run, exactly
+ * as the raw activity rows it stands in for always did.
  */
-interface RowPlan {
-  group: ReturnType<typeof groupByOperation>[number];
-  clustered: boolean;
-  dayLabel: string | null;
-  firstId: string;
-}
+type PlanUnit =
+  | ReturnType<typeof groupByOperation>[number]
+  | Extract<TurnSegment, { kind: 'turn' }>;
+
+type RowPlan =
+  | {
+      kind: 'row';
+      group: ReturnType<typeof groupByOperation>[number];
+      clustered: boolean;
+      dayLabel: string | null;
+      firstId: string;
+    }
+  | {
+      kind: 'turn';
+      segment: Extract<TurnSegment, { kind: 'turn' }>;
+      dayLabel: string | null;
+      firstId: string;
+    };
 
 const CLUSTER_WINDOW_MS = 7 * 60 * 1000;
 
 function planRows(
-  groups: ReturnType<typeof groupByOperation>,
+  units: readonly PlanUnit[],
   newSinceItemId: string | null,
   threads = false,
 ): RowPlan[] {
   const out: RowPlan[] = [];
   let previous: FeedItem | null = null;
   let previousDay: number | null = null;
-  for (const group of groups) {
+  for (const unit of units) {
+    if (unit.kind === 'turn') {
+      previous = null;
+      if (unit.model.touches.length === 0) continue;
+      const day = dayStart(unit.createdAt);
+      const dayLabel = day !== null && day !== previousDay ? formatDay(unit.createdAt) : null;
+      out.push({ kind: 'turn', segment: unit, dayLabel, firstId: unit.firstId });
+      previousDay = day ?? previousDay;
+      continue;
+    }
+    const group = unit;
     const first = group.kind === 'operation' ? group.items[0] : group.item;
     const day = dayStart(first.createdAt);
     const dayLabel = day !== null && day !== previousDay ? formatDay(first.createdAt) : null;
@@ -529,7 +577,7 @@ function planRows(
       && newSinceItemId !== first.itemId
       && group.kind === 'single'
       && continuesRun(previous, group.item, threads);
-    out.push({ group, clustered, dayLabel, firstId: first.itemId });
+    out.push({ kind: 'row', group, clustered, dayLabel, firstId: first.itemId });
     previousDay = day ?? previousDay;
     previous = group.kind === 'operation' ? group.items[group.items.length - 1] : group.item;
   }
@@ -587,15 +635,7 @@ function FeedRowGroupWithMark({
 }) {
   return (
     <>
-      {mark ? (
-        /* The oracle labels this divider CLIENT-LOCAL in its own copy, and the
-           label is load-bearing: this is not a read state and does not survive
-           a reload, so calling it "unread" would promise durability we do not
-           have. */
-        <li className="chs-mark" aria-hidden data-testid="chs-mark">
-          <span>NEW SINCE OPENED · CLIENT-LOCAL</span>
-        </li>
-      ) : null}
+      {mark ? <NewSinceMark /> : null}
       <FeedRowGroup
         group={group}
         anchorId={anchorId}
@@ -613,6 +653,17 @@ function FeedRowGroupWithMark({
         }}
       />
     </>
+  );
+}
+
+/* The oracle labels this divider CLIENT-LOCAL in its own copy, and the label
+   is load-bearing: this is not a read state and does not survive a reload, so
+   calling it "unread" would promise durability we do not have. */
+function NewSinceMark() {
+  return (
+    <li className="chs-mark" aria-hidden data-testid="chs-mark">
+      <span>NEW SINCE OPENED · CLIENT-LOCAL</span>
+    </li>
   );
 }
 

@@ -1,16 +1,21 @@
 /**
- * LIVE TOOL GRAPH — the collapsible strip at the top of a session's Chat feed.
+ * LIVE GRAPH SURFACES — the entity star a chat's activity implies.
  *
- * Draws the star the feed already implies: the session at the centre, one node
- * per entity its tool calls touched, edges labelled with the accumulated verbs.
- * PURE UI — it reads the SAME `page.items` array the chip rows render from and
- * issues no read of its own, so it is live exactly as the chat is live.
+ * Two mounts share one canvas:
+ *
+ *   · `LiveGraphStrip` — the collapsible whole-conversation strip (Chat Home).
+ *   · `TurnGraph` — the compact in-feed row Session Chat draws IN PLACE OF a
+ *     turn's raw activity items: one graph per message-bounded activity run,
+ *     visible by default, neutral count language, no tool names.
+ *
+ * PURE UI — both fold the SAME loaded `FeedItem` array the feed renders from
+ * and issue no read of their own, so they are live exactly as the chat is.
  *
  * Visual language is the session-graph surface's (`sg-*` classes, registry
- * icon art), so the fourth chip's full graph and this strip read as one family.
+ * icon art), so the fourth chip's full graph and these read as one family.
  */
-import { useMemo, useState, type KeyboardEvent } from 'react';
-import type { EntityId, FeedItem } from '@tm8/contract';
+import { useState, type KeyboardEvent } from 'react';
+import type { EntityId } from '@tm8/contract';
 import { getKind } from '../domain';
 import { NODE_H, NODE_W } from '../session-graph/layout';
 import '../session-graph/session-graph.css';
@@ -20,18 +25,10 @@ import '../session-graph/session-graph.css';
 import './channel-screen.css';
 import {
   edgeLabel,
-  foldLiveGraph,
+  neutralEdgeLabel,
   type LiveGraphModel,
   type LiveGraphTouch,
 } from './live-graph-model';
-
-export interface LiveToolGraphProps {
-  items: readonly FeedItem[];
-  anchorId: EntityId;
-  /** The caller's word for the centre ("this session"). */
-  anchorNoun: string;
-  onOpenEntity?: (id: EntityId) => void;
-}
 
 export interface LiveGraphStripProps {
   /** A prebuilt fold — any client-side source of touches (feed activity,
@@ -47,9 +44,52 @@ export interface LiveGraphStripProps {
 const PAD = 24;
 const MIN_R = 132;
 
-export function LiveToolGraph({ items, anchorId, anchorNoun, onOpenEntity }: LiveToolGraphProps) {
-  const model = useMemo(() => foldLiveGraph(items, anchorId), [items, anchorId]);
-  return <LiveGraphStrip model={model} anchorNoun={anchorNoun} onOpenEntity={onOpenEntity} />;
+export interface TurnGraphProps {
+  /** The fold of ONE message-bounded activity run — see `segmentTurnGraphs`. */
+  model: LiveGraphModel;
+  /** The caller's word for the centre ("this session"). */
+  anchorNoun: string;
+  /** Registry kind whose icon draws the centre node. */
+  focusKind?: string;
+  onOpenEntity?: (id: EntityId) => void;
+}
+
+/**
+ * THE IN-FEED TURN GRAPH — a `<li>` row that stands where a turn's raw
+ * activity items would otherwise render. Visible by default (no toggle: the
+ * graph IS the row), captioned with honest counts, and labelled in NEUTRAL
+ * relationship language — entity title/kind and touch counts, never a verb
+ * string that could carry a tool name.
+ *
+ * An empty fold renders NOTHING: an anchorless run has no far ends, and an
+ * empty graph would be a drawing of a claim that cannot exist yet.
+ */
+export function TurnGraph({
+  model,
+  anchorNoun,
+  focusKind = 'work_session',
+  onOpenEntity,
+}: TurnGraphProps) {
+  const { touches } = model;
+  if (touches.length === 0) return null;
+  const n = touches.length;
+  return (
+    <li className="chs-turn-graph" data-testid="chs-turn-graph">
+      <p className="chs-turn-graph__caption">
+        {`turn graph · ${n} ${n === 1 ? 'entity' : 'entities'} · ${model.activityCount} ${
+          model.activityCount === 1 ? 'touch' : 'touches'
+        }`}
+      </p>
+      <LiveGraphCanvas
+        touches={touches}
+        anchorNoun={anchorNoun}
+        focusKind={focusKind}
+        onOpenEntity={onOpenEntity}
+        graphNoun="Turn graph"
+        labelFor={neutralEdgeLabel}
+      />
+    </li>
+  );
 }
 
 export function LiveGraphStrip({
@@ -103,11 +143,17 @@ function LiveGraphCanvas({
   anchorNoun,
   focusKind,
   onOpenEntity,
+  graphNoun = 'Live graph',
+  labelFor = edgeLabel,
 }: {
   touches: readonly LiveGraphTouch[];
   anchorNoun: string;
   focusKind: string;
   onOpenEntity?: (id: EntityId) => void;
+  /** The accessible name's own word for itself ("Live graph", "Turn graph"). */
+  graphNoun?: string;
+  /** The edge's wording — verbs for the strip, neutral counts for a turn. */
+  labelFor?: (touch: LiveGraphTouch) => string;
 }) {
   const n = touches.length;
   // One ring; grow it until the nodes fit side by side around it.
@@ -126,7 +172,7 @@ function LiveGraphCanvas({
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="xMidYMid meet"
         role="img"
-        aria-label={`Live graph: ${anchorNoun} touched ${n} ${n === 1 ? 'entity' : 'entities'}`}
+        aria-label={`${graphNoun}: ${anchorNoun} touched ${n} ${n === 1 ? 'entity' : 'entities'}`}
       >
         <circle className="sg-ring" cx={cx} cy={cy} r={r} />
         {touches.map((touch, index) => {
@@ -140,7 +186,7 @@ function LiveGraphCanvas({
             <g key={touch.id}>
               <path className="sg-link" d={`M ${cx} ${cy} L ${x} ${y}`} />
               <text className="sg-meta" x={lx} y={ly - 4} textAnchor="middle">
-                {edgeLabel(touch)}
+                {labelFor(touch)}
               </text>
               <TouchNode
                 touch={touch}
@@ -148,6 +194,7 @@ function LiveGraphCanvas({
                 y={y}
                 fresh={touch === latest}
                 onOpen={onOpenEntity}
+                labelFor={labelFor}
               />
             </g>
           );
@@ -184,19 +231,21 @@ function TouchNode({
   y,
   fresh,
   onOpen,
+  labelFor,
 }: {
   touch: LiveGraphTouch;
   x: number;
   y: number;
   fresh: boolean;
   onOpen?: (id: EntityId) => void;
+  labelFor: (touch: LiveGraphTouch) => string;
 }) {
   const config = getKind(touch.kind);
   /* A node is a BUTTON only where the host can actually open the entity. With
      no handler it keeps its label and drops the role, the tab stop and the
      handlers — the same rule the entity chips follow, and for the same reason:
      `role="button"` over a no-op is a control that swallows the press. */
-  const label = `${config.label}: ${touch.title} — ${edgeLabel(touch)}`;
+  const label = `${config.label}: ${touch.title} — ${labelFor(touch)}`;
   const pressable = onOpen
     ? {
         role: 'button',

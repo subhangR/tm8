@@ -13,7 +13,7 @@ import {
   type TriggerOption,
 } from '../rich-input';
 import { LiveGraphStrip } from '../channel-screen/LiveToolGraph';
-import { mergeChatTurnFrame, reconcileDetails } from './turn-model';
+import { mergeChatTurnFrame, projectTurnParts, reconcileDetails } from './turn-model';
 import { foldTurnGraph } from './turn-graph';
 import type { ChatEntityResolver } from './EntityChip';
 import { TurnParts } from './TurnParts';
@@ -198,6 +198,12 @@ export function ChatHomeScreen({
    *  after the post (ours or a successor), or by leaving the thread. */
   const expectingRootRef = useRef<EntityId | null>(null);
   const expectingMarkRef = useRef(0);
+  /** The turns already on screen when we posted, or null when we have not
+   *  posted into this thread. Nothing in that snapshot can be the turn our
+   *  pulse stands in for — the server writes the placeholder when it CLAIMS
+   *  the turn, strictly after our post — and with no snapshot at all there is
+   *  nothing to identify a placeholder by. */
+  const preTurnIdsRef = useRef<Set<string> | null>(null);
   /** Per-root single-flight for participant-message refreshes — one thread's
    *  pending refresh must not swallow another thread's. */
   const refreshingRootsRef = useRef<Set<string>>(new Set());
@@ -299,6 +305,7 @@ export function ChatHomeScreen({
     firstSeenRef.current.clear();
     if (expectingRootRef.current && expectingRootRef.current !== selectedRootId) {
       expectingRootRef.current = null;
+      preTurnIdsRef.current = null;
     }
     if (!selectedRootId) {
       setDetail(null);
@@ -402,6 +409,7 @@ export function ChatHomeScreen({
             return;
           }
           expectingRootRef.current = null;
+          preTurnIdsRef.current = null;
           setPhase('idle');
         } else setPhase('streaming');
       }),
@@ -436,6 +444,11 @@ export function ChatHomeScreen({
     [modelId, models],
   );
   const busy = isBusyPhase(phase);
+  const thinking = detail !== null && showThinking(phase, detail);
+  const pendingTurnId =
+    detail !== null && thinking
+      ? claimedSilentTurnId(phase, detail, preTurnIdsRef.current)
+      : null;
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
   const selectionUnavailable =
@@ -551,6 +564,9 @@ export function ChatHomeScreen({
         setPhase('posting-turn');
         expectingRootRef.current = selectedRootId;
         expectingMarkRef.current = frameSeqRef.current;
+        preTurnIdsRef.current = new Set(
+          (detailRef.current?.turns ?? []).map((turn) => turn.messageId),
+        );
         await port.postTurn({
           threadRootId: selectedRootId,
           body,
@@ -611,6 +627,7 @@ export function ChatHomeScreen({
       // pulse honest until the first frame arrives.
       expectingRootRef.current = root.threadRootId;
       expectingMarkRef.current = frameSeqRef.current;
+      preTurnIdsRef.current = new Set();
       setSelectedRootId(root.threadRootId);
       setPhase('streaming');
       await refreshThreads(root.threadRootId);
@@ -656,6 +673,7 @@ export function ChatHomeScreen({
       if (activeRootRef.current === rootId) {
         liveTurnsRef.current.clear();
         expectingRootRef.current = null;
+        preTurnIdsRef.current = null;
         setDetail((current) => {
           const merged = reconcileDetails(current, stoppedDetail);
           return { ...merged, summary: { ...merged.summary, state: 'stopped-continuable' } };
@@ -1082,12 +1100,13 @@ export function ChatHomeScreen({
                   key={turn.messageId}
                   turn={turn}
                   mode={detail.summary.config.mode}
+                  pending={turn.messageId === pendingTurnId}
                   onOpenEntity={onOpenEntity}
                   resolveEntity={resolveEntity}
                   suppressEntityIds={ownMessageIds}
                 />
               ))}
-              {showThinking(phase, detail) ? (
+              {thinking ? (
                 <div className="tch-thinking" role="status" data-testid="chat-thinking">
                   <span className="tch-dots" aria-hidden><i /><i /><i /></span>
                   {phase === 'streaming' ? 'Agent is thinking…' : 'Sending your message…'}
@@ -1227,10 +1246,27 @@ export function ChatHomeScreen({
               ) : null}
               <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
               <span className="tch-hint">Enter to send · Shift+Enter for a new line</span>
-              {phase === 'streaming' && port.interrupt ? (
-                <button type="button" className="tch-stop" onClick={() => void interrupt()}>
-                  <span aria-hidden>■</span> Stop
-                </button>
+              {phase === 'streaming' ? (
+                port.interrupt ? (
+                  <button type="button" className="tch-stop" onClick={() => void interrupt()}>
+                    <span aria-hidden>■</span> Stop
+                  </button>
+                ) : (
+                  /* Unavailable ≠ invisible: the catalog has exactly one chat
+                     operation (`chat.threads.start`) and no interrupt, so on a
+                     real node this control used to vanish mid-turn and leave a
+                     running turn looking unstoppable by design. */
+                  <DisabledIconControl
+                    label="Stop this turn"
+                    glyph="■"
+                    reason={{
+                      cause: 'Stopping a turn isn’t available on this node',
+                      remedy: 'no chat interrupt operation is exposed — the turn ends on its own',
+                    }}
+                  >
+                    Stop
+                  </DisabledIconControl>
+                )
               ) : null}
               <button
                 type="button"
@@ -1467,12 +1503,15 @@ function filterTaskRows(tasks: readonly ChatTaskRow[], query: string): ChatTaskR
 function Turn({
   turn,
   mode,
+  pending,
   onOpenEntity,
   resolveEntity,
   suppressEntityIds,
 }: {
   turn: ChatThreadDetail['turns'][number];
   mode: ChatMode;
+  /** This turn is the one the pulse is already announcing. */
+  pending?: boolean;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   resolveEntity?: ChatEntityResolver | undefined;
   suppressEntityIds?: ReadonlySet<string> | undefined;
@@ -1480,6 +1519,26 @@ function Turn({
   const label = turn.author?.displayName ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
   const agent = turn.author?.isAgent ?? turn.role === 'assistant';
+  /**
+   * AN ANSWER IS ITS RENDERED PARTS. The server writes the assistant message
+   * body twice — 'Agent turn in progress.' when the turn is claimed, the
+   * finished text when it completes — because feeds, previews and
+   * notifications have no parts to read. Here they do, so printing the body
+   * alongside them said the same thing twice: the answer duplicated on every
+   * re-read, and a redundant placeholder bubble under the thinking pulse.
+   *
+   * The test is what the transcript actually DRAWS, not how many rows were
+   * stored. `projectTurnParts` folds a call and its result into one card and
+   * drops `done` entirely, so a turn that terminated without producing output
+   * holds one part and renders nothing — suppressing its body on `length` left
+   * an empty bubble where the durable 'Agent turn completed.' should be.
+   *
+   * A turn that draws nothing is not an answer: either an ordinary message
+   * posted into this thread by a teammate, whose body is all it has to say, or
+   * the claimed-but-silent turn the pulse is already covering.
+   */
+  const bodyIsContent =
+    turn.role !== 'assistant' || (projectTurnParts(turn.parts).length === 0 && !pending);
   return (
     <article className="tch-turn" data-role={turn.role} data-mode={mode}>
       <header className="tch-turn__byline">
@@ -1494,7 +1553,7 @@ function Turn({
         <span className="tch-mode-chip" title={`This answer ran in ${mode} mode`}>{mode}</span>
         <Timestamp at={turn.createdAt} />
       </header>
-      {turn.body ? <div className="tch-user-body">{turn.body}</div> : null}
+      {bodyIsContent && turn.body ? <div className="tch-user-body">{turn.body}</div> : null}
       <TurnParts
         parts={turn.parts}
         onOpenEntity={onOpenEntity}
@@ -1523,8 +1582,74 @@ function showThinking(phase: ComposerPhase, detail: ChatThreadDetail): boolean {
   if (phase === 'posting-root' || phase === 'configuring' || phase === 'posting-turn') return true;
   if (phase !== 'streaming') return false;
   const last = detail.turns[detail.turns.length - 1];
-  return !last || last.role !== 'assistant' || last.parts.length === 0;
+  return !last || last.role !== 'assistant' || projectTurnParts(last.parts).length === 0;
 }
+
+/**
+ * WHICH turn the pulse is standing in for — by identity, never by position.
+ *
+ * A claimed turn's placeholder and an ordinary message a teammate posted into
+ * this thread are INDISTINGUISHABLE on the wire: `role` is derived purely from
+ * `author.isAgent`, and `MessageView.parts` is omitted entirely when a message
+ * has none, so neither carries a mark saying "I am a chat turn". Position
+ * cannot stand in for identity either — the composer stays open during
+ * `streaming`, so a later user message can sit after the placeholder, and the
+ * placeholder is then no longer the last row.
+ *
+ * Cardinality does not stand in for it either: a thread can already hold a
+ * silent teammate message, which is then the only silent assistant on screen.
+ * Nor does arrival: "absent from the rows THIS TAB had rendered" is not the
+ * server's ordering, so a teammate message that lands between our post and the
+ * claim — or one that was durable all along and unseen here, since this screen
+ * never subscribes to ordinary message additions — is equally new to us.
+ *
+ * So the last gate is the server's OWN sentinel. `createAgentMessage`
+ * (`server/src/chat/orchestrator.ts:369`, pinned by `chat-storage.pg.test.ts`)
+ * writes exactly this body when it claims a turn. Matching it is a heuristic
+ * and it is deliberately the one whose failure is BOUNDED: the worst it can do
+ * is hide an ordinary message whose entire content is that same sentence,
+ * rather than arbitrary teammate content. If the server ever changes the
+ * string, suppression stops and the redundant bubble comes back — a blemish,
+ * not data loss. That is the safe direction to fail in.
+ *
+ * The real fix is a wire marker. The server already HAS one —
+ * `bind_chat_agent_message` records `chat_turns.agent_message_id` — and no
+ * read path projects it, so no client can ask which row belongs to a turn.
+ *
+ * Arrival and cardinality still gate on top: only rows new to us, and only
+ * when exactly one qualifies. With NO snapshot — a reload or a thread switch
+ * mid-turn — nothing is suppressed and the durable body renders. That is the
+ * honest outcome while thread liveness is never read back from the server: the
+ * body is then the only hint that surface has.
+ *
+ * Candidacy asks for zero STORED parts, not zero rendered ones: a turn that
+ * stored only `done` draws nothing but is plainly finished, and is not what a
+ * pulse stands in for. (The body fallback still asks the projection — there
+ * the question is whether anything was drawn.)
+ *
+ * During the posting phases the pulse is announcing OUR OWN write, not any
+ * turn on screen, so it stands in for nothing and suppresses nothing.
+ */
+function claimedSilentTurnId(
+  phase: ComposerPhase,
+  detail: ChatThreadDetail,
+  preTurnIds: ReadonlySet<string> | null,
+): EntityId | null {
+  if (phase !== 'streaming' || preTurnIds === null) return null;
+  const silent = detail.turns.filter(
+    (turn) =>
+      turn.role === 'assistant' &&
+      turn.parts.length === 0 &&
+      turn.body === CLAIMED_TURN_BODY &&
+      !preTurnIds.has(turn.messageId),
+  );
+  return silent.length === 1 ? silent[0]!.messageId : null;
+}
+
+/** The body the server writes onto the agent message when it claims a turn —
+ *  `orchestrator.ts:369`, asserted by `server/test/db/chat-storage.pg.test.ts`.
+ *  Not a UI string: the transcript never authors it, it only recognises it. */
+const CLAIMED_TURN_BODY = 'Agent turn in progress.';
 
 function phaseForThreadState(state: ChatThreadSummary['state']): ComposerPhase {
   if (state === 'streaming') return 'streaming';

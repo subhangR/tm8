@@ -90,3 +90,73 @@ export function edgeLabel(touch: LiveGraphTouch): string {
   const head = n > 1 ? `${verb} ×${n}` : verb;
   return entries.length > 1 ? `${head} +${entries.length - 1}` : head;
 }
+
+/**
+ * NEUTRAL edge language for the in-feed turn graph: a count, never a verb.
+ * Activity verbs can carry tool-shaped strings (`chat.tool_called`), and the
+ * turn graph's contract is entity title/kind plus relationship weight only —
+ * no tool names, arguments, or payload ever reach the feed.
+ */
+export function neutralEdgeLabel(touch: LiveGraphTouch): string {
+  return touch.count === 1 ? '1 touch' : `${touch.count} touches`;
+}
+
+// ---------------------------------------------------------------------------
+// Turn segmentation — message-bounded runs, never timestamps.
+// ---------------------------------------------------------------------------
+
+export type TurnSegment =
+  | { kind: 'item'; item: FeedItem }
+  | {
+      kind: 'turn';
+      /** The run's first activity itemId — the row's stable identity. */
+      firstId: string;
+      /** ISO time of the run's first activity item — owns the day divider. */
+      createdAt: string;
+      /** The fold of THIS run only. `touches` may be empty (anchorless run). */
+      model: LiveGraphModel;
+    };
+
+/**
+ * Split the loaded feed into render segments: every non-activity item passes
+ * through unchanged, and each MAXIMAL CONSECUTIVE RUN of activity items
+ * between them becomes one `turn` segment folded by `foldLiveGraph`.
+ *
+ * THE BOUNDARY IS THE MESSAGE, DETERMINISTICALLY. `logicalOperationId` is
+ * currently null in the server projection, so adjacency between messages is
+ * the interim turn rule — never timestamps. If exact turn identity is ever
+ * required, that is a contract/server provenance change, not a heuristic here.
+ *
+ * A run whose fold has no touches (anchorless or self-only activity) is still
+ * EMITTED, with an empty model: the caller draws no row and no empty graph for
+ * it, but can still treat the position as a boundary (e.g. for clustering).
+ */
+export function segmentTurnGraphs(
+  items: readonly FeedItem[],
+  anchorId: EntityId,
+): TurnSegment[] {
+  const out: TurnSegment[] = [];
+  let run: FeedItem[] = [];
+
+  const flush = (): void => {
+    if (run.length === 0) return;
+    out.push({
+      kind: 'turn',
+      firstId: run[0]!.itemId,
+      createdAt: run[0]!.createdAt,
+      model: foldLiveGraph(run, anchorId),
+    });
+    run = [];
+  };
+
+  for (const item of items) {
+    if (item.itemKind === 'activity') {
+      run.push(item);
+      continue;
+    }
+    flush();
+    out.push({ kind: 'item', item });
+  }
+  flush();
+  return out;
+}
