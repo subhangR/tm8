@@ -185,9 +185,9 @@ describe('W1.C generated catalog and reachability foundations', () => {
     }
   });
 
-  it('is total over 20 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
-    // 19 -> 20 (2026-08-09): `loop`.
-    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(20);
+  it('is total over 21 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
+    // 19 -> 20 (2026-08-09): `loop`; 20 -> 21 (2026-08-16): `graph` (Craft P1).
+    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(21);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({
       kind: 'ui_template',

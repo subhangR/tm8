@@ -119,9 +119,10 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     expect(rows[0]?.ids).toEqual([]);
   });
 
-  it('serves Board and Graph as single-view tab groups (130/134 posture)', async () => {
+  it('serves Board, Craft and Graph as single-view tab groups (130/134/137 posture)', async () => {
     for (const [id, ref] of [
       ['board', 'board'],
+      ['craft', 'craft'],
       ['graph', 'graph'],
     ] as const) {
       const rows = await db.query<{ items: Array<{ type: string; ref: string }> }>(

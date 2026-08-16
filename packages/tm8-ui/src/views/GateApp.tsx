@@ -40,6 +40,7 @@ import { MobileShell } from './MobileShell';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
+import { CraftScreen } from '../craft';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { NavView } from '../routes';
@@ -158,6 +159,8 @@ const VIEW_REF_SCREENS = {
   messages: 'mounted',
   /* The task Board (2026-08-16): the kanban screen, mounted below. */
   board: 'mounted',
+  /* The Craft studio (2026-08-16): the blueprint split pane, mounted below. */
+  craft: 'mounted',
   workspace: 'workspace',
   /* The last genuinely unbuilt view ref. */
   feed: 'unbuilt',
@@ -1653,6 +1656,33 @@ export function GateApp(props: GateAppProps = {}) {
                 navigateTo(WORKSPACE_TARGET);
                 nav.push(id as EntityId);
               }}
+            />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'craft' ? (
+            /* ✎ Craft (Craft P1, 2026-08-16) — the blueprint studio: a
+               craft-mode chat anchored to a `graph` entity beside a canvas
+               rendering that entity's ROW. Full-bleed like Board; the thread
+               and the canvas are the navigation. */
+            <CraftScreen
+              seam={data.seam}
+              spaceId={data.spaceId as SpaceId}
+              nodeKey={nodeKey}
+              bridge={chatBridge}
+              skillOptions={data.skillOptions}
+              viewerName={data.viewerActor?.displayName}
+              viewerId={data.viewerActor?.id}
+              onOpenEntity={(id) => {
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id as EntityId);
+              }}
+              onNotice={(text) =>
+                notices.push({
+                  id: `crf:${Date.now()}`,
+                  tone: 'info',
+                  title: 'Craft',
+                  body: text,
+                  ttlMs: 6000,
+                })
+              }
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'inbox' ? (
             /* ◹ Inbox — the finished screen that was never mounted. Nothing

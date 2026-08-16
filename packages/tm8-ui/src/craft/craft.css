@@ -1,0 +1,151 @@
+/* CRAFT — the blueprint studio (Craft P1). Tokens only; no raw hex (§14). */
+
+.crf-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+
+/* -- top bar: picker + new + orchestrate ---------------------------------- */
+.crf-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--pn-line);
+  flex: 0 0 auto;
+}
+
+.crf-bar__title {
+  font-weight: 600;
+  color: var(--pn-ink-1);
+}
+
+.crf-bar__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crf-bar__label {
+  font-size: 12px;
+  color: var(--pn-ink-3);
+}
+
+.crf-bar__pick select {
+  max-width: 260px;
+  background: var(--pn-card);
+  color: var(--pn-ink-1);
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.crf-bar__new,
+.crf-bar__orchestrate {
+  background: var(--pn-card);
+  color: var(--pn-ink-1);
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.crf-bar__new:hover,
+.crf-bar__orchestrate:hover:not(:disabled) {
+  border-color: var(--pn-ink-3);
+}
+
+.crf-bar__orchestrate:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.crf-bar__spacer {
+  flex: 1;
+}
+
+/* -- the split ------------------------------------------------------------ */
+.crf-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.crf-chat {
+  flex: 1 1 46%;
+  min-width: 320px;
+  min-height: 0;
+  border-right: 1px solid var(--pn-line);
+  display: flex;
+  flex-direction: column;
+}
+
+/* The chat surface manages its own scroll; the pane just contains it. */
+.crf-chat > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.crf-canvas {
+  flex: 1 1 54%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.crf-svg {
+  width: 100%;
+  height: auto;
+}
+
+.crf-mermaid {
+  padding: 8px;
+}
+
+.crf-empty {
+  color: var(--pn-ink-3);
+  padding: 24px;
+  margin: 0;
+}
+
+.crf-note {
+  color: var(--pn-ink-3);
+  font-size: 12px;
+  padding: 0 24px 12px;
+  margin: 0;
+}
+
+/* SPEC cards are dashed: intent, not fact. */
+.crf-cell--spec .sg-box {
+  stroke-dasharray: 5 4;
+}
+
+.crf-cell__flag {
+  opacity: 0.75;
+}
+
+/* LIVE CONSTRUCTION: what the latest patch added glows briefly in brass,
+   then settles. Attention is CSS — the drawn set never changes for it. */
+@keyframes crf-fresh-settle {
+  0% { stroke: var(--pn-brand); stroke-width: 2.5; }
+  100% { stroke: var(--pn-line); stroke-width: 1; }
+}
+
+.crf-cell--fresh .sg-box {
+  animation: crf-fresh-settle 2.4s ease-out;
+}
+
+.crf-line--fresh .sg-link {
+  animation: crf-fresh-settle 2.4s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crf-cell--fresh .sg-box,
+  .crf-line--fresh .sg-link {
+    animation: none;
+  }
+}

@@ -23,6 +23,8 @@ export interface ChatHomeSurfaceProps {
   spaceId: SpaceId | string;
   nodeKey: string;
   anchorId?: EntityId;
+  /** Pass-through to the screen (Craft P1): pins new threads to one mode. */
+  pinnedMode?: ChatHomeScreenProps['pinnedMode'];
   bridge?: ChatHomeL2Bridge;
   /** The shell's entity-open verb: opens the right-side detail panel. */
   onOpenEntity?: (id: EntityId) => void;

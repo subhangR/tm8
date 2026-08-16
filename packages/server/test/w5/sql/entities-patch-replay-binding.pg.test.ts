@@ -101,6 +101,10 @@ const PATCH_DOORS = [
   'update_custom_entity',
   'update_document',
   'update_file_entity',
+  // 2026-08-16: migration 135 (Craft P1) added `update_graph_entity`, carrying
+  // 038's replay binding from birth. Fifteen -> sixteen; the detector fired
+  // on the independent enumeration, exactly as the header promises.
+  'update_graph_entity',
   // 2026-08-09: migration 090 (loops) added `update_loop`, which carries 038's
   // replay binding from birth. Thirteen doors -> fourteen; the detector fired
   // and the list moved to the new exact literals, never to a pattern.
@@ -155,9 +159,10 @@ describe.sequential('W5 Duo A — 038: the eleven entities.patch doors keep thei
   // 2026-08-09 (merge): fifteen — 085's rename_work_session and 090's
   // update_loop arrived on separate branches, each side counting fourteen;
   // the union is fifteen and the detector fired on the merge.
-  it('the frozen list is exactly fifteen and every one exists in the catalog', () => {
-    expect(PATCH_DOORS).toHaveLength(15);
-    expect(new Set(PATCH_DOORS).size).toBe(15);
+  // 2026-08-16: sixteen — 135's update_graph_entity (Craft P1).
+  it('the frozen list is exactly sixteen and every one exists in the catalog', () => {
+    expect(PATCH_DOORS).toHaveLength(16);
+    expect(new Set(PATCH_DOORS).size).toBe(16);
     for (const door of PATCH_DOORS) {
       expect(bodies.get(door), `${door} is missing from the catalog`).toBeTypeOf('string');
     }
