@@ -1283,6 +1283,12 @@ export class SpawnService {
     const info = await this.graph.loadWorkSessionForResume(auth, request.sessionId);
     const sessionId = info.sessionId;
     let bootExit: PtyExitInfo | undefined;
+    // Cleanup owns only a child THIS invocation created. `spawnIfAbsent` can
+    // legitimately discover a live PTY after the optimistic guard above (a
+    // concurrent reattach/race) and answer `reused: true`; a later graph error
+    // must not turn that unrelated failure into destruction of the healthy
+    // process we merely found.
+    let launchedPty = false;
 
     if (this.pty.hasSession(sessionId)) {
       throw new SpawnError(
@@ -1587,6 +1593,7 @@ export class SpawnService {
         ...(request.cols ? { cols: request.cols } : {}),
         ...(request.rows ? { rows: request.rows } : {}),
       });
+      launchedPty = !reused;
 
       const bootSettlement = this.pty.waitForBootSettlement(sessionId, this.bootSettlementMs);
       await this.graph.transition(auth, { sessionId, status: 'running' });
@@ -1605,7 +1612,7 @@ export class SpawnService {
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
       await this.failSession(auth, sessionId, error, bootExit);
-      this.pty.kill(sessionId);
+      if (launchedPty) this.pty.kill(sessionId);
       this.sessionAuth.delete(sessionId);
       throw error;
     }

@@ -16,7 +16,7 @@
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 import { SpawnService } from '../src/spawn/SpawnService.js';
 import { SpawnError, type WorkSessionResumeInfo } from '../src/spawn/types.js';
@@ -178,6 +178,37 @@ describe('SpawnService.resume — guards and orchestration', () => {
     expect(pty.hasSession(SESSION_ID)).toBe(false);
     // A replay is a transport retry — the status must not be re-driven.
     expect(graph.statusesFor(SESSION_ID)).toHaveLength(0);
+  });
+
+  it('does not kill a live PTY reused after the optimistic resume guard', async () => {
+    // Reproduce the race instead of returning a decorative `reused` flag from
+    // a fake: the host owns a REAL, live PTY. The initial guard observes the
+    // pre-race state, then the real spawnIfAbsent discovers and reuses it.
+    pty.spawn({
+      sessionId: SESSION_ID,
+      command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify('setInterval(() => {}, 1_000)')}`,
+      cwd: projectDir,
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: dataDir,
+        SHELL: '/bin/sh',
+      },
+    });
+    expect(pty.hasSession(SESSION_ID)).toBe(true);
+
+    vi.spyOn(pty, 'hasSession').mockReturnValueOnce(false);
+    const kill = vi.spyOn(pty, 'kill');
+    vi.spyOn(graph, 'transition').mockRejectedValueOnce(
+      new Error('injected graph failure after PTY reuse'),
+    );
+
+    await expect(
+      serviceWith({ HOME: dataDir }).resume(AUTH, { sessionId: SESSION_ID }),
+    ).rejects.toThrow('injected graph failure after PTY reuse');
+
+    expect(kill).not.toHaveBeenCalled();
+    expect(pty.hasSession(SESSION_ID)).toBe(true);
+    expect(graph.statusesFor(SESSION_ID)).toEqual(['failed']);
   });
 
   // --- defect D: a write-once collision is fatal, not silent ----------------
