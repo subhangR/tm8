@@ -44,57 +44,193 @@ export const EDGE_CACHE_CAP = 20_000;
 export const EDGE_INDEX_CACHE_CAP = EDGE_CACHE_CAP * 2;
 export const NOTIFICATION_CAP = 500;
 
+/**
+ * `retained` is the set of keys some rendered projection still points at, and
+ * it is not optional bookkeeping — without it this cap can evict THE THREAD ON
+ * SCREEN. `messagesByAnchor` is keyed by anchor entity id, an open panel's
+ * anchor is in the retained set (its detail is cached, which is why it renders
+ * at all), and the eviction previously took the oldest key unconditionally. A
+ * viewer reading a long-lived channel while 128 other anchors received messages
+ * would watch their own thread blank and refetch. `pull` re-arms it, so it
+ * self-heals — as a visible flicker, on the one surface the viewer is looking
+ * at, which is the worst place to spend a cache miss.
+ */
 function setBounded<T>(
   source: Record<string, T>,
   key: string,
   value: T,
   cap: number,
+  retained: ReadonlySet<string> = new Set(),
 ): Record<string, T> {
   const next = { ...source };
   // Delete/reinsert makes object order a small, allocation-free LRU index.
   delete next[key];
   next[key] = value;
-  const excess = Object.keys(next).length - cap;
+  let excess = Object.keys(next).length - cap;
   if (excess > 0) {
-    for (const stale of Object.keys(next).slice(0, excess)) delete next[stale];
+    for (const stale of Object.keys(next)) {
+      if (excess <= 0) break;
+      // The key just written is always the newest and never a candidate.
+      if (stale === key || retained.has(stale)) continue;
+      delete next[stale];
+      excess -= 1;
+    }
   }
   return next;
 }
 
-function trimEdgeMaps(
-  edges: Record<string, EdgeView>,
-  edgeIdsByEntity: Record<EntityId, string[]>,
-  retainedEntityIds: ReadonlySet<string> = new Set(),
+/**
+ * Move a key to the end of a record's insertion order.
+ *
+ * Object key order IS the LRU index for every bounded family in this file
+ * (`setBounded` states the same trick), so a write that leaves an existing key
+ * where it was records a recency that never happened: the entity everyone is
+ * looking at would age out ahead of one nobody has touched since boot. The
+ * delete is therefore not redundant with the assignment — it is the whole
+ * recency update. Only safe on a map the caller already cloned.
+ */
+function touchInto<T>(map: Record<string, T>, key: string, value: T): void {
+  delete map[key];
+  map[key] = value;
+}
+
+/**
+ * The four normalized families a cap sweep may need to rewrite, threaded as
+ * lazily-cloned drafts. Absent ⇒ "unchanged so far, read it off `state`" —
+ * the same copy-on-write discipline `reduceEvents` uses, so a sweep that
+ * evicts nothing allocates nothing and returns no patch.
+ */
+export interface CacheDraft {
+  entities?: Record<EntityId, EntitySummary>;
+  details?: Record<EntityId, EntityDetail>;
+  edges?: Record<string, EdgeView>;
+  edgeIdsByEntity?: Record<EntityId, string[]>;
+}
+
+/**
+ * EVERY WRITE PATH ENFORCES THE CAPS, AND EVICTION LEAVES NO DANGLING REFERENCE.
+ *
+ * Both halves of that sentence were false before this function existed, and
+ * each was its own defect.
+ *
+ * **The caps only ran on the event path.** `reduceEvents` swept; the four
+ * other ways an entity enters this store — `ingestSummaries` (every read and
+ * every command's `patches`), `ingestEdges` (`graph.query`), `ingestDetail`
+ * (every panel open) and the optimistic `mergeSummary` — swept nothing. So the
+ * bound described a client that only ever receives events, and the one that
+ * actually leaks is the one someone is BROWSING: reads grew `entities`,
+ * `details` and `edges` without limit for as long as a space stayed open, and
+ * the event path's sweep could not recover it because `Object.keys().length`
+ * had to exceed the cap through EVENTS ALONE to fire at all.
+ *
+ * **Eviction was not reference-safe.** Dropping `entities[id]` left
+ * `details[id]` behind — a detail is an `EntitySummary` plus heavy sections, so
+ * the store then held a panel's whole payload for a row `projectRows` skips
+ * (it reads `entities`, and an id with no summary is dropped from the list).
+ * It also left `edgeIdsByEntity[id]` pointing at edges whose endpoint the store
+ * can no longer name, which is exactly the shape `selectConnectionsOf` renders
+ * from. Eviction here is therefore TRANSITIVE: an evicted entity takes its
+ * detail, its edge index entry and its edges with it, and each of those edges
+ * is unindexed from its OTHER endpoint too.
+ *
+ * `retained` is the set of ids some rendered projection still references —
+ * rows on screen, graph nodes, open details, open threads. Those are never
+ * evicted, at either cap, which is what makes a sweep invisible to the screen.
+ * Nothing here is a heuristic about what LOOKS unused: if the UI still points
+ * at it, it stays, and the cap is best-effort against that.
+ *
+ * Mutates `draft` in place, cloning each family off `state` only when the
+ * first eviction actually needs it.
+ */
+export function enforceCacheBounds(
+  state: Pick<DomainState, 'entities' | 'details' | 'edges' | 'edgeIdsByEntity'>,
+  draft: CacheDraft,
+  retained: ReadonlySet<string> = new Set(),
 ): void {
-  const excess = Math.max(0, Object.keys(edges).length - EDGE_CACHE_CAP);
-  const staleIds = Object.keys(edges)
-    .filter((edgeId) => {
-      const edge = edges[edgeId];
-      return edge !== undefined
-        && !retainedEntityIds.has(edge.source.id)
-        && !retainedEntityIds.has(edge.target.id);
-    })
-    .slice(0, excess);
-  for (const edgeId of staleIds) {
+  const entityExcess = Object.keys(draft.entities ?? state.entities).length - ENTITY_CACHE_CAP;
+  const edgeExcess = Object.keys(draft.edges ?? state.edges).length - EDGE_CACHE_CAP;
+  const indexExcess = Object.keys(draft.edgeIdsByEntity ?? state.edgeIdsByEntity).length
+    - EDGE_INDEX_CACHE_CAP;
+  // The common case by far. Returning before touching `Object.keys` a second
+  // time keeps a steady-state event burst allocation-free here: the previous
+  // edge trim built and filtered a full key array on every batch and then
+  // sliced zero of it.
+  if (entityExcess <= 0 && edgeExcess <= 0 && indexExcess <= 0) return;
+
+  /** Drop one edge and unindex it from both endpoints. */
+  const dropEdge = (edgeId: string): void => {
+    const edges = (draft.edges ??= { ...state.edges });
     const edge = edges[edgeId];
     delete edges[edgeId];
-    if (!edge) continue;
+    if (!edge) return;
+    const index = (draft.edgeIdsByEntity ??= { ...state.edgeIdsByEntity });
     for (const endpoint of [edge.source.id, edge.target.id]) {
-      const list = edgeIdsByEntity[endpoint];
-      if (list) edgeIdsByEntity[endpoint] = list.filter((id) => id !== edgeId);
+      const list = index[endpoint];
+      if (list) index[endpoint] = list.filter((id) => id !== edgeId);
     }
-  }
-  const indexExcess = Object.keys(edgeIdsByEntity).length - EDGE_INDEX_CACHE_CAP;
-  if (indexExcess > 0) {
-    let removed = 0;
-    for (const entityId of Object.keys(edgeIdsByEntity)) {
-      if (removed >= indexExcess) break;
-      if (edgeIdsByEntity[entityId]?.length === 0) {
-        delete edgeIdsByEntity[entityId];
-        removed += 1;
+  };
+
+  if (entityExcess > 0) {
+    let remaining = entityExcess;
+    // Insertion order is the LRU index — see `touchInto`.
+    for (const id of Object.keys(draft.entities ?? state.entities)) {
+      if (remaining <= 0) break;
+      if (retained.has(id)) continue;
+      const entities = (draft.entities ??= { ...state.entities });
+      delete entities[id];
+      remaining -= 1;
+      const details = draft.details ?? state.details;
+      if (details[id]) delete (draft.details ??= { ...state.details })[id];
+      const touching = (draft.edgeIdsByEntity ?? state.edgeIdsByEntity)[id];
+      if (touching) {
+        // Copy: `dropEdge` rewrites the very list being walked.
+        for (const edgeId of [...touching]) dropEdge(edgeId);
+        delete (draft.edgeIdsByEntity ??= { ...state.edgeIdsByEntity })[id];
       }
     }
   }
+
+  // Re-measured: the transitive sweep above may already have taken the edge
+  // family under its own cap.
+  let remainingEdges = Object.keys(draft.edges ?? state.edges).length - EDGE_CACHE_CAP;
+  if (remainingEdges > 0) {
+    const edges = draft.edges ?? state.edges;
+    for (const edgeId of Object.keys(edges)) {
+      if (remainingEdges <= 0) break;
+      const edge = edges[edgeId];
+      if (!edge) continue;
+      if (retained.has(edge.source.id) || retained.has(edge.target.id)) continue;
+      dropEdge(edgeId);
+      remainingEdges -= 1;
+    }
+  }
+
+  // The index outlives its edges: unindexing leaves an empty array behind, and
+  // those are the only entries safe to drop (a non-empty one still names live
+  // edges). Retained ids keep theirs so an open Connections tab is never
+  // silently emptied.
+  let remainingIndex = Object.keys(draft.edgeIdsByEntity ?? state.edgeIdsByEntity).length
+    - EDGE_INDEX_CACHE_CAP;
+  if (remainingIndex > 0) {
+    const index = draft.edgeIdsByEntity ?? state.edgeIdsByEntity;
+    for (const entityId of Object.keys(index)) {
+      if (remainingIndex <= 0) break;
+      if (retained.has(entityId)) continue;
+      if (index[entityId]?.length !== 0) continue;
+      delete (draft.edgeIdsByEntity ??= { ...state.edgeIdsByEntity })[entityId];
+      remainingIndex -= 1;
+    }
+  }
+}
+
+/** The patch shape of a cap sweep: only the families it actually rewrote. */
+export function draftPatch(draft: CacheDraft): Partial<DomainState> {
+  return {
+    ...(draft.entities ? { entities: draft.entities } : {}),
+    ...(draft.details ? { details: draft.details } : {}),
+    ...(draft.edges ? { edges: draft.edges } : {}),
+    ...(draft.edgeIdsByEntity ? { edgeIdsByEntity: draft.edgeIdsByEntity } : {}),
+  };
 }
 
 /** Per-space settings slice fed by `space.default_channel.updated`. */
@@ -304,6 +440,7 @@ export function reduceMessageEvent(
   state: DomainState,
   anchorId: EntityId,
   message: MessageView,
+  retained: ReadonlySet<string> = new Set(),
 ): Partial<DomainState> {
   const list = state.messagesByAnchor[anchorId] ?? [];
   return {
@@ -312,6 +449,7 @@ export function reduceMessageEvent(
       anchorId,
       upsertMessageList(list, message),
       MESSAGE_ANCHOR_CACHE_CAP,
+      retained,
     ),
   };
 }
@@ -395,60 +533,71 @@ export function reduceProfileInvalidation(state: DomainState): Partial<DomainSta
 // Hydration ingestion (read results → same normalized families)
 // ---------------------------------------------------------------------------
 
-export function ingestSummaries(state: DomainState, list: EntitySummary[]): Partial<DomainState> {
+export function ingestSummaries(
+  state: DomainState,
+  list: EntitySummary[],
+  retained: ReadonlySet<string> = new Set(),
+): Partial<DomainState> {
   if (list.length === 0) return {};
-  let entities = state.entities;
-  let entitiesChanged = false;
-  let details = state.details;
-  let detailsChanged = false;
+  const draft: CacheDraft = {};
   for (const s of list) {
-    const current = entities[s.id];
+    const current = (draft.entities ?? state.entities)[s.id];
     if (current && current.version > s.version) continue;
-    if (!entitiesChanged) {
-      entities = { ...entities };
-      entitiesChanged = true;
-    }
-    entities[s.id] = s;
-    const detail = details[s.id];
-    if (detail) {
-      if (!detailsChanged) {
-        details = { ...details };
-        detailsChanged = true;
-      }
-      details[s.id] = { ...detail, ...s };
-    }
+    touchInto((draft.entities ??= { ...state.entities }), s.id, s);
+    const detail = (draft.details ?? state.details)[s.id];
+    if (detail) (draft.details ??= { ...state.details })[s.id] = { ...detail, ...s };
   }
-  if (!entitiesChanged) return {};
-  return detailsChanged ? { entities, details } : { entities };
+  if (!draft.entities) return {};
+  enforceCacheBounds(state, draft, retained);
+  return draftPatch(draft);
+}
+
+/**
+ * Fold edges into a draft without sweeping. The sweep is the CALLER'S, because
+ * `ingestDetail` folds its connection snapshot through here on the way to one
+ * combined patch and a nested sweep would evict against a half-built draft.
+ */
+function foldEdges(
+  state: DomainState,
+  draft: CacheDraft & { edgeTombstones?: Record<string, string> },
+  list: readonly EdgeView[],
+): void {
+  for (const edge of list) {
+    const current = (draft.edges ?? state.edges)[edge.id];
+    const tombstone = (draft.edgeTombstones ?? state.edgeTombstones)[edge.id];
+    if (current && isAfter(current.updatedAt, edge.updatedAt)) continue;
+    if (tombstone && isAtOrAfter(tombstone, edge.updatedAt)) continue;
+    const edges = (draft.edges ??= { ...state.edges });
+    const index = (draft.edgeIdsByEntity ??= { ...state.edgeIdsByEntity });
+    touchInto(edges, edge.id, edge);
+    index[edge.source.id] = indexEdge(index, edge.source.id, edge.id);
+    index[edge.target.id] = indexEdge(index, edge.target.id, edge.id);
+    if (tombstone) delete (draft.edgeTombstones ??= { ...state.edgeTombstones })[edge.id];
+  }
 }
 
 /** `graph.query` hydration uses the same normalized edge family as events. */
-export function ingestEdges(state: DomainState, list: EdgeView[]): Partial<DomainState> {
+export function ingestEdges(
+  state: DomainState,
+  list: EdgeView[],
+  retained: ReadonlySet<string> = new Set(),
+): Partial<DomainState> {
   if (list.length === 0) return {};
-  let edges = state.edges;
-  let edgeIdsByEntity = state.edgeIdsByEntity;
-  let edgeTombstones = state.edgeTombstones;
-  let changed = false;
-  for (const edge of list) {
-    const current = edges[edge.id];
-    const tombstone = edgeTombstones[edge.id];
-    if (current && isAfter(current.updatedAt, edge.updatedAt)) continue;
-    if (tombstone && isAtOrAfter(tombstone, edge.updatedAt)) continue;
-    if (!changed) {
-      edges = { ...edges };
-      edgeIdsByEntity = { ...edgeIdsByEntity };
-      edgeTombstones = { ...edgeTombstones };
-      changed = true;
-    }
-    edges[edge.id] = edge;
-    edgeIdsByEntity[edge.source.id] = indexEdge(edgeIdsByEntity, edge.source.id, edge.id);
-    edgeIdsByEntity[edge.target.id] = indexEdge(edgeIdsByEntity, edge.target.id, edge.id);
-    if (tombstone) delete edgeTombstones[edge.id];
-  }
-  return changed ? { edges, edgeIdsByEntity, edgeTombstones } : {};
+  const draft: CacheDraft & { edgeTombstones?: Record<string, string> } = {};
+  foldEdges(state, draft, list);
+  if (!draft.edges) return {};
+  enforceCacheBounds(state, draft, retained);
+  return {
+    ...draftPatch(draft),
+    ...(draft.edgeTombstones ? { edgeTombstones: draft.edgeTombstones } : {}),
+  };
 }
 
-export function ingestDetail(state: DomainState, detail: EntityDetail): Partial<DomainState> {
+export function ingestDetail(
+  state: DomainState,
+  detail: EntityDetail,
+  retained: ReadonlySet<string> = new Set(),
+): Partial<DomainState> {
   const cachedDetail = state.details[detail.id];
   if (cachedDetail && cachedDetail.version > detail.version) return {};
   const currentSummary = state.entities[detail.id];
@@ -465,13 +614,20 @@ export function ingestDetail(state: DomainState, detail: EntityDetail): Partial<
     ...(detail.connections?.outgoing ?? []).flatMap((group) => group.edges),
     ...(detail.connections?.incoming ?? []).flatMap((group) => group.edges),
   ];
-  const projected = ingestEdges(state, connectionEdges);
-  return {
+  const draft: CacheDraft & { edgeTombstones?: Record<string, string> } = {
     details: setBounded(state.details, detail.id, detail, DETAIL_CACHE_CAP),
-    entities: { ...state.entities, [detail.id]: detail },
-    ...(projected.edges ? { edges: projected.edges } : {}),
-    ...(projected.edgeIdsByEntity ? { edgeIdsByEntity: projected.edgeIdsByEntity } : {}),
-    ...(projected.edgeTombstones ? { edgeTombstones: projected.edgeTombstones } : {}),
+    entities: { ...state.entities },
+  };
+  touchInto(draft.entities as Record<EntityId, EntitySummary>, detail.id, detail);
+  foldEdges(state, draft, connectionEdges);
+  // The id whose detail this IS can never be the sweep's victim: dropping the
+  // summary of a panel that is open right now is the one eviction guaranteed
+  // to be wrong, and the caller's retained set is built from a render that
+  // predates this read.
+  enforceCacheBounds(state, draft, new Set([...retained, detail.id]));
+  return {
+    ...draftPatch(draft),
+    ...(draft.edgeTombstones ? { edgeTombstones: draft.edgeTombstones } : {}),
   };
 }
 
@@ -479,6 +635,7 @@ export function ingestMessages(
   state: DomainState,
   anchorId: EntityId,
   messages: MessageView[],
+  retained: ReadonlySet<string> = new Set(),
 ): Partial<DomainState> {
   let list = state.messagesByAnchor[anchorId] ?? [];
   const byId = new Map(list.map((m) => [m.id, m]));
@@ -495,6 +652,7 @@ export function ingestMessages(
       anchorId,
       list,
       MESSAGE_ANCHOR_CACHE_CAP,
+      retained,
     ),
   };
 }
@@ -786,11 +944,16 @@ export function reduceEvents(
       delete details[stale];
     }
   }
-  if (messagesByAnchor && Object.keys(messagesByAnchor).length > MESSAGE_ANCHOR_CACHE_CAP) {
-    for (const stale of Object.keys(messagesByAnchor).slice(
-      0,
-      Object.keys(messagesByAnchor).length - MESSAGE_ANCHOR_CACHE_CAP,
-    )) delete messagesByAnchor[stale];
+  if (messagesByAnchor) {
+    // Same rule as `setBounded`: an open thread's anchor is retained and must
+    // not be evicted out from under the panel rendering it.
+    let excess = Object.keys(messagesByAnchor).length - MESSAGE_ANCHOR_CACHE_CAP;
+    for (const stale of Object.keys(messagesByAnchor)) {
+      if (excess <= 0) break;
+      if (retainedEntityIds.has(stale)) continue;
+      delete messagesByAnchor[stale];
+      excess -= 1;
+    }
   }
   if (edgeTombstones && Object.keys(edgeTombstones).length > EDGE_TOMBSTONE_CAP) {
     for (const stale of Object.keys(edgeTombstones).slice(
@@ -798,16 +961,23 @@ export function reduceEvents(
       Object.keys(edgeTombstones).length - EDGE_TOMBSTONE_CAP,
     )) delete edgeTombstones[stale];
   }
-  if (entities && Object.keys(entities).length > ENTITY_CACHE_CAP) {
-    let remaining = Object.keys(entities).length - ENTITY_CACHE_CAP;
-    for (const stale of Object.keys(entities)) {
-      if (remaining <= 0) break;
-      if (retainedEntityIds.has(stale)) continue;
-      delete entities[stale];
-      remaining -= 1;
-    }
+  // ONE SWEEP, SHARED WITH THE READ PATHS. This used to be two bespoke trims
+  // that between them dropped entities without their details and edges without
+  // re-checking whether the entity sweep had already taken the family under
+  // cap — see `enforceCacheBounds` for both defects.
+  if (entities || edges || edgeIdsByEntity || details) {
+    const draft: CacheDraft = {
+      ...(entities ? { entities } : {}),
+      ...(details ? { details } : {}),
+      ...(edges ? { edges } : {}),
+      ...(edgeIdsByEntity ? { edgeIdsByEntity } : {}),
+    };
+    enforceCacheBounds(state, draft, retainedEntityIds);
+    entities = draft.entities;
+    details = draft.details;
+    edges = draft.edges;
+    edgeIdsByEntity = draft.edgeIdsByEntity;
   }
-  if (edges && edgeIdsByEntity) trimEdgeMaps(edges, edgeIdsByEntity, retainedEntityIds);
 
   // Construct only the changed families so an unknown-event batch is a true
   // no-op and Zustand does not wake every subscriber for it.

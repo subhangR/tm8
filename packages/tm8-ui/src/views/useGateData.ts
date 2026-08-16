@@ -54,6 +54,11 @@ import {
   type RealControls,
 } from '../data';
 import { isRealSeamEnabled } from './realSeamFlag';
+import {
+  ROW_QUERY_CACHE_CAP,
+  createRecencyLedger,
+  evictRowKeys,
+} from './row-cache';
 import { createDomainStore, projectRows, selectConnectionsOf, type DomainStoreHandle } from '../data/project/domain-store';
 import {
   CACHED_LAUNCH_KINDS,
@@ -731,6 +736,66 @@ export function useGateData(options: GateOptions): GateData {
    * entity changes the list, with no read and nothing to invalidate.
    */
   const [rows, setRows] = useState<Record<string, RowPage>>({});
+  /**
+   * Access order over `rows` keys, and the claims/in-flight sets an eviction
+   * has to release with them. See `row-cache.ts` — the short version is that an
+   * unbounded `rows` map pins `retainedEntityIds` open and makes the entity cap
+   * unreachable, and that evicting a key without dropping its CLAIM produces a
+   * list that renders empty forever.
+   */
+  const rowRecency = useRef(createRecencyLedger());
+  /** The queue of render-recorded misses awaiting the drain effect below. */
+  const pending = useRef(new Map<string, PendingRead>());
+  /**
+   * A missing read stays claimed until its cache entry exists.
+   *
+   * `pending` is only the queue waiting for the drain effect. That effect has
+   * to clear the queue before it starts the requests, otherwise a later tick
+   * would dispatch the same batch again. But clearing the queue used to make
+   * every request look UNCLAIMED while it was in flight. Each response first
+   * updates the shared entity store, which re-renders the screen; during that
+   * render the sibling reads still had no cache entry and were queued again.
+   * With several bands in flight their responses continually re-armed one
+   * another — the production shape was hundreds of successful identical
+   * `collections.query` calls until Chrome exhausted its own request budget.
+   *
+   * This set is the lifetime claim. A success or terminal empty result writes
+   * the cache, so the claim can remain until that cache entry goes away — a
+   * space switch clears both, and so does an LRU eviction (`releaseRowKey`),
+   * because a claim outliving its page is a list that never reads again.
+   *
+   * DECLARED HERE, above `absorb`, only so the write path can release it.
+   */
+  const claimedReads = useRef(new Set<string>());
+  /**
+   * Keys with a `loadMore` page in flight. Guarded on a ref, not on `rows`: a
+   * scroll sentinel fires several times inside one frame, and state written by
+   * the first call is not visible to the second. Each of them would spend the
+   * SAME cursor, fetch the same page and append nothing — the list stops
+   * growing while looking busy. Also the LRU's pin set: evicting a key
+   * mid-append would leave the appended page with no rows before it.
+   */
+  const pagesInFlight = useRef(new Set<string>());
+
+  /** An evicted key must take its claim with it, or `rowsFor` returns
+      `EMPTY_ROWS` for it forever — the claim is what suppresses the re-read. */
+  const releaseRowKey = useCallback((key: string) => {
+    claimedReads.current.delete(key);
+    pending.current.delete(key);
+  }, []);
+
+  /** Bound the row-query cache on every write. See `row-cache.ts`. */
+  const boundRows = useCallback(
+    (next: Record<string, RowPage>): Record<string, RowPage> =>
+      evictRowKeys(
+        next,
+        rowRecency.current,
+        ROW_QUERY_CACHE_CAP,
+        pagesInFlight.current,
+        releaseRowKey,
+      ) as Record<string, RowPage>,
+    [releaseRowKey],
+  );
   const activity = useTerminalActivityMap(terminalActivitySource);
   const messagePulses = useMessagePulses(seam);
 
@@ -756,15 +821,35 @@ export function useGateData(options: GateOptions): GateData {
     domain.store.subscribe,
     () => domain.store.getState().messagesByAnchor,
   );
-  // The normalized-cache caps may evict only records no rendered projection
-  // still references. Rebuilt from bounded rows/graph/detail/thread caches;
-  // store batching reads this ref synchronously at commit time.
-  retainedEntityIdsRef.current = new Set([
-    ...Object.values(rows).flatMap((page) => page.ids),
-    ...graphLoad.nodeIds,
-    ...Object.keys(details),
-    ...Object.keys(messagesByAnchor),
-  ]);
+  /**
+   * The ids some rendered projection still references — the set
+   * `enforceCacheBounds` refuses to evict.
+   *
+   * MEMOISED, and that is a fix rather than a tidy-up. This used to be rebuilt
+   * on EVERY render of this hook: a fresh `Set` over every id in every cached
+   * page plus the graph plus the detail and thread keys, allocated per render,
+   * while an event burst renders at frame rate. It is now recomputed only when
+   * one of the four caches it reads actually changes.
+   *
+   * Every input is itself bounded — `rows` by `ROW_QUERY_CACHE_CAP` (see
+   * `row-cache.ts` for why that bound is what makes the entity cap reachable),
+   * `nodeIds` by `GRAPH_NODE_LIMIT`, `details` by `DETAIL_CACHE_CAP`,
+   * `messagesByAnchor` by `MESSAGE_ANCHOR_CACHE_CAP`. A retained set built from
+   * an unbounded input protects an unbounded number of entities, which is the
+   * same as having no cap at all.
+   */
+  const retainedEntityIds = useMemo(
+    () =>
+      new Set([
+        ...Object.values(rows).flatMap((page) => page.ids),
+        ...graphLoad.nodeIds,
+        ...Object.keys(details),
+        ...Object.keys(messagesByAnchor),
+      ]),
+    [rows, graphLoad.nodeIds, details, messagesByAnchor],
+  );
+  // The store reads this ref synchronously at commit time, from outside React.
+  retainedEntityIdsRef.current = retainedEntityIds;
 
   /** Every read lands in the store FIRST, then leaves its ordering here. Both
       halves matter: skipping the ingest would leave `projectRows` joining ids
@@ -778,11 +863,14 @@ export function useGateData(options: GateOptions): GateData {
     (key: string, page: Page<EntitySummary>, append = false, generation = spaceGeneration.current) => {
       if (generation !== spaceGeneration.current) return;
       domain.store.getState().ingestSummaries([...page.items]);
+      // A page that just landed is the most recently USED key by definition —
+      // stamp before the bound runs, or the write could evict itself.
+      rowRecency.current.touch(key);
       setRows((current) => {
         if (generation !== spaceGeneration.current) return current;
         const prior = append ? current[key]?.ids : undefined;
         const ids = page.items.map((item) => item.id);
-        return {
+        return boundRows({
           ...current,
           [key]: {
             // De-duplicated on append: a row that changed between two page
@@ -793,10 +881,10 @@ export function useGateData(options: GateOptions): GateData {
             loading: false,
             ...(page.total === undefined ? {} : { total: page.total }),
           },
-        };
+        });
       });
     },
-    [domain],
+    [domain, boundRows],
   );
 
   const loadGraph = useCallback(
@@ -1191,6 +1279,7 @@ export function useGateData(options: GateOptions): GateData {
     messageReadsInFlight.current.clear();
     readFailures.current.clear();
     setRows({});
+    rowRecency.current.clear();
     graphEventIds.current.clear();
     // A space switch or resync invalidates every grouped read with the rows.
     setBoards({});
@@ -1530,11 +1619,12 @@ export function useGateData(options: GateOptions): GateData {
           if (generation !== spaceGeneration.current) return;
           // A kind that will not load renders as an honestly empty panel
           // rather than a spinner that never resolves.
-          setRows((current) => ({ ...current, [key]: EMPTY_PAGE }));
+          rowRecency.current.touch(key);
+          setRows((current) => boundRows({ ...current, [key]: EMPTY_PAGE }));
         })
         .finally(() => inFlight.current.delete(kind));
     },
-    [seam, spaceId, absorb],
+    [seam, spaceId, absorb, boundRows],
   );
 
   useEffect(() => {
@@ -1779,25 +1869,8 @@ export function useGateData(options: GateOptions): GateData {
    * path, it never stands in for it, or a kind nobody has asked for would
    * render as confidently empty.
    */
-  const pending = useRef(new Map<string, PendingRead>());
-  /**
-   * A missing read stays claimed until its cache entry exists.
-   *
-   * `pending` is only the queue waiting for the effect below. The effect has
-   * to clear that queue before it starts the requests, otherwise a later tick
-   * would dispatch the same batch again. But clearing the queue used to make
-   * every request look UNCLAIMED while it was in flight. Each response first
-   * updates the shared entity store, which re-renders the screen; during that
-   * render the sibling reads still had no cache entry and were queued again.
-   * With several bands in flight their responses continually re-armed one
-   * another — the production shape was hundreds of successful identical
-   * `collections.query` calls until Chrome exhausted its own request budget.
-   *
-   * This set is the lifetime claim. A success or terminal empty result writes
-   * the cache, so the claim can remain until the cache itself is reset. A
-   * space switch clears both together below.
-   */
-  const claimedReads = useRef(new Set<string>());
+  // `pending` and `claimedReads` are declared above `absorb`, because the row
+  // cache's LRU eviction has to release a claim along with the page it drops.
   const [pendingTick, setPendingTick] = useState(0);
 
   /**
@@ -1818,6 +1891,13 @@ export function useGateData(options: GateOptions): GateData {
     (kind: string) =>
       (filter?: unknown, sort?: CollectionQuery['sort']): readonly EntitySummary[] => {
         const key = rowsKey(kind, filter, sort);
+        // THE RECENCY STAMP, and the reason it is safe from render: the ledger
+        // is a plain Map behind a ref. Nothing subscribes to it, so writing it
+        // here cannot schedule a render — and it is the ONLY place that knows a
+        // list is still on screen. Stamping at write time instead would make
+        // the LRU a write-order queue and evict the list being looked at in
+        // favour of one nobody has opened since boot.
+        rowRecency.current.touch(key);
         const page = rows[key];
         if (page === undefined) {
           // Record the miss; the effect below performs the read. Requesting
@@ -1850,7 +1930,9 @@ export function useGateData(options: GateOptions): GateData {
   const pageStateOf = useCallback(
     (kind: string) =>
       (filter?: unknown, sort?: CollectionQuery['sort']): ListPageState => {
-        const page = rows[rowsKey(kind, filter, sort)];
+        const key = rowsKey(kind, filter, sort);
+        rowRecency.current.touch(key);
+        const page = rows[key];
         if (page === undefined) return { hasMore: false, loading: true };
         return {
           hasMore: page.nextCursor !== null,
@@ -1869,7 +1951,6 @@ export function useGateData(options: GateOptions): GateData {
    * the second. Each of them would spend the SAME cursor, fetch the same page
    * and append nothing — the list stops growing while looking busy.
    */
-  const pagesInFlight = useRef(new Set<string>());
   const loadMore = useCallback(
     (kind: string) =>
       (filter?: unknown, sort?: CollectionQuery['sort']): void => {
@@ -1917,11 +1998,12 @@ export function useGateData(options: GateOptions): GateData {
         .then((result) => absorb(key, result.page, false, generation))
         .catch(() => {
           if (generation === spaceGeneration.current) {
-            setRows((current) => ({ ...current, [key]: EMPTY_PAGE }));
+            rowRecency.current.touch(key);
+            setRows((current) => boundRows({ ...current, [key]: EMPTY_PAGE }));
           }
         });
     }
-  }, [ready, spaceId, seam, pendingTick, absorb]);
+  }, [ready, spaceId, seam, pendingTick, absorb, boundRows]);
 
   // -- Board reads (A2) -------------------------------------------------------
   //
