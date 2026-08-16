@@ -25,7 +25,7 @@ import '../session-graph/session-graph.css';
 import './chat-entity-graph.css';
 import { resolveChatEntity, type ChatEntityResolver } from './EntityChip';
 import type { ChatEntityRef } from './entity-refs';
-import { ChatEntityGraphFullscreen } from './ChatEntityGraphFullscreen';
+import { ChatEntityGraphFullscreen, MAX_DRAWN_FULL } from './ChatEntityGraphFullscreen';
 import { foldGraphSeeds } from './graph-seeds';
 import { buildInducedGraph } from './induced-graph';
 import {
@@ -85,9 +85,35 @@ export function ChatEntityGraph({
     [turns, suppressEntityIds],
   );
   const { drawn, overflow } = fold;
-  const seedIds = useMemo(() => drawn.map((seed) => seed.id), [drawn]);
+
+  /* STEP 7 (D3): fullscreen draws up to MAX_DRAWN_FULL, and the reads — the
+     real cost — widen only once the viewer has actually opened it. Sticky by
+     design: the per-id read cache lives for this mount, so closing the
+     dialog keeps everything already read instead of forgetting it. */
+  const [everExpanded, setEverExpanded] = useState(expanded === true);
+  useEffect(() => {
+    if (expanded) setEverExpanded(true);
+  }, [expanded]);
+  const fullFold = useMemo(
+    () =>
+      everExpanded
+        ? foldGraphSeeds(turns, suppressEntityIds, { limit: MAX_DRAWN_FULL })
+        : null,
+    [everExpanded, turns, suppressEntityIds],
+  );
+
+  const seedIds = useMemo(
+    () => (fullFold?.drawn ?? drawn).map((seed) => seed.id),
+    [fullFold, drawn],
+  );
   const read = useInducedConnections(seedIds, connections);
+  /* Inline stays the 64-seed drawing (D3: no regression); the wider read map
+     is harmless here — the build only looks up its own seeds. */
   const graph = useMemo(() => buildInducedGraph(drawn, read), [drawn, read]);
+  const fullGraph = useMemo(
+    () => (fullFold ? buildInducedGraph(fullFold.drawn, read) : null),
+    [fullFold, read],
+  );
 
   /* Step 5 — the URL's filters shape the inline drawing too, and the strip
      echoes the loss read-only: the honesty rule says a hidden card always
@@ -101,9 +127,10 @@ export function ChatEntityGraph({
   const shown = filtered?.graph ?? graph;
 
   /* R7c — the resolver is the LAST resort: only ids that neither an edge
-     payload nor the extraction titled, through the same cache the chips use. */
+     payload nor the extraction titled, through the same cache the chips use.
+     The WIDER drawing's nodes resolve too once fullscreen has opened. */
   const [late, setLate] = useState<ReadonlyMap<string, ChatEntityRef>>(new Map());
-  const unresolvedKey = graph.nodes
+  const unresolvedKey = (fullGraph ?? graph).nodes
     .filter((node) => !node.resolvedTitle && !late.has(node.id))
     .map((node) => node.id)
     .join(',');
@@ -142,12 +169,10 @@ export function ChatEntityGraph({
   const n = graph.nodes.length;
   const single = n === 1;
   const allIsolated = !single && graph.edges.length === 0 && graph.unreadCount === 0;
-  const caption = [
-    `${n} ${n === 1 ? 'entity' : 'entities'}`,
-    ...(single ? [] : [`${graph.relationCount} ${graph.relationCount === 1 ? 'relation' : 'relations'}`]),
-    ...(graph.unreadCount > 0 ? [`${graph.unreadCount} not read`] : []),
-    ...(overflow > 0 ? [`+${overflow} more not drawn`] : []),
-  ].join(' · ');
+  const caption = captionOf(graph, overflow);
+  /* The dialog states ITS OWN drawing's numbers — at the wider cap the
+     inline split's "+N more not drawn" would be a lie about this canvas. */
+  const fullCaption = fullGraph && fullFold ? captionOf(fullGraph, fullFold.overflow) : caption;
 
   return (
     <div className="ceg" data-testid="chat-entity-graph">
@@ -176,9 +201,9 @@ export function ChatEntityGraph({
       </div>
       {expanded && onExpandedChange ? (
         <ChatEntityGraphFullscreen
-          graph={graph}
-          fold={fold}
-          caption={caption}
+          graph={fullGraph ?? graph}
+          fold={fullFold ?? fold}
+          caption={fullCaption}
           filters={filters}
           onFiltersChange={(next) => onGraphFiltersChange?.(encodeGraphFilters(next))}
           late={late}
@@ -214,4 +239,21 @@ export function ChatEntityGraph({
       ) : null}
     </div>
   );
+}
+
+/** The strip's honest arithmetic: entities, relations, unread, undrawn. */
+function captionOf(
+  graph: { nodes: readonly unknown[]; relationCount: number; unreadCount: number },
+  overflow: number,
+): string {
+  const n = graph.nodes.length;
+  const single = n === 1;
+  return [
+    `${n} ${single ? 'entity' : 'entities'}`,
+    ...(single
+      ? []
+      : [`${graph.relationCount} ${graph.relationCount === 1 ? 'relation' : 'relations'}`]),
+    ...(graph.unreadCount > 0 ? [`${graph.unreadCount} not read`] : []),
+    ...(overflow > 0 ? [`+${overflow} more not drawn`] : []),
+  ].join(' · ');
 }
