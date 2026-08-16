@@ -628,11 +628,17 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
     }
     const all = listing.listing.entries;
     if (all.length === 0) {
+      // The library's own empty state names what the library IS and the one
+      // move that fills it — a new space lands here with nothing, and "this
+      // folder is empty" alone leaves a user unsure what the library even holds.
+      const emptyText = trashTab
+        ? 'Trash is empty — nothing has been deleted here.'
+        : activeRoot.kind === 'library' && path === ''
+          ? 'Your library is empty. It holds files shared across this space — drop files here or use Upload files above to add the first. A linked project’s code lives under its own root, not here.'
+          : 'This folder is empty. Nothing is hidden; there is nothing to show yet.';
       return (
         <p className="fx-empty" data-testid="fx-measured-empty">
-          {trashTab
-            ? 'Trash is empty — nothing has been deleted here.'
-            : 'This folder is empty. Nothing is hidden; there is nothing to show yet.'}
+          {emptyText}
         </p>
       );
     }
@@ -746,6 +752,20 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
         </ul>
         {activeRoot?.kind === 'project' ? (
           <p className="fx-note">{EXPLORER_REASONS.PROJECT_READ_ONLY}</p>
+        ) : null}
+        {/* When no project is linked there is only the Library root, and nothing
+            on this screen says a project can be here at all. Name what a project
+            root is and the real way to add one — folder import when the node
+            serves it, otherwise the CLI, which always works. */}
+        {roots !== null && !roots.some((r) => r.kind === 'project') ? (
+          <p className="fx-note fx-roots-hint" data-testid="fx-no-projects">
+            Link a project and its files appear here as their own root to browse.{' '}
+            {port.importFolder
+              ? 'Use “Import folder” to bring a local folder in as a linked project, '
+              : ''}
+            {port.importFolder ? 'or link ' : 'Link '}an existing one from the CLI:{' '}
+            <code className="fx-code">tm8 project link &lt;project-id&gt; --space &lt;space&gt;</code>.
+          </p>
         ) : null}
       </aside>
 

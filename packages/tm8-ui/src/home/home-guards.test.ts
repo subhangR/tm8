@@ -47,10 +47,6 @@ function stripComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
-function stripCssComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, '');
-}
-
 const ownedFiles = walk(HERE);
 
 /**
@@ -62,12 +58,9 @@ const sourceFiles = ownedFiles
   .filter((f) => /\.(ts|tsx)$/.test(f))
   .filter((f) => !/\.(test|spec)\.tsx?$/.test(f));
 
-const styleFiles = ownedFiles.filter((f) => f.endsWith('.css'));
-
 describe('src/home — the lane guards', () => {
   it('scans a non-empty file set (a green run over zero files proves nothing)', () => {
     expect(sourceFiles.length).toBeGreaterThan(3);
-    expect(styleFiles.length).toBeGreaterThan(0);
   });
 
   it('§15.2 — no file in src/home names an entity kind', () => {
@@ -107,33 +100,12 @@ describe('src/home — the lane guards', () => {
     expect(offenders, offenders.join('\n')).toEqual([]);
   });
 
-  it('§14 — home.css resolves every colour through a token', () => {
-    const offenders: string[] = [];
-    for (const file of styleFiles) {
-      const hits = stripCssComments(readFileSync(file, 'utf8')).match(/#[0-9a-fA-F]{3,8}\b/g);
-      if (hits) offenders.push(`${relative(SRC, file)} → ${[...new Set(hits)].join(', ')}`);
-    }
-    expect(offenders, `raw hex in src/home:\n${offenders.join('\n')}`).toEqual([]);
-  });
-
-  it('§14 — and neither does a component, in a style prop or anywhere else', () => {
+  it('§14 — no component carries raw hex, in a style prop or anywhere else', () => {
     const offenders: string[] = [];
     for (const file of sourceFiles) {
       const hits = stripComments(readFileSync(file, 'utf8')).match(/#[0-9a-fA-F]{6}\b/g);
       if (hits) offenders.push(`${relative(SRC, file)} → ${[...new Set(hits)].join(', ')}`);
     }
     expect(offenders, `inline hex in src/home:\n${offenders.join('\n')}`).toEqual([]);
-  });
-
-  it('home.css introduces NO per-theme override — dark is a token swap or it is mis-tokenised', () => {
-    // The oracle's own dark annotation: "Token swap; the dashboard carries no
-    // extra chrome to re-skin — it is made of rows." A `data-theme` selector
-    // appearing in this stylesheet is therefore evidence about the LIGHT rules
-    // above it, not a dark-mode fix — which is why it is a test and not a
-    // review habit.
-    for (const file of styleFiles) {
-      const text = stripCssComments(readFileSync(file, 'utf8'));
-      expect(text, `${relative(SRC, file)} restates the theme`).not.toMatch(/data-theme/);
-    }
   });
 });

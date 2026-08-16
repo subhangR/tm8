@@ -604,6 +604,20 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     onCreated: (id) => nav.push?.(id as EntityId),
   });
 
+  /* The empty CENTRE's first-run action always creates a TASK, whichever kinds
+     the docks happen to show — a session launches on one, so it is the move
+     that unblocks a workspace with nothing in it. The assignable kind comes
+     from the registry (a badge that carries assignees), never a literal. */
+  const taskConfig = allKinds().find((k) => k.list.tile.badges.some((b) => b.source === 'assignees'))
+    ?? leftConfig;
+  const centreCreateFlow = useNewTask({
+    spaceId: data.spaceId,
+    kind: taskConfig.kind,
+    placeholderTitle: placeholderNameFor(taskConfig, placeholderTitleFor(taskConfig.label)),
+    commands: data.seam.commands,
+    onCreated: (id) => nav.push?.(id as EntityId),
+  });
+
   const centreIsEmpty = engine.visible.stack.length === 0 && engine.visible.pinned.length === 0;
 
   return (
@@ -751,6 +765,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               rows={rosterRows}
               livenessOf={data.livenessOf}
               onFocusSession={openEntity}
+              newTask={{
+                unavailable: centreCreateFlow.unavailable,
+                create: centreCreateFlow.create,
+              }}
+              onStartTerminal={sessionStart.startTerminal}
             />
           ) : (
             <PanelStack nav={visibleNav} renderPanel={renderPanel} isKeyboardOwnedAbove={props.isModalOpen} />

@@ -71,4 +71,41 @@ describe('EmptyCenter', () => {
     expect(view.getByText('No active or recent terminals.')).toBeTruthy();
     expect(view.queryByText('idle-history')).toBeNull();
   });
+
+  it('first run: names what a session is and offers a live ＋ New task', () => {
+    const create = vi.fn();
+    const onStartTerminal = vi.fn();
+    const view = render(
+      <EmptyCenter
+        rows={[]}
+        liveIds={[]}
+        livenessOf={() => 'not-running'}
+        newTask={{ unavailable: null, create }}
+        onStartTerminal={onStartTerminal}
+      />,
+    );
+
+    // The concept sentence — the surface says what the thing IS.
+    expect(view.getByText(/A session is a teammate working in a terminal/)).toBeTruthy();
+    // The one next action is a REAL, clickable control (not refused).
+    fireEvent.click(view.getByRole('button', { name: '＋ New task' }));
+    expect(create).toHaveBeenCalledTimes(1);
+    fireEvent.click(view.getByRole('button', { name: 'Start a terminal ▸' }));
+    expect(onStartTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  it('first run: refuses create WITH A REASON rather than a dead button', () => {
+    const view = render(
+      <EmptyCenter
+        rows={[]}
+        liveIds={[]}
+        livenessOf={() => 'not-running'}
+        newTask={{ unavailable: { cause: 'no executor', remedy: 'wire one' }, create: vi.fn() }}
+      />,
+    );
+    // Refused controls are focusable and carry their reason — never a live
+    // button that silently does nothing.
+    expect(view.queryByRole('button', { name: '＋ New task' })).toBeNull();
+    expect(view.getByTestId('empty-center-firstrun')).toBeTruthy();
+  });
 });
