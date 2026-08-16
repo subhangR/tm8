@@ -134,6 +134,14 @@ export interface ChatHomeScreenProps {
   slots?: { used: number; total: number } | undefined;
   /** The signed-in display name, for the empty-state greeting. */
   viewerName?: string | undefined;
+  /**
+   * The signed-in actor id, for byline sidedness — the viewer's identity
+   * header sits left, everyone else's right. Same source as `viewerName`,
+   * never a separate fetch. Role is NOT a substitute: in a shared thread
+   * another human's turn is also `role: 'user'`, so sidedness must compare
+   * author identity.
+   */
+  viewerId?: string | undefined;
 }
 
 type ComposerPhase =
@@ -170,6 +178,7 @@ export function ChatHomeScreen({
   centerOverride,
   slots,
   viewerName,
+  viewerId,
 }: ChatHomeScreenProps) {
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [teammates, setTeammates] = useState<readonly ChatTeammateOption[]>([]);
@@ -1130,6 +1139,7 @@ export function ChatHomeScreen({
                   turn={turn}
                   mode={detail.summary.config.mode}
                   pending={turn.messageId === pendingTurnId}
+                  viewerId={viewerId}
                   onOpenEntity={onOpenEntity}
                   resolveEntity={resolveEntity}
                   suppressEntityIds={ownMessageIds}
@@ -1439,6 +1449,7 @@ function Turn({
   turn,
   mode,
   pending,
+  viewerId,
   onOpenEntity,
   resolveEntity,
   suppressEntityIds,
@@ -1448,6 +1459,7 @@ function Turn({
   mode: ChatMode;
   /** This turn is the one the pulse is already announcing. */
   pending?: boolean;
+  viewerId?: string | undefined;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   resolveEntity?: ChatEntityResolver | undefined;
   suppressEntityIds?: ReadonlySet<string> | undefined;
@@ -1456,6 +1468,19 @@ function Turn({
   const label = turn.author?.displayName ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
   const agent = turn.author?.isAgent ?? turn.role === 'assistant';
+  /**
+   * Sidedness is decided by AUTHOR IDENTITY, not role — in a shared thread
+   * another human's turn is also `role: 'user'` and must land right. A null
+   * author on a user turn is your own message rendered optimistically before
+   * the server echo; treating it as self prevents a visible left→right flip
+   * on send. No `viewerId` degrades to the role heuristic — never crash,
+   * never guess.
+   */
+  const isSelf = viewerId
+    ? turn.author
+      ? turn.author.id === viewerId
+      : turn.role === 'user'
+    : turn.role === 'user';
   /**
    * AN ANSWER IS ITS RENDERED PARTS. The server writes the assistant message
    * body twice — 'Agent turn in progress.' when the turn is claimed, the
@@ -1477,7 +1502,7 @@ function Turn({
   const bodyIsContent =
     turn.role !== 'assistant' || (projectTurnParts(turn.parts).length === 0 && !pending);
   return (
-    <article className="tch-turn" data-role={turn.role} data-mode={mode}>
+    <article className="tch-turn" data-role={turn.role} data-mode={mode} data-self={isSelf ? 'true' : 'false'}>
       <header className="tch-turn__byline">
         <Avatar
           actorId={actorId}

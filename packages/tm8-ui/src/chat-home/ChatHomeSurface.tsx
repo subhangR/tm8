@@ -48,6 +48,7 @@ export interface ChatHomeSurfaceProps {
   centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];
   viewerName?: ChatHomeScreenProps['viewerName'];
+  viewerId?: ChatHomeScreenProps['viewerId'];
 }
 
 /** Production route boundary: Chat and its markdown renderer stay out of non-Home chunks. */
