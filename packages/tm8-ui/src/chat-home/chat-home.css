@@ -207,12 +207,21 @@
 
 .tch-turn__byline {
   display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
   align-items: center;
   gap: 6px;
   margin-bottom: var(--pn-space-2);
   color: var(--pn-ink-3);
   font-size: 10px;
 }
+
+/* Byline sidedness: the viewer's identity block sits left, everyone else's
+   right — avatar, name, mode chip and timestamp travel as ONE unit. Purely
+   visual: `justify-content`, never `row-reverse`, so DOM order (and with it
+   screen-reader and tab order) is identical on both sides. Bodies
+   (`tch-user-body`, `tch-parts`) are siblings and do not move. */
+.tch-turn[data-self='false'] .tch-turn__byline { justify-content: flex-end; }
 
 .tch-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
 .tch-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }

@@ -1937,6 +1937,7 @@ export function GateApp(props: GateAppProps = {}) {
                   centerOverride={regions.centerOverride}
                   slots={homeSlots}
                   viewerName={data.viewerActor?.displayName}
+                  viewerId={data.viewerActor?.id}
                   /* IN PLACE, not away (user report 2026-08-16): a chip inside
                      a conversation you are still having opens the entity in
                      Home's own column. Leaving for the workspace is the right
