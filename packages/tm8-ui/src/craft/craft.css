@@ -30,27 +30,6 @@
   color: var(--pn-ink-1);
 }
 
-.crf-bar__pick {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.crf-bar__label {
-  font-size: 12px;
-  color: var(--pn-ink-3);
-}
-
-.crf-bar__pick select {
-  max-width: 260px;
-  background: var(--pn-card);
-  color: var(--pn-ink-1);
-  border: 1px solid var(--pn-line);
-  border-radius: 6px;
-  padding: 4px 8px;
-}
-
-.crf-bar__new,
 .crf-bar__orchestrate {
   background: var(--pn-card);
   color: var(--pn-ink-1);
@@ -60,7 +39,6 @@
   cursor: pointer;
 }
 
-.crf-bar__new:hover,
 .crf-bar__orchestrate:hover:not(:disabled) {
   border-color: var(--pn-ink-3);
 }

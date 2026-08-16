@@ -32,8 +32,6 @@ export interface CraftChatPickerProps {
   onSelect(id: EntityId): void;
   /** ＋ — back to the new-conversation composer, pinned to craft by the host. */
   onNewChat(): void;
-  /** Absent on a node whose space-wide thread read has not landed. */
-  unavailableReason?: string | null;
 }
 
 export function CraftChatPicker({
@@ -42,7 +40,6 @@ export function CraftChatPicker({
   selectedId,
   onSelect,
   onNewChat,
-  unavailableReason,
 }: CraftChatPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -73,14 +70,25 @@ export function CraftChatPicker({
     const onDown = (event: MouseEvent) => {
       if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
     };
+    /* CONSUMING ESCAPE MEANS SAYING SO — and saying it FIRST.
+       `CraftScreen`'s region-C rung skips on `defaultPrevented` so the
+       innermost thing open can win. Marking the event was half the answer:
+       both rungs sit on `document`, so among bubble listeners the queue is
+       REGISTRATION order, and region C's is attached the moment the column
+       opens — long before this popover exists. The outer rung would answer
+       first and preventDefault US. Capture runs ahead of every bubble
+       listener whenever it was added, which is the only ordering that tracks
+       nesting rather than history. */
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      setOpen(false);
     };
     document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     return () => {
       document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
     };
   }, [open]);
 
@@ -135,8 +143,7 @@ export function CraftChatPicker({
             onChange={(event) => setQuery(event.target.value)}
           />
           <div className="crf-pop__list">
-            {unavailableReason ? <p className="crf-pop__hollow">{unavailableReason}</p> : null}
-            {!unavailableReason && groups.length === 0 ? (
+            {groups.length === 0 ? (
               <p className="crf-pop__hollow" data-testid="crf-chat-empty">
                 {query.trim()
                   ? 'Nothing loaded here matches.'

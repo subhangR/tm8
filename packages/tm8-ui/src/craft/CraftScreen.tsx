@@ -115,6 +115,16 @@ export function CraftScreen({
    * What the PICKER asked for, handed down as `routeThreadId`. `undefined`
    * means "nothing asked yet" — the chat screen keeps its cold-start
    * auto-open; `null` is the explicit ＋ (the new-conversation composer).
+   *
+   * IT TRACKS THE RESOLVED SELECTION, and it has to. `routeThreadId` is
+   * compared BY VALUE, while the chat screen moves its own selection when a
+   * send creates a thread — so a request left naming the value it asked for
+   * last goes stale the moment those two diverge, and re-asking for it is
+   * then a no-op React drops before the adoption effect can see it. That is
+   * not hypothetical: ＋ after a send left the request on `null` while the
+   * screen sat in the new thread, and the button stopped working for the
+   * rest of the session. A request that mirrors what is actually open can
+   * always be moved away from.
    */
   const [requestedThreadId, setRequestedThreadId] = useState<EntityId | null | undefined>(undefined);
   /** The conversation list, published up by the chat screen's ONE read. */
@@ -205,6 +215,26 @@ export function CraftScreen({
     );
     setRequestedThreadId(scoped[0]?.rootId ?? null);
   }, [selectedId, threads]);
+
+  /**
+   * THE RESOLVED SELECTION, ADOPTED — the header's subject and the request
+   * move together.
+   *
+   * The chat screen is not only steered; it also STEERS ITSELF, and the send
+   * that turns the composer into a real thread is the case that matters.
+   * Recording that in `requestedThreadId` too is what keeps ＋ and the picker
+   * able to move away from wherever the screen actually landed. Both writes
+   * are no-ops when nothing changed, so this cannot cycle with the publish
+   * effect that calls it.
+   */
+  const adoptSelection = useCallback((id: EntityId | null) => {
+    setActiveThreadId(id);
+    /* `undefined` is left alone. It means "nothing asked yet", and the mount
+       publishes a null selection before anything has been read — collapsing
+       that to an explicit `null` would forbid the chat's cold-start auto-open
+       before the blueprint resolve above has had its say. */
+    setRequestedThreadId((asked) => (asked === undefined ? asked : id));
+  }, []);
 
   /* LIVE: a durable entity event for the selected row re-reads it; any graph
      upsert refreshes the picker (a rename, a new blueprint from chat). */
@@ -439,7 +469,7 @@ export function CraftScreen({
               soloConversation
               routeThreadId={requestedThreadId}
               onThreadsChange={setThreads}
-              onSelectionChange={setActiveThreadId}
+              onSelectionChange={adoptSelection}
               viewerName={viewerName}
               viewerId={viewerId}
             />

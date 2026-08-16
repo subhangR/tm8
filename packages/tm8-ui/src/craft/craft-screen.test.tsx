@@ -218,6 +218,44 @@ describe('the two-pane studio', () => {
     view.unmount();
   });
 
+  /**
+   * THE ESCAPE QUEUE IS ONLY ORDERED IF EVERY RUNG REPORTS.
+   *
+   * `CraftScreen`'s region-C rung skips on `defaultPrevented` so the popover
+   * can come first. That guard is worth nothing unless the popover actually
+   * marks the event, and it did not: one press closed the popover AND the
+   * entity column. This asserts the CONTRACT rather than the collision,
+   * because the collision needs a `panelHost` this mount has no `GateData`
+   * to build — and a test that can only run in prod is how the bug survived.
+   */
+  it('marks Escape as handled, so a host rung registered EARLIER does not also fire', async () => {
+    const { view } = await mountStudio();
+    await waitFor(() => view.getByTestId('crf-chat-picker'));
+
+    /* Stands in for `CraftScreen`'s region-C rung — a bubble listener on
+       `document`, guarded on `defaultPrevented`, ATTACHED BEFORE the popover
+       exists. That order is the whole point: region C's listener goes on the
+       moment the column opens, so a popover that merely marks the event still
+       loses the bubble queue to it. Registering this first is what makes the
+       case honest; registering it last passes against a broken picker. */
+    let hostWouldClose = false;
+    const hostRung = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) hostWouldClose = true;
+    };
+    document.addEventListener('keydown', hostRung);
+    try {
+      fireEvent.click(view.getByTestId('crf-chat-picker'));
+      await waitFor(() => view.getByTestId('crf-chat-pop'));
+
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => expect(view.queryByTestId('crf-chat-pop')).toBeNull());
+      expect(hostWouldClose).toBe(false);
+    } finally {
+      document.removeEventListener('keydown', hostRung);
+    }
+    view.unmount();
+  });
+
   it('opens the conversation popover with its search, and closes it on Escape', async () => {
     const { view } = await mountStudio();
     await waitFor(() => view.getByTestId('crf-chat-picker'));
@@ -249,6 +287,41 @@ describe('the two-pane studio', () => {
 
     fireEvent.click(scope);
     await waitFor(() => expect(view.getByTestId('crf-chat-scope').textContent).toContain('Showing all'));
+    view.unmount();
+  });
+
+  /**
+   * ＋ KEEPS WORKING AFTER A SEND, which it did not.
+   *
+   * `routeThreadId` is compared BY VALUE, and the chat screen moves its own
+   * selection when a send turns the composer into a real thread. Craft was
+   * not told, so its request stayed on `null` while the screen sat in the new
+   * conversation — and re-asking for `null` was a no-op React dropped before
+   * the adoption effect could see it. ＋ was dead for the rest of the session.
+   * The fix is that the request ADOPTS the resolved selection; this is the
+   * case that says so.
+   */
+  it('returns to the composer when ＋ is pressed after a send created a thread', async () => {
+    const { view } = await mountStudio();
+    await waitFor(() => view.getByTestId('crf-chat-picker'));
+    /* A blueprint has to exist for the conversation to be resolved AGAINST —
+       with none selected the resolve stands aside and the chat keeps its own
+       cold-start, which is a different case from the one under test. */
+    fireEvent.click(view.getByTestId('crf-new'));
+    await waitFor(() => view.getByTestId('crf-empty'));
+    /* Resolved to the composer: the fixture's threads are anchored elsewhere
+       and are not craft-mode, so this blueprint has none of its own. */
+    await waitFor(() => expect(view.getByText('New conversation')).toBeTruthy());
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), {
+      target: { value: 'Draft the blueprint.' },
+    });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    /* The send created a thread and the chat screen selected it ITSELF. */
+    await waitFor(() => expect(view.queryByText('New conversation')).toBeNull());
+
+    fireEvent.click(view.getByTestId('crf-new-chat'));
+    await waitFor(() => expect(view.getByText('New conversation')).toBeTruthy());
     view.unmount();
   });
 
