@@ -17,64 +17,38 @@ export const DIRECT_TOOL_NAMES = [
 
 export type DirectToolName = (typeof DIRECT_TOOL_NAMES)[number];
 
-const MINIMAL_READ_TOOLS = new Set<string>([
-  'tm8_read', 'repo_read_file', 'repo_glob', 'repo_grep', 'session_transcript',
-]);
-
-const RESEARCH_READ_TOOLS = new Set<string>([
-  'tm8_overview', 'tm8_read', 'repo_read_file', 'repo_glob', 'repo_grep',
-  'session_transcript', 'session_tail', 'web_fetch', 'web_search',
-  'memory_search', 'git_branch', 'git_status', 'git_diff', 'git_pr',
-]);
-
-const PLAN_WRITES = new Set<string>(['doc_create', 'doc_update', 'artifact_create']);
 const EXPLAIN_OUTPUTS = new Set<string>([
   'explain_diagram', 'explain_graph', 'explain_code', 'explain_asset',
 ]);
-const BUILD_ONLY = new Set<string>([
-  'repo_write', 'repo_edit', 'repo_multi_edit', 'memory_write',
-]);
-const ORCHESTRATION = new Set<string>([
-  'tm8_delegate', 'session_followup', 'session_stop',
-]);
 
 /**
- * Central mode policy. Operation-level checks below narrow hierarchical tools;
- * this top-level answer is still useful for provider registration minimization.
+ * Central mode policy.
+ *
+ * A chat mode states INTENT, not permission. Every mode carries the full tool
+ * surface — repository reads and edits, web, the whole tm8 graph including
+ * mutation and delegation, docs, artifacts, memory and git — so no mode is
+ * crippled by its own label. What separates the modes is the system prompt
+ * (`chatSystemPrompt`), which says how to work, not what may be touched.
+ *
+ * Exactly two exceptions survive, and both are stated rather than implied:
+ *
+ * - `repo_bash` stays Build's alone and answers `ask`, which `exposedToolNames`
+ *   drops. A headless provider cannot settle an approval prompt, so shell work
+ *   is delegated to a worker session rather than silently pre-approved.
+ * - The `explain_*` inline presentation tools are Explain's extra surface.
+ *   They are a rendering contract with the Explain transcript, not a
+ *   capability: every other mode expresses the same content durably through
+ *   doc_create/doc_update (fenced Mermaid) and artifact_create, which every
+ *   mode now has.
+ *
+ * The `operation` argument is still accepted because the router narrows
+ * hierarchical tools through this one entry point; no mode narrows an
+ * operation any more.
  */
-export function toolPermission(mode: ChatMode, tool: string, operation?: string): ToolPermission {
+export function toolPermission(mode: ChatMode, tool: string, _operation?: string): ToolPermission {
   if (tool === 'repo_bash') return mode === 'build' ? 'ask' : 'deny';
-  if (mode === 'build') return 'allow';
-
-  if (mode === 'ask') return MINIMAL_READ_TOOLS.has(tool) ? 'allow' : 'deny';
-  if (mode === 'explain') {
-    return MINIMAL_READ_TOOLS.has(tool) || EXPLAIN_OUTPUTS.has(tool) || PLAN_WRITES.has(tool)
-      ? 'allow'
-      : 'deny';
-  }
-
-  if (tool === 'tm8_messages') {
-    if (!operation) return 'allow';
-    if (operation === 'messages.list' || operation === 'messages.delivery.get') return 'allow';
-    return mode === 'orchestrate' ? 'allow' : 'deny';
-  }
-  if (tool === 'tm8_act') {
-    if (mode !== 'orchestrate') return 'deny';
-    if (!operation) return 'allow';
-    return operation.startsWith('entities.commands.') ? 'allow' : 'deny';
-  }
-  if (tool === 'tm8_delegate') return mode === 'orchestrate' ? 'allow' : 'deny';
-
-  if (mode === 'orchestrate') {
-    if (ORCHESTRATION.has(tool)) return 'allow';
-    if (tool.startsWith('git_') || tool === 'session_transcript' || tool === 'session_tail') return 'allow';
-    return tool === 'tm8_overview' || tool === 'tm8_read' || tool === 'memory_search' ? 'allow' : 'deny';
-  }
-
-  if (RESEARCH_READ_TOOLS.has(tool)) return 'allow';
-  if (mode === 'plan' && PLAN_WRITES.has(tool)) return 'allow';
-  if (PLAN_WRITES.has(tool) || BUILD_ONLY.has(tool) || ORCHESTRATION.has(tool)) return 'deny';
-  return 'deny';
+  if (EXPLAIN_OUTPUTS.has(tool)) return mode === 'explain' ? 'allow' : 'deny';
+  return 'allow';
 }
 
 export function exposedToolNames(mode: ChatMode, names: readonly string[]): string[] {
