@@ -62,6 +62,9 @@ export type NavView =
   | { view: 'files' }
   | { view: 'git' }
   | { view: 'messages' }
+  /* The task Board (2026-08-16): a whole-centre kanban screen, flat segment,
+     no parameters of its own — same posture as the four above. */
+  | { view: 'board' }
   /*
    * A VOICE ROOM. Added 2026-08-14 to close a latent break, not to add a
    * feature.

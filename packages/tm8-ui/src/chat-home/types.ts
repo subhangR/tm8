@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { ActorSummary, ChatMode, EntityId, SpaceId } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
@@ -75,6 +76,61 @@ export interface ChatThreadSummary {
   replyCount: number;
   config: ChatThreadConfig;
   state: 'idle' | 'streaming' | 'stopped-continuable' | 'error';
+}
+
+/**
+ * A work session row for the merged Home column (R4, 2026-08-15: Home's left
+ * column lists chat threads AND work sessions in one time-grouped list).
+ *
+ * COMPOSED BY THE HOST, not read here: `status` must come from the host's
+ * liveness verdict composed with the stored record — `execution.liveness` is
+ * the only authority for "live", a `running` record with no live process is
+ * stale, and `idle` is a LEGAL LIVE STATE (an idle session is running, just
+ * quiet). This module renders the words; it must not re-derive them.
+ */
+export interface ChatSessionRow {
+  id: string;
+  title: string;
+  /** The host's composed word — rendered verbatim, never re-derived here. */
+  statusWord: string;
+  /** The kit's pill tone vocabulary, chosen by the host's projection. */
+  tone: 'run' | 'wait' | 'block' | 'info' | 'idle' | 'brand';
+  /** True only when the liveness verdict says a process exists right now. */
+  live: boolean;
+  /** e.g. `forge · sonnet-4-5` — whatever the host can truthfully compose. */
+  detail?: string;
+  updatedAt: string;
+  /** Visible but not yours: listing has no owner gate; terminal attach does. */
+  viewOnly?: boolean;
+  /**
+   * The workspace tile's badge sub-row, composed BY THE HOST from the same
+   * components the tiles use (`SessionLaneLine` branch/worktree facts,
+   * `LinkedPullRequestChips`, `TileCountBadges`) — one vocabulary, zero
+   * re-derivation here. Rendered as a SIBLING of the row button because PR
+   * chips carry real `<a>` links, which cannot nest inside a button.
+   */
+  badges?: ReactNode;
+}
+
+/**
+ * A task row for Home's Tasks tab (task 01a006f8 D1/D11). Same contract as
+ * `ChatSessionRow`: COMPOSED BY THE HOST — the status word and tone come from
+ * the host's registry projection (`homeRowOf`), and the host owns ordering
+ * (open-first, then recency — Q1's provisional scope). This module renders
+ * rows in the order given and filters them client-side; it re-derives nothing.
+ */
+export interface ChatTaskRow {
+  id: string;
+  title: string;
+  /** The host's composed word — rendered verbatim, never re-derived here. */
+  statusWord: string;
+  /** The kit's pill tone vocabulary, chosen by the host's projection. */
+  tone: 'run' | 'wait' | 'block' | 'info' | 'idle' | 'brand';
+  /** e.g. priority or assignee — whatever the host can truthfully compose. */
+  detail?: string;
+  updatedAt: string;
+  /** Same contract as `ChatSessionRow.badges` — PR chips + entity counts. */
+  badges?: ReactNode;
 }
 
 export interface ChatTurn {

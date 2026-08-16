@@ -28,11 +28,9 @@
  * (`'liveWork' in state`), and every glyph resolves through the registry.
  */
 import { useMemo, type ReactNode } from 'react';
-import type { EntitySummary } from '@tm8/contract';
-import { HOME_PRESENCE_KIND, HOME_RAIL_KINDS, KindIcon, getKind } from '../domain';
+import { KindIcon } from '../domain';
 import {
   composeMyWork,
-  homeRowOf,
   useHomeData,
   type HomeRow,
   type HomeScreenData,
@@ -40,20 +38,24 @@ import {
 } from '../home';
 import './home-page.css';
 
-/** Cards per rail — a glance, not a list. The header opens the whole kind. */
-const RAIL_CARD_CAP = 6;
-
 export interface HomePageProps {
   data: HomeScreenData;
-  /** The solo chat surface — the host mounts it (seam wiring is its business). */
+  /** The chat surface — the host mounts it (seam wiring is its business). */
   chat: ReactNode;
+  /**
+   * The entity opened FROM this page, shown BESIDE it rather than instead of
+   * it. Absent ⇒ no column at all: a host with nowhere to put a detail must
+   * not be handed a slot that draws an empty one.
+   *
+   * The column AND its chrome are the host's (`views/HomeView`), exactly as
+   * they are on the channel screen — this page only makes room. That is why
+   * the node lands here unwrapped: the separator that resizes the column has
+   * to be its SIBLING, not something inside it.
+   */
+  aside?: ReactNode;
   onOpenEntity(id: string): void;
-  onOpenKind(kind: string): void;
   onOpenWorkspace(): void;
 }
-
-const byActivity = (a: EntitySummary, b: EntitySummary): number =>
-  b.activityAt.localeCompare(a.activityAt);
 
 function RowCard({ row, onOpen }: { row: HomeRow; onOpen(id: string): void }) {
   return (
@@ -120,89 +122,25 @@ export function HomePage(props: HomePageProps) {
     return work.sections.find((section) => section.emphasis === 'needs-you') ?? null;
   }, [home, data.livenessOf, data.activity]);
 
-  const presenceRows = data.rowsFor(HOME_PRESENCE_KIND)(undefined);
-
+  /* R4 (2026-08-15): Home IS the chat view. The chat surface — with its
+     merged conversation column — fills the canvas and triage rides above it.
+     The glance rails, the presence row and the per-kind counts strip retired
+     to the Work tab, where the inventory framing lives. */
   return (
-    <div className="hp-root" data-testid="home-page">
-      <div className="hp-scroll">
-        <section className="hp-chat" aria-label="Chat">
-          {props.chat}
-        </section>
+    <div className="hp-root hp-root--chat" data-testid="home-page" data-aside={props.aside ? 'open' : undefined}>
+      <div className="hp-page">
+      {needsYou && needsYou.rows.length > 0 ? (
+        <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
+      ) : needsYou && (home.viewerError || home.notificationsError) ? (
+        <p className="hp-note" role="status">{needsYou.emptyNote}</p>
+      ) : null}
 
-        {/* Triage first, and ONLY when it has rows — an inbox-zero space gets
-            a quiet canvas, not an empty amber box. A section empty because a
-            READ failed is a different fact and renders its honest note. */}
-        {needsYou && needsYou.rows.length > 0 ? (
-          <NeedsYouStrip section={needsYou} onOpen={props.onOpenEntity} />
-        ) : needsYou && (home.viewerError || home.notificationsError) ? (
-          <p className="hp-note" role="status">{needsYou.emptyNote}</p>
-        ) : null}
-
-        {HOME_RAIL_KINDS.map((kind) => {
-          const config = getKind(kind);
-          const rows = [...data.rowsFor(kind)(undefined)].sort(byActivity).slice(0, RAIL_CARD_CAP);
-          return (
-            <section key={kind} className="hp-rail" aria-label={config.labelPlural} data-testid={`hp-rail-${config.slug ?? kind}`}>
-              <div className="hp-rail__head">
-                <button type="button" className="hp-rail__open" onClick={() => props.onOpenKind(kind)}>
-                  <span className="hp-rail__label kit-eyebrow">{config.labelPlural}</span>
-                  <span aria-hidden="true">▸</span>
-                </button>
-              </div>
-              {rows.length > 0 ? (
-                <div className="hp-rail__scroll">
-                  {rows.map((summary) => (
-                    <RowCard
-                      key={summary.id}
-                      row={homeRowOf(summary, {
-                        ...(config.list.liveTreatment
-                          ? { liveness: data.livenessOf(summary.id) }
-                          : {}),
-                        streaming: data.activity[summary.id] === true,
-                        compact: true,
-                      })}
-                      onOpen={props.onOpenEntity}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <p className="hp-note">No {config.labelPlural.toLowerCase()} yet.</p>
-              )}
-            </section>
-          );
-        })}
-
-        {presenceRows.length > 0 ? (
-          <section className="hp-presence" aria-label="Teammates" data-testid="hp-presence">
-            {presenceRows.map((row) => {
-              const liveWork =
-                'liveWork' in row.state && row.state.liveWork ? row.state.liveWork : null;
-              return (
-                <button
-                  key={row.id}
-                  type="button"
-                  className="hp-presence__row"
-                  title={liveWork ? `${row.title} — working: ${liveWork.task.title}` : row.title}
-                  onClick={() => props.onOpenEntity(row.id)}
-                >
-                  <span
-                    className={`hp-presence__dot ${liveWork ? 'hp-presence__dot--working' : ''}`}
-                    aria-hidden="true"
-                  />
-                  <span className="hp-presence__name">{row.title}</span>
-                  {liveWork ? <span className="hp-presence__verb">working</span> : null}
-                </button>
-              );
-            })}
-          </section>
-        ) : null}
-
-        <footer className="hp-foot">
-          <button type="button" className="hp-foot__workspace" onClick={props.onOpenWorkspace}>
-            Open full workspace ⌗
-          </button>
-        </footer>
+      <section className="hp-chat hp-chat--full" aria-label="Chat">
+        {props.chat}
+      </section>
       </div>
+
+      {props.aside ?? null}
     </div>
   );
 }

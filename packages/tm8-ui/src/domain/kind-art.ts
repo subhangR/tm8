@@ -248,6 +248,17 @@ export const VIEW_ART = {
     'M2.4 6.6h11l-1.1 5.4a1.2 1.2 0 0 1-1.18.98H4.7a1.2 1.2 0 0 1-1.18-.98z',
   ],
   /**
+   * Three columns of descending height — the kanban silhouette (Board tab,
+   * 2026-08-16). Deliberately NOT `KIND_ART.task`: the Board is a VIEW over
+   * the task collection, and the task kind row sits in the same rail idiom;
+   * the columns are the surface itself drawn, not the things on it.
+   */
+  board: [
+    'M2.6 3.4a.8.8 0 0 1 .8-.8h1.2a.8.8 0 0 1 .8.8v9.2a.8.8 0 0 1-.8.8H3.4a.8.8 0 0 1-.8-.8z',
+    'M6.6 3.4a.8.8 0 0 1 .8-.8h1.2a.8.8 0 0 1 .8.8v5.2a.8.8 0 0 1-.8.8H7.4a.8.8 0 0 1-.8-.8z',
+    'M10.6 3.4a.8.8 0 0 1 .8-.8h1.2a.8.8 0 0 1 .8.8v3.2a.8.8 0 0 1-.8.8h-1.2a.8.8 0 0 1-.8-.8z',
+  ],
+  /**
    * A gear, drawn as a real toothed outline rather than as radial ticks
    * around a circle. The tick version is the shape a sun/brightness control
    * uses, and this app HAS a theme toggle — "settings" and "brightness" are

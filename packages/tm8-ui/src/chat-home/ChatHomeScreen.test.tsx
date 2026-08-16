@@ -3,7 +3,7 @@ import { act, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
-import { createChatHomeFixturePort } from './fixtures';
+import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatHomePort, ChatModelOption } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
@@ -23,6 +23,51 @@ const MODELS: ChatModelOption[] = [
 ];
 
 describe('Chat Home', () => {
+  /**
+   * THE PANEL IS THE NAVIGATION (revision 14). The surface is two panes and
+   * the left one is the only conversation selector — a working-set tab strip
+   * above the right pane existed briefly and was removed, because two
+   * selectors for one selection is the redundancy this surface keeps shedding.
+   * So the click that moves the right pane has to be a PANEL row, and this is
+   * the case that says so. It needs two threads; the shared fixture ships one,
+   * which is why nothing pinned this before.
+   */
+  it('opens a panel row in the right pane, leaving the panel itself whole', async () => {
+    const second = structuredClone(CHAT_HOME_FIXTURE_THREAD);
+    second.summary.rootId = '019f0000-0000-7000-8000-0000000000aa' as EntityId;
+    second.summary.title = 'Retire the flaky migration';
+    // OLDER than the shipped fixture, so `listThreads` (most-recent-first)
+    // puts it second and cold start does NOT auto-open it — otherwise the
+    // click below would assert nothing.
+    second.summary.updatedAt = '2026-08-11T08:20:00.000Z';
+
+    const { port } = createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD, second]);
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+
+    const titles = () =>
+      [...view.container.querySelectorAll('.tch-thread__title')].map((n) => n.textContent);
+    await waitFor(() => expect(titles()).toHaveLength(2));
+    const before = titles();
+    // Cold start opened the most recent, so the pane starts on the OTHER one.
+    // (Waited for, not read straight off: the list and the thread detail are
+    // two reads, and the head still says "New conversation" until the second
+    // one lands.)
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-title strong')?.textContent)
+        .toBe('Plan the launch sequence'),
+    );
+
+    fireEvent.click(view.getByRole('button', { name: /Retire the flaky migration/ }));
+
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-title strong')?.textContent)
+        .toBe('Retire the flaky migration'),
+    );
+    // The inventory does not reorder, filter or shrink when you read one of
+    // its rows — selecting is not consuming.
+    expect(titles()).toEqual(before);
+  });
+
   it('renders a thread, one stateful tool card, and actual usage', async () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
@@ -47,11 +92,16 @@ describe('Chat Home', () => {
       />,
     );
 
-    await waitFor(() => expect(view.getByRole('button', { name: /new/i })).toBeTruthy());
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
-    expect((view.getByLabelText('Chat teammate') as HTMLSelectElement).disabled).toBe(false);
+    await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+    /* R4: a NEW thread's teammate and mode are composer chips (the TO row and
+       the mode radios); the model keeps its header select. */
+    const toRow = view.getByRole('radiogroup', { name: 'Send to teammate' });
+    expect(within(toRow).getAllByRole('radio').length).toBeGreaterThan(0);
     fireEvent.change(view.getByLabelText('Chat model'), { target: { value: 'gpt-5.6-sol' } });
-    fireEvent.change(view.getByLabelText('Chat mode'), { target: { value: 'build' } });
+    fireEvent.click(
+      within(view.getByRole('radiogroup', { name: 'Chat mode' })).getByRole('radio', { name: 'build' }),
+    );
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Audit the release blockers.' },
     });
@@ -85,11 +135,12 @@ describe('Chat Home', () => {
       />,
     );
 
-    await waitFor(() => expect(view.getByRole('button', { name: /new/i })).toBeTruthy());
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
-    const mode = view.getByLabelText('Chat mode') as HTMLSelectElement;
-    expect(within(mode).getByRole('option', { name: 'Explain' })).toBeTruthy();
-    fireEvent.change(mode, { target: { value: 'explain' } });
+    await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+    const modeRow = view.getByRole('radiogroup', { name: 'Chat mode' });
+    const explain = within(modeRow).getByRole('radio', { name: 'explain' });
+    fireEvent.click(explain);
+    expect(explain.getAttribute('aria-checked')).toBe('true');
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Explain the request flow with a diagram.' },
     });
@@ -145,8 +196,8 @@ describe('Chat Home', () => {
       },
     };
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByRole('button', { name: /new/i })).toBeTruthy());
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
+    await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
     expect(view.getByText(/does not expose chat thread configuration/i)).toBeTruthy();
     expect(view.getByRole('button', { name: /send/i }).getAttribute('aria-disabled')).toBe('true');
   });

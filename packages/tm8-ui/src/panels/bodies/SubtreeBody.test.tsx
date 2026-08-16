@@ -495,6 +495,36 @@ describe('RUNS — the verdict is handed in, never derived (D6, brief §2.7)', (
   });
 });
 
+describe('LIVE SESSION — the Phase 3 card renders only on a MEASURED live verdict', () => {
+  it('draws the card when a run measures live, and names the session', () => {
+    const { getByTestId } = renderBody({ livenessOf: () => 'live' });
+    const card = within(getByTestId('live-session-section')).getAllByTestId('live-session-card');
+    expect(card).toHaveLength(1);
+    expect(card[0]?.textContent).toContain(sessionStale.title);
+  });
+
+  it('draws NOTHING when the verdict is not live — the stored status is not the authority (D6)', () => {
+    // The fixture session's record claims `running`; the measured verdict says
+    // stale. A card off the record would be the exact lie the two-source rule
+    // forbids, so its absence is the assertion.
+    expect(sessionStale.state).toMatchObject({ status: 'running' });
+    const { queryByTestId } = renderBody({ livenessOf: staleVerdict });
+    expect(queryByTestId('live-session-section')).toBeNull();
+  });
+
+  it('draws NOTHING when nobody measured — no livenessOf, no card', () => {
+    const { queryByTestId } = renderBody();
+    expect(queryByTestId('live-session-section')).toBeNull();
+  });
+
+  it('opens the session on click', () => {
+    const onOpenEntity = vi.fn();
+    const { getByTestId } = renderBody({ livenessOf: () => 'live', onOpenEntity });
+    fireEvent.click(within(getByTestId('live-session-section')).getAllByTestId('live-session-card')[0]!);
+    expect(onOpenEntity).toHaveBeenCalledWith(sessionStale.id);
+  });
+});
+
 describe('LINKED — connection peers as chips', () => {
   it('chips every non-session peer, counted', () => {
     const { getByTestId } = renderBody();

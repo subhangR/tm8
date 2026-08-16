@@ -39,13 +39,15 @@ import type { EntityId } from '@tm8/contract';
 
 /**
  * A screen's identity. `kind:` for the rail's kind screens, `channel:` for one
- * channel — the two hosts that own a detail region.
+ * channel, `view:` for a menu view that owns a detail region — the hosts that
+ * open an entity beside what referenced it.
  */
 export type ScreenKey = string;
 
 export const screenKeyOf = {
   kind: (kind: string): ScreenKey => `kind:${kind}`,
   channel: (channelId: string): ScreenKey => `channel:${channelId}`,
+  view: (ref: string): ScreenKey => `view:${ref}`,
 };
 
 /**

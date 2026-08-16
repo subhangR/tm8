@@ -1,10 +1,12 @@
 /* ==========================================================================
-   ENTITY VIEW — the per-kind screen (USER RULING 2026-07-31, superseding the
-   wide-list-with-a-peek layout). THREE REGIONS, left to right:
+   ENTITY VIEW — the per-kind screen (WORK-TAB RULING 2026-08-15, Phase 3 of
+   the redesign; supersedes the 2026-07-31 centre-is-the-entity arrangement).
+   THREE REGIONS, left to right:
 
-     ev-list    the EntityListPanel rail — fixed, it is a navigator
-     ev-detail  the complete entity — takes everything that is left
-     ev-aux     the third column, only while something in the centre asked
+     ev-list    the EntityListPanel — the CENTRE now; the collection is the
+                subject of this screen and takes what the columns leave
+     ev-detail  the detail panel — a viewer-set reading width on the right
+     ev-aux     the third column, only while something in the detail asked
                 for it; it never reserves width it is not using.
 
    Colors are tokens only (the package hex guard scans this file).
@@ -21,28 +23,14 @@
   background: var(--pn-paper);
 }
 
-/* --- LEFT: the list rail --------------------------------------------------
-   Not flexible, but no longer FIXED either: the column's job is to stay put
-   while the centre changes under it — a list that resizes itself every time a
-   longer document opens is a list you stop trusting to be in the same place —
-   and that is exactly why the only thing allowed to move it is the viewer.
-
-   `--ev-list` is SOLVED IN `EntityView` and handed down (the same trade
-   `WorkspaceGrid` makes with `--ws-left`), because the drag has to clamp the
-   width against the centre's floor and a literal in a stylesheet cannot be
-   clamped against. The `var(…, 320px)` fallback keeps the pre-measurement
-   frame and any host that mounts the section without the custom property at
-   the width this rail has always had. */
+/* --- CENTRE: the collection ----------------------------------------------
+   The list/board IS the subject of this screen (Phase 3), so it is the one
+   flexible region: it takes whatever the detail and aux columns leave. The
+   old collapse-to-a-strip chrome retired with the flip — the detail column is
+   the one that opens and closes now. */
 .cv2-root .ev-list {
   position: relative;
-  flex: none;
-  width: var(--ev-list, 320px);
-  /* A flex item defaults to `min-width: auto`, which lets a wide tile's
-     min-content width push the rail past its declared width. Pinned so the
-     rail cannot be widened by its own contents.
-     NOTE for anyone measuring this in a browser: `.cv2-root` carries
-     `zoom: 1.1` (D60), so 320 here is ~352 device px on screen. That is the
-     zoom lever doing its job, not the rail drifting. */
+  flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -50,70 +38,9 @@
   border-right: 1px solid var(--pn-line);
   background: var(--pn-surface);
 }
-/* The PANEL fills the rail; the collapse control and the collapsed spine are
-   chrome and keep their own size. Naming the exceptions rather than the target
-   is deliberate — `EntityListPanel` renders whatever element it likes, and a
-   rule that depended on that would break the next time it changed. */
-.cv2-root .ev-list > *:not(.ev-list__toggle):not(.ev-list__spine) {
+.cv2-root .ev-list > * {
   flex: 1;
   min-height: 0;
-}
-
-/* --- COLLAPSE / SHOW ------------------------------------------------------
-   The control is a real button in the flow, not a hover-only affordance: a
-   rail you can only reopen by finding an invisible hotspot is a rail people
-   report as lost. Floating over the panel's own head keeps it out of the
-   list's search row without asking `EntityListPanel` for a slot it does not
-   have. */
-.cv2-root .ev-list__toggle {
-  appearance: none;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
-  color: var(--pn-ink-3);
-  background: var(--pn-card);
-  font-family: var(--pn-mono);
-  font-size: 11px;
-  line-height: 1;
-  cursor: pointer;
-}
-.cv2-root .ev-list__toggle:hover {
-  color: var(--pn-ink);
-  background: var(--pn-hover);
-}
-.cv2-root .ev-list__toggle--floating {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 2;
-}
-
-/* Collapsed: a STRIP, never a disappearance. The spine repeats the kind's own
-   label so the strip says what reopening it would bring back. */
-.cv2-root .ev-list--collapsed {
-  /* No width here: `--ev-list` already carries the collapsed value, and a
-     second literal is a second thing to keep in step with the constant. */
-  align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  overflow: hidden;
-}
-.cv2-root .ev-list__spine {
-  flex: none;
-  writing-mode: vertical-rl;
-  color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-height: 100%;
 }
 
 /* --- BOARD LAYOUT: one region, not three ----------------------------------
@@ -132,12 +59,17 @@
   background: var(--pn-paper);
 }
 
-/* --- CENTRE: the complete entity ------------------------------------------
-   No measure cap here. The panel keeps its OWN internal reading measures, and
-   capping at this level would also shrink a terminal body — which inverts D63
-   ("nothing outbids the terminal"). */
+/* --- RIGHT: the detail panel ----------------------------------------------
+   A viewer-set READING width (Phase 3), solved in `EntityView` and handed
+   down as `--ev-detail` — the same trade `WorkspaceGrid` makes with
+   `--ws-left`, because the drag has to clamp against the centre's floor and a
+   literal in a stylesheet cannot be clamped against. No measure cap inside:
+   the panel keeps its OWN internal reading measures, and capping at this
+   level would also shrink a terminal body — which inverts D63 ("nothing
+   outbids the terminal"). */
 .cv2-root .ev-detail {
-  flex: 1;
+  flex: none;
+  width: var(--ev-detail, 560px);
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -235,14 +167,14 @@
 
    ONE RULE SURVIVES, and only because it is not a width. Below 1040 with an
    aux column open there is genuinely not enough room for three columns above
-   their floors, and the list — reachable again in one click from the strip, or
-   from the rail — is the one that yields. It is HIDDEN, not narrowed to
-   something unreadable. Scoped to the three-column layout: on the board the
-   list is the SUBJECT, so yielding it would leave the screen with nothing the
-   user came for. */
+   their floors, and the DETAIL — reachable again in one click by re-selecting
+   the row — is the one that yields, because the list is the SUBJECT of this
+   screen now (Phase 3) and the aux is what the viewer just asked for. It is
+   HIDDEN, not narrowed to something unreadable. Scoped to the three-column
+   layout: the board renders no detail column at all. */
 @media (max-width: 1040px) {
-  .cv2-root .ev-root[data-layout='columns']:not([data-aux='none']) .ev-list { display: none; }
-  .cv2-root .ev-root[data-layout='columns']:not([data-aux='none']) .kit-resizer[data-side='left'] {
+  .cv2-root .ev-root[data-layout='columns']:not([data-aux='none']) .ev-detail { display: none; }
+  .cv2-root .ev-root[data-layout='columns']:not([data-aux='none']) .kit-resizer[aria-label*='detail'] {
     display: none;
   }
 }

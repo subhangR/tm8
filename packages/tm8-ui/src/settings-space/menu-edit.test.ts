@@ -80,12 +80,12 @@ describe('reorder', () => {
   });
 
   it('moves an item inside its group without touching siblings', () => {
-    // Revision 11: the multi-item groups are Chats (Channels · Messages) and
-    // Workspace (caret · File browser); the move is asserted where there are
+    // Revision 12: the multi-item groups are Channels (Channels · Messages)
+    // and Work (caret · dev rows · git); the move is asserted where there are
     // siblings to swap.
-    const d = moveItem(startDraft(BASE), 'chats', 0, 1);
-    const chats = draftConfig(d).groups.find((g) => g.id === 'chats');
-    expect(chats?.items.map((i) => i.ref)).toEqual(['messages', 'channel']);
+    const d = moveItem(startDraft(BASE), 'channels', 0, 1);
+    const channels = draftConfig(d).groups.find((g) => g.id === 'channels');
+    expect(channels?.items.map((i) => i.ref)).toEqual(['messages', 'channel']);
   });
 
   it('an out-of-range index is a no-op, not a crash or a dropped row', () => {
@@ -101,13 +101,14 @@ describe('rename', () => {
     const d = renameGroup(startDraft(BASE), 'workspace', 'LIBRARY');
     const g = draftConfig(d).groups.find((x) => x.id === 'workspace');
     expect(g?.label).toBe('LIBRARY');
-    expect(g?.items).toHaveLength(2);
+    // Revision 12: caret · project · pull_request · worktree · git.
+    expect(g?.items).toHaveLength(5);
   });
 
   it('an empty label is REFUSED by the validator, not silently coerced', () => {
     // resolveMenu requires 1..32 chars. A blank group label would render the
     // rail with an unlabelled band; the editor must be able to say so.
-    const d = renameGroup(startDraft(BASE), 'home', '');
+    const d = renameGroup(startDraft(BASE), 'graph', '');
     expect(draftIssue(d)).not.toBeNull();
   });
 });
@@ -116,7 +117,13 @@ describe('remove', () => {
   it('removes an item', () => {
     const d = removeItem(startDraft(BASE), 'workspace', 1);
     const workspace = draftConfig(d).groups.find((g) => g.id === 'workspace');
-    expect(workspace?.items.map((i) => i.ref)).toEqual(['workspace']);
+    // Revision 12: index 1 is the `project` row; its siblings survive.
+    expect(workspace?.items.map((i) => i.ref)).toEqual([
+      'workspace',
+      'pull_request',
+      'worktree',
+      'git',
+    ]);
   });
 
   it('removes a caret child without removing its parent', () => {
@@ -150,14 +157,20 @@ describe('add', () => {
     // here is hardcoded: `availableViewRefs` is VIEW_PRESENTATION minus what
     // the draft already places, so this assertion moves whenever the shipped
     // default does — which is the point of it.
+    //
+    // DASHBOARD JOINED THE FREE SET on 2026-08-15 (revision 13) and LEFT IT
+    // AGAIN the same day (revision 14): the Chats group places it, so the
+    // editor no longer offers it. The round trip is the assertion's whole
+    // value — it moved twice without anyone touching this list, because
+    // `availableViewRefs` is VIEW_PRESENTATION minus what the draft places.
     expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels']);
   });
 
   it('adds a freed view ref back onto the rail', () => {
-    const d = addItem(startDraft(BASE), 'home', { type: 'view', ref: 'feed' });
+    const d = addItem(startDraft(BASE), 'graph', { type: 'view', ref: 'feed' });
     expect(draftIssue(d)).toBeNull();
-    expect(draftConfig(d).groups.find((g) => g.id === 'home')?.items.map((i) => i.ref))
-      .toEqual(['dashboard', 'feed']);
+    expect(draftConfig(d).groups.find((g) => g.id === 'graph')?.items.map((i) => i.ref))
+      .toEqual(['graph', 'feed']);
     // And once used, it stops being on offer.
     expect(availableViewRefs(d)).toEqual(['inbox', 'channels']);
   });
@@ -239,12 +252,13 @@ describe('capacity — the caps are the RAIL’s caps, cross-checked not copied'
   it('reports group and item capacity too', () => {
     const d = startDraft(BASE);
     expect(groupCapacity(d)).toEqual({ used: BASE.groups.length, max: MENU_CAPS.groups, full: false });
-    // Home is the single landing row since revision 11. Derived from BASE
-    // rather than typed, so a future Home edit moves this assertion with it
-    // instead of turning it red for the wrong reason.
-    const homeItems = BASE.groups.find((g) => g.id === 'home')?.items.length ?? 0;
-    expect(homeItems).toBe(1);
-    expect(itemCapacity(d, 'home')).toEqual({ used: homeItems, max: MENU_CAPS.items, full: false });
+    // Graph is a one-row group (revision 13 retired Home, which used to be the
+    // single-row witness here). Derived from BASE rather than typed, so a
+    // future edit moves this assertion with it instead of turning it red for
+    // the wrong reason.
+    const graphItems = BASE.groups.find((g) => g.id === 'graph')?.items.length ?? 0;
+    expect(graphItems).toBe(1);
+    expect(itemCapacity(d, 'graph')).toEqual({ used: graphItems, max: MENU_CAPS.items, full: false });
   });
 
   it('an add past the cap is REFUSED by the model, so the control can state the cap', () => {
