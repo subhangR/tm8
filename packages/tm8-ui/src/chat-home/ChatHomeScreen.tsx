@@ -1143,7 +1143,7 @@ export function ChatHomeScreen({
                     type="button"
                     role="radio"
                     aria-checked={chatMode === entry.mode}
-                    className={`tch-mode-choice ${chatMode === entry.mode ? 'tch-mode-choice--active' : ''} ${entry.configOnly ? 'tch-mode-choice--config-only' : ''}`}
+                    className={`tch-mode-choice ${chatMode === entry.mode ? 'tch-mode-choice--active' : ''}`}
                     title={entry.hint}
                     onClick={() => setChatMode(entry.mode)}
                   >
@@ -1376,33 +1376,26 @@ function Selector({
 }
 
 /**
- * The composer's mode chips. `configOnly` marks the two modes whose special
- * behaviour has NO pipeline behind it today (04-DATA-CONTRACT §4): choosing
- * them is legal — a thread's mode is stored configuration — but the chip must
- * not look like it triggers machinery nobody built, so it draws dashed and its
- * hint says exactly what it is.
+ * The composer's mode chips.
+ *
+ * Every mode carries the same tool surface (`toolPermission` in @tm8/mcp); the
+ * mode states how the teammate works, not what it may touch. So these hints
+ * describe intent and must never promise safety — the earlier "changes
+ * nothing" copy on ask/explain/plan would now be a lie, because those modes
+ * can edit the thread checkout and mutate the graph like any other. The
+ * `configOnly` dashed treatment is gone with it: build and orchestrate reach
+ * real repository and delegation tools through MCP.
  */
 const CHAT_MODES: readonly {
   mode: ChatMode;
   label: string;
   hint: string;
-  configOnly?: boolean;
 }[] = [
-  { mode: 'ask', label: 'ask', hint: 'ask — answers from the graph; changes nothing' },
-  { mode: 'explain', label: 'explain', hint: 'explain — walks the reasoning; changes nothing' },
-  { mode: 'plan', label: 'plan', hint: 'plan — shapes work into steps; changes nothing yet' },
-  {
-    mode: 'build',
-    label: 'build',
-    hint: 'build — configuration only today: no message→task→session pipeline runs from chat',
-    configOnly: true,
-  },
-  {
-    mode: 'orchestrate',
-    label: 'orchestrate°',
-    hint: 'orchestrate — configuration only today: no fan-out pipeline exists',
-    configOnly: true,
-  },
+  { mode: 'ask', label: 'ask', hint: 'ask — answers your question; acts only when you ask it to' },
+  { mode: 'explain', label: 'explain', hint: 'explain — walks the reasoning with inline diagrams, graphs and code' },
+  { mode: 'plan', label: 'plan', hint: 'plan — shapes work into steps and a durable plan to approve' },
+  { mode: 'build', label: 'build', hint: 'build — does the work; edits this thread’s checkout for real' },
+  { mode: 'orchestrate', label: 'orchestrate', hint: 'orchestrate — dispatches and steers worker sessions' },
 ];
 
 function greetingLine(viewerName?: string): string {
