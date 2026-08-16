@@ -28,6 +28,14 @@ import {
   EV_PANEL_BORDER,
   EV_RESIZER,
 } from './EntityView';
+import {
+  HOME_CENTER_MIN,
+  HOME_LIST_CHROME,
+  HOME_LIST_DEFAULT,
+  HOME_LIST_MAX,
+  HOME_LIST_MIN,
+  HOME_RAIL_COLLAPSED,
+} from './HomeView';
 
 beforeEach(() => {
   const map = new Map<string, string>();
@@ -232,6 +240,152 @@ describe('the home icon rail', () => {
     const second = render(<GateApp />);
     await waitFor(() => second.getByTestId('home-rail'));
     expect(second.getByTestId('home-rail').dataset.collapsed).toBe('false');
+    second.unmount();
+  });
+});
+
+/**
+ * COLUMN A RESIZES, AND COLLAPSES WITH THE RAIL (task 01a00ac2).
+ *
+ * Subhang's report was that both Home panels should be adjustable; half of it
+ * already shipped (C has been draggable since the aside landed), so everything
+ * below is about A — the column that was a fixed `minmax(300px, 380px)` track
+ * nobody could move.
+ *
+ * THE FOUR RULINGS THESE CASES EXIST TO PIN (2026-08-16):
+ *   1. a drag CLAMPS at the floor and never closes the panel;
+ *   2. one toggle collapses the rail AND A together;
+ *   3. a persistent edge affordance is the way back, not a hover-reveal;
+ *   4. the range is 240–560 with a 340 default.
+ * Each is a choice with a live alternative, so each gets a case: a regression
+ * here is a silent reversal of a decision, not just a broken widget.
+ */
+describe('Home column A — the entity list panel', () => {
+  /* The width is published on the host as a custom property, which is what the
+     grid track reads. Asserting the property rather than a computed track is
+     deliberate: jsdom loads no stylesheets, so the track itself is unmeasurable
+     here (the standing tm8-ui law) while the number driving it is not. */
+  const listWidthOf = (view: ReturnType<typeof render>) =>
+    (view.container.querySelector('.hp-host') as HTMLElement | null)?.style.getPropertyValue(
+      '--hp-list',
+    );
+
+  async function openHome() {
+    const view = render(<GateApp />);
+    await waitFor(() => view.getByTestId('home-page'));
+    return view;
+  }
+
+  it('opens at the ruled default and drags to a width that persists', async () => {
+    const view = await openHome();
+    expect(listWidthOf(view)).toBe(`${HOME_LIST_DEFAULT}px`);
+
+    const separator = view.getByTestId('panel-resizer-left');
+    /* A drag RIGHT widens a left-hand column — `PanelResizer` folds the sign in
+       so both mounts pass the same numbers. One arrow is the smallest honest
+       step; the pointer path is the same code. */
+    fireEvent.keyDown(separator, { key: 'ArrowRight' });
+    await waitFor(() => expect(listWidthOf(view)).toBe(`${HOME_LIST_DEFAULT + 16}px`));
+    expect(window.localStorage.getItem('tm8ui.panel-width.home.list')).toBe(
+      String(HOME_LIST_DEFAULT + 16),
+    );
+
+    view.unmount();
+
+    // The preference outlives the mount — that is what makes it a preference.
+    const second = await openHome();
+    expect(listWidthOf(second)).toBe(`${HOME_LIST_DEFAULT + 16}px`);
+    second.unmount();
+  });
+
+  it('CLAMPS at the floor instead of closing — the ruled gesture (1)', async () => {
+    const view = await openHome();
+    const separator = view.getByTestId('panel-resizer-left');
+    expect(separator.getAttribute('aria-valuemin')).toBe(String(HOME_LIST_MIN));
+
+    fireEvent.keyDown(separator, { key: 'Home' });
+    await waitFor(() => expect(listWidthOf(view)).toBe(`${HOME_LIST_MIN}px`));
+
+    /* The rejected alternative was snap-shut-past-the-floor. Pushing further
+       must therefore do NOTHING — not narrow, and above all not collapse. */
+    fireEvent.keyDown(separator, { key: 'ArrowLeft' });
+    fireEvent.keyDown(separator, { key: 'ArrowLeft' });
+    expect(listWidthOf(view)).toBe(`${HOME_LIST_MIN}px`);
+    expect(view.getByTestId('home-rail')).toBeTruthy();
+    expect(view.queryByTestId('hp-list-reveal')).toBeNull();
+
+    view.unmount();
+  });
+
+  it('leaves the centre its floor at maximum drag — the ceiling is SOLVED (4)', async () => {
+    const view = await openHome();
+    const separator = view.getByTestId('panel-resizer-left');
+
+    fireEvent.keyDown(separator, { key: 'End' });
+
+    /* jsdom has no layout, so the row is the window — the same fallback the
+       solver takes. That makes the arithmetic assertable even though every box
+       measures 0×0. The rail is collapsed by default, hence its 72. */
+    const ceiling = Math.min(
+      HOME_LIST_MAX,
+      window.innerWidth - HOME_RAIL_COLLAPSED - HOME_CENTER_MIN - HOME_LIST_CHROME,
+    );
+    await waitFor(() => expect(listWidthOf(view)).toBe(`${ceiling}px`));
+    /* And the ceiling is the RULED maximum, not merely whatever was left over
+       — a 1024px jsdom row could otherwise afford 584. */
+    expect(ceiling).toBe(HOME_LIST_MAX);
+
+    view.unmount();
+  });
+
+  it('collapses the rail AND the list on one toggle, and comes back (2, 3)', async () => {
+    const view = await openHome();
+    expect(view.getByTestId('home-rail')).toBeTruthy();
+
+    fireEvent.click(view.getByTestId('hp-list-collapse'));
+
+    /* BOTH go, together. The rejected alternative was two independent
+       toggles, which this would pass only by accident. */
+    await waitFor(() => expect(view.queryByTestId('home-rail')).toBeNull());
+    expect(listWidthOf(view)).toBe('0px');
+    expect(
+      (view.container.querySelector('.hp-host') as HTMLElement).style.getPropertyValue('--hp-rail'),
+    ).toBe('0px');
+
+    /* Ruling 3: the way back is ALWAYS on screen. A hover-reveal overlay would
+       leave nothing in the tree to find here — which is exactly the failure
+       mode the ruling names, and exactly what this line detects. */
+    const reveal = view.getByTestId('hp-list-reveal');
+    expect(reveal.getAttribute('aria-expanded')).toBe('false');
+    /* And no drag handle survives: there is nothing left to resize. */
+    expect(view.queryByTestId('panel-resizer-left')).toBeNull();
+
+    fireEvent.click(reveal);
+    await waitFor(() => expect(view.getByTestId('home-rail')).toBeTruthy());
+    expect(listWidthOf(view)).toBe(`${HOME_LIST_DEFAULT}px`);
+
+    view.unmount();
+  });
+
+  it('remembers being collapsed, and ⌘\\ is the same switch', async () => {
+    const first = await openHome();
+    /* Mod+\ used to toggle the MENU rail, which Home does not draw at all —
+       the key did nothing where it was pressed. On Home it now means Home's
+       left side. */
+    fireEvent.keyDown(window, { key: '\\', metaKey: true });
+    await waitFor(() => expect(first.queryByTestId('home-rail')).toBeNull());
+    expect(window.localStorage.getItem('tm8ui.panel-flag.home-focus')).toBe('1');
+    first.unmount();
+
+    const second = await openHome();
+    await waitFor(() => expect(second.getByTestId('hp-list-reveal')).toBeTruthy());
+    expect(second.queryByTestId('home-rail')).toBeNull();
+
+    /* The chevron and the shortcut write the SAME state — two `usePanelFlag`
+       hooks on one key would each hold their own `useState` and drift, which
+       is why the flag is owned by GateApp and handed down. */
+    fireEvent.keyDown(window, { key: '\\', metaKey: true });
+    await waitFor(() => expect(second.getByTestId('home-rail')).toBeTruthy());
     second.unmount();
   });
 });
