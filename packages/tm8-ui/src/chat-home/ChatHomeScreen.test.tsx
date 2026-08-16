@@ -123,9 +123,11 @@ describe('Chat Home', () => {
     await waitFor(() => expect(view.getAllByTestId('chat-touched-entities')).toHaveLength(1));
     expect(view.queryByTestId('chat-tool-card')).toBeNull();
     expect(view.getByTestId('chat-usage-card').textContent).toContain('$0.0073');
-    expect((view.getByLabelText('Chat teammate') as HTMLSelectElement).disabled).toBe(true);
-    expect((view.getByLabelText('Chat mode') as HTMLSelectElement).disabled).toBe(true);
-    expect(view.getAllByText('plan').length).toBeGreaterThan(0);
+    // A configured thread still SAYS what it runs as; it just cannot be edited.
+    expect((view.getByLabelText('Chat teammate') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByLabelText('Chat model') as HTMLButtonElement).disabled).toBe(true);
+    expect(view.getByLabelText('Chat mode').textContent).toContain('plan');
     expect(view.getByText('pinned for this thread')).toBeTruthy();
   });
 
@@ -142,14 +144,18 @@ describe('Chat Home', () => {
 
     await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
     fireEvent.click(view.getByRole('button', { name: /new chat/i }));
-    /* R4: a NEW thread's teammate and mode are composer chips (the TO row and
-       the mode radios); the model keeps its header select. */
-    const toRow = view.getByRole('radiogroup', { name: 'Send to teammate' });
-    expect(within(toRow).getAllByRole('radio').length).toBeGreaterThan(0);
-    fireEvent.change(view.getByLabelText('Chat model'), { target: { value: 'gpt-5.6-sol' } });
-    fireEvent.click(
-      within(view.getByRole('radiogroup', { name: 'Chat mode' })).getByRole('radio', { name: 'build' }),
-    );
+    /* R4: a NEW thread's teammate, mode and model are all drop-ups on the
+       composer's own foot — there is no configuration panel above it. */
+    fireEvent.click(view.getByLabelText('Chat teammate'));
+    expect(
+      within(view.getByTestId('tch-teammate-menu')).getAllByRole('option').length,
+    ).toBeGreaterThan(0);
+    fireEvent.keyDown(view.getByLabelText('Chat teammate'), { key: 'Escape' });
+
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-gpt-5.6-sol'));
+    fireEvent.click(view.getByLabelText('Chat mode'));
+    fireEvent.click(view.getByTestId('tch-mode-build'));
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Audit the release blockers.' },
     });
@@ -185,10 +191,10 @@ describe('Chat Home', () => {
 
     await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
     fireEvent.click(view.getByRole('button', { name: /new chat/i }));
-    const modeRow = view.getByRole('radiogroup', { name: 'Chat mode' });
-    const explain = within(modeRow).getByRole('radio', { name: 'explain' });
-    fireEvent.click(explain);
-    expect(explain.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(view.getByLabelText('Chat mode'));
+    fireEvent.click(view.getByTestId('tch-mode-explain'));
+    // The trigger states the selection without being opened.
+    expect(view.getByLabelText('Chat mode').textContent).toContain('explain');
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Explain the request flow with a diagram.' },
     });
@@ -197,9 +203,9 @@ describe('Chat Home', () => {
     await waitFor(() => expect(controls.configs).toHaveLength(1));
     expect(controls.configs[0]).toMatchObject({ mode: 'explain' });
     await waitFor(() => {
-      expect((view.getByLabelText('Chat mode') as HTMLSelectElement).disabled).toBe(true);
+      expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
     });
-    expect((view.getByLabelText('Chat mode') as HTMLSelectElement).value).toBe('explain');
+    expect(view.getByLabelText('Chat mode').textContent).toContain('explain');
     expect(view.getByText('pinned for this thread')).toBeTruthy();
   });
 
