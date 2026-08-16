@@ -3132,12 +3132,20 @@
   cursor: pointer;
   background: none;
   border: 0;
-  padding: 2px 4px;
-  margin: -2px -1px;
+  /* WCAG 2.2 §2.5.8: the visual chip stays badge-sized, but the HIT AREA
+     does not — 5px vertical + 6px horizontal padding over the 12px glyph
+     clears the 22px practical floor without growing the row (the negative
+     margin returns the visual footprint). */
+  padding: 5px 6px;
+  margin: -5px -3px;
   border-radius: 4px;
   transition: background 120ms, color 120ms;
 }
 .cv2-root .pn-st__count--btn:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.cv2-root .pn-st__count--btn:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
 .cv2-root .pn-st__count--open { color: var(--pn-ink-1); background: var(--pn-active); }
 
 /* The open group: SAME LEVEL as its owner (offset is the hierarchy tree's
@@ -3152,7 +3160,7 @@
   border-left: 2px solid var(--pn-line);
 }
 .cv2-root .lp__related-head {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 4px;
   padding: 2px 0;
@@ -3161,6 +3169,40 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--pn-ink-4);
+}
+/* The group's own close — the guaranteed collapse when a live update takes
+   the opening chip away (PR #272 review, 4). */
+.cv2-root .lp__related-close {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: -6px;
+  margin-bottom: -6px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--pn-ink-4);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.cv2-root .lp__related-close:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.cv2-root .lp__related-close:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+/* The standard tile's relation band — its own sub-row so the 17px main-row
+   floor holds (PR #272 review, blocking 2). */
+.cv2-root .lp__tile-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 0 8px 4px 26px;
 }
 .cv2-root .lp__related-note {
   margin: 0;

@@ -2734,7 +2734,15 @@ export function Tile({
    * reason `flowRef` is: outside state would need an "only one open"
    * register this panel has no owner for.
    */
-  const [openRelation, setOpenRelation] = useState<string | null>(null);
+  const [openRelation, setOpenRelation] = useState<{
+    kind: string;
+    /* The counted edge, captured AT CLICK TIME from the badge's own spec —
+       a live counter update that removes the badge must not retroactively
+       widen an already-open group to "every relation". */
+    edge?: { type: string; direction: 'incoming' | 'outgoing' };
+  } | null>(null);
+  /** The group's stable DOM id — the chips' `aria-controls` target. */
+  const relatedGroupId = useId();
   const connections = props.connectionsOf?.(row.id);
   /** This tile's own id joins the path its expansion hands down. */
   const nestedPath = useMemo<ReadonlySet<string>>(() => {
@@ -2747,13 +2755,16 @@ export function Tile({
   const sessionRows = SESSION_CHIP_KIND
     ? relatedOfKind(row.id, connections, SESSION_CHIP_KIND, linkedSessions, path)
     : NO_LINKED;
-  const toggleRelation = (kind: string): void => {
+  const toggleRelation = (
+    kind: string,
+    edge?: { type: string; direction: 'incoming' | 'outgoing' },
+  ): void => {
     /* Opening asks for the row's detail exactly like the control strip does —
        `connectionsOf` is backed by hydration, so an unhydrated row would
        otherwise say "loading" forever. The fill is idempotent (see
        `onNeedDetail`), so a re-click cannot stampede the seam. */
-    if (openRelation !== kind && connections === undefined) props.onNeedDetail?.(row.id);
-    setOpenRelation((prev) => (prev === kind ? null : kind));
+    if (openRelation?.kind !== kind && connections === undefined) props.onNeedDetail?.(row.id);
+    setOpenRelation((prev) => (prev?.kind === kind ? null : { kind, ...(edge ? { edge } : {}) }));
   };
 
   const streaming = Boolean(
@@ -2805,18 +2816,26 @@ export function Tile({
    * the open group renders from, so the chip can never promise a row the
    * group refuses to draw.
    */
+  const sessionsOpen = openRelation?.kind === SESSION_CHIP_KIND;
+  const sessionsPlural = SESSION_CHIP_KIND
+    ? `${sessionRows.length} linked ${getKind(SESSION_CHIP_KIND).label.toLowerCase()}${sessionRows.length === 1 ? '' : 's'}`
+    : '';
   const sessionChip = SESSION_CHIP_KIND && sessionRows.length > 0 ? (
     <button
       type="button"
       className={
-        openRelation === SESSION_CHIP_KIND
+        sessionsOpen
           ? 'pn-st__count pn-st__count--btn pn-st__count--open'
           : 'pn-st__count pn-st__count--btn'
       }
       data-testid="session-chip"
       data-count-kind={SESSION_CHIP_KIND}
-      title={`${sessionRows.length} linked ${getKind(SESSION_CHIP_KIND).label.toLowerCase()}${sessionRows.length === 1 ? '' : 's'} — click to show them under this row`}
-      aria-expanded={openRelation === SESSION_CHIP_KIND}
+      title={`${sessionsPlural} — click to show them under this row`}
+      /* The visible content is a decorative glyph and a number; the name
+         must say kind, count and action itself (PR #272 review, 3). */
+      aria-label={`${sessionsOpen ? 'Hide' : 'Show'} ${sessionsPlural} under this row`}
+      aria-expanded={sessionsOpen}
+      aria-controls={sessionsOpen ? relatedGroupId : undefined}
       onClick={(event) => {
         event.stopPropagation();
         toggleRelation(SESSION_CHIP_KIND);
@@ -2827,10 +2846,12 @@ export function Tile({
     </button>
   ) : null;
 
-  /** ONE badge sub-row for both carrying anatomies: sessions chip first,
-      then PR chips, then the count badges — now doors where a count names a
-      real collection kind. Clickability requires a wired `connectionsOf`;
-      without the projection an opened group could never fill. */
+  /** ONE badge sub-row for EVERY anatomy — session-tree, control-card and
+      standard alike, or traversal would dead-end at the first doc: sessions
+      chip first, then PR chips (on the anatomies that resolve them), then
+      the count badges — doors where a count names a real collection kind.
+      Clickability requires a wired `connectionsOf`; without the projection
+      an opened group could never fill. */
   const tileBadges =
     sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters) ? (
       <>
@@ -2841,9 +2862,10 @@ export function Tile({
         <TileCountBadges
           counters={row.counters}
           humanAuthors={row.badges.humanMessageAuthors}
-          openKind={openRelation}
+          openKind={openRelation?.kind ?? null}
           onToggleKind={props.connectionsOf ? toggleRelation : undefined}
           expandableKind={isExpandableKind}
+          controlsId={relatedGroupId}
         />
       </>
     ) : undefined;
@@ -2861,17 +2883,20 @@ export function Tile({
     ? relatedOfKind(
         row.id,
         connections,
-        openRelation,
-        openRelation === SESSION_CHIP_KIND ? linkedSessions : NO_LINKED,
+        openRelation.kind,
+        openRelation.kind === SESSION_CHIP_KIND ? linkedSessions : NO_LINKED,
         nestedPath,
+        openRelation.edge,
       )
     : NO_LINKED;
   const relatedBlock = openRelation ? (
     <RelatedGroup
-      kind={openRelation}
-      label={getKind(openRelation).labelPlural}
+      id={relatedGroupId}
+      kind={openRelation.kind}
+      label={getKind(openRelation.kind).labelPlural}
       count={relatedRows.length}
       loading={connections === undefined}
+      onClose={() => setOpenRelation(null)}
     >
       {relatedRows.map((related) => (
         <Tile
@@ -3073,6 +3098,7 @@ export function Tile({
   }
 
   return (
+    <>
     <div
       ref={tileRef}
       className={[
@@ -3226,6 +3252,13 @@ export function Tile({
         </div>
       </div>
 
+      {/* THE RELATION BAND, ON THE STANDARD ANATOMY TOO (PR #272 review,
+          blocking 2): the graph is traversable through EVERY tile, so a doc
+          expanded under a task carries the same chips and can keep going.
+          Rendered as its own sub-row because the standard tile's main row
+          holds the 17px floor. */}
+      {tileBadges ? <div className="lp__tile-badges">{tileBadges}</div> : null}
+
       {detailsExpanded ? <EntityControlStrip row={row} props={props} config={config} /> : null}
 
       {/* The config is an attached card section, not a popover: the subject
@@ -3258,6 +3291,8 @@ export function Tile({
         </div>
       ) : null}
     </div>
+    {relatedBlock}
+    </>
   );
 }
 

@@ -20,6 +20,7 @@ import type { ActionContext } from '../domain';
 import {
   FIXTURE_SPACE_ID,
   ada,
+  docChapterShell,
   docLayoutSpec,
   sessionLive,
   taskGuideLines,
@@ -47,13 +48,24 @@ function connectionsOfTask(): Connections {
   return {
     outgoing: [
       {
-        type: 'attached_to',
+        /* A SAME-KIND PEER BY A DIFFERENT EDGE — the blocking-1 regression:
+           the docs counter (108) counts inbound attached_to only, so this
+           relates_to doc must never appear under the doc chip's group. */
+        type: 'relates_to',
         direction: 'outgoing',
-        label: 'attached',
-        edges: [edge('e-doc', 'attached_to', taskUuidTitle, docLayoutSpec)],
+        label: 'related',
+        edges: [edge('e-doc2', 'relates_to', taskUuidTitle, docChapterShell)],
       },
     ],
     incoming: [
+      {
+        /* 108's counted relation, in its real direction: the doc is the
+           SOURCE, the decorated entity the destination. */
+        type: 'attached_to',
+        direction: 'incoming',
+        label: 'attached',
+        edges: [edge('e-doc', 'attached_to', docLayoutSpec, taskUuidTitle)],
+      },
       {
         type: 'working_on',
         direction: 'incoming',
@@ -93,11 +105,33 @@ describe('relatedOfKind — the one read the chip and the group share', () => {
     expect(relatedOfKind(ownerTask.id, conn, 'work_session').map((r) => r.id)).toEqual([
       sessionLive.id,
     ]);
-    expect(relatedOfKind(ownerTask.id, conn, 'doc').map((r) => r.id)).toEqual([docLayoutSpec.id]);
+    // No edge spec ⇒ every relation: BOTH docs, whatever edge carried them.
+    expect(relatedOfKind(ownerTask.id, conn, 'doc').map((r) => r.id).sort()).toEqual(
+      [docChapterShell.id, docLayoutSpec.id].sort(),
+    );
     // The extra projection merges without duplicating an edge's own summary.
     expect(
       relatedOfKind(ownerTask.id, conn, 'work_session', [sessionLive]).map((r) => r.id),
     ).toEqual([sessionLive.id]);
+  });
+
+  it('narrows to the COUNTED relation when an edge spec is given (108 semantics)', () => {
+    // The docs counter counts inbound attached_to only — the relates_to doc
+    // is a different fact and stays out of the counted group.
+    expect(
+      relatedOfKind(ownerTask.id, conn, 'doc', [], undefined, {
+        type: 'attached_to',
+        direction: 'incoming',
+      }).map((r) => r.id),
+    ).toEqual([docLayoutSpec.id]);
+    // Direction matters on its own: the same type in the other direction is
+    // not the counted relation either.
+    expect(
+      relatedOfKind(ownerTask.id, conn, 'doc', [], undefined, {
+        type: 'attached_to',
+        direction: 'outgoing',
+      }),
+    ).toEqual([]);
   });
 
   it('suppresses everything on the traversal path — parent → child → parent renders once', () => {
@@ -180,6 +214,20 @@ describe('the sessions chip and the inline group', () => {
     expect(screen.queryByTestId('related-group')).toBeNull();
   });
 
+  it('renders EXACTLY the counted relation — chip 1 means group 1, never a same-kind stray', () => {
+    mount();
+    const chip = screen.getByTitle('1 doc — click to show them under this row');
+    fireEvent.click(chip);
+    const group = screen.getByTestId('related-group');
+    // The counted attached_to doc is here; the relates_to doc is NOT —
+    // the chip's number and the rows under it are one claim (review, 1).
+    expect(within(group).getByText(docLayoutSpec.title)).toBeTruthy();
+    expect(within(group).queryByText(docChapterShell.title)).toBeNull();
+    expect(group.textContent).toContain('DOCS · 1');
+    // The open chip names its group for assistive tech.
+    expect(chip.getAttribute('aria-controls')).toBe(group.getAttribute('id'));
+  });
+
   it('keeps the ancestor out of the nested session tile task lines', () => {
     mount({
       linkedTasksOf: (id) =>
@@ -200,5 +248,71 @@ describe('the sessions chip and the inline group', () => {
     const badge = document.querySelector('[data-count-kind="message"]');
     expect(badge).not.toBeNull();
     expect(badge!.tagName).toBe('SPAN');
+  });
+
+  it('traverses through STANDARD-anatomy tiles too — a doc row carries the band', () => {
+    // A docs list: standard anatomy end to end. The ruling is all kinds,
+    // so traversal must not dead-end at the first non-card tile (review, 2).
+    render(
+      <div className="cv2-root">
+        <EntityListPanel
+          kind="doc"
+          rowsFor={() => [docLayoutSpec]}
+          ctx={ctx}
+          linkedSessionsOf={(id) => (id === docLayoutSpec.id ? [sessionLive] : [])}
+          connectionsOf={() => undefined}
+          livenessOf={() => 'live'}
+        />
+      </div>,
+    );
+    fireEvent.click(screen.getByTestId('session-chip'));
+    const group = screen.getByTestId('related-group');
+    expect(group.getAttribute('data-related-kind')).toBe('work_session');
+    // The nested row is the real session tile, under a standard tile.
+    expect(group.querySelector('.pn-st')).not.toBeNull();
+    expect(within(group).getByText(sessionLive.title)).toBeTruthy();
+  });
+
+  it('stays closeable when a live update removes the opening chip (group ✕)', () => {
+    const emptied: Connections = {
+      outgoing: [],
+      incoming: [
+        {
+          type: 'working_on',
+          direction: 'incoming',
+          label: 'worked on by',
+          edges: [edge('e-ws', 'working_on', sessionLive, taskUuidTitle)],
+        },
+      ],
+      unresolvedHardDependencyCount: 0,
+    };
+    const strippedTask: EntitySummary = {
+      ...taskUuidTitle,
+      counters: { ...taskUuidTitle.counters, docs: 0 },
+    };
+    const tree = (rows: readonly EntitySummary[], conn: Connections) => (
+      <div className="cv2-root">
+        <EntityListPanel
+          kind="task"
+          rowsFor={() => rows}
+          ctx={ctx}
+          linkedSessionsOf={() => []}
+          connectionsOf={() => conn}
+        />
+      </div>
+    );
+    const view = render(tree([ownerTask], connectionsOfTask()));
+    fireEvent.click(screen.getByTitle('1 doc — click to show them under this row'));
+    expect(screen.getByTestId('related-group')).toBeTruthy();
+
+    // The counter goes to zero and the counted edge disappears: the chip
+    // unmounts, the group persists (state captured at click time) — and the
+    // group's OWN close is what collapses it (review, 4).
+    view.rerender(tree([strippedTask], emptied));
+    expect(screen.queryByTitle('1 doc — click to show them under this row')).toBeNull();
+    const group = screen.getByTestId('related-group');
+    expect(within(group).getByTestId('related-empty')).toBeTruthy();
+    fireEvent.click(within(group).getByTestId('related-close'));
+    expect(screen.queryByTestId('related-group')).toBeNull();
   });
 });

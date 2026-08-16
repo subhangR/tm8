@@ -20,21 +20,33 @@ import { KindIcon } from '../../domain';
  *   · rows — the caller's REAL tiles.
  */
 export function RelatedGroup({
+  id,
   kind,
   label,
   count,
   loading,
+  onClose,
   children,
 }: {
+  /** Stable DOM id, the target of the opening chip's `aria-controls`. */
+  id: string;
   kind: string;
   label: string;
   count: number;
   /** True while the row's connections are still unhydrated. */
   loading: boolean;
+  /**
+   * The group's OWN close, on the header — not a redundancy. The opening
+   * chip is derived from live counters/edges, so the relation can vanish
+   * mid-view and take the only toggle with it; without this the group
+   * would be an expansion nothing can collapse (PR #272 review, 4).
+   */
+  onClose: () => void;
   children?: ReactNode;
 }) {
   return (
     <div
+      id={id}
       className="lp__related"
       role="group"
       aria-label={`Related ${label.toLowerCase()}`}
@@ -44,6 +56,19 @@ export function RelatedGroup({
       <div className="lp__related-head">
         <KindIcon kind={kind} size={11} />
         <span>{`${label.toUpperCase()} · ${count}`}</span>
+        <button
+          type="button"
+          className="lp__related-close"
+          aria-label={`Close related ${label.toLowerCase()}`}
+          title={`Close related ${label.toLowerCase()}`}
+          data-testid="related-close"
+          onClick={(event) => {
+            event.stopPropagation();
+            onClose();
+          }}
+        >
+          ✕
+        </button>
       </div>
       {loading && count === 0 ? (
         <p className="lp__related-note" data-testid="related-loading">

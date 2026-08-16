@@ -20,6 +20,13 @@ import type { Connections, EntitySummary } from '@tm8/contract';
  * parent → child → parent — is suppressed HERE, in the one place both the
  * chip count and the expanded rows read, so a chip can never promise a row
  * the group refuses to draw.
+ *
+ * `edge` narrows to ONE relation — the counted one. A count badge derives
+ * from a specific edge type and direction (108's trigger; the spec rides
+ * `TileCountBadge.relation`), and its group must render exactly that
+ * relation: a same-kind peer reached by a different edge is a different
+ * fact (PR #272 review, blocking 1). No `edge` ⇒ every relation, which is
+ * what the sessions chip wants — its count comes from this same call.
  */
 export function relatedOfKind(
   selfId: string,
@@ -27,6 +34,7 @@ export function relatedOfKind(
   kind: string,
   extra: readonly EntitySummary[] = [],
   exclude?: ReadonlySet<string>,
+  edge?: { type: string; direction: 'incoming' | 'outgoing' },
 ): EntitySummary[] {
   const out = new Map<string, EntitySummary>();
   const admit = (row: EntitySummary): void => {
@@ -35,9 +43,16 @@ export function relatedOfKind(
     if (!out.has(row.id)) out.set(row.id, row);
   };
   for (const row of extra) admit(row);
-  for (const group of [...(connections?.outgoing ?? []), ...(connections?.incoming ?? [])]) {
-    for (const edge of group.edges) {
-      admit(edge.source.id === selfId ? edge.target : edge.source);
+  const groups =
+    edge === undefined
+      ? [...(connections?.outgoing ?? []), ...(connections?.incoming ?? [])]
+      : edge.direction === 'outgoing'
+        ? (connections?.outgoing ?? [])
+        : (connections?.incoming ?? []);
+  for (const group of groups) {
+    for (const view of group.edges) {
+      if (edge !== undefined && view.type !== edge.type) continue;
+      admit(view.source.id === selfId ? view.target : view.source);
     }
   }
   return [...out.values()];

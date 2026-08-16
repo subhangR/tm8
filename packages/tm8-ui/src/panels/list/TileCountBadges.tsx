@@ -26,15 +26,21 @@ export function hasTileCounts(counters: EntityCounters): boolean {
   return tileCountBadgesOf(counters).length > 0;
 }
 
-export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind, expandableKind }: {
+export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind, expandableKind, controlsId }: {
   counters: EntityCounters;
   humanAuthors?: EntityBadges['humanMessageAuthors'];
   /** The kind whose relation group is open under this tile, if any. */
   openKind?: string | null;
-  /** Present ⇒ expandable badges become toggles for their relation group. */
-  onToggleKind?: (kind: string) => void;
+  /**
+   * Present ⇒ expandable badges become toggles for their relation group.
+   * The badge's own `relation` spec (108's counted edge) rides along so the
+   * host opens exactly the relation the number claims.
+   */
+  onToggleKind?: (kind: string, relation?: { type: string; direction: 'incoming' | 'outgoing' }) => void;
   /** The host's registry-derived answer to "can this kind expand at all?". */
   expandableKind?: (kind: string) => boolean;
+  /** The relation group's DOM id, for the open toggle's `aria-controls`. */
+  controlsId?: string;
 }) {
   const badges = tileCountBadgesOf(counters);
   if (badges.length === 0) return null;
@@ -65,10 +71,15 @@ export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind
             className={`${classes} pn-st__count--btn`}
             data-count-kind={badge.kind}
             title={`${plural} — click to show them under this row`}
+            /* The visible content is a bare number beside a decorative
+               glyph, so the accessible name must say kind, count and
+               action itself (PR #272 review, 3). */
+            aria-label={`${open ? 'Hide' : 'Show'} ${plural} under this row`}
             aria-expanded={open}
+            aria-controls={open ? controlsId : undefined}
             onClick={(event) => {
               event.stopPropagation();
-              onToggleKind(badge.kind);
+              onToggleKind(badge.kind, badge.relation);
             }}
           >
             {body}

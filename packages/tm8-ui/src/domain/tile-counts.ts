@@ -22,6 +22,16 @@ export interface TileCountBadge {
    * `human-message` → the message mark is a §15.2 fact and it lives here.
    */
   icon: string;
+  /**
+   * THE EDGE RELATION THE COUNT IS DERIVED FROM — migration 108's own
+   * trigger semantics, restated as client data: `docs` counts inbound
+   * `attached_to` from docs; `memories` counts outbound `remembers` to
+   * memories. The badge's inline relation group filters by EXACTLY this,
+   * so the number on the chip and the rows under it are one claim — a doc
+   * linked by some OTHER edge type is a different fact and must not appear
+   * under a chip that never counted it (PR #272 review, blocking 1).
+   */
+  relation?: { type: string; direction: 'incoming' | 'outgoing' };
   count: number;
   /** Singular noun for the title; the renderer pluralises. */
   label: string;
@@ -32,10 +42,22 @@ export interface TileCountBadge {
 export function tileCountBadgesOf(counters: EntityCounters): TileCountBadge[] {
   const badges: TileCountBadge[] = [];
   if (typeof counters.docs === 'number' && counters.docs > 0) {
-    badges.push({ kind: 'doc', icon: 'doc', count: counters.docs, label: 'doc' });
+    badges.push({
+      kind: 'doc',
+      icon: 'doc',
+      relation: { type: 'attached_to', direction: 'incoming' },
+      count: counters.docs,
+      label: 'doc',
+    });
   }
   if (typeof counters.memories === 'number' && counters.memories > 0) {
-    badges.push({ kind: 'memory', icon: 'memory', count: counters.memories, label: 'memory' });
+    badges.push({
+      kind: 'memory',
+      icon: 'memory',
+      relation: { type: 'remembers', direction: 'outgoing' },
+      count: counters.memories,
+      label: 'memory',
+    });
   }
   if (typeof counters.humanMessages === 'number' && counters.humanMessages > 0) {
     badges.push({ kind: 'human-message', icon: 'message', count: counters.humanMessages, label: 'human message', emphasis: 'human' });
