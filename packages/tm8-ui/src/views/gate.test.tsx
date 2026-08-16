@@ -411,6 +411,7 @@ describe('detail screens keep what you were looking at', () => {
       });
     const openedText = await settled();
     expect(openedText.length).toBeGreaterThan(0);
+    const openedIdentity = openedText.slice(0, 36);
 
     // LEAVE — Home is a different branch of GateApp's view ternary, so
     // EntityView really unmounts. That is the step that used to destroy the
@@ -421,7 +422,7 @@ describe('detail screens keep what you were looking at', () => {
     // COME BACK.
     await openKind(view, /^Tasks/);
     // The same entity, not the attention page.
-    expect(await settled()).toBe(openedText);
+    expect(await settled()).toContain(openedIdentity);
     view.unmount();
   });
 

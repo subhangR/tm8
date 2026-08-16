@@ -69,6 +69,7 @@ const settingsPort = {
   loadMembers: async () => [],
   loadIdentity: async () => ({ memberId: 'm-1', displayName: 'Ada', avatar: null, role: 'owner' }) as never,
   loadMenu: async () => ({ menu: null, source: 'default', error: null }) as never,
+  loadInvites: async () => [],
   updateProfile: async () => ({}) as never,
 };
 

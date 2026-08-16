@@ -35,7 +35,7 @@ export function TileCountBadges({ counters, humanAuthors }: {
           data-count-kind={badge.kind}
           title={`${badge.count} ${badge.label}${badge.count === 1 ? '' : 's'}`}
         >
-          <KindIcon kind={badge.kind.endsWith('-message') ? 'message' : badge.kind} size={12} />
+          <KindIcon kind={badge.iconKind} size={12} />
           {badge.kind === 'human-message' && humanAuthors
             ? <AvatarStack actors={humanAuthors.actors} total={humanAuthors.total} />
             : null}

@@ -13,8 +13,10 @@ import type { EntityCounters } from '@tm8/contract';
  *     also produces no row — absence is "never counted", not zero.
  */
 export interface TileCountBadge {
-  /** The registry kind whose drawn mark (KindIcon) the badge wears. */
+  /** The badge's semantic key (split message counts remain distinct). */
   kind: string;
+  /** The registry kind whose drawn mark (KindIcon) the badge wears. */
+  iconKind: string;
   count: number;
   /** Singular noun for the title; the renderer pluralises. */
   label: string;
@@ -25,21 +27,21 @@ export interface TileCountBadge {
 export function tileCountBadgesOf(counters: EntityCounters): TileCountBadge[] {
   const badges: TileCountBadge[] = [];
   if (typeof counters.docs === 'number' && counters.docs > 0) {
-    badges.push({ kind: 'doc', count: counters.docs, label: 'doc' });
+    badges.push({ kind: 'doc', iconKind: 'doc', count: counters.docs, label: 'doc' });
   }
   if (typeof counters.memories === 'number' && counters.memories > 0) {
-    badges.push({ kind: 'memory', count: counters.memories, label: 'memory' });
+    badges.push({ kind: 'memory', iconKind: 'memory', count: counters.memories, label: 'memory' });
   }
   if (typeof counters.humanMessages === 'number' && counters.humanMessages > 0) {
-    badges.push({ kind: 'human-message', count: counters.humanMessages, label: 'human message', emphasis: 'human' });
+    badges.push({ kind: 'human-message', iconKind: 'message', count: counters.humanMessages, label: 'human message', emphasis: 'human' });
   }
   if (typeof counters.agentMessages === 'number' && counters.agentMessages > 0) {
-    badges.push({ kind: 'agent-message', count: counters.agentMessages, label: 'agent message' });
+    badges.push({ kind: 'agent-message', iconKind: 'message', count: counters.agentMessages, label: 'agent message' });
   }
   // Rolling compatibility: an older server cannot truthfully split the total.
   // Preserve its existing neutral badge until its projection includes 109.
   if (counters.humanMessages === undefined && counters.agentMessages === undefined && counters.messages > 0) {
-    badges.push({ kind: 'message', count: counters.messages, label: 'message' });
+    badges.push({ kind: 'message', iconKind: 'message', count: counters.messages, label: 'message' });
   }
   return badges;
 }
