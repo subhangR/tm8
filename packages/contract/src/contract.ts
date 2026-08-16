@@ -484,7 +484,39 @@ export interface WorkSessionInteractionProfileProjection {
  * pass through so future graph types cost no contract change.
  */
 export interface GraphNodeSpec { kind?: string; title?: string; hint?: string; [extra: string]: unknown }
-export interface GraphNode { key?: string; id?: EntityId; spec?: GraphNodeSpec; [extra: string]: unknown }
+/**
+ * THE PINNED NODE SHAPE (Craft P1, settled 2026-08-16 — read this before
+ * writing a blueprint row).
+ *
+ *   id    the ROW-LOCAL key. Edges' `src`/`dst` name it. Not an entity id.
+ *   ref   the entity id, when this node points at something that REALLY EXISTS.
+ *   spec  {kind,title,hint} when the node does NOT exist yet.
+ *
+ * A node is a REFERENCE **iff it carries `ref`**; otherwise it is a SPEC.
+ * Entity-hood is never inferred from `id` — that inference is precisely the
+ * defect this pin removes: writers universally reach for `id` as the node's
+ * local identity (11 of 11 nodes on the first real blueprint row did, and none
+ * carried `key`), so a reader treating `id` as an entity id turned every spec
+ * into a broken reference reading "unavailable entity".
+ *
+ * LEGACY ALIASES, accepted forever, never written: `key` for `id` (it wins
+ * when both are present, because that is the key old edges named) and
+ * `entityId` for `ref`. One migration branch covers rows written before the
+ * pin: no `ref`, no `spec`, and an `id` in UUID form ⇒ `id` is the ref. A node
+ * carrying `spec` is never subject to it.
+ */
+export interface GraphNode {
+  /** Row-local key — the edge namespace. */
+  id?: string;
+  /** The referenced entity. Present ⇔ this node is a reference. */
+  ref?: EntityId;
+  spec?: GraphNodeSpec;
+  /** @deprecated legacy alias for `id`; still honored, and it wins over `id`. */
+  key?: string;
+  /** @deprecated legacy alias for `ref`. */
+  entityId?: EntityId;
+  [extra: string]: unknown;
+}
 export interface GraphEdgeSpec { src?: string; dst?: string; type?: string; note?: string; [extra: string]: unknown }
 
 export type CoreEntityContent =

@@ -37,7 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { HomePage } from '../home-page';
 import { AuxEntityPanel } from './auxPanel';
-import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
+import { PanelResizer, useElementWidth, usePanelFlag, usePanelWidth } from '../kit';
 import {
   EntityListPanel,
   ListViewSwitcher,
@@ -78,12 +78,46 @@ import type { GateData } from './useGateData';
    `PanelResizer` was made to stop. */
 const ASIDE_MIN = 320;
 const ASIDE_DEFAULT = 440;
-/** Region B's hard floor (D13) — what the conversation (or a terminal) needs
-    to still be itself, PLUS column A beside it inside the chat grid. */
-const HOME_MIN = 420;
 /** The 8px separator track plus the aside's own 1px border — this package sets
     no global `border-box`, so that border ADDS to the declared width. */
 const ASIDE_CHROME = 8 + 1;
+
+/* ---------------------------------------------------------------------------
+   COLUMN A AND THE RAIL (task 01a00ac2)
+   ---------------------------------------------------------------------------
+   `HOME_MIN = 420` used to stand here as region B's floor "PLUS column A
+   beside it". That number was already a fiction and a resizable A is what
+   makes the fiction load-bearing: the rail alone is 72 and A's own CSS floor
+   was 300, which leaves 48px for B — less than an eighth of what the comment
+   claimed B needed. Nothing caught it because A's width was a constant, so
+   the under-count only ever showed up as the overlay firing later than it
+   should have.
+
+   The bundle is therefore split into the three things it was pretending to
+   be, and the floor left of C is now COMPUTED from them (`leftFloor` below)
+   rather than typed. Every one of these is a floor in the 02-LAYOUT §6 sense:
+   the width below which the column stops being itself. */
+
+/** Region B alone — what the conversation (or a terminal) needs to still be
+    itself, with A and the rail no longer smuggled inside the number. */
+export const HOME_CENTER_MIN = 360;
+/** Column A. 240 keeps a task row's title readable; 560 is where a list stops
+    being a list and starts being a second reading column. 340 is a hair under
+    today's fluid track resting width, so nothing jumps on first paint for a
+    viewer who has never dragged it. (Ruled by Subhang, 2026-08-16.) */
+export const HOME_LIST_MIN = 240;
+export const HOME_LIST_DEFAULT = 340;
+export const HOME_LIST_MAX = 560;
+/** A's separator track. It has no border of its own — unlike the aside, which
+    is why this is 8 and `ASIDE_CHROME` is 9. */
+export const HOME_LIST_CHROME = 8;
+
+/* The rail's two widths, which the SOLVER needs and CSS used to own alone
+   (`home-page.css`'s `.hr-rail` 72 / 172). Duplicating a floor in a
+   stylesheet is exactly what geometry.ts's standing rule forbids, so they
+   live here now and are handed to CSS as `--hp-rail`. */
+export const HOME_RAIL_COLLAPSED = 72;
+export const HOME_RAIL_EXPANDED = 172;
 
 export interface HomeViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -111,6 +145,15 @@ export interface HomeViewProps {
    * press in C, and the region-A/B bundle the three-tab column needs.
    */
   chat(onOpenEntity: (id: EntityId) => void, regions: HomeChatRegions): ReactNode;
+  /**
+   * FOCUS MODE — the ruled single toggle that collapses the icon rail AND
+   * column A together (task 01a00ac2). It is owned by `GateApp` rather than
+   * here for one reason: Mod+\ is a GLOBAL binding handled on the window, and
+   * a second `usePanelFlag('home-focus')` in this file would hold its own
+   * `useState` and drift from the one the shortcut writes.
+   */
+  focus?: boolean;
+  onToggleFocus?(): void;
 }
 
 /** What the host's chat mount needs from this screen's region state. */
@@ -373,7 +416,39 @@ export function HomeView(props: HomeViewProps) {
   const outerWidth = rootWidth > 0
     ? rootWidth
     : (typeof window === 'undefined' ? 0 : window.innerWidth);
-  const asideMax = Math.max(0, outerWidth - HOME_MIN - ASIDE_CHROME);
+
+  /* COLUMN A IS DRAGGABLE TOO (task 01a00ac2), and it is ONE width for every
+     root — not one per kind. Subhang ruled that in the previous wave ("it has
+     to be same width", home-page.css) because a per-tab width made the whole
+     layout jump on each tab switch; making the width adjustable does not
+     re-open that, it just moves who chooses the single number. Hence the flat
+     `home.list` key with no kind in it. */
+  const listPref = usePanelWidth('home.list', HOME_LIST_DEFAULT, HOME_LIST_MIN);
+  const [railCollapsed, setRailCollapsed] = usePanelFlag('home-rail-collapsed', true);
+  const focus = props.focus ?? false;
+
+  /* What the rail and A actually occupy. Focus mode is the ruled "collapse the
+     entire left panel AND the icon rail" state: both go to zero together
+     behind one toggle, and B + C take the whole row. */
+  const railWidth = focus ? 0 : railCollapsed ? HOME_RAIL_COLLAPSED : HOME_RAIL_EXPANDED;
+
+  /* A's ceiling is what the row can spare once the rail, B's floor and — when
+     C is open — C's floor have been paid. `outerWidth === 0` is jsdom, which
+     cannot measure; the same law the overlay follows applies here, so an
+     unmeasurable row imposes no ceiling rather than a fabricated one. */
+  const asideReserve = drillId ? ASIDE_MIN + ASIDE_CHROME : 0;
+  const listCeiling = outerWidth > 0
+    ? Math.max(HOME_LIST_MIN, Math.min(HOME_LIST_MAX, outerWidth - railWidth - HOME_CENTER_MIN - HOME_LIST_CHROME - asideReserve))
+    : HOME_LIST_MAX;
+  /* The PREFERENCE is never rewritten by a narrow window — `usePanelWidth`'s
+     own docblock is explicit that clamping on write is how a preference dies.
+     This is the paint-time clamp, and widening the window restores what was
+     asked for. */
+  const listWidth = focus ? 0 : Math.min(Math.max(HOME_LIST_MIN, listPref.width), listCeiling);
+
+  /* Everything left of C, at its ACTUAL width rather than a bundled guess. */
+  const leftFloor = focus ? HOME_CENTER_MIN : railWidth + listWidth + HOME_LIST_CHROME + HOME_CENTER_MIN;
+  const asideMax = Math.max(0, outerWidth - leftFloor - ASIDE_CHROME);
   /** Beside-mode is affordable only while C's floor fits next to B's floor.
       jsdom measures 0 ⇒ beside, so the overlay never triggers in tests that
       cannot measure (the same law as the workspace demotion loop). */
@@ -591,12 +666,77 @@ export function HomeView(props: HomeViewProps) {
   /* THE ICON RAIL (R4) — the switcher's twin: same groups, same select, no
      view rows. No row is active while Chats is the root; chats live in the
      list header's own cell, not the rail. */
-  const rail = (
+  /* Focus mode takes the rail off the row entirely rather than collapsing it
+     to its 72px icon strip — "collapsing entire left panel AND icon rail" was
+     the ask, and a 72px strip left standing is not a collapse. */
+  const rail = focus ? null : (
     <HomeRail
       groups={homeRailGroups()}
       activeKind={root === CHATS_ROOT ? null : root}
       onSelect={setRoot}
+      collapsed={railCollapsed}
+      onToggleCollapsed={() => setRailCollapsed((collapsed) => !collapsed)}
     />
+  );
+
+  /* COLUMN A'S SEPARATOR, and — when A is collapsed — the only way back.
+
+     THE STRIP IS NEVER ABSENT, ONLY RE-ROLED. Collapsed, it is a button at
+     the row's left edge carrying a chevron; open, it is the drag handle.
+     Subhang ruled against the hover-reveal overlay and against keyboard-only
+     restore for the same reason: a viewer who collapses the panel and does
+     not know the shortcut has no way to discover one, and a control you can
+     only find by sweeping the mouse at a screen edge is not discoverable
+     either. Ten pixels is the rent that costs.
+
+     DRAG CLAMPS, IT NEVER CLOSES (the ruling). `PanelResizer` already floors
+     every drag at `minWidth`, so there is nothing to add for that — the point
+     is what is NOT wired: no snap-shut past the floor. Collapse is only ever
+     the chevron, the double-click, or Mod+\. */
+  const listRail = focus ? (
+    <button
+      type="button"
+      className="hp-listreveal"
+      title="Show the list panel and the icon rail (⌘\)"
+      aria-label="Show the list panel and the icon rail"
+      aria-expanded={false}
+      aria-controls="home-view-list"
+      data-testid="hp-list-reveal"
+      onClick={() => props.onToggleFocus?.()}
+    >
+      <span aria-hidden>›</span>
+    </button>
+  ) : (
+    <div className="hp-listsep" data-testid="hp-list-separator">
+      <PanelResizer
+        side="left"
+        label="List"
+        controls="home-view-list"
+        width={listWidth}
+        minWidth={HOME_LIST_MIN}
+        maxWidth={listCeiling}
+        onResize={listPref.setWidth}
+        /* THE DIVIDER'S DOUBLE-CLICK COLLAPSES HERE, where everywhere else in
+           the kit it resets to the default width. That is Subhang's ruling
+           (2026-08-16) and it is a deliberate divergence, not an oversight:
+           on this divider collapse is the gesture people reach for. Reset did
+           not go anywhere — `PanelResizer` binds it to Backspace/Delete on the
+           focused separator as well, and that binding is untouched. */
+        onReset={() => props.onToggleFocus?.()}
+      />
+      <button
+        type="button"
+        className="hp-listsep__collapse"
+        title="Collapse the list panel and the icon rail (⌘\)"
+        aria-label="Collapse the list panel and the icon rail"
+        aria-expanded
+        aria-controls="home-view-list"
+        data-testid="hp-list-collapse"
+        onClick={() => props.onToggleFocus?.()}
+      >
+        <span aria-hidden>‹</span>
+      </button>
+    </div>
   );
 
   /* R6's PROMOTE — "open here": C's subject becomes B's ROOT, the left list
@@ -678,12 +818,22 @@ export function HomeView(props: HomeViewProps) {
     <div
       className="hp-host"
       ref={rootRef}
-      style={{ '--hp-aside': `${asideWidth}px` } as React.CSSProperties}
+      style={{
+        '--hp-aside': `${asideWidth}px`,
+        /* Handed to CSS rather than duplicated in it — the same rule that
+           keeps the workspace's floors in `geometry.ts` and out of
+           `shell.css`. `--hp-rail` replaces the 72/172 literals that used to
+           live in `.hr-rail`. */
+        '--hp-list': `${listWidth}px`,
+        '--hp-rail': `${railWidth}px`,
+      } as React.CSSProperties}
     >
       <HomePage
         data={data}
         chat={props.chat(openEntity, regions)}
         rail={rail}
+        listRail={listRail}
+        focus={focus}
         {...(aside ? { aside } : {})}
         /* A NEEDS YOU card opens where a chip does. They are the same gesture
            — "show me that" — from two places on one screen. */

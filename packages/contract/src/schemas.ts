@@ -145,18 +145,37 @@ export const EntityKindSchema: z.ZodType<EntityKind> =
 
 /**
  * Craft P1 — the lean blueprint vocabulary (rulings R1-R3), SOFT by design.
- * A node is a reference (`id`) or a spec (`{kind,title,hint?}`); an edge is
- * `{src,dst,type,note?}` intent. `passthrough` everywhere: the orchestrating
- * agent interprets, the schema only keeps the shapes recognizably graph-ish.
+ * A node is `{id, ref?, spec?}`: `id` is the ROW-LOCAL key edges name, `ref`
+ * the entity id when the node is a reference, `spec` the sketch when it is
+ * not. See `GraphNode` in contract.ts for the full pin and its legacy
+ * aliases. `passthrough` everywhere: the orchestrating agent interprets, and
+ * the schema only keeps the shapes recognizably graph-ish.
+ *
+ * The ONE thing this door refuses is the mistake that caused the defect: a
+ * `ref` that is not an entity id. `ref` is now the sole word meaning "this
+ * exists", so it must be typed, or the ambiguity walks straight back in.
  */
+const ENTITY_ID_FORM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const GraphNodeRefSchema = z.string().regex(
+  ENTITY_ID_FORM,
+  '`ref` must be an entity id — use `id` for the row-local key edges name',
+);
+
 export const GraphNodeInputSchema = z.object({
-  key: z.string().min(1).optional(),
-  id: EntityIdSchema.optional(),
+  /** Row-local key — the edge namespace. NOT an entity id. */
+  id: z.string().min(1).optional(),
+  /** Present ⇔ this node references a real entity. */
+  ref: GraphNodeRefSchema.optional(),
   spec: z.object({
     kind: z.string().min(1).optional(),
     title: z.string().optional(),
     hint: z.string().optional(),
   }).passthrough().optional(),
+  /** @deprecated legacy alias for `id`; honored, and it wins over `id`. */
+  key: z.string().min(1).optional(),
+  /** @deprecated legacy alias for `ref`. */
+  entityId: GraphNodeRefSchema.optional(),
 }).passthrough();
 
 export const GraphEdgeInputSchema = z.object({

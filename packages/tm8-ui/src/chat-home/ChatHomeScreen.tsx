@@ -843,7 +843,11 @@ export function ChatHomeScreen({
         When it lands, the accepted default is that the cold-start auto-open
         marks read like any other open.
       */}
-      <aside className="tch-sidebar" aria-label="Tasks, chats and sessions">
+      {/* `id` is what Home's column-A separator points `aria-controls` at
+          (task 01a00ac2). Only ever one of these mounts at a time — the
+          solo-hero arrangement hides this column rather than mounting a
+          second grid — so the id stays unique. */}
+      <aside id="home-view-list" className="tch-sidebar" aria-label="Tasks, chats and sessions">
         {/* THE ROOT HEADER (task 01a00932 R5) — two cells, [Chats ＋] and
             [Kind ＋ ▾]. Each cell's LABEL switches the root (browsing, D6);
             each cell's ＋ CREATES (the D10 exception: it takes region B and

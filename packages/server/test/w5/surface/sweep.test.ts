@@ -587,7 +587,16 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // revoke on the task-workflow definer functions — found because the
     // tm8_delivery_worker surface enumeration was red on every PR.
     // MEASURED: `ls db/migrations/*.sql | wc -l` = 129.
-    expect(server.appliedMigrations.length).toBe(129);
+    // 129 -> 130 (2026-08-16): 139 restores
+    // `session_message_deliveries.pair_budget_version` on nodes that applied an
+    // orphan `083_remove_session_wake_budgets.sql` that never reached main.
+    // Nothing in THIS chain drops that column, so on a tree built from these
+    // files 139 is a no-op — it exists because plpgsql is late-bound, so 120's
+    // reserve body CREATES fine against a drifted table and only raises 42703
+    // when called, which reads as "PTY injection is dead" with a green deploy.
+    // Numbered 139 after measuring every remote ref (max was 138).
+    // MEASURED, never arithmetic: `ls db/migrations/*.sql | wc -l` = 130.
+    expect(server.appliedMigrations.length).toBe(130);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
