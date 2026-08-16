@@ -219,7 +219,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   /* Memoized on `data` so the port identity is stable — the feed hook's effects
      key on it, and a fresh object each render would re-read on every keystroke
      anywhere in the workspace. */
-  const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
+  const channelFeedPort = useMemo(
+    () => channelFeedPortFromGateData(data),
+    [data.seam, data.spaceId, data.liveIds, data.postMessage, data.spawn, data.launch.projects],
+  );
 
   /* The panel action bar's executor AND the session tile's ✕, from one hook —
      see `usePanelPrimaries` for why the wiring is not written inline here. */
@@ -540,7 +543,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const rosterRows = useMemo(() => {
     if (!TERMINAL_ROSTER_KIND) return [];
     return data.rowsFor(TERMINAL_ROSTER_KIND)(undefined).map((summary) => toSessionRow(summary));
-  }, [data]);
+  }, [data.rowsFor]);
 
   /** Session task rows come from durable `working_on` edges already projected
       by the gate graph. The map updates with edge events and is shared by both

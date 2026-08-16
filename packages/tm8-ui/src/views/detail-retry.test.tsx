@@ -193,6 +193,36 @@ async function renderPasses(
 }
 
 describe('a detail read that fails is not abandoned forever', () => {
+  it('does not duplicate a detail read while the first request is still in flight', async () => {
+    const row = task('ent-slow');
+    const h = harness([row], () => false);
+    let resolveDetail: ((detail: EntityDetail) => void) | undefined;
+    let calls = 0;
+    Object.assign(h.seam, {
+      entity: () => {
+        calls += 1;
+        return new Promise<EntityDetail>((resolve) => { resolveDetail = resolve; });
+      },
+    });
+    const { result, rerender } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => {
+      for (let index = 0; index < 5; index += 1) result.current.pull?.(row.id);
+    });
+    rerender();
+    act(() => result.current.pull?.(row.id));
+    expect(calls).toBe(1);
+
+    await act(async () => {
+      resolveDetail?.(detailOf(row));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(result.current.detailOf(row.id)).toBeDefined());
+  });
+
   it('a detail read that failed once is retried on the next render', { timeout: 30_000 }, async () => {
     // Fails attempt 1 (the 503), healthy from attempt 2 — the owner's node.
     const h = harness([task('ent-poisoned')], (attempt) => attempt === 1);

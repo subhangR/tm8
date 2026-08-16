@@ -20,6 +20,7 @@ interface Harness {
   pool: FakeSocketPool;
   polls: PollCall[];
   events: DurableWorkspaceEvent[];
+  cursorUpdates: Array<{ spaceId: SpaceId; cursor: number }>;
   phases: ConnectionState[];
   resyncs: SpaceId[];
   refusals: Array<{ spaceId: SpaceId; error: CollabError }>;
@@ -32,6 +33,7 @@ function mk(config?: Parameters<typeof createConnectionManager>[0]['config']): H
   const pool = fakeSocketPool();
   const polls: PollCall[] = [];
   const events: DurableWorkspaceEvent[] = [];
+  const cursorUpdates: Array<{ spaceId: SpaceId; cursor: number }> = [];
   const phases: ConnectionState[] = [];
   const resyncs: SpaceId[] = [];
   const refusals: Array<{ spaceId: SpaceId; error: CollabError }> = [];
@@ -51,6 +53,7 @@ function mk(config?: Parameters<typeof createConnectionManager>[0]['config']): H
     now: clock.now,
     random: clock.random,
     config,
+    onCursor: (spaceId, cursor) => cursorUpdates.push({ spaceId, cursor }),
   });
 
   conn.onEvent((e) => events.push(e));
@@ -60,7 +63,7 @@ function mk(config?: Parameters<typeof createConnectionManager>[0]['config']): H
   conn.onReconnect(() => { counters.reconnects += 1; });
 
   return {
-    conn, clock, pool, polls, events, phases, resyncs, refusals,
+    conn, clock, pool, polls, events, cursorUpdates, phases, resyncs, refusals,
     get reconnects() { return counters.reconnects; },
     setPoll(fn) { pollFn = fn; },
   } as Harness;
@@ -86,6 +89,148 @@ function ev(spaceId: SpaceId, seq: number): DurableWorkspaceEvent {
 // ---------------------------------------------------------------------------
 
 describe('connection: connect — subscribe is ALWAYS followed by resume', () => {
+  it('scans retained pages without dispatching them, then resumes from the tail', async () => {
+    const h = mk({ pollLimit: 2 });
+    h.setPoll(({ since }) => {
+      if (since === 0) return { items: [ev('sp-1', 1), ev('sp-1', 2)], nextCursor: '2' };
+      if (since === 2) return { items: [ev('sp-1', 3)], nextCursor: '3' };
+      return { items: [], nextCursor: String(since) };
+    });
+    await expect(h.conn.prepareSpace('sp-1')).resolves.toBe(3);
+    expect(h.events).toEqual([]);
+    h.conn.openSpace('sp-1');
+    h.pool.last().openIt();
+    expect(h.pool.last().frames()).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 3 },
+    ]);
+  });
+
+  it('uses an epoch-scoped persisted cursor as the scan start', async () => {
+    const h = mk();
+    h.setPoll(({ since }) => ({ items: [], nextCursor: String(since) }));
+    await h.conn.prepareSpace('sp-1', 91);
+    expect(h.polls).toEqual([{ spaceId: 'sp-1', since: 91 }]);
+    expect(h.conn.cursorOf('sp-1')).toBe(91);
+  });
+
+  it('never subscribes from an intermediate cursor in a retained log larger than 64 pages', async () => {
+    const h = mk({ pollLimit: 1 });
+    h.setPoll(({ since }) => since < 70
+      ? { items: [ev('sp-1', since + 1)], nextCursor: String(since + 1) }
+      : { items: [], nextCursor: String(since) });
+    await expect(h.conn.prepareSpace('sp-1')).resolves.toBe(70);
+    expect(h.polls).toHaveLength(71);
+    expect(h.events).toEqual([]);
+  });
+
+  it('checkpoints a non-converging scan and retries without subscribing or rescanning', async () => {
+    const h = mk({ pollLimit: 1, bootstrapPageBudget: 2 });
+    h.setPoll(({ since }) => ({
+      items: [ev('sp-1', since + 1)],
+      nextCursor: String(since + 1),
+    }));
+    await expect(h.conn.prepareSpace('sp-1')).rejects.toThrow('still advancing');
+    expect(h.conn.cursorOf('sp-1')).toBe(2);
+    expect(h.pool.sockets).toHaveLength(0);
+    h.setPoll(({ since }) => ({ items: [], nextCursor: String(since) }));
+    await expect(h.conn.prepareSpace('sp-1')).resolves.toBe(2);
+    expect(h.polls.map((call) => call.since)).toEqual([0, 1, 2]);
+  });
+
+  it('discards a first page response that lands after cancellation', async () => {
+    const h = mk();
+    let resolvePage: ((page: DurableEventPage) => void) | undefined;
+    h.setPoll(() => new Promise<DurableEventPage>((resolve) => { resolvePage = resolve; }));
+    const preparing = h.conn.prepareSpace('sp-1');
+    await flush();
+    h.conn.closeSpace('sp-1');
+    resolvePage?.({ items: [ev('sp-1', 1)], nextCursor: '1' });
+    await expect(preparing).rejects.toThrow('cancelled');
+    expect(h.polls).toHaveLength(1);
+    expect(h.conn.cursorOf('sp-1')).toBe(0);
+    expect(h.cursorUpdates).toEqual([]);
+  });
+
+  it('keeps completed checkpoints but discards the in-flight page when cancelled between pages', async () => {
+    const h = mk();
+    let resolveSecondPage: ((page: DurableEventPage) => void) | undefined;
+    h.setPoll(({ since }) => since === 0
+      ? { items: [ev('sp-1', 1)], nextCursor: '1' }
+      : new Promise<DurableEventPage>((resolve) => { resolveSecondPage = resolve; }));
+
+    const preparing = h.conn.prepareSpace('sp-1');
+    await flush();
+    expect(h.conn.cursorOf('sp-1')).toBe(1);
+    h.conn.closeSpace('sp-1');
+    resolveSecondPage?.({ items: [ev('sp-1', 50)], nextCursor: '50' });
+
+    await expect(preparing).rejects.toThrow('cancelled');
+    expect(h.conn.cursorOf('sp-1')).toBe(1);
+    expect(h.cursorUpdates).toEqual([{ spaceId: 'sp-1', cursor: 1 }]);
+  });
+
+  it('a late obsolete generation cannot overwrite a newer live cursor', async () => {
+    const h = mk();
+    const resolvePages: Array<(page: DurableEventPage) => void> = [];
+    h.setPoll(() => new Promise<DurableEventPage>((resolve) => { resolvePages.push(resolve); }));
+
+    const obsolete = h.conn.prepareSpace('sp-1');
+    await flush();
+    expect(resolvePages).toHaveLength(1);
+
+    h.conn.closeSpace('sp-1');
+    const current = h.conn.prepareSpace('sp-1');
+    await flush();
+    expect(resolvePages).toHaveLength(2);
+
+    resolvePages[1]?.({ items: [ev('sp-1', 5)], nextCursor: '5' });
+    await flush();
+    expect(resolvePages).toHaveLength(3);
+    resolvePages[2]?.({ items: [], nextCursor: '5' });
+    await expect(current).resolves.toBe(5);
+
+    h.conn.openSpace('sp-1');
+    h.pool.last().openIt();
+    expect(lastFrame(h.pool.last())).toEqual({ type: 'resume', spaceId: 'sp-1', since: 5 });
+
+    // Generation zero finally lands after generation one is already live. It
+    // must neither persist 100 nor make the live seq=6 look stale.
+    resolvePages[0]?.({ items: [ev('sp-1', 100)], nextCursor: '100' });
+    await expect(obsolete).rejects.toThrow('cancelled');
+    expect(h.conn.cursorOf('sp-1')).toBe(5);
+    expect(h.cursorUpdates.some(({ cursor }) => cursor === 100)).toBe(false);
+
+    h.pool.last().deliver(ev('sp-1', 6));
+    expect(h.events.map((event) => event.seq)).toEqual([6]);
+  });
+
+  it('a current prepare page cannot rewind a cursor advanced live while it was in flight', async () => {
+    const h = mk();
+    let resolveFirstPage: ((page: DurableEventPage) => void) | undefined;
+    h.setPoll(({ since }) => since === 0
+      ? new Promise<DurableEventPage>((resolve) => { resolveFirstPage = resolve; })
+      : { items: [], nextCursor: String(since) });
+
+    const preparing = h.conn.prepareSpace('sp-1');
+    await flush();
+    h.conn.openSpace('sp-1');
+    h.pool.last().openIt();
+    h.pool.last().deliver(ev('sp-1', 10));
+    expect(h.conn.cursorOf('sp-1')).toBe(10);
+
+    // The older HTTP page knows only seq=5. Its generation is still current,
+    // but the global cursor is newer and must remain the high-water mark.
+    resolveFirstPage?.({ items: [ev('sp-1', 5)], nextCursor: '5' });
+    await expect(preparing).resolves.toBe(10);
+    expect(h.polls.map(({ since }) => since)).toEqual([0, 10]);
+    expect(h.conn.cursorOf('sp-1')).toBe(10);
+
+    h.pool.last().deliver(ev('sp-1', 6));
+    h.pool.last().deliver(ev('sp-1', 11));
+    expect(h.events.map((event) => event.seq)).toEqual([10, 11]);
+  });
+
   it('sends subscribe then resume(0) on a first-ever open', () => {
     const h = mk();
     h.conn.openSpace('sp-1');
@@ -582,6 +727,35 @@ describe('connection: closeSpace / dispose', () => {
     expect(lastFrame(h.pool.last())).toEqual({ type: 'resume', spaceId: 'sp-1', since: 12 });
   });
 
+  it('an obsolete fallback poll cannot checkpoint after close, clear and re-open', async () => {
+    const h = mk();
+    let resolveOldPoll: ((page: DurableEventPage) => void) | undefined;
+    h.setPoll(() => new Promise<DurableEventPage>((resolve) => { resolveOldPoll = resolve; }));
+
+    h.conn.openSpace('sp-1');
+    const oldSocket = h.pool.last();
+    oldSocket.openIt();
+    oldSocket.drop();
+    await flush();
+    expect(h.polls).toEqual([{ spaceId: 'sp-1', since: 0 }]);
+
+    h.conn.closeSpace('sp-1');
+    h.conn.clearCursor('sp-1');
+    h.conn.openSpace('sp-1');
+    const currentSocket = h.pool.last();
+    expect(currentSocket).not.toBe(oldSocket);
+
+    // The space is open again when the old generation returns, so an
+    // `open.has` check alone would accept and persist this poisoned cursor.
+    resolveOldPoll?.({ items: [ev('sp-1', 900)], nextCursor: '900' });
+    await flush();
+    expect(h.conn.cursorOf('sp-1')).toBe(0);
+    expect(h.cursorUpdates).toEqual([]);
+
+    currentSocket.openIt();
+    expect(lastFrame(currentSocket)).toEqual({ type: 'resume', spaceId: 'sp-1', since: 0 });
+  });
+
   it('dispose closes the socket, cancels every timer and delivers nothing more', async () => {
     const h = mk();
     h.conn.openSpace('sp-1');
@@ -629,6 +803,9 @@ describe('toCursor: explicit coercion, because Number("") is 0', () => {
     expect(toCursor([])).toBeNull();
     expect(toCursor('abc')).toBeNull();
     expect(toCursor(Number.NaN)).toBeNull();
+    expect(toCursor(-1)).toBeNull();
+    expect(toCursor('1.5')).toBeNull();
+    expect(toCursor(Number.MAX_SAFE_INTEGER + 1)).toBeNull();
     // The control: real cursors still parse.
     expect(toCursor('512')).toBe(512);
     expect(toCursor(512)).toBe(512);

@@ -13,11 +13,11 @@
  *    offscreen full-screen TUI repainting many times a second costs one big
  *    write per second instead of hundreds of small ones.
  *
- * Visibility is read from the DOM (computed style of the xterm element), NOT from
- * React state — the DOM is the only source of truth for what is actually on
- * screen. NO DATA IS EVER DROPPED: buffers force-flush past MAX_BUFFERED_BYTES
- * regardless of visibility.
+ * Visibility is read from computed `display`/`visibility` on the xterm element
+ * and its ancestors, NOT from React state. NO DATA IS EVER DROPPED: buffers
+ * force-flush past MAX_BUFFERED_BYTES regardless of visibility.
  */
+import { isElementPaintable } from './elementVisibility.js';
 
 export interface TerminalWriteTarget {
   /** The live xterm Terminal for a session id, if mounted. */
@@ -49,7 +49,7 @@ export function initTerminalWriteScheduler(t: TerminalWriteTarget): void {
 function isElementHidden(term: { element?: HTMLElement }): boolean {
   const el = term.element;
   if (!el || !el.isConnected) return false; // unknown → treat as visible, just write
-  return getComputedStyle(el).visibility === 'hidden';
+  return !isElementPaintable(el);
 }
 
 /**

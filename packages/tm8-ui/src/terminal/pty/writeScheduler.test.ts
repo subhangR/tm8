@@ -95,6 +95,23 @@ describe('terminal write scheduler', () => {
     expect(term.writes).toEqual(['x']);
   });
 
+  it('throttles a terminal hidden by an ancestor surface', async () => {
+    const term = makeTerm(true);
+    const parent = document.createElement('div');
+    document.body.insertBefore(parent, term.element!);
+    parent.appendChild(term.element!);
+    parent.style.display = 'none';
+    terms.set('s1', term);
+    queueTerminalOutput('s1', 'hidden');
+    await new Promise((r) => setTimeout(r, 5));
+    expect(term.writes).toEqual(['hidden']);
+    queueTerminalOutput('s1', '-throttled');
+    await new Promise((r) => setTimeout(r, 5));
+    expect(term.writes).toEqual(['hidden']);
+    flushTerminalOutput('s1');
+    expect(term.writes).toEqual(['hidden', '-throttled']);
+  });
+
   it('dropTerminalOutput discards buffered chunks (stale pre-reset output)', async () => {
     const term = makeTerm();
     terms.set('s1', term);
