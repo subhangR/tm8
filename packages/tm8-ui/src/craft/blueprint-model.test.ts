@@ -100,6 +100,79 @@ describe('blueprintView — the entity-type fold', () => {
     expect(loose.cards[0]!.title).toBe('Untitled');
   });
 
+  /**
+   * THE PIN (2026-08-16). These cases are transcribed from the shapes on the
+   * first real blueprint row (01a00a8c-0cd5, v5): 11 of 11 nodes carried `id`
+   * as a row-local slug, 0 carried `key`, 9 carried a `spec` alongside, and
+   * the 2 references mirrored their uuid across id/ref/entityId. Reading `id`
+   * as the entity id turned all 9 specs into references, so the canvas drew
+   * "ref" cards and the host fetched slugs and printed "unavailable entity".
+   */
+  describe('the pinned node shape — a reference iff it carries `ref`', () => {
+    it('a slug `id` beside a `spec` is a SPEC, not a broken reference', () => {
+      const view = blueprintView({
+        kind: 'graph',
+        graphType: 'entity',
+        nodes: [{
+          id: 't-schema', kind: 'task', label: 'Pin the schema', title: 'Pin the schema',
+          hint: 'writers guess', spec: { kind: 'task', title: 'Pin the schema', hint: 'writers guess' },
+        }],
+      });
+      const card = view.cards[0]!;
+      expect(card.isSpec).toBe(true);
+      expect(card.refId).toBeNull();
+      expect(card.key).toBe('t-schema');
+      expect(card.title).toBe('Pin the schema');
+      expect(card.kind).toBe('task');
+    });
+
+    it('`ref` names the entity while `id` stays the edge namespace', () => {
+      const view = blueprintView({
+        kind: 'graph',
+        graphType: 'entity',
+        nodes: [{ id: 'tm-graph', ref: '019fbf18-b652-7177-a464-cf2cbaa31ed4' }],
+        edges: [{ src: 'tm-graph', dst: 'tm-graph', type: 'relates_to' }],
+      });
+      const card = view.cards[0]!;
+      expect(card.isSpec).toBe(false);
+      expect(card.refId).toBe('019fbf18-b652-7177-a464-cf2cbaa31ed4');
+      /* The edge names the SLUG, so it must resolve — not dangle. */
+      expect(card.key).toBe('tm-graph');
+      expect(view.danglingEdgeCount).toBe(0);
+    });
+
+    it('honors the wild aliases: `entityId` for ref, `key` for id', () => {
+      const view = blueprintView({
+        kind: 'graph',
+        graphType: 'entity',
+        nodes: [{ id: 'a', entityId: '019fbf29-92b9-775f-9486-a99f6cff7b8a' }],
+      });
+      expect(view.cards[0]!.refId).toBe('019fbf29-92b9-775f-9486-a99f6cff7b8a');
+      expect(view.cards[0]!.key).toBe('a');
+    });
+
+    it('LEGACY: a bare entity-id `id` with no ref and no spec is still a reference', () => {
+      const view = blueprintView({
+        kind: 'graph',
+        graphType: 'entity',
+        nodes: [{ id: '019f0000-0000-7000-8000-00000000aaaa' }],
+      });
+      expect(view.cards[0]!.isSpec).toBe(false);
+      expect(view.cards[0]!.refId).toBe('019f0000-0000-7000-8000-00000000aaaa');
+    });
+
+    it('…but a spec is NEVER dragged back into a reference by that branch', () => {
+      const view = blueprintView({
+        kind: 'graph',
+        graphType: 'entity',
+        nodes: [{ id: '019f0000-0000-7000-8000-00000000aaaa', spec: { kind: 'task', title: 'Sketch' } }],
+      });
+      expect(view.cards[0]!.isSpec).toBe(true);
+      expect(view.cards[0]!.refId).toBeNull();
+      expect(view.cards[0]!.title).toBe('Sketch');
+    });
+  });
+
   it('carries a mermaid row through: type and source, cards empty', () => {
     const view = blueprintView({ kind: 'graph', graphType: 'mermaid', source: 'flowchart TD; a-->b' });
     expect(view.graphType).toBe('mermaid');
