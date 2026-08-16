@@ -97,6 +97,20 @@ export const CLAIM = {
     'Steps 2 and 3 of the oracle’s first run — name the server, create the first space — are not connected: nothing sets a server’s name, and spaces.create is a contract operation the seam does not expose. The gate completes at step 1.',
 } as const;
 
+/**
+ * ORACLE DRAWINGS, NOT LIVE PATHS. `NAME_STEP` (1b) and `FIRST_SPACE` (1c)
+ * render ONLY on the review board — the live gate never reaches them
+ * (`defaultSignedOutFrame` returns only `1a`/`1d`, and the first-run ruling of
+ * 2026-08-16 / PR #313 is a one-step claim gate whose first-Space step is the
+ * app's post-claim zero-spaces welcome → `NewSpaceProjectDialog`, not an
+ * in-gate 1b/1c; see FIRST-RUN-CLAIM-DESIGN.md §10.1). Because nothing renders
+ * them, their copy is NOT maintained against the shipping shell — e.g.
+ * `FIRST_SPACE.menuNote` still names a four-tab menu though the shell now has
+ * seven tabs. That staleness is deliberate: this is the oracle transcription
+ * for the board diff, so it must not be "fixed" — and it must not be rendered
+ * live, where a stale specimen becomes a lie waiting to be believed.
+ */
+
 /** 1b — naming the server. Oracle L58–L66. */
 export const NAME_STEP = {
   title: 'Name the server.',
