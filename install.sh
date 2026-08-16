@@ -1344,11 +1344,20 @@ if (( USE_SERVICE )) && [[ "$SERVICE_KIND" == systemd ]]; then
       || { rm -f "$tmp"; need_root_hint "install -m 0644 <rendered> $unit_path"; die "cannot write $unit_path"; }
     rm -f "$tmp"
     as_root systemctl daemon-reload || die "systemctl daemon-reload failed"
-    # enable --now, and NEVER a signal. A clean node shutdown exits 0, so with
-    # Restart=on-failure a `kill -TERM` "restart" leaves the unit INACTIVE and
-    # the instance silently DOWN. systemctl is the only verb used here.
-    as_root systemctl enable --now "$UNIT_NAME" || die "systemctl enable --now $UNIT_NAME failed"
-    ok "$UNIT_NAME installed, enabled and started"
+    # NEVER a signal. A clean node shutdown exits 0, so with Restart=on-failure a
+    # `kill -TERM` "restart" leaves the unit INACTIVE and the instance silently
+    # DOWN. systemctl is the only verb used here.
+    as_root systemctl enable "$UNIT_NAME" || die "systemctl enable $UNIT_NAME failed"
+    # `restart`, NOT `enable --now`. `--now` only STARTS a unit that is stopped,
+    # so on the case this installer exists to serve — upgrading a node that is
+    # already running — it does nothing at all. The old process keeps serving,
+    # against the schema this run just migrated and the UI bundle it just built,
+    # and phase 11 then confirms a healthy `/health` from that very process. The
+    # run reports success and the new code is never loaded.
+    # `restart` starts a stopped unit and recycles a running one, which is the
+    # only verb that means "load what I just built" in both cases.
+    as_root systemctl restart "$UNIT_NAME" || die "systemctl restart $UNIT_NAME failed"
+    ok "$UNIT_NAME installed, enabled and (re)started"
     dim "logs: journalctl -u $UNIT_NAME -f"
   fi
 elif (( USE_SERVICE )) && [[ "$SERVICE_KIND" == launchd ]]; then
@@ -1404,6 +1413,20 @@ verify_running() {
     *) return 1 ;;
   esac
   ok "health on $TM8_ENV_SERVER_PORT — db:ok after ${waited}s"
+  # A healthy /health proves SOMETHING is serving, not that it is what this run
+  # built — a stale process answers exactly the same. Prove the unit entered
+  # active during this run, so the no-op above cannot come back silently.
+  if (( USE_SYSTEMD )) && command -v systemctl >/dev/null; then
+    local entered entered_epoch
+    entered="$(systemctl show "$UNIT_NAME" -p ActiveEnterTimestamp --value 2>/dev/null || true)"
+    entered_epoch="$(date -d "$entered" +%s 2>/dev/null || echo 0)"
+    if [[ -n "$entered" ]] && (( entered_epoch > 0 )) && (( entered_epoch < started_at )); then
+      die "$UNIT_NAME has been running since $entered — it did not restart during
+      this install, so the process serving requests is NOT the build this run
+      produced. Restart it and re-run the verify:
+        systemctl restart $UNIT_NAME"
+    fi
+  fi
   # /health carries BOTH counts and they mean different things: "operations" is
   # the catalog size, "implemented" is how many answer something other than 501.
   # Printing the first under the second's name is how "141 implemented" gets
