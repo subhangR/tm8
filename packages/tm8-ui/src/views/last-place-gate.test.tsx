@@ -67,11 +67,10 @@ describe('a server round trip keeps your place', () => {
     // EntityView. Tasks rides the Workspace caret on the WORK TAB now
     // (revision 12), so switch tab first. The caret itself is an EXPANDED-rail
     // control and the rail boots collapsed, where every leaf is drawn anyway.
-    fireEvent.click(within(first.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
-    const rail = first.getByTestId('menu-rail');
-    const caret = within(rail).queryByLabelText('Expand Workspace');
-    if (caret) fireEvent.click(caret);
-    fireEvent.click(within(rail).getByRole('button', { name: /^Tasks/ }));
+    /* Revision 17: the Work tab retired — the guaranteed `g t` chord is the
+       door to the Tasks screen now. */
+    fireEvent.keyDown(window, { key: 'g' });
+    fireEvent.keyDown(window, { key: 't' });
     await waitFor(() => first.getByTestId('entity-view'));
 
     // THE ROUND TRIP. Unmount is what `key={activeServer.id}` does on a switch.

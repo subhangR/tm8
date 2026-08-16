@@ -34,6 +34,7 @@ export function HomeRail({ groups, activeKind, onSelect }: HomeRailProps) {
       className={`hr-rail${collapsed ? ' hr-rail--collapsed' : ''}`}
       aria-label="Entity lists"
       data-testid="home-rail"
+      data-collapsed={collapsed ? 'true' : 'false'}
     >
       <div className="hr-rail__scroll">
         {groups.map((group) => (

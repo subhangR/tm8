@@ -50,18 +50,12 @@ beforeEach(() => {
 
 async function openTasksScreen() {
   const view = render(<GateApp />);
-  /* Revision 12: no-memory boots land on the merged Home; Tasks rides the
-     Workspace caret ON THE WORK TAB — the rail is the active tab's contents. */
+  /* Revision 17: the Work tab retired with the unified Home (task 01a00932)
+     — the kind screens are reached by their GUARANTEED chord (`g t`), the
+     door the keyboard contract promises survives any menu arrangement. */
   await waitFor(() => view.getByTestId('home-page'));
-  fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
-  const rail = within(view.getByTestId('menu-rail'));
-  /* The caret is an EXPANDED-rail control and the rail now boots collapsed,
-     where every leaf is drawn regardless of it. Click it when it is there,
-     skip it when it is not: Tasks is reachable either way, which is exactly
-     what the collapsed rail promises. */
-  const caret = rail.queryByLabelText('Expand Workspace');
-  if (caret) fireEvent.click(caret);
-  fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+  fireEvent.keyDown(window, { key: 'g' });
+  fireEvent.keyDown(window, { key: 't' });
   await waitFor(() => view.getByTestId('entity-view'));
   return view;
 }

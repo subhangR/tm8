@@ -49,26 +49,23 @@ describe('dashboard route', () => {
     expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
   });
 
-  it('leads with a Collab tab that reads CURRENT while you stand on the surface', async () => {
+  it('leads with a Home tab that reads CURRENT while you stand on the surface', async () => {
     const view = render(<GateApp />);
     await view.findByTestId('chat-home-screen');
 
     const tabs = view.getByRole('tablist', { name: 'Screens' });
-    // Revision 15: the label is Collab (rename only — the group id is still
+    // Revision 17: the label is Home (rename only — the group id is still
     // `chats`, which is what routes it).
-    const chats = within(tabs).getByRole('tab', { name: 'Collab' });
+    const chats = within(tabs).getByRole('tab', { name: 'Home' });
     // Revision 13's defect, pinned: no tab claimed this place, so standing
     // here nothing read as current and the only way back was an unlabelled
     // mark. The group is what makes the tab able to say "you are here".
     expect(chats.getAttribute('aria-selected')).toBe('true');
-    // Named for what it holds — the ref's own presentation label is 'Home',
-    // and the tab deliberately does not use it.
-    expect(within(tabs).queryByRole('tab', { name: 'Home' })).toBeNull();
 
     // It is a real door, not just a highlight: leave and come back by it.
-    fireEvent.click(within(tabs).getByRole('tab', { name: 'Work' }));
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'Board' }));
     await waitFor(() => expect(view.queryByTestId('chat-home-screen')).toBeNull());
-    fireEvent.click(within(tabs).getByRole('tab', { name: 'Collab' }));
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'Home' }));
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
   });
 
@@ -85,14 +82,14 @@ describe('dashboard route', () => {
     expect(mark.getAttribute('role')).toBeNull();
     expect(mark.getAttribute('aria-selected')).toBeNull();
 
-    fireEvent.click(within(tabs).getByRole('tab', { name: 'Work' }));
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'Board' }));
     await waitFor(() => expect(view.queryByTestId('chat-home-screen')).toBeNull());
 
     fireEvent.click(view.getByTestId('go-home'));
     expect(await view.findByTestId('chat-home-screen')).toBeTruthy();
     // Arriving by the mark lights the same tab as arriving by the tab.
     await waitFor(() =>
-      expect(within(tabs).getByRole('tab', { name: 'Collab' }).getAttribute('aria-selected'))
+      expect(within(tabs).getByRole('tab', { name: 'Home' }).getAttribute('aria-selected'))
         .toBe('true'),
     );
   });

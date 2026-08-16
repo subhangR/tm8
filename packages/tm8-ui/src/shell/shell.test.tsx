@@ -10,13 +10,20 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
-import type { EntityId, MenuConfig, SpaceId, SpaceSummary } from '@tm8/contract';
+import {
+  DEFAULT_MENU_CHANNELS_SPINE,
+  DEFAULT_MENU_WORK_ITEM_SPINE,
+  type EntityId,
+  type MenuConfig,
+  type SpaceId,
+  type SpaceSummary,
+} from '@tm8/contract';
 import { MenuRail, type KindPresenter, type RefPresentation } from './MenuRail';
 import { SpaceTabBar } from './SpaceTabBar';
 import { SpaceSwitcher, SWITCHER_ADD_SERVER_REASON } from './SpaceSwitcher';
 import { PanelStack } from './PanelStack';
 import { NoticeHost } from './NoticeHost';
-import { SHIPPED_DEFAULT_MENU } from '../domain';
+
 import { resolveMenu } from './menu-resolve';
 import { demotionNotice, describeDropped, overflowNotice } from './notices';
 import type { NavPort } from './nav-port';
@@ -41,11 +48,33 @@ const presentKind: KindPresenter = (ref) => {
   return table[ref] ?? null;
 };
 
+/**
+ * The ROW-GRAMMAR fixture: the revision-16 arrangement as a server-authored
+ * config. Revision 17's shipped default is all railless single-view groups
+ * (the unified Home owns its own icon rail), so it no longer exercises the
+ * caret/leaf/kind-row grammars — but server-authored menus still do, and the
+ * rail must keep rendering them. The spines are the contract's own retired
+ * constants, kept exported for exactly this characterization.
+ */
+const RAILED_MENU: MenuConfig = {
+  schemaVersion: 1,
+  revision: 16,
+  groups: [
+    { id: 'chats', label: 'Collab', items: [{ type: 'view', ref: 'dashboard' }] },
+    { id: 'workspace', label: 'Work', items: [...DEFAULT_MENU_WORK_ITEM_SPINE] },
+    { id: 'board', label: 'Board', items: [{ type: 'view', ref: 'board' }] },
+    { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
+    { id: 'channels', label: 'Channels', items: [...DEFAULT_MENU_CHANNELS_SPINE] },
+    { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
+    { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
+  ],
+};
+
 const renderRail = (props: Partial<React.ComponentProps<typeof MenuRail>> = {}) =>
   render(
     <div className="cv2-root">
       <MenuRail
-        config={SHIPPED_DEFAULT_MENU}
+        config={RAILED_MENU}
         collapsed={false}
         onToggle={() => {}}
         onNavigate={() => {}}
@@ -64,9 +93,9 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     const { container } = renderRail();
     expect(container.querySelectorAll('.shell-rail__header')).toHaveLength(0);
     const groups = [...container.querySelectorAll('.shell-rail__group')];
-    expect(groups).toHaveLength(SHIPPED_DEFAULT_MENU.groups.length);
+    expect(groups).toHaveLength(RAILED_MENU.groups.length);
     expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(
-      SHIPPED_DEFAULT_MENU.groups.map((g) => g.label),
+      RAILED_MENU.groups.map((g) => g.label),
     );
   });
 
@@ -354,17 +383,18 @@ describe('MenuRail — fail-closed rendering, end to end (§4.1)', () => {
 
   it('renders the shipped default when the seam resolves null (the Phase-1 path)', () => {
     // createFixtureSeam ships no menu row, so this IS the gate rendering.
+    // Revision 17: the shipped default is five railless single-view tabs.
     const { container, getByText } = renderResolved(null);
     const labels = [...container.querySelectorAll('.shell-rail__label')].map((n) => n.textContent);
-    expect(labels).toContain('Workspace');
+    expect(labels).toContain('Home');
     expect(labels).toContain('Settings');
-    getByText('Channels');
+    getByText('Board');
   });
 
   it('renders the shipped default for a future schemaVersion instead of nothing', () => {
     const { container } = renderResolved({ schemaVersion: 4, revision: 1, groups: [] } as never);
     const labels = [...container.querySelectorAll('.shell-rail__label')].map((n) => n.textContent);
-    expect(labels).toContain('Workspace');
+    expect(labels).toContain('Home');
     expect(labels).toContain('Settings');
   });
 
@@ -383,7 +413,8 @@ describe('MenuRail — fail-closed rendering, end to end (§4.1)', () => {
     expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Ops', 'Admin']);
     getByText('Tasks');
     // The shipped default's groups are NOT merged in.
-    expect(queryByText('Collab')).toBeNull();
+    expect(queryByText('Home')).toBeNull();
+    expect(queryByText('Board')).toBeNull();
   });
 
   it('always keeps a route to settings, whatever the server said', () => {
