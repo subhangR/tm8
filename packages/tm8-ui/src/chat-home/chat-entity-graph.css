@@ -1,0 +1,65 @@
+/* CHAT ENTITY GRAPH — the induced-relations strip in Chat Home. Cards speak
+   the session-graph family's visual language (sg-*); this file carries only
+   the strip chrome and the treatments the family does not have. */
+
+.ceg {
+  border: 1px solid var(--pn-line);
+  border-radius: 10px;
+  background: var(--pn-surface);
+  margin: 0 0 12px;
+}
+
+.ceg__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.ceg__toggle:hover { background: var(--pn-hover); }
+
+.ceg__count {
+  color: var(--pn-ink-3);
+  font-size: 11px;
+}
+
+.ceg__canvas {
+  padding: 4px 12px 12px;
+}
+
+.ceg__canvas .sg-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 420px;
+}
+
+.ceg__note {
+  margin: 0 0 6px;
+  color: var(--pn-ink-3);
+  font-size: 11px;
+}
+
+/* R6 — a node the conversation MUTATED is emphasised; a read node is not. */
+.ceg-cell--mutated .sg-box {
+  stroke: var(--pn-brand);
+  stroke-width: 1.5;
+}
+
+.ceg-cell__flag {
+  font-size: 9px;
+  opacity: 0.85;
+}
+
+.ceg-line__labels {
+  font-size: 10px;
+}

@@ -8,6 +8,7 @@ import {
 } from '../domain/model-catalog';
 import { attachmentsPortFromSeam } from '../files/port';
 import type { TriggerOption } from '../rich-input';
+import type { ConnectionsReader } from '../session-graph/load';
 import { createChatHomePortFromSeam, type ChatHomeL2Bridge } from './real-port';
 import type { ChatEntityResolver } from './EntityChip';
 import type { ChatHomeScreenProps } from './ChatHomeScreen';
@@ -72,6 +73,12 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     },
     [seam],
   );
+  /** The entity graph's induced-relations read — `entities.connections`, the
+   *  same seam op the Connections tab and the session graph use. */
+  const connections = useMemo<ConnectionsReader>(
+    () => (id, opts) => seam.connections(id, opts),
+    [seam],
+  );
   const models = modelCatalog(nodeKey).map((model) => ({
     model: model.model,
     label: model.label,
@@ -85,6 +92,7 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     port,
     models,
     resolveEntity,
+    connections,
     onOpenEntity,
     attach,
     assetHref: seam.files.downloadHref,
