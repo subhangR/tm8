@@ -12,9 +12,9 @@ import {
   useRichInput,
   type TriggerOption,
 } from '../rich-input';
-import { LiveGraphStrip } from '../channel-screen/LiveToolGraph';
+import type { ConnectionsReader } from '../session-graph/load';
 import { mergeChatTurnFrame, projectTurnParts, reconcileDetails } from './turn-model';
-import { foldTurnGraph } from './turn-graph';
+import { ChatEntityGraph } from './ChatEntityGraph';
 import type { ChatEntityResolver } from './EntityChip';
 import { TurnParts } from './TurnParts';
 import type {
@@ -40,6 +40,13 @@ export interface ChatHomeScreenProps {
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   /** Lazily resolves title/kind for bare entity ids in tool payloads. */
   resolveEntity?: ChatEntityResolver | undefined;
+  /**
+   * The host's `entities.connections` reader, for the entity graph's induced
+   * relations (never `graph.query` — see `session-graph/model.ts`). Absent ⇒
+   * the graph draws every card labelled "edges not read" (R11), never a
+   * fabricated line.
+   */
+  connections?: ConnectionsReader | undefined;
   /** Same authenticated file-byte seam used by the Files screen. */
   assetHref?: ((fileEntityId: EntityId) => string | null) | undefined;
   /**
@@ -146,6 +153,7 @@ export function ChatHomeScreen({
   newMutationId = defaultMutationId,
   onOpenEntity,
   resolveEntity,
+  connections,
   assetHref,
   attach,
   skillOptions,
@@ -433,13 +441,6 @@ export function ChatHomeScreen({
     return ids;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by id list
   }, [ownMessageIdsKey]);
-
-  /** Live star of every entity this thread's tool calls referenced — the same
-   *  client-side extraction the chips use, folded once per turns change. */
-  const turnGraph = useMemo(
-    () => (detail ? foldTurnGraph(detail.turns, ownMessageIds) : null),
-    [detail, ownMessageIds],
-  );
 
   const activeConfig = detail?.summary.config ?? null;
   const selectedModel = useMemo(
@@ -1100,14 +1101,15 @@ export function ChatHomeScreen({
             </div>
           ) : detail ? (
             <>
-              {turnGraph ? (
-                <LiveGraphStrip
-                  model={turnGraph}
-                  anchorNoun="this conversation"
-                  focusKind="message"
-                  onOpenEntity={onOpenEntity}
-                />
-              ) : null}
+              {/* The entities this thread referenced and the relations they
+                  ACTUALLY hold — the conversation selects, it is not a node. */}
+              <ChatEntityGraph
+                turns={detail.turns}
+                suppressEntityIds={ownMessageIds}
+                connections={connections}
+                resolveEntity={resolveEntity}
+                onOpenEntity={onOpenEntity}
+              />
               {detail.turns.map((turn) => (
                 <Turn
                   key={turn.messageId}
