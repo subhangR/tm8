@@ -56,9 +56,10 @@ const SLOW_GATE_MS = 30_000;
 
 async function openTasksScreen() {
   const view = render(<GateApp />);
-  /* Revision 11: no-memory boots land on the merged Home; Tasks rides the
-     Workspace caret, which ships closed. */
+  /* Revision 12: no-memory boots land on the merged Home; Tasks rides the
+     Workspace caret ON THE WORK TAB — the rail is the active tab's contents. */
   await waitFor(() => view.getByTestId('home-page'));
+  fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
   const rail = within(view.getByTestId('menu-rail'));
   fireEvent.click(rail.getByLabelText('Expand Workspace'));
   fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));

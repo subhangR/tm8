@@ -39,6 +39,21 @@
   color: var(--pn-brand);
   white-space: nowrap;
 }
+/* The mark as the door back to conversations (revision 13). It reads as the
+   mark, not as a tab — no active state, because there is no destination to
+   be current on. */
+.cv2-root .shell-tabbar__mark--door {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.cv2-root .shell-tabbar__mark--door:hover {
+  color: var(--pn-text);
+}
 .cv2-root .shell-tabbar__server {
   min-width: 0;
   max-width: 168px;
@@ -124,6 +139,62 @@
 }
 .cv2-root .shell-tabbar__spacer {
   flex: 1;
+}
+/* R1/R2 (2026-08-15): the top ROW hosts the identity block and the tabs.
+   The tabs are the menu's groups — a segmented control, active tab raised. */
+.cv2-root .shell-tabbar {
+  height: 36px;
+  gap: 8px;
+}
+.cv2-root .shell-tabbar__tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  padding: 2px;
+  background: var(--pn-hover);
+  border-radius: var(--pn-r-pill);
+}
+.cv2-root .shell-tabbar__tabs .shell-tabbar__tab {
+  padding: 2px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-pill);
+}
+.cv2-root .shell-tabbar__tabs .shell-tabbar__tab--active {
+  background: var(--pn-surface);
+  border-color: var(--pn-line);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--pn-ink) 8%, transparent);
+}
+/* The identity block, re-hosted (R1): the same SpaceSwitcher, drawn as a
+   compact pill — space and server on one line, popover dropping below. */
+.cv2-root .shell-tabbar .shell-switcher {
+  padding: 0;
+}
+.cv2-root .shell-tabbar .shell-switcher__trigger {
+  width: auto;
+  height: 24px;
+  padding: 0 8px;
+  gap: 6px;
+  background: var(--pn-active);
+  border-radius: var(--pn-r-pill);
+}
+.cv2-root .shell-tabbar .shell-switcher__names {
+  flex: none;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+}
+.cv2-root .shell-tabbar .shell-switcher__space { font-size: 11.5px; }
+.cv2-root .shell-tabbar .shell-switcher__server-line { font-size: 9.5px; }
+.cv2-root .shell-tabbar .shell-switcher__monogram {
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  border-radius: 5px;
+}
+.cv2-root .shell-tabbar .shell-switcher__pop {
+  top: calc(100% + 6px);
+  left: 0;
 }
 .cv2-root .shell-tabbar__palette {
   font-family: var(--pn-mono);

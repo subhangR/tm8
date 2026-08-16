@@ -3,7 +3,7 @@ import type { AcceptanceCriterion, EntityDetail, EntitySummary } from '@tm8/cont
 import type { SessionLiveness } from '../../data/seam';
 import type { ContentBlockRef, KindConfig, StatusSource } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
-import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
+import { Avatar, Chip, Eyebrow, Markdown, clockTime } from '../../kit';
 import type { FileUploadTask } from '../../files/upload';
 import { ProseField, type TriggerOption } from '../../rich-input';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
@@ -205,6 +205,7 @@ export function SubtreeBody({
         attach={attach}
         onAttached={onAttached}
       />
+      <LiveSessionSection runs={runs} livenessOf={livenessOf} onOpenEntity={onOpenEntity} />
       <AcceptanceSection
         detail={detail}
         draft={criteriaDraft}
@@ -758,6 +759,75 @@ function SubtreeRow({ child, onOpenEntity }: { child: EntitySummary; onOpenEntit
       {word ? <span className={`sb-word sb-word--${tone}`}>{word}</span> : null}
     </button>
   );
+}
+
+// ---------------------------------------------------------------------------
+// LIVE SESSION — the Phase 3 (2026-08-15) card: the run(s) with a live process
+// RIGHT NOW, promoted above the fold so "who is on this at this moment" does
+// not have to be read out of the history below.
+// ---------------------------------------------------------------------------
+
+/**
+ * Rendered ONLY when at least one run MEASURES live — `livenessOf` is the one
+ * authority (D6: the stored `state.status` says "running" for a session whose
+ * node restarted, and drawing a LIVE card off it is the exact lie the
+ * two-source rule forbids). No verdict, or no live verdict, means NO section:
+ * absence here is honest quiet, and the RUNS region below still accounts for
+ * every run, verdicts and hollows included.
+ */
+function LiveSessionSection({
+  runs,
+  livenessOf,
+  onOpenEntity,
+}: {
+  runs: readonly EntitySummary[];
+  livenessOf?: (sessionId: string) => SessionLiveness | undefined;
+  onOpenEntity?: (id: string) => void;
+}) {
+  if (!livenessOf) return null;
+  const live = runs.filter((run) => livenessOf(run.id) === 'live');
+  if (live.length === 0) return null;
+
+  return (
+    <section className="sb-section" data-testid="live-session-section">
+      <Eyebrow faint>{live.length === 1 ? 'LIVE SESSION' : `LIVE SESSIONS · ${live.length}`}</Eyebrow>
+      {live.map((run) => {
+        const config = getKind(run.kind);
+        const treatment = config.list.liveTreatment?.('live');
+        const state = run.state as unknown as Record<string, unknown>;
+        const model = typeof state.model === 'string' ? state.model : null;
+        const started = typeof state.startedAt === 'string' ? startedWord(state.startedAt) : null;
+        return (
+          <button
+            type="button"
+            className="sb-livecard"
+            data-testid="live-session-card"
+            key={run.id}
+            onClick={() => onOpenEntity?.(run.id)}
+          >
+            <span className="sb-run__dot sb-run__dot--run" aria-hidden />
+            <span className="sb-livecard__main">
+              <span className="sb-livecard__title">{run.title}</span>
+              <span className="sb-livecard__meta">
+                <Avatar actorId={run.createdBy.id} provenance={run.createdBy.isAgent ? 'agent' : 'human'} label={run.createdBy.displayName} size={15} src={run.createdBy.avatar ?? null} />
+                {run.createdBy.displayName}
+                {model ? <> · {model}</> : null}
+                {started ? <> · {started}</> : null}
+              </span>
+            </span>
+            <span className="sb-livecard__spacer" />
+            <span className="sb-word sb-word--run">{treatment?.shortLabel ?? treatment?.label ?? 'live'}</span>
+          </button>
+        );
+      })}
+    </section>
+  );
+}
+
+/** "started HH:MM" through the ONE shared clock; an unparsable stamp says nothing. */
+function startedWord(iso: string): string | null {
+  const clock = clockTime(iso);
+  return clock === '' ? null : `started ${clock}`;
 }
 
 // ---------------------------------------------------------------------------

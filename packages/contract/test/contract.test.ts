@@ -30,7 +30,13 @@ const taskSummary: EntitySummary = {
   createdBy: actor, counters,
   state: {
     kind: 'task', workStatus: 'open', priority: 'medium', axes: {},
-    assignees: [], acceptance: { total: 0, completed: 0 },
+    assignees: [actor],
+    assignments: [{
+      assignee: actor,
+      assignedBy: null,
+      assignedAt: '2026-07-25T12:00:00.000Z',
+    }],
+    acceptance: { total: 0, completed: 0 },
   },
   badges: {},
 };
@@ -166,6 +172,12 @@ describe('DTO schemas', () => {
     const base = { spaceId: '019f9896-928d-79b6-ba1c-1cdcc1d30a6f' };
     expect(CollectionQuerySchema.safeParse({ ...base, filters: { sessionStatus: ['running', 'idle'] } }).success).toBe(true);
     expect(CollectionQuerySchema.safeParse({ ...base, filters: { workStatus: ['open'] } }).success).toBe(true);
+    expect(CollectionQuerySchema.safeParse({
+      ...base,
+      filters: {
+        assignedByIds: ['019f9896-928d-7a24-848b-4c8fdd82b761'],
+      },
+    }).success).toBe(true);
     expect(CollectionQuerySchema.safeParse({ ...base, filters: { sessionStatus: ['sleeping'] } }).success).toBe(false);
 
     // …but the kind-disjoint PAIR is refused, not silently empty: no row is
@@ -178,6 +190,18 @@ describe('DTO schemas', () => {
     expect(pair.success).toBe(false);
     if (!pair.success) {
       expect(JSON.stringify(pair.error.issues)).toContain('kind-disjoint');
+    }
+
+    // The priority axis obeys the same law: task-only, so pairing it with
+    // sessionStatus is another always-empty conjunction that must refuse.
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { priority: ['high'] } }).success).toBe(true);
+    const priorityPair = CollectionQuerySchema.safeParse({
+      ...base,
+      filters: { priority: ['high'], sessionStatus: ['running'] },
+    });
+    expect(priorityPair.success).toBe(false);
+    if (!priorityPair.success) {
+      expect(JSON.stringify(priorityPair.error.issues)).toContain('kind-disjoint');
     }
   });
 

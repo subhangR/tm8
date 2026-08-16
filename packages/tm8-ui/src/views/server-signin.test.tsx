@@ -258,9 +258,12 @@ describe('signing in to the active server from inside the workspace', () => {
     const frame = await screen.findByTestId('auth-frame');
     expect(frame.getAttribute('data-frame')).toBe('1d');
     expect(screen.queryByText(/Can’t reach the tm8 node/)).toBeNull();
-    // INSIDE the workspace: the rail is still there — this is the in-shell
-    // sign-in, not AuthGate's full-screen gate replacing the app.
-    expect(screen.getByTestId('menu-rail')).toBeTruthy();
+    // INSIDE the workspace: the shell chrome is still there — this is the
+    // in-shell sign-in, not AuthGate's full-screen gate replacing the app.
+    // The witness is the TAB BAR, not the rail: revision 13 landed the boot on
+    // the conversation surface, which belongs to no group and so draws no rail
+    // even when everything is healthy.
+    expect(screen.getByTestId('space-tab-bar')).toBeTruthy();
 
     // The refusal is parked on the session store, not retried on a timer.
     await new Promise((resolve) => setTimeout(resolve, 50));

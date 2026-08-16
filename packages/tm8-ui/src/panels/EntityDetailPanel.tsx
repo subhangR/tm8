@@ -909,7 +909,18 @@ function PanelBody(
     );
   }
   if (tab === 'connections') {
-    return <ConnectionsTab detail={detail} connections={props.connections} onOpenEntity={onOpenEntity} />;
+    return (
+      <ConnectionsTab
+        detail={detail}
+        connections={props.connections}
+        onOpenEntity={onOpenEntity}
+        /* The SAME surface the session's Graph chip renders, offered here for
+           every other kind — see the tab's docblock. Sessions never reach this
+           arm (the terminal archetype returns above with its own chip), so no
+           entity gets two entrances to the same canvas. */
+        graph={props.graphSurface}
+      />
+    );
   }
   if (tab === 'activity') {
     return <ActivityTab items={props.activity ?? []} />;

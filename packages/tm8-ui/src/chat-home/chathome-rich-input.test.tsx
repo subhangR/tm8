@@ -70,8 +70,8 @@ describe('a pasted file rides the chat prompt', () => {
       />,
     );
 
-    await waitFor(() => expect(view.getByRole('button', { name: /new/i })).toBeTruthy());
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
+    await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
 
     const field = view.getByLabelText('Message the chat agent');
     fireEvent.paste(field, clipboard([pdf()]));

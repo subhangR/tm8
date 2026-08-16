@@ -57,7 +57,16 @@ describe('Chat Home stability', () => {
     const gated = gateReads(port);
     const view = render(<ChatHomeScreen port={gated.port} spaceId={SPACE_ID} models={MODELS} />);
     act(() => gated.release());
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    // Scoped to the PANEL row. The working-set tab strip forced this (it made
+    // a bare text query match twice) and revision 14 removed the strip again,
+    // but the scoping is KEPT: the panel row is precisely what "the thread has
+    // loaded into the list" means here, where a bare query would also accept
+    // the conversation head. Same for the two cases below.
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
 
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Quick follow-up.' },
@@ -91,7 +100,11 @@ describe('Chat Home stability', () => {
   it('sends on plain Enter and keeps Shift+Enter as a newline', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
 
     const composer = view.getByLabelText('Message the chat agent');
     fireEvent.change(composer, { target: { value: 'Line one' } });
@@ -137,7 +150,11 @@ describe('Chat Home stability', () => {
   it('marks a sidebar thread live when its frames stream while it is not active', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+    await waitFor(() =>
+      expect(view.container.querySelector('.tch-thread__title')?.textContent).toBe(
+        'Plan the launch sequence',
+      ),
+    );
 
     act(() => {
       controls.emit({
@@ -169,12 +186,12 @@ describe('Chat Home cross-thread and multiplayer safety', () => {
     await waitFor(() => expect(controls.posts).toHaveLength(1));
 
     // Switch to the new-thread composer while the post-send read is gated.
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
-    await waitFor(() => expect(view.getByText('What should we work on?')).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
+    await waitFor(() => expect(view.getByText(/New conversation — pick a mode/)).toBeTruthy());
     act(() => gated.release());
 
     // Thread A's snapshot must not overwrite the new-thread screen.
-    await waitFor(() => expect(view.getByText('What should we work on?')).toBeTruthy());
+    await waitFor(() => expect(view.getByText(/New conversation — pick a mode/)).toBeTruthy());
     expect(view.queryByTestId('chat-usage-card')).toBeNull();
   });
 
@@ -271,7 +288,7 @@ describe('Chat Home snapshot reconciliation', () => {
     fireEvent.keyDown(view.getByLabelText('Message the chat agent'), { key: 'Enter' });
     await waitFor(() => expect(controls.posts).toHaveLength(1));
 
-    fireEvent.click(view.getByRole('button', { name: /new/i }));
+    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
     const composer = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
     fireEvent.change(composer, { target: { value: 'Fresh draft for a new conversation.' } });
     act(() => gated.release());

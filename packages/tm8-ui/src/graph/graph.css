@@ -442,6 +442,10 @@
 
 .gv-node__meta--ghost { color: var(--pn-block); }
 
+/* The hub badge — "◈27". Deliberately quiet: it explains the partition, it does
+   not claim the node is more important than the work around it. */
+.gv-node__meta--hub { color: var(--pn-ink-2); }
+
 /* The fold badge — "+12" on a hub that swallowed twelve leaves. Brand-soft so
    it reads as an available expansion, and it must stay legible when the card is
    dimmed by a hover neighborhood or a search miss (see the --dim rules). */

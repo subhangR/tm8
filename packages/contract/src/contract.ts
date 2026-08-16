@@ -115,9 +115,18 @@ export interface EntitySummary {
   badges: EntityBadges;
 }
 
+/** Provenance for one task's current `assigned_to` edge. */
+export interface TaskAssignment {
+  assignee: ActorSummary;
+  assignedBy: ActorSummary | null;
+  assignedAt: string;
+}
+
 export type CoreEntityState =
   | { kind: 'task'; workStatus: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; assignees: ActorSummary[];
+      /** Additive: absent on payloads produced before assignment provenance shipped. */
+      assignments?: TaskAssignment[];
       acceptance: { total: number; completed: number };
       /**
        * 082's opt-in completion gate, ADDITIVE and OPTIONAL. 'pr_merged'
@@ -536,6 +545,14 @@ export interface CollectionQuery {
   parentId?: EntityId | null;
   filters?: {
     workStatus?: WorkStatus[]; axes?: Record<string, string[]>; assigneeIds?: EntityId[];
+    /**
+     * Additive (Board tab wave, 2026-08-16): tasks at any of these priorities.
+     * Same kind-narrowing semantics as `workStatus` — priority lives on the
+     * task arm only, so a non-task row never matches.
+     */
+    priority?: ('low'|'medium'|'high'|'urgent')[];
+    /** Tasks with any current assignment performed by one of these actors. */
+    assignedByIds?: EntityId[];
     edge?: { type: string; direction: 'incoming'|'outgoing'; entityId: EntityId };
     readyToPull?: boolean; inReviewForActorId?: EntityId; mentionedActorId?: EntityId;
     /**
@@ -566,10 +583,29 @@ export interface CollectionQuery {
      * zero is worse than a refusal that names the mechanism.
      */
     sessionStatus?: WorkSessionStatus[];
+    /**
+     * Additive: entities whose `activityAt` is at or after this instant — a
+     * TIME WINDOW, expressed as an absolute ISO timestamp rather than a
+     * duration so the server never has to agree with the caller about "now".
+     *
+     * The graph canvas is why this exists. `activityAt_desc` is already the
+     * default sort, so a bounded read has always returned a RANK window ("the
+     * newest N"), and a rank window cannot answer "what happened today" — the
+     * caller learns how many things it got, never how far back they reach. A
+     * clock predicate makes the window a property of the QUERY, so a client
+     * offering "last hour / last day / last week" is describing what it asked
+     * for instead of describing what happened to arrive.
+     *
+     * Still bounded by `limit` like every other read: a window wider than the
+     * page returns its most recent page, and a full page is the caller's
+     * signal that more of the window exists.
+     */
+    activeSince?: string;
     deleted?: 'exclude'|'only'|'include';
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
-  groupBy?: 'workStatus'|'assignee'|`axis:${string}`;
+  /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
+  groupBy?: 'workStatus'|'assignee'|'priority'|`axis:${string}`;
   sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'priority';
   cursor?: Cursor; limit?: number;
 }
@@ -1895,7 +1931,11 @@ export type InvitePreview =
  * `message` KIND: `message` stays excluded from `MenuKindRef` because it is
  * anchored, slugless and has no collection list, which is precisely why the
  * conversation surface needs a view ref of its own to be addressable. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages';
+/** `board` added 2026-08-16 (same R4 additive widening) for the task Board —
+ * the full-screen kanban over the task collection (switchable grouping,
+ * priority/assignee filters). A VIEW: it renders the `task` KIND's rows, so
+ * no kind ref moves; the tab is a presentation of an existing collection. */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -1957,28 +1997,53 @@ export const DEFAULT_MENU_WORKSPACE_KIND_SPINE = [
 ] as const satisfies readonly MenuKindRef[];
 
 /**
- * The ordered rows in the default Chats group (single-home ruling, 2026-08-14):
- * the conversation surfaces, clustered — the channel collection and the
- * cross-entity Messages browser. Live voice rooms are appended beneath them at
- * runtime (GateApp's dynamic group), exactly as the old Voice group worked.
+ * The ordered rows in the default Channels group (five-tab ruling R2/R4,
+ * 2026-08-15; formerly the Chats group of the single-home ruling): the
+ * conversation surfaces, clustered — the channel collection and the
+ * cross-entity Messages browser (D2: `messages` moved here rather than dying
+ * with the retired `chats` group). Live voice rooms are appended beneath them
+ * at runtime (GateApp's dynamic group), exactly as the old Voice group worked.
  * Same twin-joining job as the other spines: the server seeder and the client
  * fallback each prove their copy against this list.
  */
-export const DEFAULT_MENU_CHATS_SPINE = [
+export const DEFAULT_MENU_CHANNELS_SPINE = [
   { type: 'kind', ref: 'channel' },
   { type: 'view', ref: 'messages' },
 ] as const satisfies readonly MenuItem[];
 
 /**
- * The ordered caret children beneath the default Code row (the `git` view).
- * The dev-tracking collections live under one caret rather than as four
- * always-visible rows — the same trim the Workspace caret already made.
+ * The three dev-tracking collections. R3 (2026-08-15): "code is not a
+ * top-level anything" — the `code` group is retired and these become ordinary
+ * Work rows beside the Workspace caret, with the `git` view surviving as a
+ * plain Work row too (D1). The constant keeps its name because the pre-125
+ * defaults in persisted Space menus still carry it as the Code caret and the
+ * upgrade migrations characterize against that shape.
  */
 export const DEFAULT_MENU_CODE_KIND_SPINE = [
   'project',
   'pull_request',
   'worktree',
 ] as const satisfies readonly MenuKindRef[];
+
+/**
+ * The ordered items of the default Work group under the five-tab ruling
+ * (R2/R3/D1, 2026-08-15): the Workspace caret with its eight kinds, then the
+ * three dev collections as ordinary rows and the git topology view as a plain
+ * row. No `files` view here — the File browser is its own TAB (user
+ * amendment, same day) and menu refs are globally unique, so the row cannot
+ * also live in Work; the `file` KIND stays in the Workspace caret (owner
+ * ruling R9's two doors, now on two tabs). One list so the seeder (migration
+ * 125) and the client fallback prove the whole group against a single truth.
+ */
+export const DEFAULT_MENU_WORK_ITEM_SPINE = [
+  {
+    type: 'view',
+    ref: 'workspace',
+    children: DEFAULT_MENU_WORKSPACE_KIND_SPINE.map((ref) => ({ type: 'kind' as const, ref })),
+  },
+  ...DEFAULT_MENU_CODE_KIND_SPINE.map((ref) => ({ type: 'kind' as const, ref })),
+  { type: 'view', ref: 'git' },
+] satisfies readonly MenuItem[];
 
 /**
  * The ordered rows in the default Library group.
@@ -2022,20 +2087,60 @@ export const DEFAULT_MENU_LIBRARY_SPINE = [
  * Additive export only: no schema, operation, or DTO changes ride on it.
  */
 export const DEFAULT_MENU_GROUP_SPINE = [
-  // 2026-08-14 (single-home ruling): the rail reorganized around INTENTS
-  // rather than kinds — six groups, ~8 always-visible rows. Home is the merged
-  // chat-first landing; Chats clusters the conversation surfaces (channel
-  // collection + Messages + live voice rows via the dynamic group, retiring the
-  // items-empty `voice` group); Workspace absorbs the Library rows behind its
-  // caret; Code is the old Tracking group behind the git row's caret; `collab`
-  // (the `member` row) left the shipped rail for the palette and the kind
-  // switcher. Inbox left the rail for the top-bar bell. Nothing was deleted:
-  // every ref keeps its route, its chord and its menu-editor eligibility.
-  { serverId: 'home', clientId: 'home' },
+  // 2026-08-15 (five-tab ruling R2, plus the same-day Files amendment): the
+  // groups ARE the top-level tabs —
+  //   home | work | graph | channels | files | settings
+  // drawn in the top row by the shell; the rail renders only the ACTIVE
+  // group's contents. R3 retired the `code` group: project / pull_request /
+  // worktree became ordinary Work rows and the git view survives as a plain
+  // Work row (D1). R4 renamed `chats` to `channels` — Home is the chat view,
+  // Channels is the channel kind's own tab (`messages` rides with it, D2).
+  // The File browser view is its own tab (user amendment) — it left Work
+  // because menu refs are globally unique. Nothing was deleted: every ref
+  // keeps its route, its chord and its menu-editor eligibility.
+  //
+  // (The pre-125 rail history — six intent clusters, Chats group, Code caret —
+  // is characterized by migrations 122-124 and their parity tests.)
+  //
+  // LATER THE SAME DAY (conversation-axis ruling, migration 126): the `home`
+  // GROUP is retired, leaving —
+  //   work | graph | channels | files | settings
+  // Home stopped being a destination and became the CONTAINER: the
+  // conversation surface the shell falls back to. A tab for it, plus a rail
+  // row inside that tab repeating its own name, were two more doors to the
+  // place you were already standing in. The `dashboard` VIEW REF is
+  // untouched — still registered, still routable, still the
+  // no-remembered-place landing, still offerable through the menu editor.
+  // A rail edit, not a feature removal: the same posture 125 took toward
+  // `chats` and `code`.
+  //
+  // AND REVERSED THE SAME DAY (user ruling, migration 127): a group leads
+  // `dashboard` again, now named CHATS —
+  //   chats | work | graph | channels | files | settings
+  // 126 read the redundancy correctly and drew the wrong conclusion from it.
+  // The duplicated door was the RAIL ROW, not the tab: standing on the
+  // conversation surface, the rail drew one row repeating the tab's own name.
+  // Retiring the group deleted the tab too, which left the brand mark as the
+  // only way back to conversations — a door with no label, discoverable only
+  // by guessing. So the tab returns and the RAIL is what stays gone:
+  // `dashboard` joins the railless view refs (tm8-ui `menu-resolve.ts`), and
+  // the surface is exactly two panes — the conversation LIST is the
+  // navigation, and it belongs to the screen.
+  //
+  // The id is `chats` on both sides. It is free: 125 RENAMED the old `chats`
+  // group to `channels` (it was the channel collection's group, never this
+  // surface's), so nothing else claims it and no space can hold both.
   { serverId: 'chats', clientId: 'chats' },
   { serverId: 'work', clientId: 'workspace' },
-  { serverId: 'code', clientId: 'code' },
+  // 2026-08-16 (Board tab wave, migration 130): the task kanban is its own
+  // full-bleed tab beside Work — a railless group holding the single `board`
+  // VIEW, the same posture as graph/files/chats. It PRESENTS the task
+  // collection; the `task` kind row stays in the Workspace caret, so this is
+  // a second door to tasks, not a move (the R9 two-doors posture files set).
+  { serverId: 'board', clientId: 'board' },
   { serverId: 'graph', clientId: 'graph' },
+  { serverId: 'channels', clientId: 'channels' },
+  { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },
 ] as const;
 

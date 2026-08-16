@@ -1,16 +1,19 @@
 /**
  * EntityView — the per-kind screen every rail kind-row opens.
  *
- * THE 2026-07-31 USER RULING, which supersedes D65's wide-list-in-the-middle:
- * an entity screen is a THREE-REGION READING SURFACE, not a list with a peek.
+ * THE 2026-08-15 WORK-TAB RULING (Phase 3, refs/03-workspace.png), which
+ * supersedes the 2026-07-31 centre-is-the-entity arrangement: the Work tab is
+ * a THREE-PANE surface whose CENTRE is the collection.
  *
- *   LEFT   the entity list panel — the SAME `EntityListPanel` the workspace
- *          uses (search, filter chips, lifecycle tabs, sections, tiles), at a
- *          fixed rail width. Not the wide `EntityTree`: the list is now a
- *          navigator, and a navigator wants search more than it wants width.
- *   CENTRE the COMPLETE entity — `EntityDetailPanel` with the whole remaining
- *          width, not a 440px aside. This is the screen's subject.
- *   RIGHT  the AUX column, opened by clicking something INSIDE the centre:
+ *   CENTRE the entity list / board — the SAME `EntityListPanel` the workspace
+ *          uses (search, filter chips, lifecycle tabs, sections, tiles),
+ *          taking the width the detail column does not. The collection is the
+ *          subject of this screen now; the rail beside it (MenuRail) holds the
+ *          collections and views, so this list no longer needs to be one.
+ *   RIGHT  the DETAIL PANEL — `EntityDetailPanel` at a viewer-set reading
+ *          width, opened by selecting a row. Empty, it holds the space-wide
+ *          attention triage rather than a blank.
+ *   FAR RIGHT the AUX column, opened by clicking something INSIDE the detail:
  *          a linked entity, Discussion, or Connections. Absent until asked
  *          for; it never reserves space it is not using.
  *
@@ -27,7 +30,7 @@
  * per-kind facts on this screen — tiles, sections, filters, body archetype —
  * were already registry DATA before this change.
  *
- * ESC WALKS DOWN ONE RUNG PER PRESS: aux → centre → list.
+ * ESC WALKS DOWN ONE RUNG PER PRESS: aux → detail → list.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, EntityKind, ExecutionSpawnInput, WorkSessionInteractionProfileProjection } from '@tm8/contract';
@@ -40,7 +43,7 @@ import {
   type PanelTab,
 } from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
-import { PanelResizer, useElementWidth, usePanelFlag, usePanelWidth } from '../kit';
+import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
 import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
 import { getKind } from '../domain/registry';
@@ -157,16 +160,14 @@ const AUX_TABS = new Set<PanelTab>(['discussion', 'connections']);
  * minus this floor, never from a breakpoint.
  * ------------------------------------------------------------------------- */
 
-/** The list rail is a navigator: wide enough to read a title, never a column. */
-export const EV_LIST_MIN = 220;
-export const EV_LIST_DEFAULT = 320;
 /** Same reading width the workspace's stacked panel uses — same content. */
 export const EV_AUX_MIN = 320;
 export const EV_AUX_DEFAULT = 420;
-/** The subject's floor. Nothing outbids the centre (D63's rule, one level up). */
+/** The subject's floor — the LIST now (Phase 3): nothing outbids the centre. */
 export const EV_CENTER_MIN = 420;
-/** Collapsed, the rail keeps a strip — a hidden panel with no way back is a trap. */
-export const EV_LIST_COLLAPSED = 34;
+/** The detail column: a reading panel, floored where its bodies stay legible. */
+export const EV_DETAIL_MIN = 380;
+export const EV_DETAIL_DEFAULT = 560;
 
 /**
  * THE CHROME BETWEEN THE COLUMNS IS PART OF THE BUDGET.
@@ -283,24 +284,22 @@ export function EntityView(props: EntityViewProps) {
   /*
    * THE COLUMN GEOMETRY — stored preference, measured clamp.
    *
-   * Two numbers per column, deliberately: `listPref.width` is what the viewer
-   * ASKED for and outlives a narrow window, while `listWidth` below it is what
-   * currently FITS. Clamping on write instead would let one narrow window
-   * silently overwrite a preference the viewer set on a wide one.
-   *
-   * The widths are keyed per kind, not per screen instance. Someone who wants a
-   * wide list for Tasks and a narrow one for Docs gets both, and the choice
-   * survives a reload the way the theme does.
+   * Two numbers per column, deliberately: `detailPref.width` is what the
+   * viewer ASKED for and outlives a narrow window, while `detailWidth` below
+   * it is what currently FITS. Clamping on write instead would let one narrow
+   * window silently overwrite a preference the viewer set on a wide one.
    */
   const rootRef = useRef<HTMLDivElement | null>(null);
   const rootWidth = useElementWidth(rootRef);
-  const listPref = usePanelWidth(`entity.${kind}.list`, EV_LIST_DEFAULT, EV_LIST_MIN);
+  /* ONE detail width for every kind — it is a READING width, like the aux
+     column's, not a per-collection preference the way the old list rail's was:
+     the content in it (a detail panel) has the same measure whatever the kind. */
+  const detailPref = usePanelWidth('entity.detail', EV_DETAIL_DEFAULT, EV_DETAIL_MIN);
   const auxPref = usePanelWidth('entity.aux', EV_AUX_DEFAULT, EV_AUX_MIN);
-  const [listCollapsed, setListCollapsed] = usePanelFlag(`entity.${kind}.list-collapsed`, false);
 
-  /* On the board the list IS the screen — it takes the whole width and there is
-     no centre to protect, so neither the drag nor the collapse applies. */
-  const listResizable = !boardMode && !listCollapsed;
+  /* On the board the list IS the whole screen — there is no detail column to
+     size, so the drag does not apply. */
+  const detailResizable = !boardMode;
   /*
    * BEFORE THE FIRST MEASUREMENT, THE WINDOW STANDS IN FOR THE ROOT.
    *
@@ -314,19 +313,18 @@ export function EntityView(props: EntityViewProps) {
   const outerWidth = rootWidth > 0
     ? rootWidth
     : (typeof window === 'undefined' ? 0 : window.innerWidth);
-  /* Every term the centre does NOT get: the other column's width, and the
-     separator + hairline each side column costs on top of it. The list keeps
-     its chrome while collapsed — the strip still has a border and the separator
-     is still mounted — so `SIDE_CHROME` is unconditional on that side. */
+  /* Every term the centre list does NOT get: each side column's width, plus
+     the separator + hairline that column costs on top of it (the WLT Σb term —
+     see the SIDE_CHROME comment above). */
   const auxRoom = aux ? auxPref.width + SIDE_CHROME : 0;
-  const listRoom = listCollapsed ? EV_LIST_COLLAPSED : EV_LIST_MIN;
-  const listMax = Math.max(EV_LIST_MIN, outerWidth - EV_CENTER_MIN - SIDE_CHROME - auxRoom);
-  const listWidth = listCollapsed
-    ? EV_LIST_COLLAPSED
-    : clampWidth(listPref.width, EV_LIST_MIN, listMax);
+  const detailMax = Math.max(
+    EV_DETAIL_MIN,
+    outerWidth - EV_CENTER_MIN - SIDE_CHROME - auxRoom,
+  );
+  const detailWidth = clampWidth(detailPref.width, EV_DETAIL_MIN, detailMax);
   const auxMax = Math.max(
     EV_AUX_MIN,
-    outerWidth - EV_CENTER_MIN - SIDE_CHROME - listRoom - SIDE_CHROME,
+    outerWidth - EV_CENTER_MIN - SIDE_CHROME - (EV_DETAIL_MIN + SIDE_CHROME),
   );
   const auxWidth = clampWidth(auxPref.width, EV_AUX_MIN, auxMax);
 
@@ -398,6 +396,8 @@ export function EntityView(props: EntityViewProps) {
       onSetState: rowLifecycle.setState,
       onArchive: rowLifecycle.archive,
       onSetValue: rowLifecycle.setValue,
+      onSetAxis: rowLifecycle.setAxis,
+      taskAxes: data.taskAxes,
       onAssign: rowLifecycle.assign,
       assignableActors: rowLifecycle.assignable,
       onMembership: rowLifecycle.membership,
@@ -798,14 +798,13 @@ export function EntityView(props: EntityViewProps) {
       data-mode={selectedId ? 'detail' : 'list'}
       data-aux={aux ? aux.sort : 'none'}
       data-layout={boardMode ? 'board' : 'columns'}
-      data-list-collapsed={listCollapsed && !boardMode ? true : undefined}
       /* The solved widths reach the stylesheet as custom properties rather than
          as inline widths on each column, so the CSS keeps owning the floors and
          the borders while this file owns the arithmetic. */
       style={{
-        '--ev-list': `${listWidth}px`,
+        '--ev-detail': `${detailWidth}px`,
         '--ev-aux': `${auxWidth}px`,
-        '--ev-list-min': `${EV_LIST_MIN}px`,
+        '--ev-detail-min': `${EV_DETAIL_MIN}px`,
         '--ev-aux-min': `${EV_AUX_MIN}px`,
       } as React.CSSProperties}
     >
@@ -860,47 +859,12 @@ export function EntityView(props: EntityViewProps) {
         targetTitle={marksHost?.title ?? 'this memory'}
         skillOptions={data.skillOptions}
       />
-      {/* COLLAPSED, THE RAIL IS A STRIP, NOT A DISAPPEARANCE (L6). The list is
-          how you change the subject of this screen; hiding it with no visible
-          way back would strand a viewer who collapsed it by accident. The strip
-          carries the reopen control and the kind's own label, so it says what
-          bringing it back would bring back. */}
-      {listCollapsed && !boardMode ? (
-        <section
-          className="ev-list ev-list--collapsed"
-          id="entity-view-list"
-          aria-label={`${config.labelPlural} list, collapsed`}
-        >
-          <button
-            type="button"
-            className="ev-list__toggle"
-            data-testid="entity-view-list-expand"
-            aria-expanded={false}
-            title={`Show the ${config.labelPlural.toLowerCase()} list`}
-            aria-label={`Show the ${config.labelPlural.toLowerCase()} list`}
-            onClick={() => setListCollapsed(false)}
-          >
-            <span aria-hidden>»</span>
-          </button>
-          <span className="ev-list__spine" aria-hidden>{config.labelPlural}</span>
-        </section>
-      ) : (
+      {/* THE CENTRE (Phase 3): the collection itself. The old collapse-to-a-
+          strip control retired with the flip — the list is the SUBJECT of the
+          screen now, and collapsing the subject would leave the screen with
+          nothing the viewer came for. The detail column is the one that opens
+          and closes, and it closes through its own ✕. */}
       <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
-        {/* NOT OFFERED ON THE BOARD: there the list is the subject of the
-            screen, so collapsing it would leave nothing behind. */}
-        {boardMode ? null : (
-          <button
-            type="button"
-            className="ev-list__toggle ev-list__toggle--floating"
-            data-testid="entity-view-list-collapse"
-            aria-expanded
-            title={`Hide the ${config.labelPlural.toLowerCase()} list`}
-            aria-label={`Hide the ${config.labelPlural.toLowerCase()} list`}
-            onClick={() => setListCollapsed(true)}
-          >
-            <span aria-hidden>«</span>
-          </button>
-        )}
         <EntityListPanel
           kind={kind}
           rowsFor={data.rowsFor(kind)}
@@ -943,6 +907,8 @@ export function EntityView(props: EntityViewProps) {
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
           onSetValue={rowLifecycle.setValue}
+          onSetAxis={rowLifecycle.setAxis}
+          taskAxes={data.taskAxes}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
           onMembership={rowLifecycle.membership}
@@ -958,34 +924,34 @@ export function EntityView(props: EntityViewProps) {
           wiredActions={sessionStart.wiredActions}
         />
       </section>
-      )}
 
-      {/* The rail's drag handle. It stays MOUNTED while the rail is collapsed
-          and refuses instead (`disabled`), because a control that vanishes and
-          reappears under the cursor is how a resize gesture gets lost. */}
+      {/* The detail column's drag handle — the control the panel it sizes
+          hangs on, exactly as in the workspace. `side="right"` because the
+          column it controls sits to the handle's right. */}
       {boardMode ? null : (
         <PanelResizer
-          side="left"
-          label={`${config.labelPlural} list`}
-          controls="entity-view-list"
-          width={listWidth}
-          minWidth={EV_LIST_MIN}
-          maxWidth={listMax}
-          disabled={!listResizable}
-          onResize={listPref.setWidth}
-          onReset={listPref.reset}
+          side="right"
+          label={`${config.label} detail`}
+          controls="entity-view-detail"
+          width={detailWidth}
+          minWidth={EV_DETAIL_MIN}
+          maxWidth={detailMax}
+          disabled={!detailResizable}
+          onResize={detailPref.setWidth}
+          onReset={detailPref.reset}
         />
       )}
 
-      {/* NOT RENDERED ON THE BOARD. The board took this width; a centre that
+      {/* NOT RENDERED ON THE BOARD. The board took this width; a column that
           is only display:none would still mount the open entity's panel — its
           chat surface, its terminal, its polling — behind an invisible region. */}
       {boardMode ? null : (
         <main className="ev-detail" aria-label={`${config.label} detail`} data-testid="entity-view-detail">
-          {/* The blank centre is the space-wide triage list, not a placeholder:
-              every entity waiting on a human, its requests combined into one row.
-              Deliberately NOT filtered to `kind` — attention lives on entities,
-              so a doc waiting on you must show while the Tasks list is open. */}
+          {/* The empty detail column is the space-wide triage list, not a
+              placeholder: every entity waiting on a human, its requests
+              combined into one row. Deliberately NOT filtered to `kind` —
+              attention lives on entities, so a doc waiting on you must show
+              while the Tasks list is open. */}
           {detailPanel ?? (
             <AttentionInbox
               seam={data.seam}
@@ -1074,6 +1040,14 @@ export function EntityView(props: EntityViewProps) {
                 detail={detail}
                 connections={data.connectionsOf(detail.id)}
                 onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
+                /* The same canvas the panel's own Connections tab offers. A
+                   surface present in one column and missing from the other
+                   would read as a defect in the entity rather than a choice
+                   about this column — and the column is wide enough to be a
+                   real second reading of the same edges. */
+                graph={graphSurfaceFor(data.seam, detail.id, data.livenessOf, (id) =>
+                  setAux({ sort: 'entity', id: id as EntityId }),
+                )}
               />
             ) : (
               <EmptyBody sentence="The entity this panel belongs to is no longer open." />
