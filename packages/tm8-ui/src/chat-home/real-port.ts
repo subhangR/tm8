@@ -153,7 +153,10 @@ export function createChatHomePortFromSeam(
         summary: {
           rootId: item.rootMessageId,
           title: root.content.body || 'Conversation',
-          preview: messages[messages.length - 1]?.content.body || 'No text response',
+          // An in-flight turn's body is the claim placeholder ('Agent turn in
+          // progress.'), not content — preview the last settled message instead.
+          preview: [...messages].reverse().find((message) => !message.turnInFlight)?.content.body
+            || 'No text response',
           updatedAt: item.lastReplyAt ?? item.createdAt,
           replyCount: replies.items.length,
           config: {
