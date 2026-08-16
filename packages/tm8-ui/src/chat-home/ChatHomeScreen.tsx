@@ -7,6 +7,7 @@ import type { FileUploadTask } from '../files/upload';
 import { DisabledIconControl } from '../panels/honesty/DisabledWithReason';
 import {
   AttachmentChips,
+  ComposerCard,
   TriggerPopover,
   skillReference,
   useRichInput,
@@ -1160,9 +1161,10 @@ export function ChatHomeScreen({
               Turn stopped · this thread is continuable. Send another message to resume.
             </p>
           ) : null}
-          <div className="tch-composer">
-            <AttachmentChips attachments={attachments} testId="tch-attachments" />
-            <div className="ri-host">
+          <ComposerCard
+            className="tch-composer"
+            above={<AttachmentChips attachments={attachments} testId="tch-attachments" />}
+            field={<>
               <textarea
                 ref={composer}
                 value={draft}
@@ -1187,8 +1189,8 @@ export function ChatHomeScreen({
                 emptyText="No matching skills"
                 testId="tch-skill-picker"
               />
-            </div>
-            <div className="tch-composer__foot">
+            </>}
+            foot={<>
               {attach ? (
                 <ChooseFilesControl
                   label="Attach a file"
@@ -1298,8 +1300,8 @@ export function ChatHomeScreen({
               >
                 Send <span aria-hidden>↑</span>
               </button>
-            </div>
-          </div>
+            </>}
+          />
         </div>
       </section>
     </main>

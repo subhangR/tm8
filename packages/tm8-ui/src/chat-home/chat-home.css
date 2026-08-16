@@ -586,47 +586,8 @@ button.tch-entity-chip:hover {
   border-color: color-mix(in srgb, var(--pn-wait) 45%, var(--pn-border));
 }
 
-.tch-composer {
-  /* VISIBLE, and that is a change with a reason: the skill picker pins above
-     the field (`.ri-host` + `.ri-popover`), and `hidden` clips an absolutely
-     positioned descendant. It was here to round the textarea's corners
-     against the card, and the textarea's background is transparent — so the
-     rounding it bought was already the card's own. */
-  overflow: visible;
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-md);
-  background: var(--pn-card);
-  box-shadow: var(--pn-sh-md);
-}
-
-.tch-composer:focus-within { border-color: var(--pn-brand); }
-
-.tch-composer textarea {
-  display: block;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 58px;
-  resize: none;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--pn-ink);
-  font: 13px/1.45 var(--pn-ui);
-  padding: 11px 12px 4px;
-}
-
-.tch-composer textarea::placeholder { color: var(--pn-ink-4); }
-
-.tch-composer__foot {
-  display: flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 3px 7px 6px 11px;
-}
-
-/* Chips and the paste refusal sit ABOVE the field, inside the composer card,
-   so an attachment reads as part of the message being written. */
-.tch-composer .ri-attachments { padding: 9px 11px 0; }
+/* The card shell (border, field, foot geometry) is `ComposerCard`'s —
+   `.ri-card` in rich-input.css. Only what is genuinely Chat Home's stays. */
 
 /* The two sigil-and-file controls in the footer. Sized to the phase label
    beside them rather than to the Send button, which is the primary. */
