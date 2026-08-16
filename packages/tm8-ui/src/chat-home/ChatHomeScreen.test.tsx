@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
-import type { ChatHomePort, ChatModelOption } from './types';
+import type { ChatHomePort, ChatModelOption, ChatThreadDetail, ChatTurn } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const MODELS: ChatModelOption[] = [
@@ -21,6 +21,53 @@ const MODELS: ChatModelOption[] = [
     agentTool: 'codex',
   },
 ];
+
+function placeholderTurn(): ChatTurn {
+  return {
+    messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
+    role: 'assistant',
+    author: CHAT_HOME_FIXTURE_THREAD.turns[1]!.author,
+    createdAt: '2026-08-13T08:19:30.000Z',
+    // Written by the server onto the message body when the turn is claimed.
+    body: 'Agent turn in progress.',
+    parts: [],
+  };
+}
+
+/**
+ * The fixture port models the user's post and stops there. The server does one
+ * more thing the suppression rule turns on: it writes the placeholder when it
+ * CLAIMS the turn, which is strictly AFTER that post. `claimed` is what the
+ * claim adds — pass `[]` for the window where the post has landed and the
+ * claim has not.
+ */
+function claimingPort(thread: ChatThreadDetail, claimed: readonly ChatTurn[]): ChatHomePort {
+  const { port: base } = createChatHomeFixturePort([thread]);
+  let posted = false;
+  return {
+    ...base,
+    async postTurn(input) {
+      const result = await base.postTurn(input);
+      posted = true;
+      return result;
+    },
+    async readThread(rootId) {
+      const detail = await base.readThread(rootId);
+      return posted ? { ...detail, turns: [...detail.turns, ...claimed] } : detail;
+    },
+  };
+}
+
+async function sendInto(port: ChatHomePort) {
+  const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+  await waitFor(() => expect(view.getByText('Plan the launch sequence')).toBeTruthy());
+  fireEvent.change(view.getByLabelText('Message the chat agent'), {
+    target: { value: 'Keep going.' },
+  });
+  fireEvent.click(view.getByRole('button', { name: /send/i }));
+  await waitFor(() => expect(view.getByText('Agent is working')).toBeTruthy());
+  return view;
+}
 
 describe('Chat Home', () => {
   it('renders a thread, one stateful tool card, and actual usage', async () => {
@@ -228,21 +275,7 @@ describe('Chat Home', () => {
   });
 
   it('shows the pulse alone while a claimed turn has produced nothing yet', async () => {
-    const placeholder = structuredClone(CHAT_HOME_FIXTURE_THREAD);
-    placeholder.summary.state = 'streaming';
-    placeholder.turns = [
-      placeholder.turns[0]!,
-      {
-        messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
-        role: 'assistant',
-        author: placeholder.turns[1]!.author,
-        createdAt: '2026-08-13T08:19:30.000Z',
-        body: 'Agent turn in progress.',
-        parts: [],
-      },
-    ];
-    const { port } = createChatHomeFixturePort([placeholder]);
-    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    const view = await sendInto(claimingPort(CHAT_HOME_FIXTURE_THREAD, [placeholderTurn()]));
 
     await waitFor(() => expect(view.getByTestId('chat-thinking')).toBeTruthy());
     expect(view.queryByText('Agent turn in progress.')).toBeNull();
@@ -255,29 +288,19 @@ describe('Chat Home', () => {
    * one ordering to the left.
    */
   it('covers the claimed turn even when a later message follows it', async () => {
-    const thread = structuredClone(CHAT_HOME_FIXTURE_THREAD);
-    thread.summary.state = 'streaming';
-    thread.turns = [
-      thread.turns[0]!,
-      {
-        messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
-        role: 'assistant',
-        author: thread.turns[1]!.author,
-        createdAt: '2026-08-13T08:19:30.000Z',
-        body: 'Agent turn in progress.',
-        parts: [],
-      },
-      {
-        messageId: '019f0000-0000-7000-8000-0000000000a1' as EntityId,
-        role: 'user',
-        author: thread.turns[0]!.author,
-        createdAt: '2026-08-13T08:19:40.000Z',
-        body: 'One more thing while you work.',
-        parts: [],
-      },
-    ];
-    const { port } = createChatHomeFixturePort([thread]);
-    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    const view = await sendInto(
+      claimingPort(CHAT_HOME_FIXTURE_THREAD, [
+        placeholderTurn(),
+        {
+          messageId: '019f0000-0000-7000-8000-0000000000a1' as EntityId,
+          role: 'user',
+          author: CHAT_HOME_FIXTURE_THREAD.turns[0]!.author,
+          createdAt: '2026-08-13T08:19:40.000Z',
+          body: 'One more thing while you work.',
+          parts: [],
+        },
+      ]),
+    );
 
     await waitFor(() => expect(view.getByText('One more thing while you work.')).toBeTruthy());
     expect(view.getByTestId('chat-thinking')).toBeTruthy();
@@ -287,38 +310,73 @@ describe('Chat Home', () => {
   /**
    * `role` is derived from `author.isAgent` alone, so a message a teammate
    * posts into the thread by the ordinary writer is assistant-role with no
-   * parts — indistinguishable from a claimed placeholder. When two silent
-   * assistant turns exist we cannot know which one the pulse means, and
-   * swallowing a real message is far worse than a redundant progress line.
+   * parts — indistinguishable from a claimed placeholder. When two of them
+   * arrive together we cannot know which one the pulse means, and swallowing a
+   * real message is far worse than a redundant progress line.
    */
   it('never swallows a teammate message it cannot tell from a placeholder', async () => {
-    const thread = structuredClone(CHAT_HOME_FIXTURE_THREAD);
-    thread.summary.state = 'streaming';
-    thread.turns = [
-      thread.turns[0]!,
-      {
-        messageId: '019f0000-0000-7000-8000-000000000099' as EntityId,
-        role: 'assistant',
-        author: thread.turns[1]!.author,
-        createdAt: '2026-08-13T08:19:30.000Z',
-        body: 'Agent turn in progress.',
-        parts: [],
-      },
-      {
-        messageId: '019f0000-0000-7000-8000-0000000000a2' as EntityId,
-        role: 'assistant',
-        author: thread.turns[1]!.author,
-        createdAt: '2026-08-13T08:19:45.000Z',
-        body: 'Heads up: I am reading the storage lane first.',
-        parts: [],
-      },
-    ];
-    const { port } = createChatHomeFixturePort([thread]);
-    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    const view = await sendInto(
+      claimingPort(CHAT_HOME_FIXTURE_THREAD, [
+        placeholderTurn(),
+        {
+          messageId: '019f0000-0000-7000-8000-0000000000a2' as EntityId,
+          role: 'assistant',
+          author: CHAT_HOME_FIXTURE_THREAD.turns[1]!.author,
+          createdAt: '2026-08-13T08:19:45.000Z',
+          body: 'Heads up: I am reading the storage lane first.',
+          parts: [],
+        },
+      ]),
+    );
 
     await waitFor(() =>
       expect(view.getByText('Heads up: I am reading the storage lane first.')).toBeTruthy(),
     );
+    expect(view.getByText('Agent turn in progress.')).toBeTruthy();
+  });
+
+  /**
+   * A thread can already hold a silent teammate message before the user types.
+   * The UI reaches `streaming` on its own post, while the server writes the
+   * placeholder only once it CLAIMS the turn — so in that window the only
+   * silent assistant on screen is somebody's real message. Cardinality alone
+   * suppressed it. Nothing that predates our post can be our placeholder.
+   */
+  it('never suppresses a message that was already there when we posted', async () => {
+    const thread = structuredClone(CHAT_HOME_FIXTURE_THREAD);
+    thread.turns = [
+      thread.turns[0]!,
+      {
+        messageId: '019f0000-0000-7000-8000-0000000000a4' as EntityId,
+        role: 'assistant',
+        author: thread.turns[1]!.author,
+        createdAt: '2026-08-13T08:19:10.000Z',
+        body: 'Heads up: I am reading the storage lane first.',
+        parts: [],
+      },
+    ];
+    // Nothing claimed yet — exactly the window between our post and the
+    // server's placeholder write.
+    const view = await sendInto(claimingPort(thread, []));
+
+    await waitFor(() => expect(view.getByTestId('chat-thinking')).toBeTruthy());
+    expect(view.getByText('Heads up: I am reading the storage lane first.')).toBeTruthy();
+  });
+
+  /**
+   * After a reload there is no post to measure arrival against, and thread
+   * liveness is never read back from the server, so nothing identifies a
+   * placeholder. The durable body is then the only hint that surface has, and
+   * printing it is more honest than hiding an unidentified message.
+   */
+  it('keeps the durable body when a reload finds a claimed turn', async () => {
+    const thread = structuredClone(CHAT_HOME_FIXTURE_THREAD);
+    thread.summary.state = 'streaming';
+    thread.turns = [thread.turns[0]!, placeholderTurn()];
+    const { port } = createChatHomeFixturePort([thread]);
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() => expect(view.getByText('Agent turn in progress.')).toBeTruthy());
   });
 
   /**

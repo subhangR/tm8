@@ -118,6 +118,12 @@ export function ChatHomeScreen({
    *  after the post (ours or a successor), or by leaving the thread. */
   const expectingRootRef = useRef<EntityId | null>(null);
   const expectingMarkRef = useRef(0);
+  /** The turns already on screen when we posted, or null when we have not
+   *  posted into this thread. Nothing in that snapshot can be the turn our
+   *  pulse stands in for — the server writes the placeholder when it CLAIMS
+   *  the turn, strictly after our post — and with no snapshot at all there is
+   *  nothing to identify a placeholder by. */
+  const preTurnIdsRef = useRef<Set<string> | null>(null);
   /** Per-root single-flight for participant-message refreshes — one thread's
    *  pending refresh must not swallow another thread's. */
   const refreshingRootsRef = useRef<Set<string>>(new Set());
@@ -206,6 +212,7 @@ export function ChatHomeScreen({
     firstSeenRef.current.clear();
     if (expectingRootRef.current && expectingRootRef.current !== selectedRootId) {
       expectingRootRef.current = null;
+      preTurnIdsRef.current = null;
     }
     if (!selectedRootId) {
       setDetail(null);
@@ -344,7 +351,10 @@ export function ChatHomeScreen({
   );
   const busy = isBusyPhase(phase);
   const thinking = detail !== null && showThinking(phase, detail);
-  const pendingTurnId = detail !== null && thinking ? claimedSilentTurnId(phase, detail) : null;
+  const pendingTurnId =
+    detail !== null && thinking
+      ? claimedSilentTurnId(phase, detail, preTurnIdsRef.current)
+      : null;
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
   const selectionUnavailable =
@@ -415,6 +425,9 @@ export function ChatHomeScreen({
         setPhase('posting-turn');
         expectingRootRef.current = selectedRootId;
         expectingMarkRef.current = frameSeqRef.current;
+        preTurnIdsRef.current = new Set(
+          (detailRef.current?.turns ?? []).map((turn) => turn.messageId),
+        );
         await port.postTurn({
           threadRootId: selectedRootId,
           body,
@@ -475,6 +488,7 @@ export function ChatHomeScreen({
       // pulse honest until the first frame arrives.
       expectingRootRef.current = root.threadRootId;
       expectingMarkRef.current = frameSeqRef.current;
+      preTurnIdsRef.current = new Set();
       setSelectedRootId(root.threadRootId);
       setPhase('streaming');
       await refreshThreads(root.threadRootId);
@@ -520,6 +534,7 @@ export function ChatHomeScreen({
       if (activeRootRef.current === rootId) {
         liveTurnsRef.current.clear();
         expectingRootRef.current = null;
+        preTurnIdsRef.current = null;
         setDetail((current) => {
           const merged = reconcileDetails(current, stoppedDetail);
           return { ...merged, summary: { ...merged.summary, state: 'stopped-continuable' } };
@@ -962,18 +977,37 @@ function showThinking(phase: ComposerPhase, detail: ChatThreadDetail): boolean {
  * `streaming`, so a later user message can sit after the placeholder, and the
  * placeholder is then no longer the last row.
  *
- * So suppress only what is UNAMBIGUOUS: exactly one silent assistant turn,
- * while a turn really is streaming. Two of them and we cannot tell which the
- * pulse means — then neither is suppressed, because a redundant progress line
- * is a blemish and a swallowed message is data loss.
+ * Cardinality alone is not enough either: a thread can already hold a silent
+ * teammate message before we ever type, and it would then be the only silent
+ * assistant on screen. So candidacy is bounded by ARRIVAL — only rows that
+ * were not there when we posted, since the server writes the placeholder when
+ * it CLAIMS the turn, strictly after that post. Within that set, suppress only
+ * what is UNAMBIGUOUS: exactly one candidate. Two of them and we cannot tell
+ * which the pulse means, so neither is suppressed — a redundant progress line
+ * is a blemish, a swallowed message is data loss.
+ *
+ * With NO snapshot — a reload or a thread switch mid-turn — nothing identifies
+ * a placeholder at all, so nothing is suppressed and the durable body renders.
+ * That is the honest outcome while thread liveness is never read back from the
+ * server: the body is then the only hint that surface has.
+ *
+ * Candidacy asks for zero STORED parts, not zero rendered ones: a turn that
+ * stored only `done` draws nothing but is plainly finished, and is not what a
+ * pulse stands in for. (The body fallback still asks the projection — there
+ * the question is whether anything was drawn.)
  *
  * During the posting phases the pulse is announcing OUR OWN write, not any
  * turn on screen, so it stands in for nothing and suppresses nothing.
  */
-function claimedSilentTurnId(phase: ComposerPhase, detail: ChatThreadDetail): EntityId | null {
-  if (phase !== 'streaming') return null;
+function claimedSilentTurnId(
+  phase: ComposerPhase,
+  detail: ChatThreadDetail,
+  preTurnIds: ReadonlySet<string> | null,
+): EntityId | null {
+  if (phase !== 'streaming' || preTurnIds === null) return null;
   const silent = detail.turns.filter(
-    (turn) => turn.role === 'assistant' && projectTurnParts(turn.parts).length === 0,
+    (turn) =>
+      turn.role === 'assistant' && turn.parts.length === 0 && !preTurnIds.has(turn.messageId),
   );
   return silent.length === 1 ? silent[0]!.messageId : null;
 }
