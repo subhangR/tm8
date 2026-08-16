@@ -58,7 +58,10 @@ import { createOutput } from '../src/output.js';
 // public, deliberately commandless: the CLI already runs these verbs locally
 // (session-git.ts), and one action must not have two names.
 // 150 -> 152 (2026-08-12): projects.file.history + projects.file.blame (GET reads, with CLI commands).
-const EXPECTED_ROWS = 163; // +2 114: spaces.members.updateRole, auth.invite.resolve — MEASURED
+// 152 -> 163: unledgered upstream bumps (measured on origin/main 9b938647).
+// 163 -> 166 (2026-08-16, W4/132): spaces.taskWorkflows list/set/delete, all
+// public, all with `space task-workflow` commands. MEASURED.
+const EXPECTED_ROWS = 166;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -170,7 +173,8 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 159 /* +2 (118): spaces.members.updateRole, auth.invite.resolve */, composite: 1, internal: 1, reserved: 2 });
+    // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
+    expect(histogram).toEqual({ public: 162, composite: 1, internal: 1, reserved: 2 });
   });
 });
 

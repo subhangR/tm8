@@ -33,6 +33,7 @@ import { InvitesPanel } from './InviteFrames';
 import { IdentityProfileSection } from './IdentityProfileSection';
 import { MenuEditor } from './MenuEditor';
 import { AxesSection } from './AxesSection';
+import { WorkflowsSection } from './WorkflowsSection';
 import {
   DANGER_ZONE_UNAVAILABLE,
   SECTION_NOT_MOUNTED,
@@ -56,6 +57,7 @@ export function SettingsShell({
     menu: null,
     invites: null,
     axes: null,
+    workflows: null,
   });
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -65,13 +67,14 @@ export function SettingsShell({
     // other three sections. A screen that goes empty because an unrelated
     // request failed is the failure mode "loading" states hide.
     void (async () => {
-      const [space, members, identity, menu, invites, axes] = await Promise.allSettled([
+      const [space, members, identity, menu, invites, axes, workflows] = await Promise.allSettled([
         port.loadSpace(),
         port.loadMembers(),
         port.loadIdentity(),
         port.loadMenu(),
         port.loadInvites(),
         port.loadAxes(),
+        port.loadWorkflows(),
       ]);
       if (!live) return;
       // The invite read is EXCLUDED from the failure count. It is admin-only,
@@ -93,6 +96,8 @@ export function SettingsShell({
         // reason: the read rides the admin-shaped settings round trip, and a
         // `null` renders as "not read", never as a space with no axes.
         axes: axes.status === 'fulfilled' ? axes.value : null,
+        // W4 — same posture and same exclusion from the count as axes.
+        workflows: workflows.status === 'fulfilled' ? workflows.value : null,
       });
     })();
     return () => {
@@ -151,6 +156,20 @@ export function SettingsShell({
     onAxesChanged?.();
   }
 
+  /**
+   * Re-read after a workflow write — same rule as `refreshAxes`. It reuses
+   * `onAxesChanged` deliberately: the host's refresh re-reads the ONE
+   * `spaceSettings()` round trip both registries ride, so one callback keeps
+   * the workspace's pickers AND its workflow narrowing current together.
+   */
+  function refreshWorkflows() {
+    void port.loadWorkflows().then(
+      (workflows) => setData((d) => ({ ...d, workflows })),
+      () => undefined,
+    );
+    onAxesChanged?.();
+  }
+
   const spaceLabel = data.space?.name ?? '—';
 
   return (
@@ -202,6 +221,7 @@ export function SettingsShell({
             onMembersChanged={refreshMembers}
             onInvitesChanged={refreshInvites}
             onAxesChanged={refreshAxes}
+            onWorkflowsChanged={refreshWorkflows}
             nodeKey={nodeKey}
           />
         </div>
@@ -220,6 +240,7 @@ function SectionBody({
   onMembersChanged,
   onInvitesChanged,
   onAxesChanged,
+  onWorkflowsChanged,
   nodeKey,
 }: {
   id: SettingsSectionId;
@@ -231,6 +252,7 @@ function SectionBody({
   onMembersChanged: () => void;
   onInvitesChanged: () => void;
   onAxesChanged: () => void;
+  onWorkflowsChanged: () => void;
   nodeKey: string;
 }) {
   const injected = sections?.[id];
@@ -320,6 +342,24 @@ function SectionBody({
             onAxesChanged();
           }}
           tasksUsing={(axis) => port.tasksUsingAxis(axis)}
+        />
+      );
+    case 'workflows':
+      /* W4 — per-type status vocabularies (132), authored beside Axes.
+         Writes are NOT caught here — the section renders the server's own
+         refusal beside the act, same rule as `MembersSection`/`AxesSection`. */
+      return (
+        <WorkflowsSection
+          axes={data.axes}
+          workflows={data.workflows}
+          onUpsert={async (input) => {
+            await port.upsertWorkflow(input);
+            onWorkflowsChanged();
+          }}
+          onDelete={async (workflowId) => {
+            await port.deleteWorkflow(workflowId);
+            onWorkflowsChanged();
+          }}
         />
       );
     case 'danger':

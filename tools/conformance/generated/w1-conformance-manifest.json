@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:4f48f15d8ac03dfcc5fce979ba12b627d2fe1af7ebd8028c397c0631eb7ed3ce",
+  "catalogDigest": "sha256:fae705aa16f2296ce88b0b327338e79455373a3ae3ab2569c49f2b5dd17738cd",
   "catalog": {
-    "total": 163,
-    "v1": 161,
+    "total": 166,
+    "v1": 164,
     "reserved": 2,
-    "http": 162,
+    "http": 165,
     "ws": 1,
-    "registerableV1Http": 160,
+    "registerableV1Http": 163,
     "methods": {
-      "GET": 59,
-      "POST": 75,
+      "GET": 60,
+      "POST": 76,
       "PATCH": 11,
-      "DELETE": 10,
+      "DELETE": 11,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 63,
-      "command": 99,
+      "read": 64,
+      "command": 101,
       "stream": 1
     },
-    "uniqueNames": 163,
-    "uniqueBindings": 163
+    "uniqueNames": 166,
+    "uniqueBindings": 166
   },
   "reservedOperations": [
     "search.query",
@@ -358,6 +358,27 @@
         "operation": "spaces.taskAxes.delete",
         "method": "DELETE",
         "path": "/v2/spaces/:spaceId/task-axes/:axisId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.taskWorkflows.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/task-workflows",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.taskWorkflows.upsert",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/task-workflows",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.taskWorkflows.delete",
+        "method": "DELETE",
+        "path": "/v2/spaces/:spaceId/task-workflows/:workflowId",
         "status": "registered",
         "source": "server-router"
       },
@@ -1545,7 +1566,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 132
+    "unimplementedV1Http": 135
   },
   "schemas": {
     "additive": {
@@ -2089,6 +2110,60 @@
           "spaces",
           "task",
           "axes",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.taskWorkflows.list",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.taskWorkflows.list",
+        "intentTags": [
+          "spaces",
+          "task",
+          "workflows",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.taskWorkflows.upsert",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.taskWorkflows.upsert",
+        "intentTags": [
+          "spaces",
+          "task",
+          "workflows",
+          "upsert"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.taskWorkflows.delete",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.taskWorkflows.delete",
+        "intentTags": [
+          "spaces",
+          "task",
+          "workflows",
           "delete"
         ],
         "inputSchemaRef": null,

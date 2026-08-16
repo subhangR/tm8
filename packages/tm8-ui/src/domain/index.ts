@@ -142,6 +142,16 @@ export type {
 
 export { placeholderNameFor, slugifyTitle, titleNormalizerFor } from './title-grammar';
 
+/** W4 — per-type status vocabularies (132): the one client-side statement of the rule. */
+export {
+  STRUCTURAL_STATUSES,
+  WORKFLOW_AXIS,
+  offWorkflowType,
+  workflowRefusalText,
+  workflowTypeOf,
+  workflowVocabularyOf,
+} from './workflows';
+
 export {
   SHIPPED_DEFAULT_MENU,
   SHIPPED_DEFAULT_MENU_REVISION,
