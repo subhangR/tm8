@@ -2767,6 +2767,23 @@ export function Tile({
     setOpenRelation((prev) => (prev?.kind === kind ? null : { kind, ...(edge ? { edge } : {}) }));
   };
 
+  /**
+   * THE SHARED VISIBLE COUNT (PR #272 re-review, blocking): once this row's
+   * connections are hydrated, a count badge shows the length of the EXACT
+   * read its group renders — same edge spec, same traversal path — so chip
+   * and rows cannot disagree, including the deterministic case where the
+   * counted peer is an ancestor of this very expansion (the chip then
+   * reads zero and unmounts). Before hydration the server counter remains
+   * the discovery value and the group withholds any numeric claim.
+   */
+  const countedRelationOf = (
+    kind: string,
+    relation?: { type: string; direction: 'incoming' | 'outgoing' },
+  ): number | undefined =>
+    connections === undefined || !isExpandableKind(kind)
+      ? undefined
+      : relatedOfKind(row.id, connections, kind, NO_LINKED, path, relation).length;
+
   const streaming = Boolean(
     list.tile.pulse && props.activity?.[row.id] && treatment?.streamingLabel,
   );
@@ -2830,6 +2847,7 @@ export function Tile({
       }
       data-testid="session-chip"
       data-count-kind={SESSION_CHIP_KIND}
+      data-relation-owner={relatedGroupId}
       title={`${sessionsPlural} — click to show them under this row`}
       /* The visible content is a decorative glyph and a number; the name
          must say kind, count and action itself (PR #272 review, 3). */
@@ -2866,6 +2884,7 @@ export function Tile({
           onToggleKind={props.connectionsOf ? toggleRelation : undefined}
           expandableKind={isExpandableKind}
           controlsId={relatedGroupId}
+          countOf={countedRelationOf}
         />
       </>
     ) : undefined;

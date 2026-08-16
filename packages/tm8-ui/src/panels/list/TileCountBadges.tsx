@@ -26,7 +26,7 @@ export function hasTileCounts(counters: EntityCounters): boolean {
   return tileCountBadgesOf(counters).length > 0;
 }
 
-export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind, expandableKind, controlsId }: {
+export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind, expandableKind, controlsId, countOf }: {
   counters: EntityCounters;
   humanAuthors?: EntityBadges['humanMessageAuthors'];
   /** The kind whose relation group is open under this tile, if any. */
@@ -41,20 +41,33 @@ export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind
   expandableKind?: (kind: string) => boolean;
   /** The relation group's DOM id, for the open toggle's `aria-controls`. */
   controlsId?: string;
+  /**
+   * THE SHARED-READ OVERRIDE (PR #272 re-review, blocking): once the host
+   * can compute the counted relation from the SAME read that renders the
+   * group's rows (same edge spec, same traversal path), that number wins
+   * over the server counter — so a visible chip and its visible group can
+   * never disagree, including the deterministic path-suppression case.
+   * `undefined` ⇒ not computable yet (unhydrated): the counter remains the
+   * DISCOVERY value. An override of ZERO removes the badge entirely — a
+   * door onto a group the path has emptied is a door onto a lie.
+   */
+  countOf?: (kind: string, relation?: { type: string; direction: 'incoming' | 'outgoing' }) => number | undefined;
 }) {
-  const badges = tileCountBadgesOf(counters);
+  const badges = tileCountBadgesOf(counters)
+    .map((badge) => ({ badge, shown: countOf?.(badge.kind, badge.relation) ?? badge.count }))
+    .filter(({ shown }) => shown > 0);
   if (badges.length === 0) return null;
 
   return (
     <span className="pn-st__counts" data-testid="tile-count-badges">
-      {badges.map((badge) => {
+      {badges.map(({ badge, shown }) => {
         const body = (
           <>
             <KindIcon kind={badge.icon} size={12} />
             {badge.emphasis === 'human' && humanAuthors
               ? <AvatarStack actors={humanAuthors.actors} total={humanAuthors.total} />
               : null}
-            {badge.count}
+            {shown}
           </>
         );
         const open = openKind === badge.kind;
@@ -63,13 +76,14 @@ export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind
           badge.emphasis === 'human' ? 'pn-st__count--human' : '',
           open ? 'pn-st__count--open' : '',
         ].filter(Boolean).join(' ');
-        const plural = `${badge.count} ${badge.label}${badge.count === 1 ? '' : 's'}`;
+        const plural = `${shown} ${badge.label}${shown === 1 ? '' : 's'}`;
         return onToggleKind && expandableKind?.(badge.kind) ? (
           <button
             key={badge.kind}
             type="button"
             className={`${classes} pn-st__count--btn`}
             data-count-kind={badge.kind}
+            data-relation-owner={controlsId}
             title={`${plural} — click to show them under this row`}
             /* The visible content is a bare number beside a decorative
                glyph, so the accessible name must say kind, count and

@@ -3133,11 +3133,16 @@
   background: none;
   border: 0;
   /* WCAG 2.2 §2.5.8: the visual chip stays badge-sized, but the HIT AREA
-     does not — 5px vertical + 6px horizontal padding over the 12px glyph
-     clears the 22px practical floor without growing the row (the negative
-     margin returns the visual footprint). */
-  padding: 5px 6px;
-  margin: -5px -3px;
+     does not — the border box itself clears the 24×24 minimum (min-width /
+     min-height, not negative-margin arithmetic, which never enlarges the
+     target). The negative margin only returns the VISUAL footprint to the
+     badge row's rhythm. */
+  box-sizing: border-box;
+  min-width: 24px;
+  min-height: 24px;
+  justify-content: center;
+  padding: 6px;
+  margin: -6px -4px;
   border-radius: 4px;
   transition: background 120ms, color 120ms;
 }
@@ -3176,10 +3181,11 @@
   margin-left: auto;
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  margin-top: -6px;
-  margin-bottom: -6px;
+  /* 24×24 border box — WCAG 2.2 §2.5.8 minimum (re-review). */
+  width: 24px;
+  height: 24px;
+  margin-top: -7px;
+  margin-bottom: -7px;
   padding: 0;
   background: none;
   border: 0;

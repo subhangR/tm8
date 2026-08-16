@@ -55,7 +55,11 @@ export function RelatedGroup({
     >
       <div className="lp__related-head">
         <KindIcon kind={kind} size={11} />
-        <span>{`${label.toUpperCase()} · ${count}`}</span>
+        {/* NO NUMERIC CLAIM before the read exists (re-review, blocking):
+            while connections are still loading and nothing projected any
+            rows, an ellipsis is the honest count. Once anything renders,
+            `count` IS the rendered rows — the same read — so it may speak. */}
+        <span>{`${label.toUpperCase()} · ${loading && count === 0 ? '…' : count}`}</span>
         <button
           type="button"
           className="lp__related-close"
@@ -64,6 +68,23 @@ export function RelatedGroup({
           data-testid="related-close"
           onClick={(event) => {
             event.stopPropagation();
+            /* FOCUS MUST SURVIVE THE UNMOUNT (re-review, should-fix): this
+               button disappears with the group, so hand focus on BEFORE the
+               state change — to the chip that opened us when it still
+               exists (`data-relation-owner` rides every chip whether open
+               or closed, unlike aria-controls), else to the owner tile's
+               first focusable control, never the document body. Quoted
+               attribute selectors take React's `:r0:`-style ids verbatim. */
+            const opener =
+              document.querySelector<HTMLElement>(
+                `[data-relation-owner="${id}"][data-count-kind="${kind}"]`,
+              ) ?? document.querySelector<HTMLElement>(`[data-relation-owner="${id}"]`);
+            const ownerTile = event.currentTarget.closest('.lp__related')?.previousElementSibling;
+            const fallback =
+              ownerTile instanceof HTMLElement
+                ? ownerTile.querySelector<HTMLElement>('button, [href], [tabindex]')
+                : null;
+            (opener ?? fallback)?.focus();
             onClose();
           }}
         >

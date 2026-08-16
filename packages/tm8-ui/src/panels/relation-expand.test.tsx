@@ -226,6 +226,67 @@ describe('the sessions chip and the inline group', () => {
     expect(group.textContent).toContain('DOCS · 1');
     // The open chip names its group for assistive tech.
     expect(chip.getAttribute('aria-controls')).toBe(group.getAttribute('id'));
+    // Closing from the group hands focus back to the opener chip.
+    fireEvent.click(within(group).getByTestId('related-close'));
+    expect(document.activeElement).toBe(chip);
+  });
+
+  it('shows the SHARED read once hydrated — a stale counter of 2 reads as the 1 real edge', () => {
+    // The server counter says 2, the projection holds ONE counted edge:
+    // the hydrated chip must announce what the group will render, in the
+    // number, the title and the accessible name alike (re-review, blocking).
+    const staleCounter: EntitySummary = {
+      ...taskUuidTitle,
+      counters: { ...taskUuidTitle.counters, docs: 2 },
+    };
+    mount({ rowsFor: () => [staleCounter] });
+    const chip = screen.getByTitle('1 doc — click to show them under this row');
+    expect(chip.textContent).toContain('1');
+    expect(chip.getAttribute('aria-label')).toBe('Show 1 doc under this row');
+    fireEvent.click(chip);
+    const group = screen.getByTestId('related-group');
+    expect(group.textContent).toContain('DOCS · 1');
+    expect(within(group).getAllByText(docLayoutSpec.title)).toHaveLength(1);
+  });
+
+  it('unmounts a chip whose counted peer is an ancestor of this expansion', () => {
+    // Deterministic suppression case (re-review, blocking 2nd observable):
+    // a session under a doc, whose ONLY counted doc IS that ancestor doc.
+    // Its raw counter says 1; the shared read says 0; a door onto an empty
+    // group would be a lie, so the chip does not render at all.
+    const sessionWithDoc: EntitySummary = {
+      ...sessionLive,
+      counters: { ...sessionLive.counters, docs: 1 },
+    };
+    const sessionConnections: Connections = {
+      outgoing: [],
+      incoming: [
+        {
+          type: 'attached_to',
+          direction: 'incoming',
+          label: 'attached',
+          edges: [edge('e-owner-doc', 'attached_to', docLayoutSpec, sessionLive)],
+        },
+      ],
+      unresolvedHardDependencyCount: 0,
+    };
+    render(
+      <div className="cv2-root">
+        <EntityListPanel
+          kind="doc"
+          rowsFor={() => [docLayoutSpec]}
+          ctx={ctx}
+          linkedSessionsOf={(id) => (id === docLayoutSpec.id ? [sessionWithDoc] : [])}
+          connectionsOf={(id) => (id === sessionLive.id ? sessionConnections : undefined)}
+        />
+      </div>,
+    );
+    fireEvent.click(screen.getByTestId('session-chip'));
+    const group = screen.getByTestId('related-group');
+    // The nested session renders; its doc chip does not, because its one
+    // counted doc is the very ancestor this expansion hangs under.
+    expect(within(group).getByText(sessionWithDoc.title)).toBeTruthy();
+    expect(group.querySelector('[data-count-kind="doc"]')).toBeNull();
   });
 
   it('keeps the ancestor out of the nested session tile task lines', () => {
@@ -314,5 +375,8 @@ describe('the sessions chip and the inline group', () => {
     expect(within(group).getByTestId('related-empty')).toBeTruthy();
     fireEvent.click(within(group).getByTestId('related-close'));
     expect(screen.queryByTestId('related-group')).toBeNull();
+    // With the doc chip gone, focus falls to another of the tile's own
+    // relation chips — never the document body (re-review, should-fix).
+    expect(document.activeElement).toBe(screen.getByTestId('session-chip'));
   });
 });
