@@ -139,8 +139,18 @@ export interface RowLifecycle {
    * axis moves, the others survive. The version guard is what keeps the
    * read-merge-write honest: a concurrent axis write lands as
    * `version_conflict` and is reported, never silently overwritten.
+   *
+   * Returns the outcome for the BOARD (W3), which renders refusals inline at
+   * the refusing column with `{notify: false}` — the same contract as
+   * `setState`. The strip's picker ignores the return and keeps its notice.
    */
-  setAxis: (entityId: string, axisName: string, next: string | null, label: string) => void;
+  setAxis: (
+    entityId: string,
+    axisName: string,
+    next: string | null,
+    label: string,
+    opts?: { notify?: boolean },
+  ) => Promise<SetStateOutcome>;
   /**
    * Bound to `EntityListPanel.onAssign` — ONE actor's edge, added or removed.
    * Outcome returned for the board's inline-refusal path, exactly as above.
@@ -338,42 +348,47 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
   );
 
   const setAxis = useCallback(
-    (entityId: string, axisName: string, next: string | null, label: string) => {
+    (
+      entityId: string,
+      axisName: string,
+      next: string | null,
+      label: string,
+      opts?: { notify?: boolean },
+    ): Promise<SetStateOutcome> => {
       const id = entityId as EntityId;
-      /* Same unreachable-case refusal as `setValue`, for the same reason:
-         the control gates on capabilities, which implies the detail (and so
-         the version AND the current axes record) is cached. */
-      const detail = data.detailOf(entityId);
-      if (detail === undefined) {
-        onNotice({
-          id: `value-unhydrated:${entityId}`,
-          tone: 'error',
-          title: `${label} could not be changed`,
-          body: 'This row’s current version is not loaded, and writing without one could overwrite a change you have not seen. Open the row, then try again.',
-          ttlMs: 6_000,
-        });
-        return;
-      }
-      const version = detail.version;
-      /* Structural read (§15.2): the axes record is addressed by name, never
-         by narrowing the state union to a kind. Non-string values (a state
-         with no axes member, or junk) contribute nothing. */
-      const stored = (detail.state as unknown as Record<string, unknown>).axes;
-      const axes: Record<string, string> = {};
-      if (stored !== null && typeof stored === 'object') {
-        for (const [name, value] of Object.entries(stored as Record<string, unknown>)) {
-          if (typeof value === 'string') axes[name] = value;
-        }
-      }
-      if (next === null) delete axes[axisName];
-      else axes[axisName] = next;
-      settle(
+      const notify = opts?.notify ?? true;
+      /* MAY READ BEFORE WRITING — the one deliberate difference from
+         `setValue`, whose no-fallback rule stands on its gate: the picker
+         refuses until the detail is cached. The BOARD has no such gate (a
+         dragged card's detail is usually not hydrated), and the merge needs
+         the CURRENT axes record regardless, because `update_task_content`
+         replaces the jsonb wholesale. So an uncached row costs one
+         `entity()` read, and the version guard still catches a write racing
+         it. Outcome is RETURNED for the board's inline refusal (§1.5). */
+      const cached = data.detailOf(entityId);
+      const source: Promise<{ version: number; state: unknown }> =
+        cached !== undefined ? Promise.resolve(cached) : seam.entity(id);
+      return settle(
         entityId,
         `${label} could not be changed`,
-        seam.commands.patchEntity(id, { expectedVersion: version, content: { axes } }),
+        source.then((detail) => {
+          /* Structural read (§15.2): the axes record is addressed by name,
+             never by narrowing the state union to a kind. */
+          const stored = (detail.state as Record<string, unknown>).axes;
+          const axes: Record<string, string> = {};
+          if (stored !== null && typeof stored === 'object') {
+            for (const [name, value] of Object.entries(stored as Record<string, unknown>)) {
+              if (typeof value === 'string') axes[name] = value;
+            }
+          }
+          if (next === null) delete axes[axisName];
+          else axes[axisName] = next;
+          return seam.commands.patchEntity(id, { expectedVersion: detail.version, content: { axes } });
+        }),
+        notify,
       );
     },
-    [data, onNotice, seam, settle],
+    [data, seam, settle],
   );
 
   const assign = useCallback(
