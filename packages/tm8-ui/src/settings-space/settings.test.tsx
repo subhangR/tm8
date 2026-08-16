@@ -18,7 +18,29 @@
  *      verbs that genuinely work client-side. Anything else must be
  *      `aria-disabled` with a reason in the DOM.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * THIS FILE NEEDS A RAISED TIMEOUT, and the reason is worth stating because
+ * four separate lanes lost time to it in one wave.
+ *
+ * Its two heaviest cases render the ENTIRE shell and walk every one of the
+ * twelve destinations. On a quiet machine the whole file does 38 tests in
+ * ~3s — comfortably inside vitest's 5s default, which is exactly the problem:
+ * comfortably, not safely. Under parallel load the individual renders tip past
+ * 5s and the file fails with `Test timed out in 5000ms` and a DIFFERENT set of
+ * cases each run.
+ *
+ * That is not a regression and not attributable to any lane's diff. Measured
+ * across the twelve-section merge (credentials lane, 2026-08-16): the same
+ * file ran 38/38 in 10.31s pre-merge and 38/38 in 9.84s post-merge — the merge
+ * made it no slower. Only contention moved.
+ *
+ * A timeout is never an assertion failure. If this file goes red, read the
+ * message before bisecting: `timed out` is the machine, `expected/received`
+ * is a real defect.
+ */
+vi.setConfig({ testTimeout: 60_000 });
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { resolveMenu } from '../shell/menu-resolve';
 import { InvitesPanel, RedeemLanding } from './InviteFrames';
