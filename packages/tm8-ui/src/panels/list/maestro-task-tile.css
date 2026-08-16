@@ -231,6 +231,23 @@
   display: grid;
   place-items: center;
 }
+/* THE STATUS COLUMN IS 16px, WHATEVER IS IN IT. The mark is a live control, so
+   while `capabilitiesOf(row.id)` is undefined it renders `CheckingPermission`,
+   whose loading vocabulary is a dashed, breathing ~30px pill. In a 16px column
+   that reads as the status dot blinking inside a dotted box AND widens the
+   column, shoving the title sideways the moment the detail lands. The wrapper
+   keeps its `title` and `aria-label`, so "not loaded yet" is still told — only
+   its chrome is dropped, and the dot it already carries sits where the dot
+   always sits. Same treatment `pn-tt__actions .hon-checking` already gets. */
+.cv2-root .pn-tt__status .hon-checking {
+  width: 16px;
+  height: 16px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  opacity: 1;
+  animation: none;
+}
 .cv2-root .pn-tt__status-text {
   position: absolute;
   width: 1px;

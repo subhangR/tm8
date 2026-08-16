@@ -1936,7 +1936,6 @@ export function GateApp(props: GateAppProps = {}) {
                   newTaskUnavailable={regions.newTaskUnavailable}
                   centerOverride={regions.centerOverride}
                   slots={homeSlots}
-                  onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
                   viewerName={data.viewerActor?.displayName}
                   /* IN PLACE, not away (user report 2026-08-16): a chip inside
                      a conversation you are still having opens the entity in

@@ -863,12 +863,26 @@ button.tch-entity-chip:hover {
   padding: 7px 6px;
   gap: 5px;
 }
+/* The disclosure caret OVERLAYS the status mark on hover, so it has to land on
+   the mark's box, not on the workspace panel's. This coat re-cuts the row to a
+   7px/6px inset; the caret's own `top: 6px; left: 7px` left it a pixel high and
+   a pixel right of the dot it is meant to replace, which is what made the
+   status marks look off-column as the pointer travelled the list. */
+.cv2-root .tch-panel-host .pn-tt__arrow {
+  top: 7px;
+  left: 6px;
+}
 .cv2-root .tch-panel-host .pn-tt__title {
   font-size: 12px;
   font-weight: 600;
 }
 .cv2-root .tch-panel-host .pn-tt__status-text { font-size: 9.5px; }
-.cv2-root .tch-panel-host .pn-tt__badges { padding: 0 8px 6px; }
+/* The badge sub-row hangs off the TITLE, not off the tile edge. This coat
+   re-cuts `pn-tt__main` to a 6px inset and a 5px gap, so the title starts at
+   6 + 16px status mark + 5px = 27px and the chips must start there too. A bare
+   `padding: 0 8px 6px` put them at the beginning of the row instead — the
+   workspace panel's own rule was already correct, so only Home read as broken. */
+.cv2-root .tch-panel-host .pn-tt__badges { padding: 0 8px 6px 27px; }
 .cv2-root .tch-panel-host .pn-tt__meta { padding: 6px 8px 8px; }
 
 /* REGION B when a task/session is selected (D7): the host's panel takes the
@@ -976,18 +990,6 @@ button.tch-entity-chip:hover {
   font-family: var(--pn-mono);
   font-size: 10.5px;
 }
-.tch-open-workspace {
-  align-self: flex-start;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  color: var(--pn-brand);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.tch-open-workspace:hover { text-decoration: underline; }
 
 /* THE THREAD'S CONFIGURATION, INSIDE THE BOX. Three triggers on the composer's
    own foot: constant height whatever the roster is, and the transcript keeps
