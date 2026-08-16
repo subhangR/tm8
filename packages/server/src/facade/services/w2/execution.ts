@@ -575,6 +575,11 @@ export interface W2ExecutionDeliveryOptions {
    * nothing here, and that is the far more likely reason for zero delivery
    * rows — the answer to THAT question is a startup line saying whether
    * delivery is wired at all, not anything in this class.
+   *
+   * OPTIONAL HERE, DEFAULTED IN THE FACTORY. Direct construction (tests) stays
+   * silent; `createW2ExecutionDelivery` installs `consoleDeliveryLogger`,
+   * because this field was passed by nobody and the whole diagnostic was dead
+   * in production. See that function.
    */
   readonly logger?: Logger;
 }
@@ -872,6 +877,30 @@ export interface W2ExecutionDeliveryWiring {
   close(): Promise<void>;
 }
 
+/**
+ * The default the PRODUCTION factory below installs.
+ *
+ * WHY A DEFAULT AND NOT AN INJECTION AT THE COMPOSITION ROOT. `logger` on
+ * `W2ExecutionDeliveryOptions` was built, tested and then passed by nobody: the
+ * one production construction site omitted it, so every diagnostic in this file
+ * was a no-op for as long as the node has been shipping. That is not a wiring
+ * slip to re-do more carefully — omission is the failure mode, and a default
+ * cannot be omitted. The CLASS keeps `logger` optional and silent, so the
+ * suite's "a healthy delivery logs NOTHING" control is unchanged and tests that
+ * construct the service directly stay quiet.
+ *
+ * Fields come from `failureFacts`, which is already the allowlist: ids and
+ * SQLSTATE, never a message body.
+ */
+export const consoleDeliveryLogger: Logger = {
+  error: (message, _error, meta) =>
+    console.error(JSON.stringify({ component: 'w2-delivery', level: 'error', event: message, ...meta })),
+  warn: (message, meta) =>
+    console.warn(JSON.stringify({ component: 'w2-delivery', level: 'warn', event: message, ...meta })),
+  info: () => {},
+  debug: () => {},
+};
+
 export function createW2ExecutionDelivery(options: {
   readonly connectionString: string;
   readonly pty: InternalPromptPty;
@@ -879,13 +908,14 @@ export function createW2ExecutionDelivery(options: {
    *  `ExecutionRuntime.promptSettlement` (execution-handlers.ts) and
    *  `InternalPromptDeliverySettlement`'s docs above. */
   readonly promptSettlement: InternalPromptDeliverySettlement;
+  /** Overrides `consoleDeliveryLogger`; absent is NOT silent — see above. */
   readonly logger?: Logger;
 }): W2ExecutionDeliveryWiring {
   const service = new W2ExecutionDeliveryService({
     rpc: PgW2DeliveryRpcPort.fromConnectionString(options.connectionString),
     pty: options.pty,
     promptSettlement: options.promptSettlement,
-    ...(options.logger ? { logger: options.logger } : {}),
+    logger: options.logger ?? consoleDeliveryLogger,
   });
   return {
     messageDelivery: {

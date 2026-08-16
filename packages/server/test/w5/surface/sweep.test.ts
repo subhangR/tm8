@@ -549,8 +549,20 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // its own tab (menu revision 16). Takes 130 rather than 129 because 129
     // was RESERVED by the concurrent assigned-by provenance lane on the same
     // task family; both lanes' files now coexist in this union tree.
-    // MEASURED, not incremented: `ls db/migrations/*.sql | wc -l` = 121.
-    expect(server.appliedMigrations.length).toBe(121);
+    // 121 -> 122 on 2026-08-16, merging main into the shell-redesign lane:
+    // 131_spawn_starts_the_task.sql — a session spawned on a task moves that
+    // task to `working`, the durable twin of the derived `workingActors`
+    // badge, written in the same `execution_spawn` task loop as 111's
+    // assignment. Its own note reasoned its way to 131 by treating 129 and
+    // 130 as claimed-but-unlanded on branches; this merge IS those branches
+    // landing, so the number it reserved is exactly right and the two
+    // histories add rather than contradict.
+    //
+    // Both sides of that merge carried a pin — 121 here, 116 there — and
+    // NEITHER is the answer. A count pin is DERIVED, so only the merged tree
+    // can be asked. MEASURED, never arithmetic:
+    // `ls db/migrations/*.sql | wc -l` = 122.
+    expect(server.appliedMigrations.length).toBe(122);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
