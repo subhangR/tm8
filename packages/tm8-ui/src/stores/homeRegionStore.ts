@@ -5,7 +5,7 @@
  * Two facts per space, and WHY they are module-level rather than component
  * state:
  *
- *  - `tab`: which of Home's left-column tabs (Tasks | Chats | Sessions) is
+ *  - `tab`: which of Home's left-column tabs (Chats | Tasks | Sessions) is
  *    active. D15 says it persists PER SPACE and the first visit opens on
  *    Chats — so it round-trips localStorage, unlike the screen stacks (whose
  *    in-memory-only ruling is about entity IDS, which go stale on reload;
@@ -27,7 +27,8 @@ import type { EntityId } from '@tm8/contract';
 export type HomeTab = 'tasks' | 'chats' | 'sessions';
 
 const TAB_VALUES: readonly HomeTab[] = ['tasks', 'chats', 'sessions'];
-/** D15: the default active tab is Chats (the ORDER is Tasks | Chats | Sessions). */
+/** D15: the default active tab is Chats (the ORDER is Chats | Tasks | Sessions,
+ *  re-ruled by Subhang 2026-08-16). */
 export const DEFAULT_HOME_TAB: HomeTab = 'chats';
 
 const storageKey = (spaceId: string) => `tm8.home.tab:${spaceId}`;

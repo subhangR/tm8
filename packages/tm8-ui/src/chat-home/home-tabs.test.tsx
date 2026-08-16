@@ -60,10 +60,10 @@ function renderHome(over: Partial<ChatHomeScreenProps> = {}) {
 }
 
 describe('Home three-tab column', () => {
-  it('D1/D16: Tasks | Chats | Sessions, in that order, labels only — no counts', () => {
+  it('D1/D16: Chats | Tasks | Sessions (order re-ruled 2026-08-16), labels only — no counts', () => {
     const view = renderHome();
     const tabs = view.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Tasks', 'Chats', 'Sessions']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Chats', 'Tasks', 'Sessions']);
   });
 
   it('D15 default: an uncontrolled mount opens on Chats', async () => {

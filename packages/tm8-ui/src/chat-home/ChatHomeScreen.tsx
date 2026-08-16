@@ -679,17 +679,12 @@ export function ChatHomeScreen({
   }, [port, selectedRootId]);
 
   return (
-    <main
-      className="tch-root"
-      data-testid="chat-home-screen"
-      /* A hosted workspace list needs the rail's width, not the chat
-         column's — the layout grid reads this to widen column A. */
-      data-hosted-list={hostedList != null || undefined}
-    >
+    <main className="tch-root" data-testid="chat-home-screen">
       {/*
         THE NAVIGATION AXIS (task 01a006f8, 2026-08-16, superseding R4's
         merged list). This panel is the full inventory AND the only selector,
-        as one time-grouped THREE-TAB column: Tasks | Chats | Sessions (D1).
+        as one time-grouped THREE-TAB column: Chats | Tasks | Sessions (D1,
+        order re-ruled 2026-08-16).
         Switching a tab is BROWSING — it re-lists this column only (D6);
         clicking a row is SELECTING — it puts that entity in region B (D7).
         The two ＋ buttons above the tabs are the single exception to D6:
@@ -762,7 +757,7 @@ export function ChatHomeScreen({
             <span aria-hidden>＋</span> New task
           </button>
         </div>
-        {/* D1: Tasks | Chats | Sessions, in that order. Labels only (D16). */}
+        {/* Chats | Tasks | Sessions (re-ruled order). Labels only (D16). */}
         <div className="tch-tabs" role="tablist" aria-label="Home lists">
           {HOME_TAB_STRIP.map((entry) => (
             <button
@@ -1371,10 +1366,13 @@ function greetingLine(viewerName?: string): string {
   return viewerName ? `${daypart}, ${viewerName}.` : `${daypart}.`;
 }
 
-/** D1's strip, in D1's order. Labels only — no counts (D16). */
+/** D1's strip. ORDER re-ruled by Subhang 2026-08-16 ("it should be
+ *  chats | tasks | sessions"), superseding D1's Tasks-first order. Chats
+ *  leads — it is also the default tab, so the first visit opens on the
+ *  first tab. Labels only — no counts (D16). */
 const HOME_TAB_STRIP: readonly { tab: HomeTab; label: string }[] = [
-  { tab: 'tasks', label: 'Tasks' },
   { tab: 'chats', label: 'Chats' },
+  { tab: 'tasks', label: 'Tasks' },
   { tab: 'sessions', label: 'Sessions' },
 ];
 
