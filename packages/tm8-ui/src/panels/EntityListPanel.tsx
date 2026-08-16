@@ -44,6 +44,9 @@ import {
   getKind,
   needsViewer,
   resolveAction,
+  workflowRefusalText,
+  workflowTypeOf,
+  workflowVocabularyOf,
 } from '../domain';
 import { Avatar, Timestamp, type PillTone } from '../kit';
 import {
@@ -316,6 +319,14 @@ export interface EntityListPanelProps {
    * kinds whose registry declares `axisControls`; empty draws none.
    */
   taskAxes?: readonly import('@tm8/contract').TaskAxis[];
+
+  /**
+   * The space's workflow registry (W4, 132) — per-space DATA from
+   * `spaceSettings().taskWorkflows`, hydrated by the host beside `taskAxes`.
+   * The state control narrows its options with it, and the STATUS board
+   * pre-flights a drop against it; the database trigger stays the real gate.
+   */
+  taskWorkflows?: readonly import('@tm8/contract').TaskWorkflow[];
 
   /**
    * Add or remove ONE assignment on an expanded row.
@@ -1940,6 +1951,26 @@ function BoardBody({
     }
 
     if (!column.option || !stateControl || !props.onSetState) return;
+
+    /**
+     * W4 — the PRE-FLIGHT workflow refusal, at the refusing column, WITHOUT
+     * calling the server: the vocabulary is already in hand (the same
+     * `spaceSettings()` data the strip narrows with), so a drop the row's
+     * type forbids is foreseeable and §8.5 says a foreseeable refusal is
+     * stated rather than attempted. Same words as the strip's disabled
+     * option; the database trigger (132) remains the real gate for every
+     * writer that is not this board.
+     */
+    const vocabulary = workflowVocabularyOf(props.taskWorkflows, row.state);
+    if (vocabulary !== null && !vocabulary.includes(column.option.id)) {
+      setPendingId(null);
+      setRefusal({
+        column: column.key,
+        reason: workflowRefusalText(workflowTypeOf(row.state)!, column.option.id),
+      });
+      return;
+    }
+
     setRefusal(null);
     setPendingId(row.id);
     const outcome = props.onSetState(
