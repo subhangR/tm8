@@ -631,9 +631,20 @@ export const ptyTransport = {
     return { baseUrl, authToken: _authTokenReaders.get(id)?.() ?? null };
   },
 
-  /** Tell the server the grid size (a JSON text control frame). */
-  resize(id: string, cols: number, rows: number): void {
-    _sendFrame(id, JSON.stringify({ type: 'resize', cols, rows }));
+  /**
+   * Tell the server the grid size (a JSON text control frame).
+   *
+   * `force` asks the server to drive a SIGWINCH even when the geometry it
+   * already has matches — the one signal that makes a full-screen agent TUI
+   * repaint over a freshly rendered replay. Send it at most ONCE per attach:
+   * the server's equality check exists to terminate echo loops, and `force` is
+   * a deliberate hole in it.
+   */
+  resize(id: string, cols: number, rows: number, force = false): void {
+    _sendFrame(
+      id,
+      JSON.stringify({ type: 'resize', cols, rows, ...(force ? { force: true } : {}) }),
+    );
   },
 
   /**

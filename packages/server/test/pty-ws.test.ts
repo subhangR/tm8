@@ -273,6 +273,64 @@ describe('PTY WebSocket', () => {
     expect(host.getSize('s-resize')).toEqual({ cols: 120, rows: 40 });
   });
 
+  it('a no-op resize is swallowed, but `force` bounces the winsize so the agent gets a SIGWINCH', async () => {
+    // The equality guard in handleControl exists to terminate client echo
+    // loops, and it is right to. But it also swallowed the ONE resize that
+    // matters on attach: a browser remounting into unchanged window geometry
+    // fits to exactly the size the PTY already has, so nothing reached the PTY,
+    // no SIGWINCH was raised, and a full-screen agent TUI never repainted over
+    // the freshly rendered replay — the "blank until I resize the window" bug.
+    // `force` is the one-shot hole in that guard. Because TIOCSWINSZ only
+    // signals when the winsize actually CHANGES, honouring it means bouncing a
+    // row and coming straight back, which is what this asserts: two resize
+    // calls, and the geometry ends where it started.
+    host = new PtyHostService({ logger: quiet });
+    host.spawn({ sessionId: 's-force', command: 'sleep 3', cwd: CWD, env: {}, cols: 80, rows: 24 });
+    await new Promise((r) => setTimeout(r, 300));
+
+    const calls: Array<{ cols: number; rows: number }> = [];
+    const realResize = host.resize.bind(host);
+    host.resize = (id: string, cols: number, rows: number) => {
+      calls.push({ cols, rows });
+      realResize(id, cols, rows);
+    };
+
+    const server = createPtyWsServer({ pty: host });
+    const sock = new FakeSocket();
+    await server.handleUpgrade(upgradeReq('/v2/ws?sessionId=s-force&offset=0'), sock, Buffer.alloc(0));
+
+    const send = (frame: Record<string, unknown>) => {
+      const payload = Buffer.from(JSON.stringify(frame), 'utf8');
+      const mask = Buffer.from([1, 2, 3, 4]);
+      const masked = Buffer.alloc(payload.length);
+      for (let i = 0; i < payload.length; i++) masked[i] = payload[i]! ^ mask[i % 4]!;
+      sock.push(Buffer.concat([Buffer.from([0x81, 0x80 | payload.length]), mask, masked]));
+    };
+
+    // Unforced and identical: the echo-loop guard swallows it whole.
+    send({ type: 'resize', cols: 80, rows: 24 });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(calls).toEqual([]);
+
+    // Forced and identical: bounce down one row, then back to the real size.
+    send({ type: 'resize', cols: 80, rows: 24, force: true });
+    await waitFor(() => calls.length >= 2);
+    expect(calls).toEqual([
+      { cols: 80, rows: 23 },
+      { cols: 80, rows: 24 },
+    ]);
+    expect(host.getSize('s-force')).toEqual({ cols: 80, rows: 24 });
+
+    // AND THE BUDGET IS SPENT. "at most once per attach" is a client
+    // convention, so the server must not depend on it: a peer that spams
+    // force:true gets nothing further, because each honoured force costs the
+    // agent a full-screen redraw.
+    for (let i = 0; i < 20; i += 1) send({ type: 'resize', cols: 80, rows: 24, force: true });
+    await new Promise((r) => setTimeout(r, 150));
+    expect(calls).toHaveLength(2);
+    expect(host.getSize('s-force')).toEqual({ cols: 80, rows: 24 });
+  });
+
   it('a respawn on the same sessionId replaces the PTY: old socket closes with NO exit frame, new attach gets a different epoch and only the new stream', async () => {
     // PtyHostService.spawn() is documented as "deliberately destructive for the
     // agent resume path": calling it twice on the same sessionId kills the old
