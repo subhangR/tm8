@@ -135,6 +135,14 @@ export interface ChatHomeScreenProps {
    */
   onThreadSelected?: ((id: EntityId | null) => void) | undefined;
   /**
+   * `?graph=full` — the entity graph's fullscreen view, route-owned (plan
+   * 01a0094b D2). The host maps the address here and `onGraphFullChange`
+   * navigates the param, so Back closes and a reload restores. Hosts
+   * without routing omit the pair and get the inline strip unchanged.
+   */
+  graphFull?: boolean | undefined;
+  onGraphFullChange?: ((open: boolean) => void) | undefined;
+  /**
    * Region B when it is NOT the chat (D7/D8): the host's entity panel,
    * rendered in the conversation pane's place while the conversation stays
    * MOUNTED but hidden — unmounting it would tear down a streaming thread.
@@ -196,6 +204,8 @@ export function ChatHomeScreen({
   newEntityUnavailable,
   routeThreadId,
   onThreadSelected,
+  graphFull,
+  onGraphFullChange,
   renderRootList,
   centerOverride,
   slots,
@@ -1088,6 +1098,8 @@ export function ChatHomeScreen({
                 connections={connections}
                 resolveEntity={resolveEntity}
                 onOpenEntity={onOpenEntity}
+                expanded={graphFull}
+                onExpandedChange={onGraphFullChange}
               />
               {detail.turns.map((turn) => (
                 <Turn

@@ -448,3 +448,59 @@ describe('the unified Home root and the right trail (task 01a00932)', () => {
     expect(hash).toContain('p=');
   });
 });
+
+describe('the fullscreen graph param (plan 01a0094b D2)', () => {
+  it('parses ?graph=full on an addressed conversation', () => {
+    const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?graph=full`);
+    expect(dropped).toEqual([]);
+    expect(route?.target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: id(1), graph: 'full' },
+    });
+  });
+
+  it('round-trips through build, with and without a thread', () => {
+    for (const threadId of [id(1), null]) {
+      const route = routeOf({
+        target: { view: 'home', root: { type: 'chats', threadId, graph: 'full' } },
+      });
+      const { hash, dropped } = build(normalize(route));
+      expect(dropped).toEqual([]);
+      expect(hash).toContain('graph=full');
+      const back = parse(hash);
+      expect(back.route?.target).toEqual(route.target);
+    }
+  });
+
+  it('LOSSY-TOLERANT: an unknown value is silently ignored — no drop, no crash', () => {
+    for (const raw of ['graph=weird', 'graph=', 'graph=%ZZ']) {
+      const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?${raw}`);
+      expect(dropped).toEqual([]);
+      expect(route?.target).toEqual({
+        view: 'home',
+        root: { type: 'chats', threadId: id(1) },
+      });
+    }
+  });
+
+  it('normalize still collapses a bare chats root, but never one holding the graph', () => {
+    const bare = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: null } },
+    });
+    expect(normalize(bare).target).toEqual({ view: 'home' });
+    const full = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: null, graph: 'full' } },
+    });
+    expect(normalize(full).target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: null, graph: 'full' },
+    });
+    // Idempotent, as normalize must stay.
+    expect(normalize(normalize(full))).toEqual(normalize(full));
+  });
+
+  it('bare /home never grows the param — only the /chat segment reads it', () => {
+    const { route } = parse(`#/s/${SPACE}/home?graph=full`);
+    expect(route?.target).toEqual({ view: 'home' });
+  });
+});

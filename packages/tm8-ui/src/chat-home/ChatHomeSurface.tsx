@@ -45,6 +45,8 @@ export interface ChatHomeSurfaceProps {
   newEntityUnavailable?: ChatHomeScreenProps['newEntityUnavailable'];
   routeThreadId?: ChatHomeScreenProps['routeThreadId'];
   onThreadSelected?: ChatHomeScreenProps['onThreadSelected'];
+  graphFull?: ChatHomeScreenProps['graphFull'];
+  onGraphFullChange?: ChatHomeScreenProps['onGraphFullChange'];
   renderRootList?: ChatHomeScreenProps['renderRootList'];
   centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];

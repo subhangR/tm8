@@ -42,7 +42,18 @@ export interface QValue {
  */
 export type HomeRootTarget =
   | { type: 'kind'; slug: string }
-  | { type: 'chats'; threadId: EntityId | null };
+  | {
+      type: 'chats';
+      threadId: EntityId | null;
+      /**
+       * `?graph=full` — the conversation's entity graph opened fullscreen
+       * (plan 01a0094b D2). A URL rather than component state so Back closes
+       * it, a reload restores it and the view can be linked. LOSSY-TOLERANT:
+       * any value other than `full` is silently ignored at parse — a stale
+       * link must degrade to the plain conversation, never crash or notice.
+       */
+      graph?: 'full' | null;
+    };
 
 /** Where the view host points. One member per WLT §2.2 route line. */
 export type NavView =

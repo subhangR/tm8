@@ -134,6 +134,9 @@ export interface HomeChatRegions {
   routeThreadId?: EntityId | null;
   /** The screen's thread selection, so the address can carry it (D1). */
   onThreadSelected?(id: EntityId | null): void;
+  /** `?graph=full` — the entity graph fullscreen, route-owned (01a0094b D2). */
+  graphFull?: boolean;
+  onGraphFullChange?(open: boolean): void;
   /**
    * A KIND root's list CONTENT: the WORKSPACE's own `EntityListPanel` —
    * the exact tree, tiles, lifecycle tabs, sort and in-panel search the
@@ -487,6 +490,18 @@ export function HomeView(props: HomeViewProps) {
       navStore.getState().navigate({
         view: 'home',
         root: { type: 'chats', threadId: id },
+      }),
+    /* The graph's fullscreen view is part of the address too (`?graph=full`,
+       01a0094b D2): opening PUSHES history, so Back closes the dialog. */
+    graphFull: routeRoot?.type === 'chats' && routeRoot.graph === 'full',
+    onGraphFullChange: (open) =>
+      navStore.getState().navigate({
+        view: 'home',
+        root: {
+          type: 'chats',
+          threadId: routeThreadId,
+          ...(open ? { graph: 'full' as const } : {}),
+        },
       }),
     renderRootList,
   };

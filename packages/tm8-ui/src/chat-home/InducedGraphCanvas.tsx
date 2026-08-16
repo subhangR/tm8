@@ -23,6 +23,8 @@ export interface InducedGraphCanvasProps {
   /** Late title resolutions (R7c) for ids no edge payload named. */
   late?: ReadonlyMap<string, ChatEntityRef> | undefined;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
+  /** Pan/zoom hosts override the viewBox; default shows the whole placement. */
+  viewBox?: string | undefined;
 }
 
 export function InducedGraphCanvas({
@@ -30,11 +32,12 @@ export function InducedGraphCanvas({
   ariaLabel,
   late,
   onOpenEntity,
+  viewBox,
 }: InducedGraphCanvasProps) {
   return (
     <svg
       className="sg-svg"
-      viewBox={`0 0 ${placement.width} ${placement.height}`}
+      viewBox={viewBox ?? `0 0 ${placement.width} ${placement.height}`}
       preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label={ariaLabel}
