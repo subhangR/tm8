@@ -11,8 +11,8 @@
 --
 -- Some nodes are not built from this chain. A file numbered 083 that never
 -- reached main -- `083_remove_session_wake_budgets.sql` -- dropped the column,
--- rewrote the pair_shape check without it, and stripped the pin out of all four
--- functions. Main shipped the same feature (removing the WAKE CAP, and only the
+-- rewrote the pair_shape check without it, and stripped the pin out of all five
+-- functions below. Main shipped the same feature (removing the WAKE CAP, and only the
 -- cap) later, as 120. The runner keys the ledger on filename, so a node that took
 -- both has TWO rows numbered 083 and a delivery ledger that disagrees with this
 -- chain. The duplicate-number guard in db/migrate.mjs (:143-148) stops a new
@@ -27,18 +27,66 @@
 -- table being empty, never from the PTY, which is innocent and never receives a
 -- byte. This is what happened on the :7778 node on 2026-08-16; it was repaired by
 -- hand, live, with no record here, which is exactly why the next `create or
--- replace` of any of these four functions would have re-broken it identically.
+-- replace` of any of these functions would have re-broken it identically.
 --
 -- THE BACKFILL. Restoring the pair_shape check requires a non-null pin on every
 -- row that has a source session. The real version is recoverable only where the
--- pair row still exists; everywhere else this writes 0. That is safe because the
--- pin is only ever re-read between a delivery's own claim and settle, and every
--- row being backfilled here was reserved before this migration ran. Rows still
--- sitting in `dispatching` from a dead session are already unsettleable for an
--- unrelated reason (the session that would settle them is gone), so a synthetic
--- pin neither fixes nor worsens them.
+-- pair row still exists; everywhere else this writes 1, and the floor is 1 rather
+-- than 0 because 0 is a SENTINEL one layer up and a row holding it could never be
+-- settled -- see the long note at the update itself. On a node whose
+-- `session_wake_budgets` stub is empty, EVERY backfilled row takes the fallback.
 --
--- The four function bodies below are reproduced verbatim from a database built
+-- What the backfilled value is NOT relied upon to do: it is never compared against
+-- a version the server computed for that same delivery, because every row it
+-- touches was reserved before this migration ran. Rows still sitting in
+-- `dispatching` from a dead session are settled by
+-- `internal.w1_prune_operational_state` through a direct owner UPDATE rather than
+-- through `settle_session_message_delivery`, so the pin check never applies to
+-- them either. Both of those are properties of the population, though, not of the
+-- migration -- which is exactly why the value must be outside the sentinel range
+-- rather than merely unread today.
+--
+-- THE GUARD IS PART OF THE REPAIR, NOT AN EXTRA. `internal.guard_session_message_delivery`
+-- is the BEFORE trigger behind `session_message_deliveries_guard`, and the orphan
+-- stripped exactly one line from it:
+--     or new.pair_budget_version is distinct from old.pair_budget_version
+-- (verified by diffing the live body against a chain-built one -- that line is the
+-- ONLY difference, so re-asserting it re-arms pin immutability and changes nothing
+-- else). Without it this migration restores the pin as DATA and leaves it as
+-- DECORATION: `update ... set pair_budget_version = 999` is accepted on a node
+-- repaired without the guard and refused once the guard is back. Restoring an
+-- optimistic-concurrency pin while leaving its enforcement stripped would be the
+-- weakest possible version of this change. The trigger itself still exists on the
+-- drifted node, so replacing the function is sufficient.
+--
+-- WHAT THIS MIGRATION DELIBERATELY DOES NOT FIX. The orphan demolished the whole
+-- wake-budget area, and the drift is WIDER than what is repaired here. Do not read
+-- a clean run of this file as "the node is converged" -- that false confidence is
+-- what produced the original outage. Still divergent afterwards, all in the
+-- wake-budget area and none of them on the delivery hot path:
+--   * `internal.w1_prune_operational_state` -- body still drifted (lost the wake-budget
+--     retention sweep and the `budgetsDeleted` key). Its delivery-settling loops are
+--     intact, which is why the reaper still settles rows.
+--   * `internal.validate_wake_budget` and
+--     `public.reset_session_wake_budget_for_member_reply` -- missing entirely.
+--   * `public.session_wake_budgets` -- present but a BARE STUB: RLS disabled, zero
+--     grants, no select policy, no validate trigger. Fails CLOSED (with no grants at
+--     all `tm8_app` cannot read it regardless of RLS), so this is a consistency defect
+--     rather than an exposure. Its COLUMNS do match the chain, which is the only
+--     reason the backfill subquery above works on such a node.
+--   * `tm8_app=X` on reserve_/claim_session_message_delivery -- an EXTRA grant the
+--     chain does not make, which CREATE OR REPLACE preserves. Inert, because
+--     `require_delivery_principal` gates on `session_user = 'tm8_delivery_worker'`.
+--
+-- HOW SUCH A NODE CAME TO EXIST AT ALL, since it matters for anyone repeating this:
+-- the drift is NOT reachable by running this chain. On a database built as
+-- chain-to-082 + the orphan + the rest, migration 120 ABORTS at its opening
+-- `alter table public.session_wake_budgets` because the orphan dropped that table.
+-- So the affected node cannot have reached 120 through the runner -- the stub was
+-- created BY HAND to get past it, which is precisely why it carries no RLS, no
+-- grants, no policy and no trigger.
+--
+-- The five function bodies below are reproduced verbatim from a database built
 -- from this chain (pg_get_functiondef), so re-asserting them cannot introduce a
 -- variant definition. CREATE OR REPLACE preserves existing EXECUTE grants; a
 -- DROP + CREATE would not, which is why this file never drops.
@@ -60,13 +108,22 @@ begin
 
     alter table public.session_message_deliveries add column pair_budget_version integer;
 
+    -- The fallback is 1, NOT 0, and that is not cosmetic. 0 is already spoken
+    -- for as a sentinel one layer up: `execution.ts:737-739` reads a null pin
+    -- out as `reservationVersion: 0`, and `:763-766` maps
+    -- `reservationVersion === 0` back to a NULL `pairBudgetVersion`. So a row
+    -- storing a literal 0 can never round-trip -- settle sends NULL, the
+    -- function's `delivery.pair_budget_version is distinct from
+    -- p_pair_budget_version` sees `0 is distinct from null` = true, and the
+    -- delivery is refused with `delivery reservation not found`. Any value >= 1
+    -- is outside the sentinel and survives the trip.
     update public.session_message_deliveries d
-       set pair_budget_version = coalesce(
+       set pair_budget_version = greatest(coalesce(
              (select b.version
                 from public.session_wake_budgets b
                where b.low_work_session_id  = d.pair_low_session_id
                  and b.high_work_session_id = d.pair_high_session_id),
-             0)
+             1), 1)
      where d.source_work_session_id is not null
        and d.pair_budget_version is null;
 
@@ -323,5 +380,53 @@ end
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION internal.guard_session_message_delivery()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'internal', 'pg_temp'
+AS $function$
+declare message_space uuid; source_space uuid; target_space uuid;
+begin
+  if tg_op = 'UPDATE' then
+    if new.delivery_id <> old.delivery_id or new.message_id <> old.message_id
+       or new.source_work_session_id is distinct from old.source_work_session_id
+       or new.target_work_session_id <> old.target_work_session_id
+       or new.pair_low_session_id is distinct from old.pair_low_session_id
+       or new.pair_high_session_id is distinct from old.pair_high_session_id
+       or new.pair_budget_version is distinct from old.pair_budget_version
+       or new.attempt_no <> old.attempt_no or new.reserved_at <> old.reserved_at then
+      raise exception 'delivery reservation identity is immutable' using errcode = '23514';
+    end if;
+    if not (
+      new.status = old.status
+      or (old.status = 'pending' and new.status in
+        ('dispatching','failed_permanent','expired','cancelled'))
+      or (old.status = 'dispatching' and new.status in
+        ('delivered','failed_retryable','failed_permanent','unknown'))
+    ) then
+      raise exception 'illegal delivery transition % -> %', old.status, new.status
+        using errcode = '23514';
+    end if;
+  end if;
+
+  select e.space_id into message_space from public.messages m
+    join public.entities e on e.id = m.entity_id where m.entity_id = new.message_id;
+  select e.space_id into target_space from public.work_sessions ws
+    join public.entities e on e.id = ws.entity_id where ws.entity_id = new.target_work_session_id;
+  if new.source_work_session_id is not null then
+    select e.space_id into source_space from public.work_sessions ws
+      join public.entities e on e.id = ws.entity_id where ws.entity_id = new.source_work_session_id;
+  end if;
+  if message_space is null or target_space is null or message_space <> target_space
+     or (new.source_work_session_id is not null and source_space <> target_space)
+     or new.source_work_session_id = new.target_work_session_id then
+    raise exception 'delivery message and sessions must be distinct same-Space endpoints'
+      using errcode = '23514';
+  end if;
+  new.updated_at := now();
+  return new;
+end
+$function$
+;
 
 reset role;
