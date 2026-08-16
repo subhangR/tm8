@@ -28,6 +28,12 @@ import type { ChatEntityRef } from './entity-refs';
 import { ChatEntityGraphFullscreen } from './ChatEntityGraphFullscreen';
 import { foldGraphSeeds } from './graph-seeds';
 import { buildInducedGraph } from './induced-graph';
+import {
+  anyGraphFilterActive,
+  applyGraphFilters,
+  decodeGraphFilters,
+  encodeGraphFilters,
+} from './graph-view';
 import { InducedGraphCanvas } from './InducedGraphCanvas';
 import { layoutInducedGraph } from './induced-layout';
 import type { ChatTurn } from './types';
@@ -51,6 +57,15 @@ export interface ChatEntityGraphProps {
    */
   expanded?: boolean | undefined;
   onExpandedChange?: ((open: boolean) => void) | undefined;
+  /**
+   * `?gf=` — the graph's serialised filter state (step 5), carried by the
+   * host the same route-owned way `expanded` is. This component decodes it
+   * (leniently — graph-view.ts owns the vocabulary), applies it to the
+   * inline canvas, and hands the fullscreen rail's edits back encoded.
+   * Filters chosen fullscreen keep shaping the inline strip after Back.
+   */
+  graphFilters?: string | null | undefined;
+  onGraphFiltersChange?: ((encoded: string | null) => void) | undefined;
 }
 
 export function ChatEntityGraph({
@@ -61,15 +76,29 @@ export function ChatEntityGraph({
   onOpenEntity,
   expanded,
   onExpandedChange,
+  graphFilters,
+  onGraphFiltersChange,
 }: ChatEntityGraphProps) {
   const [open, setOpen] = useState(true);
-  const { drawn, overflow } = useMemo(
+  const fold = useMemo(
     () => foldGraphSeeds(turns, suppressEntityIds),
     [turns, suppressEntityIds],
   );
+  const { drawn, overflow } = fold;
   const seedIds = useMemo(() => drawn.map((seed) => seed.id), [drawn]);
   const read = useInducedConnections(seedIds, connections);
   const graph = useMemo(() => buildInducedGraph(drawn, read), [drawn, read]);
+
+  /* Step 5 — the URL's filters shape the inline drawing too, and the strip
+     echoes the loss read-only: the honesty rule says a hidden card always
+     leaves a visible count behind. */
+  const filters = useMemo(() => decodeGraphFilters(graphFilters), [graphFilters]);
+  const filtersActive = anyGraphFilterActive(filters);
+  const filtered = useMemo(
+    () => (filtersActive ? applyGraphFilters(graph, filters) : null),
+    [filtersActive, graph, filters],
+  );
+  const shown = filtered?.graph ?? graph;
 
   /* R7c — the resolver is the LAST resort: only ids that neither an edge
      payload nor the extraction titled, through the same cache the chips use. */
@@ -97,7 +126,7 @@ export function ChatEntityGraph({
     };
   }, [resolveEntity, unresolvedKey]);
 
-  const placement = useMemo(() => layoutInducedGraph(graph), [graph]);
+  const placement = useMemo(() => layoutInducedGraph(shown), [shown]);
 
   /* Focus returns to Expand when the fullscreen dialog closes (step 4). */
   const expandRef = useRef<HTMLButtonElement | null>(null);
@@ -148,7 +177,10 @@ export function ChatEntityGraph({
       {expanded && onExpandedChange ? (
         <ChatEntityGraphFullscreen
           graph={graph}
+          fold={fold}
           caption={caption}
+          filters={filters}
+          onFiltersChange={(next) => onGraphFiltersChange?.(encodeGraphFilters(next))}
           late={late}
           onOpenEntity={onOpenEntity}
           onClose={() => onExpandedChange(false)}
@@ -156,6 +188,15 @@ export function ChatEntityGraph({
       ) : null}
       {open ? (
         <div className="ceg__canvas">
+          {filtered ? (
+            <p className="ceg__note" data-testid="ceg-filter-echo">
+              {[
+                `Filtered: showing ${filtered.graph.nodes.length} of ${graph.nodes.length}`,
+                ...(filtered.hiddenNodes > 0 ? [`${filtered.hiddenNodes} hidden`] : []),
+                ...(filtered.hiddenEdges > 0 ? [`${filtered.hiddenEdges} relations hidden`] : []),
+              ].join(' · ')}
+            </p>
+          ) : null}
           {allIsolated ? (
             <p className="ceg__note">These entities hold no relations to each other.</p>
           ) : null}

@@ -504,3 +504,48 @@ describe('the fullscreen graph param (plan 01a0094b D2)', () => {
     expect(route?.target).toEqual({ view: 'home' });
   });
 });
+
+describe('the graph filter param `gf` (plan 01a0094b step 5)', () => {
+  it('rides opaquely and round-trips, with or without graph=full', () => {
+    for (const graph of ['full', null] as const) {
+      const route = routeOf({
+        target: {
+          view: 'home',
+          root: {
+            type: 'chats',
+            threadId: id(1),
+            ...(graph ? { graph } : {}),
+            graphFilters: 'k:task;m',
+          },
+        },
+      });
+      const { hash, dropped } = build(normalize(route));
+      expect(dropped).toEqual([]);
+      expect(hash).toContain('gf=');
+      expect(parse(hash).route?.target).toEqual(route.target);
+    }
+  });
+
+  it('survives a threadless route and blocks the bare-home collapse', () => {
+    const route = routeOf({
+      target: {
+        view: 'home',
+        root: { type: 'chats', threadId: null, graphFilters: 'e:assigned_to' },
+      },
+    });
+    expect(normalize(route).target).toEqual(route.target);
+    const { hash } = build(normalize(route));
+    expect(parse(hash).route?.target).toEqual(route.target);
+  });
+
+  it('an empty or undecodable gf is silently ignored', () => {
+    for (const raw of ['gf=', 'gf=%ZZ']) {
+      const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?${raw}`);
+      expect(dropped).toEqual([]);
+      expect(route?.target).toEqual({
+        view: 'home',
+        root: { type: 'chats', threadId: id(1) },
+      });
+    }
+  });
+});

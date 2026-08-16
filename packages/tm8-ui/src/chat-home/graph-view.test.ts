@@ -23,7 +23,9 @@ import {
 import {
   anyGraphFilterActive,
   applyGraphFilters,
+  decodeGraphFilters,
   emptyGraphFilters,
+  encodeGraphFilters,
   graphFacets,
   type GraphFilterState,
 } from './graph-view';
@@ -185,5 +187,41 @@ describe('graphFacets', () => {
       { type: 'working_on', count: 3 },
       { type: 'relates_to', count: 2 },
     ]);
+  });
+});
+
+describe('the gf serialisation (step 5 + D2)', () => {
+  it('round-trips chips and toggles; a blank state encodes to null', () => {
+    const state = filters({
+      kinds: new Set(['task', 'work_session']),
+      edgeTypes: new Set(['assigned_to']),
+      mutatedOnly: true,
+      hideUnread: true,
+    });
+    const encoded = encodeGraphFilters(state)!;
+    expect(encoded).toBe('k:task,work_session;e:assigned_to;m;u');
+    expect(decodeGraphFilters(encoded)).toEqual(state);
+    expect(encodeGraphFilters(emptyGraphFilters())).toBeNull();
+  });
+
+  it('search is DELIBERATELY not serialised — a transient highlight', () => {
+    expect(encodeGraphFilters(filters({ search: 'deploy' }))).toBeNull();
+    const decoded = decodeGraphFilters('k:task');
+    expect(decoded.search).toBe('');
+  });
+
+  it('decodes LENIENTLY: unknown segments and undecodable members are skipped', () => {
+    const decoded = decodeGraphFilters('k:task,%ZZ;wat:42;m;zzz;e:relates_to');
+    expect([...decoded.kinds]).toEqual(['task']);
+    expect([...decoded.edgeTypes]).toEqual(['relates_to']);
+    expect(decoded.mutatedOnly).toBe(true);
+    expect(decoded.hideIsolated).toBe(false);
+    expect(decodeGraphFilters(null)).toEqual(emptyGraphFilters());
+    expect(decodeGraphFilters('')).toEqual(emptyGraphFilters());
+  });
+
+  it('members with structural characters survive the framing', () => {
+    const state = filters({ kinds: new Set(['c-my;kind,x:y']) });
+    expect([...decodeGraphFilters(encodeGraphFilters(state)!).kinds]).toEqual(['c-my;kind,x:y']);
   });
 });

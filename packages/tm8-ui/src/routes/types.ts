@@ -53,6 +53,15 @@ export type HomeRootTarget =
        * link must degrade to the plain conversation, never crash or notice.
        */
       graph?: 'full' | null;
+      /**
+       * `?gf=` — the graph's serialised filter state (plan 01a0094b step 5),
+       * OPAQUE to this layer: the codec carries the string verbatim and
+       * `chat-home/graph-view.ts` owns the vocabulary, decoding leniently so
+       * a stale link's unknown members are ignored, never a crash. Kept
+       * whether or not `graph=full` is set — filters chosen fullscreen still
+       * shape the inline summary after Back closes the dialog.
+       */
+      graphFilters?: string | null;
     };
 
 /** Where the view host points. One member per WLT §2.2 route line. */

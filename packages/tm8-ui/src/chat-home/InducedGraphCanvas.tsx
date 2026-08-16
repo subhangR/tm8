@@ -1,14 +1,23 @@
 /**
  * INDUCED GRAPH CANVAS — the one SVG that draws an `InducedPlacement`, shared
- * by the inline strip (`ChatEntityGraph`) and the fullscreen view. Extracted
- * verbatim from `ChatEntityGraph` (plan 01a0094b step 3): the host owns the
- * fold, the connection reads, the caption and the late title resolution; this
- * component only draws what it is handed.
+ * by the inline strip (`ChatEntityGraph`) and the fullscreen view. The host
+ * owns the fold, the connection reads, the caption, filters and the late
+ * title resolution; this component only draws what it is handed.
+ *
+ * ATTENTION IS CSS, NEVER REMOVAL (plan 01a0094b steps 5–6): search dims
+ * non-matches, selection dims everything outside the selected card's 1-hop
+ * neighbourhood, hover raises incident lines. The drawn SET only changes
+ * upstream, in `applyGraphFilters`, where the change carries a count.
+ *
+ * SELECTION vs OPEN: a host that passes `onSelect` (fullscreen) gets
+ * click-to-select — opening moves to the detail panel's explicit button. A
+ * host without it (inline) keeps click-to-open. Same conditional-pressable
+ * rule as the chips either way.
  *
  * NO TOOL NAMES ANYWHERE (R8): edge labels are relation types, humanised
  * upstream. Cards speak the session-graph family's visual language (`sg-*`).
  */
-import type { KeyboardEvent } from 'react';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { getKind } from '../domain';
 import { HUB_DEGREE } from '../session-graph/model';
@@ -25,6 +34,15 @@ export interface InducedGraphCanvasProps {
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   /** Pan/zoom hosts override the viewBox; default shows the whole placement. */
   viewBox?: string | undefined;
+  /**
+   * Search highlight set. `undefined` ⇒ no search active (nothing dims);
+   * an EMPTY set is an active search matching nothing — everything dims.
+   */
+  matches?: ReadonlySet<string> | undefined;
+  /** Selection (step 6). Non-null dims everything outside its 1-hop hood. */
+  selectedId?: string | null | undefined;
+  /** Present ⇒ clicking a card SELECTS it (fullscreen); absent ⇒ click opens. */
+  onSelect?: ((id: string) => void) | undefined;
 }
 
 export function InducedGraphCanvas({
@@ -33,7 +51,29 @@ export function InducedGraphCanvas({
   late,
   onOpenEntity,
   viewBox,
+  matches,
+  selectedId,
+  onSelect,
 }: InducedGraphCanvasProps) {
+  /** Transient hover — raises incident lines (step 6), never persisted. */
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  /* The selected card's 1-hop neighbourhood, from the drawn lines. */
+  const hood = useMemo(() => {
+    if (!selectedId) return null;
+    const ids = new Set<string>([selectedId]);
+    for (const line of placement.lines) {
+      if (line.edge.a === selectedId) ids.add(line.edge.b);
+      else if (line.edge.b === selectedId) ids.add(line.edge.a);
+    }
+    return ids;
+  }, [selectedId, placement.lines]);
+
+  const dimmed = (id: string): boolean =>
+    (matches !== undefined && !matches.has(id)) || (hood !== null && !hood.has(id));
+  const lineTouches = (line: PlacedLine, id: string | null): boolean =>
+    id !== null && (line.edge.a === id || line.edge.b === id);
+
   return (
     <svg
       className="sg-svg"
@@ -43,7 +83,13 @@ export function InducedGraphCanvas({
       aria-label={ariaLabel}
     >
       {placement.lines.map((line) => (
-        <RelationLine key={line.edge.key} line={line} />
+        <RelationLine
+          key={line.edge.key}
+          line={line}
+          hovered={lineTouches(line, hoveredId)}
+          focused={lineTouches(line, selectedId ?? null)}
+          dimmed={selectedId != null && !lineTouches(line, selectedId)}
+        />
       ))}
       {placement.cards.map((card) => (
         <EntityCard
@@ -53,6 +99,10 @@ export function InducedGraphCanvas({
           y={card.y}
           late={late?.get(card.node.id)}
           onOpen={onOpenEntity}
+          onSelect={onSelect}
+          selected={selectedId === card.node.id}
+          dimmed={dimmed(card.node.id)}
+          onHover={setHoveredId}
         />
       ))}
     </svg>
@@ -61,9 +111,25 @@ export function InducedGraphCanvas({
 
 /** One merged line (R4): the pair's whole relation set, each relation keeping
  *  its own direction. Labels are humanised relation types — never tool names. */
-function RelationLine({ line }: { line: PlacedLine }) {
+function RelationLine({
+  line,
+  hovered,
+  focused,
+  dimmed,
+}: {
+  line: PlacedLine;
+  hovered: boolean;
+  focused: boolean;
+  dimmed: boolean;
+}) {
+  const cls = [
+    'ceg-line',
+    ...(hovered ? ['ceg-line--hover'] : []),
+    ...(focused ? ['ceg-line--focus'] : []),
+    ...(dimmed && !hovered ? ['ceg-line--dim'] : []),
+  ].join(' ');
   return (
-    <g className="ceg-line">
+    <g className={cls}>
       <path className="sg-link" d={`M ${line.x1} ${line.y1} Q ${line.cx} ${line.cy} ${line.x2} ${line.y2}`} />
       <text className="sg-meta ceg-line__labels" x={line.lx} y={line.ly} textAnchor="middle">
         {line.edge.relations.map((relation, index) => (
@@ -82,12 +148,20 @@ function EntityCard({
   y,
   late,
   onOpen,
+  onSelect,
+  selected,
+  dimmed,
+  onHover,
 }: {
   node: InducedNode;
   x: number;
   y: number;
   late: ChatEntityRef | undefined;
   onOpen?: ((id: EntityId) => void) | undefined;
+  onSelect?: ((id: string) => void) | undefined;
+  selected: boolean;
+  dimmed: boolean;
+  onHover: (id: string | null) => void;
 }) {
   const kind = node.resolvedTitle ? node.kind : (late?.kind ?? node.kind);
   const title = node.resolvedTitle ? node.title : (late?.title ?? node.title);
@@ -99,26 +173,37 @@ function EntityCard({
       ? 'edited in this conversation'
       : 'read';
   const label = `${config.label}: ${title} — ${status}`;
-  /* A card is a BUTTON only where the host can open the entity — the same
-     conditional-pressable rule the chips and the live-graph nodes hold. */
-  const pressable = onOpen
+  /* A card is a BUTTON only where pressing it can do something — select
+     where the host tracks selection, else open where the host can open. */
+  const press = onSelect ?? onOpen;
+  const pressable = press
     ? {
         role: 'button',
         tabIndex: 0,
-        onClick: () => onOpen(node.id as EntityId),
+        ...(onSelect ? { 'aria-pressed': selected } : {}),
+        onClick: () => press(node.id as EntityId),
         onKeyDown: (event: KeyboardEvent<SVGGElement>) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            onOpen(node.id as EntityId);
+            press(node.id as EntityId);
           }
         },
       }
     : {};
+  const cls = [
+    'sg-cell',
+    'ceg-cell',
+    ...(node.mutated ? ['ceg-cell--mutated'] : []),
+    ...(selected ? ['ceg-cell--selected'] : []),
+    ...(dimmed && !selected ? ['ceg-cell--dim'] : []),
+  ].join(' ');
   return (
     <g
-      className={`sg-cell ceg-cell${node.mutated ? ' ceg-cell--mutated' : ''}`}
+      className={cls}
       transform={`translate(${x} ${y})`}
       aria-label={label}
+      onMouseEnter={() => onHover(node.id)}
+      onMouseLeave={() => onHover(null)}
       {...pressable}
     >
       <rect

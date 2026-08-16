@@ -137,6 +137,9 @@ export interface HomeChatRegions {
   /** `?graph=full` — the entity graph fullscreen, route-owned (01a0094b D2). */
   graphFull?: boolean;
   onGraphFullChange?(open: boolean): void;
+  /** `?gf=` — the graph's serialised filters, opaque at this layer (step 5). */
+  graphFilters?: string | null;
+  onGraphFiltersChange?(encoded: string | null): void;
   /**
    * A KIND root's list CONTENT: the WORKSPACE's own `EntityListPanel` —
    * the exact tree, tiles, lifecycle tabs, sort and in-panel search the
@@ -492,7 +495,9 @@ export function HomeView(props: HomeViewProps) {
         root: { type: 'chats', threadId: id },
       }),
     /* The graph's fullscreen view is part of the address too (`?graph=full`,
-       01a0094b D2): opening PUSHES history, so Back closes the dialog. */
+       01a0094b D2): opening PUSHES history, so Back closes the dialog. The
+       `?gf=` filters survive open/close both ways — a filter chosen
+       fullscreen still shapes the inline summary after Back (step 5). */
     graphFull: routeRoot?.type === 'chats' && routeRoot.graph === 'full',
     onGraphFullChange: (open) =>
       navStore.getState().navigate({
@@ -501,6 +506,22 @@ export function HomeView(props: HomeViewProps) {
           type: 'chats',
           threadId: routeThreadId,
           ...(open ? { graph: 'full' as const } : {}),
+          ...(routeRoot?.type === 'chats' && routeRoot.graphFilters
+            ? { graphFilters: routeRoot.graphFilters }
+            : {}),
+        },
+      }),
+    graphFilters: routeRoot?.type === 'chats' ? (routeRoot.graphFilters ?? null) : null,
+    onGraphFiltersChange: (encoded) =>
+      navStore.getState().navigate({
+        view: 'home',
+        root: {
+          type: 'chats',
+          threadId: routeThreadId,
+          ...(routeRoot?.type === 'chats' && routeRoot.graph === 'full'
+            ? { graph: 'full' as const }
+            : {}),
+          ...(encoded ? { graphFilters: encoded } : {}),
         },
       }),
     renderRootList,

@@ -47,6 +47,8 @@ export interface ChatHomeSurfaceProps {
   onThreadSelected?: ChatHomeScreenProps['onThreadSelected'];
   graphFull?: ChatHomeScreenProps['graphFull'];
   onGraphFullChange?: ChatHomeScreenProps['onGraphFullChange'];
+  graphFilters?: ChatHomeScreenProps['graphFilters'];
+  onGraphFiltersChange?: ChatHomeScreenProps['onGraphFiltersChange'];
   renderRootList?: ChatHomeScreenProps['renderRootList'];
   centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];
