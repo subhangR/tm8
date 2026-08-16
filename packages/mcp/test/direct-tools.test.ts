@@ -11,6 +11,101 @@ const transport: CatalogTransport = { invoke: async () => ({ ok: true }) };
 const execFileAsync = promisify(execFile);
 
 describe('direct repository tools', () => {
+  it('normalizes bounded inline diagrams and exact annotated repository excerpts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'tm8-mcp-explain-'));
+    await writeFile(join(root, 'flow.ts'), 'const one = 1;\nconst two = one + 1;\n', 'utf8');
+    const router = new Tm8ToolRouter(transport, { mode: 'explain', projectRoot: root });
+
+    await expect(router.call('explain_diagram', {
+      title: 'Request flow', source: 'flowchart LR\n  A --> B', caption: 'One hop.',
+    })).resolves.toMatchObject({
+      structuredContent: {
+        tool: 'explain_diagram', presentation: 'mermaid', title: 'Request flow',
+        source: 'flowchart LR\n  A --> B', caption: 'One hop.',
+      },
+    });
+    await expect(router.call('explain_code', {
+      path: 'flow.ts', startLine: 2, endLine: 2,
+      highlights: [{ startLine: 2, endLine: 2, label: 'Derived value', tone: 'focus' }],
+    })).resolves.toMatchObject({
+      structuredContent: {
+        tool: 'explain_code', presentation: 'code', sourceKind: 'repository',
+        path: 'flow.ts', language: 'typescript', code: 'const two = one + 1;',
+        startLine: 2, endLine: 2, totalLines: 3,
+        highlights: [{ startLine: 2, endLine: 2, label: 'Derived value', tone: 'focus' }],
+      },
+    });
+    await expect(router.call('explain_code', {
+      path: 'flow.ts', code: 'fabricated()',
+    })).resolves.toMatchObject({
+      isError: true, structuredContent: { error: { code: 'invalid_input' } },
+    });
+  });
+
+  it('verifies persisted explanation edges and same-Space file assets before presenting them', async () => {
+    const sourceId = '019f0000-0000-7000-8000-000000000101';
+    const targetId = '019f0000-0000-7000-8000-000000000102';
+    const edgeId = '019f0000-0000-7000-8000-000000000103';
+    const fileId = '019f0000-0000-7000-8000-000000000104';
+    const scoped: CatalogTransport = {
+      invoke: async (operation, options) => {
+        if (operation === 'entities.get') {
+          const id = String(options?.params?.id);
+          if (id === fileId) return {
+            id, kind: 'file', spaceId: 'space-a',
+            content: { kind: 'file', name: 'architecture.png', mimeType: 'image/png', sizeBytes: 4096 },
+          };
+          return { id, kind: 'task', spaceId: 'space-a' };
+        }
+        if (operation === 'entities.connections') return {
+          items: [{
+            id: edgeId, type: 'depends_on',
+            source: { id: sourceId }, target: { id: targetId },
+          }],
+          nextCursor: null,
+        };
+        return { ok: true };
+      },
+    };
+    const router = new Tm8ToolRouter(scoped, { mode: 'explain', spaceId: 'space-a' });
+    const graph = {
+      title: 'Dependency', focusNodeId: 'source',
+      nodes: [
+        { id: 'source', label: 'Source', entityId: sourceId, kind: 'task' },
+        { id: 'target', label: 'Target', entityId: targetId, kind: 'task' },
+        { id: 'idea', label: 'Why it matters' },
+      ],
+      edges: [
+        { from: 'source', to: 'target', label: 'depends on', basis: 'persisted', edgeId, relationshipType: 'depends_on' },
+        { from: 'target', to: 'idea', label: 'explains', basis: 'inferred' },
+      ],
+    };
+    await expect(router.call('explain_graph', graph)).resolves.toMatchObject({
+      structuredContent: {
+        tool: 'explain_graph', presentation: 'focused_graph',
+        edges: [
+          { basis: 'persisted', edgeId, relationshipType: 'depends_on' },
+          { basis: 'inferred' },
+        ],
+      },
+    });
+    await expect(router.call('explain_graph', {
+      ...graph,
+      edges: [{ ...graph.edges[0], edgeId: '019f0000-0000-7000-8000-000000000199' }],
+    })).resolves.toMatchObject({
+      isError: true, structuredContent: { error: { code: 'conflict' } },
+    });
+    await expect(router.call('explain_asset', {
+      fileEntityId: fileId, caption: 'The current architecture.', alt: 'Architecture graph',
+    })).resolves.toMatchObject({
+      structuredContent: {
+        tool: 'explain_asset', presentation: 'asset', fileEntityId: fileId,
+        name: 'architecture.png', mimeType: 'image/png', sizeBytes: 4096,
+        title: 'architecture.png', alt: 'Architecture graph',
+      },
+    });
+  });
+
   it('reads and directly edits within the project root', async () => {
     const root = await mkdtemp(join(tmpdir(), 'tm8-mcp-'));
     await writeFile(join(root, 'one.txt'), 'alpha\nbeta\n', 'utf8');

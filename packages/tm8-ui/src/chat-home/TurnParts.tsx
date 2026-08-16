@@ -3,6 +3,8 @@ import type { EntityId } from '@tm8/contract';
 import { Markdown } from '../kit';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { extractEntityRefs } from './entity-refs';
+import { ExplanationToolCard } from './ExplanationToolCard';
+import { durableOutputToolName, explanationToolName } from './explanation-tools';
 import { projectTurnParts } from './turn-model';
 import type { ChatTurnPart, ChatUsage } from './types';
 
@@ -16,9 +18,17 @@ export interface TurnPartsProps {
    *  a message already on screen is noise; a message from another session or
    *  thread stays a useful pointer. */
   suppressEntityIds?: ReadonlySet<string> | undefined;
+  /** Resolves authenticated tm8 file bytes for an inline asset preview. */
+  assetHref?: ((fileEntityId: EntityId) => string | null) | undefined;
 }
 
-export function TurnParts({ parts, onOpenEntity, resolveEntity, suppressEntityIds }: TurnPartsProps) {
+export function TurnParts({
+  parts,
+  onOpenEntity,
+  resolveEntity,
+  suppressEntityIds,
+  assetHref,
+}: TurnPartsProps) {
   return (
     <div className="tch-parts">
       {projectTurnParts(parts).map((part) => {
@@ -41,6 +51,18 @@ export function TurnParts({ parts, onOpenEntity, resolveEntity, suppressEntityId
           );
         }
         if (part.kind === 'tool') {
+          if (explanationToolName(part.name) || durableOutputToolName(part.name)) {
+            return (
+              <ExplanationToolCard
+                key={`${part.toolCallId}:${part.seq}`}
+                part={part}
+                onOpenEntity={onOpenEntity}
+                resolveEntity={resolveEntity}
+                suppressEntityIds={suppressEntityIds}
+                assetHref={assetHref}
+              />
+            );
+          }
           return (
             <ToolCard
               key={`${part.toolCallId}:${part.seq}`}
@@ -188,4 +210,3 @@ function formatPayload(value: unknown): string {
     return String(value);
   }
 }
-

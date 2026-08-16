@@ -5,5 +5,7 @@ export * from './ChatHomeScreen';
 export * from './TurnParts';
 export * from './EntityChip';
 export * from './entity-refs';
+export * from './explanation-tools';
+export * from './ExplanationToolCard';
 export * from './real-port';
 export * from './ChatHomeSurface';

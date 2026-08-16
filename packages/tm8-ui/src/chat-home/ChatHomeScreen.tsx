@@ -40,6 +40,8 @@ export interface ChatHomeScreenProps {
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   /** Lazily resolves title/kind for bare entity ids in tool payloads. */
   resolveEntity?: ChatEntityResolver | undefined;
+  /** Same authenticated file-byte seam used by the Files screen. */
+  assetHref?: ((fileEntityId: EntityId) => string | null) | undefined;
   /**
    * Starts one upload against the anchor this chat writes to.
    *
@@ -144,6 +146,7 @@ export function ChatHomeScreen({
   newMutationId = defaultMutationId,
   onOpenEntity,
   resolveEntity,
+  assetHref,
   attach,
   skillOptions,
   sessions,
@@ -1104,6 +1107,7 @@ export function ChatHomeScreen({
                   onOpenEntity={onOpenEntity}
                   resolveEntity={resolveEntity}
                   suppressEntityIds={ownMessageIds}
+                  assetHref={assetHref}
                 />
               ))}
               {thinking ? (
@@ -1507,6 +1511,7 @@ function Turn({
   onOpenEntity,
   resolveEntity,
   suppressEntityIds,
+  assetHref,
 }: {
   turn: ChatThreadDetail['turns'][number];
   mode: ChatMode;
@@ -1515,6 +1520,7 @@ function Turn({
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   resolveEntity?: ChatEntityResolver | undefined;
   suppressEntityIds?: ReadonlySet<string> | undefined;
+  assetHref?: ((fileEntityId: EntityId) => string | null) | undefined;
 }) {
   const label = turn.author?.displayName ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
@@ -1559,6 +1565,7 @@ function Turn({
         onOpenEntity={onOpenEntity}
         resolveEntity={resolveEntity}
         suppressEntityIds={suppressEntityIds}
+        assetHref={assetHref}
       />
     </article>
   );

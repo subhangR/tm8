@@ -70,6 +70,10 @@ describe('chat launch composition', () => {
       'Read(/**)',
       'mcp__tm8__tm8_read',
       'mcp__tm8__session_transcript',
+      'mcp__tm8__explain_diagram',
+      'mcp__tm8__explain_graph',
+      'mcp__tm8__explain_code',
+      'mcp__tm8__explain_asset',
       'mcp__tm8__doc_create',
       'mcp__tm8__doc_update',
       'mcp__tm8__artifact_create',
@@ -88,7 +92,8 @@ describe('chat launch composition', () => {
 
   it('puts the stored mode and its authority in the system prompt', () => {
     expect(chatSystemPrompt(launch('ask'), true)).toContain('ASK is the minimal read-only mode');
-    expect(chatSystemPrompt(launch('explain'), true)).toContain('fenced mermaid block');
+    expect(chatSystemPrompt(launch('explain'), true)).toContain('explain_diagram for Mermaid');
+    expect(chatSystemPrompt(launch('explain'), true)).toContain('basis="persisted"');
     expect(chatSystemPrompt(launch('plan'), true)).toContain('Approve → dispatch');
     expect(chatSystemPrompt(launch('build'), true)).toContain('edits are real');
     expect(chatSystemPrompt(launch('orchestrate'), false)).toContain('no repository');

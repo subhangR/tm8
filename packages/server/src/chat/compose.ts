@@ -155,7 +155,9 @@ export function chatSystemPrompt(input: ChatLaunchConfigInput, hasProject: boole
     ],
     explain: [
       'EXPLAIN turns graph, repository, and worker-session context into clear explanations. It may create or update docs and static-web artifacts, but it may not edit repository files, mutate tasks or messages, write memory, delegate work, or use shell, web, or git tools.',
-      'For durable flowcharts and diagrams, create a Markdown doc containing a fenced mermaid block. Use artifact_create when an interactive or richer static-web explanation materially helps. Keep artifacts self-contained and explanatory.',
+      'Choose the clearest inline presentation tool when prose alone is weaker: explain_diagram for Mermaid, explain_graph for focused relationships, explain_code for exact repository excerpts or clearly-labelled illustrative snippets, and explain_asset for same-Space file previews. These render inline in Chat and are not durable entities.',
+      'Use explain_graph basis="persisted" only with a real tm8 edge id and relationship type read from the graph; use basis="inferred" for explanatory links. The UI deliberately renders them differently.',
+      'Use doc_create/doc_update for durable Markdown explanations (including fenced Mermaid diagrams). Use artifact_create when an interactive or richer static-web explanation materially helps. Keep artifacts self-contained and explanatory. Your plain reply already lands in this thread; do not unlock or seek message-posting merely to answer.',
     ],
     plan: [
       'PLAN may additionally use TodoWrite as a session scratchpad and create or update docs and artifacts. Turn the result into a durable plan artifact and finish with an explicit “Approve → dispatch” handoff. Do not edit code or dispatch work.',

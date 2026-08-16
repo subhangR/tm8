@@ -336,6 +336,248 @@
 .tch-tool__detail pre { overflow-x: auto; margin: 6px 0 0; color: var(--pn-ink-2); font: 9.5px/1.45 var(--pn-mono); }
 .tch-tool__detail[data-error] { color: var(--pn-block); }
 
+/* Explain-mode presentation tools. Their structured payload is the secondary
+   disclosure; the diagram/graph/code/asset is the thing the human asked for. */
+.tch-explain {
+  overflow: hidden;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
+}
+
+.tch-explain__toolhead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 31px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.tch-explain__mark { color: var(--pn-brand-2); font: 11px var(--pn-mono); }
+.tch-explain__toolhead code { color: var(--pn-ink-3); font: 9px var(--pn-mono); }
+.tch-explain__state { margin-left: auto; color: var(--pn-run); font: 8.5px var(--pn-mono); }
+.tch-explain[data-state='running'] .tch-explain__state { color: var(--pn-wait); }
+.tch-explain[data-state='error'] .tch-explain__state { color: var(--pn-block); }
+
+.tch-explain__body { padding: 14px; }
+.tch-explain__heading { min-width: 0; }
+.tch-explain__heading > span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--pn-ink-4);
+  font: 8px var(--pn-mono);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+}
+.tch-explain__heading h3 {
+  margin: 0;
+  color: var(--pn-ink);
+  font-family: var(--pn-serif);
+  font-size: 16px;
+  font-weight: 500;
+}
+.tch-explain__caption {
+  margin: 10px 0 0;
+  color: var(--pn-ink-3);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.tch-explain__pending { padding: 18px 14px; color: var(--pn-ink-3); font-size: 11px; }
+
+.tch-explain__source {
+  margin-top: 10px;
+  color: var(--pn-ink-3);
+  font: 9px var(--pn-mono);
+}
+.tch-explain__source summary,
+.tch-explain__raw summary { cursor: pointer; }
+.tch-explain__source pre {
+  overflow-x: auto;
+  margin: 7px 0 0;
+  padding: 9px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font: 9px/1.5 var(--pn-mono);
+}
+
+.tch-explain__raw {
+  border-top: 1px solid var(--pn-line);
+  padding: 6px 10px;
+  color: var(--pn-ink-4);
+  font: 8.5px var(--pn-mono);
+}
+.tch-explain__raw > div { margin: 7px 0; }
+.tch-explain__raw > div + div { padding-top: 7px; border-top: 1px solid var(--pn-line); }
+.tch-explain__raw > div[data-error] { color: var(--pn-block); }
+.tch-explain__raw pre {
+  overflow-x: auto;
+  max-height: 240px;
+  margin: 4px 0 0;
+  color: var(--pn-ink-3);
+  font: 8.5px/1.45 var(--pn-mono);
+}
+
+/* Mermaid already owns its safe lazy renderer; this only tunes its frame in a
+   Chat presentation card instead of a document column. */
+.tch-explain .md-mermaid { margin: 12px 0 0; }
+
+.tch-xgraph__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 10px;
+  color: var(--pn-ink-4);
+  font: 8px var(--pn-mono);
+}
+.tch-xgraph__legend span::before { content: '—'; margin-right: 4px; }
+.tch-xgraph__legend span[data-basis='inferred']::before { content: '– –'; color: var(--pn-brand-2); }
+.tch-xgraph__legend span[data-basis='persisted']::before { color: var(--pn-info); }
+.tch-xgraph__legend span[data-basis='pending']::before { content: '···'; color: var(--pn-wait); }
+.tch-xgraph__stage {
+  overflow-x: auto;
+  margin-top: 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+}
+.tch-xgraph__stage svg { display: block; min-width: 620px; width: 100%; height: auto; }
+.tch-xgraph__stage marker path { fill: var(--pn-ink-3); }
+.tch-xgraph__edges path { fill: none; stroke-width: 1.5; }
+.tch-xgraph__edges g[data-basis='persisted'] path { stroke: var(--pn-info); }
+.tch-xgraph__edges g[data-basis='inferred'] path { stroke: var(--pn-brand-2); stroke-dasharray: 7 5; }
+.tch-xgraph__edges g[data-basis='pending'] path { stroke: var(--pn-wait); stroke-dasharray: 2 5; }
+.tch-xgraph__edges text {
+  fill: var(--pn-ink-3);
+  stroke: var(--pn-surface);
+  stroke-width: 5px;
+  paint-order: stroke;
+  text-anchor: middle;
+  font: 8px var(--pn-mono);
+}
+.tch-xgraph__nodes rect { fill: var(--pn-card); stroke: var(--pn-line-2); }
+.tch-xgraph__nodes g[data-entity='true'] { cursor: pointer; }
+.tch-xgraph__nodes g[data-entity='true'] rect { stroke: var(--pn-brand-2); }
+.tch-xgraph__nodes g[data-focus='true'] rect { stroke-width: 2; fill: var(--pn-brand-soft); }
+.tch-xgraph__nodes g:focus { outline: none; }
+.tch-xgraph__nodes g:focus rect { stroke-width: 3; }
+.tch-xgraph__node-label { fill: var(--pn-ink); text-anchor: middle; font: 10px var(--pn-ui); font-weight: 600; }
+.tch-xgraph__node-kind { fill: var(--pn-ink-4); text-anchor: middle; font: 7px var(--pn-mono); text-transform: uppercase; }
+
+.tch-code { padding: 0; }
+.tch-code__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.tch-code__head .tch-explain__heading { flex: 1; }
+.tch-code__actions { display: flex; align-items: center; gap: 5px; }
+.tch-code__actions > span {
+  color: var(--pn-ink-4);
+  font: 8px var(--pn-mono);
+  text-transform: lowercase;
+}
+.tch-code__actions button,
+.tch-asset__head button {
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  padding: 3px 7px;
+  font: 8.5px var(--pn-ui);
+  cursor: pointer;
+}
+.tch-code__actions button:hover,
+.tch-asset__head button:hover { background: var(--pn-hover); }
+.tch-asset__head button:disabled { cursor: default; opacity: 0.55; }
+.tch-code__path {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  color: var(--pn-ink-4);
+  font: 8px var(--pn-mono);
+}
+.tch-code__path code { overflow: hidden; color: var(--pn-ink-3); text-overflow: ellipsis; white-space: nowrap; }
+.tch-code__scroll { overflow: auto; max-height: 540px; border-top: 1px solid var(--pn-line); background: var(--pn-paper); }
+.tch-code__scroll pre { min-width: max-content; margin: 0; padding: 8px 0; }
+.tch-code__scroll code { font: 10px/1.65 var(--pn-mono); }
+.tch-code__row {
+  display: grid;
+  grid-template-columns: 48px minmax(520px, 1fr);
+  min-height: 16px;
+}
+.tch-code__row[data-highlight] { background: var(--pn-brand-soft); }
+.tch-code__row[data-highlight='warning'] { background: var(--pn-block-soft); }
+.tch-code__row[data-highlight='note'] { background: var(--pn-active); }
+.tch-code__line {
+  padding-right: 10px;
+  color: var(--pn-ink-4);
+  text-align: right;
+  user-select: none;
+}
+.tch-code__source { padding-right: 16px; color: var(--pn-ink-2); white-space: pre; }
+.tch-code__annotation {
+  grid-column: 2;
+  margin: 2px 16px 5px 0;
+  padding: 3px 7px;
+  border-left: 2px solid var(--pn-brand-2);
+  color: var(--pn-ink-3);
+  background: var(--pn-surface);
+  white-space: normal;
+  font: 9px/1.4 var(--pn-ui);
+}
+.tch-code__annotation[data-tone='warning'] { border-color: var(--pn-block); }
+.tch-code__annotation[data-tone='note'] { border-color: var(--pn-info); }
+.tch-code__tok--keyword { color: var(--pn-brand-2); font-weight: 600; }
+.tch-code__tok--string { color: var(--pn-run); }
+.tch-code__tok--comment { color: var(--pn-ink-4); font-style: italic; }
+.tch-code__tok--number { color: var(--pn-info); }
+.tch-code__tok--name { color: var(--pn-ink-2); }
+
+.tch-asset__head { display: flex; align-items: center; gap: 10px; }
+.tch-asset__head .tch-explain__heading { flex: 1; }
+.tch-asset > img,
+.tch-asset > video {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 460px;
+  margin: 12px auto 0;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+}
+.tch-asset > audio { width: 100%; margin-top: 12px; }
+.tch-asset__file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+}
+.tch-asset__file > span { color: var(--pn-brand-2); font-size: 20px; }
+.tch-asset__file > div { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.tch-asset__file strong { overflow: hidden; color: var(--pn-ink-2); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.tch-asset__file small { color: var(--pn-ink-4); font: 8px var(--pn-mono); }
+.tch-asset__file a { color: var(--pn-brand); font-size: 9px; }
+.tch-asset__file em { color: var(--pn-ink-4); font-size: 9px; }
+
+.tch-durable__entities { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.tch-durable__state { display: block; margin-top: 8px; color: var(--pn-ink-4); font: 9px var(--pn-mono); }
+.tch-durable__state[data-state='error'] { color: var(--pn-block); }
+.tch-durable__state[data-state='running'] { color: var(--pn-wait); }
+
 /* Entity chips — graph entities a tool call touched, first-class in the
    transcript. Same visual family as list rows: kind mark + title + kind word. */
 .tch-tool__entities {

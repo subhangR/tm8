@@ -3,7 +3,7 @@ import { lookup } from 'node:dns/promises';
 import { exec, execFile, spawn } from 'node:child_process';
 import { constants, createReadStream } from 'node:fs';
 import { BlockList, isIP } from 'node:net';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { lstat, mkdir, open, realpath } from 'node:fs/promises';
 import { Worker } from 'node:worker_threads';
@@ -22,6 +22,9 @@ const MAX_GREP_FILE_MS = 1_000;
 const MAX_GREP_TOTAL_MS = 5_000;
 const MAX_GREP_LINE_CHARS = 16_384;
 const MAX_GREP_RESULT_CHARS = 4_096;
+const MAX_EXPLANATION_BYTES = 128 * 1024;
+const MAX_EXPLANATION_LINES = 500;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const GREP_WORKER_SOURCE = String.raw`
   const { parentPort, workerData } = require('node:worker_threads');
@@ -86,6 +89,85 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   { name: 'session_tail', description: 'Read the newest live transcript window for a worker session.', inputSchema: objectSchema({ sessionId: stringProp('Work-session entity id.'), last: integerProp('Newest entries.', 1, 100) }, ['sessionId']), annotations: annotations(true) },
   { name: 'session_followup', description: 'Steer a worker by posting a durable message anchored to its session.', inputSchema: objectSchema({ sessionId: stringProp('Work-session entity id.'), body: stringProp('Follow-up instruction.') }, ['sessionId', 'body']), annotations: annotations(false) },
   { name: 'session_stop', description: 'Stop a running worker session.', inputSchema: objectSchema({ sessionId: stringProp('Work-session entity id.'), force: { type: 'boolean' } }, ['sessionId']), annotations: annotations(false, true) },
+  {
+    name: 'explain_diagram',
+    description: 'Present a bounded Mermaid diagram inline in Chat. This does not create a durable entity; use doc_create for a durable diagram.',
+    inputSchema: objectSchema({
+      title: stringProp('Short visible diagram title.'),
+      source: stringProp('Mermaid source. Do not wrap it in a Markdown fence.'),
+      caption: stringProp('Optional explanation below the diagram.'),
+    }, ['title', 'source']),
+    annotations: annotations(true),
+  },
+  {
+    name: 'explain_graph',
+    description: 'Present a focused node-edge explanation inline. Persisted edges must carry real tm8 edge ids and are verified; inferred edges are drawn distinctly.',
+    inputSchema: objectSchema({
+      title: stringProp('Short visible graph title.'),
+      caption: stringProp('Optional explanation below the graph.'),
+      focusNodeId: stringProp('Optional local node id to place at the center.'),
+      nodes: {
+        type: 'array', minItems: 1, maxItems: 16,
+        items: objectSchema({
+          id: stringProp('Local id used by edges in this presentation.'),
+          label: stringProp('Visible node label.'),
+          description: stringProp('Optional short node description.'),
+          entityId: stringProp('Optional real tm8 entity id. Real entities are clickable.'),
+          kind: stringProp('Optional tm8 entity kind or concept kind label.'),
+        }, ['id', 'label']),
+      },
+      edges: {
+        type: 'array', maxItems: 32,
+        items: objectSchema({
+          from: stringProp('Source local node id.'),
+          to: stringProp('Target local node id.'),
+          label: stringProp('Visible relationship label.'),
+          basis: { type: 'string', enum: ['persisted', 'inferred'], description: 'Whether this is a stored tm8 edge or an explanatory inference.' },
+          edgeId: stringProp('Required for persisted links: the real tm8 edge id.'),
+          relationshipType: stringProp('Required for persisted links: the stored tm8 edge type.'),
+        }, ['from', 'to', 'label', 'basis']),
+      },
+    }, ['title', 'nodes', 'edges']),
+    annotations: annotations(true),
+  },
+  {
+    name: 'explain_code',
+    description: 'Present an exact repository excerpt or clearly-labelled illustrative code inline with line numbers, syntax colour, highlights and annotations.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: stringProp('Optional visible title.'),
+        path: stringProp('Project-relative repository path. Supply path or code, never both.'),
+        code: stringProp('Illustrative source text. Supply code or path, never both.'),
+        language: stringProp('Optional syntax language; inferred from path when omitted.'),
+        startLine: integerProp('First repository line, or first displayed illustrative line.', 1, 1_000_000),
+        endLine: integerProp('Last repository line. At most 500 lines are displayed.', 1, 1_000_000),
+        highlights: {
+          type: 'array', maxItems: 24,
+          items: objectSchema({
+            startLine: integerProp('First highlighted displayed line.', 1, 1_000_000),
+            endLine: integerProp('Last highlighted displayed line.', 1, 1_000_000),
+            label: stringProp('Optional annotation shown with the range.'),
+            tone: { type: 'string', enum: ['focus', 'note', 'warning'] },
+          }, ['startLine', 'endLine']),
+        },
+      },
+      oneOf: [{ required: ['path'] }, { required: ['code'] }],
+      additionalProperties: false,
+    },
+    annotations: annotations(true),
+  },
+  {
+    name: 'explain_asset',
+    description: 'Present a same-Space tm8 file inline as a safe image/media preview or downloadable file card.',
+    inputSchema: objectSchema({
+      fileEntityId: stringProp('Real tm8 file entity id in this Chat Space.'),
+      title: stringProp('Optional visible title; defaults to the stored filename.'),
+      caption: stringProp('Optional explanation below the asset.'),
+      alt: stringProp('Accessible alternative text; defaults to the stored filename.'),
+    }, ['fileEntityId']),
+    annotations: annotations(true),
+  },
   { name: 'doc_create', description: 'Create a first-class Markdown doc graph entity.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), title: stringProp('Document title.'), body: stringProp('Markdown body.'), attachTo: stringProp('Optional entity id to attach the doc to.') }, ['spaceId', 'title', 'body']), annotations: annotations(false) },
   { name: 'doc_update', description: 'Update a first-class Markdown doc under a version guard.', inputSchema: objectSchema({ docId: stringProp('Doc entity id.'), expectedVersion: integerProp('Current entity version.', 1, 1_000_000), title: stringProp('Optional replacement title.'), body: stringProp('Replacement Markdown body.') }, ['docId', 'expectedVersion', 'body']), annotations: annotations(false) },
   { name: 'artifact_create', description: 'Create a versioned static-web artifact graph entity.', inputSchema: objectSchema({ spaceId: stringProp('Space id.'), name: stringProp('Artifact name.'), description: stringProp('Optional description.'), manifest: { type: 'object', additionalProperties: true }, files: { type: 'array', items: { type: 'object', additionalProperties: true } }, sourceWorkSessionId: stringProp('Optional producing session id.') }, ['spaceId', 'name', 'manifest']), annotations: annotations(false) },
@@ -140,6 +222,10 @@ export async function callDirectTool(
     case 'session_tail': return sessionTranscript(args, context, true);
     case 'session_followup': return sessionFollowup(args, context);
     case 'session_stop': return sessionStop(args, context);
+    case 'explain_diagram': return explainDiagram(args);
+    case 'explain_graph': return explainGraph(args, context);
+    case 'explain_code': return explainCode(args, context);
+    case 'explain_asset': return explainAsset(args, context);
     case 'doc_create': return docCreate(args, context);
     case 'doc_update': return docUpdate(args, context);
     case 'artifact_create': return artifactCreate(args, context);
@@ -385,6 +471,272 @@ async function sessionStop(args: Record<string, unknown>, context: DirectToolCon
   return result('session_stop', { data });
 }
 
+function explainDiagram(args: Record<string, unknown>) {
+  const source = boundedString(args.source, 'source', MAX_EXPLANATION_BYTES);
+  const caption = optionalBoundedString(args.caption, 'caption', 2_000);
+  if (source.includes('```')) {
+    throw new DirectToolError('invalid_input', 'source must be bare Mermaid syntax without a Markdown fence');
+  }
+  return result('explain_diagram', {
+    presentation: 'mermaid',
+    title: boundedString(args.title, 'title', 200),
+    source,
+    ...(caption ? { caption } : {}),
+  });
+}
+
+interface ExplanationGraphNode {
+  id: string;
+  label: string;
+  description?: string;
+  entityId?: string;
+  kind?: string;
+}
+
+interface ExplanationGraphEdge {
+  from: string;
+  to: string;
+  label: string;
+  basis: 'persisted' | 'inferred';
+  edgeId?: string;
+  relationshipType?: string;
+}
+
+async function explainGraph(args: Record<string, unknown>, context: DirectToolContext) {
+  const nodeRows = boundedArray(args.nodes, 'nodes', 1, 16);
+  const edgeRows = boundedArray(args.edges, 'edges', 0, 32);
+  const nodes: ExplanationGraphNode[] = nodeRows.map((raw, index) => {
+    const node = objectOf(raw, `nodes[${index}]`);
+    const entityId = optionalBoundedString(node.entityId, `nodes[${index}].entityId`, 100);
+    const description = optionalBoundedString(node.description, `nodes[${index}].description`, 500);
+    const kind = optionalBoundedString(node.kind, `nodes[${index}].kind`, 80);
+    if (entityId && !UUID.test(entityId)) {
+      throw new DirectToolError('invalid_input', `nodes[${index}].entityId must be a UUID`);
+    }
+    return {
+      id: boundedString(node.id, `nodes[${index}].id`, 80),
+      label: boundedString(node.label, `nodes[${index}].label`, 160),
+      ...(description ? { description } : {}),
+      ...(entityId ? { entityId } : {}),
+      ...(kind ? { kind } : {}),
+    };
+  });
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  if (byId.size !== nodes.length) throw new DirectToolError('invalid_input', 'graph node ids must be unique');
+
+  const focusNodeId = optionalBoundedString(args.focusNodeId, 'focusNodeId', 80);
+  const caption = optionalBoundedString(args.caption, 'caption', 2_000);
+  if (focusNodeId && !byId.has(focusNodeId)) {
+    throw new DirectToolError('invalid_input', 'focusNodeId must name one of the graph nodes');
+  }
+
+  const edges: ExplanationGraphEdge[] = edgeRows.map((raw, index) => {
+    const edge = objectOf(raw, `edges[${index}]`);
+    const from = boundedString(edge.from, `edges[${index}].from`, 80);
+    const to = boundedString(edge.to, `edges[${index}].to`, 80);
+    if (!byId.has(from) || !byId.has(to)) {
+      throw new DirectToolError('invalid_input', `edges[${index}] must reference existing node ids`);
+    }
+    if (edge.basis !== 'persisted' && edge.basis !== 'inferred') {
+      throw new DirectToolError('invalid_input', `edges[${index}].basis must be persisted or inferred`);
+    }
+    const edgeId = optionalBoundedString(edge.edgeId, `edges[${index}].edgeId`, 100);
+    const relationshipType = optionalBoundedString(
+      edge.relationshipType,
+      `edges[${index}].relationshipType`,
+      100,
+    );
+    if (edge.basis === 'persisted' && (!edgeId || !UUID.test(edgeId) || !relationshipType)) {
+      throw new DirectToolError(
+        'invalid_input',
+        `edges[${index}] marked persisted must include a UUID edgeId and relationshipType`,
+      );
+    }
+    return {
+      from,
+      to,
+      label: boundedString(edge.label, `edges[${index}].label`, 120),
+      basis: edge.basis,
+      ...(edgeId ? { edgeId } : {}),
+      ...(relationshipType ? { relationshipType } : {}),
+    };
+  });
+
+  await Promise.all(nodes.flatMap((node) => node.entityId
+    ? [confinedEntity(context, node.entityId)]
+    : []));
+  await Promise.all(edges.flatMap((edge, index) => edge.basis === 'persisted'
+    ? [verifyPersistedExplanationEdge(context, byId, edge, index)]
+    : []));
+
+  return result('explain_graph', {
+    presentation: 'focused_graph',
+    title: boundedString(args.title, 'title', 200),
+    ...(caption ? { caption } : {}),
+    ...(focusNodeId ? { focusNodeId } : {}),
+    nodes,
+    edges,
+  });
+}
+
+async function verifyPersistedExplanationEdge(
+  context: DirectToolContext,
+  nodes: ReadonlyMap<string, ExplanationGraphNode>,
+  edge: ExplanationGraphEdge,
+  index: number,
+): Promise<void> {
+  const sourceId = nodes.get(edge.from)?.entityId;
+  const targetId = nodes.get(edge.to)?.entityId;
+  if (!sourceId || !targetId || !edge.edgeId || !edge.relationshipType) {
+    throw new DirectToolError(
+      'invalid_input',
+      `edges[${index}] marked persisted must connect two real tm8 entity nodes`,
+    );
+  }
+  const page = await context.transport.invoke('entities.connections', {
+    params: { id: sourceId },
+    query: {
+      direction: 'outgoing',
+      peerId: targetId,
+      type: edge.relationshipType,
+      limit: '50',
+    },
+  }) as { items?: Array<{ id?: unknown; type?: unknown; source?: { id?: unknown }; target?: { id?: unknown } }> };
+  const verified = page.items?.some((candidate) => (
+    candidate.id === edge.edgeId
+    && candidate.type === edge.relationshipType
+    && candidate.source?.id === sourceId
+    && candidate.target?.id === targetId
+  ));
+  if (!verified) {
+    throw new DirectToolError(
+      'conflict',
+      `edges[${index}] is marked persisted but no matching tm8 edge is visible in this Space`,
+    );
+  }
+}
+
+interface CodeHighlight {
+  startLine: number;
+  endLine: number;
+  label?: string;
+  tone: 'focus' | 'note' | 'warning';
+}
+
+async function explainCode(args: Record<string, unknown>, context: DirectToolContext) {
+  const path = optionalBoundedString(args.path, 'path', 4_096);
+  const suppliedCode = args.code === undefined
+    ? undefined
+    : boundedString(args.code, 'code', MAX_EXPLANATION_BYTES, true);
+  if ((path ? 1 : 0) + (suppliedCode !== undefined ? 1 : 0) !== 1) {
+    throw new DirectToolError('invalid_input', 'supply exactly one of path or code');
+  }
+
+  if (path) {
+    const target = await confinedExistingPath(context, path);
+    const bytes = await readFileCapped(target);
+    if (bytes.includes(0)) throw new DirectToolError('invalid_input', 'path must name a UTF-8 text file');
+    const lines = bytes.toString('utf8').split('\n');
+    const startLine = integer(args.startLine, 'startLine', 1, 1_000_000) ?? 1;
+    if (startLine > lines.length) throw new DirectToolError('invalid_input', 'startLine is past the end of the file');
+    const requestedEnd = integer(args.endLine, 'endLine', 1, 1_000_000)
+      ?? Math.min(lines.length, startLine + 199);
+    if (requestedEnd < startLine || requestedEnd - startLine + 1 > MAX_EXPLANATION_LINES) {
+      throw new DirectToolError('invalid_input', `code range must contain 1-${MAX_EXPLANATION_LINES} lines`);
+    }
+    const endLine = Math.min(requestedEnd, lines.length);
+    const code = lines.slice(startLine - 1, endLine).join('\n');
+    if (Buffer.byteLength(code) > MAX_EXPLANATION_BYTES) {
+      throw new DirectToolError('payload_too_large', `code excerpt exceeds ${MAX_EXPLANATION_BYTES} bytes`);
+    }
+    return result('explain_code', {
+      presentation: 'code',
+      sourceKind: 'repository',
+      title: optionalBoundedString(args.title, 'title', 200) ?? basename(path),
+      path,
+      language: optionalBoundedString(args.language, 'language', 80) ?? languageForPath(path),
+      code,
+      startLine,
+      endLine,
+      totalLines: lines.length,
+      highlights: normalizeCodeHighlights(args.highlights, startLine, endLine),
+    });
+  }
+
+  const code = suppliedCode ?? '';
+  const codeLines = code.split('\n').length;
+  if (codeLines > MAX_EXPLANATION_LINES) {
+    throw new DirectToolError('payload_too_large', `illustrative code exceeds ${MAX_EXPLANATION_LINES} lines`);
+  }
+  const startLine = integer(args.startLine, 'startLine', 1, 1_000_000) ?? 1;
+  const endLine = startLine + codeLines - 1;
+  return result('explain_code', {
+    presentation: 'code',
+    sourceKind: 'illustrative',
+    title: optionalBoundedString(args.title, 'title', 200) ?? 'Illustrative code',
+    language: optionalBoundedString(args.language, 'language', 80) ?? 'text',
+    code,
+    startLine,
+    endLine,
+    totalLines: codeLines,
+    highlights: normalizeCodeHighlights(args.highlights, startLine, endLine),
+  });
+}
+
+function normalizeCodeHighlights(raw: unknown, firstLine: number, lastLine: number): CodeHighlight[] {
+  return boundedArray(raw ?? [], 'highlights', 0, 24).map((item, index) => {
+    const row = objectOf(item, `highlights[${index}]`);
+    const startLine = requiredInteger(row.startLine, `highlights[${index}].startLine`, 1, 1_000_000);
+    const endLine = requiredInteger(row.endLine, `highlights[${index}].endLine`, 1, 1_000_000);
+    if (startLine > endLine || startLine < firstLine || endLine > lastLine) {
+      throw new DirectToolError(
+        'invalid_input',
+        `highlights[${index}] must fall inside displayed lines ${firstLine}-${lastLine}`,
+      );
+    }
+    if (row.tone !== undefined && !['focus', 'note', 'warning'].includes(String(row.tone))) {
+      throw new DirectToolError('invalid_input', `highlights[${index}].tone is invalid`);
+    }
+    const label = optionalBoundedString(row.label, `highlights[${index}].label`, 500);
+    return {
+      startLine,
+      endLine,
+      ...(label ? { label } : {}),
+      tone: (row.tone as CodeHighlight['tone'] | undefined) ?? 'focus',
+    };
+  });
+}
+
+async function explainAsset(args: Record<string, unknown>, context: DirectToolContext) {
+  const fileEntityId = boundedString(args.fileEntityId, 'fileEntityId', 100);
+  if (!UUID.test(fileEntityId)) throw new DirectToolError('invalid_input', 'fileEntityId must be a UUID');
+  const detail = await confinedEntityDetail(context, fileEntityId, 'file');
+  const content = objectOf(detail.content, 'file content');
+  const name = boundedString(content.name, 'file content.name', 1_000);
+  const mimeType = boundedString(content.mimeType, 'file content.mimeType', 200);
+  const sizeBytes = requiredInteger(content.sizeBytes, 'file content.sizeBytes', 0, Number.MAX_SAFE_INTEGER);
+  const caption = optionalBoundedString(args.caption, 'caption', 2_000);
+  return result('explain_asset', {
+    presentation: 'asset',
+    fileEntityId,
+    name,
+    mimeType,
+    sizeBytes,
+    title: optionalBoundedString(args.title, 'title', 200) ?? name,
+    alt: optionalBoundedString(args.alt, 'alt', 500) ?? name,
+    ...(caption ? { caption } : {}),
+  });
+}
+
+function languageForPath(path: string): string {
+  return ({
+    '.c': 'c', '.cc': 'cpp', '.cpp': 'cpp', '.css': 'css', '.go': 'go', '.html': 'html',
+    '.java': 'java', '.js': 'javascript', '.jsx': 'jsx', '.json': 'json', '.md': 'markdown',
+    '.py': 'python', '.rb': 'ruby', '.rs': 'rust', '.sh': 'shell', '.sql': 'sql',
+    '.ts': 'typescript', '.tsx': 'tsx', '.yaml': 'yaml', '.yml': 'yaml',
+  } as Record<string, string>)[extname(path).toLowerCase()] ?? 'text';
+}
+
 async function docCreate(args: Record<string, unknown>, context: DirectToolContext) {
   const spaceId = requiredString(args.spaceId, 'spaceId');
   assertThreadSpace(context, spaceId);
@@ -538,10 +890,20 @@ async function confinedEntity(
   entityId: string,
   expectedKind?: string,
 ): Promise<{ id: string; kind: string; spaceId: string }> {
+  const data = await confinedEntityDetail(context, entityId, expectedKind);
+  return { id: data.id as string, kind: data.kind as string, spaceId: data.spaceId as string };
+}
+
+async function confinedEntityDetail(
+  context: DirectToolContext,
+  entityId: string,
+  expectedKind?: string,
+): Promise<Record<string, unknown> & { id: string; kind: string; spaceId: string }> {
   const data = await context.transport.invoke('entities.get', { params: { id: entityId } }) as {
     id?: unknown;
     kind?: unknown;
     spaceId?: unknown;
+    [key: string]: unknown;
   };
   if (typeof data.id !== 'string' || typeof data.kind !== 'string' || typeof data.spaceId !== 'string') {
     throw new DirectToolError('upstream_error', 'entity scope check returned an invalid result');
@@ -550,7 +912,7 @@ async function confinedEntity(
   if (expectedKind && data.kind !== expectedKind) {
     throw new DirectToolError('invalid_input', `target must be a ${expectedKind} entity`);
   }
-  return { id: data.id, kind: data.kind, spaceId: data.spaceId };
+  return data as Record<string, unknown> & { id: string; kind: string; spaceId: string };
 }
 
 async function projectRoot(context: DirectToolContext): Promise<string> {
@@ -935,9 +1297,29 @@ function requiredString(raw: unknown, field: string, emptyAllowed = false): stri
   return raw;
 }
 
+function boundedString(raw: unknown, field: string, maxBytes: number, emptyAllowed = false): string {
+  const value = requiredString(raw, field, emptyAllowed);
+  if (Buffer.byteLength(value) > maxBytes) {
+    throw new DirectToolError('payload_too_large', `${field} exceeds ${maxBytes} bytes`);
+  }
+  return value;
+}
+
 function optionalString(raw: unknown, field: string): string | undefined {
   if (raw === undefined) return undefined;
   return requiredString(raw, field);
+}
+
+function optionalBoundedString(raw: unknown, field: string, maxBytes: number): string | undefined {
+  if (raw === undefined) return undefined;
+  return boundedString(raw, field, maxBytes);
+}
+
+function boundedArray(raw: unknown, field: string, minimum: number, maximum: number): unknown[] {
+  if (!Array.isArray(raw) || raw.length < minimum || raw.length > maximum) {
+    throw new DirectToolError('invalid_input', `${field} must contain ${minimum}-${maximum} items`);
+  }
+  return raw;
 }
 
 function integer(raw: unknown, field: string, minimum: number, maximum: number): number | undefined {
