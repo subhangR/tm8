@@ -731,6 +731,22 @@
 }
 .cv2-root .pn-body > .pn-section { padding: 0 0 10px; }
 
+/* THE MEASURED COLUMN (task-panel redesign, 2026-08-16). A body that opts in
+   caps every child at the reading measure and centers the column; the panel
+   chrome (header, tabs, controls band, footer) stays full-bleed. Opt-IN by
+   class rather than applied to `.pn-body` wholesale: the graph body measures a
+   canvas from its box, terminal/chat bodies own their full width, and the
+   other tab bodies keep their current anatomy until each is verified by eye. */
+.cv2-root .pn-body--measured {
+  align-items: center;
+  padding: var(--pn-space-6) var(--pn-space-4);
+  gap: var(--pn-space-5);
+}
+.cv2-root .pn-body--measured > * {
+  width: 100%;
+  max-width: var(--pn-read-measure);
+}
+
 /* Connections has TWO renderings of ONE fact, so the switch is a segmented
    control rather than a tab: List and Graph are the same edges, read
    differently. It sits above the surface it governs and never scrolls with it. */
@@ -2842,9 +2858,16 @@
    both. Under the tabs it is a band in its own right, so the band supplies
    them; the strip inside keeps its chip layout unchanged. */
 .cv2-root .pn-controls {
-  padding: 6px 10px;
+  padding: 6px var(--pn-space-4);
   border-bottom: 1px solid var(--pn-line);
   background: color-mix(in srgb, var(--pn-surface) 72%, var(--pn-card));
+}
+/* The BAND stays full-bleed (background + hairline span the panel); its
+   CONTENTS ride the same reading measure as the body below it. */
+.cv2-root .pn-controls__measure {
+  width: 100%;
+  max-width: var(--pn-read-measure);
+  margin-inline: auto;
 }
 
 /* A REFUSED CHIP MUST NOT COST THE ROW ITS SECOND DIMENSION.

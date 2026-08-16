@@ -779,7 +779,8 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           hairline under the tabs. No archetype gate — see `strip` above. */}
       {strip ? (
         <div className="pn-controls" data-testid="panel-controls">
-          {strip}
+          {/* The BAND is full-bleed; its contents ride the reading measure. */}
+          <div className="pn-controls__measure">{strip}</div>
         </div>
       ) : null}
 
@@ -802,15 +803,14 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               at all while the save is clean, so this costs the body no height
               in the ordinary case. */}
           <AuthoringHost save={save}>
-            <PanelBody {...props} detail={detail} tab={tab} save={save} surfaceSlot={surfaceSlot} />
             {/*
               ATTACHMENTS RIDE IN THE CONTENT BODY — not in a fifth tab. D3
               fixes the panel at four tabs for every kind (user ruling
               2026-08-01), and the content body is the one region allowed to
-              vary. Rendered HERE rather than inside each archetype arm so it
-              is genuinely kind-agnostic: one mount serves task, doc,
-              work_session and every custom kind, and no future archetype can
-              forget to include it.
+              vary. The element is BUILT here rather than inside each
+              archetype arm so it is genuinely kind-agnostic: one construction
+              serves task, doc, work_session and every custom kind, and no
+              future archetype can forget to include it.
 
               THREE EXCLUSIONS, all structural, none a kind check. The
               terminal archetype owns its full height (a live PTY canvas with a
@@ -818,25 +818,48 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               tombstone shows only its tombstone, and a composition:'chat'
               body ends at its composer — the composer's + button already owns
               attach, so a strip below it is duplication.
+
+              PLACEMENT is the body's (2026-08-16 addendum): the subtree
+              archetype consumes the slot inside its description block; every
+              other archetype keeps today's placement, after the body. One
+              structural boolean, beside the three exclusions above.
             */}
-            {tab === 'content' &&
-            !isTombstone &&
-            config.panel.archetype !== 'terminal' &&
-            config.panel.composition !== 'chat' ? (
-              <AttachmentStrip
-                anchorId={detail.id}
-                files={attachedFiles(detail)}
-                downloadHref={props.attachments?.downloadHref}
-                startUpload={props.attachments?.startUpload}
-                projectFolder={props.attachments?.projectFolder}
-                onUploaded={props.onAttachmentUploaded}
-                onDetach={props.attachments?.detach}
-                /* A detach and an upload change the SAME thing — the anchor's
-                   `attached_to` edges — so they share one refetch, and a host
-                   cannot wire adding without also wiring removing. */
-                onDetached={props.onAttachmentUploaded}
-              />
-            ) : null}
+            {(() => {
+              const attachmentSlot =
+                tab === 'content' &&
+                !isTombstone &&
+                config.panel.archetype !== 'terminal' &&
+                config.panel.composition !== 'chat' ? (
+                  <AttachmentStrip
+                    anchorId={detail.id}
+                    files={attachedFiles(detail)}
+                    downloadHref={props.attachments?.downloadHref}
+                    startUpload={props.attachments?.startUpload}
+                    projectFolder={props.attachments?.projectFolder}
+                    onUploaded={props.onAttachmentUploaded}
+                    onDetach={props.attachments?.detach}
+                    /* A detach and an upload change the SAME thing — the
+                       anchor's `attached_to` edges — so they share one
+                       refetch, and a host cannot wire adding without also
+                       wiring removing. */
+                    onDetached={props.onAttachmentUploaded}
+                  />
+                ) : null;
+              const bodyConsumesSlot = config.panel.archetype === 'subtree';
+              return (
+                <>
+                  <PanelBody
+                    {...props}
+                    detail={detail}
+                    tab={tab}
+                    save={save}
+                    surfaceSlot={surfaceSlot}
+                    attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
+                  />
+                  {bodyConsumesSlot ? null : attachmentSlot}
+                </>
+              );
+            })()}
           </AuthoringHost>
         </CatchBoundary>
       )}
@@ -881,6 +904,9 @@ function PanelBody(
     save: TaskSaveHandle;
     /** The panel bar's slot node for the terminal/chat switch. Null elsewhere. */
     surfaceSlot?: HTMLElement | null;
+    /** The attachment tiles, built by the panel; the subtree body places them
+        inside its description block. Null for every other archetype. */
+    attachmentSlot?: ReactNode;
   },
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
@@ -1034,6 +1060,7 @@ function PanelBody(
            also a listed attachment on the same record. */
         attach={startUpload ? (file: File) => startUpload(file, detail.id) : undefined}
         onAttached={props.onAttachmentUploaded}
+        attachmentSlot={props.attachmentSlot}
       />
     );
   }
