@@ -613,6 +613,23 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     expect(PROFILE_PINNED_CAPTION).toContain('even if the profile is edited or retired later');
   });
 
+  it('carries caller-stated terminal geometry, and omits the fields entirely without it', () => {
+    // A create flow spawns with NO terminal on screen, so the ops layer's
+    // measurement fallback has nothing real to read — it returns a stale global
+    // or nothing at all. Such a caller must be able to STATE its geometry, and
+    // an absent statement must stay absent so the measurement still wins.
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-sonnet-5' });
+    const stated = buildSpawnInput({
+      clientMutationId: 'c', spaceId: 's', config, cols: 173, rows: 44,
+    });
+    expect(stated.cols).toBe(173);
+    expect(stated.rows).toBe(44);
+
+    const silent = buildSpawnInput({ clientMutationId: 'c', spaceId: 's', config });
+    expect('cols' in silent).toBe(false);
+    expect('rows' in silent).toBe(false);
+  });
+
   it('D51.4 — extra projects are ADDITIVE and never silently accepted', () => {
     // The launch root is genuinely performable; the extras are in_project edges
     // the stamped seam cannot write, so they are refused with the mechanism.
