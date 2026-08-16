@@ -59,6 +59,18 @@ export interface HomePageProps {
    * exactly as it makes room for the aside.
    */
   rail?: ReactNode;
+  /**
+   * Column A's separator — the drag handle when A is open, the reveal button
+   * when it is collapsed (task 01a00ac2). It seats INSIDE the chat section
+   * rather than beside the rail because A is not a child of this page at all:
+   * it is `.tch-sidebar`, a grid track inside the chat surface the host hands
+   * down. The section is the nearest box that starts and ends exactly where A
+   * does, which is what lets the handle line up with the edge it moves
+   * without this page having to know anything about that grid.
+   */
+  listRail?: ReactNode;
+  /** Rail + column A collapsed as one. Read by CSS off `data-focus`. */
+  focus?: boolean;
   onOpenEntity(id: string): void;
   onOpenWorkspace(): void;
 }
@@ -133,7 +145,12 @@ export function HomePage(props: HomePageProps) {
      The glance rails, the presence row and the per-kind counts strip retired
      to the Work tab, where the inventory framing lives. */
   return (
-    <div className="hp-root hp-root--chat" data-testid="home-page" data-aside={props.aside ? 'open' : undefined}>
+    <div
+      className="hp-root hp-root--chat"
+      data-testid="home-page"
+      data-aside={props.aside ? 'open' : undefined}
+      data-focus={props.focus ? 'true' : undefined}
+    >
       {props.rail ?? null}
       <div className="hp-page">
       {needsYou && needsYou.rows.length > 0 ? (
@@ -144,6 +161,7 @@ export function HomePage(props: HomePageProps) {
 
       <section className="hp-chat hp-chat--full" aria-label="Chat">
         {props.chat}
+        {props.listRail ?? null}
       </section>
       </div>
 

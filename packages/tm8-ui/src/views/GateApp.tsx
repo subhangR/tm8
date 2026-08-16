@@ -339,6 +339,10 @@ export function GateApp(props: GateAppProps = {}) {
    * profile starts.
    */
   const [menuCollapsed, setMenuCollapsed] = usePanelFlag('menu-rail-collapsed', true);
+  /* Home's focus mode — icon rail + column A collapsed as one (task 01a00ac2).
+     It lives up here rather than in `HomeView` because Mod+\ is handled on the
+     window, and the shortcut and the chevron must write the SAME state. */
+  const [homeFocus, setHomeFocus] = usePanelFlag('home-focus', false);
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
@@ -387,6 +391,9 @@ export function GateApp(props: GateAppProps = {}) {
     () => unroutableTarget ?? landingOfRoute(navView)?.target ?? null,
     [unroutableTarget, navView],
   );
+
+  /** Home. Named once because both the render branch and Mod+\ ask for it. */
+  const onDashboard = activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
 
   /**
    * EVERY user navigation goes through here, so there is no second write path
@@ -1149,7 +1156,14 @@ export function GateApp(props: GateAppProps = {}) {
       // differently — losing a shipped shortcut would be its own regression.
       if (event.key === '\\' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        setMenuCollapsed((collapsed) => !collapsed);
+        /* ON HOME THE KEY MEANS HOME'S LEFT SIDE (task 01a00ac2). `dashboard`
+           is a RAILLESS view — no menu rail is drawn there at all — so the
+           binding was toggling a flag with nothing on screen behind it, which
+           is a shipped shortcut that does nothing where it is pressed. The
+           rail it CAN mean there is Home's own, and the ruled focus toggle
+           takes it with column A. Everywhere else the key is unchanged. */
+        if (onDashboard) setHomeFocus((collapsed) => !collapsed);
+        else setMenuCollapsed((collapsed) => !collapsed);
         return;
       }
       const result = kb.handle({
@@ -1164,7 +1178,7 @@ export function GateApp(props: GateAppProps = {}) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [paletteOpen, promptsOpen, launch]);
+  }, [paletteOpen, promptsOpen, launch, onDashboard, setHomeFocus, setMenuCollapsed]);
 
   /**
    * Kind refs resolve through the DOMAIN REGISTRY (§15.2) — shell never maps a
@@ -1786,6 +1800,8 @@ export function GateApp(props: GateAppProps = {}) {
               serverBaseUrl={activeServer.routeBaseUrl}
               viewerMemberId={viewerMemberId}
               onNotice={notices.push}
+              focus={homeFocus}
+              onToggleFocus={() => setHomeFocus((collapsed) => !collapsed)}
               onSpawn={async (input) => {
                 /* D11: a spawn committed on Home STAYS on Home — the session
                    takes region B and the column flips to the sessions root. */
