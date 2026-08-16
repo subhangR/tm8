@@ -427,6 +427,16 @@ button.tch-entity-chip:hover {
   flex: none;
   width: min(760px, calc(100% - 32px));
   margin: 0 auto var(--pn-space-3);
+  /* A query container, so the foot degrades by the COMPOSER's width, not the
+     viewport's — the pane beside a 380px column and an open aside is far
+     narrower than the window. The skill popover is unaffected: its containing
+     block is .ri-host (position: relative), not this ancestor. */
+  container-type: inline-size;
+}
+/* The keyboard hint is the first thing to go when the foot runs out of room —
+   losing a tip beats the Send button wrapping onto its own line. */
+@container (max-width: 620px) {
+  .tch-hint { display: none; }
 }
 
 /* THE EMPTY STATE CENTRES THE PAIR (ref mockup 02-home-empty): greeting and
