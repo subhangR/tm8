@@ -378,6 +378,13 @@ export interface GateData {
    */
   taskAxes: readonly import('@tm8/contract').TaskAxis[];
   /**
+   * Re-read the axis registry NOW — after Settings > Axes lands a write, so a
+   * new axis appears as a W1 picker (and a W3 group-by option) without a
+   * reload. Axis writes emit no workspace event (`task_axes` rows are not
+   * entities), so the event stream cannot do this on its own.
+   */
+  refreshTaskAxes: () => void;
+  /**
    * THE TWO TRIGGER SUBJECTS every rich input in this shell picks from.
    *
    * `mentionOptions` is the space's own membership projected into the picker's
@@ -2088,6 +2095,15 @@ export function useGateData(options: GateOptions): GateData {
     [members],
   );
 
+  /** See `GateData.refreshTaskAxes` — axis writes emit no workspace event. */
+  const refreshTaskAxes = useCallback(() => {
+    if (!spaceId) return;
+    void seam
+      .spaceSettings(spaceId)
+      .then((settings) => setTaskAxes(settings.taskAxes ?? []))
+      .catch(() => undefined);
+  }, [seam, spaceId]);
+
   // without reaching for the seam themselves.
   const data = useMemo<GateData & { pull: (id: string) => void }>(
     () => ({
@@ -2096,6 +2112,7 @@ export function useGateData(options: GateOptions): GateData {
       spaces,
       members,
       taskAxes,
+      refreshTaskAxes,
       mentionOptions,
       skillOptions,
       viewerActor,
@@ -2131,7 +2148,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, taskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

@@ -28,6 +28,8 @@ import {
   type InviteRedemption,
   type RedeemInviteInput,
   type SpaceInviteView,
+  type TaskAxis,
+  type TaskAxisInput,
   type UpdateMemberRoleInput,
   bindPath,
   CollabError,
@@ -783,6 +785,59 @@ export function createFixtureSeam(): FixtureSeam {
   const invites: SpaceInviteView[] = [];
   let inviteSeq = 0;
 
+  /**
+   * The task-axis registry, MUTABLE — W2. Seeded with exactly what the node
+   * seeds every space (001's `type` axis, kind 'default', position 0), so
+   * the fixture-backed product draws the axis picker and the Settings > Axes
+   * screen has real rows to curate. The array itself is the store the CRUD
+   * verbs below mutate; `spaceSettings()` clones it per read.
+   */
+  const taskAxes: TaskAxis[] = [
+    {
+      id: 'axis-type',
+      spaceId: FIXTURE_SPACE_ID,
+      name: 'type',
+      axisValues: ['default', 'code', 'design', 'review', 'test'],
+      kind: 'default',
+      position: 0,
+    },
+  ];
+  let axisSeq = 0;
+
+  /**
+   * The node's own in-use predicate, mirrored: does any task in the space
+   * carry a value under this axis NAME (`tasks.axes ? name`)? Used by
+   * delete/rename/value-removal exactly as `w2_delete_task_axis` /
+   * `w2_update_task_axis` use it — refusal, never orphaning (measured
+   * 2026-08-16; 132 relaxes only the default-kind special cases).
+   */
+  function axisInUse(name: string, keepingValues?: readonly string[]): boolean {
+    return [...summaries.values()].some((s) => {
+      if (s.state.kind !== 'task') return false;
+      const value = (s.state.axes ?? {})[name];
+      if (typeof value !== 'string') return false;
+      return keepingValues === undefined ? true : !keepingValues.includes(value);
+    });
+  }
+
+  /** The shared validation the three w2_* RPCs apply, in the node's words. */
+  function validateAxisInput(input: TaskAxisInput): void {
+    if (!input.name || input.name.trim().length < 1 || input.name.trim().length > 100) {
+      throw new CollabError('invalid_input', 'task axis name must contain 1 to 100 characters');
+    }
+    const values = input.axisValues;
+    if (
+      !Array.isArray(values)
+      || values.some((v) => typeof v !== 'string' || v.trim() === '')
+      || new Set(values).size !== values.length
+    ) {
+      throw new CollabError('invalid_input', 'task axis values must be unique non-empty strings');
+    }
+    if (input.kind !== 'default' && input.kind !== 'manual') {
+      throw new CollabError('invalid_input', 'invalid task axis kind');
+    }
+  }
+
   /** Mirrors the node's shape (`'inv_' + 32 hex`) without pretending to be one. */
   function newInviteCode(): string {
     inviteSeq += 1;
@@ -1283,21 +1338,10 @@ export function createFixtureSeam(): FixtureSeam {
           { actor: clone(noor), role: 'member' as const, joinedAt: FIXTURE_NOW },
         ],
         invites,
-        // The node seeds every space exactly one axis (001's `task_axes`
-        // seed: `type`, kind 'default', position 0). Mirroring it is what
-        // lets the fixture-backed product actually draw the axis picker; an
-        // empty array here would demo "a space with no axes", which is the
-        // rarer state.
-        taskAxes: [
-          {
-            id: 'axis-type',
-            spaceId: FIXTURE_SPACE_ID,
-            name: 'type',
-            axisValues: ['default', 'code', 'design', 'review', 'test'],
-            kind: 'default' as const,
-            position: 0,
-          },
-        ],
+        // The MUTABLE registry above — seeded with the node's own seed, and
+        // the same rows the W2 CRUD verbs curate. Position order, exactly as
+        // `spaces.settings` answers it.
+        taskAxes: [...taskAxes].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
         menu: {
           schemaVersion: 1,
           revision: 1,
@@ -2356,6 +2400,73 @@ export function createFixtureSeam(): FixtureSeam {
         if (!invite) throw new CollabError('not_found', `invite ${inviteId} not found`);
         invite.revoked = true;
         return clone(invite);
+      },
+
+      /**
+       * W2 — the axis registry's writes, mirroring the w2_* RPCs refusal for
+       * refusal: shared input validation, the (space,name) uniqueness, the
+       * three in-use refusals AND the two default-axis refusals (delete and
+       * demote — 016, KEPT by the amended ruling 2026-08-16), all in the
+       * node's own words.
+       */
+      async createTaskAxis(spaceId: SpaceId, input: TaskAxisInput): Promise<TaskAxis> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        validateAxisInput(input);
+        if (taskAxes.some((a) => a.name === input.name)) {
+          throw new CollabError('conflict', `a task axis named ${input.name} already exists`);
+        }
+        axisSeq += 1;
+        const axis: TaskAxis = {
+          id: `axis-fixture-${axisSeq}`,
+          spaceId,
+          name: input.name,
+          axisValues: [...input.axisValues],
+          kind: input.kind,
+          position: input.position,
+        };
+        taskAxes.push(axis);
+        return clone(axis);
+      },
+
+      async updateTaskAxis(spaceId: SpaceId, axisId: string, input: TaskAxisInput): Promise<TaskAxis> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        const axis = taskAxes.find((a) => a.id === axisId);
+        if (!axis) throw new CollabError('not_found', 'task axis not found');
+        validateAxisInput(input);
+        if (axis.kind === 'default' && input.kind !== 'default') {
+          throw new CollabError('invariant_violation', 'the default task axis cannot be demoted');
+        }
+        if (input.name !== axis.name && axisInUse(axis.name)) {
+          throw new CollabError('invariant_violation', 'cannot rename a task axis that tasks still use');
+        }
+        if (axis.axisValues.length > 0 && axisInUse(axis.name, input.axisValues)) {
+          throw new CollabError('invariant_violation', 'cannot remove a task axis value that tasks still use');
+        }
+        axis.name = input.name;
+        axis.axisValues = [...input.axisValues];
+        axis.kind = input.kind;
+        axis.position = input.position;
+        return clone(axis);
+      },
+
+      async deleteTaskAxis(spaceId: SpaceId, axisId: string): Promise<{ axisId: string }> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        const index = taskAxes.findIndex((a) => a.id === axisId);
+        if (index < 0) throw new CollabError('not_found', 'task axis not found');
+        if (taskAxes[index]!.kind === 'default') {
+          throw new CollabError('invariant_violation', 'the default task axis cannot be deleted');
+        }
+        if (axisInUse(taskAxes[index]!.name)) {
+          throw new CollabError('invariant_violation', 'task axis is still in use by tasks');
+        }
+        taskAxes.splice(index, 1);
+        return { axisId };
       },
 
       /**

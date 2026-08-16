@@ -374,6 +374,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       // revoke body binds `RequiredCommandContextSchema`, so a missing body is
       // a 400 and an absent object is not the same as an empty one on the wire.
       revokeInvite: (spaceId, inviteId, ctx) => ops.revokeInvite(spaceId, inviteId, ctx ?? {}),
+      createTaskAxis: (spaceId, input) => ops.createTaskAxis(spaceId, input),
+      updateTaskAxis: (spaceId, axisId, input) => ops.updateTaskAxis(spaceId, axisId, input),
+      deleteTaskAxis: (spaceId, axisId, ctx) => ops.deleteTaskAxis(spaceId, axisId, ctx),
       redeemInvite: (input) => ops.redeemInvite(input),
       markRead: (notificationId) => ops.markRead(notificationId),
       /**

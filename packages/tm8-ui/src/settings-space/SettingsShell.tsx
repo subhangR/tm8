@@ -13,7 +13,8 @@
  *              `SpaceSummary`. Editing is disabled-with-reason.
  *   members  — REAL rows, refused writes (MembersSection).
  *   invites  — no capability at all; the absence is stated (InviteFrames).
- *   axes     — no axis definition exists to read; stated.
+ *   axes     — REAL rows + CRUD over the ops that existed all along (W2;
+              the old AXES_UNREADABLE refusal was measured false).
  *   projects — HALF B's body, injected. Unmounted ⇒ says so.
  *   menu     — REAL editor, refused save (MenuEditor).
  *   kinds    — HALF B's body, injected. Unmounted ⇒ says so.
@@ -31,8 +32,8 @@ import { ModelsSection } from './ModelsSection';
 import { InvitesPanel } from './InviteFrames';
 import { IdentityProfileSection } from './IdentityProfileSection';
 import { MenuEditor } from './MenuEditor';
+import { AxesSection } from './AxesSection';
 import {
-  AXES_UNREADABLE,
   DANGER_ZONE_UNAVAILABLE,
   SECTION_NOT_MOUNTED,
   SPACE_EDIT_UNAVAILABLE,
@@ -45,6 +46,7 @@ export function SettingsShell({
   initialSection = 'members',
   onSectionChange,
   nodeKey = 'local',
+  onAxesChanged,
 }: SettingsShellProps) {
   const [active, setActive] = useState<SettingsSectionId>(initialSection);
   const [data, setData] = useState<SettingsData>({
@@ -53,6 +55,7 @@ export function SettingsShell({
     identity: null,
     menu: null,
     invites: null,
+    axes: null,
   });
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -62,12 +65,13 @@ export function SettingsShell({
     // other three sections. A screen that goes empty because an unrelated
     // request failed is the failure mode "loading" states hide.
     void (async () => {
-      const [space, members, identity, menu, invites] = await Promise.allSettled([
+      const [space, members, identity, menu, invites, axes] = await Promise.allSettled([
         port.loadSpace(),
         port.loadMembers(),
         port.loadIdentity(),
         port.loadMenu(),
         port.loadInvites(),
+        port.loadAxes(),
       ]);
       if (!live) return;
       // The invite read is EXCLUDED from the failure count. It is admin-only,
@@ -85,6 +89,10 @@ export function SettingsShell({
         // rather than as an empty list — the distinction the panel exists to
         // keep.
         invites: invites.status === 'fulfilled' ? invites.value : null,
+        // Same posture as invites and EXCLUDED from the count for the same
+        // reason: the read rides the admin-shaped settings round trip, and a
+        // `null` renders as "not read", never as a space with no axes.
+        axes: axes.status === 'fulfilled' ? axes.value : null,
       });
     })();
     return () => {
@@ -129,6 +137,18 @@ export function SettingsShell({
       (invites) => setData((d) => ({ ...d, invites })),
       () => undefined,
     );
+  }
+
+  /** Re-read after an axis write — the server is the authority on what landed. */
+  function refreshAxes() {
+    void port.loadAxes().then(
+      (axes) => setData((d) => ({ ...d, axes })),
+      () => undefined,
+    );
+    // The workspace's own pickers (W1) and board options (W3) read a separate
+    // projection; the host refreshes it here or not at all — axis rows are
+    // not entities and emit no event.
+    onAxesChanged?.();
   }
 
   const spaceLabel = data.space?.name ?? '—';
@@ -181,6 +201,7 @@ export function SettingsShell({
             onProfileSaved={refreshIdentity}
             onMembersChanged={refreshMembers}
             onInvitesChanged={refreshInvites}
+            onAxesChanged={refreshAxes}
             nodeKey={nodeKey}
           />
         </div>
@@ -198,6 +219,7 @@ function SectionBody({
   onProfileSaved,
   onMembersChanged,
   onInvitesChanged,
+  onAxesChanged,
   nodeKey,
 }: {
   id: SettingsSectionId;
@@ -208,6 +230,7 @@ function SectionBody({
   onProfileSaved: () => void;
   onMembersChanged: () => void;
   onInvitesChanged: () => void;
+  onAxesChanged: () => void;
   nodeKey: string;
 }) {
   const injected = sections?.[id];
@@ -275,11 +298,29 @@ function SectionBody({
       // The node key comes from the shell because the catalog is per node.
       return <ModelsSection nodeKey={nodeKey} heading={def.heading} />;
     case 'axes':
+      /* W2 — the real registry, read off the same settings round trip as
+         invites. The refusal this replaces (AXES_UNREADABLE) was measured
+         FALSE on 2026-08-16: the contract defined `TaskAxis` and the seam
+         already delivered `taskAxes`. Writes are NOT caught here — the
+         section renders the server's own refusal beside the act, same rule
+         as `MembersSection`. */
       return (
-        <>
-          <Head title={def.heading} />
-          <Absent head="No task-axis configuration exists to read." why={`${AXES_UNREADABLE.cause} — ${AXES_UNREADABLE.remedy}`} />
-        </>
+        <AxesSection
+          axes={data.axes}
+          onCreate={async (input) => {
+            await port.createAxis(input);
+            onAxesChanged();
+          }}
+          onUpdate={async (axisId, input) => {
+            await port.updateAxis(axisId, input);
+            onAxesChanged();
+          }}
+          onDelete={async (axisId) => {
+            await port.deleteAxis(axisId);
+            onAxesChanged();
+          }}
+          tasksUsing={(axis) => port.tasksUsingAxis(axis)}
+        />
       );
     case 'danger':
       return <DangerSection heading={def.heading} />;

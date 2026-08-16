@@ -50,6 +50,8 @@ import type {
   SpaceInviteView,
   SpaceMemberRole,
   SpaceSummary,
+  TaskAxis,
+  TaskAxisInput,
 } from '@tm8/contract';
 import type { IdentityView, Seam } from '../data/seam';
 import { allKinds } from '../domain';
@@ -146,6 +148,18 @@ export function adminRoles(): string[] {
   return roles.slice(0, Math.max(0, roles.length - 1));
 }
 
+/**
+ * The kinds whose rows carry per-space axes, from REGISTRY DATA — every kind
+ * declaring `list.axisControls`. Today that is exactly the task kind; a
+ * second axis-bearing kind arrives here by registry entry alone, which is the
+ * same door the W1 picker uses.
+ */
+export function axisKindRefs(): string[] {
+  return allKinds()
+    .filter((row) => row.list.axisControls !== undefined)
+    .map((row) => row.kind);
+}
+
 /** The least-privileged representable role — the sane default for an invite. */
 export function defaultInviteRole(): string {
   // Index arithmetic, not `.at(-1)`: this package's tsc lib target predates it
@@ -192,6 +206,35 @@ export interface SettingsPort {
 
   /** Kill a live code. The row survives, revoked, so the list stays truthful. */
   revokeInvite(inviteId: string): Promise<SpaceInviteView>;
+
+  /**
+   * The task-axis registry (W2), position order. Rides `spaces.settings` —
+   * the round trip this shell already makes for invites (the precedent the
+   * `loadInvites` docblock establishes) — NOT a call to `spaces.taskAxes.list`,
+   * which answers from the same rows.
+   */
+  loadAxes(): Promise<TaskAxis[]>;
+
+  /**
+   * Create / reshape / delete one axis. Every rule is the server's and comes
+   * back as its own words: space-admin authorization, name and value
+   * validation, and the in-use refusals (delete, rename, or value-removal
+   * while any task in the space carries the axis are all refused — measured
+   * 2026-08-16; nothing is ever cleared or orphaned). `updateAxis` takes the
+   * whole row shape because `w2_update_task_axis` has no sparse form.
+   */
+  createAxis(input: Omit<TaskAxisInput, 'clientMutationId' | 'actorId'>): Promise<TaskAxis>;
+  updateAxis(axisId: string, input: Omit<TaskAxisInput, 'clientMutationId' | 'actorId'>): Promise<TaskAxis>;
+  deleteAxis(axisId: string): Promise<{ axisId: string }>;
+
+  /**
+   * The tasks carrying ANY of this axis's declared values — what makes an
+   * in-use refusal actionable (owner ruling: the UI names WHICH tasks still
+   * use it). A free-text axis (no declared values) answers `[]`: the
+   * `filters.axes` clause matches values, and "any value at all" is not a
+   * question it can ask.
+   */
+  tasksUsingAxis(axis: TaskAxis): Promise<EntitySummary[]>;
 }
 
 let profileMutationSeq = 0;
@@ -268,6 +311,44 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort
       return seam.commands.revokeInvite(spaceId, inviteId, {
         clientMutationId: newMutationId('revoke'),
       });
+    },
+
+    async loadAxes() {
+      const settings = await seam.spaceSettings(spaceId);
+      return settings.taskAxes ?? [];
+    },
+
+    createAxis(input) {
+      return seam.commands.createTaskAxis(spaceId, {
+        ...input,
+        clientMutationId: newMutationId('axis'),
+      });
+    },
+
+    updateAxis(axisId, input) {
+      return seam.commands.updateTaskAxis(spaceId, axisId, {
+        ...input,
+        clientMutationId: newMutationId('axis'),
+      });
+    },
+
+    deleteAxis(axisId) {
+      return seam.commands.deleteTaskAxis(spaceId, axisId, {
+        clientMutationId: newMutationId('axisrm'),
+      });
+    },
+
+    async tasksUsingAxis(axis) {
+      if (axis.axisValues.length === 0) return [];
+      const result = await seam.query({
+        spaceId,
+        // The kinds whose registry rows declare axis pickers — the same
+        // derivation rule as `memberKindRef` above, for the same §15.2
+        // reason: the kind that CARRIES axes is registry data, not a literal.
+        kinds: axisKindRefs() as never,
+        filters: { axes: { [axis.name]: [...axis.axisValues] } },
+      });
+      return result.page.items;
     },
 
     async loadMenu() {

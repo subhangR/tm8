@@ -204,6 +204,8 @@ import type {
   SpaceKindCounts,
   SpaceSettingsView,
   SpaceSummary,
+  TaskAxis,
+  TaskAxisInput,
   TrackingPrMergeInput,
   TrackingPrMergeResult,
   WorkInput,
@@ -779,6 +781,23 @@ export interface Seam {
     createInvite(spaceId: SpaceId, input: CreateInviteInput): Promise<SpaceInviteView>;
     /** Kill a live code. The row survives, revoked, so the list stays truthful. */
     revokeInvite(spaceId: SpaceId, inviteId: string, ctx?: CommandContext): Promise<SpaceInviteView>;
+    /**
+     * The task-axis registry's writes (W2, 2026-08-16) — over catalog ops
+     * that existed all along (`spaces.taskAxes.create|update|delete`): new
+     * SEAM verbs only, zero catalog change.
+     *
+     * The READ deliberately has no verb here: axes ride `spaceSettings()`,
+     * the same round trip the settings shell already makes for invites.
+     *
+     * Every rule lives in SQL and is surfaced, never copied: space-admin
+     * authorization, name/value validation, and the three in-use refusals
+     * (delete / rename / value-removal while any task carries the axis) come
+     * back as the server's own words. `update` takes the WHOLE row shape —
+     * `w2_update_task_axis` has no sparse form.
+     */
+    createTaskAxis(spaceId: SpaceId, input: TaskAxisInput): Promise<TaskAxis>;
+    updateTaskAxis(spaceId: SpaceId, axisId: string, input: TaskAxisInput): Promise<TaskAxis>;
+    deleteTaskAxis(spaceId: SpaceId, axisId: string, ctx: CommandContext): Promise<{ axisId: string }>;
     /**
      * Redeem a code as the CURRENT viewer. Distinct from `previewInvite` below
      * in the way that matters: this one requires you to be somebody.
