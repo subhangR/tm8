@@ -25,8 +25,6 @@
  * host passes them through `sections`. Neither lane imports the other.
  */
 import { useEffect, useState } from 'react';
-import type { SpaceSummary } from '@tm8/contract';
-import { DisabledAction } from '../panels';
 import { MembersSection } from './MembersSection';
 import { ModelsSection } from './ModelsSection';
 import { InvitesPanel } from './InviteFrames';
@@ -34,11 +32,10 @@ import { IdentityProfileSection } from './IdentityProfileSection';
 import { MenuEditor } from './MenuEditor';
 import { AxesSection } from './AxesSection';
 import { WorkflowsSection } from './WorkflowsSection';
-import {
-  DANGER_ZONE_UNAVAILABLE,
-  SECTION_NOT_MOUNTED,
-  SPACE_EDIT_UNAVAILABLE,
-} from './reasons';
+import { ProfileSection } from './ProfileSection';
+import { DangerSection } from './DangerSection';
+import { SectionAbsent, SectionFrame } from './SectionFrame';
+import { SECTION_NOT_MOUNTED } from './reasons';
 import { SETTINGS_SECTIONS, type SettingsData, type SettingsSectionId, type SettingsShellProps } from './types';
 
 export function SettingsShell({
@@ -292,17 +289,20 @@ function SectionBody({
         />
       );
     case 'menu':
+      /* `measure={false}`: the editor draws a two-column author/preview pair
+         and capping it at the reading measure would stack them into a single
+         narrow column on a screen with room for both. */
       return (
-        <>
-          <Head title={def.heading} />
-          <div className="set-section__scroll" style={{ padding: 16 }}>
-            {data.menu ? (
-              <MenuEditor menu={data.menu} spaceName={data.space?.name} />
-            ) : (
-              <Absent head="The menu could not be read." why="seam.menu did not resolve — the rail is showing its own fallback, and this editor has nothing to edit" />
-            )}
-          </div>
-        </>
+        <SectionFrame title={def.heading} measure={false} bodyTestId="menu-body">
+          {data.menu ? (
+            <MenuEditor menu={data.menu} spaceName={data.space?.name} />
+          ) : (
+            <SectionAbsent
+              head="The menu could not be read."
+              why="seam.menu did not resolve — the rail is showing its own fallback, and this editor has nothing to edit"
+            />
+          )}
+        </SectionFrame>
       );
     case 'profile':
       return <ProfileSection space={data.space} heading={def.heading} />;
@@ -366,106 +366,12 @@ function SectionBody({
       return <DangerSection heading={def.heading} />;
     default:
       return (
-        <>
-          <Head title={def.heading} />
-          <Absent
+        <SectionFrame title={def.heading}>
+          <SectionAbsent
             head="This section is built in another module and is not mounted here."
             why={`${SECTION_NOT_MOUNTED.cause} — ${SECTION_NOT_MOUNTED.remedy}`}
           />
-        </>
+        </SectionFrame>
       );
   }
-}
-
-function Head({ title, action }: { title: string; action?: React.ReactNode }) {
-  return (
-    <div className="set-section__head">
-      <span className="set-section__title">{title}</span>
-      <div className="set-section__grow" />
-      {action}
-    </div>
-  );
-}
-
-function Absent({ head, why }: { head: string; why: string }) {
-  return (
-    <div className="set-absent" data-testid="section-absent">
-      <span className="set-absent__head">{head}</span>
-      <span className="set-absent__why">{why}</span>
-    </div>
-  );
-}
-
-/**
- * Profile: everything `SpaceSummary` actually carries, and NOTHING ELSE. The
- * oracle never draws this section's body, so there is no canvas to transcribe
- * — inventing an avatar picker and a timezone field would be designing, which
- * is not this pass's job. Four real facts beat four plausible ones.
- */
-function ProfileSection({ space, heading }: { space: SpaceSummary | null; heading: string }) {
-  return (
-    <>
-      <Head title={heading} />
-      <div className="set-section__scroll">
-        {space === null ? (
-          <Absent head="This space did not resolve." why="spaces() returned no row with this id" />
-        ) : (
-          <div className="set-stack">
-            <div className="set-kv">
-              <span className="set-kv__k">Name</span>
-              <span className="set-kv__v">{space.name}</span>
-            </div>
-            <div className="set-kv">
-              <span className="set-kv__k">About</span>
-              <span className="set-kv__v">{space.description || '—'}</span>
-            </div>
-            <div className="set-kv">
-              <span className="set-kv__k">Members</span>
-              <span className="set-kv__v">{space.memberCount}</span>
-            </div>
-            <div className="set-kv">
-              <span className="set-kv__k">Repo</span>
-              <span className="set-kv__v">{space.githubRepo || '—'}</span>
-            </div>
-            <div className="set-kv">
-              <span className="set-kv__k">Created</span>
-              <span className="set-kv__v">{space.createdAt}</span>
-            </div>
-            <div style={{ paddingTop: 8 }}>
-              <DisabledAction reason={SPACE_EDIT_UNAVAILABLE} label="edit space details">
-                Edit space details
-              </DisabledAction>
-            </div>
-          </div>
-        )}
-      </div>
-    </>
-  );
-}
-
-/**
- * Danger zone. The oracle names it in the nav (L43) and draws no body — and
- * this is the one section where that must not become an empty pane, because
- * the acts behind it (transfer ownership, delete the space) are irreversible.
- * Both render refused, and the reason says the seam carries no verb rather
- * than implying they are merely gated by permission.
- */
-function DangerSection({ heading }: { heading: string }) {
-  return (
-    <>
-      <Head title={heading} />
-      <div className="set-stack">
-        <span className="set-prose">
-          These two acts are irreversible and neither has an executor in this build. They are shown so
-          you know where they live — not so you can be told “nothing happened” after clicking.
-        </span>
-        <DisabledAction reason={DANGER_ZONE_UNAVAILABLE} label="transfer ownership">
-          Transfer ownership
-        </DisabledAction>
-        <DisabledAction reason={DANGER_ZONE_UNAVAILABLE} label="delete this space">
-          Delete this space
-        </DisabledAction>
-      </div>
-    </>
-  );
 }
