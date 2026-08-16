@@ -41,7 +41,7 @@
  */
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { CSSProperties, ReactNode, RefObject } from 'react';
+import type { ReactNode } from 'react';
 import type {
   ActorSummary,
   Connections,
@@ -72,7 +72,7 @@ import {
   workflowTypeOf,
   workflowVocabularyOf,
 } from '../../domain';
-import { Avatar, type PillTone } from '../../kit';
+import { Avatar, useMenuAnchor, type PillTone } from '../../kit';
 import {
   CheckingPermission,
   DisabledAction,
@@ -592,61 +592,11 @@ function RowAxisControl({
  * space above is taller. Fixed coordinates do not travel, so any outside
  * scroll or a resize closes the menu rather than letting it drift off its
  * row; scrolls INSIDE the menu (its own overflow-y) are its own business.
+ *
+ * The measurement itself now lives in `kit/useMenuAnchor` — the Board tab's
+ * filter selects are the same affordance and must not carry a second copy of
+ * this reasoning.
  */
-interface MenuAnchor {
-  style: CSSProperties;
-  host: HTMLElement;
-}
-
-function useMenuAnchor(
-  open: boolean,
-  boxRef: RefObject<HTMLElement | null>,
-  menuRef: RefObject<HTMLElement | null>,
-  onClose: () => void,
-): MenuAnchor | null {
-  const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
-  useEffect(() => {
-    if (!open) {
-      setAnchor(null);
-      return;
-    }
-    const el = boxRef.current;
-    const box = el?.getBoundingClientRect();
-    if (!el || !box) return;
-    const host = (el.closest('.cv2-root') as HTMLElement | null) ?? document.body;
-    // 214 = the menu's own max-height (210, panels.css) + its 4px offset.
-    const below = window.innerHeight - box.bottom;
-    const up = below < 214 && box.top > below;
-    setAnchor({
-      host,
-      style: {
-        position: 'fixed',
-        // Clamped so a trigger at the right edge cannot push the menu's
-        // 170px minimum off-screen.
-        left: Math.max(8, Math.min(box.left, window.innerWidth - 178)),
-        ...(up
-          ? { top: 'auto', bottom: window.innerHeight - box.top + 4 }
-          : { top: box.bottom + 4 }),
-        zIndex: 1000,
-      },
-    });
-    const close = (event: Event) => {
-      if (
-        menuRef.current
-        && event.target instanceof Node
-        && menuRef.current.contains(event.target)
-      ) return;
-      onClose();
-    };
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
-    };
-  }, [open, boxRef, menuRef, onClose]);
-  return anchor;
-}
 
 /**
  * The assignee picker.

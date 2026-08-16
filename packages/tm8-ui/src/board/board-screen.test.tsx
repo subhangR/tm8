@@ -4,8 +4,11 @@
  * the same harness `router-mount.test.tsx` proved. What these cases pin:
  *
  *  · the canonical column skeletons per pivot (empty columns included);
- *  · filters that reach the SEAM (the fixture narrows rows for real, so a
- *    chip that stopped binding would fail here, not just look unpressed);
+ *  · filters that reach the SEAM (the fixture narrows rows for real, so an
+ *    option that stopped binding would fail here, not just look unpressed);
+ *  · the filter chrome staying ONE row whatever the roster size — every axis
+ *    is a dropdown, so its options only exist once the menu is open, and
+ *    that is exactly the property these cases have to keep true;
  *  · a real drag commit: the card moves optimistically, the fixture write
  *    lands, and the fresh read AGREES — a card still in its target after
  *    settle is the evidence, because a refused write snaps it home;
@@ -66,6 +69,12 @@ async function mountBoard(): Promise<RenderResult> {
 const columnKeys = (view: RenderResult): string[] =>
   view.getAllByTestId('bd-column').map((c) => c.getAttribute('data-column') ?? '');
 
+/** Every axis is a dropdown now: its options do not exist until it is open. */
+const openAxis = (view: RenderResult, testId: string) => {
+  fireEvent.click(view.getByTestId(testId));
+  return view.getByTestId(`${testId}-menu`);
+};
+
 const column = (view: RenderResult, key: string) => {
   const col = view.getAllByTestId('bd-column').find((c) => c.getAttribute('data-column') === key);
   expect(col).toBeDefined();
@@ -82,12 +91,13 @@ describe('the status board', () => {
     view.unmount();
   });
 
-  it('a status chip narrows BOTH the columns and the seam read', async () => {
+  it('a status option narrows BOTH the columns and the seam read', async () => {
     const view = await mountBoard();
+    openAxis(view, 'bd-filter-status');
     fireEvent.click(view.getByTestId('bd-filter-status-working'));
     /* The filtered snapshot is a fresh cache key — the fixture applies
-       `workStatus` for real, so a chip that stopped reaching the seam would
-       leave the other tasks visible and fail here. */
+       `workStatus` for real, so an option that stopped reaching the seam
+       would leave the other tasks visible and fail here. */
     await waitFor(() => expect(columnKeys(view)).toEqual(['working']));
     await waitFor(() => expect(view.getAllByTestId('bd-card')).toHaveLength(1));
     expect(view.getByText(GUIDE)).toBeTruthy();
@@ -188,26 +198,65 @@ describe('the pivots', () => {
 });
 
 describe('the assigned-by axis (129 provenance)', () => {
-  it('chips render per roster actor and BIND the seam read to who assigned', async () => {
+  it('options render per roster actor and BIND the seam read to who assigned', async () => {
     /* Once §8.5's backend landed (PR #251), the disabled-with-reason chip
-       became real chips over the same roster as the people axis. The fixture
-       dataset ships NO recorded provenance, so pressing a chip must empty
-       the board — the honest answer, and proof the axis reaches the seam
-       (a chip that stopped binding would leave every card visible). The
-       MATCHING side of the arm is proven at the seam
+       became real options over the same roster as the people axis. The
+       fixture dataset ships NO recorded provenance, so choosing one must
+       empty the board — the honest answer, and proof the axis reaches the
+       seam (an option that stopped binding would leave every card visible).
+       The MATCHING side of the arm is proven at the seam
        (seam-fixture.test.ts, '129 parity'). */
     const view = await mountBoard();
-    const chip = await waitFor(() => view.getByTestId('bd-filter-assignedby-ent-member-ada'));
-    expect(chip.getAttribute('aria-pressed')).toBe('false');
+    openAxis(view, 'bd-filter-assignedby');
+    const option = await waitFor(() => view.getByTestId('bd-filter-assignedby-ent-member-ada'));
+    expect(option.getAttribute('aria-pressed')).toBe('false');
     expect(view.getAllByTestId('bd-card').length).toBeGreaterThan(0);
 
-    fireEvent.click(chip);
-    await waitFor(() => expect(chip.getAttribute('aria-pressed')).toBe('true'));
+    fireEvent.click(option);
+    await waitFor(() => expect(option.getAttribute('aria-pressed')).toBe('true'));
     await waitFor(() => expect(view.queryAllByTestId('bd-card')).toHaveLength(0));
 
     // Unpressing restores the unfiltered snapshot — same cache key as untouched.
-    fireEvent.click(chip);
+    fireEvent.click(option);
     await waitFor(() => expect(view.getAllByTestId('bd-card').length).toBeGreaterThan(0));
+    view.unmount();
+  });
+});
+
+describe('the filter chrome', () => {
+  /* The rail this replaced drew every status, every priority and the whole
+     roster TWICE as inline chips, so its height grew with the space. These
+     cases pin the property that fixed it: what the bar renders does not
+     depend on how many options an axis has. */
+
+  it('renders one trigger per axis and NO options until a menu is opened', async () => {
+    const view = await mountBoard();
+    for (const axis of ['bd-filter-status', 'bd-filter-priority', 'bd-filter-person', 'bd-filter-assignedby']) {
+      expect(view.getByTestId(axis)).toBeTruthy();
+      expect(view.queryByTestId(`${axis}-menu`)).toBeNull();
+    }
+    // The whole vocabulary of the biggest static axis is behind ONE control.
+    expect(view.queryByTestId('bd-filter-status-working')).toBeNull();
+    expect(view.getByTestId('bd-filters').querySelectorAll('.bd__sel')).toHaveLength(4);
+    view.unmount();
+  });
+
+  it('the trigger SAYS what is selected, and clears just its own axis', async () => {
+    const view = await mountBoard();
+    const trigger = view.getByTestId('bd-filter-status');
+    expect(trigger.getAttribute('aria-label')).toBe('Status filter, nothing selected');
+    expect(view.queryByTestId('bd-filter-status-clear')).toBeNull();
+
+    openAxis(view, 'bd-filter-status');
+    fireEvent.click(view.getByTestId('bd-filter-status-working'));
+    fireEvent.click(view.getByTestId('bd-filter-status-blocked'));
+    await waitFor(() => expect(trigger.getAttribute('aria-label')).toBe('Status filter, 2 selected'));
+
+    // A per-axis clear is not the global one: search survives it.
+    fireEvent.change(view.getByLabelText('Filter cards by title'), { target: { value: 'guide' } });
+    fireEvent.click(view.getByTestId('bd-filter-status-clear'));
+    await waitFor(() => expect(trigger.getAttribute('aria-label')).toBe('Status filter, nothing selected'));
+    expect((view.getByLabelText('Filter cards by title') as HTMLInputElement).value).toBe('guide');
     view.unmount();
   });
 });
