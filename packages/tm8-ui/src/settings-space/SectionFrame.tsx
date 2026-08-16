@@ -36,7 +36,21 @@ import type { ReactNode } from 'react';
 export interface SectionFrameProps {
   /** The section heading. Use the `heading` from `SETTINGS_SECTIONS`, not a re-typed copy. */
   title: string;
-  /** Right-aligned header controls — the invite chip, an "Add" chip. */
+  /**
+   * Right-aligned header controls — the invite chip, an "Add" chip.
+   *
+   * IF YOU PUT AN ENABLED CONTROL HERE YOU MUST REGISTER ITS ACCESSIBLE NAME
+   * in `LIVE_VERBS` (`settings.test.tsx`). A shell-wide sweep asserts that no
+   * enabled control on this surface promises an act it cannot perform, so an
+   * unregistered chip fails the suite. Append a delimited block naming your
+   * section and stating WHY the verb is live — SECTION-CONTRACT.md §2.
+   *
+   * This is documented here because the first wave's ownership rule forbade
+   * editing that file, which made this prop unfillable: a lane built a chip,
+   * measured the failure, and deleted its own work. Appending to the allowlist
+   * is explicitly allowed (§5); it is the one shared-file edit that does not
+   * conflict between parallel lanes.
+   */
   action?: ReactNode;
   /**
    * Cap the body at the reading measure (`--set-measure`). Default `true`.

@@ -375,8 +375,16 @@
 }
 .set-field--grow { flex: 1; }
 
+/* PANEL-LOCAL — do not borrow `.set-invite*` as generic row classes.
+   Reported by the axes lane 2026-08-16 after finding them used outside the
+   invite list. Their 16px gutter is correct HERE, because these rows sit
+   inside `.set-panel`, which is itself inset within the section body — they
+   line up with the panel head at L94/L99, not with the section head. Borrowed
+   into a section body directly they land 2px inside `--set-gutter` (18px) and
+   sit visibly off the head above them.
+   A section that wants a row of its own writes `.set-<section>__row`. */
 .set-invite {
-  padding: 7px 16px; /* L108 */
+  padding: 7px 16px; /* L108 — the PANEL gutter, not --set-gutter */
   border-bottom: 1px solid var(--pn-x-hairline-soft);
   display: flex;
   flex-direction: column;
