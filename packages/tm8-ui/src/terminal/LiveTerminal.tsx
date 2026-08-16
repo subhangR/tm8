@@ -133,7 +133,24 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   const resizeTimeoutRef = useRef<number | null>(null);
   const resizeRetryCountRef = useRef(0);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
-  /** One-shot: has this view already asked the agent to repaint? */
+  /**
+   * One-shot: has this view already asked the agent to repaint?
+   *
+   * Scoped to the MOUNT, not to the attach, and that is a known narrowing. It
+   * is not re-armed after a reconnect or a visibility-driver resume, so on
+   * those paths the client asks for nothing and the terminal depends wholly on
+   * replay fidelity again — the server would grant a fresh budget on the new
+   * socket, the client simply never spends it. Acceptable because the PTY now
+   * boots at the real geometry, so the replay ring holds correctly-sized frames
+   * and replay IS enough; note that this rests on the spawn-geometry fix, not
+   * on the nudge. Re-arming per REPLAY instead was the obvious alternative and
+   * is worse: hydration runs on every reconnect and every resume, which made a
+   * flapping socket a repaint storm.
+   *
+   * If a blank-on-reconnect report ever appears, this is the line. The seam
+   * that would fix it properly is a per-attach signal — `ptyTransport.onAttached`,
+   * which this version of the transport does not expose.
+   */
   const repaintForcedRef = useRef(false);
   const fontsReadyRef = useRef(false);
   const readOnlyRef = useRef(!live);

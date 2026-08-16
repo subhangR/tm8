@@ -235,14 +235,25 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
         // both directions, and the client's own grid is never touched.
         //
         // The short row is not observable to a TUI that reads the winsize when
-        // it HANDLES the signal — both deliveries then report the real size, so
+        // it HANDLES the signal — every delivery then reports the real size, so
         // no frame is ever laid out one row short. Measured against a real
-        // child. The residual is a program that reads TIOCGWINSZ from inside
-        // the handler itself (plausible for a Rust or Go agent) and could catch
-        // the intermediate value; it would be corrected by the second signal
-        // one tick later. Signalling the foreground process group directly
-        // would avoid the window entirely and is the better fix if this ever
-        // bites, but it is platform-specific and unverified here.
+        // child.
+        //
+        // DO NOT ASSERT A DELIVERY COUNT AT THE CHILD. SIGWINCH is a standard
+        // non-queued signal, so the two ioctls coalesce into one delivery or
+        // not depending purely on scheduling: the same code against the same
+        // child was measured producing one delivery on one run and two on
+        // another. Harmless — the repaint is what matters and every delivery
+        // reads the final size — but a test that pins the number is testing the
+        // kernel's scheduler. The two `pty.resize` CALLS here are deterministic
+        // and are what pty-ws.test.ts asserts instead.
+        //
+        // The residual is a program that reads TIOCGWINSZ from inside the
+        // handler itself (plausible for a Rust or Go agent) and could catch the
+        // intermediate value; a coalesced delivery cannot, and an uncoalesced
+        // one is corrected a tick later. Signalling the foreground process
+        // group directly would avoid the window entirely and is the better fix
+        // if this ever bites, but it is platform-specific and unverified here.
         pty.resize(sessionId, cols, rows > 1 ? rows - 1 : rows + 1);
       }
       pty.resize(sessionId, cols, rows);
