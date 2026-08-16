@@ -208,6 +208,31 @@ export interface EntityListPanelProps {
   onMode?: (mode: CollectionMode) => void;
 
   /**
+   * WHO DRAWS THE KIND CELL — `'panel'` (the default, and every surface that
+   * mounts this panel alone) or `'host'`.
+   *
+   * Home is the one surface that already had one. Its root header draws
+   * `[Chats ＋][◫ Tasks ＋ ▾]`, and hosting this panel underneath drew
+   * `◫ Tasks ▾` again directly below it: the same glyph, the same word, and
+   * BOTH carets opening a kind menu over the same selection. ChatHomeScreen's
+   * own comment already names this hazard for the header-vs-rail pair ("one
+   * selection, two views of it"); the hosted panel was a third view of it that
+   * arrived with the host, and nothing in either component could see the
+   * duplicate because each is correct alone.
+   *
+   * `'host'` suppresses the selector ROW, not the controls: the host is
+   * expected to render `<ListViewSwitcher>` in its own header and to pass the
+   * `mode`/`onMode` pair back, so the switcher keeps working from up there.
+   * The kind MENU needs no relocation — the host's caret already is one.
+   *
+   * This is a slot, not a `hideHeader` boolean, because the honest failure of
+   * a boolean is a panel with no way to change layout at all. Naming the
+   * OWNER makes "who renders the switcher" a question the call site must
+   * answer.
+   */
+  selectorSlot?: 'panel' | 'host';
+
+  /**
    * Board mode's data source (A2). The shell backs it with the SAME
    * `collections.query` the rows come from, plus `groupBy` — columns are
    * `CollectionResult.groups`, computed server-side; the client never groups
@@ -509,18 +534,24 @@ export function EntityListPanel(props: EntityListPanelProps) {
       data-kind={config.kind}
       aria-label={config.labelPlural}
     >
-      <KindSelector
-        config={config}
-        total={
-          list.lifecycle
-            ? `${tierCounts.reduce((n, c) => n + c.n, 0)}${anyTierTruncated ? '+' : ''}`
-            : undefined
-        }
-        liveCount={liveCountFor(props, config)}
-        onKindChange={props.onKindChange}
-        mode={mode}
-        onMode={setMode}
-      />
+      {/* The host's own kind cell replaces this row when it declares one —
+          see `selectorSlot`. The row is not merely hidden: its two live
+          controls (the kind menu, the view switcher) exist up there instead,
+          which is why the prop names an owner rather than reading `hideHeader`. */}
+      {props.selectorSlot === 'host' ? null : (
+        <KindSelector
+          config={config}
+          total={
+            list.lifecycle
+              ? `${tierCounts.reduce((n, c) => n + c.n, 0)}${anyTierTruncated ? '+' : ''}`
+              : undefined
+          }
+          liveCount={liveCountFor(props, config)}
+          onKindChange={props.onKindChange}
+          mode={mode}
+          onMode={setMode}
+        />
+      )}
 
       <HeaderActions
         config={config}
@@ -1019,6 +1050,21 @@ const MODE_GLYPH: Record<CollectionMode, string> = {
   feed: '≡',
   gallery: '▩',
 };
+
+/**
+ * EXPORTED so a host that owns the header row (`selectorSlot: 'host'`) renders
+ * the SAME control rather than a lookalike. C5 says one switcher everywhere;
+ * a host reimplementing four buttons would be a second one, and the first
+ * thing it would lose is the visible-but-refused position for unbuilt layouts,
+ * which is the whole point of the control.
+ */
+export function ListViewSwitcher(props: {
+  config: KindConfig;
+  mode: CollectionMode;
+  onMode: (mode: CollectionMode) => void;
+}) {
+  return <ViewSwitcher {...props} />;
+}
 
 function ViewSwitcher({
   config,

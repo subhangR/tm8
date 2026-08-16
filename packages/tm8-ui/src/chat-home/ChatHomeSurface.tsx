@@ -46,6 +46,7 @@ export interface ChatHomeSurfaceProps {
   routeThreadId?: ChatHomeScreenProps['routeThreadId'];
   onThreadSelected?: ChatHomeScreenProps['onThreadSelected'];
   renderRootList?: ChatHomeScreenProps['renderRootList'];
+  renderRootAside?: ChatHomeScreenProps['renderRootAside'];
   centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];
   viewerName?: ChatHomeScreenProps['viewerName'];

@@ -33,13 +33,18 @@
  * Two executors that disagree about what a write means is the failure
  * `auxPanel`'s docblock names. One screen, one set.
  */
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { HomePage } from '../home-page';
 import { AuxEntityPanel } from './auxPanel';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
-import { EntityListPanel, type ControlHost, type DetailReasons } from '../panels';
-import type { ActionRef } from '../domain';
+import {
+  EntityListPanel,
+  ListViewSwitcher,
+  type ControlHost,
+  type DetailReasons,
+} from '../panels';
+import type { ActionRef, CollectionMode } from '../domain';
 import { getKind } from '../domain';
 import { attachmentsFor } from '../files/port';
 import { placeholderTitleFor, useNewTask } from '../authoring';
@@ -143,6 +148,12 @@ export interface HomeChatRegions {
    * singleton. Returns null for the Chats root (the screen's own list).
    */
   renderRootList?: (root: HomeRoot) => ReactNode;
+  /**
+   * The same list's LAYOUT SWITCHER, for the root header's own line. The
+   * hosted panel no longer draws a header row — it restated the kind the
+   * header already names — so the switcher is composed here and handed up.
+   */
+  renderRootAside?: (root: HomeRoot) => ReactNode;
 }
 
 /** The `NavView` a Home root addresses (the inverse lives in the resolver below). */
@@ -429,6 +440,49 @@ export function HomeView(props: HomeViewProps) {
      the root's space. The mount mirrors `EntityView`'s, minus the header
      verbs no Home executor owns (they render their honest not-wired
      refusal). */
+  /**
+   * THE HOSTED LIST'S LAYOUT MODE, LIFTED.
+   *
+   * It used to be the panel's own local state, which was fine while the panel
+   * drew the switcher too. Now the switcher lives in the root header and the
+   * body lives in the column, so one of them has to hold the value and the
+   * only place that sees both is here.
+   *
+   * PER KIND, not one global mode: the modes a kind offers are registry data
+   * (`hiddenModes`, and board only where a kind declares one), so a single
+   * value would carry `board` from tasks onto a kind that has no board and
+   * land the column on a refused position. An absent entry means "this kind
+   * has not been switched", which reads its registry default — the same seed
+   * the panel used, kept as the fallback rather than copied at mount.
+   */
+  const [modeByKind, setModeByKind] = useState<Readonly<Record<string, CollectionMode>>>({});
+  const modeFor = useCallback(
+    (kind: string): CollectionMode => modeByKind[kind] ?? getKind(kind).defaultMode,
+    [modeByKind],
+  );
+  const setModeFor = useCallback(
+    (kind: string, next: CollectionMode) =>
+      setModeByKind((prev) => ({ ...prev, [kind]: next })),
+    [],
+  );
+
+  /* The switcher for the header line. The SAME control the panel exports —
+     not a lookalike — so the visible-but-refused positions for unbuilt
+     layouts come with it (C5: one switcher everywhere). */
+  const renderRootAside = useCallback(
+    (listRoot: HomeRoot): ReactNode => {
+      if (listRoot === CHATS_ROOT) return null;
+      return (
+        <ListViewSwitcher
+          config={getKind(listRoot)}
+          mode={modeFor(listRoot)}
+          onMode={(next) => setModeFor(listRoot, next)}
+        />
+      );
+    },
+    [modeFor, setModeFor],
+  );
+
   const renderRootList = useCallback(
     (listRoot: HomeRoot): ReactNode => {
       if (listRoot === CHATS_ROOT) return null;
@@ -436,6 +490,12 @@ export function HomeView(props: HomeViewProps) {
       return (
         <EntityListPanel
           kind={kind}
+          /* The root header above draws the kind cell and the switcher, so
+             this panel must not draw a second pair. The mode pair below is
+             what keeps the relocated switcher wired to this body. */
+          selectorSlot="host"
+          mode={modeFor(kind)}
+          onMode={(next) => setModeFor(kind, next)}
           rowsFor={data.rowsFor(kind)}
           pageStateOf={data.pageStateOf(kind)}
           loadMore={data.loadMore(kind)}
@@ -466,7 +526,7 @@ export function HomeView(props: HomeViewProps) {
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, ctx, centerId, rowLifecycle, launchPort],
+    [data, ctx, centerId, rowLifecycle, launchPort, modeFor, setModeFor],
   );
 
   const regions: HomeChatRegions = {
@@ -489,6 +549,7 @@ export function HomeView(props: HomeViewProps) {
         root: { type: 'chats', threadId: id },
       }),
     renderRootList,
+    renderRootAside,
   };
 
   /* THE ICON RAIL (R4) — the switcher's twin: same groups, same select, no
