@@ -35,6 +35,12 @@ export interface ChatHomeScreenProps {
   spaceId: SpaceId | string;
   /** Bare Home defaults to the space entity. A contextual host passes its entity instead. */
   anchorId?: EntityId;
+  /**
+   * A host that IS a mode (Craft P1: the Craft studio pins 'craft') — new
+   * threads start in it and the mode select is held, exactly as a configured
+   * thread's pin holds it. Absent ⇒ the composer's own choice, default 'ask'.
+   */
+  pinnedMode?: ChatMode;
   models: readonly ChatModelOption[];
   newMutationId?: (prefix: string) => string;
   /** Opens the entity detail panel for an entity a tool call referenced. */
@@ -189,6 +195,7 @@ export function ChatHomeScreen({
   port,
   spaceId,
   anchorId = spaceId as EntityId,
+  pinnedMode,
   models,
   newMutationId = defaultMutationId,
   onOpenEntity,
@@ -229,7 +236,7 @@ export function ChatHomeScreen({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
   const [modelId, setModelId] = useState(models[0]?.model ?? '');
-  const [chatMode, setChatMode] = useState<ChatMode>('ask');
+  const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? 'ask');
   const activeRootRef = useRef<EntityId | null>(null);
   const stoppedRootRef = useRef<EntityId | null>(null);
   const detailRef = useRef<ChatThreadDetail | null>(null);
@@ -1224,7 +1231,7 @@ export function ChatHomeScreen({
                   options={MODE_OPTIONS}
                   value={shownMode}
                   onChange={(id) => setChatMode(id as ChatMode)}
-                  disabled={pinned}
+                  disabled={pinned || pinnedMode !== undefined}
                   emptyNote="No chat mode is available."
                 />
                 <ComposerSelect
@@ -1323,6 +1330,7 @@ const MODE_OPTIONS: readonly { id: ChatMode; label: string; hint: string }[] = [
   { id: 'plan', label: 'plan', hint: 'shapes work into steps and a durable plan to approve' },
   { id: 'build', label: 'build', hint: 'does the work; edits this thread’s checkout for real' },
   { id: 'orchestrate', label: 'orchestrate', hint: 'dispatches and steers worker sessions' },
+  { id: 'craft', label: 'craft', hint: 'sketches a blueprint row; materializes only on approval' },
 ];
 
 function greetingLine(viewerName?: string): string {
