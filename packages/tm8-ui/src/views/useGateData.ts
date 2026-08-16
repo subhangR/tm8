@@ -1406,6 +1406,46 @@ export function useGateData(options: GateOptions): GateData {
     ensureKind(options.rightKind);
   }, [ready, options.leftKind, options.rightKind, ensureKind]);
 
+  /**
+   * RE-READ ONE ANCHOR'S DETAIL, UNCONDITIONALLY — the invalidating half that
+   * `pull` deliberately is not.
+   *
+   * WHY IT CANNOT BE `pull`. `pull` is a cache-FILL primitive: its `needsDetail`
+   * is `details[id] === undefined && !pulledDetails.has(id)`, and it early-returns
+   * when neither half is stale. AN OPEN PANEL ALWAYS HAS ITS DETAIL CACHED —
+   * that is why it renders at all — so `pull(id)` on an open panel is a no-op by
+   * construction. That early return is load-bearing (`renderPanel` calls `pull`
+   * FROM RENDER, so widening its staleness rule is a request loop against the
+   * node), which is why the invalidating path is a SECOND verb rather than a
+   * relaxed first one.
+   *
+   * WHAT MAKES IT SAFE TO BE UNCONDITIONAL: this is only ever called from an
+   * EVENT HANDLER for a write that already landed — an attachment uploaded, a
+   * link cut, a session spawned. One completed mutation, one read. It is never
+   * called from render, so there is no loop to bound and no budget to spend.
+   *
+   * NOT COALESCED, deliberately. Two uploads landing 200ms apart are two
+   * different facts, and handing the second one the first one's in-flight
+   * promise would answer it with a read that predates its own edge — the exact
+   * class of staleness this function exists to end.
+   *
+   * DETAIL ONLY. An attachment edge does not touch the thread, and re-reading
+   * messages here would spend a round-trip on data that did not change.
+   */
+  const refetchDetail = useCallback(
+    async (id: string) => {
+      const detail = await seam.entity(id as never).catch(() => undefined);
+      if (!detail) return;
+      // The id is now genuinely cached, so `pull` may keep early-returning for
+      // it, and a read that ANSWERED clears its own failure record — the same
+      // rule `pull` follows for the same reason.
+      pulledDetails.current.add(id);
+      readFailures.current.delete(readKey('d', id));
+      domain.store.getState().ingestDetail(detail);
+    },
+    [seam, domain],
+  );
+
   const spawn = useCallback(
     async (input: ExecutionSpawnInput) => {
       const result = await seam.commands.spawn(input);
@@ -1419,12 +1459,27 @@ export function useGateData(options: GateOptions): GateData {
         throw new Error('execution.spawn returned no work-session entity');
       }
 
+      /* THE ANCHOR'S DETAIL IS NOW STALE, AND ONLY A RE-READ FIXES IT.
+         Spawn writes a `working_on` edge from the new session to every id in
+         `taskIds`. That edge lives on the ANCHOR's `connections`, which is a
+         SNAPSHOT taken when its detail was read (`files/model.ts` states the
+         same rule for attachments) — no event converges it, and `pull` is a
+         cache-fill that early-returns on an already-cached detail. So the
+         panel the user launched FROM kept rendering "no runs recorded"
+         against a run that exists, until a full page reload. `patches` cannot
+         close this: it carries SUMMARIES, and a summary has no connections.
+
+         NOT AWAITED, for the reason the next comment gives: the terminal opens
+         on the command result, not one round-trip later. The RUNS region
+         re-renders when the read lands. */
+      for (const taskId of input.taskIds ?? []) void refetchDetail(taskId);
+
       // The command result opens the caller's terminal immediately. The
       // durable entity.upsert event independently converges other clients;
       // neither path needs a browser refresh or a post-command full hydrate.
       return sessionId;
     },
-    [seam, domain],
+    [seam, domain, refetchDetail],
   );
 
   const launch = useMemo<GateData['launch']>(() => {
@@ -1929,46 +1984,6 @@ export function useGateData(options: GateOptions): GateData {
          this hook obeys. */
       if (detail) domain.store.getState().ingestDetail(detail);
       if (thread) domain.store.getState().ingestMessages(id as EntityId, [...thread.items]);
-    },
-    [seam, domain],
-  );
-
-  /**
-   * RE-READ ONE ANCHOR'S DETAIL, UNCONDITIONALLY — the invalidating half that
-   * `pull` deliberately is not.
-   *
-   * WHY IT CANNOT BE `pull`. `pull` is a cache-FILL primitive: its `needsDetail`
-   * is `details[id] === undefined && !pulledDetails.has(id)`, and it early-returns
-   * when neither half is stale. AN OPEN PANEL ALWAYS HAS ITS DETAIL CACHED —
-   * that is why it renders at all — so `pull(id)` on an open panel is a no-op by
-   * construction. That early return is load-bearing (`renderPanel` calls `pull`
-   * FROM RENDER, so widening its staleness rule is a request loop against the
-   * node), which is why the invalidating path is a SECOND verb rather than a
-   * relaxed first one.
-   *
-   * WHAT MAKES IT SAFE TO BE UNCONDITIONAL: this is only ever called from an
-   * EVENT HANDLER for a write that already landed — an attachment uploaded, a
-   * link cut. One completed mutation, one read. It is never called from render,
-   * so there is no loop to bound and no budget to spend.
-   *
-   * NOT COALESCED, deliberately. Two uploads landing 200ms apart are two
-   * different facts, and handing the second one the first one's in-flight
-   * promise would answer it with a read that predates its own edge — the exact
-   * class of staleness this function exists to end.
-   *
-   * DETAIL ONLY. An attachment edge does not touch the thread, and re-reading
-   * messages here would spend a round-trip on data that did not change.
-   */
-  const refetchDetail = useCallback(
-    async (id: string) => {
-      const detail = await seam.entity(id as never).catch(() => undefined);
-      if (!detail) return;
-      // The id is now genuinely cached, so `pull` may keep early-returning for
-      // it, and a read that ANSWERED clears its own failure record — the same
-      // rule `pull` follows for the same reason.
-      pulledDetails.current.add(id);
-      readFailures.current.delete(readKey('d', id));
-      domain.store.getState().ingestDetail(detail);
     },
     [seam, domain],
   );
