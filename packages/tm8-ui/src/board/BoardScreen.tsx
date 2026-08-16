@@ -37,7 +37,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ActorSummary, EntitySummary } from '@tm8/contract';
 import { getKind } from '../domain';
 import type { SetStateOutcome } from '../domain';
-import { Avatar, AvatarStack, Pill, shortDate } from '../kit';
+import { AvatarStack, Pill, shortDate } from '../kit';
 import type { Notice } from '../shell/notices';
 import type { GateData } from '../views/useGateData';
 import { useRowLifecycle } from '../views/useRowLifecycle';
@@ -56,11 +56,20 @@ import {
   type BoardFilterState,
   type BoardPivot,
 } from './board-model';
+import { FilterSelect, type FilterOption } from './FilterSelect';
 import './board.css';
 
 /** How long a priority drop will wait for the version to hydrate. */
 const DETAIL_POLL_TRIES = 20;
 const DETAIL_POLL_MS = 100;
+
+/* The closed vocabularies as menu options — the SAME specs the columns are
+   built from, so a filter can never offer a state no column would draw. */
+const STATUS_OPTIONS: readonly FilterOption[] = STATUS_COLUMNS.map((s) => ({ id: s.key, label: s.label }));
+const PRIORITY_OPTIONS: readonly FilterOption[] = PRIORITY_COLUMNS.map((p) => ({ id: p.key, label: p.label }));
+
+/** An unloaded roster is not an empty space, and must not read as one. */
+const ROSTER_EMPTY = 'The people and teammates for this space have not loaded yet.';
 
 interface BoardScreenProps {
   data: GateData;
@@ -115,6 +124,15 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
     () => roster.map((actor) => ({ id: actor.id as string, label: actor.displayName })),
     [roster],
   );
+  /**
+   * The people options, built ONCE and handed to both people axes. "Who holds
+   * this" and "who handed it out" are different questions over the same
+   * population, so they must never drift into two different populations.
+   */
+  const peopleOptions = useMemo<FilterOption[]>(
+    () => roster.map((actor) => ({ id: actor.id as string, label: actor.displayName, actor })),
+    [roster],
+  );
 
   const filter = useMemo(() => buildFilters(filters), [filters]);
   const snapshot = data.boardFor('task')(filter, pivot);
@@ -154,6 +172,10 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
       const next = list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
       return { ...prior, [axis]: next };
     });
+  };
+
+  const clearAxis = (axis: keyof BoardFilterState): void => {
+    setFilters((prior) => ({ ...prior, [axis]: [] }));
   };
 
   /** Waits for the card's detail to hydrate; the priority patch needs its version. */
@@ -280,7 +302,12 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
 
   return (
     <section className="bd" data-testid="board-screen">
-      <header className="bd__bar">
+      {/* ONE ROW OF CHROME. Every axis is a constant-height trigger, so this
+          header's height is independent of how many statuses, priorities or
+          people the space has — which is the whole point: the board gets the
+          rest of the screen. It wraps to a second row only when the window is
+          genuinely too narrow to hold the controls. */}
+      <header className="bd__bar" data-testid="bd-filters">
         <div className="bd__pivots" role="group" aria-label="Group by">
           {PIVOTS.map((p) => (
             <button
@@ -295,6 +322,46 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
             </button>
           ))}
         </div>
+
+        <span className="bd__sep" aria-hidden />
+
+        <FilterSelect
+          label="Status"
+          testId="bd-filter-status"
+          options={STATUS_OPTIONS}
+          selected={filters.statuses}
+          onToggle={(key) => toggle('statuses', key)}
+          onClear={() => clearAxis('statuses')}
+          emptyNote="This build declares no task states."
+        />
+        <FilterSelect
+          label="Priority"
+          testId="bd-filter-priority"
+          options={PRIORITY_OPTIONS}
+          selected={filters.priorities}
+          onToggle={(key) => toggle('priorities', key)}
+          onClear={() => clearAxis('priorities')}
+          emptyNote="This build declares no priorities."
+        />
+        <FilterSelect
+          label="Assigned to"
+          testId="bd-filter-person"
+          options={peopleOptions}
+          selected={filters.people}
+          onToggle={(id) => toggle('people', id)}
+          onClear={() => clearAxis('people')}
+          emptyNote={ROSTER_EMPTY}
+        />
+        <FilterSelect
+          label="Assigned by"
+          testId="bd-filter-assignedby"
+          options={peopleOptions}
+          selected={filters.assignedBy}
+          onToggle={(id) => toggle('assignedBy', id)}
+          onClear={() => clearAxis('assignedBy')}
+          emptyNote={ROSTER_EMPTY}
+        />
+
         <input
           className="bd__search"
           type="search"
@@ -314,91 +381,6 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
           </button>
         ) : null}
       </header>
-
-      <div className="bd__filters" data-testid="bd-filters">
-        <div className="bd__axis" role="group" aria-label="Status">
-          <span className="bd__axis-label">Status</span>
-          {STATUS_COLUMNS.map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              className="bd__chip"
-              aria-pressed={filters.statuses.includes(s.key)}
-              data-testid={`bd-filter-status-${s.key}`}
-              onClick={() => toggle('statuses', s.key)}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-        <div className="bd__axis" role="group" aria-label="Priority">
-          <span className="bd__axis-label">Priority</span>
-          {PRIORITY_COLUMNS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              className="bd__chip"
-              aria-pressed={filters.priorities.includes(p.key)}
-              data-testid={`bd-filter-priority-${p.key}`}
-              onClick={() => toggle('priorities', p.key)}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="bd__axis" role="group" aria-label="Assigned to">
-          <span className="bd__axis-label">Assigned to</span>
-          {roster.length === 0 ? (
-            <span className="bd__axis-empty">roster not loaded yet</span>
-          ) : (
-            roster.map((actor) => (
-              <button
-                key={actor.id}
-                type="button"
-                className="bd__chip bd__chip--person"
-                aria-pressed={filters.people.includes(actor.id as string)}
-                data-testid={`bd-filter-person-${actor.id}`}
-                onClick={() => toggle('people', actor.id as string)}
-              >
-                <Avatar
-                  actorId={actor.id}
-                  provenance={actor.isAgent ? 'agent' : 'human'}
-                  label={actor.displayName}
-                  size={15}
-                  src={actor.avatar ?? null}
-                />
-                {actor.displayName}
-              </button>
-            ))
-          )}
-        </div>
-        <div className="bd__axis" role="group" aria-label="Assigned by">
-          <span className="bd__axis-label">Assigned by</span>
-          {roster.length === 0 ? (
-            <span className="bd__axis-empty">roster not loaded yet</span>
-          ) : (
-            roster.map((actor) => (
-              <button
-                key={actor.id}
-                type="button"
-                className="bd__chip bd__chip--person"
-                aria-pressed={filters.assignedBy.includes(actor.id as string)}
-                data-testid={`bd-filter-assignedby-${actor.id}`}
-                onClick={() => toggle('assignedBy', actor.id as string)}
-              >
-                <Avatar
-                  actorId={actor.id}
-                  provenance={actor.isAgent ? 'agent' : 'human'}
-                  label={actor.displayName}
-                  size={15}
-                  src={actor.avatar ?? null}
-                />
-                {actor.displayName}
-              </button>
-            ))
-          )}
-        </div>
-      </div>
 
       {snapshot?.error ? (
         <div className="bd__error" data-testid="bd-error" role="alert">
