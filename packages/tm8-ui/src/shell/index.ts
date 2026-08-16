@@ -53,7 +53,7 @@ export {
   type RefPresentation,
   type ServerRailItem,
 } from './MenuRail';
-export { SpaceTabBar, type SpaceTabBarProps } from './SpaceTabBar';
+export { SpaceTabBar, type ShellTab, type SpaceTabBarProps } from './SpaceTabBar';
 export {
   SpaceSwitcher,
   SWITCHER_ADD_SERVER_REASON,
@@ -74,6 +74,9 @@ export {
 // from here — shell owns the resolver, domain owns the kind-naming data.
 export {
   VIEW_PRESENTATION,
+  groupIdOfTarget,
+  isRaillessGroup,
+  primaryTargetOfGroup,
   resolveMenu,
   type MenuFallbackReason,
   type MenuSource,

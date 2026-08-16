@@ -27,12 +27,15 @@ import type { SessionLiveness } from '../data/seam';
 import { useDismissable } from '../panels/useDismissable';
 import { Avatar, Chip, Eyebrow, IconBtn, Pill, Timestamp, type PillTone } from '../kit';
 import {
+  DEFAULT_WINDOW,
+  GRAPH_WINDOWS,
   NODE_H,
   NODE_W,
   RENDER_CAP,
   buildGraphModel,
   focusSubgraph,
   searchMatches,
+  windowSpec,
   type GraphModel,
   type PlacedEdge,
   type PlacedNode,
@@ -60,6 +63,21 @@ export interface GraphViewProps {
   livenessOf(id: string): SessionLiveness;
   /** The aside's current selection — the matching node wears a persistent ring. */
   selectedId?: EntityId | null;
+  /**
+   * THE WINDOW IS A READ, SO ITS STATE LIVES ABOVE THIS COMPONENT.
+   *
+   * Choosing "last day" re-queries the space for entities active since then;
+   * it does not filter the nodes already in hand. Owning the choice locally
+   * would mean the label could describe a window the canvas never asked for —
+   * exactly the failure this scope is meant to end. A host that passes nothing
+   * gets a canvas that filters what it was handed, and says so.
+   */
+  window?: string;
+  onChooseWindow?: (id: string) => void;
+  /** The read's page filled: the window holds more than this canvas shows. */
+  atCeiling?: boolean;
+  /** Size of that page, so the count can be stated rather than implied. */
+  nodeLimit?: number;
 }
 
 const ZOOM_MIN = 0.35;
@@ -156,6 +174,18 @@ export function GraphView(props: GraphViewProps) {
   // canvas opens on active work rather than on every entity the session has
   // ever ingested, and `Everything` is one click away and clearly labeled.
   const [lens, setLens] = useState<LensId>(DEFAULT_LENS);
+  // The time window — orthogonal to the lens and the other half of the same
+  // answer. The lens says what KIND of interest earns a place; the window says
+  // how recently the space touched it. It opens on a day because that is what
+  // separates on this space (24h selects 195 of 3,917) — see GRAPH_WINDOWS.
+  //
+  // The host owns it when the host can act on it, i.e. when choosing a window
+  // re-reads the space. The local fallback keeps this component usable from a
+  // fixture harness; there the window can only filter the nodes handed in, and
+  // the footer says so rather than claiming the space was searched.
+  const [localWindowId, setLocalWindowId] = useState<string>(DEFAULT_WINDOW);
+  const readBacked = props.window !== undefined && props.onChooseWindow !== undefined;
+  const windowId = props.window ?? localWindowId;
   // Folding is ON by default (it is the largest declutter and costs no meaning)
   // but the user can always ask to see every leaf as its own card.
   const [fold, setFold] = useState(true);
@@ -257,6 +287,7 @@ export function GraphView(props: GraphViewProps) {
           : null,
         now,
         lens,
+        windowMs: windowSpec(windowId).ms,
         liveIds,
         matchIds: matches,
         pinnedIds,
@@ -268,7 +299,7 @@ export function GraphView(props: GraphViewProps) {
     // prevCanvasIds below): it is refreshed by the snapshot effect after commit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [modelNodes, allEdges, kindsOff, typesOff, kindsPresent, typesPresent, now, relayoutTick,
-     lens, liveIds, matches, pinnedIds, focus, fold],
+     lens, windowId, liveIds, matches, pinnedIds, focus, fold],
   );
 
   // Snapshot placed positions AFTER each compute — the next compute freezes on
@@ -566,6 +597,16 @@ export function GraphView(props: GraphViewProps) {
     frozenRef.current = null;
     setLens(next);
   }, []);
+  const chooseWindow = useCallback(
+    (next: string) => {
+      frozenRef.current = null;
+      // Both, always: the host re-reads, and the local value keeps the buttons
+      // honest in a harness that passes no handler.
+      setLocalWindowId(next);
+      props.onChooseWindow?.(next);
+    },
+    [props],
+  );
   const toggleFold = useCallback(() => {
     frozenRef.current = null;
     setFold((f) => !f);
@@ -662,9 +703,41 @@ export function GraphView(props: GraphViewProps) {
             </button>
           ))}
         </div>
+        {/* THE WINDOW, beside the lens because they are two halves of one
+            question and neither is a refinement of the other: the lens picks
+            the KIND of interest, the window picks HOW RECENT. Kept as its own
+            control rather than folded into the lens list so that "Live, last
+            week" is expressible — collapsing them would silently remove
+            combinations the reader can currently ask for. */}
+        <div className="gv-lens" role="group" aria-label="Graph time window">
+          {GRAPH_WINDOWS.map((spec) => (
+            <button
+              key={spec.id}
+              type="button"
+              className={spec.id === windowId ? 'gv-lens__opt gv-lens__opt--on' : 'gv-lens__opt'}
+              aria-pressed={spec.id === windowId}
+              title={spec.hint}
+              onClick={() => chooseWindow(spec.id)}
+            >
+              {spec.label}
+            </button>
+          ))}
+        </div>
         <span className="gv-toolbar__count">
           {model.placed.length} nodes · {model.edges.length} edges · {model.componentCount}{' '}
           {model.componentCount === 1 ? 'island' : 'islands'}
+          {/* Hubs are why the islands are islands. Saying so here is what keeps
+              the partition from looking arbitrary to someone who can plainly
+              see an edge crossing between two of them. */}
+          {model.hubCount > 0 && (
+            <span
+              className="gv-toolbar__fold"
+              title="A node with more than a dozen connections is drawn and linked, but is not treated as evidence that the groups it touches are the same piece of work."
+            >
+              {' '}
+              · {model.hubCount} {model.hubCount === 1 ? 'hub' : 'hubs'} not merging
+            </span>
+          )}
           {/* The declutter states its own price, always. A number nobody can
               account for is the thing this whole change exists to remove. */}
           {model.foldedCount > 0 && (
@@ -742,13 +815,40 @@ export function GraphView(props: GraphViewProps) {
         </div>
       </div>
 
-      {/* TWO EXCLUSIONS, TWO SENTENCES. `truncated` means the canvas filled up;
-          `outOfLens` means this lens never reached them. They are different facts
-          with different remedies — raise the cap vs. widen the lens — and saying
-          "the canvas holds 150" over a lens exclusion is a false explanation, the
-          exact failure this change exists to remove. */}
-      {(model.truncated > 0 || model.outOfLens > 0) && (
+      {/* THREE EXCLUSIONS, THREE SENTENCES. `outOfWindow` means it is older than
+          the window; `outOfLens` means this lens never reached it; `truncated`
+          means the canvas filled up. Three different facts with three different
+          remedies — widen the window, widen the lens, raise the cap — and saying
+          "the canvas holds 150" over either of the other two is a false
+          explanation, the exact failure this banner exists to remove. */}
+      {(model.truncated > 0 || model.outOfLens > 0 || model.outOfWindow > 0 ||
+        props.atCeiling === true) && (
         <div className="gv-banner" role="status">
+          {/* A FOURTH, DIFFERENT FACT: the READ filled its page. The window was
+              asked of the whole space and the space had more to say than one
+              page holds. There is no count-by-query read, so a full page is the
+              only evidence available — which is why this says "at least", and
+              why its remedy is a narrower window rather than a bigger canvas. */}
+          {props.atCeiling === true && (
+            <>
+              This is the {props.nodeLimit ?? model.visibleTotal} most recently active in{' '}
+              {windowSpec(windowId).label.toLowerCase()}; the window holds at least that many.
+              Narrow the window to see a complete picture of a shorter period.{' '}
+            </>
+          )}
+          {model.outOfWindow > 0 && (
+            <>
+              {model.outOfWindow} of {model.visibleTotal} are older than{' '}
+              {windowSpec(windowId).label.toLowerCase()} and are not on this canvas. Running,
+              searched and selected entities are shown however old they are.{' '}
+              {/* WHICH WINDOW THIS IS. A host that owns the choice re-queries the
+                  space, so the sentence above is about the space. Without one the
+                  window can only sieve the nodes this canvas was handed, and
+                  saying nothing would let the same words claim a search that
+                  never happened. */}
+              {readBacked ? '' : 'This window sieves the nodes already loaded; it does not re-read the space. '}
+            </>
+          )}
           {model.outOfLens > 0 && (
             <>
               {model.outOfLens} of {model.visibleTotal} outside this lens —{' '}
@@ -782,6 +882,21 @@ export function GraphView(props: GraphViewProps) {
               </p>
               <button type="button" className="gv-filter" onClick={() => chooseLens('all')}>
                 Show everything
+              </button>
+            </>
+          ) : model.outOfWindow === model.visibleTotal && model.visibleTotal > 0 ? (
+            /* A QUIET SPACE IS NOT AN EMPTY ONE. Everything here fell out of the
+               window, which is a fact about the clock, not about the filters —
+               blaming the filters would send the reader to the wrong control. */
+            <>
+              <p className="gv-empty__title">
+                Nothing has been touched in {windowSpec(windowId).label.toLowerCase()}.
+              </p>
+              <p className="gv-empty__detail">
+                {model.visibleTotal} entities are loaded; all of them are older than that.
+              </p>
+              <button type="button" className="gv-filter" onClick={() => chooseWindow('all')}>
+                Show all time
               </button>
             </>
           ) : filtered ? (
@@ -965,6 +1080,19 @@ export function GraphView(props: GraphViewProps) {
                       <span className="gv-node__meta">✉ {p.entity.counters.messages}</span>
                     )}
                     {p.ghost && <span className="gv-node__meta gv-node__meta--ghost">deleted</span>}
+                    {/* THE HUB BADGE. Nothing is hidden behind it — it is the
+                        answer to "why are these two groups drawn apart when I
+                        can see an edge between them?". A node this connected is
+                        shared context, so it is not evidence that the work on
+                        either side of it is the same work. */}
+                    {p.hub && (
+                      <span
+                        className="gv-node__meta gv-node__meta--hub"
+                        title={`${p.degree} connections — drawn and linked, but not used to merge the groups it touches`}
+                      >
+                        ◈{p.degree}
+                      </span>
+                    )}
                     {/* THE FOLD BADGE. What collapsed onto this card, said in
                         kinds and counts, and clickable to bring it back. A
                         folded leaf is relocated here — never dropped — and this

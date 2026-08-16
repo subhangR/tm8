@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_MENU_WORKSPACE_KIND_SPINE, MenuConfigSchema } from '@tm8/contract';
 import type { MenuConfig } from '@tm8/contract';
 import { SHIPPED_DEFAULT_MENU, SHIPPED_DEFAULT_MENU_REVISION } from '../domain';
-import { VIEW_PRESENTATION, resolveMenu } from './menu-resolve';
+import { VIEW_PRESENTATION, isRaillessGroup, resolveMenu } from './menu-resolve';
 
 describe('the shipped default menu', () => {
   it('satisfies the frozen MenuConfig DTO (contract zod, not a local guess)', () => {
@@ -18,20 +18,71 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the shipped group spine — the revision-11 intent clusters', () => {
+  it('encodes the shipped group spine — the revision-14 tab row', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
-      'Home',
-      // Revision 11 (2026-08-14, single-home ruling): Chats clusters the
-      // conversation surfaces; live voice rooms hang beneath it via the
-      // dynamic group, so the items-empty Voice label retired. Library folded
-      // into Workspace; Tracking became the Code caret; Collab's member row
-      // left for the palette and the kind switcher.
-      'Chats',
-      'Workspace',
-      'Code',
+      // Revision 12 (2026-08-15, five-tab ruling + Files amendment): the
+      // groups are the top-level tabs. Code retired into Work (R3);
+      // Chats renamed Channels (R4); the File browser became its own tab.
+      //
+      // Revision 13 (later the same day, conversation-axis ruling): HOME NO
+      // LONGER LEADS — the group was removed entirely.
+      //
+      // Revision 14 (user ruling, same day): a group leads the conversation
+      // surface again, named CHATS. 13 left the brand mark as the only way
+      // back to it; what 13 was actually right about — the redundant RAIL ROW
+      // — is handled by `isRaillessGroup` instead, proven below. Note the row
+      // reads its own label while the ref's presentation label is still Home:
+      // the GROUP names the tab, the ref names nothing here.
+      //
+      // Revision 15 (2026-08-16): the label is COLLAB — a rename only, the
+      // group id stays `chats`.
+      //
+      // Revision 16 (2026-08-16, Board tab wave): BOARD joins beside Work —
+      // the task kanban as its own railless tab.
+      'Collab',
+      'Work',
+      'Board',
       'Graph',
+      'Channels',
+      'Files',
       'Settings',
     ]);
+  });
+
+  it('draws NO rail on Chats — the two-pane guarantee, at the seam that decides it', () => {
+    // The surface is conversation LIST | conversation. The list is drawn by
+    // the screen inside its own pane, so a rail here would be a THIRD column
+    // holding one row that repeats the tab's own name — which is precisely
+    // what made revision 13 retire the tab. The rule is what lets 14 restore
+    // the tab without restoring that column.
+    const chats = SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === 'chats');
+    expect(chats).toBeTruthy();
+    expect(isRaillessGroup(chats!)).toBe(true);
+
+    // The other full-bleed screens keep their posture, and the groups with
+    // real rows keep theirs — this is a widening, not a change of rule.
+    for (const id of ['graph', 'settings', 'files', 'board']) {
+      expect(isRaillessGroup(SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === id)!), id).toBe(true);
+    }
+    for (const id of ['workspace', 'channels']) {
+      expect(isRaillessGroup(SHIPPED_DEFAULT_MENU.groups.find((g) => g.id === id)!), id).toBe(false);
+    }
+  });
+
+  it('keys railless on the SHAPE, so a Chats group with a second row draws a rail again', () => {
+    // The guarantee is one childless view item, not the `dashboard` ref alone.
+    // An operator who adds a row to this group has asked for a rail and gets
+    // one, rather than silently losing the row they just added.
+    expect(
+      isRaillessGroup({
+        id: 'chats',
+        label: 'Chats',
+        items: [
+          { type: 'view', ref: 'dashboard' },
+          { type: 'view', ref: 'feed' },
+        ],
+      }),
+    ).toBe(false);
   });
 
   it('keeps Workspace as a caret view item with its eight leaves (RULING E)', () => {
@@ -46,11 +97,13 @@ describe('the shipped default menu', () => {
     expect(children).toHaveLength(8);
   });
 
-  it('carries exactly two caret items — Workspace and Code — depth exactly ≤1', () => {
+  it('carries exactly one caret item — Workspace — depth exactly ≤1', () => {
+    // Revision 12: the Code caret retired with its group (R3); the git view
+    // is a plain childless Work row now (D1).
     const withChildren = SHIPPED_DEFAULT_MENU.groups
       .flatMap((g) => g.items)
       .filter((item) => item.type === 'view' && (item.children?.length ?? 0) > 0);
-    expect(withChildren.map((item) => item.ref)).toEqual(['workspace', 'git']);
+    expect(withChildren.map((item) => item.ref)).toEqual(['workspace']);
   });
 
   it('omits deferred features entirely (R7-5: never rows in the shipped config)', () => {
@@ -79,9 +132,10 @@ describe('the shipped default menu', () => {
     // posture as `graph`). The union is closed, so this list is how a widening
     // announces itself rather than silently shipping a ref with no glyph.
     // `messages` joined 2026-08-13 (the cross-entity conversation browser),
-    // same additive R4 widening as the two above.
+    // same additive R4 widening as the two above. `board` joined 2026-08-16
+    // (the task kanban tab), same posture.
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['channels', 'dashboard', 'feed', 'files', 'git', 'graph', 'inbox', 'messages', 'settings', 'workspace'].sort(),
+      ['board', 'channels', 'dashboard', 'feed', 'files', 'git', 'graph', 'inbox', 'messages', 'settings', 'workspace'].sort(),
     );
   });
 });

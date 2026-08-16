@@ -580,6 +580,7 @@ const ROWS: readonly KindConfig[] = [
         badges: [
           { source: 'workStatus' },
           { source: 'priority' },
+          { source: 'axes' },
           { source: 'assignees' },
           { source: 'acceptance' },
           { source: 'blocked' },
@@ -594,6 +595,11 @@ const ROWS: readonly KindConfig[] = [
       inlineEdit: { status: true, title: true },
       stateControl: TASK_STATE_CONTROL,
       valueControls: [TASK_PRIORITY_CONTROL],
+      /* The per-space `type` taxonomy (and any axis the space defines). The
+         vocabulary is server data, not a static options list — see the
+         `ListConfig.axisControls` docblock for why this is not a
+         `ValueControl`. */
+      axisControls: { source: 'axes' },
       assignControl: TASK_ASSIGN_CONTROL,
       // A2: the board groups by the same field the state picker writes. The
       // server computes the groups (collections.ts groupItems); the client

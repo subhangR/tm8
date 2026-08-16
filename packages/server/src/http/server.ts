@@ -290,10 +290,40 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       const match = router.match(method, pathname);
       if (!match) throw fail('not_found', `no operation bound to ${method} ${pathname}`);
 
-      const identity = await resolveIdentity(req.headers, {
-        remoteAddress: req.socket.remoteAddress,
-        disableAutoOwner: config.disableAutoOwner === true,
-      });
+      let identity: Awaited<ReturnType<typeof resolveIdentity>>;
+      try {
+        identity = await resolveIdentity(req.headers, {
+          remoteAddress: req.socket.remoteAddress,
+          disableAutoOwner: config.disableAutoOwner === true,
+        });
+      } catch (err) {
+        /*
+         * A CREDENTIAL EXCHANGE STANDS ON THE CREDENTIAL IN ITS BODY.
+         *
+         * Found live (2026-08-15, staging): a password reset revokes every
+         * session, the browser keeps the revoked token in its HttpOnly
+         * `tm8_session` cookie, fetch attaches it to every request — and this
+         * resolution refused `auth.login` with `invalid token` BEFORE the
+         * password was ever read. The correct new password was reported as
+         * wrong, and no client-side act short of manually deleting the cookie
+         * could ever break the loop (HttpOnly is out of script's reach).
+         *
+         * So for the two exchange operations only, a dead SESSION carrier is
+         * stripped and resolution runs again — landing on the loopback
+         * auto-owner or anonymous, exactly as if the stale cookie were absent.
+         * Every other operation keeps refusing: presenting an invalid token
+         * to a session-bearing call is still a refusal, not a downgrade.
+         */
+        const exchange = match.opName === 'auth.login' || match.opName === 'auth.signup';
+        if (!exchange || !(err instanceof Error && (err as { code?: string }).code === 'unauthenticated')) {
+          throw err;
+        }
+        const { authorization: _authorization, cookie: _cookie, ...bare } = req.headers;
+        identity = await resolveIdentity(bare, {
+          remoteAddress: req.socket.remoteAddress,
+          disableAutoOwner: config.disableAutoOwner === true,
+        });
+      }
 
       const handler = registry.get(match.opName);
       if (!handler) throw notImplemented(match.opName);

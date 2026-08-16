@@ -1,11 +1,17 @@
 /**
- * The session Graph surface, composed ONCE for every host that mounts an
+ * The Graph surface, composed ONCE for every host that mounts an
  * `EntityDetailPanel` — the same shape, and for the same reason, as
  * `debugSurfaceFor`.
  *
- * The Graph chip is rendered by `WorkSessionContent`, so every host gets the
- * CHIP for free through the panel; the BODY behind it is a prop, because the
- * panel layer is presentational and never reaches for the seam. Wiring the five
+ * TWO ENTRANCES, ONE SURFACE. A session reaches it through the Graph chip
+ * `WorkSessionContent` draws; every other kind reaches it through the
+ * Connections tab's List/Graph switch. Sessions never take the second door (the
+ * terminal archetype returns before the tab arm), so nothing has two entrances
+ * to the same canvas.
+ *
+ * The chip and the switch are rendered by the panel layer, so every host gets
+ * them for free; the BODY behind them is a prop, because that layer is
+ * presentational and never reaches for the seam. Wiring the five
  * mount sites by hand is exactly how `debugSurface` and `onResumeSession` each
  * ended up live on one screen and dead on the rest, so the composition lives
  * here and a host opts in with one call.
@@ -34,9 +40,11 @@ export function graphSurfaceFor(
   return (
     <SessionGraphBody
       seam={seam}
-      sessionId={entityId as EntityId}
-      // A session that can still act can still grow edges. An exited one cannot,
-      // so it is read once.
+      focusId={entityId as EntityId}
+      // An entity that can still act can still grow edges. A finished one
+      // cannot, so it is read once. `livenessOf` answers 'unknown' for every
+      // non-session kind, which lands on the read-once arm — correct: a task
+      // grows edges through its sessions, and those are what poll.
       live={livenessOf(entityId) === 'live'}
       onOpenEntity={onOpenEntity}
     />

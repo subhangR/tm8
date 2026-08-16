@@ -205,10 +205,12 @@ export const SPACE_EDIT_UNAVAILABLE = reason(
   'seam.commands has no space-mutation verb; spaces() is a read.',
 );
 
-export const AXES_UNREADABLE = reason(
-  'No task-axis configuration exists to read',
-  'CollectionQuery consumes axes as a filter, but nothing in the seam or the contract DEFINES the axis set for a space.',
-);
+/* AXES_UNREADABLE stood here until 2026-08-16 and was measured FALSE on both
+   halves: `TaskAxis` is in the contract (contract.ts) and `seam.spaceSettings()`
+   already carried `taskAxes` on the round trip `port.ts` makes for invites.
+   Deleted with the gap it named (W2 wired the real read + CRUD) — the SECOND
+   stale refusal found in this file; re-verify the mechanism a reason cites
+   before trusting it. */
 
 export const DANGER_ZONE_UNAVAILABLE = reason(
   'Transfer and delete have no executor in this build',
@@ -242,7 +244,6 @@ export const ALL_SETTINGS_REASONS: readonly UnavailableReason[] = [
   INVITE_REDEEM_NOT_HERE,
   INVITE_REDEEM_LANDING_UNWIRED,
   SPACE_EDIT_UNAVAILABLE,
-  AXES_UNREADABLE,
   DANGER_ZONE_UNAVAILABLE,
   SECTION_NOT_MOUNTED,
 ];

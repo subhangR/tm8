@@ -211,6 +211,19 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
     }
     case 'dueDate':
       return meta(str(field(row, 'dueDate')) && `due ${str(field(row, 'dueDate'))}`);
+    case 'axes': {
+      // The task's per-space axis values (`state.axes`, a {axis: value}
+      // record). Rendered as `axis:value` pairs because two axes with bare
+      // values would be ambiguous on one line; an unset axis is simply
+      // absent, which `hideWhenEmpty` already makes distinguishable.
+      const a = field(row, 'axes');
+      if (a === null || typeof a !== 'object') return null;
+      const entries = Object.entries(a as Record<string, unknown>).filter(
+        (pair): pair is [string, string] => typeof pair[1] === 'string' && pair[1].length > 0,
+      );
+      if (entries.length === 0) return null;
+      return meta(entries.map(([axis, value]) => `${axis}:${value}`).join(' · '));
+    }
     case 'blocked': {
       const n = row.badges.blocked?.unresolvedHardDependencyCount ?? 0;
       return n > 0 ? meta(`blocked ×${n}`) : null;
@@ -308,7 +321,7 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
  */
 export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSource>([
   'workStatus', 'sessionStatus', 'prState', 'profileStatus',
-  'priority', 'entityActor', 'createdBy',
+  'priority', 'axes', 'entityActor', 'createdBy',
   'workingActors', 'liveWork', 'owner', 'messageAuthor',
   'assignees', 'acceptance', 'dueDate', 'blocked', 'pulls', 'restricted',
   'messages', 'points', 'agentTool', 'model', 'shareMode',

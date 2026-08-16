@@ -17,7 +17,6 @@
   background: var(--pn-surface);
 }
 
-.tch-sidebar__head,
 .tch-conversation__head {
   display: flex;
   align-items: center;
@@ -28,7 +27,6 @@
   border-bottom: 1px solid var(--pn-line);
 }
 
-.tch-sidebar__head > span,
 .tch-title {
   display: flex;
   flex-direction: column;
@@ -36,7 +34,6 @@
   flex: 1;
 }
 
-.tch-sidebar__head strong,
 .tch-title strong {
   font-family: var(--pn-serif);
   font-size: 18px;
@@ -47,7 +44,6 @@
   white-space: nowrap;
 }
 
-.tch-sidebar__head small,
 .tch-title span {
   color: var(--pn-ink-3);
   font-size: 11px;
@@ -297,14 +293,25 @@
   background: var(--pn-surface);
 }
 
+/* A real button now (it discloses the call), so the button chrome is reset back
+   to the header it has always looked like — the press is the only new thing. */
 .tch-tool__head {
   display: flex;
+  width: 100%;
   align-items: center;
   gap: 7px;
   min-height: 30px;
   padding: 0 9px;
+  border: 0;
   border-bottom: 1px solid var(--pn-line);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
+
+.tch-tool__head:hover { background: var(--pn-hover); }
 
 .tch-tool__mark { color: var(--pn-brand-2); }
 .tch-tool code { color: var(--pn-ink-2); font: 10px var(--pn-mono); }
@@ -800,7 +807,6 @@ button.tch-entity-chip:hover {
 @media (max-width: 760px) {
   .tch-root { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .tch-sidebar { border-right: 0; border-bottom: 1px solid var(--pn-line); }
-  .tch-sidebar__head { min-height: 42px; }
   .tch-thread-list { display: flex; gap: 4px; overflow-x: auto; padding: 5px 8px; }
   .tch-thread { flex: 0 0 210px; margin: 0; }
   .tch-conversation__head { align-items: flex-start; flex-direction: column; }
@@ -808,4 +814,345 @@ button.tch-entity-chip:hover {
   .tch-selector__pin { display: none; }
   .tch-transcript { padding: var(--pn-space-4); }
   .tch-composer-wrap { width: calc(100% - 20px); }
+}
+
+/* ---------------------------------------------------------------------------
+   The MERGED conversation column (R4, 2026-08-15): threads + sessions,
+   time-grouped, with the launch actions, the loaded-list filter, and the
+   slots/workspace foot. */
+
+.tch-sidebar__actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+  padding: var(--pn-space-2) var(--pn-space-3) 0;
+}
+.tch-sidebar__actions .tch-new { flex: 1; text-align: center; }
+.tch-new--task { background: var(--pn-active); }
+.tch-new--task[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* D1: the tab strip. Labels only — no counts (D16). */
+.tch-tabs {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  margin: var(--pn-space-2) var(--pn-space-3) 0;
+  padding: 2px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+}
+.tch-tab {
+  flex: 1;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tch-tab:hover { color: var(--pn-ink); }
+.tch-tab--active,
+.tch-tab[aria-selected='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+
+/* A tile groups a row button with its NON-BUTTON siblings (the Run control,
+   the badge sub-row — PR chips carry real links, which cannot nest inside a
+   button). The tile carries the hover/active visuals so all of it reads as
+   one row; the inner button's own chrome goes quiet inside it. */
+.tch-tile {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 3px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+}
+.tch-tile:hover { background: var(--pn-hover); }
+.tch-tile[data-active] {
+  border-color: var(--pn-line);
+  background: var(--pn-active);
+}
+.tch-tile .tch-thread { margin: 0; }
+.tch-tile .tch-thread:hover { background: transparent; }
+.tch-tile .tch-thread[data-active] {
+  border-color: transparent;
+  background: transparent;
+}
+
+/* The workspace tiles' badge sub-row, verbatim components (SessionLaneLine,
+   LinkedPullRequestChips, TileCountBadges) in a chat-column coat. */
+.tch-thread__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px 7px;
+  font-size: 10px;
+}
+
+/* A task row and its Run are siblings — Run must not be the row's whole
+   surface, and a button cannot nest a button. */
+.tch-task-row {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+}
+.tch-task-row .tch-thread { flex: 1; margin: 0; }
+.tch-run {
+  flex: none;
+  align-self: center;
+  padding: 4px 7px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tch-run:hover { background: var(--pn-hover); }
+/* Run appears on hover (user ruling 2026-08-16) — the same reveal the
+   workspace tile's action cluster does. Focus keeps it reachable and
+   visible for keyboard users. */
+.tch-task-row .tch-run {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.tch-tile:hover .tch-task-row .tch-run,
+.tch-task-row .tch-run:focus-visible,
+.tch-task-row .tch-run:focus {
+  opacity: 1;
+}
+.tch-thread--task[aria-disabled='true'] { cursor: not-allowed; opacity: 0.7; }
+
+/* THE WORKSPACE LIST'S HOME COAT (user ruling 2026-08-16): Tasks and
+   Sessions tabs mount the real `EntityListPanel` — the exact tree, tiles,
+   lifecycle tabs and in-panel search the workspace draws. The host fills
+   the tab's space; this scope only re-cuts the tiles for a narrow column
+   (compact paddings, the chat rows' type scale). Anatomy and behaviour
+   stay the components' own. */
+.tch-panel-host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.tch-panel-host > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.cv2-root .tch-panel-host .pn-tt {
+  margin: 0 0 3px;
+  border-radius: var(--pn-r-sm);
+}
+.cv2-root .tch-panel-host .pn-tt__main {
+  padding: 7px 6px;
+  gap: 5px;
+}
+.cv2-root .tch-panel-host .pn-tt__title {
+  font-size: 12px;
+  font-weight: 600;
+}
+.cv2-root .tch-panel-host .pn-tt__status-text { font-size: 9.5px; }
+.cv2-root .tch-panel-host .pn-tt__badges { padding: 0 8px 6px; }
+.cv2-root .tch-panel-host .pn-tt__meta { padding: 6px 8px 8px; }
+
+/* REGION B when a task/session is selected (D7): the host's panel takes the
+   conversation's grid cell; the conversation itself stays MOUNTED but
+   display:none (D8) — the attribute selector outranks the pane's own
+   display:flex, which the bare `hidden` attribute would not. */
+.tch-center {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+.tch-center > * { flex: 1; min-width: 0; min-height: 0; }
+.tch-conversation[data-hidden] { display: none; }
+
+.tch-find {
+  flex: none;
+  margin: var(--pn-space-2) var(--pn-space-3);
+  padding: 5px 9px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: 11.5px;
+}
+
+.tch-group__label {
+  display: block;
+  padding: 8px 9px 3px;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tch-thread__glyph {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+}
+.tch-thread--session[aria-disabled='true'] { cursor: not-allowed; opacity: 0.7; }
+
+.tch-session-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+}
+.tch-session-word--run { color: var(--pn-run); }
+.tch-session-word--wait { color: var(--pn-wait); }
+.tch-session-word--block { color: var(--pn-block); }
+.tch-session-word--idle { color: var(--pn-ink-3); }
+.tch-session-word--info { color: var(--pn-ink-2); }
+.tch-session-word--brand { color: var(--pn-brand); }
+
+.tch-viewonly {
+  padding: 0 5px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+}
+
+.tch-sidebar__foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+}
+.tch-slots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tch-slots__label {
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tch-slots__bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--pn-active);
+  overflow: hidden;
+}
+.tch-slots__fill {
+  display: block;
+  height: 100%;
+  background: var(--pn-run);
+}
+.tch-slots__nums {
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+}
+.tch-open-workspace {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--pn-brand);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tch-open-workspace:hover { text-decoration: underline; }
+
+/* Composer config for a NEW thread: mode chips + the TO row. */
+.tch-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  padding: 2px 2px 6px;
+}
+.tch-mode-choice {
+  padding: 2px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.tch-mode-choice:hover { background: var(--pn-hover); }
+.tch-mode-choice--active {
+  background: var(--pn-active);
+  border-color: var(--pn-line-2);
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+/* Config-only modes (build/orchestrate): legal to choose, but nothing runs a
+   pipeline behind them today — dashed says "stored, not wired". */
+.tch-mode-choice--config-only { border-style: dashed; }
+.tch-mode-hint {
+  margin-left: auto;
+  color: var(--pn-ink-4);
+  font-size: 10.5px;
+  font-style: italic;
+}
+.tch-to-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-right: auto;
+}
+.tch-to-label {
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tch-to-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 3px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.tch-to-chip:hover { background: var(--pn-hover); }
+.tch-to-chip--active {
+  background: var(--pn-active);
+  border-color: var(--pn-line-2);
+  color: var(--pn-ink);
+  font-weight: 600;
 }

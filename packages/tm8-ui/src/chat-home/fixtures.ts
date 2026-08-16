@@ -58,7 +58,11 @@ export const CHAT_HOME_FIXTURE_THREAD: ChatThreadDetail = {
       role: 'assistant',
       author: AGENT,
       createdAt: '2026-08-13T08:20:00.000Z',
-      body: '',
+      // What the server actually stores once the turn completes: the answer
+      // text, written onto the message body as the durable projection of the
+      // parts below. Modelling this as `''` hid the fact that the transcript
+      // was rendering both.
+      body: 'I mapped the work into three dependency-safe lanes. The storage lane is the only current blocker.',
       parts: [
         { seq: 0, kind: 'thinking', text: 'I need the task tree and current blockers.' },
         {

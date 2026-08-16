@@ -18,10 +18,14 @@ import {
   NoticeHost,
   SpaceSwitcher,
   SpaceTabBar,
+  groupIdOfTarget,
+  isRaillessGroup,
+  primaryTargetOfGroup,
   useNotices,
   type KindPresenter,
   type MenuDynamicGroup,
   type MenuTarget,
+  type ShellTab,
 } from '../shell';
 import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
@@ -35,6 +39,7 @@ import { useShellKind } from '../mobile';
 import { MobileShell } from './MobileShell';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
+import { BoardScreen } from '../board';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { NavView } from '../routes';
@@ -58,8 +63,13 @@ import { useTheme } from '../theme/useTheme';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
-import { ChatHomeSurface } from '../chat-home';
-import { HomePage } from '../home-page';
+import { ChatHomeSurface, type ChatSessionRow, type ChatTaskRow } from '../chat-home';
+import { homeRowOf } from '../home';
+import { HomeView } from './HomeView';
+import { homeRegionStore } from '../stores/homeRegionStore';
+import { LinkedPullRequestChips } from '../pull-requests';
+import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
+import { TileCountBadges, hasTileCounts } from '../panels/list/TileCountBadges';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
@@ -103,6 +113,14 @@ const DEFAULT_RIGHT_KIND = 'work_session';
  * for. Named for what it is instead.
  */
 const LIVE_COUNT_KIND = 'work_session';
+/** Home's Tasks tab population (task 01a006f8, Q1 provisional). */
+const HOME_TASK_KIND = 'task';
+/** Open-first ordering: a settled task sinks below every open one. The two
+ *  closed statuses mirror the registry's `TASK_CLOSED_STATUSES`. */
+function isSettledWorkStatus(state: unknown): boolean {
+  const status = (state as { workStatus?: string }).workStatus;
+  return status === 'done' || status === 'cancelled';
+}
 
 /** The three-panel workspace — the handoff destination entity opens use. */
 const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
@@ -149,6 +167,8 @@ const VIEW_REF_SCREENS = {
   settings: 'mounted',
   git: 'mounted',
   messages: 'mounted',
+  /* The task Board (2026-08-16): the kanban screen, mounted below. */
+  board: 'mounted',
   workspace: 'workspace',
   /* The last genuinely unbuilt view ref. */
   feed: 'unbuilt',
@@ -935,13 +955,24 @@ export function GateApp(props: GateAppProps = {}) {
       )
       .then((sessionId) => {
         launch.close();
-        navigateTo(WORKSPACE_TARGET);
-        nav.push(sessionId);
+        /* D11 (task 01a006f8): a launch submitted FROM HOME stays in Home —
+           the new session takes region B and the left column flips to
+           Sessions. Everywhere else keeps the workspace hand-off. */
+        if (activeTarget?.type === 'view' && activeTarget.ref === 'dashboard') {
+          homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
+          homeRegionStore.getState().setTab(data.spaceId, 'sessions');
+        } else {
+          navigateTo(WORKSPACE_TARGET);
+          nav.push(sessionId);
+        }
         notices.push({
           id: 'launch-done',
           tone: 'info',
           title: 'Session launched',
-          body: 'The live terminal is open in the workspace.',
+          body:
+            activeTarget?.type === 'view' && activeTarget.ref === 'dashboard'
+              ? 'The live terminal is open here in Home.'
+              : 'The live terminal is open in the workspace.',
           ttlMs: 6000,
         });
       })
@@ -1195,6 +1226,133 @@ export function GateApp(props: GateAppProps = {}) {
     },
   }), [data.seam]);
 
+  /**
+   * Work sessions for Home's MERGED conversation column (R4, 2026-08-15),
+   * composed HERE because the chat module must not re-derive status: the
+   * word/tone come from `homeRowOf` — the registry projection every other
+   * surface uses, where the liveness VERDICT outranks the stored record and
+   * `idle` is a legal live state. Credential login terminals are filtered
+   * OUT (they are plumbing, not conversations).
+   */
+  const homeSessionRows = useMemo<ChatSessionRow[]>(
+    () =>
+      data
+        .rowsFor(LIVE_COUNT_KIND)(undefined)
+        .filter((row) => (row.state as { sessionKind?: string }).sessionKind !== 'credential')
+        .map((row) => {
+          const projected = homeRowOf(row, {
+            liveness: data.livenessOf(row.id),
+            streaming: data.activity[row.id] === true,
+            compact: true,
+          });
+          const state = row.state as { agentTool?: string; model?: string };
+          const detailParts = [state.agentTool, state.model].filter(
+            (part): part is string => typeof part === 'string' && part.length > 0,
+          );
+          /* "Yours" = you spawned it, or one of YOUR agents did. Listing has
+             no owner gate; terminal attach does (owner-only) — this flag only
+             labels the row, the attach refusal itself lives on the session
+             surface. */
+          const mine =
+            viewerMemberId !== undefined &&
+            (row.createdBy.id === viewerMemberId || row.createdBy.ownerMemberId === viewerMemberId);
+          /* THE WORKSPACE TILE'S OWN BADGE SUB-ROW, reused verbatim: the
+             lane facts (⎇ branch + worktree/shared/scratch, riding the
+             summary state per 107), the PR chips resolved through the same
+             index the tiles read, and the glyph counts. The chat module
+             renders the node; nothing is re-derived there. */
+          const lane = sessionLaneOf(row.state);
+          const pullRequests = data.linkedPullRequestsOf?.(row.id) ?? [];
+          const badges =
+            lane !== null || pullRequests.length > 0 || hasTileCounts(row.counters) ? (
+              <>
+                {lane !== null ? <SessionLaneLine lane={lane} /> : null}
+                {pullRequests.length > 0 ? (
+                  <LinkedPullRequestChips pullRequests={pullRequests} placement="tile" />
+                ) : null}
+                <TileCountBadges
+                  counters={row.counters}
+                  humanAuthors={row.badges.humanMessageAuthors}
+                />
+              </>
+            ) : undefined;
+          return {
+            id: row.id,
+            title: row.title,
+            statusWord: projected.word ?? '',
+            tone: projected.tone,
+            live: data.livenessOf(row.id) === 'live',
+            ...(detailParts.length > 0 ? { detail: detailParts.join(' · ') } : {}),
+            updatedAt: row.activityAt,
+            ...(mine ? {} : { viewOnly: true }),
+            ...(badges !== undefined ? { badges } : {}),
+          };
+        }),
+    [data, viewerMemberId],
+  );
+  /**
+   * Tasks for Home's TASKS TAB (task 01a006f8 D1; Q1 provisional pending
+   * Subhang's answer): every task the viewer can see, open-first then by
+   * recent activity. Same law as the session rows — the word/tone come from
+   * `homeRowOf`, the registry projection, and the CHAT MODULE re-derives
+   * nothing. `rowsFor` issues its own query on first read, so no ensureKind
+   * bootstrap is needed here.
+   */
+  const homeTaskRows = useMemo<ChatTaskRow[]>(
+    () =>
+      [...data.rowsFor(HOME_TASK_KIND)(undefined)]
+        .sort((a, b) => {
+          const aDone = isSettledWorkStatus(a.state);
+          const bDone = isSettledWorkStatus(b.state);
+          if (aDone !== bDone) return aDone ? 1 : -1;
+          return b.activityAt.localeCompare(a.activityAt);
+        })
+        .map((row) => {
+          const projected = homeRowOf(row, {
+            liveness: data.livenessOf(row.id),
+            streaming: data.activity[row.id] === true,
+            compact: true,
+          });
+          const priority = (row.state as { priority?: string }).priority;
+          /* Same badge sub-row as the workspace task tiles: PR chips through
+             the tracks index + the entity glyph counts (docs, messages,
+             memories). One vocabulary; the chat module renders it verbatim. */
+          const pullRequests = data.linkedPullRequestsOf?.(row.id) ?? [];
+          const badges =
+            pullRequests.length > 0 || hasTileCounts(row.counters) ? (
+              <>
+                {pullRequests.length > 0 ? (
+                  <LinkedPullRequestChips pullRequests={pullRequests} placement="tile" />
+                ) : null}
+                <TileCountBadges
+                  counters={row.counters}
+                  humanAuthors={row.badges.humanMessageAuthors}
+                />
+              </>
+            ) : undefined;
+          return {
+            id: row.id,
+            title: row.title,
+            statusWord: projected.word ?? '',
+            tone: projected.tone,
+            ...(typeof priority === 'string' && priority.length > 0 ? { detail: priority } : {}),
+            updatedAt: row.activityAt,
+            ...(badges !== undefined ? { badges } : {}),
+          };
+        }),
+    [data],
+  );
+  const homeSlots = useMemo(
+    () =>
+      data.launch.capacity
+        ? {
+            used: data.launch.capacity.slotsTotal - data.launch.capacity.slotsFree,
+            total: data.launch.capacity.slotsTotal,
+          }
+        : undefined,
+    [data.launch.capacity],
+  );
+
   // The same grammar for VOICE: "Voice" is a label, the space's voice_channel
   // entities are the rows. The glyph comes from the REGISTRY row (as
   // `presentKind` does above) rather than being authored here — a second
@@ -1327,6 +1485,53 @@ export function GateApp(props: GateAppProps = {}) {
   }, [channelEntities, navigateTo]);
 
   /*
+   * THE FIVE-TAB ROW (ruling R2, 2026-08-15): the resolved menu's GROUPS are
+   * the top-level tabs — home | work | graph | channels | files | settings in
+   * the shipped default — and the rail below renders only the ACTIVE group's
+   * contents. Data-driven throughout: a legacy hand-edited menu (the seeder
+   * only upgrades byte-matching defaults) simply shows ITS groups as tabs.
+   */
+  const shellTabs = useMemo<ShellTab[]>(
+    () => data.menu.config.groups.map((group) => ({ id: group.id, label: group.label })),
+    [data.menu.config],
+  );
+  /* Voice rooms are DYNAMIC rows with no menu item to match, so the group
+     that hosts them (channels; `chats` in pre-125 menus) claims their entity
+     targets here. */
+  const conversationGroupId = useMemo(
+    () => data.menu.config.groups.find((g) => g.id === 'channels' || g.id === 'chats')?.id ?? null,
+    [data.menu.config],
+  );
+  const activeGroupId = useMemo(() => {
+    const direct = groupIdOfTarget(data.menu.config, activeTarget ?? null);
+    if (direct) return direct;
+    if (activeTarget?.type === 'entity' && voiceEntities.some((e) => e.id === activeTarget.ref)) {
+      return conversationGroupId;
+    }
+    /* No group claims the target (e.g. Inbox, whose door is the bell): no
+       tab reads current, and no rail pretends to contain it. */
+    return null;
+  }, [data.menu.config, activeTarget, voiceEntities, conversationGroupId]);
+  const activeGroup = data.menu.config.groups.find((g) => g.id === activeGroupId) ?? null;
+  /* The rail is the active tab's contents. A group that IS its own one screen
+     (Graph, Settings, Files — single childless view item) draws no rail. */
+  const railConfig = useMemo(
+    () =>
+      activeGroup && !isRaillessGroup(activeGroup)
+        ? { ...data.menu.config, groups: [activeGroup] }
+        : null,
+    [data.menu.config, activeGroup],
+  );
+  const openTab = useCallback(
+    (id: string) => {
+      const group = data.menu.config.groups.find((g) => g.id === id);
+      const target = group ? primaryTargetOfGroup(group) : null;
+      if (target) navigateTo(target);
+    },
+    [data.menu.config, navigateTo],
+  );
+
+  /*
    * THE SHELL FORK. Chosen by pointer type and width, never by user agent —
    * `mobile/shell-for.ts` owns that predicate and is unit-tested away from the
    * DOM.
@@ -1368,10 +1573,40 @@ export function GateApp(props: GateAppProps = {}) {
     <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
       <div className="shell-root">
         <SpaceTabBar
-          /* Revision 11: the server chip and the space tablist left this bar
-             for the rail's identity block (SpaceSwitcher below). The bell is
-             Inbox's one chrome door — its rail row retired with the same
-             ruling. */
+          /* R1 (2026-08-15): the identity block lives in the TOP ROW now.
+             Still ONE control — the single-home rule holds, only the address
+             changed; the old read-only server label is not restored. The
+             invariant on onSelectServer (privacy-lane agreement, 2026-08-15):
+             leaveSpaceContext THEN resetAddress, together, in this order,
+             wherever this control lives. */
+          switcherSlot={
+            <SpaceSwitcher
+              servers={props.servers ?? [activeServer]}
+              activeServerId={activeServer.id}
+              spaces={data.spaces}
+              activeSpaceId={(data.spaceId as SpaceId) || null}
+              collapsed={false}
+              onSelectServer={(id) => {
+                leaveSpaceContext();
+                resetAddress();
+                props.onSelectServer?.(id);
+              }}
+              onSelectSpace={(id) => {
+                leaveSpaceContext();
+                data.selectSpace(id);
+              }}
+              onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
+              onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
+            />
+          }
+          /* R2: the menu's groups, as tabs. */
+          tabs={shellTabs}
+          activeTabId={activeGroupId}
+          onSelectTab={openTab}
+          /* Revision 13: no group owns `dashboard`, so no tab leads back to
+             the conversation surface — the MARK does. Not an extra door: the
+             tab it replaces was retired in the same change. */
+          onGoHome={() => navigateTo(HOME_TARGET)}
           onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
@@ -1414,44 +1649,23 @@ export function GateApp(props: GateAppProps = {}) {
         />
 
         <div className="shell-body">
-          <MenuRail
-            config={data.menu.config}
-            collapsed={menuCollapsed}
-            onToggle={() => setMenuCollapsed((c) => !c)}
-            activeTarget={activeTarget}
-            onNavigate={navigateTo}
-            presentKind={presentKind}
-            /* Revision 11: live voice rooms hang beneath the Chats cluster. */
-            dynamicGroups={{ chats: voiceGroup }}
-            identitySlot={
-              <SpaceSwitcher
-                servers={props.servers ?? [activeServer]}
-                activeServerId={activeServer.id}
-                spaces={data.spaces}
-                activeSpaceId={(data.spaceId as SpaceId) || null}
-                collapsed={menuCollapsed}
-                onSelectServer={(id) => {
-                  /* INVARIANT (privacy-lane agreement, 2026-08-15): these two
-                     calls stay TOGETHER and in THIS order wherever the
-                     server-switch control lives. `leaveSpaceContext` is the
-                     one path that clears the space-scoped module stores —
-                     entity ids are space-scoped, so a missed reset does not
-                     throw, it shows someone else's rows. `resetAddress` then
-                     writes last: the remount reads the address, and a Space id
-                     from the Server you just left addresses nothing here. */
-                  leaveSpaceContext();
-                  resetAddress();
-                  props.onSelectServer?.(id);
-                }}
-                onSelectSpace={(id) => {
-                  leaveSpaceContext();
-                  data.selectSpace(id);
-                }}
-                onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
-                onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
-              />
-            }
-          />
+          {/* R2: the rail is the ACTIVE TAB's contents — one group, no
+              group-spine listing. Null when the active group is its own one
+              screen (Graph / Settings / Files) or nothing claims the target.
+              The identity block left the rail head for the top row (R1). */}
+          {railConfig ? (
+            <MenuRail
+              config={railConfig}
+              collapsed={menuCollapsed}
+              onToggle={() => setMenuCollapsed((c) => !c)}
+              activeTarget={activeTarget}
+              onNavigate={navigateTo}
+              presentKind={presentKind}
+              /* Live voice rooms hang beneath the conversation cluster —
+                 `channels` since 125, `chats` in pre-125 hand-edited menus. */
+              dynamicGroups={{ channels: voiceGroup, chats: voiceGroup }}
+            />
+          ) : null}
 
           {/* The REAL error boundary wraps the whole view region: a crashed
               screen renders the designed error state with retry; the rail and
@@ -1507,6 +1721,10 @@ export function GateApp(props: GateAppProps = {}) {
               loading={data.graph.loading}
               error={data.graph.error}
               onRetry={data.graph.refresh}
+              window={data.graph.window}
+              onChooseWindow={data.graph.setWindow}
+              atCeiling={data.graph.atCeiling}
+              nodeLimit={data.graph.limit}
               launch={graphLaunchPort}
               onNotice={notices.push}
             />
@@ -1540,6 +1758,20 @@ export function GateApp(props: GateAppProps = {}) {
                 /* A lens, not a terminus — leaving a conversation for the
                    entity it lives on lands in the workspace with the panel
                    pushed, the same handoff Git's lane click-through performs. */
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id as EntityId);
+              }}
+            />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'board' ? (
+            /* ▦ Board (Board tab wave) — the task kanban as its own tab, the
+               D65 posture again: full width, no side lists, the columns ARE
+               the navigation. A card is a door — opening one performs the
+               same workspace handoff Git's lane click-through does. */
+            <BoardScreen
+              data={data}
+              viewerMemberId={viewerMemberId}
+              onNotice={notices.push}
+              onOpenEntity={(id) => {
                 navigateTo(WORKSPACE_TARGET);
                 nav.push(id as EntityId);
               }}
@@ -1630,22 +1862,45 @@ export function GateApp(props: GateAppProps = {}) {
                NEEDS YOU strip, the glance rails and the presence row beneath.
                The existing dashboard route stays stable while its centre is
                replaced wholesale (the same D65 posture as every view swap). */
-            <HomePage
+            <HomeView
               /* GateData satisfies HomeScreenData structurally — the same
                  narrow port src/home was built against. */
               data={data}
-              onOpenEntity={(id) => {
-                navigateTo(WORKSPACE_TARGET);
-                nav.push(id as EntityId);
+              reasons={reasons}
+              serverBaseUrl={activeServer.routeBaseUrl}
+              viewerMemberId={viewerMemberId}
+              onNotice={notices.push}
+              onSpawn={async (input) => {
+                /* D11: a spawn committed on Home STAYS on Home — the session
+                   takes region B and the column flips to Sessions. */
+                const sessionId = await data.spawn(input);
+                homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
+                homeRegionStore.getState().setTab(data.spaceId, 'sessions');
               }}
-              onOpenKind={(kind) => navigateTo({ type: 'kind', ref: kind })}
               onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
-              chat={
+              /* D12: the ONE route out of Home — region C's explicit header
+                 action. Chips never navigate; this button does. */
+              onOpenInWorkspace={(id) => {
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id);
+              }}
+              /* D11/D14: the launch-sheet singleton, mounted over Home while
+                 it holds a subject — Run on a task row opens it here. */
+              onLaunchOpen={(id) => launch.open(id)}
+              launchSubjectId={launch.subjectId}
+              launchRefusal={launchRefusal}
+              launchInFlight={launching}
+              onLaunchCancel={() => {
+                setLaunchRefusal(null);
+                launch.close();
+              }}
+              onLaunchSubmit={submitLaunch}
+              onLaunchDispatch={submitDispatch}
+              chat={(openEntity, regions) => (
                 <ChatHomeSurface
                   seam={data.seam}
                   spaceId={data.spaceId}
                   nodeKey={nodeKey}
-                  spaceLabel={data.spaces.find((sp) => sp.id === data.spaceId)?.name}
                   bridge={chatBridge}
                   /* PR188 review F3: the space id is NOT an entity and
                      messages.post 404s on it (measured). Bare-home chats anchor
@@ -1655,14 +1910,36 @@ export function GateApp(props: GateAppProps = {}) {
                   /* One read per space, shared with every other rich input in
                      the shell — see `useGateData`. */
                   skillOptions={data.skillOptions}
-                  /* Entity chips in the transcript open the detail panel
-                     through the SAME handoff every other screen commits. */
-                  onOpenEntity={(id) => {
-                    navigateTo(WORKSPACE_TARGET);
-                    nav.push(id as EntityId);
-                  }}
+                  /* The three-tab column (task 01a006f8): sessions keep the
+                     R4 composition (liveness-first, credential terminals
+                     filtered, "view only" labels), tasks are composed above
+                     under the same registry-projection law. There is NO New
+                     session button any more (D2): a session is created by
+                     RUNNING a task, which is `onRunTask` → the launch sheet. */
+                  sessions={homeSessionRows}
+                  tasks={homeTaskRows}
+                  onRunTask={(id) => launch.open(id as EntityId)}
+                  renderTabList={regions.renderTabList}
+                  tab={regions.tab}
+                  onTab={regions.onTab}
+                  selectedEntityId={regions.selectedEntityId}
+                  onSelectEntity={regions.onSelectEntity}
+                  onShowChat={regions.onShowChat}
+                  onNewTask={regions.onNewTask}
+                  newTaskUnavailable={regions.newTaskUnavailable}
+                  centerOverride={regions.centerOverride}
+                  slots={homeSlots}
+                  onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
+                  viewerName={data.viewerActor?.displayName}
+                  /* IN PLACE, not away (user report 2026-08-16): a chip inside
+                     a conversation you are still having opens the entity in
+                     Home's own column. Leaving for the workspace is the right
+                     handoff for a screen you are DONE with — Git's lanes,
+                     Messages' "go to the entity this lives on" — and the wrong
+                     one for a reference mid-thread. */
+                  onOpenEntity={openEntity}
                 />
-              }
+              )}
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&
@@ -1676,6 +1953,10 @@ export function GateApp(props: GateAppProps = {}) {
             <SettingsShell
               port={settingsPort}
               nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
+              /* W2 -> W1/W3: an axis write must reach the workspace's own
+                 pickers and board options; axis rows are not entities, so no
+                 event will do it. */
+              onAxesChanged={data.refreshTaskAxes}
               sections={
                 credentialsPort || branchesPort
                   ? {

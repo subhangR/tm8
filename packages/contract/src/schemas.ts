@@ -209,6 +209,11 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     axes: z.record(z.string()),
     dueDate: z.string().nullable().optional(),
     assignees: z.array(ActorSummarySchema),
+    assignments: z.array(z.object({
+      assignee: ActorSummarySchema,
+      assignedBy: ActorSummarySchema.nullable(),
+      assignedAt: IsoTimestamp,
+    }).strict()).optional(),
     acceptance: z.object({ total: z.number().int().nonnegative(), completed: z.number().int().nonnegative() }).strict(),
     // 082's opt-in completion gate, additive + optional (Git UI wave).
     completionGate: z.enum(['none', 'pr_merged']).optional(),
@@ -687,13 +692,16 @@ export const EntityDetailSchema: z.ZodType<EntityDetail> = z.lazy(() => z.object
 const GroupBySchema = z.union([
   z.literal('workStatus'),
   z.literal('assignee'),
-  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "workStatus", "assignee" or "axis:<name>"'),
+  z.literal('priority'),
+  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "workStatus", "assignee", "priority" or "axis:<name>"'),
 ]);
 
 const CollectionFiltersSchema = z.object({
   workStatus: z.array(WorkStatusSchema).optional(),
   axes: z.record(z.array(z.string())).optional(),
   assigneeIds: z.array(EntityIdSchema).optional(),
+  priority: z.array(PrioritySchema).optional(),
+  assignedByIds: z.array(EntityIdSchema).optional(),
   edge: z.object({
     type: z.string(),
     direction: z.enum(['incoming', 'outgoing']),
@@ -706,6 +714,10 @@ const CollectionFiltersSchema = z.object({
   inFlightForActorId: EntityIdSchema.optional(),
   needsActorId: EntityIdSchema.optional(),
   sessionStatus: z.array(WorkSessionStatusSchema).optional(),
+  // Validated as a real instant, not merely a string: an unparseable value
+  // would otherwise reach Postgres as a cast error, and a window filter that
+  // 500s is indistinguishable at the client from a node that is down.
+  activeSince: z.string().datetime({ offset: true }).optional(),
   deleted: z.enum(['exclude', 'only', 'include']).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no
@@ -717,6 +729,14 @@ const CollectionFiltersSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'workStatus and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
+    });
+  }
+  // Same law for the priority axis: priority is task-only, so pairing it with
+  // sessionStatus is another always-empty conjunction that must refuse.
+  if (f.priority && f.priority.length > 0 && f.sessionStatus && f.sessionStatus.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'priority and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
     });
   }
 });
@@ -1893,7 +1913,8 @@ export const UpdateMemberRoleInputSchema: z.ZodType<UpdateMemberRoleInput> = z.o
 // `files` widened 2026-08-10 in lockstep with the MenuViewRef type (R4 posture).
 // `git` widened 2026-08-12 in the same lockstep (Git UI wave: the project git screen).
 // `messages` widened 2026-08-13 in the same lockstep (the Messages surface).
-export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages']);
+// `board` widened 2026-08-16 in the same lockstep (the task kanban tab).
+export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board']);
 // `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
 // menu-visible, still not menu-creatable (creation stays with the saga).
 // `channel` un-excluded 2026-08-01, same lockstep — it became a collection

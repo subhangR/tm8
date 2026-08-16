@@ -3,7 +3,7 @@
  * — no component in this module constructs a seam (see `port.ts` for why).
  */
 import type { ReactNode } from 'react';
-import type { EntitySummary, SpaceInviteView, SpaceSummary } from '@tm8/contract';
+import type { EntitySummary, SpaceInviteView, SpaceSummary, TaskAxis } from '@tm8/contract';
 import type { IdentityView } from '../data/seam';
 import type { ResolvedMenu } from '../shell/menu-resolve';
 import type { SettingsPort } from './port';
@@ -84,6 +84,12 @@ export interface SettingsData {
    * because only one of those is worth acting on.
    */
   invites: readonly SpaceInviteView[] | null;
+  /**
+   * The task-axis registry (W2). `null` means NOT READ — the read rides the
+   * same `spaces.settings` round trip as invites, so a failure there leaves
+   * this section saying "could not be read" rather than "no axes".
+   */
+  axes: readonly TaskAxis[] | null;
 }
 
 export interface SettingsShellProps {
@@ -105,6 +111,13 @@ export interface SettingsShellProps {
    * module read so a host pointed at a named Server edits THAT node's catalog.
    */
   nodeKey?: string;
+  /**
+   * Fired after any axis write LANDS (W2). The host uses it to refresh the
+   * workspace's own `taskAxes` projection so a new axis appears as a picker
+   * (W1) and a group-by option (W3) without a reload. Optional: the shell
+   * re-reads its own list either way.
+   */
+  onAxesChanged?: () => void;
 }
 
 /**

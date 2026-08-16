@@ -21,13 +21,22 @@ export function VectorIcon({
   paths,
   size = 16,
   strokeWidth = 1.4,
+  filled = false,
   className,
   title,
 }: {
-  /** SVG path `d` strings on the 16×16 grid. Every one is stroked, none filled. */
+  /** SVG path `d` strings on the 16×16 grid. Stroked, unless `filled`. */
   paths: readonly string[];
   size?: number;
   strokeWidth?: number;
+  /**
+   * Fill the paths in `currentColor` and draw no stroke. The house artwork in
+   * `domain/kind-art.ts` is stroked outline geometry and must stay that way
+   * (a filled kind mark would read as "selected" beside the stroked ones), but
+   * an official third-party glyph is authored as a SOLID silhouette — stroking
+   * its outline draws the outline of an outline and turns to mud at 13px.
+   */
+  filled?: boolean;
   className?: string;
   /**
    * An accessible name. With one, the icon is a labelled `img` — the mark IS
@@ -47,11 +56,11 @@ export function VectorIcon({
       width={size}
       height={size}
       viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke={filled ? 'none' : 'currentColor'}
+      strokeWidth={filled ? undefined : strokeWidth}
+      strokeLinecap={filled ? undefined : 'round'}
+      strokeLinejoin={filled ? undefined : 'round'}
       role={title ? 'img' : undefined}
       aria-label={title}
       aria-hidden={title ? undefined : true}

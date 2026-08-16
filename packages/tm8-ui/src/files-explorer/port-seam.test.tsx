@@ -94,6 +94,9 @@ describe('the explorer port over a real fixture seam', () => {
         linkProject: async () => {
           throw new Error('unused');
         },
+        listProjects: async () => {
+          throw new Error('unused');
+        },
       },
     };
 

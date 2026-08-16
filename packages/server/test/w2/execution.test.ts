@@ -33,12 +33,13 @@
  * `false` would make every negative pass for a reason that has nothing to do
  * with B1, and the suite would go green over an unguarded route.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { registerExecutionHandlers } from '../../src/facade/execution-handlers.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import {
   W2ExecutionDeliveryService,
+  createW2ExecutionDelivery,
   type DeliveryPrincipalLease,
   type DeliverySettlementStatus,
   type StoredDelivery,
@@ -892,5 +893,91 @@ describe('the delivery diagnostic names failures without becoming noise', () => 
     expect(lines).toHaveLength(1);
     expect(lines[0]!.message).toBe('w2 delivery: dispatch failed');
     expect(lines[0]!.meta).toMatchObject({ deliveryId: reservation.deliveryId, sqlstate: null });
+  });
+});
+
+// --- and the half that was missing: production actually HAS a logger ---------
+
+/**
+ * The three tests above proved the diagnostic works when a logger is supplied.
+ * Nothing proved one ever WAS, and none was: `createW2ExecutionDelivery` copied
+ * `logger` only `...(options.logger ? … : {})`, and the single production call
+ * site omitted it. Every assertion above passed against a node whose delivery
+ * failures were completely silent — which is how a `reserve()` that threw on
+ * every message for days looked exactly like a node with nothing to deliver.
+ *
+ * So this is deliberately not a wiring assertion at the composition root. It
+ * drives the real factory against an unreachable database and reads the
+ * console: the failure has to be AUDIBLE with nobody having asked for it.
+ */
+describe('the production factory is audible by default', () => {
+  // Port 1 is reserved and unbound: connect() refuses immediately rather than
+  // hanging, so this is a fast, network-free-by-effect failure.
+  const UNREACHABLE = 'postgres://tm8_delivery_worker@127.0.0.1:1/nowhere';
+
+  const intent = {
+    messageId: IDS.message,
+    targetWorkSessionId: IDS.session,
+    content: 'wake up',
+    mode: 'send' as const,
+    requestId: 'req-audible',
+  };
+
+  function buildWiring(logger?: {
+    error: (message: string, error?: Error, meta?: Record<string, unknown>) => void;
+    warn: () => void;
+    info: () => void;
+    debug: () => void;
+  }) {
+    return createW2ExecutionDelivery({
+      connectionString: UNREACHABLE,
+      pty: new RecordingPty() as never,
+      promptSettlement: fakePromptSettlement() as never,
+      ...(logger ? { logger: logger as never } : {}),
+    });
+  }
+
+  /** Captured rather than read off the spy: `mockRestore` clears `mock.calls`. */
+  async function reserveCapturingConsole(logger?: Parameters<typeof buildWiring>[0]): Promise<string[]> {
+    const printed: string[] = [];
+    const spy = vi
+      .spyOn(console, 'error')
+      .mockImplementation((line: unknown) => void printed.push(String(line)));
+    const wiring = buildWiring(logger);
+    try {
+      await expect(wiring.messageDelivery.reserve(intent)).rejects.toThrow();
+    } finally {
+      await wiring.close();
+      spy.mockRestore();
+    }
+    return printed;
+  }
+
+  it('names a reserve failure on the console when no logger is supplied', async () => {
+    const printed = await reserveCapturingConsole();
+
+    expect(printed).toHaveLength(1);
+    expect(JSON.parse(printed[0]!) as Record<string, unknown>).toMatchObject({
+      component: 'w2-delivery',
+      level: 'error',
+      event: 'w2 delivery: reserve failed',
+      messageId: IDS.message,
+      targetWorkSessionId: IDS.session,
+    });
+    // Same allowlist as every other line: ids and SQLSTATE, never the body.
+    expect(printed[0]!).not.toContain('wake up');
+  });
+
+  it('CONTROL: an explicit logger still wins, and the console stays quiet', async () => {
+    const lines: string[] = [];
+    const printed = await reserveCapturingConsole({
+      error: (message) => lines.push(message),
+      warn: () => {},
+      info: () => {},
+      debug: () => {},
+    });
+
+    expect(lines).toEqual(['w2 delivery: reserve failed']);
+    expect(printed).toEqual([]);
   });
 });

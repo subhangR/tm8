@@ -119,6 +119,11 @@
   margin-left: -5px;
 }
 
+/* NO FILL AT REST, for the same reason `lp__tile` carries none (panels.css):
+   the session row `pn-st` declares no background, so it shows `--pn-surface` —
+   the panel it sits in — and this rule painted `--pn-card`, which is literally
+   #FFFFFF. A task row was a pure white card on a warm paper panel beside a
+   session row that was not. */
 .cv2-root .pn-tt {
   --tt-indent: 0px;
   position: relative;
@@ -131,7 +136,6 @@
   border: 0;
   border-bottom: 1px solid var(--pn-line);
   border-radius: 0;
-  background: var(--pn-card);
   box-shadow: none;
   transition: background 120ms;
 }

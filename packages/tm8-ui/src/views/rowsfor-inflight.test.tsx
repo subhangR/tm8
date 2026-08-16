@@ -31,8 +31,13 @@ describe('rowsFor keeps a cache miss claimed while its query is in flight', () =
     const calls = new Map<string, number>();
     const releases = new Map<string, Array<() => void>>();
 
+    // THE BANDS, and only the bands. This used to hold every query carrying any
+    // filter at all, which silently also held the graph canvas's own read once
+    // that gained a time window — and a read this stub never releases stalls
+    // boot, so the failure read as "the hook stopped becoming ready" rather
+    // than "the stub caught something it did not mean to".
     seam.query = async (input: CollectionQuery) => {
-      if (input.filters === undefined) return query(input);
+      if (input.filters?.sessionStatus === undefined) return query(input);
 
       const key = filterKey(input.filters);
       calls.set(key, (calls.get(key) ?? 0) + 1);

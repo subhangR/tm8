@@ -108,3 +108,91 @@ describe('the port reaches real data through a real seam', () => {
     expect(memberKindRef()).toBeTypeOf('string');
   });
 });
+
+/**
+ * W2 — the axis registry, round-tripped through the same real fixture seam.
+ * Every assertion is on what comes BACK, and the refusal cases are the
+ * fixture's mirrors of the node's own SQL refusals (016), which is what lets
+ * a component test believe the words it renders.
+ */
+describe('the axis registry round-trips through the port', () => {
+  it('reads the seeded `type` axis off the settings round trip', async () => {
+    const seam = createFixtureSeam();
+    const spaceId = await firstSpaceId(seam);
+    const axes = await settingsPortFromSeam(seam, spaceId).loadAxes();
+
+    const seeded = axes.find((a) => a.kind === 'default');
+    expect(seeded).toBeDefined();
+    expect(seeded!.name).toBe('type');
+    expect(seeded!.axisValues).toEqual(['default', 'code', 'design', 'review', 'test']);
+  });
+
+  it('creates, reshapes, and deletes a manual axis — each write visible on the next read', async () => {
+    const seam = createFixtureSeam();
+    const spaceId = await firstSpaceId(seam);
+    const port = settingsPortFromSeam(seam, spaceId);
+
+    const created = await port.createAxis({ name: 'size', axisValues: ['s', 'm', 'l'], kind: 'manual', position: 1 });
+    expect((await port.loadAxes()).map((a) => a.name)).toContain('size');
+
+    await port.updateAxis(created.id, { name: 'scale', axisValues: ['s', 'm', 'l', 'xl'], kind: 'manual', position: 1 });
+    const renamed = (await port.loadAxes()).find((a) => a.id === created.id);
+    expect(renamed?.name).toBe('scale');
+    expect(renamed?.axisValues).toContain('xl');
+
+    await port.deleteAxis(created.id);
+    expect((await port.loadAxes()).find((a) => a.id === created.id)).toBeUndefined();
+  });
+
+  it('refuses to delete the seeded default axis, in the node\u2019s own words', async () => {
+    const seam = createFixtureSeam();
+    const spaceId = await firstSpaceId(seam);
+    const port = settingsPortFromSeam(seam, spaceId);
+    const seeded = (await port.loadAxes()).find((a) => a.kind === 'default')!;
+
+    await expect(port.deleteAxis(seeded.id)).rejects.toThrow('the default task axis cannot be deleted');
+    // And the row SURVIVED the refusal.
+    expect((await port.loadAxes()).some((a) => a.id === seeded.id)).toBe(true);
+  });
+
+  it('refuses to demote the seeded default axis to manual', async () => {
+    const seam = createFixtureSeam();
+    const spaceId = await firstSpaceId(seam);
+    const port = settingsPortFromSeam(seam, spaceId);
+    const seeded = (await port.loadAxes()).find((a) => a.kind === 'default')!;
+
+    await expect(
+      port.updateAxis(seeded.id, { name: seeded.name, axisValues: [...seeded.axisValues], kind: 'manual', position: seeded.position }),
+    ).rejects.toThrow('the default task axis cannot be demoted');
+  });
+
+  it('refuses in-use rename and value-removal once a task carries the value, and names the tasks', async () => {
+    const seam = createFixtureSeam();
+    const spaceId = await firstSpaceId(seam);
+    const port = settingsPortFromSeam(seam, spaceId);
+    const seeded = (await port.loadAxes()).find((a) => a.kind === 'default')!;
+
+    // Put a real value on a real task through the ordinary content patch —
+    // the same write W1's picker performs.
+    const tasks = await seam.query({ spaceId, kinds: ['task'] as never });
+    const task = tasks.page.items.find((t) => t.deletedAt == null)!;
+    const detail = await seam.entity(task.id);
+    await seam.commands.patchEntity(task.id, {
+      expectedVersion: detail.version,
+      content: { axes: { [seeded.name]: seeded.axisValues[0] } },
+    });
+
+    await expect(
+      port.updateAxis(seeded.id, { name: 'category', axisValues: [...seeded.axisValues], kind: 'default', position: seeded.position }),
+    ).rejects.toThrow('cannot rename a task axis that tasks still use');
+
+    await expect(
+      port.updateAxis(seeded.id, { name: seeded.name, axisValues: seeded.axisValues.slice(1), kind: 'default', position: seeded.position }),
+    ).rejects.toThrow('cannot remove a task axis value that tasks still use');
+
+    // The actionable half of the refusal: the port can NAME the tasks that
+    // hold a value, viewer-scoped, via the filters.axes clause.
+    const using = await port.tasksUsingAxis(seeded);
+    expect(using.map((t) => t.id)).toContain(task.id);
+  });
+});

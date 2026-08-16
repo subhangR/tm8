@@ -1,4 +1,4 @@
-import { Pill, type PillTone } from '../kit';
+import { Pill, type PillTone, VectorIcon } from '../kit';
 import './session-git.css';
 
 /**
@@ -10,6 +10,7 @@ import './session-git.css';
  *
  * THE BADGE CARRIES THE HONESTY:
  *   · `worktree` — the session's own attributable lane; the branch is yours.
+ *                  Drawn as the official worktree symbol, not the word.
  *   · `shared`   — a shared project checkout; the branch is NOT exclusively
  *                  this session's, and any terminal can move it.
  *   · (scratch)  — no repo, no branch, and therefore NO LANE LINE AT ALL:
@@ -31,8 +32,27 @@ export interface SessionLaneFacts {
   mode: SessionLaneMode | null;
 }
 
-const MODE_TONE: Record<SessionLaneMode, PillTone> = {
-  worktree: 'run',
+/**
+ * THE OFFICIAL WORKTREE MARK — VS Code's `worktree` codicon
+ * (microsoft/vscode-codicons, `src/icons/worktree.svg`, MIT), verbatim.
+ *
+ * The mode used to render as the WORD "worktree" in a green pill, which is
+ * the loudest token on a session tile spent saying the ordinary case. There
+ * is a real, official symbol for this concept, so we draw it instead of
+ * naming it — and we take the one the wider tooling already ships rather
+ * than invent a house glyph a reader would have to learn.
+ *
+ * A SOLID silhouette, hence `filled`: it is authored as a filled path and
+ * must not be stroked (see `VectorIcon`). It is also why the house artwork
+ * in `domain/kind-art.ts` is untouched — that grid is a stroked set and this
+ * badge is not a kind mark.
+ */
+const WORKTREE_MARK = [
+  'M12.854 14.8542L14.854 12.8542C15.049 12.6592 15.049 12.3422 14.854 12.1472L12.854 10.1472C12.659 9.95223 12.342 9.95223 12.147 10.1472C11.952 10.3422 11.952 10.6592 12.147 10.8542L13.293 12.0002H8.5C8.225 12.0002 8 11.7752 8 11.5002V5.50023C8 5.22523 8.225 5.00023 8.5 5.00023H13.293L12.147 6.14623C12.049 6.24423 12.001 6.37223 12.001 6.50023C12.001 6.62823 12.05 6.75623 12.147 6.85423C12.342 7.04923 12.659 7.04923 12.854 6.85423L14.854 4.85423C15.049 4.65923 15.049 4.34223 14.854 4.14723L12.854 2.14723C12.659 1.95223 12.342 1.95223 12.147 2.14723C11.952 2.34223 11.952 2.65923 12.147 2.85423L13.293 4.00023H8.5C7.673 4.00023 7 4.67323 7 5.50023V8.00023H1.5C1.224 8.00023 1 8.22423 1 8.50023C1 8.77623 1.224 9.00023 1.5 9.00023H7V11.5002C7 12.3272 7.673 13.0002 8.5 13.0002H13.293L12.147 14.1462C12.049 14.2442 12.001 14.3722 12.001 14.5002C12.001 14.6282 12.05 14.7562 12.147 14.8542C12.342 15.0492 12.659 15.0492 12.854 14.8542Z',
+];
+
+/** The two modes that stay WORDS. `worktree` draws its symbol instead. */
+const MODE_TONE: Record<Exclude<SessionLaneMode, 'worktree'>, PillTone> = {
   shared: 'wait',
   scratch: 'idle',
 };
@@ -69,6 +89,21 @@ export function sessionLaneOf(state: unknown): SessionLaneFacts | null {
  *  branch, so it composes this beside it rather than a second branch name. */
 export function SessionLaneModeBadge({ mode }: { mode: SessionLaneMode | null }) {
   if (mode === null) return null;
+  // `worktree` is the ORDINARY case and has an official symbol, so it draws
+  // the mark, quiet and in the branch's own ink. `shared` and `scratch` are
+  // caveats with no symbol anywhere — they keep the toned WORD, which is the
+  // honesty the badge exists to carry.
+  if (mode === 'worktree') {
+    return (
+      <VectorIcon
+        paths={WORKTREE_MARK}
+        filled
+        size={13}
+        className="pn-lane__worktree-mark"
+        title={MODE_TITLE.worktree}
+      />
+    );
+  }
   return (
     <Pill tone={MODE_TONE[mode]} title={MODE_TITLE[mode]}>
       {mode}

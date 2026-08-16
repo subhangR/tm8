@@ -173,7 +173,9 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 142 -> 143 (2026-08-13): `task import-issue`, an alias over
     // entities.create (catalog rows unmoved).
     // 143 -> 144 (2026-08-13, forge write): `pr merge` (catalog row tracking.pr.merge).
-    expect(COMMAND_PATHS).toHaveLength(148);
+    // 148 -> 149 (2026-08-16): `task axis`, an alias over entities.get +
+    // entities.patch (catalog rows unmoved).
+    expect(COMMAND_PATHS).toHaveLength(149);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {

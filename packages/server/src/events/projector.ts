@@ -38,6 +38,7 @@ import {
   type CustomEntityState,
   type EntityState,
   type EntitySummary,
+  type TaskAssignment,
 } from '@tm8/contract';
 
 import type { Querier } from '../db/types.js';
@@ -424,7 +425,7 @@ where e.id = any($1::uuid[])
  * a channel has nobody when the graph says otherwise.
  */
 const EDGE_SQL = `
-select src_id, dst_id, type
+select src_id, dst_id, type, created_at, assigned_by, assigned_at
   from public.edges
  where type in ('likes','dislikes','stars','assigned_to','has_member')
    and (dst_id = any($1::uuid[]) or src_id = any($1::uuid[]))
@@ -486,7 +487,14 @@ export class PgEntityProjector implements EntityProjector {
       for (const id of authors.ids) actorIds.add(id);
     }
 
-    const edges = await q.query<{ src_id: string; dst_id: string; type: string }>(EDGE_SQL, [unique]);
+    const edges = await q.query<{
+      src_id: string;
+      dst_id: string;
+      type: string;
+      created_at: Date | string;
+      assigned_by: string | null;
+      assigned_at: Date | string | null;
+    }>(EDGE_SQL, [unique]);
     const attentionRows = await q.query<{
       entity_id: string;
       pending_count: number;
@@ -519,6 +527,11 @@ export class PgEntityProjector implements EntityProjector {
     // and the second to src kind channel (080) — but keeping them apart means
     // this code says which relation it is holding instead of relying on that.
     const assigneeIds = new Map<string, string[]>();
+    const assignments = new Map<string, Array<{
+      assigneeId: string;
+      assignedById: string | null;
+      assignedAt: string;
+    }>>();
     const memberIds = new Map<string, string[]>();
     for (const edge of edges) {
       const target =
@@ -528,6 +541,16 @@ export class PgEntityProjector implements EntityProjector {
       list.push(edge.dst_id);
       target.set(edge.src_id, list);
       actorIds.add(edge.dst_id);
+      if (edge.type === 'assigned_to') {
+        const taskAssignments = assignments.get(edge.src_id) ?? [];
+        taskAssignments.push({
+          assigneeId: edge.dst_id,
+          assignedById: edge.assigned_by,
+          assignedAt: isoRequired(edge.assigned_at ?? edge.created_at),
+        });
+        assignments.set(edge.src_id, taskAssignments);
+        if (edge.assigned_by !== null) actorIds.add(edge.assigned_by);
+      }
     }
 
     const missingActors = [...actorIds].filter((id) => !unique.includes(id));
@@ -589,7 +612,8 @@ export class PgEntityProjector implements EntityProjector {
     for (const r of rows) {
       out.set(
         r.id,
-        this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], memberIds.get(r.id) ?? [],
+        this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], assignments.get(r.id) ?? [],
+          memberIds.get(r.id) ?? [],
           viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts, containsCounts,
           pullRequests.get(r.id), humanMessageAuthors.get(r.id)),
       );
@@ -658,6 +682,11 @@ export class PgEntityProjector implements EntityProjector {
     r: SummaryRow,
     actors: Map<string, ActorSummary>,
     assignees: readonly string[],
+    assignments: readonly {
+      assigneeId: string;
+      assignedById: string | null;
+      assignedAt: string;
+    }[],
     members: readonly string[],
     viewerReaction: EntityCounters['viewerReaction'],
     attention: EntityAttentionSummary | undefined,
@@ -697,7 +726,7 @@ export class PgEntityProjector implements EntityProjector {
       deletedAt: iso(r.deleted_at),
       createdBy: actors.get(r.created_by) ?? this.unknownActor(r.created_by),
       counters,
-      state: this.stateOf(r, actors, assignees, members, unreadCounts, containsCounts),
+      state: this.stateOf(r, actors, assignees, assignments, members, unreadCounts, containsCounts),
       // `EntityBadges` fields are all optional, so `{}` is a valid and honest
       // "no badges computed" — unlike `state`, which has required fields and
       // cannot be honestly empty. `restricted` is the one badge derivable from
@@ -886,6 +915,11 @@ export class PgEntityProjector implements EntityProjector {
     r: SummaryRow,
     actors: Map<string, ActorSummary>,
     assignees: readonly string[],
+    assignments: readonly {
+      assigneeId: string;
+      assignedById: string | null;
+      assignedAt: string;
+    }[],
     members: readonly string[],
     unreadCounts: ReadonlyMap<string, number>,
     containsCounts: ReadonlyMap<string, number>,
@@ -903,6 +937,13 @@ export class PgEntityProjector implements EntityProjector {
           axes: asStringRecord(r.axes),
           dueDate: iso(r.due_date),
           assignees: assignees.map((id) => actors.get(id) ?? this.unknownActor(id)),
+          assignments: assignments.map((assignment): TaskAssignment => ({
+            assignee: actors.get(assignment.assigneeId) ?? this.unknownActor(assignment.assigneeId),
+            assignedBy: assignment.assignedById === null
+              ? null
+              : actors.get(assignment.assignedById) ?? this.unknownActor(assignment.assignedById),
+            assignedAt: assignment.assignedAt,
+          })),
           acceptance: { total: criteria.length, completed },
           completionGate: r.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
         };

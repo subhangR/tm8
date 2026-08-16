@@ -82,6 +82,25 @@ function fakePort(over: Partial<SettingsPort> = {}): SettingsPort {
       identityId: IDENTITY.identityId, displayName: IDENTITY.displayName,
       avatar: IDENTITY.avatar, email: IDENTITY.email, globalId: IDENTITY.globalId,
     }),
+    // W2 — the axis registry. Seeded with the node's own seed so the section
+    // renders real rows; the writes echo a plausible row back.
+    loadAxes: async () => [
+      {
+        id: 'axis-type', spaceId: 'specimen-space' as never, name: 'type',
+        axisValues: ['default', 'code', 'design', 'review', 'test'],
+        kind: 'default' as const, position: 0,
+      },
+    ],
+    createAxis: async (input) => ({
+      id: 'axis-new', spaceId: 'specimen-space' as never, name: input.name,
+      axisValues: input.axisValues, kind: input.kind, position: input.position,
+    }),
+    updateAxis: async (axisId, input) => ({
+      id: axisId, spaceId: 'specimen-space' as never, name: input.name,
+      axisValues: input.axisValues, kind: input.kind, position: input.position,
+    }),
+    deleteAxis: async (axisId) => ({ axisId }),
+    tasksUsingAxis: async () => [],
     ...over,
   };
 }
@@ -122,6 +141,17 @@ const LIVE_VERBS = [
   /^add to group$/,
   /^new group name$/,
   /^Your name$/,
+  // Task axes (W2): live because `spaces.taskAxes.create|update|delete` are
+  // real catalog ops the seam now carries verbs for — the AXES_UNREADABLE
+  // refusal these replaced was measured false. The default axis's delete is
+  // NOT here: it renders disabled-with-reason (016's refusal, kept by the
+  // amended ruling).
+  /^axis name$/,
+  /^axis values, comma separated$/,
+  /^edit$/,
+  /^delete$/,
+  /^Create axis$/,
+  /^Save axis$/,
   // Your profile (067): the nav row plus the FOUR live controls — live
   // because `identity.profile.update` is a real executor in seam.commands
   // (Amendment 4), the first write this surface has ever been allowed.
@@ -572,8 +602,9 @@ describe('T2-3 — the menu editor', () => {
 
   it('renaming a group commits on ⏎ and cancels on esc', () => {
     render(<MenuEditor menu={MENU} spaceName="atelier" />);
-    fireEvent.click(screen.getByRole('button', { name: 'rename Workspace' }));
-    const input = screen.getByLabelText('rename Workspace') as HTMLInputElement;
+    // Revision 12: the group label is "Work" (the tab name).
+    fireEvent.click(screen.getByRole('button', { name: 'rename Work' }));
+    const input = screen.getByLabelText('rename Work') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'LIBRARY' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(screen.getByTestId('menu-preview').textContent).toMatch(/LIBRARY/);

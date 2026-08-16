@@ -207,6 +207,56 @@ describe.sequential('W2.G05 collection, graph, and undo PostgreSQL semantics', (
     expect(outsider.page.items).toEqual([]);
   });
 
+  it('filters and groups tasks by priority (Board tab wave)', async () => {
+    // Fixture priorities: Root=medium, Child=high, Sibling=low, Deleted=urgent (soft-deleted).
+    const high = await asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      { spaceId: fixture.spaceId, kinds: ['task'], filters: { priority: ['high'] } },
+      fixture.identityId,
+    ));
+    expect(high.page.items.map((item) => item.id)).toEqual([fixture.childId]);
+
+    const widened = await asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      { spaceId: fixture.spaceId, kinds: ['task'], filters: { priority: ['high', 'low'] } },
+      fixture.identityId,
+    ));
+    expect(widened.page.items.map((item) => item.id).sort()).toEqual(
+      [fixture.childId, fixture.siblingId].sort(),
+    );
+
+    // The only urgent task is soft-deleted; the default deleted filter must still apply.
+    const urgent = await asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      { spaceId: fixture.spaceId, kinds: ['task'], filters: { priority: ['urgent'] } },
+      fixture.identityId,
+    ));
+    expect(urgent.page.items).toEqual([]);
+
+    const grouped = await asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      { spaceId: fixture.spaceId, kinds: ['task'], groupBy: 'priority', limit: 10 },
+      fixture.identityId,
+    ));
+    const byKey = new Map((grouped.groups ?? []).map((group) => [group.key, group]));
+    expect([...byKey.keys()].sort()).toEqual(['high', 'low', 'medium']);
+    expect(byKey.get('high')).toMatchObject({ label: 'High', total: 1 });
+    expect(byKey.get('high')!.items.map((item) => item.id)).toEqual([fixture.childId]);
+    expect(byKey.get('medium')!.items.map((item) => item.id)).toEqual([fixture.rootId]);
+
+    // The filter ANDs with workStatus (both are task-narrowing predicates).
+    const anded = await asApp(database, fixture.identityId, (q) => queryCollection(
+      q,
+      {
+        spaceId: fixture.spaceId,
+        kinds: ['task'],
+        filters: { priority: ['high'], workStatus: ['done'] },
+      },
+      fixture.identityId,
+    ));
+    expect(anded.page.items).toEqual([]);
+  });
+
   it('bounds graph traversal and excludes non-live or unreadable endpoints and edges', async () => {
     const query: GraphQuery = {
       spaceId: fixture.spaceId,

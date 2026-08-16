@@ -61,6 +61,7 @@ import {
   readLaunchCache,
   writeLaunchCache,
 } from '../data/launch-cache';
+import { DEFAULT_WINDOW, windowSpec } from '../graph/model';
 import { readLastSpace, writeLastSpace } from './last-place';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
@@ -188,7 +189,20 @@ export interface GateGraphData {
   error: string | null;
   now: string;
   refresh: () => void;
+  /** The time window the canvas is READING, not filtering — see `loadGraph`. */
+  window: string;
+  setWindow: (id: string) => void;
+  /** The page filled, so the window holds more than the canvas can show. */
+  atCeiling: boolean;
+  limit: number;
 }
+
+/**
+ * How many nodes the canvas asks for. The server's own ceiling is higher; this
+ * is the number the picture stays readable at, and it is exported so the
+ * surface can say "the 150 most recent" rather than implying it got everything.
+ */
+const GRAPH_NODE_LIMIT = 150;
 
 /** Order-independent key: two equal filters must not produce two cache rows. */
 function stableKey(value: unknown): string {
@@ -355,6 +369,21 @@ export interface GateData {
   spaces: SpaceSummary[];
   /** Real membership of the active space, never inferred from result authors. */
   members: readonly ActorSummary[];
+  /**
+   * The space's task-axis registry, from the same `spaceSettings()` boot read
+   * that carries membership — the axis pickers' vocabulary and the board's
+   * axis group-by options are PER-SPACE DATA, never registry config. Empty
+   * means the space defines none (or the read is not in yet), and the strip
+   * renders no axis controls for it.
+   */
+  taskAxes: readonly import('@tm8/contract').TaskAxis[];
+  /**
+   * Re-read the axis registry NOW — after Settings > Axes lands a write, so a
+   * new axis appears as a W1 picker (and a W3 group-by option) without a
+   * reload. Axis writes emit no workspace event (`task_axes` rows are not
+   * entities), so the event stream cannot do this on its own.
+   */
+  refreshTaskAxes: () => void;
   /**
    * THE TWO TRIGGER SUBJECTS every rich input in this shell picks from.
    *
@@ -591,6 +620,7 @@ export function useGateData(options: GateOptions): GateData {
   const [ready, setReady] = useState(false);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const [members, setMembers] = useState<readonly ActorSummary[]>([]);
+  const [taskAxes, setTaskAxes] = useState<readonly import('@tm8/contract').TaskAxis[]>([]);
   const [skillOptions, setSkillOptions] = useState<readonly SkillTriggerOption[] | undefined>(
     undefined,
   );
@@ -612,11 +642,40 @@ export function useGateData(options: GateOptions): GateData {
   const [linkedProjects, setLinkedProjects] = useState<readonly ProjectResource[]>([]);
   const [spaceDefaultProfileId, setSpaceDefaultProfileId] = useState<EntityId | null>(null);
   const [teammateProfileDefaults, setTeammateProfileDefaults] = useState<Readonly<Record<string, EntityId | null>>>({});
+  /**
+   * THE GRAPH READ'S ANSWER, KEPT — which it previously was not.
+   *
+   * `loadGraph` ingested a bounded response into the shared domain store and
+   * then threw the response away; the canvas rendered every same-space value in
+   * that store instead. Since every other read writes into the same store, the
+   * canvas was unbounded BY CONSTRUCTION and grew as the viewer browsed — the
+   * measured cause of "it shows a lot of entities". Holding `nodeIds` makes the
+   * canvas exactly what the graph read returned.
+   *
+   * IDS, not summaries, per the row law below: the ids are the SELECTION and
+   * the store is the truth, so an entity that changes while the canvas is open
+   * redraws without a re-read.
+   *
+   * `activeSince` is the window that was ASKED FOR, and `atCeiling` says the
+   * page filled — together they are the difference between "this is the last
+   * day" and "this is as much of the last day as one page holds".
+   */
   const [graphLoad, setGraphLoad] = useState<{
     phase: 'loading' | 'ready' | 'error';
     error: string | null;
     now: string;
-  }>(() => ({ phase: 'loading', error: null, now: new Date().toISOString() }));
+    nodeIds: readonly string[];
+    activeSince: string | null;
+    atCeiling: boolean;
+  }>(() => ({
+    phase: 'loading',
+    error: null,
+    now: new Date().toISOString(),
+    nodeIds: [],
+    activeSince: null,
+    atCeiling: false,
+  }));
+  const [graphWindow, setGraphWindow] = useState<string>(DEFAULT_WINDOW);
   /**
    * ROWS ARE IDS NOW, NOT SUMMARIES — and that one change is what closed the
    * live loop.
@@ -692,24 +751,75 @@ export function useGateData(options: GateOptions): GateData {
   );
 
   const loadGraph = useCallback(
-    async (space: SpaceId) => {
+    async (space: SpaceId, windowId: string = DEFAULT_WINDOW) => {
       setGraphLoad((current) => ({ ...current, phase: 'loading', error: null }));
+      // The window is sent as an ABSOLUTE instant so the node never has to
+      // agree with this browser about what "now" is. `null` is all time.
+      const ms = windowSpec(windowId).ms;
+      const activeSince = ms === null ? null : new Date(Date.now() - ms).toISOString();
       try {
-        const result = await seam.graph({ spaceId: space, layout: 'graph', limit: 150 });
+        const result = await seam.graph({
+          spaceId: space,
+          layout: 'graph',
+          limit: GRAPH_NODE_LIMIT,
+          ...(activeSince === null ? {} : { filters: { activeSince } }),
+        });
         const store = domain.store.getState();
         store.ingestSummaries(result.nodes);
         store.ingestEdges(result.edges);
-        setGraphLoad({ phase: 'ready', error: null, now: new Date().toISOString() });
+        setGraphLoad({
+          phase: 'ready',
+          error: null,
+          now: new Date().toISOString(),
+          nodeIds: result.nodes.map((node) => node.id),
+          activeSince,
+          // A full page is the only evidence available that the window holds
+          // more: there is no count-by-query read to ask for the true total.
+          atCeiling: result.nodes.length >= GRAPH_NODE_LIMIT,
+        });
       } catch (error: unknown) {
         setGraphLoad({
           phase: 'error',
           error: String((error as { message?: string })?.message ?? error),
           now: new Date().toISOString(),
+          nodeIds: [],
+          activeSince,
+          atCeiling: false,
         });
       }
     },
     [seam, domain],
   );
+
+  /**
+   * A BOUNDED SNAPSHOT MUST STILL BE LIVE.
+   *
+   * Scoping the canvas to what the graph read returned would otherwise freeze
+   * it: an entity created after the read is not in `nodeIds`, so a task born
+   * while the canvas is open would not appear until a manual refresh. That is
+   * the opposite of what a "last hour" view is for.
+   *
+   * A DURABLE EVENT IS NOT BROWSING, and that distinction is the whole point.
+   * The old canvas grew because every READ wrote into the shared store and the
+   * canvas rendered the store — so opening a doc list put docs on the graph.
+   * An `entity.upsert` is the space telling us something just happened, which
+   * is precisely what any of these windows selects for. So arrivals extend the
+   * selection and reads do not, and the next graph read replaces the list
+   * wholesale rather than accumulating on top of it.
+   */
+  useEffect(() => {
+    if (!spaceId) return undefined;
+    return seam.onEvent((event) => {
+      if (event.type !== 'entity.upsert') return;
+      const arrival = (event as { entity?: { id?: string; spaceId?: string } }).entity;
+      if (!arrival?.id || arrival.spaceId !== spaceId) return;
+      setGraphLoad((current) =>
+        current.nodeIds.includes(arrival.id as string)
+          ? current
+          : { ...current, nodeIds: [...current.nodeIds, arrival.id as string] },
+      );
+    });
+  }, [seam, spaceId]);
 
   /**
    * Hydration is written as ONE idempotent, re-runnable function from day one
@@ -757,6 +867,9 @@ export function useGateData(options: GateOptions): GateData {
       const memberActors = (settings.members ?? []).map((member) => member.actor);
       const viewerMemberId = identity?.memberships.find((membership) => membership.spaceId === space)?.memberId;
       setMembers(memberActors);
+      // Same posture as membership: a settings shape from before the axes
+      // projection reads as "none defined", never as a fabricated axis.
+      setTaskAxes(settings.taskAxes ?? []);
       setViewerActor(memberActors.find((member) => member.id === viewerMemberId) ?? null);
       setSpaceDefaultProfileId(settings.defaultInteractionProfileId);
       if (counts) setKindCounts(counts);
@@ -979,6 +1092,7 @@ export function useGateData(options: GateOptions): GateData {
     setBoards({});
     pendingBoards.current.clear();
     setMembers([]);
+    setTaskAxes([]);
     setViewerActor(null);
     setMenu(resolveMenu(null));
     setLiveIds([]);
@@ -1865,8 +1979,13 @@ export function useGateData(options: GateOptions): GateData {
     () =>
       graphLoad.phase === 'error'
         ? EMPTY_ROWS
-        : Object.values(entities).filter((entity) => entity.spaceId === spaceId),
-    [graphLoad.phase, entities, spaceId],
+        : graphLoad.nodeIds
+            .map((id) => entities[id])
+            .filter(
+              (entity): entity is EntitySummary =>
+                entity !== undefined && entity.spaceId === spaceId,
+            ),
+    [graphLoad.phase, graphLoad.nodeIds, entities, spaceId],
   );
   const graphEdges = useMemo(() => {
     if (graphLoad.phase === 'error') return [];
@@ -1889,8 +2008,18 @@ export function useGateData(options: GateOptions): GateData {
     [linkedPullRequests],
   );
   const refreshGraph = useCallback(() => {
-    if (spaceId) void loadGraph(spaceId);
-  }, [spaceId, loadGraph]);
+    if (spaceId) void loadGraph(spaceId, graphWindow);
+  }, [spaceId, loadGraph, graphWindow]);
+  // Choosing a window is a READ, not a client-side filter — which is the whole
+  // point of it being a window rather than a rank. State lives here, above the
+  // read, so the canvas cannot drift from what was asked for.
+  const chooseGraphWindow = useCallback(
+    (next: string) => {
+      setGraphWindow(next);
+      if (spaceId) void loadGraph(spaceId, next);
+    },
+    [spaceId, loadGraph],
+  );
   const graph = useMemo<GateGraphData>(
     () => ({
       nodes: graphNodes,
@@ -1899,8 +2028,12 @@ export function useGateData(options: GateOptions): GateData {
       error: graphLoad.error,
       now: graphLoad.now,
       refresh: refreshGraph,
+      window: graphWindow,
+      setWindow: chooseGraphWindow,
+      atCeiling: graphLoad.atCeiling,
+      limit: GRAPH_NODE_LIMIT,
     }),
-    [graphNodes, graphEdges, graphLoad, refreshGraph],
+    [graphNodes, graphEdges, graphLoad, refreshGraph, graphWindow, chooseGraphWindow],
   );
 
   // Exposed through the returned object so views can request a panel's detail
@@ -1962,6 +2095,15 @@ export function useGateData(options: GateOptions): GateData {
     [members],
   );
 
+  /** See `GateData.refreshTaskAxes` — axis writes emit no workspace event. */
+  const refreshTaskAxes = useCallback(() => {
+    if (!spaceId) return;
+    void seam
+      .spaceSettings(spaceId)
+      .then((settings) => setTaskAxes(settings.taskAxes ?? []))
+      .catch(() => undefined);
+  }, [seam, spaceId]);
+
   // without reaching for the seam themselves.
   const data = useMemo<GateData & { pull: (id: string) => void }>(
     () => ({
@@ -1969,6 +2111,8 @@ export function useGateData(options: GateOptions): GateData {
       spaceId,
       spaces,
       members,
+      taskAxes,
+      refreshTaskAxes,
       mentionOptions,
       skillOptions,
       viewerActor,
@@ -2004,7 +2148,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

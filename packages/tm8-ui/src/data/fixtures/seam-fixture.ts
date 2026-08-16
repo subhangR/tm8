@@ -28,6 +28,8 @@ import {
   type InviteRedemption,
   type RedeemInviteInput,
   type SpaceInviteView,
+  type TaskAxis,
+  type TaskAxisInput,
   type UpdateMemberRoleInput,
   bindPath,
   CollabError,
@@ -144,6 +146,8 @@ import {
   fixtureDetails,
   fixtureHandoffsBySession,
   fixtureSummaries,
+  memberAda,
+  memberNoor,
   noor,
   sessionCredentialLogin,
   sessionLive,
@@ -781,6 +785,59 @@ export function createFixtureSeam(): FixtureSeam {
   const invites: SpaceInviteView[] = [];
   let inviteSeq = 0;
 
+  /**
+   * The task-axis registry, MUTABLE — W2. Seeded with exactly what the node
+   * seeds every space (001's `type` axis, kind 'default', position 0), so
+   * the fixture-backed product draws the axis picker and the Settings > Axes
+   * screen has real rows to curate. The array itself is the store the CRUD
+   * verbs below mutate; `spaceSettings()` clones it per read.
+   */
+  const taskAxes: TaskAxis[] = [
+    {
+      id: 'axis-type',
+      spaceId: FIXTURE_SPACE_ID,
+      name: 'type',
+      axisValues: ['default', 'code', 'design', 'review', 'test'],
+      kind: 'default',
+      position: 0,
+    },
+  ];
+  let axisSeq = 0;
+
+  /**
+   * The node's own in-use predicate, mirrored: does any task in the space
+   * carry a value under this axis NAME (`tasks.axes ? name`)? Used by
+   * delete/rename/value-removal exactly as `w2_delete_task_axis` /
+   * `w2_update_task_axis` use it — refusal, never orphaning (measured
+   * 2026-08-16; 132 relaxes only the default-kind special cases).
+   */
+  function axisInUse(name: string, keepingValues?: readonly string[]): boolean {
+    return [...summaries.values()].some((s) => {
+      if (s.state.kind !== 'task') return false;
+      const value = (s.state.axes ?? {})[name];
+      if (typeof value !== 'string') return false;
+      return keepingValues === undefined ? true : !keepingValues.includes(value);
+    });
+  }
+
+  /** The shared validation the three w2_* RPCs apply, in the node's words. */
+  function validateAxisInput(input: TaskAxisInput): void {
+    if (!input.name || input.name.trim().length < 1 || input.name.trim().length > 100) {
+      throw new CollabError('invalid_input', 'task axis name must contain 1 to 100 characters');
+    }
+    const values = input.axisValues;
+    if (
+      !Array.isArray(values)
+      || values.some((v) => typeof v !== 'string' || v.trim() === '')
+      || new Set(values).size !== values.length
+    ) {
+      throw new CollabError('invalid_input', 'task axis values must be unique non-empty strings');
+    }
+    if (input.kind !== 'default' && input.kind !== 'manual') {
+      throw new CollabError('invalid_input', 'invalid task axis kind');
+    }
+  }
+
   /** Mirrors the node's shape (`'inv_' + 32 hex`) without pretending to be one. */
   function newInviteCode(): string {
     inviteSeq += 1;
@@ -926,6 +983,16 @@ export function createFixtureSeam(): FixtureSeam {
     return { items: all.slice(start, end), nextCursor: end < all.length ? String(end) : null, total: all.length };
   }
 
+  /** The node's own group labels (collections.ts) — the fixture must hand
+   *  back 'High', not 'high', or a label-rendering surface diverges. */
+  const GROUP_STATUS_LABELS: Record<string, string> = {
+    open: 'Open', pulled: 'Pulled', working: 'Working', in_review: 'In review',
+    done: 'Done', blocked: 'Blocked', cancelled: 'Cancelled',
+  };
+  const GROUP_PRIORITY_LABELS: Record<string, string> = {
+    urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low',
+  };
+
   /**
    * `groupBy` answered for real, PAGE-SCOPED like the node's own.
    *
@@ -938,17 +1005,52 @@ export function createFixtureSeam(): FixtureSeam {
    */
   function groupsFor(rows: EntitySummary[], input: CollectionQuery): { groups?: CollectionGroup[] } {
     const groupBy = input.groupBy;
-    if (groupBy !== 'workStatus') return {};
-    const byKey = new Map<string, EntitySummary[]>();
-    for (const row of pageOf(rows, input).items) {
-      if (row.state.kind !== 'task') continue;
-      const key = row.state.workStatus;
-      const bucket = byKey.get(key);
-      if (bucket) bucket.push(row);
-      else byKey.set(key, [row]);
+    if (groupBy !== 'workStatus' && groupBy !== 'priority' && groupBy !== 'assignee') return {};
+    /**
+     * The server's `groupItems` arms, mirrored (collections.ts): a
+     * multi-assignee task appears in EVERY assignee column, no assignee is
+     * the '' / "Unassigned" column, labels are the server's display words
+     * (WORK_STATUS_LABELS / PRIORITY_LABELS), and a NON-task row lands in
+     * the same default bucket the server gives it ('open' / 'medium' /
+     * Unassigned) instead of vanishing from the groups it counts toward.
+     */
+    const keysOf = (row: EntitySummary): readonly (readonly [string, string])[] => {
+      if (groupBy === 'workStatus') {
+        const status = row.state.kind === 'task' ? row.state.workStatus : 'open';
+        return [[status, GROUP_STATUS_LABELS[status] ?? status]];
+      }
+      if (groupBy === 'priority') {
+        const priority = row.state.kind === 'task' ? row.state.priority : 'medium';
+        return [[priority, GROUP_PRIORITY_LABELS[priority] ?? priority]];
+      }
+      const assignees = row.state.kind === 'task' ? row.state.assignees : [];
+      if (assignees.length === 0) return [['', 'Unassigned']];
+      return assignees.map((a) => [a.id, a.displayName] as const);
+    };
+    /**
+     * `total` counts ALL filtered rows (the server's `groupTotals` CTE runs
+     * before LIMIT); `items` stay page-scoped. Off-page groups (total > 0,
+     * empty page slice) are kept for status/priority and dropped for
+     * assignee — the server appends empty groups for closed vocabularies
+     * only, never for the open actor axis.
+     */
+    const byKey = new Map<string, { label: string; items: EntitySummary[]; total: number }>();
+    const paged = new Set(pageOf(rows, input).items.map((r) => r.id));
+    for (const row of rows) {
+      for (const [key, label] of keysOf(row)) {
+        let bucket = byKey.get(key);
+        if (!bucket) {
+          bucket = { label, items: [], total: 0 };
+          byKey.set(key, bucket);
+        }
+        bucket.total += 1;
+        if (paged.has(row.id)) bucket.items.push(row);
+      }
     }
     return {
-      groups: [...byKey].map(([key, items]) => ({ key, label: key, items })),
+      groups: [...byKey]
+        .filter(([, g]) => groupBy !== 'assignee' || g.items.length > 0)
+        .map(([key, g]) => ({ key, label: g.label, items: g.items, total: g.total })),
     };
   }
 
@@ -995,6 +1097,33 @@ export function createFixtureSeam(): FixtureSeam {
   }
 
   /**
+   * The performer of an assignment, spoken in the ENTITY id vocabulary.
+   *
+   * This fixture has TWO id spaces for one person — `act-ada` the actor and
+   * `ent-member-ada` the member entity (documented at `spaceSettings` below;
+   * unifying them predates this change and is not its job). The real server
+   * has ONE id, and `assigned_by` resolves through the same entity read as
+   * the assignee, so an `assignments` record whose two arms spoke different
+   * vocabularies would be a parity bug: the roster the assigned-by chips are
+   * drawn from is built on ENTITY rows, and a filter that can never match is
+   * indistinguishable from one that is broken. Every seam-written edge is
+   * authored by the viewer, so the map only needs the humans the identity
+   * can be.
+   */
+  function assignmentAuthor(author: ActorSummary): ActorSummary {
+    const entityId = author.id === ada.id ? memberAda.id : author.id === noor.id ? memberNoor.id : author.id;
+    const entity = summaries.get(entityId);
+    if (!entity || (entity.kind !== 'member' && entity.kind !== 'team_member')) return clone(author);
+    return {
+      id: entity.id,
+      kind: entity.kind,
+      displayName: entity.title,
+      avatar: null,
+      isAgent: entity.kind === 'team_member',
+    };
+  }
+
+  /**
    * Both actor rosters, recomputed from the edges that ARE them: a task's
    * `assigned_to` and a channel's `has_member` (migration 080). Two arms of one
    * function because the projection is identical and the meaning is not — the
@@ -1002,8 +1131,30 @@ export function createFixtureSeam(): FixtureSeam {
    * `relations.assignees` / `relations.members`).
    */
   function projectAssignees(s: EntitySummary): void {
-    if (s.state.kind === 'task') s.state.assignees = projectActorEdges(s, 'assigned_to');
-    else if (s.state.kind === 'channel') s.state.members = projectActorEdges(s, 'has_member');
+    if (s.state.kind === 'task') {
+      s.state.assignees = projectActorEdges(s, 'assigned_to');
+      /* 129's provenance projection: one entry per CURRENT `assigned_to`
+         edge, its `assignedBy` the actor who WROTE that edge — the server
+         projects the same rows out of assigned_by/assigned_at
+         (entity-read.ts). Additive field: a task this function never ran on
+         keeps no `assignments`, exactly as pre-129 rows read NULL. */
+      const group = extrasOf(s.id).connections.outgoing.find((g) => g.type === 'assigned_to');
+      s.state.assignments = (group?.edges ?? []).flatMap((edge) => {
+        const target = summaries.get(edge.target.id);
+        if (!target || (target.kind !== 'member' && target.kind !== 'team_member')) return [];
+        return [{
+          assignee: {
+            id: target.id,
+            kind: target.kind,
+            displayName: target.title,
+            avatar: null,
+            isAgent: target.kind === 'team_member',
+          },
+          assignedBy: assignmentAuthor(edge.createdBy),
+          assignedAt: edge.createdAt,
+        }];
+      });
+    } else if (s.state.kind === 'channel') s.state.members = projectActorEdges(s, 'has_member');
   }
 
   function defaultStateFor(input: CreateEntityInput): EntityState {
@@ -1187,7 +1338,10 @@ export function createFixtureSeam(): FixtureSeam {
           { actor: clone(noor), role: 'member' as const, joinedAt: FIXTURE_NOW },
         ],
         invites,
-        taskAxes: [],
+        // The MUTABLE registry above — seeded with the node's own seed, and
+        // the same rows the W2 CRUD verbs curate. Position order, exactly as
+        // `spaces.settings` answers it.
+        taskAxes: [...taskAxes].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
         menu: {
           schemaVersion: 1,
           revision: 1,
@@ -1260,11 +1414,29 @@ export function createFixtureSeam(): FixtureSeam {
         if (input.parentId !== undefined && s.parentId !== input.parentId) return false;
         if (subtree && !subtree.has(s.id)) return false;
         const f = input.filters;
-        if (f?.workStatus && !(s.state.kind === 'task' && f.workStatus.includes(s.state.workStatus))) return false;
-        if (f?.sessionStatus && !(s.state.kind === 'work_session'
+        /* Empty lists are NO constraint — the server guards every arm with
+           `length > 0` (collections.ts), so `priority: []` must not read as
+           "match nothing" here while the node reads it as "unfiltered". */
+        if (f?.workStatus?.length && !(s.state.kind === 'task' && f.workStatus.includes(s.state.workStatus))) return false;
+        if (f?.priority?.length && !(s.state.kind === 'task' && f.priority.includes(s.state.priority))) return false;
+        if (f?.sessionStatus?.length && !(s.state.kind === 'work_session'
           && f.sessionStatus.includes(s.state.status))) return false;
-        if (f?.assigneeIds && !(s.state.kind === 'task'
+        if (f?.assigneeIds?.length && !(s.state.kind === 'task'
           && s.state.assignees.some((a) => f.assigneeIds!.includes(a.id)))) return false;
+        /* 129's provenance filter: a task matches when ANY of its CURRENT
+           assignments was performed by a listed actor. `assignments` is the
+           additive contract field; a task without it (pre-provenance data)
+           matches nothing, exactly as its rows have NULL assigned_by. */
+        if (f?.assignedByIds?.length && !(s.state.kind === 'task'
+          && (s.state.assignments ?? []).some((a) => a.assignedBy !== null
+            && f.assignedByIds!.includes(a.assignedBy.id)))) return false;
+        /* The clock window (`collections.ts`: `e.activity_at >= $n`). Honoured
+           here because the graph canvas's whole scope is this predicate — a
+           fixture that ignored it would hand back the entire space and let a
+           test prove a window that does nothing. Compared as strings: `tick()`
+           and the caller both produce `toISOString()`, which is always UTC and
+           fixed-width, so lexical order IS chronological order. */
+        if (f?.activeSince && s.activityAt < f.activeSince) return false;
         /* The `edge` clause the server executes as an EXISTS over
            public.edges (collections.ts): keep this row exactly when it has an
            edge of `type` in `direction` whose OTHER endpoint is `entityId`.
@@ -2065,6 +2237,50 @@ export function createFixtureSeam(): FixtureSeam {
             const due = patched.dueDate;
             s.state.dueDate = typeof due === 'string' ? due : null;
           }
+          /**
+           * Same crossing for `priority`: the node's `update_task_content`
+           * writes `tasks.priority` and `stateOf` projects it, so a fixture
+           * that banked it in content alone would let the board's priority
+           * drop report success while every fresh read said 'medium' — an
+           * optimistic move that could never settle NOR roll back.
+           */
+          if (s.state.kind === 'task' && 'priority' in patched) {
+            const p = patched.priority;
+            if (p === 'low' || p === 'medium' || p === 'high' || p === 'urgent') s.state.priority = p;
+          }
+          /* `axes` makes the same content→state crossing as `dueDate`, and
+             with the server's own replace-wholesale semantics
+             (`update_task_content`: `axes = coalesce(p_axes, axes)`): a
+             present object REPLACES the stored record — the MERGE is the
+             writer's job — and an absent key changes nothing. A fixture that
+             merged here would pass a writer that forgets to merge, which the
+             real node would quietly data-lose. */
+          if (s.state.kind === 'task' && 'axes' in patched) {
+            const axes = patched.axes;
+            if (axes !== null && typeof axes === 'object') {
+              s.state.axes = { ...(axes as Record<string, string>) };
+            }
+          }
+          /**
+           * And the crossing is a MOVE, not a copy: the node's `contentOf`
+           * never carries these state-projected keys (task content is
+           * kind/description/acceptanceCriteria/pointsEstimate, strict), so
+           * a fixture that left them merged into content would hand back a
+           * detail `EntityDetailSchema` refuses — contract-invalid in a way
+           * the real server never is.
+           *
+           * `axes` joins that list on the merge: it is an EntityState field
+           * with no home in the strict task content, so the block main added
+           * above has to clear it here for the same reason the other two are
+           * cleared. Leaving it would make every axis write hand back a
+           * contract-invalid detail.
+           */
+          if (s.state.kind === 'task') {
+            const c = e.content as Record<string, unknown>;
+            delete c.priority;
+            delete c.dueDate;
+            delete c.axes;
+          }
         }
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
@@ -2184,6 +2400,73 @@ export function createFixtureSeam(): FixtureSeam {
         if (!invite) throw new CollabError('not_found', `invite ${inviteId} not found`);
         invite.revoked = true;
         return clone(invite);
+      },
+
+      /**
+       * W2 — the axis registry's writes, mirroring the w2_* RPCs refusal for
+       * refusal: shared input validation, the (space,name) uniqueness, the
+       * three in-use refusals AND the two default-axis refusals (delete and
+       * demote — 016, KEPT by the amended ruling 2026-08-16), all in the
+       * node's own words.
+       */
+      async createTaskAxis(spaceId: SpaceId, input: TaskAxisInput): Promise<TaskAxis> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        validateAxisInput(input);
+        if (taskAxes.some((a) => a.name === input.name)) {
+          throw new CollabError('conflict', `a task axis named ${input.name} already exists`);
+        }
+        axisSeq += 1;
+        const axis: TaskAxis = {
+          id: `axis-fixture-${axisSeq}`,
+          spaceId,
+          name: input.name,
+          axisValues: [...input.axisValues],
+          kind: input.kind,
+          position: input.position,
+        };
+        taskAxes.push(axis);
+        return clone(axis);
+      },
+
+      async updateTaskAxis(spaceId: SpaceId, axisId: string, input: TaskAxisInput): Promise<TaskAxis> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        const axis = taskAxes.find((a) => a.id === axisId);
+        if (!axis) throw new CollabError('not_found', 'task axis not found');
+        validateAxisInput(input);
+        if (axis.kind === 'default' && input.kind !== 'default') {
+          throw new CollabError('invariant_violation', 'the default task axis cannot be demoted');
+        }
+        if (input.name !== axis.name && axisInUse(axis.name)) {
+          throw new CollabError('invariant_violation', 'cannot rename a task axis that tasks still use');
+        }
+        if (axis.axisValues.length > 0 && axisInUse(axis.name, input.axisValues)) {
+          throw new CollabError('invariant_violation', 'cannot remove a task axis value that tasks still use');
+        }
+        axis.name = input.name;
+        axis.axisValues = [...input.axisValues];
+        axis.kind = input.kind;
+        axis.position = input.position;
+        return clone(axis);
+      },
+
+      async deleteTaskAxis(spaceId: SpaceId, axisId: string): Promise<{ axisId: string }> {
+        if (spaceId !== FIXTURE_SPACE_ID) {
+          throw new CollabError('not_found', `space ${spaceId} not found`);
+        }
+        const index = taskAxes.findIndex((a) => a.id === axisId);
+        if (index < 0) throw new CollabError('not_found', 'task axis not found');
+        if (taskAxes[index]!.kind === 'default') {
+          throw new CollabError('invariant_violation', 'the default task axis cannot be deleted');
+        }
+        if (axisInUse(taskAxes[index]!.name)) {
+          throw new CollabError('invariant_violation', 'task axis is still in use by tasks');
+        }
+        taskAxes.splice(index, 1);
+        return { axisId };
       },
 
       /**

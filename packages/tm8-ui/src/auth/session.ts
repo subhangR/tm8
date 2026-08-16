@@ -104,6 +104,27 @@ function clientForActiveServer(): { client: HttpClient; serverId: string } {
   return { client, serverId };
 }
 
+/**
+ * The same client with NO pass attached — for the two calls that EXCHANGE a
+ * credential rather than present one (`auth.login`, `auth.signup`).
+ *
+ * Attaching the stored pass there was a real lockout (2026-08-15): a
+ * server-side credential reset revokes every session, the browser still holds
+ * the revoked token, and the server refuses the bearer with `unauthenticated`
+ * BEFORE it reads the password — so the correct new password is reported as
+ * wrong, and nothing the viewer types can ever succeed until they clear
+ * storage by hand. A sign-in must stand on the credential alone.
+ */
+function bareClientForActiveServer(): { client: HttpClient; serverId: string } {
+  const serverId = readActiveServerId();
+  const client = createHttpClient({
+    baseUrl: routeBaseUrlFor(serverId),
+    fetch: (url, init) => globalThis.fetch(url, init),
+    getAuthToken: () => null,
+  });
+  return { client, serverId };
+}
+
 function toGateAccount(account: {
   username: string;
   displayName: string | null;
@@ -278,7 +299,10 @@ export async function createServerAccount(
     return { ok: false, failure: { kind: 'password-too-short', min: MIN_PASSWORD_LENGTH } };
   }
 
-  const { client, serverId } = clientForActiveServer();
+  /* BARE on purpose: signup rides the caller's claims (loopback auto-owner),
+     and a stale revoked pass in storage would be refused before those claims
+     are ever resolved — same lockout class as the login below. */
+  const { client, serverId } = bareClientForActiveServer();
   try {
     await client.call<AuthSignupResult>('auth.signup', {
       body: { username: handle, password, displayName: name.trim() },
@@ -308,7 +332,9 @@ export async function signInToServer(
   const username = handleFrom(handle);
   if (!username) return { ok: false, failure: { kind: 'name-required' } };
 
-  const { client, serverId } = clientForActiveServer();
+  /* BARE on purpose — see `bareClientForActiveServer`: a login must stand on
+     the credential alone, never on a stored pass a reset may have revoked. */
+  const { client, serverId } = bareClientForActiveServer();
   try {
     const login = await client.call<AuthLoginResult>('auth.login', {
       body: { username, password, kind: 'browser' },

@@ -731,6 +731,54 @@
 }
 .cv2-root .pn-body > .pn-section { padding: 0 0 10px; }
 
+/* Connections has TWO renderings of ONE fact, so the switch is a segmented
+   control rather than a tab: List and Graph are the same edges, read
+   differently. It sits above the surface it governs and never scrolls with it. */
+.cv2-root .pn-viewswitch {
+  flex: none;
+  align-self: flex-start;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  background: var(--pn-hover);
+}
+.cv2-root .pn-viewswitch__opt {
+  appearance: none;
+  border: 0;
+  background: none;
+  border-radius: 5px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .pn-viewswitch__opt:hover { color: var(--pn-ink); }
+.cv2-root .pn-viewswitch__opt--on {
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* The graph arm gives the canvas the whole body. A canvas measures itself from
+   its box, so the body must NOT scroll here — a scrolling parent would let the
+   canvas ask for height forever — and the graph gets `min-height: 0` so it
+   shrinks with the panel instead of overflowing it. */
+.cv2-root .pn-body--graph {
+  overflow: hidden;
+  gap: 8px;
+}
+.cv2-root .pn-connections-graph {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Connections tab: one row per connected ENTITY, its edge types trailing it.
    The peer chip leads because "what is this connected to" is the question;
    the relation labels answer "how" without competing for the eye. */
@@ -1669,13 +1717,20 @@
    all four sides, a gapped column, a brand-tinted selected state. Against the
    session list's full-bleed run of hairline-separated rows they read as two
    different products. This block is `pn-st`, rule for rule: one bottom
-   hairline, hover tint plus the brand edge bar, `--pn-active` when selected. */
+   hairline, hover tint plus the brand edge bar, `--pn-active` when selected.
+
+   AND NO FILL AT REST, which is the one place it still disagreed. `pn-st`
+   declares no background at all, so a session row simply shows `--pn-surface`,
+   the panel it sits in. This rule painted `--pn-card`, which is literally
+   #FFFFFF: every list except sessions drew pure white rows on a warm paper
+   panel. Dark is the same defect inverted — there `--pn-card` is LIGHTER than
+   the panel, so the rows read as slabs while session rows stayed flat. The
+   hairline and the hover/selected tints separate rows; a fill never did. */
 .cv2-root .lp__tile {
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--pn-card);
   border: 0;
   border-bottom: 1px solid var(--pn-line);
   border-radius: 0;
@@ -2651,6 +2706,30 @@
 .cv2-root .lp__statesel--absent {
   color: var(--pn-ink-4);
   font-style: italic;
+}
+
+/* THE COLLAPSED TILE'S STATUS MARK, as a trigger.
+   It must occupy the 16px square `.pn-tt__status` gives it and nothing more:
+   that row's height is pinned by its tallest child, so any padding here would
+   grow every task row. The affordance is therefore a hover/focus ring drawn
+   OUTSIDE the box with `box-shadow`, which takes no layout space. */
+.cv2-root .lp__statedot {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.cv2-root .lp__statedot:hover { box-shadow: 0 0 0 3px var(--pn-hover); }
+.cv2-root .lp__statedot:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
 }
 
 /* The wide row-action carries its label.
