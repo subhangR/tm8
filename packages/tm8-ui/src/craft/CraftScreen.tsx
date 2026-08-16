@@ -20,6 +20,7 @@
  * messages.post.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import type { EntityDetail, EntityId, EntitySummary, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import type { ChatHomeL2Bridge } from '../chat-home/real-port';
@@ -67,6 +68,10 @@ export function CraftScreen({
   /** The craft thread the approval posts into — tracked via the chat's own selection. */
   const [activeThreadId, setActiveThreadId] = useState<EntityId | null>(null);
   const [approving, setApproving] = useState(false);
+  /** Keys that arrived in the latest patch — the glow set (cleared on a timer). */
+  const [fresh, setFresh] = useState<{ cards: ReadonlySet<string>; lines: ReadonlySet<string> } | null>(null);
+  const prevKeysRef = useRef<{ id: EntityId; cards: Set<string>; lines: Set<string> } | null>(null);
+  const freshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedRef = useRef<EntityId | null>(null);
   selectedRef.current = selectedId;
 
@@ -211,6 +216,29 @@ export function CraftScreen({
     [content, refTitles],
   );
 
+  /* LIVE CONSTRUCTION READS AS MOTION: diff consecutive folds of the SAME
+     row and glow what the latest patch added. The drawn set never changes
+     here — attention is CSS only — and switching graphs resets the baseline
+     so a freshly opened blueprint does not arrive glowing wholesale. */
+  useEffect(() => {
+    if (!view || !selectedId) return;
+    const cards = new Set(view.cards.map((card) => card.key));
+    const lines = new Set(view.lines.map((line) => line.key));
+    const prev = prevKeysRef.current;
+    prevKeysRef.current = { id: selectedId, cards, lines };
+    if (!prev || prev.id !== selectedId) return;
+    const freshCards = new Set([...cards].filter((key) => !prev.cards.has(key)));
+    const freshLines = new Set([...lines].filter((key) => !prev.lines.has(key)));
+    if (freshCards.size === 0 && freshLines.size === 0) return;
+    setFresh({ cards: freshCards, lines: freshLines });
+    if (freshTimerRef.current) clearTimeout(freshTimerRef.current);
+    freshTimerRef.current = setTimeout(() => setFresh(null), 2600);
+  }, [view, selectedId]);
+
+  useEffect(() => () => {
+    if (freshTimerRef.current) clearTimeout(freshTimerRef.current);
+  }, []);
+
   return (
     <div className="crf-root" data-testid="craft-screen">
       <header className="crf-bar">
@@ -293,6 +321,7 @@ export function CraftScreen({
                 view={view}
                 ariaLabel={`Blueprint ${detail?.title ?? ''}: ${view.cards.length} nodes, ${view.lines.length} edges`}
                 onOpenEntity={onOpenEntity}
+                fresh={fresh ?? undefined}
               />
               {view.danglingEdgeCount > 0 ? (
                 <p className="crf-note" data-testid="crf-dangling">

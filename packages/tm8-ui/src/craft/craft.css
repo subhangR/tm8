@@ -127,3 +127,25 @@
 .crf-cell__flag {
   opacity: 0.75;
 }
+
+/* LIVE CONSTRUCTION: what the latest patch added glows briefly in brass,
+   then settles. Attention is CSS — the drawn set never changes for it. */
+@keyframes crf-fresh-settle {
+  0% { stroke: var(--pn-brand); stroke-width: 2.5; }
+  100% { stroke: var(--pn-line); stroke-width: 1; }
+}
+
+.crf-cell--fresh .sg-box {
+  animation: crf-fresh-settle 2.4s ease-out;
+}
+
+.crf-line--fresh .sg-link {
+  animation: crf-fresh-settle 2.4s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crf-cell--fresh .sg-box,
+  .crf-line--fresh .sg-link {
+    animation: none;
+  }
+}

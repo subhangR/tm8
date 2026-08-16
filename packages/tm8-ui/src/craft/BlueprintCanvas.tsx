@@ -20,9 +20,15 @@ export interface BlueprintCanvasProps {
   view: BlueprintView;
   ariaLabel: string;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
+  /**
+   * Keys that arrived in the LATEST patch (the host diffs consecutive folds).
+   * Drawn with a brief glow so live construction reads as motion — attention
+   * is CSS, never a different drawn set (the induced-graph law, kept).
+   */
+  fresh?: { cards: ReadonlySet<string>; lines: ReadonlySet<string> } | undefined;
 }
 
-export function BlueprintCanvas({ view, ariaLabel, onOpenEntity }: BlueprintCanvasProps) {
+export function BlueprintCanvas({ view, ariaLabel, onOpenEntity, fresh }: BlueprintCanvasProps) {
   if (view.cards.length === 0) {
     return (
       <p className="crf-empty" data-testid="crf-empty">
@@ -40,19 +46,24 @@ export function BlueprintCanvas({ view, ariaLabel, onOpenEntity }: BlueprintCanv
       data-testid="crf-canvas"
     >
       {view.lines.map((line) => (
-        <IntentLine key={line.key} line={line} />
+        <IntentLine key={line.key} line={line} fresh={fresh?.lines.has(line.key) ?? false} />
       ))}
       {view.cards.map((card) => (
-        <BlueprintNodeCard key={card.key} card={card} onOpen={onOpenEntity} />
+        <BlueprintNodeCard
+          key={card.key}
+          card={card}
+          onOpen={onOpenEntity}
+          fresh={fresh?.cards.has(card.key) ?? false}
+        />
       ))}
     </svg>
   );
 }
 
 /** One edge of intent: the humanised relation riding the bow's apex. */
-function IntentLine({ line }: { line: BlueprintLine }) {
+function IntentLine({ line, fresh }: { line: BlueprintLine; fresh: boolean }) {
   return (
-    <g className="ceg-line">
+    <g className={['ceg-line', ...(fresh ? ['crf-line--fresh'] : [])].join(' ')}>
       <path className="sg-link" d={`M ${line.x1} ${line.y1} Q ${line.cx} ${line.cy} ${line.x2} ${line.y2}`} />
       <text className="sg-meta ceg-line__labels" x={line.lx} y={line.ly} textAnchor="middle">
         {`${line.label} ⟶`}
@@ -65,9 +76,11 @@ function IntentLine({ line }: { line: BlueprintLine }) {
 function BlueprintNodeCard({
   card,
   onOpen,
+  fresh,
 }: {
   card: BlueprintCard;
   onOpen?: ((id: EntityId) => void) | undefined;
+  fresh: boolean;
 }) {
   const config = getKind(card.kind);
   const status = card.isSpec ? 'spec — not materialized yet' : 'references a real entity';
@@ -89,7 +102,12 @@ function BlueprintNodeCard({
     : {};
   return (
     <g
-      className={['sg-cell', 'crf-cell', ...(card.isSpec ? ['crf-cell--spec'] : [])].join(' ')}
+      className={[
+        'sg-cell',
+        'crf-cell',
+        ...(card.isSpec ? ['crf-cell--spec'] : []),
+        ...(fresh ? ['crf-cell--fresh'] : []),
+      ].join(' ')}
       transform={`translate(${card.x} ${card.y})`}
       aria-label={`${config.label}: ${card.title} — ${status}`}
       {...pressable}

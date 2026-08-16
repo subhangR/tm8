@@ -127,6 +127,27 @@ describe('the craft studio', () => {
     /* The edge naming a key no node carries is COUNTED, never silently gone. */
     await waitFor(() => view.getByTestId('crf-dangling'));
     expect(view.getByTestId('crf-dangling').textContent).toContain('1 edge');
+
+    /* LIVE CONSTRUCTION READS AS MOTION: the NEXT patch's additions carry the
+       fresh marker (class only — jsdom sees no styles; the glow itself is the
+       pixel path's claim), and the settled cards do not. */
+    await seam.commands.patchEntity(id, {
+      clientMutationId: 'crf-test-2b',
+      expectedVersion: 2,
+      content: {
+        graphType: 'entity',
+        nodes: [
+          { key: 'a', spec: { kind: 'task', title: 'Ship API', hint: 'REST' } },
+          { key: 'b', spec: { kind: 'task', title: 'Ship UI' } },
+          { key: 'c', spec: { kind: 'task', title: 'Ship docs' } },
+        ],
+        edges: [{ src: 'b', dst: 'a', type: 'depends_on' }],
+      },
+    });
+    await waitFor(() => expect(view.getByTestId('crf-canvas').textContent).toContain('Ship docs'));
+    const freshCells = view.getByTestId('crf-canvas').querySelectorAll('.crf-cell--fresh');
+    expect(freshCells).toHaveLength(1);
+    expect(freshCells[0]!.textContent).toContain('Ship docs');
     view.unmount();
   });
 
