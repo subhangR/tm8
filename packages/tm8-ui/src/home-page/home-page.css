@@ -197,6 +197,7 @@
 }
 .cv2-root .hp-aside {
   display: flex;
+  flex-direction: column;
   flex: none;
   width: var(--hp-aside, 440px);
   min-width: 0;
@@ -208,7 +209,40 @@
 .cv2-root .hp-aside > * {
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }
+/* D13: when the window cannot afford all three regions, region C becomes an
+   overlay DRAWER over B at its own width instead of crushing B — a squeezed
+   xterm reflows to nonsense columns and reads as "the terminal is broken".
+   `.hp-host` is the positioning context (it already wraps the whole row). */
+.cv2-root .hp-host { position: relative; }
+.cv2-root .hp-aside--overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  box-shadow: var(--pn-sh-pop);
+}
+/* D12: C's chrome carries the ONE explicit route out of Home. */
+.cv2-root .hp-aside__bar {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .hp-aside__workspace {
+  padding: 3px 9px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  background: var(--pn-card);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.cv2-root .hp-aside__workspace:hover { color: var(--pn-ink); background: var(--pn-hover); }
 .cv2-root .hp-root--chat .hp-needs {
   flex: none;
   margin: 10px 14px 0;
@@ -223,41 +257,10 @@
 .cv2-root .hp-chat--full .tch-root {
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
 }
+/* A hosted workspace list (Tasks/Sessions tabs) needs the rail's width the
+   workspace gives it, not the chat column's — the tree, lifecycle tabs and
+   in-panel search were cut for ~320px. */
+.cv2-root .hp-chat--full .tch-root[data-hosted-list] {
+  grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+}
 .cv2-root .hp-chat--full .tch-sidebar { display: flex; }
-
-.cv2-root .hp-counts {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: center;
-  padding: 0 14px 12px;
-}
-.cv2-root .hp-counts__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border: 1px solid var(--pn-line);
-  border-radius: 999px;
-  background: var(--pn-card);
-  color: var(--pn-ink-2);
-  font-family: var(--pn-ui);
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.cv2-root .hp-counts__chip:hover { background: var(--pn-hover); }
-.cv2-root .hp-counts__label { font-weight: 600; color: var(--pn-ink); }
-.cv2-root .hp-counts__total { font-family: var(--pn-mono); font-size: 11px; }
-.cv2-root .hp-counts__unseen {
-  color: var(--pn-brand);
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  font-weight: 600;
-}
-.cv2-root .hp-counts__live {
-  color: var(--pn-run);
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  font-weight: 600;
-}

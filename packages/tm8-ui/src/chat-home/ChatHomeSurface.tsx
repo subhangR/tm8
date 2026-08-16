@@ -22,7 +22,6 @@ export interface ChatHomeSurfaceProps {
   spaceId: SpaceId | string;
   nodeKey: string;
   anchorId?: EntityId;
-  spaceLabel?: string;
   bridge?: ChatHomeL2Bridge;
   /** The shell's entity-open verb: opens the right-side detail panel. */
   onOpenEntity?: (id: EntityId) => void;
@@ -32,10 +31,20 @@ export interface ChatHomeSurfaceProps {
    * `/` types plain text.
    */
   skillOptions?: readonly TriggerOption[];
-  /** Merged-column extras (R4) — all pass through to the screen verbatim. */
+  /** Three-tab column + region-B extras (task 01a006f8) — all pass through
+   *  to the screen verbatim. */
   sessions?: ChatHomeScreenProps['sessions'];
-  onOpenSession?: ChatHomeScreenProps['onOpenSession'];
-  onNewSession?: ChatHomeScreenProps['onNewSession'];
+  tasks?: ChatHomeScreenProps['tasks'];
+  tab?: ChatHomeScreenProps['tab'];
+  onTab?: ChatHomeScreenProps['onTab'];
+  selectedEntityId?: ChatHomeScreenProps['selectedEntityId'];
+  onSelectEntity?: ChatHomeScreenProps['onSelectEntity'];
+  onShowChat?: ChatHomeScreenProps['onShowChat'];
+  onNewTask?: ChatHomeScreenProps['onNewTask'];
+  newTaskUnavailable?: ChatHomeScreenProps['newTaskUnavailable'];
+  onRunTask?: ChatHomeScreenProps['onRunTask'];
+  renderTabList?: ChatHomeScreenProps['renderTabList'];
+  centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];
   onOpenWorkspace?: ChatHomeScreenProps['onOpenWorkspace'];
   viewerName?: ChatHomeScreenProps['viewerName'];
