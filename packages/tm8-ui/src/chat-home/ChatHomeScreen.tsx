@@ -316,6 +316,7 @@ export function ChatHomeScreen({
             return;
           }
           expectingRootRef.current = null;
+          preTurnIdsRef.current = null;
           setPhase('idle');
         } else setPhase('streaming');
       }),
@@ -977,19 +978,31 @@ function showThinking(phase: ComposerPhase, detail: ChatThreadDetail): boolean {
  * `streaming`, so a later user message can sit after the placeholder, and the
  * placeholder is then no longer the last row.
  *
- * Cardinality alone is not enough either: a thread can already hold a silent
- * teammate message before we ever type, and it would then be the only silent
- * assistant on screen. So candidacy is bounded by ARRIVAL — only rows that
- * were not there when we posted, since the server writes the placeholder when
- * it CLAIMS the turn, strictly after that post. Within that set, suppress only
- * what is UNAMBIGUOUS: exactly one candidate. Two of them and we cannot tell
- * which the pulse means, so neither is suppressed — a redundant progress line
- * is a blemish, a swallowed message is data loss.
+ * Cardinality does not stand in for it either: a thread can already hold a
+ * silent teammate message, which is then the only silent assistant on screen.
+ * Nor does arrival: "absent from the rows THIS TAB had rendered" is not the
+ * server's ordering, so a teammate message that lands between our post and the
+ * claim — or one that was durable all along and unseen here, since this screen
+ * never subscribes to ordinary message additions — is equally new to us.
  *
- * With NO snapshot — a reload or a thread switch mid-turn — nothing identifies
- * a placeholder at all, so nothing is suppressed and the durable body renders.
- * That is the honest outcome while thread liveness is never read back from the
- * server: the body is then the only hint that surface has.
+ * So the last gate is the server's OWN sentinel. `createAgentMessage`
+ * (`server/src/chat/orchestrator.ts:369`, pinned by `chat-storage.pg.test.ts`)
+ * writes exactly this body when it claims a turn. Matching it is a heuristic
+ * and it is deliberately the one whose failure is BOUNDED: the worst it can do
+ * is hide an ordinary message whose entire content is that same sentence,
+ * rather than arbitrary teammate content. If the server ever changes the
+ * string, suppression stops and the redundant bubble comes back — a blemish,
+ * not data loss. That is the safe direction to fail in.
+ *
+ * The real fix is a wire marker. The server already HAS one —
+ * `bind_chat_agent_message` records `chat_turns.agent_message_id` — and no
+ * read path projects it, so no client can ask which row belongs to a turn.
+ *
+ * Arrival and cardinality still gate on top: only rows new to us, and only
+ * when exactly one qualifies. With NO snapshot — a reload or a thread switch
+ * mid-turn — nothing is suppressed and the durable body renders. That is the
+ * honest outcome while thread liveness is never read back from the server: the
+ * body is then the only hint that surface has.
  *
  * Candidacy asks for zero STORED parts, not zero rendered ones: a turn that
  * stored only `done` draws nothing but is plainly finished, and is not what a
@@ -1007,10 +1020,18 @@ function claimedSilentTurnId(
   if (phase !== 'streaming' || preTurnIds === null) return null;
   const silent = detail.turns.filter(
     (turn) =>
-      turn.role === 'assistant' && turn.parts.length === 0 && !preTurnIds.has(turn.messageId),
+      turn.role === 'assistant' &&
+      turn.parts.length === 0 &&
+      turn.body === CLAIMED_TURN_BODY &&
+      !preTurnIds.has(turn.messageId),
   );
   return silent.length === 1 ? silent[0]!.messageId : null;
 }
+
+/** The body the server writes onto the agent message when it claims a turn —
+ *  `orchestrator.ts:369`, asserted by `server/test/db/chat-storage.pg.test.ts`.
+ *  Not a UI string: the transcript never authors it, it only recognises it. */
+const CLAIMED_TURN_BODY = 'Agent turn in progress.';
 
 function phaseForThreadState(state: ChatThreadSummary['state']): ComposerPhase {
   if (state === 'streaming') return 'streaming';

@@ -310,11 +310,10 @@ describe('Chat Home', () => {
   /**
    * `role` is derived from `author.isAgent` alone, so a message a teammate
    * posts into the thread by the ordinary writer is assistant-role with no
-   * parts — indistinguishable from a claimed placeholder. When two of them
-   * arrive together we cannot know which one the pulse means, and swallowing a
-   * real message is far worse than a redundant progress line.
+   * parts. Arriving beside the placeholder does not make it one — only the
+   * server's own claim sentence does.
    */
-  it('never swallows a teammate message it cannot tell from a placeholder', async () => {
+  it('never swallows a teammate message arriving beside the placeholder', async () => {
     const view = await sendInto(
       claimingPort(CHAT_HOME_FIXTURE_THREAD, [
         placeholderTurn(),
@@ -332,7 +331,54 @@ describe('Chat Home', () => {
     await waitFor(() =>
       expect(view.getByText('Heads up: I am reading the storage lane first.')).toBeTruthy(),
     );
-    expect(view.getByText('Agent turn in progress.')).toBeTruthy();
+    expect(view.queryByText('Agent turn in progress.')).toBeNull();
+  });
+
+  /**
+   * The UI reaches `streaming` on its own post; the server writes the
+   * placeholder only once it CLAIMS the turn. A teammate message landing in
+   * that window — or one durable all along and first seen by this tab now,
+   * since the screen never subscribes to ordinary message additions — is new
+   * to the arrival snapshot without being our placeholder. Only the server's
+   * claim sentence separates them.
+   */
+  it('never swallows a teammate message that arrives before the claim', async () => {
+    const view = await sendInto(
+      claimingPort(CHAT_HOME_FIXTURE_THREAD, [
+        {
+          messageId: '019f0000-0000-7000-8000-0000000000a5' as EntityId,
+          role: 'assistant',
+          author: CHAT_HOME_FIXTURE_THREAD.turns[1]!.author,
+          createdAt: '2026-08-13T08:19:35.000Z',
+          body: 'Heads up: I am reading the storage lane first.',
+          parts: [],
+        },
+      ]),
+    );
+
+    await waitFor(() => expect(view.getByTestId('chat-thinking')).toBeTruthy());
+    expect(view.getByText('Heads up: I am reading the storage lane first.')).toBeTruthy();
+  });
+
+  /**
+   * Two claimed turns in one thread: both carry the sentinel, so neither can
+   * be attributed to this pulse. A redundant progress line is a blemish; the
+   * wrong turn covered is a lie about whose work is running.
+   */
+  it('covers neither placeholder when two turns are claimed at once', async () => {
+    const view = await sendInto(
+      claimingPort(CHAT_HOME_FIXTURE_THREAD, [
+        placeholderTurn(),
+        {
+          ...placeholderTurn(),
+          messageId: '019f0000-0000-7000-8000-0000000000a6' as EntityId,
+          createdAt: '2026-08-13T08:19:50.000Z',
+        },
+      ]),
+    );
+
+    await waitFor(() => expect(view.getByTestId('chat-thinking')).toBeTruthy());
+    expect(view.getAllByText('Agent turn in progress.')).toHaveLength(2);
   });
 
   /**
