@@ -47,7 +47,7 @@ export function AuthStage({
       {/* oracle L36: height 46, padding 0 18px, the mark + "tm8" mono 13/600 brass */}
       <div className="auth-stage__bar">
         <span className="auth-stage__brand">
-          <BrandMark /> tm8
+          <BrandMark />
         </span>
         {meta ? <span className="auth-stage__meta">{meta}</span> : null}
       </div>

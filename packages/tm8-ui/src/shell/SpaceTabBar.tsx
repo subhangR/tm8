@@ -122,11 +122,11 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
           title="Back to conversations"
           onClick={props.onGoHome}
         >
-          <BrandMark /> tm8
+          <BrandMark />
         </button>
       ) : (
         <div className="shell-tabbar__mark" aria-label="tm8">
-          <BrandMark /> tm8
+          <BrandMark />
         </div>
       )}
 
