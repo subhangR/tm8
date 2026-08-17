@@ -618,7 +618,21 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 143: +1 migration file (143_signup_requires_claimed_node.sql, the §7.1
     // unclaimed-node guard) -> 133 on THIS branch. RE-MEASURE on merge: #318
     // adds 142, so the six-way merged tree is 134, not 133.
-    expect(server.appliedMigrations.length).toBe(133);
+    // 133 -> 137 (2026-08-17): the re-measure the note above asked for never
+    // happened, and the pin sat at 133 while four more files landed. It did not
+    // go red to say so, because it could not RUN: main carried duplicate
+    // prefixes 133/134/135, so `migrationFiles()` aborted on the duplicate guard
+    // before any count was reached, and this assertion was unreachable on main.
+    // Un-blocking the chain (the 144/145/146 renames) is what let it be observed
+    // again, and the first thing it reported was its own four-file drift. The
+    // detector was working; nothing had silently shrunk.
+    // MEASURED on the merged tree, never arithmetic, and equal on both sides
+    // because a rename does not change a count:
+    //   ls db/migrations/*.sql | wc -l                                  -> 137
+    //   git ls-tree --name-only origin/main db/migrations/ | grep -c sql -> 137
+    // CI's own fixture agrees: "chain applied: 137 migrations
+    // (001_core_graph.sql … 146_remove_wake_budget_machinery.sql)".
+    expect(server.appliedMigrations.length).toBe(137);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

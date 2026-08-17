@@ -389,7 +389,7 @@ When a work session responds:
 
 > ### ⚠ THE BUDGET DESCRIBED BELOW WAS REMOVED — by migrations `120` and `135`
 >
-> Everything from here to the end of §10 describes the retired **agent wake budget**. `120_remove_agent_wake_budget.sql` first deleted the cap; `135_remove_wake_budget_machinery.sql` then removed the table, counter, reset/cleanup functions, delivery pair columns, and copied version claim. **A session may wake another session as many times as the work needs.** The adopted text is kept verbatim below because it is the record of what was adopted; read it as history, not as behaviour.
+> Everything from here to the end of §10 describes the retired **agent wake budget**. `120_remove_agent_wake_budget.sql` first deleted the cap; `146_remove_wake_budget_machinery.sql` then removed the table, counter, reset/cleanup functions, delivery pair columns, and copied version claim. **A session may wake another session as many times as the work needs.** The adopted text is kept verbatim below because it is the record of what was adopted; read it as history, not as behaviour.
 >
 > What is still true, and is load-bearing after `135`:
 >

@@ -1,5 +1,15 @@
 -- =============================================================================
--- 133  A CHAT TURN NOW CARRIES THE FILES THE HUMAN ATTACHED TO IT.
+-- 144  A CHAT TURN NOW CARRIES THE FILES THE HUMAN ATTACHED TO IT.
+--
+-- RENUMBERED FROM 133. This file was merged as `133_chat_turn_attachments.sql`
+-- while `133_chat_turns_select.sql` already held 133 on main, so the chain had a
+-- duplicate prefix and db/migrate.mjs (:146) refused to run any of it. 133 stays
+-- with `chat_turns_select`, which is the copy already recorded in the
+-- `applied_migrations` ledger on the deployed nodes; the ledger keys on
+-- FILENAME, so renaming the applied one would re-apply it and desynchronise
+-- prod. This unapplied file takes the next free prefix instead. It replaces
+-- `public.claim_next_chat_turn`, which nothing in 134..143 touches, so moving it
+-- after them changes no definition but its own.
 --
 -- THE DEFECT, measured on the applied chain. `messages.post` validates a
 -- message's attachments (019's `w2_validate_attachment_files`), writes them to
