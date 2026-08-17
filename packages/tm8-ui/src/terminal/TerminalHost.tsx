@@ -27,6 +27,7 @@ export function TerminalHost({
   hostRef,
   ariaLabel = 'Terminal',
   onPointerDown,
+  busy = false,
 }: {
   placeholder?: string;
   /** Where the pool will reparent the xterm element at integration. */
@@ -34,6 +35,8 @@ export function TerminalHost({
   ariaLabel?: string;
   /** Interactive terminals use this to reclaim xterm's hidden textarea. */
   onPointerDown?: React.PointerEventHandler<HTMLDivElement>;
+  /** Announces and visually covers xterm while its initial replay is hydrating. */
+  busy?: boolean;
 }) {
   const hintId = useId();
   return (
@@ -44,11 +47,17 @@ export function TerminalHost({
         role="group"
         aria-label={ariaLabel}
         aria-describedby={hintId}
+        aria-busy={busy || undefined}
         data-testid="terminal-host"
         onPointerDown={onPointerDown}
       >
         {placeholder ? (
-          <p className="term-host__ghost" data-testid="terminal-host-placeholder">
+          <p
+            className="term-host__ghost"
+            data-testid="terminal-host-placeholder"
+            role={busy ? 'status' : undefined}
+            aria-live={busy ? 'polite' : undefined}
+          >
             {placeholder}
           </p>
         ) : null}

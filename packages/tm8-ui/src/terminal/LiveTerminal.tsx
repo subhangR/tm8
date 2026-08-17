@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
@@ -9,8 +9,10 @@ import { dispatchClipboardData } from './clipboardPaste.js';
 import { uploadClipboardFile } from './clipboardUpload.js';
 import { copyToClipboardOrWarn } from './domUtils.js';
 import { notifyUser } from './notifications.js';
+import { isElementPaintable } from './pty/elementVisibility.js';
 import { ptyTransport } from './pty/ptyTransport.js';
 import { mintPtyAttachGrant } from './pty/ptyGrant.js';
+import { writeTerminalReplay } from './pty/replayHydration.js';
 import { readActivePass } from '../auth/pass-store';
 import { registerTerminal } from './pty/runtime.js';
 import {
@@ -19,6 +21,7 @@ import {
   serverPtySizes,
   setLastFittedSize,
 } from './pty/terminalSize.js';
+import { reconcileTerminalVisibility } from './pty/visibilityDriver.js';
 import {
   TERMINAL_CURSOR_INACTIVE_STYLE,
   TERMINAL_CURSOR_STYLE,
@@ -105,6 +108,8 @@ export interface LiveTerminalProps {
   serverBaseUrl?: string;
   /** False renders the terminal read-only (stdin disabled). */
   live: boolean;
+  /** True while this retained xterm is the selected, paintable surface. */
+  active?: boolean;
   /** Focus stdin as soon as this intentionally-interactive terminal mounts. */
   autoFocus?: boolean;
   onResize?: (sessionId: string, size: { cols: number; rows: number }) => void;
@@ -123,7 +128,7 @@ export interface LiveTerminalProps {
  * (maestro main ef0dcbe) rather than a user setting.
  */
 export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(function LiveTerminal(
-  { sessionId, serverBaseUrl = '', live, autoFocus = false, onResize, onExit },
+  { sessionId, serverBaseUrl = '', live, active = true, autoFocus = false, onResize, onExit },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -131,13 +136,24 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   const fitRef = useRef<FitAddon | null>(null);
   const resizeRafRef = useRef<number | null>(null);
   const resizeTimeoutRef = useRef<number | null>(null);
+  const scheduleResizeRef = useRef<() => void>(() => undefined);
   const resizeRetryCountRef = useRef(0);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const fontsReadyRef = useRef(false);
+  const activeRef = useRef(active);
+  const attachedRef = useRef(false);
+  const fittedRef = useRef(false);
+  const awaitingReplayRef = useRef(false);
+  const hydratingRef = useRef(false);
+  const hydrationGenerationRef = useRef(0);
+  const hydrationTimerRef = useRef<number | null>(null);
+  const hydrationRafRef = useRef<number | null>(null);
   const readOnlyRef = useRef(!live);
   const onResizeRef = useRef(onResize);
   const onExitRef = useRef(onExit);
+  const [renderReady, setRenderReady] = useState(false);
 
+  activeRef.current = active;
   readOnlyRef.current = !live;
   onResizeRef.current = onResize;
   onExitRef.current = onExit;
@@ -149,6 +165,10 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   useEffect(() => {
     const container = hostRef.current;
     if (!container || termRef.current) return;
+    attachedRef.current = false;
+    fittedRef.current = false;
+    awaitingReplayRef.current = false;
+    setRenderReady(false);
 
     const term = new Terminal({
       allowProposedApi: true,
@@ -180,9 +200,16 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     // their existing non-stealing mount behaviour.
     if (autoFocus && !readOnlyRef.current) term.focus();
 
-    const finishReplayHydration = () => {
-      requestAnimationFrame(() => {
-        if (!term.element) return;
+    const finishReplayHydration = (generation: number) => {
+      if (generation !== hydrationGenerationRef.current || !hydratingRef.current) return;
+      if (hydrationTimerRef.current !== null) {
+        window.clearTimeout(hydrationTimerRef.current);
+        hydrationTimerRef.current = null;
+      }
+      hydratingRef.current = false;
+      hydrationRafRef.current = requestAnimationFrame(() => {
+        hydrationRafRef.current = null;
+        if (generation !== hydrationGenerationRef.current || !term.element) return;
         try {
           term.scrollToBottom();
           term.refresh(0, term.rows - 1);
@@ -190,6 +217,10 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
           // Terminal may have been evicted after parsing the last replay byte.
         }
         term.element.style.removeProperty('visibility');
+        setRenderReady(fittedRef.current);
+        resizeRetryCountRef.current = 0;
+        scheduleResizeRef.current();
+        reconcileTerminalVisibility();
       });
     };
     const hydrateReplay = (data: string) => {
@@ -197,11 +228,23 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       // Hide imperative xterm DOM until its async parser reaches the final
       // replay byte; otherwise a retained full-screen TUI visibly redraws
       // top-to-bottom.
+      const generation = ++hydrationGenerationRef.current;
+      awaitingReplayRef.current = false;
+      hydratingRef.current = true;
+      setRenderReady(false);
       term.element.style.visibility = 'hidden';
       try {
-        term.write(data, finishReplayHydration);
+        if (data.length > 0) {
+          // A parser fault must degrade to a visible partial terminal, never a
+          // permanent black box. The callback normally wins quickly.
+          hydrationTimerRef.current = window.setTimeout(
+            () => finishReplayHydration(generation),
+            5000,
+          );
+        }
+        writeTerminalReplay(term, data, () => finishReplayHydration(generation));
       } catch {
-        term.element.style.removeProperty('visibility');
+        finishReplayHydration(generation);
       }
     };
 
@@ -211,9 +254,13 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       const currentTerm = termRef.current;
       const currentFit = fitRef.current;
       if (!currentTerm || !currentFit || !currentTerm.element) return;
+      if (!activeRef.current || !isElementPaintable(container)) return;
       const rect = container.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-      if (getComputedStyle(container).visibility === 'hidden') return;
+      if (rect.width === 0 || rect.height === 0) {
+        resizeRetryCountRef.current += 1;
+        scheduleResize();
+        return;
+      }
       if (!fontsReadyRef.current || !isXtermRendererReady(currentTerm)) {
         resizeRetryCountRef.current += 1;
         scheduleResize();
@@ -229,6 +276,17 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       resizeRetryCountRef.current = 0;
       const { cols, rows } = currentTerm;
       if (cols <= 0 || rows <= 0) return;
+      fittedRef.current = true;
+      container.dataset.cols = String(cols);
+      container.dataset.rows = String(rows);
+      try {
+        currentTerm.refresh(0, rows - 1);
+      } catch {
+        // A later activation/ResizeObserver pass will repaint.
+      }
+      if (attachedRef.current && !awaitingReplayRef.current && !hydratingRef.current) {
+        setRenderReady(true);
+      }
       clientFittedSessions.add(sessionId);
       // RECLAIM ON ACTIVATION (maestro 0539726): read the shared PTY's last-
       // known truth BEFORE this view overwrites it with its own just-fitted
@@ -249,6 +307,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     };
 
     const scheduleResize = () => {
+      if (!activeRef.current) return;
       if (resizeRafRef.current !== null || resizeTimeoutRef.current !== null) return;
       const attempts = resizeRetryCountRef.current;
       if (attempts < 5) {
@@ -264,6 +323,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         sendResize();
       }, delay);
     };
+    scheduleResizeRef.current = scheduleResize;
 
     const forceFontReflow = () => {
       if (!term.element) return;

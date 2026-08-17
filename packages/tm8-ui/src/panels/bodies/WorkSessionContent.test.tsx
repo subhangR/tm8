@@ -116,6 +116,28 @@ describe('WorkSessionContent', () => {
     expect(onMount).toHaveBeenCalledTimes(1);
   });
 
+  it('tells a retained terminal when its surface becomes hidden and visible again', () => {
+    const activity: boolean[] = [];
+    render(
+      <WorkSessionContent
+        sessionId="01900000-0000-7000-8000-000000000019"
+        profile={null}
+        terminal={(active) => {
+          activity.push(active);
+          return <div>render-aware terminal</div>;
+        }}
+        chat={<div>explicit chat</div>}
+        debug={<div>debug journal</div>}
+      />,
+    );
+
+    expect(activity.at(-1)).toBe(true);
+    fireEvent.click(screen.getByRole('tab', { name: 'Debug' }));
+    expect(activity.at(-1)).toBe(false);
+    fireEvent.click(screen.getByRole('tab', { name: 'Terminal' }));
+    expect(activity.at(-1)).toBe(true);
+  });
+
   // USER RULING 2026-08-01 — the default is always Terminal, for every session.
   it('opens on Terminal even when the pin projects Chat as its initial surface', () => {
     render(

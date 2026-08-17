@@ -19,7 +19,8 @@ export interface WorkSessionContentProps {
   profile?: WorkSessionInteractionProfileProjection | null;
   /** Explicit route selection. It outranks the viewer-local preference. */
   requestedSurface?: ContentSurface | null;
-  terminal: ReactNode;
+  /** A render function receives whether the retained terminal is paintable. */
+  terminal: ReactNode | ((active: boolean) => ReactNode);
   chat: ReactNode;
   /**
    * The DEBUG surface (the session's CLI journal). Always offered — it does not
@@ -229,7 +230,7 @@ export function WorkSessionContent({
         data-active={surface === 'terminal' ? 'true' : 'false'}
         data-testid="work-session-terminal-surface"
       >
-        {terminal}
+        {typeof terminal === 'function' ? terminal(surface === 'terminal') : terminal}
       </div>
       {chatAvailable ? (
         <div

@@ -950,9 +950,10 @@ function PanelBody(
         requestedSurface={props.contentSurface}
         onSurfaceChange={props.onContentSurfaceChange}
         switchSlot={props.surfaceSlot}
-        terminal={
+        terminal={(active) => (
           <TerminalBody
             detail={detail}
+            active={active}
             serverBaseUrl={props.serverBaseUrl}
             liveness={props.liveness ?? 'unknown'}
             streaming={props.streaming}
@@ -967,7 +968,7 @@ function PanelBody(
             {...(props.onResumeSession ? { onResume: props.onResumeSession } : {})}
             {...(props.resumingSession ? { resuming: props.resumingSession } : {})}
           />
-        }
+        )}
         chat={props.chatSurface ?? (
           <p className="pn-surface-host-missing" role="alert">
             Chat is enabled for this session, but its feed host is unavailable.

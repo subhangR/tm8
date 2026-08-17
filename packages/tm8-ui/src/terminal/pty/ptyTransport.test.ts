@@ -97,6 +97,22 @@ describe('pty transport — offset resume', () => {
     expect(reattached).toEqual([]); // a first attach is not a reset
   });
 
+  it('reports whether attach completion is waiting for a replay frame', () => {
+    const attached: Array<{ id: string; hasReplay: boolean }> = [];
+    const off = ptyTransport.onAttached((id, info) => attached.push({ id, ...info }));
+    ptyTransport.openSession('s1');
+
+    last().text({ type: 'attached', base: 0, gap: 0, next: 8, hasReplay: true, epoch: 'e1' });
+    last().bin('history');
+    last().text({ type: 'attached', base: 8, gap: 0, next: 8, hasReplay: false, epoch: 'e1' });
+
+    expect(attached).toEqual([
+      { id: 's1', hasReplay: true },
+      { id: 's1', hasReplay: false },
+    ]);
+    off();
+  });
+
   it('routes a remote session through the selected server relay', () => {
     ptyTransport.openSession('s1', '/v2/server-connections/ec2/proxy');
     const url = new URL(last().url);

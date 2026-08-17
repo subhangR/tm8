@@ -43,6 +43,8 @@ import { ShareDropTarget } from '../share/ShareDropTarget';
 
 export interface TerminalBodyProps {
   detail: EntityDetail;
+  /** True while the retained terminal surface is the selected, paintable tab. */
+  active?: boolean;
   /** Same-origin route prefix for the tm8 server that owns this session. */
   serverBaseUrl?: string;
   /** THE verdict — `seam.liveness.statusOf`. Never derived here. */
@@ -74,6 +76,7 @@ export interface TerminalBodyProps {
 
 export function TerminalBody({
   detail,
+  active = true,
   serverBaseUrl,
   liveness,
   streaming,
@@ -164,6 +167,7 @@ export function TerminalBody({
         <SessionCanvas
           presentation={presentation}
           sessionId={detail.id}
+          active={active}
           serverBaseUrl={serverBaseUrl}
           livenessLabel={livenessLabel}
           livenessReason={livenessReason}
@@ -389,6 +393,7 @@ function SessionContextHeader({
 function SessionCanvas({
   presentation,
   sessionId,
+  active,
   serverBaseUrl,
   livenessLabel,
   livenessReason,
@@ -400,6 +405,7 @@ function SessionCanvas({
 }: {
   presentation: ReturnType<typeof presentSession>;
   sessionId: string;
+  active: boolean;
   serverBaseUrl?: string;
   livenessLabel?: string;
   livenessReason?: string;
@@ -421,6 +427,7 @@ function SessionCanvas({
           sessionId={sessionId}
           serverBaseUrl={serverBaseUrl}
           live
+          active={active}
         />
       ) : (
         <TerminalHost placeholder={TERMINAL_PLACEHOLDER} />

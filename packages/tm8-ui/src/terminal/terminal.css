@@ -238,6 +238,10 @@
   white-space: pre-line;
   padding: 0 12px;
 }
+.cv2-root .term-host__ghost[role='status'] {
+  z-index: 2;
+  background: var(--pn-x-term-bg);
+}
 
 /* --- "⚠ needs you" banner ------------------------------------------------ */
 /* A full-width strip between the chrome and the canvas, not a pill: an agent
