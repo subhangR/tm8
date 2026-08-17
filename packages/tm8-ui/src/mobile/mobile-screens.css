@@ -114,6 +114,20 @@
   border-right: none;
 }
 
+/* The aux column is inside a SHEET on the phone, and the sheet draws the
+   header — the crumb, the title, the close. The column's own head would stack
+   a second crumb row under the first, with an `esc` chip on a device that has
+   no Escape key: the exact look of a desktop column dropped into a phone
+   without being reconsidered. Its border-left separated it from a detail
+   column that is no longer beside it. */
+.cv2-root[data-shell='mobile'] .ev-aux__head {
+  display: none;
+}
+
+.cv2-root[data-shell='mobile'] .ev-aux {
+  border-left: none;
+}
+
 /* --------------------------------------------------------------------------
    4. NO DRAG HANDLES
 
