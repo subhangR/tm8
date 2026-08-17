@@ -49,7 +49,6 @@
   font-size: 11px;
 }
 
-.tch-new,
 .tch-send,
 .tch-stop {
   border: 1px solid var(--pn-line-2);
@@ -63,7 +62,6 @@
   cursor: pointer;
 }
 
-.tch-new:hover,
 .tch-stop:hover {
   background: var(--pn-hover);
 }
@@ -207,12 +205,21 @@
 
 .tch-turn__byline {
   display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
   align-items: center;
   gap: 6px;
   margin-bottom: var(--pn-space-2);
   color: var(--pn-ink-3);
   font-size: 10px;
 }
+
+/* Byline sidedness: the viewer's identity block sits left, everyone else's
+   right — avatar, name, mode chip and timestamp travel as ONE unit. Purely
+   visual: `justify-content`, never `row-reverse`, so DOM order (and with it
+   screen-reader and tab order) is identical on both sides. Bodies
+   (`tch-user-body`, `tch-parts`) are siblings and do not move. */
+.tch-turn[data-self='false'] .tch-turn__byline { justify-content: flex-end; }
 
 .tch-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
 .tch-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
@@ -586,47 +593,8 @@ button.tch-entity-chip:hover {
   border-color: color-mix(in srgb, var(--pn-wait) 45%, var(--pn-border));
 }
 
-.tch-composer {
-  /* VISIBLE, and that is a change with a reason: the skill picker pins above
-     the field (`.ri-host` + `.ri-popover`), and `hidden` clips an absolutely
-     positioned descendant. It was here to round the textarea's corners
-     against the card, and the textarea's background is transparent — so the
-     rounding it bought was already the card's own. */
-  overflow: visible;
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-md);
-  background: var(--pn-card);
-  box-shadow: var(--pn-sh-md);
-}
-
-.tch-composer:focus-within { border-color: var(--pn-brand); }
-
-.tch-composer textarea {
-  display: block;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 58px;
-  resize: none;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--pn-ink);
-  font: 13px/1.45 var(--pn-ui);
-  padding: 11px 12px 4px;
-}
-
-.tch-composer textarea::placeholder { color: var(--pn-ink-4); }
-
-.tch-composer__foot {
-  display: flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 3px 7px 6px 11px;
-}
-
-/* Chips and the paste refusal sit ABOVE the field, inside the composer card,
-   so an attachment reads as part of the message being written. */
-.tch-composer .ri-attachments { padding: 9px 11px 0; }
+/* The card shell (border, field, foot geometry) is `ComposerCard`'s —
+   `.ri-card` in rich-input.css. Only what is genuinely Chat Home's stays. */
 
 /* The two sigil-and-file controls in the footer. Sized to the phase label
    beside them rather than to the Send button, which is the primary. */
@@ -670,6 +638,33 @@ button.tch-entity-chip:hover {
 
 .tch-send[aria-disabled='true'] { opacity: 0.42; cursor: default; }
 .tch-stop { color: var(--pn-block); }
+
+/* The send button carrying the agent-running state: same footprint, plus a
+   spinner. Disabled here means "no interrupt on this node", not "inert UI",
+   so it keeps more presence than a refused send. */
+.tch-send--working {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tch-send--working[aria-disabled='true'] { opacity: 0.72; cursor: default; }
+
+.tch-spin {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--pn-card) 40%, transparent);
+  border-top-color: var(--pn-card);
+  animation: tch-spin 0.8s linear infinite;
+}
+
+@keyframes tch-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tch-spin { animation-duration: 2.4s; }
+}
 
 .tch-loading,
 .tch-thinking {
@@ -723,32 +718,51 @@ button.tch-entity-chip:hover {
    time-grouped, with the launch actions, the loaded-list filter, and the
    slots/workspace foot. */
 
-.tch-sidebar__actions {
+/* THE ROOT HEADER (task 01a00932 R5): [Chats ＋][Kind ＋ ▾]. Two segmented
+   cells sharing one strip — the label half switches the root, the ＋ half
+   creates, the caret opens the kind menu. Labels only — no counts (D16). */
+/* THE ROOT HEADER LINE — the segmented tablist, plus the hosted list's layout
+   switcher pinned to the right. The margin moved OFF `.tch-roots` and onto
+   this bar so both halves share one line box; the tablist keeps its own
+   border and background, which is what makes the switcher read as beside the
+   segmented control rather than inside it. */
+.tch-rootbar {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
   flex: none;
-  padding: var(--pn-space-2) var(--pn-space-3) 0;
-}
-.tch-sidebar__actions .tch-new { flex: 1; text-align: center; }
-.tch-new--task { background: var(--pn-active); }
-.tch-new--task[aria-disabled='true'] {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-/* D1: the tab strip. Labels only — no counts (D16). */
-.tch-tabs {
-  display: flex;
-  gap: 2px;
-  flex: none;
+  min-width: 0;
   margin: var(--pn-space-2) var(--pn-space-3) 0;
+}
+/* The tablist takes the slack and the switcher takes its natural width: the
+   kind label already ellipsizes (`.tch-rootcell__label`), so a long plural
+   like "Work sessions" shortens itself rather than pushing the switcher out
+   of the 280px column. */
+.tch-rootbar > .tch-roots { flex: 1; min-width: 0; }
+.tch-rootbar > .lp__views { flex: none; }
+
+.tch-roots {
+  display: flex;
+  gap: 4px;
+  flex: none;
   padding: 2px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
   background: var(--pn-card);
 }
-.tch-tab {
-  flex: 1;
+.tch-rootcell {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+}
+.tch-rootcell--kind { flex: 1; min-width: 0; }
+.tch-rootcell__label,
+.tch-rootcell__plus,
+.tch-rootcell__caret {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 4px 6px;
   border: 0;
   border-radius: calc(var(--pn-r-sm) - 2px);
@@ -758,13 +772,61 @@ button.tch-entity-chip:hover {
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
-.tch-tab:hover { color: var(--pn-ink); }
-.tch-tab--active,
-.tch-tab[aria-selected='true'] {
-  background: var(--pn-active);
-  color: var(--pn-ink);
+.tch-rootcell__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tch-rootcell--kind .tch-rootcell__label { flex: 1; }
+.tch-rootcell__plus,
+.tch-rootcell__caret {
+  flex: none;
+  padding: 4px 5px;
 }
+.tch-rootcell__plus[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.tch-rootcell__label:hover,
+.tch-rootcell__plus:hover,
+.tch-rootcell__caret:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.tch-rootcell--active { background: var(--pn-active); }
+.tch-rootcell--active .tch-rootcell__label { color: var(--pn-ink); }
+.tch-rootcell__glyph { display: inline-flex; flex: none; }
+
+/* The kind menu — a portal-free popover is safe here: the sidebar clips
+   nothing (`.tch-sidebar` declares no overflow), unlike the panel tiles. */
+.tch-rootmenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 168px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-shadow-2, 0 8px 24px rgba(16, 18, 24, 0.16));
+}
+.tch-rootopt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.tch-rootopt:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.tch-rootopt--current { background: var(--pn-active); color: var(--pn-ink); }
 
 /* A tile groups a row button with its NON-BUTTON siblings (the Run control,
    the badge sub-row — PR chips carry real links, which cannot nest inside a

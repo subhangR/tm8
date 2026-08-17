@@ -49,11 +49,12 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
     // then `memory`, `worktree` and `artifact` landed the same day → 19;
-    // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20.
+    // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20;
+    // then `graph` joined with migration 135 (Craft P1) → 21.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(20);
+    expect(CORE_KINDS.length).toBe(21);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });

@@ -13,21 +13,29 @@
  * The word "touch" is retired (R13) — it meant "mutated" on one surface and
  * "mentioned" on the other.
  *
- * Visual language is the session-graph family's (`sg-*` classes, registry
- * icon art), so the fourth chip's graph and this one read as relatives.
+ * This is the INLINE HOST: it folds the thread, reads connections for the
+ * DRAWN seeds only (the reads are the real cost of a bigger canvas, plan
+ * 01a0094b D3), resolves late titles, and hands the drawing to the shared
+ * `InducedGraphCanvas` the fullscreen view reuses.
  */
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
-import { getKind } from '../domain';
-import { HUB_DEGREE } from '../session-graph/model';
 import type { ConnectionsReader } from '../session-graph/load';
 import '../session-graph/session-graph.css';
 import './chat-entity-graph.css';
 import { resolveChatEntity, type ChatEntityResolver } from './EntityChip';
 import type { ChatEntityRef } from './entity-refs';
+import { ChatEntityGraphFullscreen, MAX_DRAWN_FULL } from './ChatEntityGraphFullscreen';
 import { foldGraphSeeds } from './graph-seeds';
-import { buildInducedGraph, type InducedNode } from './induced-graph';
-import { CARD_H, CARD_W, layoutInducedGraph, type PlacedLine } from './induced-layout';
+import { buildInducedGraph } from './induced-graph';
+import {
+  anyGraphFilterActive,
+  applyGraphFilters,
+  decodeGraphFilters,
+  encodeGraphFilters,
+} from './graph-view';
+import { InducedGraphCanvas } from './InducedGraphCanvas';
+import { layoutInducedGraph } from './induced-layout';
 import type { ChatTurn } from './types';
 import { useInducedConnections } from './use-induced-connections';
 
@@ -41,6 +49,23 @@ export interface ChatEntityGraphProps {
   /** Shared lazy title resolution (R7c) for ids no edge payload named. */
   resolveEntity?: ChatEntityResolver | undefined;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
+  /**
+   * FULLSCREEN IS A URL (plan 01a0094b D2): the host maps `?graph=full` here
+   * and `onExpandedChange` navigates the param on/off — this component never
+   * owns the open state, so Back closes and a reload restores. Hosts without
+   * routing simply omit the pair and get the inline strip unchanged.
+   */
+  expanded?: boolean | undefined;
+  onExpandedChange?: ((open: boolean) => void) | undefined;
+  /**
+   * `?gf=` — the graph's serialised filter state (step 5), carried by the
+   * host the same route-owned way `expanded` is. This component decodes it
+   * (leniently — graph-view.ts owns the vocabulary), applies it to the
+   * inline canvas, and hands the fullscreen rail's edits back encoded.
+   * Filters chosen fullscreen keep shaping the inline strip after Back.
+   */
+  graphFilters?: string | null | undefined;
+  onGraphFiltersChange?: ((encoded: string | null) => void) | undefined;
 }
 
 export function ChatEntityGraph({
@@ -49,20 +74,63 @@ export function ChatEntityGraph({
   connections,
   resolveEntity,
   onOpenEntity,
+  expanded,
+  onExpandedChange,
+  graphFilters,
+  onGraphFiltersChange,
 }: ChatEntityGraphProps) {
   const [open, setOpen] = useState(true);
-  const { seeds, overflow } = useMemo(
+  const fold = useMemo(
     () => foldGraphSeeds(turns, suppressEntityIds),
     [turns, suppressEntityIds],
   );
-  const seedIds = useMemo(() => seeds.map((seed) => seed.id), [seeds]);
+  const { drawn, overflow } = fold;
+
+  /* STEP 7 (D3): fullscreen draws up to MAX_DRAWN_FULL, and the reads — the
+     real cost — widen only once the viewer has actually opened it. Sticky by
+     design: the per-id read cache lives for this mount, so closing the
+     dialog keeps everything already read instead of forgetting it. */
+  const [everExpanded, setEverExpanded] = useState(expanded === true);
+  useEffect(() => {
+    if (expanded) setEverExpanded(true);
+  }, [expanded]);
+  const fullFold = useMemo(
+    () =>
+      everExpanded
+        ? foldGraphSeeds(turns, suppressEntityIds, { limit: MAX_DRAWN_FULL })
+        : null,
+    [everExpanded, turns, suppressEntityIds],
+  );
+
+  const seedIds = useMemo(
+    () => (fullFold?.drawn ?? drawn).map((seed) => seed.id),
+    [fullFold, drawn],
+  );
   const read = useInducedConnections(seedIds, connections);
-  const graph = useMemo(() => buildInducedGraph(seeds, read), [seeds, read]);
+  /* Inline stays the 64-seed drawing (D3: no regression); the wider read map
+     is harmless here — the build only looks up its own seeds. */
+  const graph = useMemo(() => buildInducedGraph(drawn, read), [drawn, read]);
+  const fullGraph = useMemo(
+    () => (fullFold ? buildInducedGraph(fullFold.drawn, read) : null),
+    [fullFold, read],
+  );
+
+  /* Step 5 — the URL's filters shape the inline drawing too, and the strip
+     echoes the loss read-only: the honesty rule says a hidden card always
+     leaves a visible count behind. */
+  const filters = useMemo(() => decodeGraphFilters(graphFilters), [graphFilters]);
+  const filtersActive = anyGraphFilterActive(filters);
+  const filtered = useMemo(
+    () => (filtersActive ? applyGraphFilters(graph, filters) : null),
+    [filtersActive, graph, filters],
+  );
+  const shown = filtered?.graph ?? graph;
 
   /* R7c — the resolver is the LAST resort: only ids that neither an edge
-     payload nor the extraction titled, through the same cache the chips use. */
+     payload nor the extraction titled, through the same cache the chips use.
+     The WIDER drawing's nodes resolve too once fullscreen has opened. */
   const [late, setLate] = useState<ReadonlyMap<string, ChatEntityRef>>(new Map());
-  const unresolvedKey = graph.nodes
+  const unresolvedKey = (fullGraph ?? graph).nodes
     .filter((node) => !node.resolvedTitle && !late.has(node.id))
     .map((node) => node.id)
     .join(',');
@@ -85,169 +153,107 @@ export function ChatEntityGraph({
     };
   }, [resolveEntity, unresolvedKey]);
 
-  const placement = useMemo(() => layoutInducedGraph(graph), [graph]);
+  const placement = useMemo(() => layoutInducedGraph(shown), [shown]);
+
+  /* Focus returns to Expand when the fullscreen dialog closes (step 4). */
+  const expandRef = useRef<HTMLButtonElement | null>(null);
+  const wasExpanded = useRef(false);
+  useEffect(() => {
+    if (wasExpanded.current && !expanded) expandRef.current?.focus();
+    wasExpanded.current = expanded === true;
+  }, [expanded]);
 
   /* R12 — degenerate cases. Zero seeds: nothing at all, not even a header. */
-  if (seeds.length === 0) return null;
+  if (drawn.length === 0) return null;
 
   const n = graph.nodes.length;
   const single = n === 1;
   const allIsolated = !single && graph.edges.length === 0 && graph.unreadCount === 0;
-  const caption = [
-    `${n} ${n === 1 ? 'entity' : 'entities'}`,
-    ...(single ? [] : [`${graph.relationCount} ${graph.relationCount === 1 ? 'relation' : 'relations'}`]),
-    ...(graph.unreadCount > 0 ? [`${graph.unreadCount} not read`] : []),
-    ...(overflow > 0 ? [`+${overflow} more not drawn`] : []),
-  ].join(' · ');
+  const caption = captionOf(graph, overflow);
+  /* The dialog states ITS OWN drawing's numbers — at the wider cap the
+     inline split's "+N more not drawn" would be a lie about this canvas. */
+  const fullCaption = fullGraph && fullFold ? captionOf(fullGraph, fullFold.overflow) : caption;
 
   return (
     <div className="ceg" data-testid="chat-entity-graph">
-      <button
-        type="button"
-        className="ceg__toggle"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        title="Entities this conversation referenced, and the relations they hold in the graph"
-      >
-        {`${open ? '▾' : '▸'} Entity graph`}
-        <span className="ceg__count">{caption}</span>
-      </button>
+      <div className="ceg__head">
+        <button
+          type="button"
+          className="ceg__toggle"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+          title="Entities this conversation referenced, and the relations they hold in the graph"
+        >
+          {`${open ? '▾' : '▸'} Entity graph`}
+          <span className="ceg__count">{caption}</span>
+        </button>
+        {onExpandedChange ? (
+          <button
+            type="button"
+            className="ceg__expand"
+            ref={expandRef}
+            title="Open the graph fullscreen"
+            onClick={() => onExpandedChange(true)}
+          >
+            ⛶ Expand
+          </button>
+        ) : null}
+      </div>
+      {expanded && onExpandedChange ? (
+        <ChatEntityGraphFullscreen
+          graph={fullGraph ?? graph}
+          fold={fullFold ?? fold}
+          caption={fullCaption}
+          filters={filters}
+          onFiltersChange={(next) => onGraphFiltersChange?.(encodeGraphFilters(next))}
+          late={late}
+          onOpenEntity={onOpenEntity}
+          onClose={() => onExpandedChange(false)}
+        />
+      ) : null}
       {open ? (
         <div className="ceg__canvas">
+          {filtered ? (
+            <p className="ceg__note" data-testid="ceg-filter-echo">
+              {[
+                `Filtered: showing ${filtered.graph.nodes.length} of ${graph.nodes.length}`,
+                ...(filtered.hiddenNodes > 0 ? [`${filtered.hiddenNodes} hidden`] : []),
+                ...(filtered.hiddenEdges > 0 ? [`${filtered.hiddenEdges} relations hidden`] : []),
+              ].join(' · ')}
+            </p>
+          ) : null}
           {allIsolated ? (
             <p className="ceg__note">These entities hold no relations to each other.</p>
           ) : null}
-          <svg
-            className="sg-svg"
-            viewBox={`0 0 ${placement.width} ${placement.height}`}
-            preserveAspectRatio="xMidYMid meet"
-            role="img"
-            aria-label={
+          <InducedGraphCanvas
+            placement={placement}
+            ariaLabel={
               single
                 ? 'Entity graph: 1 entity'
                 : `Entity graph: ${n} entities, ${graph.relationCount} relations`
             }
-          >
-            {placement.lines.map((line) => (
-              <RelationLine key={line.edge.key} line={line} />
-            ))}
-            {placement.cards.map((card) => (
-              <EntityCard
-                key={card.node.id}
-                node={card.node}
-                x={card.x}
-                y={card.y}
-                late={late.get(card.node.id)}
-                onOpen={onOpenEntity}
-              />
-            ))}
-          </svg>
+            late={late}
+            onOpenEntity={onOpenEntity}
+          />
         </div>
       ) : null}
     </div>
   );
 }
 
-/** One merged line (R4): the pair's whole relation set, each relation keeping
- *  its own direction. Labels are humanised relation types — never tool names. */
-function RelationLine({ line }: { line: PlacedLine }) {
-  return (
-    <g className="ceg-line">
-      <path className="sg-link" d={`M ${line.x1} ${line.y1} Q ${line.cx} ${line.cy} ${line.x2} ${line.y2}`} />
-      <text className="sg-meta ceg-line__labels" x={line.lx} y={line.ly} textAnchor="middle">
-        {line.edge.relations.map((relation, index) => (
-          <tspan key={`${relation.type}:${relation.from}`} x={line.lx} dy={index === 0 ? 0 : 12}>
-            {relation.from === line.edge.a ? `${relation.label} ⟶` : `⟵ ${relation.label}`}
-          </tspan>
-        ))}
-      </text>
-    </g>
-  );
-}
-
-function EntityCard({
-  node,
-  x,
-  y,
-  late,
-  onOpen,
-}: {
-  node: InducedNode;
-  x: number;
-  y: number;
-  late: ChatEntityRef | undefined;
-  onOpen?: ((id: EntityId) => void) | undefined;
-}) {
-  const kind = node.resolvedTitle ? node.kind : (late?.kind ?? node.kind);
-  const title = node.resolvedTitle ? node.title : (late?.title ?? node.title);
-  const config = getKind(kind);
-  const hub = node.degree !== null && node.degree > HUB_DEGREE;
-  const status = !node.edgesRead
-    ? 'edges not read'
-    : node.mutated
-      ? 'edited in this conversation'
-      : 'read';
-  const label = `${config.label}: ${title} — ${status}`;
-  /* A card is a BUTTON only where the host can open the entity — the same
-     conditional-pressable rule the chips and the live-graph nodes hold. */
-  const pressable = onOpen
-    ? {
-        role: 'button',
-        tabIndex: 0,
-        onClick: () => onOpen(node.id as EntityId),
-        onKeyDown: (event: KeyboardEvent<SVGGElement>) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            onOpen(node.id as EntityId);
-          }
-        },
-      }
-    : {};
-  return (
-    <g
-      className={`sg-cell ceg-cell${node.mutated ? ' ceg-cell--mutated' : ''}`}
-      transform={`translate(${x} ${y})`}
-      aria-label={label}
-      {...pressable}
-    >
-      <rect
-        className="sg-box"
-        width={CARD_W}
-        height={CARD_H}
-        rx={8}
-        data-unread={node.edgesRead ? undefined : 'true'}
-        data-hub={hub ? 'true' : undefined}
-      />
-      <g className="sg-icon" transform={`translate(11 ${CARD_H / 2 - 8})`}>
-        {config.iconArt.map((d) => (
-          <path key={d} d={d} />
-        ))}
-      </g>
-      <text className="sg-title" x={33} y={17}>
-        {truncate(title, 17)}
-      </text>
-      <text className="sg-meta" x={33} y={30}>
-        {config.label}
-      </text>
-      {node.mutated ? (
-        <text className="sg-meta ceg-cell__flag" x={33} y={CARD_H - 14}>
-          edited here
-        </text>
-      ) : null}
-      {!node.edgesRead ? (
-        <text className="sg-meta ceg-cell__flag" x={33} y={CARD_H - 14}>
-          edges not read
-        </text>
-      ) : null}
-      {hub ? (
-        <text className="sg-count" x={CARD_W - 10} y={15} textAnchor="end">
-          {`${node.degree}${node.pageCapped ? '+' : ''} links`}
-        </text>
-      ) : null}
-    </g>
-  );
-}
-
-function truncate(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+/** The strip's honest arithmetic: entities, relations, unread, undrawn. */
+function captionOf(
+  graph: { nodes: readonly unknown[]; relationCount: number; unreadCount: number },
+  overflow: number,
+): string {
+  const n = graph.nodes.length;
+  const single = n === 1;
+  return [
+    `${n} ${single ? 'entity' : 'entities'}`,
+    ...(single
+      ? []
+      : [`${graph.relationCount} ${graph.relationCount === 1 ? 'relation' : 'relations'}`]),
+    ...(graph.unreadCount > 0 ? [`${graph.unreadCount} not read`] : []),
+    ...(overflow > 0 ? [`+${overflow} more not drawn`] : []),
+  ].join(' · ');
 }

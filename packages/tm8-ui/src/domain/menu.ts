@@ -17,11 +17,7 @@
  * deferred features out of the shipped MenuConfig — they surface only as
  * disabled palette-discovery rows (§4.2).
  */
-import {
-  DEFAULT_MENU_CHANNELS_SPINE,
-  DEFAULT_MENU_WORK_ITEM_SPINE,
-  type MenuConfig,
-} from '@tm8/contract';
+import { type MenuConfig } from '@tm8/contract';
 import { getKind } from './registry';
 import { CUSTOM_KIND_FALLBACK } from './types';
 
@@ -66,81 +62,80 @@ import { CUSTOM_KIND_FALLBACK } from './types';
 // view item, the graph/files posture). It PRESENTS the task collection; the
 // `task` kind row stays in the Workspace caret, so this is a second door to
 // tasks, not a move.
-export const SHIPPED_DEFAULT_MENU_REVISION = 16;
+// Revision 17 (2026-08-16, unified Home — task 01a00932, migration 134): the
+// WORK and CHANNELS groups retire and the conversation tab is renamed HOME —
+//   Home | Board | Graph | Files | Settings.
+// Home's screen now lists chat threads OR any collection kind (the root
+// column + registry-driven icon rail, `domain/home-rail.ts`), so a Work tab
+// beside it would be a second door to every list Home already owns, and
+// Channels' contents await the redesigned Collab surface (R2: a later
+// feature). Nothing was deleted: `workspace`, `git`, `messages` and every
+// retired kind ref keep their routes, their chords and their menu-editor
+// eligibility — the 125/126/127 rail-edit posture.
+// 17 → 18 (2026-08-16, Craft P1 / migration 137): the CRAFT group joins
+// between Board and Graph.
+export const SHIPPED_DEFAULT_MENU_REVISION = 18;
 
 /**
- * The tab shell (revision 14, 2026-08-15), encoded literally — the GROUPS are
- * the top-row TABS and the rail renders only the active group's contents:
+ * The tab shell (revision 17, 2026-08-16 — task 01a00932), encoded literally
+ * — the GROUPS are the top-row TABS and the rail renders only the active
+ * group's contents:
  *
- *   Collab   → the conversation surface (view ref `dashboard`), two panes:
- *              the conversation LIST · the open conversation. No rail.
- *              (Group id `chats`; revision 15 renamed the LABEL only.)
- *   Work     → Workspace ▾ (caret: Tasks · Sessions · Docs · Teammates ·
- *              Memories · Artifacts · Loops · Files) ·
- *              Projects · Pull requests · Worktrees · Code (the git view)
+ *   Home     → the unified surface (view ref `dashboard`): the root column
+ *              (chat threads OR any collection kind's list, picked through
+ *              the [Chats ＋][Kind ＋ ▾] header and the screen's own icon
+ *              rail), the center (conversation or entity), the optional
+ *              right panel. No MENU rail — see below.
+ *              (Group id `chats`; 15 renamed the label to Collab, 17 to
+ *              Home. Ids are wire-stable; labels move.)
+ *   Board    → the task kanban, full-bleed (no rail)
  *   Graph    → the space picture (no rail)
- *   Channels → the channel collection · Messages, plus live voice rooms
- *              injected beneath (the dynamic group)
- *   Files    → the File browser view, its own tab (user amendment 2026-08-15)
+ *   Files    → the File browser view (no rail)
  *   Settings → Space settings (no rail)
  *
- * R3: the `code` GROUP is retired — "code is just part of the workspace" —
- * so its three kind collections become ordinary Work rows and the git
- * topology view survives as a plain Work row (reversible default D1: that
- * surface shipped in #167-#175 and is distinct from the three collections;
- * it is not deleted). R4: `chats` is renamed Channels — Home is the chat
- * view, Channels is the channel kind's own tab; `messages` rides with it
- * (reversible default D2). Nothing was deleted, only re-shelved: every ref
- * keeps its route, its chord and its menu-editor eligibility.
+ * WORK AND CHANNELS RETIRED HERE (revision 17). Home's root column lists
+ * every collection kind the registry offers, so a Work tab beside it was a
+ * second door to every one of its lists; Channels' contents (channel
+ * collection, Messages, voice rooms) await the redesigned Collab surface,
+ * which ships later as its own feature (R2). Nothing was deleted:
+ * `workspace`, `git`, `messages` and every retired kind ref keep their
+ * routes, their chords and their menu-editor eligibility — the same
+ * rail-edit-not-feature-removal posture as 125/126/127.
  *
- * THE CHATS TAB DRAWS NO RAIL (revision 14), and that is the whole of what
- * survives from 13. The group owns exactly one childless view item, so
- * `isRaillessGroup` answers true and the shell renders the screen full-bleed
- * beside the tab row — which is what keeps the surface at TWO panes. The
- * conversation LIST is the left one; it belongs to the screen, not to the
- * chrome, and it is the navigation. A rail here could only have repeated the
- * tab's own name, which is the redundancy 13 correctly objected to.
+ * THE HOME TAB DRAWS NO MENU RAIL, still: the group owns exactly one
+ * childless view item, so `isRaillessGroup` answers true and the shell
+ * renders the screen full-bleed beside the tab row. The ICON RAIL a viewer
+ * sees on Home is part of the SCREEN (`views/HomeRail.tsx`, fed by
+ * `domain/home-rail.ts`) — registry-derived, entities only — because the
+ * frozen menu DTO caps a group at 12 items and cannot carry every kind,
+ * and because the rail must equal the kind switcher by construction.
  *
- * `HOME_TARGET` in `views/GateApp.tsx` is unchanged: the conversation surface
- * is still where a viewer with no remembered place lands. The difference from
- * 13 is that the tab now reads CURRENT when you are standing there, instead of
- * no tab claiming the place at all.
+ * `HOME_TARGET` in `views/GateApp.tsx` is unchanged: the unified surface
+ * is still where a viewer with no remembered place lands.
  *
  * MESSAGES stays a VIEW and not a kind row for two independent reasons: the
  * `message` registry row is `strategy: 'anchored'` with `slug: null`, so
  * `isMenuEligibleKind` refuses it and the rail would fail closed; and the
  * DB's own twin (`internal.w2_normalize_menu_payload`) rejects a kind ref of
- * `message` outright. There is exactly one door and this is it.
+ * `message` outright. It keeps its route and palette row; its menu seat
+ * returns with Collab.
  */
 export const SHIPPED_DEFAULT_MENU: MenuConfig = {
   schemaVersion: 1,
   revision: SHIPPED_DEFAULT_MENU_REVISION,
   groups: [
-    // COLLAB leads (revision 14 restored the tab; 15 renamed the label — the
-    // id stays `chats`). One childless view item is what makes the group
-    // railless — add a second row here and the surface grows a third pane,
-    // which is the arrangement this revision exists to prevent.
-    { id: 'chats', label: 'Collab', items: [{ type: 'view', ref: 'dashboard' }] },
-    {
-      id: 'workspace',
-      label: 'Work',
-      // The whole group comes from ONE spine so the server seeder (migration
-      // 125) and this fallback prove the same list — items, order and the
-      // caret's children alike.
-      items: [...DEFAULT_MENU_WORK_ITEM_SPINE],
-    },
-    // The task kanban (revision 16). Railless for the same reason as Collab:
+    // HOME leads (revision 14 restored the tab; 15 and 17 renamed the label
+    // — the id stays `chats`). One childless view item is what makes the
+    // group railless — add a second row here and the surface grows a third
+    // pane, which is the arrangement this revision exists to prevent.
+    { id: 'chats', label: 'Home', items: [{ type: 'view', ref: 'dashboard' }] },
+    // The task kanban (revision 16). Railless for the same reason as Home:
     // one childless view item — the board's own columns are the navigation.
     { id: 'board', label: 'Board', items: [{ type: 'view', ref: 'board' }] },
+    // The blueprint studio (revision 18). Railless like Board and Home: one
+    // childless view item — the chat and the canvas are the navigation.
+    { id: 'craft', label: 'Craft', items: [{ type: 'view', ref: 'craft' }] },
     { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
-    {
-      id: 'channels',
-      label: 'Channels',
-      items: [...DEFAULT_MENU_CHANNELS_SPINE],
-    },
-    // The File browser TAB (user amendment, 2026-08-15). The view left the
-    // Work group — menu refs are globally unique — while the `file` KIND
-    // stays in the Workspace caret: R9's two file doors, now on two tabs.
     { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
     { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
   ],

@@ -189,6 +189,18 @@ describe.sequential('task assignment provenance (129)', () => {
       return row.created_at;
     });
     database.apply([migration]);
+    // …plus EXACTLY 135_graph_kind, out of band. The reads below run CURRENT
+    // code, and current code speaks the current schema — 135 joined
+    // public.graphs into ENTITY_FROM, so `loadEntitySummariesByIds` refuses
+    // to run without the relation. The FULL remainder is deliberately NOT
+    // applied: this suite is position-pinned AT 129 (the header's whole
+    // point), and later migrations legitimately changed execution_spawn's
+    // provenance behaviour — applying them would silently retarget the spawn
+    // assertion below at a different function than the one it documents.
+    // 135 touches no function this suite exercises (verified: registry row,
+    // detail table, entity_content arm, its own doors) and depends on nothing
+    // past 091, so the position statement survives it.
+    database.apply(['135_graph_kind.sql']);
   }, 180_000);
 
   afterAll(async () => {

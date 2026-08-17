@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, SpaceId } from '@tm8/contract';
-import type { HomeTab } from '../stores/homeRegionStore';
+import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
 import { Avatar, Timestamp } from '../kit';
+import { useDismissable } from '../panels/useDismissable';
 import { ChooseFilesControl } from '../files/ChooseFilesControl';
 import type { FileUploadTask } from '../files/upload';
 import { DisabledIconControl } from '../panels/honesty/DisabledWithReason';
 import {
   AttachmentChips,
+  ComposerCard,
   TriggerPopover,
   skillReference,
   useRichInput,
@@ -21,8 +23,6 @@ import { TurnParts } from './TurnParts';
 import type {
   ChatHomePort,
   ChatModelOption,
-  ChatSessionRow,
-  ChatTaskRow,
   ChatTeammateOption,
   ChatThreadDetail,
   ChatThreadSummary,
@@ -35,6 +35,12 @@ export interface ChatHomeScreenProps {
   spaceId: SpaceId | string;
   /** Bare Home defaults to the space entity. A contextual host passes its entity instead. */
   anchorId?: EntityId;
+  /**
+   * A host that IS a mode (Craft P1: the Craft studio pins 'craft') — new
+   * threads start in it and the mode select is held, exactly as a configured
+   * thread's pin holds it. Absent ⇒ the composer's own choice, default 'ask'.
+   */
+  pinnedMode?: ChatMode;
   models: readonly ChatModelOption[];
   newMutationId?: (prefix: string) => string;
   /** Opens the entity detail panel for an entity a tool call referenced. */
@@ -73,26 +79,26 @@ export interface ChatHomeScreenProps {
    */
   skillOptions?: readonly TriggerOption[];
   /**
-   * Work sessions for the SESSIONS TAB (task 01a006f8 D1/D17 — the merged
-   * R4 column is retired; each population owns a tab now). Rows arrive
-   * COMPOSED — status word, tone and the live verdict are the host's
-   * (liveness outranks the stored record); this screen renders them.
-   * `undefined` means the host did not wire sessions (older mounts), and the
-   * tab says so — absent is not an empty session list.
+   * The active ROOT — which population the left column lists — when the HOST
+   * owns it (D15: persisted per space; D11 flips it to the session kind from
+   * outside this screen on spawn). `CHATS_ROOT` or a collection kind name
+   * (task 01a00932 R3: the three-tab column generalized to every kind).
+   * Absent ⇒ uncontrolled, defaulting to Chats — the standalone mounts.
    */
-  sessions?: readonly ChatSessionRow[];
+  root?: HomeRoot;
+  onRoot?: ((root: HomeRoot) => void) | undefined;
   /**
-   * Tasks for the TASKS TAB, same contract as `sessions`: host-composed and
-   * host-ordered. `undefined` ⇒ the tab states tasks are not wired here.
+   * What the KIND CELL of the root header names — the current kind root, or
+   * (while Chats is the root) the kind the viewer would return to. The host
+   * owns the memory; this screen only renders the cell.
    */
-  tasks?: readonly ChatTaskRow[];
+  kindCell?: HomeRootOption;
   /**
-   * The active tab, when the HOST owns it (D15: persisted per space, and
-   * D11 flips it to Sessions from outside this screen on spawn). Absent ⇒
-   * uncontrolled, defaulting to Chats — the standalone/mobile mounts.
+   * The switcher's kind list, the icon rail FLATTENED (R4: rail ≡ switcher
+   * by construction — both come from `homeRootKinds()`). Picking one
+   * SWITCHES the root; it never creates (R5).
    */
-  tab?: HomeTab;
-  onTab?: ((tab: HomeTab) => void) | undefined;
+  rootKindOptions?: readonly HomeRootOption[];
   /**
    * The entity currently occupying region B, for the HONEST active-row
    * highlight (D9): a task/session row draws active only when it IS the
@@ -105,21 +111,62 @@ export interface ChatHomeScreenProps {
   /** The host clears region B back to the chat — a chat row click or ＋ New
    *  chat calls it, so the conversation pane (D8: mounted, hidden) returns. */
   onShowChat?: (() => void) | undefined;
-  /** D2/D3: `＋ New task` — the host's `useNewTask` create-immediately flow.
-   *  Absent ⇒ disabled with `newTaskUnavailable`'s reason, never hidden. */
-  onNewTask?: (() => void) | undefined;
-  newTaskUnavailable?: { cause: string; remedy: string } | null;
-  /** D11: Run on a task row → the host opens its launch sheet on that task.
-   *  Serves the FALLBACK rows only — a hosted tab list wires Run itself. */
-  onRunTask?: ((id: string) => void) | undefined;
+  /** R5: the kind cell's `＋` — the host's `useNewTask` create-immediately
+   *  flow for the CELL's kind (D2/D3 generalized). Absent ⇒ disabled with
+   *  `newEntityUnavailable`'s reason, never hidden. */
+  onNewEntity?: (() => void) | undefined;
+  newEntityUnavailable?: { cause: string; remedy: string } | null;
   /**
-   * The host's own CONTENT for a tab — the workspace's `EntityListPanel`
-   * with its full tree, tiles, lifecycle tabs and in-panel search (user
-   * ruling 2026-08-16: exact same components). Non-null replaces this
-   * screen's list AND its search box for that tab (the panel brings its
-   * own); null keeps the built-in rows — the standalone/mobile mounts.
+   * The host's own CONTENT for a KIND root — the workspace's
+   * `EntityListPanel` with its full tree, tiles, lifecycle tabs and in-panel
+   * search (user ruling 2026-08-16: exact same components). Non-null
+   * replaces this screen's list AND its search box for that root (the panel
+   * brings its own). A kind root with no hosted list states so honestly —
+   * the tab-era built-in task/session rows are retired with the tabs.
    */
-  renderTabList?: ((tab: HomeTab) => ReactNode) | undefined;
+  renderRootList?: ((root: HomeRoot) => ReactNode) | undefined;
+  /**
+   * The hosted list's LAYOUT SWITCHER, drawn on the root header's own line.
+   *
+   * The hosted panel used to draw its own header directly beneath this one,
+   * which restated the kind — `[Chats ＋][◫ Tasks ＋ ▾]` above `◫ Tasks ▾` —
+   * and cost a whole row to say a word this row already says. The panel now
+   * yields that row (`selectorSlot: 'host'`) and hands its switcher up here,
+   * so the control survives at full size while the duplicate label does not.
+   *
+   * Called with the root so the host can answer per kind: which layouts a
+   * kind offers is registry data, and a kind that offers one gets no switcher.
+   * Absent, or null for this root ⇒ the header is the tablist alone, which is
+   * exactly the Chats case.
+   */
+  renderRootAside?: ((root: HomeRoot) => ReactNode) | undefined;
+  /**
+   * The conversation the ADDRESS names (`/home/chat/{id}`, task 01a00932
+   * D1). Adopted when it differs from the current selection — back/forward
+   * and shared links land on the right thread. `null` means the address is
+   * bare; the screen keeps its own selection (the cold-start auto-open stays
+   * viewer-local and writes no history).
+   */
+  routeThreadId?: EntityId | null;
+  /**
+   * USER thread selection, reported so the address can carry it: a row
+   * click, ＋ New chat (null — back to the composer), and the send that
+   * creates a root. The auto-open deliberately does NOT report — a default
+   * is not a navigation.
+   */
+  onThreadSelected?: ((id: EntityId | null) => void) | undefined;
+  /**
+   * `?graph=full` — the entity graph's fullscreen view, route-owned (plan
+   * 01a0094b D2). The host maps the address here and `onGraphFullChange`
+   * navigates the param, so Back closes and a reload restores. Hosts
+   * without routing omit the pair and get the inline strip unchanged.
+   */
+  graphFull?: boolean | undefined;
+  onGraphFullChange?: ((open: boolean) => void) | undefined;
+  /** `?gf=` — the graph's serialised filter state, route-owned like
+   *  `graphFull` and opaque at this layer (graph-view.ts decodes it). */
+  graphFilters?: string | null | undefined;
+  onGraphFiltersChange?: ((encoded: string | null) => void) | undefined;
   /**
    * Region B when it is NOT the chat (D7/D8): the host's entity panel,
    * rendered in the conversation pane's place while the conversation stays
@@ -134,6 +181,21 @@ export interface ChatHomeScreenProps {
   slots?: { used: number; total: number } | undefined;
   /** The signed-in display name, for the empty-state greeting. */
   viewerName?: string | undefined;
+  /**
+   * The signed-in actor id, for byline sidedness — the viewer's identity
+   * header sits left, everyone else's right. Same source as `viewerName`,
+   * never a separate fetch. Role is NOT a substitute: in a shared thread
+   * another human's turn is also `role: 'user'`, so sidedness must compare
+   * author identity.
+   */
+  viewerId?: string | undefined;
+}
+
+/** One switcher/cell entry: a kind, its plural label, and its singular. */
+export interface HomeRootOption {
+  kind: string;
+  label: string;
+  single: string;
 }
 
 type ComposerPhase =
@@ -148,6 +210,7 @@ export function ChatHomeScreen({
   port,
   spaceId,
   anchorId = spaceId as EntityId,
+  pinnedMode,
   models,
   newMutationId = defaultMutationId,
   onOpenEntity,
@@ -156,20 +219,27 @@ export function ChatHomeScreen({
   assetHref,
   attach,
   skillOptions,
-  sessions,
-  tasks,
-  tab: tabProp,
-  onTab,
+  root: rootProp,
+  onRoot,
+  kindCell,
+  rootKindOptions,
   selectedEntityId = null,
   onSelectEntity,
   onShowChat,
-  onNewTask,
-  newTaskUnavailable,
-  onRunTask,
-  renderTabList,
+  onNewEntity,
+  newEntityUnavailable,
+  routeThreadId,
+  onThreadSelected,
+  graphFull,
+  onGraphFullChange,
+  graphFilters,
+  onGraphFiltersChange,
+  renderRootList,
+  renderRootAside,
   centerOverride,
   slots,
   viewerName,
+  viewerId,
 }: ChatHomeScreenProps) {
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [teammates, setTeammates] = useState<readonly ChatTeammateOption[]>([]);
@@ -182,7 +252,7 @@ export function ChatHomeScreen({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
   const [modelId, setModelId] = useState(models[0]?.model ?? '');
-  const [chatMode, setChatMode] = useState<ChatMode>('ask');
+  const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? 'ask');
   const activeRootRef = useRef<EntityId | null>(null);
   const stoppedRootRef = useRef<EntityId | null>(null);
   const detailRef = useRef<ChatThreadDetail | null>(null);
@@ -224,6 +294,14 @@ export function ChatHomeScreen({
   useEffect(() => {
     detailRef.current = detail;
   }, [detail]);
+
+  /* ADOPT the addressed conversation (D1): back/forward and shared links win
+     over the current selection; a bare address changes nothing. The select
+     effect below owns loading whatever this lands on. */
+  useEffect(() => {
+    if (!routeThreadId) return;
+    setSelectedRootId((current) => (current === routeThreadId ? current : routeThreadId));
+  }, [routeThreadId]);
 
   const refreshThreads = useCallback(async (preferRoot?: EntityId) => {
     const next = await port.listThreads(spaceId);
@@ -542,50 +620,43 @@ export function ChatHomeScreen({
 
   const sendDisabled = busy || draft.trim() === '' || refusal !== null || attachments.blocked;
 
-  /* THREE TABS, one population each (task 01a006f8 D1 — the merged R4 column
-     is retired). The tab is CONTROLLED when the host owns it (D15 per-space
+  /* THE ROOT (task 01a00932 R3 — the three-tab column generalized to chats +
+     every collection kind). CONTROLLED when the host owns it (D15 per-space
      persistence; D11's spawn flip arrives from outside) and uncontrolled on
-     standalone mounts, opening on Chats. D6: switching a tab is BROWSING — it
-     re-lists this column and touches nothing else on the screen. */
-  const [innerTab, setInnerTab] = useState<HomeTab>('chats');
-  const tab = tabProp ?? innerTab;
-  const setTab = useCallback(
-    (next: HomeTab) => {
-      if (onTab) onTab(next);
-      else setInnerTab(next);
+     standalone mounts, opening on Chats. D6: switching the root is BROWSING —
+     it re-lists this column and touches nothing else on the screen. */
+  const [innerRoot, setInnerRoot] = useState<HomeRoot>(CHATS_ROOT);
+  const root = rootProp ?? innerRoot;
+  const setRoot = useCallback(
+    (next: HomeRoot) => {
+      if (onRoot) onRoot(next);
+      else setInnerRoot(next);
     },
-    [onTab],
+    [onRoot],
   );
+  const onChatsRoot = root === CHATS_ROOT;
 
-  /* ONE search box, scoped to the active tab (D4). It filters WHAT IS READ —
-     there is no server-side search behind it, and its labels must not claim
-     one. The query survives a tab switch: it is one box, not three. */
+  /* The find box serves the CHATS root only (D4's one-box law survives): a
+     kind root's hosted list brings its own in-panel search. It filters WHAT
+     IS READ — there is no server-side search behind it, and its labels must
+     not claim one. */
   const [findQuery, setFindQuery] = useState('');
   const threadGroups = useMemo(
-    () => (tab === 'chats' ? composeThreadColumn(threads, findQuery) : []),
-    [tab, threads, findQuery],
+    () => (onChatsRoot ? composeThreadColumn(threads, findQuery) : []),
+    [onChatsRoot, threads, findQuery],
   );
-  const sessionGroups = useMemo(
-    () => (tab === 'sessions' ? composeSessionColumn(sessions ?? [], findQuery) : []),
-    [tab, sessions, findQuery],
-  );
-  const taskRows = useMemo(
-    () => (tab === 'tasks' ? filterTaskRows(tasks ?? [], findQuery) : []),
-    [tab, tasks, findQuery],
-  );
-  const activeTabEmpty =
-    tab === 'chats'
-      ? threadGroups.length === 0
-      : tab === 'sessions'
-        ? sessionGroups.length === 0
-        : taskRows.length === 0;
   /** D9 — the honest highlight: chat rows are active only while the chat
    *  OCCUPIES region B; an entity selection extinguishes them rather than
-   *  fabricating an active row on a tab the selection is not from. */
+   *  fabricating an active row on a root the selection is not from. */
   const chatOccupiesCenter = centerOverride === undefined || centerOverride === null;
-  /** The host's whole-tab takeover: the workspace list panel, with its own
-   *  search — so this screen's find box stands down for that tab. */
-  const hostedList = renderTabList?.(tab) ?? null;
+  /** The host's whole-root takeover: the workspace list panel, with its own
+   *  search — so this screen's find box stands down for that root. */
+  const hostedList = onChatsRoot ? null : (renderRootList?.(root) ?? null);
+
+  /* R5's kind-menu open state, dismissed like every other popover. */
+  const [rootMenuOpen, setRootMenuOpen] = useState(false);
+  const rootMenuRef = useRef<HTMLDivElement>(null);
+  useDismissable(rootMenuOpen, rootMenuRef, useCallback(() => setRootMenuOpen(false), []));
 
   const send = useCallback(async () => {
     const body = draft.trim();
@@ -670,6 +741,7 @@ export function ChatHomeScreen({
       expectingMarkRef.current = frameSeqRef.current;
       preTurnIdsRef.current = new Set();
       setSelectedRootId(root.threadRootId);
+      onThreadSelected?.(root.threadRootId);
       setPhase('streaming');
       await refreshThreads(root.threadRootId);
     } catch (error) {
@@ -740,16 +812,18 @@ export function ChatHomeScreen({
   return (
     <main className="tch-root" data-testid="chat-home-screen">
       {/*
-        THE NAVIGATION AXIS (task 01a006f8, 2026-08-16, superseding R4's
-        merged list). This panel is the full inventory AND the only selector,
-        as one time-grouped THREE-TAB column: Chats | Tasks | Sessions (D1,
-        order re-ruled 2026-08-16).
-        Switching a tab is BROWSING — it re-lists this column only (D6);
+        THE NAVIGATION AXIS (task 01a006f8, generalized by task 01a00932).
+        This panel is the full inventory AND the only selector, as one ROOT
+        column: the chat threads, or ONE collection kind's list — every kind
+        the registry offers (R3), picked through the header's kind cell,
+        its menu, or the icon rail beside this column (R4: one selection,
+        two views of it).
+        Switching the root is BROWSING — it re-lists this column only (D6);
         clicking a row is SELECTING — it puts that entity in region B (D7).
-        The two ＋ buttons above the tabs are the single exception to D6:
-        each takes region B AND switches this column to its own tab (D10).
+        The two ＋ buttons in the header are the single exception to D6:
+        each takes region B AND switches this column to its own root (D10).
 
-        NO COUNTS ON THE TAB LABELS (D16): the only number obtainable is
+        NO COUNTS ON THE ROOT LABELS (D16): the only number obtainable is
         "how many are loaded", which would read as a total — absent ≠ zero.
 
         UNREAD IS NOT DRAWN, AND ITS ABSENCE IS THE HONEST STATE. The ruling
@@ -770,101 +844,180 @@ export function ChatHomeScreen({
         marks read like any other open.
       */}
       <aside className="tch-sidebar" aria-label="Tasks, chats and sessions">
-        {/* D2: two constant buttons. No New session — a session is created by
-            RUNNING a task (D11); the old permanently-disabled button is gone. */}
-        <div className="tch-sidebar__actions">
-          <button
-            type="button"
-            className="tch-new"
-            onClick={() => {
-              setSelectedRootId(null);
-              setDetail(null);
-              stoppedRootRef.current = null;
-              setPhase('idle');
-              setSubmitError(null);
-              /* D10: takes region B (back to the chat's new-conversation
-                 composer) AND switches the column to its own tab. */
-              onShowChat?.();
-              setTab('chats');
-            }}
-          >
-            <span aria-hidden>＋</span> New chat
-          </button>
-          <button
-            type="button"
-            className="tch-new tch-new--task"
-            aria-disabled={onNewTask ? undefined : 'true'}
-            title={
-              onNewTask
-                ? 'Create an Untitled task and open it — type its name there'
-                : newTaskUnavailable
-                  ? `${newTaskUnavailable.cause} — ${newTaskUnavailable.remedy}`
-                  : 'Creating tasks isn’t wired on this surface'
-            }
-            onClick={
-              onNewTask
-                ? () => {
-                    /* D3: create immediately — the host's useNewTask flow
-                       makes the entity, selects it into B (title focused)
-                       and, per D10, we land on its tab. */
-                    onNewTask();
-                    setTab('tasks');
-                  }
-                : (event) => event.preventDefault()
-            }
-          >
-            <span aria-hidden>＋</span> New task
-          </button>
-        </div>
-        {/* Chats | Tasks | Sessions (re-ruled order). Labels only (D16). */}
-        <div className="tch-tabs" role="tablist" aria-label="Home lists">
-          {HOME_TAB_STRIP.map((entry) => (
+        {/* THE ROOT HEADER (task 01a00932 R5) — two cells, [Chats ＋] and
+            [Kind ＋ ▾]. Each cell's LABEL switches the root (browsing, D6);
+            each cell's ＋ CREATES (the D10 exception: it takes region B and
+            lands the column on its own root). The caret only ever SWITCHES —
+            picking a kind from the menu never creates (R5). Labels only, no
+            counts (D16).
+
+            THE HOSTED LIST'S LAYOUT SWITCHER RIDES THIS LINE (`renderRootAside`),
+            which is what retires the panel's own header row: that row restated
+            this one's kind and spent 34.9px doing it. The switcher sits OUTSIDE
+            the tablist, never in it — the tablist is the root SELECTION, every
+            child of it must be a tab, and a layout switcher is not a root.
+            Nesting it would make `role="tablist"` a lie to the a11y tree. */}
+        <div className="tch-rootbar">
+        <div className="tch-roots" role="tablist" aria-label="Home roots">
+          <div className={`tch-rootcell${onChatsRoot ? ' tch-rootcell--active' : ''}`}>
             <button
-              key={entry.tab}
               type="button"
               role="tab"
-              aria-selected={tab === entry.tab}
-              className={`tch-tab ${tab === entry.tab ? 'tch-tab--active' : ''}`}
-              onClick={() => setTab(entry.tab)}
+              aria-selected={onChatsRoot}
+              className="tch-rootcell__label"
+              onClick={() => setRoot(CHATS_ROOT)}
             >
-              {entry.label}
+              Chats
             </button>
-          ))}
+            <button
+              type="button"
+              className="tch-rootcell__plus"
+              aria-label="New chat"
+              title="Start a new conversation"
+              onClick={() => {
+                setSelectedRootId(null);
+                setDetail(null);
+                stoppedRootRef.current = null;
+                setPhase('idle');
+                setSubmitError(null);
+                /* D10: takes region B (back to the chat's new-conversation
+                   composer) AND switches the column to its own root. */
+                onShowChat?.();
+                setRoot(CHATS_ROOT);
+                onThreadSelected?.(null);
+              }}
+            >
+              <span aria-hidden>＋</span>
+            </button>
+          </div>
+          {kindCell ? (
+            <div
+              className={`tch-rootcell tch-rootcell--kind${onChatsRoot ? '' : ' tch-rootcell--active'}`}
+              ref={rootMenuRef}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!onChatsRoot}
+                className="tch-rootcell__label"
+                title={`List ${kindCell.label.toLowerCase()}`}
+                onClick={() => setRoot(kindCell.kind)}
+              >
+                <span className="tch-rootcell__glyph" aria-hidden>
+                  <KindIcon kind={kindCell.kind} />
+                </span>
+                {kindCell.label}
+              </button>
+              <button
+                type="button"
+                className="tch-rootcell__plus"
+                aria-label={`New ${kindCell.single.toLowerCase()}`}
+                aria-disabled={onNewEntity ? undefined : 'true'}
+                title={
+                  onNewEntity
+                    ? `Create an Untitled ${kindCell.single.toLowerCase()} and open it — type its name there`
+                    : newEntityUnavailable
+                      ? `${newEntityUnavailable.cause} — ${newEntityUnavailable.remedy}`
+                      : `Creating ${kindCell.label.toLowerCase()} isn’t wired on this surface`
+                }
+                onClick={
+                  onNewEntity
+                    ? () => {
+                        /* D3 generalized: create immediately — the host's
+                           useNewTask flow makes the entity, selects it into B
+                           (title focused) and, per D10, we land on its root. */
+                        onNewEntity();
+                        setRoot(kindCell.kind);
+                      }
+                    : (event) => event.preventDefault()
+                }
+              >
+                <span aria-hidden>＋</span>
+              </button>
+              {rootKindOptions && rootKindOptions.length > 0 ? (
+                <button
+                  type="button"
+                  className="tch-rootcell__caret"
+                  aria-label="Choose which list to show"
+                  aria-expanded={rootMenuOpen}
+                  onClick={() => setRootMenuOpen((open) => !open)}
+                >
+                  <span aria-hidden>▾</span>
+                </button>
+              ) : null}
+              {rootMenuOpen && rootKindOptions ? (
+                <ul className="tch-rootmenu" role="menu" aria-label="Entity lists">
+                  {rootKindOptions.map((option) => (
+                    <li key={option.kind}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={
+                          option.kind === root
+                            ? 'tch-rootopt tch-rootopt--current'
+                            : 'tch-rootopt'
+                        }
+                        onClick={() => {
+                          setRootMenuOpen(false);
+                          /* R5: picking a kind SWITCHES the root. Never creates. */
+                          setRoot(option.kind);
+                        }}
+                      >
+                        <KindIcon kind={option.kind} />
+                        {option.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-        {hostedList == null ? (
+        {/* Chats has no hosted list, so it has no layouts to switch between
+            and this slot is simply empty there — the header narrows to the
+            tablist, which is the honest shape for a root that offers one
+            view. Nothing is drawn disabled: the switcher belongs to the LIST,
+            and on Chats there is no list to own it. */}
+        {onChatsRoot ? null : renderRootAside?.(root)}
+        </div>
+        {onChatsRoot ? (
           <input
             type="search"
             className="tch-find"
-            placeholder={FIND_COPY[tab].placeholder}
-            aria-label={`${FIND_COPY[tab].label} — filters what is already loaded`}
-            title={`Filters the ${FIND_COPY[tab].noun} already loaded here; this is not a server search`}
+            placeholder="Find a conversation…"
+            aria-label="Find a conversation — filters what is already loaded"
+            title="Filters the conversations already loaded here; this is not a server search"
             value={findQuery}
             onChange={(event) => setFindQuery(event.target.value)}
           />
         ) : null}
         {hostedList != null ? (
-          /* The workspace's own EntityListPanel, given the tab's space —
+          /* The workspace's own EntityListPanel, given the root's space —
              tree, tiles, lifecycle tiers, sort and search are all its own. */
           <div className="tch-panel-host" data-testid="tch-hosted-list">
             {hostedList}
           </div>
+        ) : !onChatsRoot ? (
+          /* A kind root with no hosted list: the tab-era built-in rows are
+             retired, so the honest state is a refusal, never a blank. */
+          <p className="tch-hollow">This list isn’t wired on this surface.</p>
         ) : (
         <div className="tch-thread-list">
-          {tab === 'chats' && loading ? (
+          {loading ? (
             <p className="tch-hollow">Reading conversations…</p>
           ) : null}
-          {!(tab === 'chats' && loading) && activeTabEmpty ? (
+          {!loading && threadGroups.length === 0 ? (
             <p className="tch-hollow">
-              {findQuery.trim() ? 'Nothing loaded here matches.' : EMPTY_COPY[tab](
-                tab === 'sessions' ? sessions !== undefined : tab !== 'tasks' || tasks !== undefined,
-              )}
+              {findQuery.trim()
+                ? 'Nothing loaded here matches.'
+                : 'No conversations yet. Start with the composer.'}
             </p>
           ) : null}
-          {tab === 'chats' && port.threadListUnavailableReason ? (
+          {port.threadListUnavailableReason ? (
             <p className="tch-thread-refusal">{port.threadListUnavailableReason}</p>
           ) : null}
 
-          {tab === 'chats'
+          {onChatsRoot
             ? threadGroups.map((group) => (
                 <div key={group.label} className="tch-group" role="group" aria-label={group.label}>
                   <span className="tch-group__label">{group.label}</span>
@@ -881,6 +1034,7 @@ export function ChatHomeScreen({
                         /* D7: selecting a chat puts the conversation in B. */
                         setSelectedRootId(thread.rootId);
                         onShowChat?.();
+                        onThreadSelected?.(thread.rootId);
                       }}
                     >
                       <span className="tch-thread__title">
@@ -899,141 +1053,6 @@ export function ChatHomeScreen({
                       </span>
                     </button>
                   ))}
-                </div>
-              ))
-            : null}
-
-          {tab === 'sessions'
-            ? sessionGroups.map((group) => (
-                <div key={group.label} className="tch-group" role="group" aria-label={group.label}>
-                  <span className="tch-group__label">{group.label}</span>
-                  {group.rows.map((session) => (
-                    /* The badge sub-row is a SIBLING of the row button — PR
-                       chips carry real links, which cannot nest in a button.
-                       The tile wrapper carries the hover/active visuals so
-                       button and badges read as one row. */
-                    <div
-                      key={session.id}
-                      className="tch-tile"
-                      data-active={session.id === selectedEntityId || undefined}
-                    >
-                    <button
-                      type="button"
-                      className="tch-thread tch-thread--session"
-                      data-active={session.id === selectedEntityId || undefined}
-                      title={
-                        onSelectEntity
-                          ? 'Open this session here'
-                          : 'Opening sessions isn’t wired on this surface'
-                      }
-                      aria-disabled={onSelectEntity ? undefined : 'true'}
-                      onClick={
-                        onSelectEntity
-                          ? () => onSelectEntity(session.id)
-                          : (event) => event.preventDefault()
-                      }
-                    >
-                      <span className="tch-thread__title">
-                        <span className="tch-thread__glyph" aria-hidden>❯_</span>
-                        {session.title}
-                      </span>
-                      <span className="tch-thread__meta">
-                        <span className={`tch-session-word tch-session-word--${session.tone}`}>
-                          {session.live ? <span className="tch-thread__live" aria-hidden /> : null}
-                          {session.statusWord}
-                        </span>
-                        {session.detail ? (
-                          <>
-                            <span aria-hidden>·</span>
-                            <span>{session.detail}</span>
-                          </>
-                        ) : null}
-                        {session.viewOnly ? (
-                          <span
-                            className="tch-viewonly"
-                            title="Another member’s session — you can see it; only the owner can attach to its terminal"
-                          >
-                            view only
-                          </span>
-                        ) : null}
-                        <Timestamp at={session.updatedAt} />
-                      </span>
-                    </button>
-                    {session.badges ? (
-                      <span className="tch-thread__badges">{session.badges}</span>
-                    ) : null}
-                    </div>
-                  ))}
-                </div>
-              ))
-            : null}
-
-          {tab === 'tasks'
-            ? taskRows.map((task) => (
-                /* A row and its Run are SIBLINGS — a button cannot nest a
-                   button, and Run must not be the row's whole surface. The
-                   badge sub-row (PR chips, entity counts) is a sibling too,
-                   for the same reason: chips carry real links. */
-                <div
-                  key={task.id}
-                  className="tch-tile"
-                  data-active={task.id === selectedEntityId || undefined}
-                >
-                <div className="tch-task-row">
-                  <button
-                    type="button"
-                    className="tch-thread tch-thread--task"
-                    data-active={task.id === selectedEntityId || undefined}
-                    title={
-                      onSelectEntity
-                        ? 'Open this task here'
-                        : 'Opening tasks isn’t wired on this surface'
-                    }
-                    aria-disabled={onSelectEntity ? undefined : 'true'}
-                    onClick={
-                      onSelectEntity
-                        ? () => onSelectEntity(task.id)
-                        : (event) => event.preventDefault()
-                    }
-                  >
-                    <span className="tch-thread__title">{task.title}</span>
-                    <span className="tch-thread__meta">
-                      <span className={`tch-session-word tch-session-word--${task.tone}`}>
-                        {task.statusWord}
-                      </span>
-                      {task.detail ? (
-                        <>
-                          <span aria-hidden>·</span>
-                          <span>{task.detail}</span>
-                        </>
-                      ) : null}
-                      <Timestamp at={task.updatedAt} />
-                    </span>
-                  </button>
-                  {onRunTask ? (
-                    <button
-                      type="button"
-                      className="tch-run"
-                      title="Run — configure and launch a session on this task"
-                      aria-label={`Run ${task.title}`}
-                      onClick={() => onRunTask(task.id)}
-                    >
-                      ◔ Run ▸
-                    </button>
-                  ) : (
-                    <DisabledIconControl
-                      label={`Run ${task.title}`}
-                      glyph="▸"
-                      reason={{
-                        cause: 'Launching isn’t wired on this surface',
-                        remedy: 'open the task in the workspace to run it',
-                      }}
-                    />
-                  )}
-                </div>
-                {task.badges ? (
-                  <span className="tch-thread__badges">{task.badges}</span>
-                ) : null}
                 </div>
               ))
             : null}
@@ -1123,6 +1142,10 @@ export function ChatHomeScreen({
                 connections={connections}
                 resolveEntity={resolveEntity}
                 onOpenEntity={onOpenEntity}
+                expanded={graphFull}
+                onExpandedChange={onGraphFullChange}
+                graphFilters={graphFilters}
+                onGraphFiltersChange={onGraphFiltersChange}
               />
               {detail.turns.map((turn) => (
                 <Turn
@@ -1130,6 +1153,7 @@ export function ChatHomeScreen({
                   turn={turn}
                   mode={detail.summary.config.mode}
                   pending={turn.messageId === pendingTurnId}
+                  viewerId={viewerId}
                   onOpenEntity={onOpenEntity}
                   resolveEntity={resolveEntity}
                   suppressEntityIds={ownMessageIds}
@@ -1160,9 +1184,10 @@ export function ChatHomeScreen({
               Turn stopped · this thread is continuable. Send another message to resume.
             </p>
           ) : null}
-          <div className="tch-composer">
-            <AttachmentChips attachments={attachments} testId="tch-attachments" />
-            <div className="ri-host">
+          <ComposerCard
+            className="tch-composer"
+            above={<AttachmentChips attachments={attachments} testId="tch-attachments" />}
+            field={<>
               <textarea
                 ref={composer}
                 value={draft}
@@ -1187,8 +1212,8 @@ export function ChatHomeScreen({
                 emptyText="No matching skills"
                 testId="tch-skill-picker"
               />
-            </div>
-            <div className="tch-composer__foot">
+            </>}
+            foot={<>
               {attach ? (
                 <ChooseFilesControl
                   label="Attach a file"
@@ -1237,7 +1262,7 @@ export function ChatHomeScreen({
                   options={MODE_OPTIONS}
                   value={shownMode}
                   onChange={(id) => setChatMode(id as ChatMode)}
-                  disabled={pinned}
+                  disabled={pinned || pinnedMode !== undefined}
                   emptyNote="No chat mode is available."
                 />
                 <ComposerSelect
@@ -1263,43 +1288,54 @@ export function ChatHomeScreen({
               <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
               <span className="tch-hint">Enter to send · Shift+Enter for a new line</span>
               {phase === 'streaming' ? (
+                /* The agent-running state lives ON the send button: a loader
+                   that is also Stop. Enter still queues a send — the server
+                   accepts turns while one runs — so only the button changes
+                   role mid-turn, not the composer.
+                   Unavailable ≠ invisible: with no interrupt operation on
+                   this node the loader stays, disabled with its reason, so a
+                   running turn never looks unstoppable by design. */
                 port.interrupt ? (
-                  <button type="button" className="tch-stop" onClick={() => void interrupt()}>
-                    <span aria-hidden>■</span> Stop
+                  <button
+                    type="button"
+                    className="tch-send tch-send--working"
+                    data-testid="tch-send-working"
+                    aria-label="Agent is working — stop this turn"
+                    title="Agent is working — click to stop this turn"
+                    onClick={() => void interrupt()}
+                  >
+                    <span className="tch-spin" aria-hidden /> Stop
                   </button>
                 ) : (
-                  /* Unavailable ≠ invisible: the catalog has exactly one chat
-                     operation (`chat.threads.start`) and no interrupt, so on a
-                     real node this control used to vanish mid-turn and leave a
-                     running turn looking unstoppable by design. */
-                  <DisabledIconControl
-                    label="Stop this turn"
-                    glyph="■"
-                    reason={{
-                      cause: 'Stopping a turn isn’t available on this node',
-                      remedy: 'no chat interrupt operation is exposed — the turn ends on its own',
-                    }}
+                  <button
+                    type="button"
+                    className="tch-send tch-send--working"
+                    data-testid="tch-send-working"
+                    aria-disabled="true"
+                    aria-label="Agent is working"
+                    title="Agent is working — no chat interrupt operation is exposed on this node; the turn ends on its own"
                   >
-                    Stop
-                  </DisabledIconControl>
+                    <span className="tch-spin" aria-hidden /> Working
+                  </button>
                 )
-              ) : null}
-              <button
-                type="button"
-                className="tch-send"
-                aria-disabled={sendDisabled}
-                onClick={() => void send()}
-                title={
-                  refusal
-                  ?? (attachments.blocked
-                    ? 'One or more attachments are not ready — wait for uploads to finish, retry failures, or remove them before sending.'
-                    : undefined)
-                }
-              >
-                Send <span aria-hidden>↑</span>
-              </button>
-            </div>
-          </div>
+              ) : (
+                <button
+                  type="button"
+                  className="tch-send"
+                  aria-disabled={sendDisabled}
+                  onClick={() => void send()}
+                  title={
+                    refusal
+                    ?? (attachments.blocked
+                      ? 'One or more attachments are not ready — wait for uploads to finish, retry failures, or remove them before sending.'
+                      : undefined)
+                  }
+                >
+                  Send <span aria-hidden>↑</span>
+                </button>
+              )}
+            </>}
+          />
         </div>
       </section>
     </main>
@@ -1325,6 +1361,7 @@ const MODE_OPTIONS: readonly { id: ChatMode; label: string; hint: string }[] = [
   { id: 'plan', label: 'plan', hint: 'shapes work into steps and a durable plan to approve' },
   { id: 'build', label: 'build', hint: 'does the work; edits this thread’s checkout for real' },
   { id: 'orchestrate', label: 'orchestrate', hint: 'dispatches and steers worker sessions' },
+  { id: 'craft', label: 'craft', hint: 'sketches a blueprint row; materializes only on approval' },
 ];
 
 function greetingLine(viewerName?: string): string {
@@ -1339,37 +1376,9 @@ function greetingLine(viewerName?: string): string {
  *  above it is a sentinel, not a measurement — never a denominator. */
 const UNCAPPED_SESSION_TOTAL = 2_147_483_647;
 
-/** D1's strip. ORDER re-ruled by Subhang 2026-08-16 ("it should be
- *  chats | tasks | sessions"), superseding D1's Tasks-first order. Chats
- *  leads — it is also the default tab, so the first visit opens on the
- *  first tab. Labels only — no counts (D16). */
-const HOME_TAB_STRIP: readonly { tab: HomeTab; label: string }[] = [
-  { tab: 'chats', label: 'Chats' },
-  { tab: 'tasks', label: 'Tasks' },
-  { tab: 'sessions', label: 'Sessions' },
-];
-
-/** D4: the one search box, worded per tab and never claiming server search. */
-const FIND_COPY: Record<HomeTab, { placeholder: string; label: string; noun: string }> = {
-  tasks: { placeholder: 'Find a task…', label: 'Find a task', noun: 'tasks' },
-  chats: { placeholder: 'Find a conversation…', label: 'Find a conversation', noun: 'conversations' },
-  sessions: { placeholder: 'Find a session…', label: 'Find a session', noun: 'sessions' },
-};
-
-/** Empty states: an unwired tab (host passed nothing) is NOT an empty list. */
-const EMPTY_COPY: Record<HomeTab, (wired: boolean) => string> = {
-  tasks: (wired) =>
-    wired ? 'No tasks yet. ＋ New task creates one.' : 'Tasks aren’t wired on this surface.',
-  chats: () => 'No conversations yet. Start with the composer.',
-  sessions: (wired) =>
-    wired
-      ? 'No sessions yet. Run a task to launch one.'
-      : 'Sessions aren’t wired on this surface.',
-};
-
 /**
  * Day buckets in the VIEWER's local time — Today, Yesterday, then Earlier —
- * the same grouping the merged column drew, now applied per tab.
+ * the same grouping the merged column drew, applied to the thread list.
  */
 function bucketByDay<T>(rows: readonly { at: string; row: T }[]): { label: string; rows: T[] }[] {
   const sorted = [...rows].sort((a, b) => b.at.localeCompare(a.at));
@@ -1407,38 +1416,11 @@ function composeThreadColumn(
   );
 }
 
-function composeSessionColumn(
-  sessions: readonly ChatSessionRow[],
-  query: string,
-): { label: string; rows: ChatSessionRow[] }[] {
-  const q = query.trim().toLowerCase();
-  return bucketByDay(
-    sessions
-      .filter(
-        (session) =>
-          !q ||
-          `${session.title} ${session.detail ?? ''} ${session.statusWord}`
-            .toLowerCase()
-            .includes(q),
-      )
-      .map((session) => ({ at: session.updatedAt, row: session })),
-  );
-}
-
-/** Tasks keep the HOST's order (open-first, then recency) — no day buckets,
- *  because interleaving open-first with date groups would lie about one axis. */
-function filterTaskRows(tasks: readonly ChatTaskRow[], query: string): ChatTaskRow[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [...tasks];
-  return tasks.filter((task) =>
-    `${task.title} ${task.statusWord} ${task.detail ?? ''}`.toLowerCase().includes(q),
-  );
-}
-
 function Turn({
   turn,
   mode,
   pending,
+  viewerId,
   onOpenEntity,
   resolveEntity,
   suppressEntityIds,
@@ -1448,6 +1430,7 @@ function Turn({
   mode: ChatMode;
   /** This turn is the one the pulse is already announcing. */
   pending?: boolean;
+  viewerId?: string | undefined;
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   resolveEntity?: ChatEntityResolver | undefined;
   suppressEntityIds?: ReadonlySet<string> | undefined;
@@ -1456,6 +1439,19 @@ function Turn({
   const label = turn.author?.displayName ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
   const agent = turn.author?.isAgent ?? turn.role === 'assistant';
+  /**
+   * Sidedness is decided by AUTHOR IDENTITY, not role — in a shared thread
+   * another human's turn is also `role: 'user'` and must land right. A null
+   * author on a user turn is your own message rendered optimistically before
+   * the server echo; treating it as self prevents a visible left→right flip
+   * on send. No `viewerId` degrades to the role heuristic — never crash,
+   * never guess.
+   */
+  const isSelf = viewerId
+    ? turn.author
+      ? turn.author.id === viewerId
+      : turn.role === 'user'
+    : turn.role === 'user';
   /**
    * AN ANSWER IS ITS RENDERED PARTS. The server writes the assistant message
    * body twice — 'Agent turn in progress.' when the turn is claimed, the
@@ -1473,11 +1469,17 @@ function Turn({
    * A turn that draws nothing is not an answer: either an ordinary message
    * posted into this thread by a teammate, whose body is all it has to say, or
    * the claimed-but-silent turn the pulse is already covering.
+   *
+   * `turnInFlight` is the server's wire marker for that claim (133 projects
+   * `chat_turns.agent_message_id` onto `messages.list`): while it is set the
+   * body IS the placeholder, on any read — a reload or thread switch mid-turn
+   * included, where the heuristics below have no snapshot to lean on.
    */
   const bodyIsContent =
-    turn.role !== 'assistant' || (projectTurnParts(turn.parts).length === 0 && !pending);
+    (turn.role !== 'assistant' || (projectTurnParts(turn.parts).length === 0 && !pending))
+    && !turn.turnInFlight;
   return (
-    <article className="tch-turn" data-role={turn.role} data-mode={mode}>
+    <article className="tch-turn" data-role={turn.role} data-mode={mode} data-self={isSelf ? 'true' : 'false'}>
       <header className="tch-turn__byline">
         <Avatar
           actorId={actorId}
@@ -1507,7 +1509,9 @@ function phaseLabel(phase: ComposerPhase): string {
     case 'posting-root': return 'Saving the first prompt…';
     case 'configuring': return 'Starting the agent…';
     case 'posting-turn': return 'Saving your message…';
-    case 'streaming': return 'Agent is working';
+    // Streaming is announced by the send button itself (the working loader),
+    // not by a second label fighting the pinned chip for the same row.
+    case 'streaming': return '';
     case 'stopped-continuable': return 'Stopped · continuable';
     default: return '';
   }
@@ -1541,7 +1545,14 @@ function showThinking(phase: ComposerPhase, detail: ChatThreadDetail): boolean {
  * claim — or one that was durable all along and unseen here, since this screen
  * never subscribes to ordinary message additions — is equally new to us.
  *
- * So the last gate is the server's OWN sentinel. `createAgentMessage`
+ * The wire marker now exists and is asked FIRST: migration 133 lets
+ * `messages.list` project `chat_turns.agent_message_id` as
+ * `MessageView.turnInFlight`, so a marked, partless assistant row is the
+ * claimed turn by the server's own record — on any read, including a reload
+ * or thread switch mid-turn where this tab has no snapshot.
+ *
+ * The body sentinel stays as the FALLBACK for reads that predate the marker
+ * (a detail cached before this shipped). `createAgentMessage`
  * (`server/src/chat/orchestrator.ts:369`, pinned by `chat-storage.pg.test.ts`)
  * writes exactly this body when it claims a turn. Matching it is a heuristic
  * and it is deliberately the one whose failure is BOUNDED: the worst it can do
@@ -1550,15 +1561,10 @@ function showThinking(phase: ComposerPhase, detail: ChatThreadDetail): boolean {
  * string, suppression stops and the redundant bubble comes back — a blemish,
  * not data loss. That is the safe direction to fail in.
  *
- * The real fix is a wire marker. The server already HAS one —
- * `bind_chat_agent_message` records `chat_turns.agent_message_id` — and no
- * read path projects it, so no client can ask which row belongs to a turn.
- *
- * Arrival and cardinality still gate on top: only rows new to us, and only
- * when exactly one qualifies. With NO snapshot — a reload or a thread switch
- * mid-turn — nothing is suppressed and the durable body renders. That is the
- * honest outcome while thread liveness is never read back from the server: the
- * body is then the only hint that surface has.
+ * For the fallback, arrival and cardinality still gate on top: only rows new
+ * to us, and only when exactly one qualifies. With NO snapshot — a reload or
+ * a thread switch mid-turn — the fallback suppresses nothing and only the
+ * marker can.
  *
  * Candidacy asks for zero STORED parts, not zero rendered ones: a turn that
  * stored only `done` draws nothing but is plainly finished, and is not what a
@@ -1573,7 +1579,12 @@ function claimedSilentTurnId(
   detail: ChatThreadDetail,
   preTurnIds: ReadonlySet<string> | null,
 ): EntityId | null {
-  if (phase !== 'streaming' || preTurnIds === null) return null;
+  if (phase !== 'streaming') return null;
+  const marked = detail.turns.filter(
+    (turn) => turn.role === 'assistant' && turn.turnInFlight === true && turn.parts.length === 0,
+  );
+  if (marked.length === 1) return marked[0]!.messageId;
+  if (preTurnIds === null) return null;
   const silent = detail.turns.filter(
     (turn) =>
       turn.role === 'assistant' &&

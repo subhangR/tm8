@@ -40,10 +40,43 @@ const registry = new Map<string, RegistryEntry>();
  * Output that arrived before a session's terminal mounted. Bounded: a terminal
  * that never mounts would otherwise accumulate its whole stream here.
  */
-const pending = new Map<string, string[]>();
+interface PendingOutput {
+  chunks: string[];
+  bytes: number;
+}
+const pending = new Map<string, PendingOutput>();
 /** Pending buffers whose next drain must use hidden replay hydration. */
 const pendingReplayHydrations = new Set<string>();
 const MAX_PENDING_CHUNKS = 256;
+export const MAX_PENDING_BYTES = 2 * 1024 * 1024;
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+function appendPending(id: string, data: string): void {
+  const encoded = encoder.encode(data);
+  let chunk = data;
+  let chunkBytes = encoded.byteLength;
+  if (encoded.byteLength > MAX_PENDING_BYTES) {
+    // Start on a UTF-8 code-point boundary. Decoding from a continuation byte
+    // would insert a replacement character and could make the retained string
+    // slightly larger than the byte ceiling it is meant to enforce.
+    let start = encoded.byteLength - MAX_PENDING_BYTES;
+    while (start < encoded.byteLength && (encoded[start]! & 0xc0) === 0x80) start += 1;
+    chunk = decoder.decode(encoded.slice(start));
+    chunkBytes = encoded.byteLength - start;
+  }
+  const value = pending.get(id) ?? { chunks: [], bytes: 0 };
+  value.chunks.push(chunk);
+  value.bytes += chunkBytes;
+  while (
+    value.chunks.length > 1
+    && (value.chunks.length > MAX_PENDING_CHUNKS || value.bytes > MAX_PENDING_BYTES)
+  ) {
+    const removed = value.chunks.shift();
+    if (removed !== undefined) value.bytes -= encoder.encode(removed).byteLength;
+  }
+  pending.set(id, value);
+}
 
 let started = false;
 
@@ -60,10 +93,7 @@ export function ensureTerminalRuntime(): void {
       return { write: (data: string) => entry.term.write(data), element: entry.term.element };
     },
     bufferPending: (id, data) => {
-      const chunks = pending.get(id) ?? [];
-      chunks.push(data);
-      if (chunks.length > MAX_PENDING_CHUNKS) chunks.splice(0, chunks.length - MAX_PENDING_CHUNKS);
-      pending.set(id, chunks);
+      appendPending(id, data);
     },
   });
 
@@ -92,10 +122,7 @@ export function ensureTerminalRuntime(): void {
       entry.hydrateReplay(data);
       return;
     }
-    const chunks = pending.get(id) ?? [];
-    chunks.push(data);
-    if (chunks.length > MAX_PENDING_CHUNKS) chunks.splice(0, chunks.length - MAX_PENDING_CHUNKS);
-    pending.set(id, chunks);
+    appendPending(id, data);
     pendingReplayHydrations.add(id);
   });
 
@@ -124,9 +151,9 @@ export function registerTerminal(
   if (buffered) {
     pending.delete(id);
     if (pendingReplayHydrations.delete(id)) {
-      hydrateReplay(buffered.join(''));
+      hydrateReplay(buffered.chunks.join(''));
     } else {
-      for (const chunk of buffered) term.write(chunk);
+      for (const chunk of buffered.chunks) term.write(chunk);
     }
   }
   return () => {

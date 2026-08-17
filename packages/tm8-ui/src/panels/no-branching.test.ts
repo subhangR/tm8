@@ -108,6 +108,18 @@ describe('§15.2 — no component knows a kind', () => {
       .map((k) => k.kind)
       .filter((k) => !k.startsWith('c:'));
 
+    // 'graph' became a KIND with Craft P1 (migration 135) while remaining,
+    // from long before, a session-panel SURFACE token, a collection MODE and
+    // a detail-tab VIEW name. This scanner is a quoted-word match and cannot
+    // tell those unions from a kind literal, so the pre-existing collisions
+    // are enumerated BY FILE and the rule stays hard everywhere else — a
+    // fourth file quoting 'graph' still fails here and must argue its case.
+    const wordCollisions: ReadonlySet<string> = new Set([
+      'panels/EntityListPanel.tsx → graph',
+      'panels/bodies/WorkSessionContent.tsx → graph',
+      'panels/detail/tabs.tsx → graph',
+    ]);
+
     const offenders: string[] = [];
     for (const file of sourceFiles) {
       // Comments are stripped FIRST: the docblocks in these files quote the
@@ -115,6 +127,7 @@ describe('§15.2 — no component knows a kind', () => {
       // cannot name the rule is worse documentation and no safer.
       const text = stripComments(readFileSync(file, 'utf8'));
       for (const kind of kinds) {
+        if (wordCollisions.has(`${relative(SRC, file)} → ${kind}`)) continue;
         // Quoted literal only: the WORD may appear in prose and in comments
         // (this file's own docblock names three kinds), and banning prose
         // would push the explanations out of the code that needs them.

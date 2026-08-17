@@ -165,6 +165,8 @@ describe('W1 frozen-row schema amendments', () => {
       'voice_channel', 'memory', 'worktree', 'artifact',
       // 2026-08-09: `loop` — the scheduled-work kind (dreamer-dispatcher §4.4).
       'loop',
+      // 2026-08-16: `graph` — the blueprint/diagram kind (Craft P1, R1-R3).
+      'graph',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

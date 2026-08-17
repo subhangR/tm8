@@ -36,7 +36,14 @@ export type CoreEntityKind =
   | 'memory'
   | 'artifact'
   | 'worktree'
-  | 'loop';
+  | 'loop'
+  // Craft P1 (2026-08-16, rulings R1-R3 on task 01a00a0b): the general
+  // diagram/flow primitive. ONE ROW holds vertices AND edges — a lean,
+  // self-contained blueprint; referenced entities stay outside, the flow
+  // between them lives inside the row. Content-discriminated `graphType`
+  // ('entity' = orchestratable blueprint, 'mermaid' = durable diagram source,
+  // more later). It never writes real public.edges while being crafted.
+  | 'graph';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -272,7 +279,13 @@ export type CoreEntityState =
    */
   | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
       subjectId: EntityId | null; nextRunAt: string | null; lastRunAt: string | null;
-      lastError: string | null };
+      lastError: string | null }
+  /**
+   * Craft P1: enough for a list row — which type of graph, and how big. The
+   * vertices and edges themselves are content, not state: a summary never
+   * needs them and they can be large.
+   */
+  | { kind: 'graph'; graphType: string; nodeCount: number; edgeCount: number };
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
@@ -458,6 +471,22 @@ export interface WorkSessionInteractionProfileProjection {
   composerPolicy: ComposerInteractionPolicy;
 }
 
+/**
+ * Craft P1 — the lean blueprint vocabulary (rulings R1-R3, task 01a00a0b).
+ *
+ * DELIBERATELY A SKETCH, NOT A PROGRAM SCHEMA. A node is either a REFERENCE
+ * to an existing entity (`id`) or a SPEC for one that does not exist yet
+ * (`{kind, title, hint?}` — the orchestrating agent writes the real body when
+ * it materializes, R2). `key` is row-local so specs can be wired before they
+ * exist. Edges carry the registered edge vocabulary as INTENT — the agent
+ * treats them as instruction, never as a schema-validated DAG. Everything is
+ * optional beyond the discriminants and validation is soft: unknown members
+ * pass through so future graph types cost no contract change.
+ */
+export interface GraphNodeSpec { kind?: string; title?: string; hint?: string; [extra: string]: unknown }
+export interface GraphNode { key?: string; id?: EntityId; spec?: GraphNodeSpec; [extra: string]: unknown }
+export interface GraphEdgeSpec { src?: string; dst?: string; type?: string; note?: string; [extra: string]: unknown }
+
 export type CoreEntityContent =
   | { kind: 'task'; description: string; acceptanceCriteria: AcceptanceCriterion[];
       pointsEstimate?: number | null }
@@ -492,7 +521,15 @@ export type CoreEntityContent =
       statusChangedAt: string | null }
   | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
       subjectId: EntityId | null; prompt: string; config: Record<string, unknown>;
-      nextRunAt: string | null; lastRunAt: string | null; lastError: string | null };
+      nextRunAt: string | null; lastRunAt: string | null; lastError: string | null }
+  /**
+   * Craft P1: the whole graph in one row (R1). `graphType` discriminates
+   * (R3): 'entity' uses nodes/edges/layout; 'mermaid' uses `source`; future
+   * types choose their own members. All four carry on every read — an arm a
+   * type does not use is simply empty. `layout` is presentation only.
+   */
+  | { kind: 'graph'; graphType: string; nodes: GraphNode[]; edges: GraphEdgeSpec[];
+      layout: Record<string, { x: number; y: number }>; source: string | null };
 
 export interface CustomEntityContent { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
 
@@ -662,6 +699,14 @@ export interface MessageView extends EntitySummary {
   lastReplyAt?: string | null; replyParticipants?: ActorSummary[];
   /** Structured runtime output, appended durably in stream order. */
   parts?: MessagePart[];
+  /**
+   * True while this message is a chat turn's agent message and that turn has
+   * not completed (`chat_turns.state` in `queued`/`running`). The stored body
+   * is then the claim placeholder, not content — parts-aware surfaces should
+   * draw the streaming parts and suppress the body. Server-set; absent
+   * everywhere else.
+   */
+  turnInFlight?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -731,8 +776,10 @@ export interface MessageDonePart extends MessagePartBase {
   payload: { reason: 'success' | 'error' | 'interrupted' | 'closed' };
 }
 
-/** One write-once runtime binding for a human-authored message-thread root. */
-export type ChatMode = 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate';
+/** One write-once runtime binding for a human-authored message-thread root.
+ *  `craft` joined 2026-08-16 (Craft P1): the blueprint-sketching mode — edits
+ *  a graph entity's row, never the real graph; style-only like every mode. */
+export type ChatMode = 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate' | 'craft';
 
 export interface ChatThreadSummary {
   rootMessageId: EntityId;
@@ -1955,7 +2002,11 @@ export type InvitePreview =
  * the full-screen kanban over the task collection (switchable grouping,
  * priority/assignee filters). A VIEW: it renders the `task` KIND's rows, so
  * no kind ref moves; the tab is a presentation of an existing collection. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board';
+/** `craft` added 2026-08-16 (Craft P1, same R4 additive widening): the
+ * split-pane blueprint studio — a craft-mode chat anchored to a `graph`
+ * entity beside a canvas rendering that entity's row. A VIEW over the new
+ * `graph` kind's rows; the kind itself stays an ordinary collection kind. */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -2150,16 +2201,30 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // The id is `chats` on both sides. It is free: 125 RENAMED the old `chats`
   // group to `channels` (it was the channel collection's group, never this
   // surface's), so nothing else claims it and no space can hold both.
+  // 2026-08-16 LATER (unified Home, task 01a00932, migration 134): the
+  // `work` and `channels` GROUPS retire and `chats` is relabelled HOME —
+  //   chats(Home) | board | graph | files | settings
+  // Home's screen lists chat threads OR any collection kind (the root
+  // column + registry-driven icon rail), so a Work tab beside it would be a
+  // second door to every list Home already owns, and Channels' contents
+  // await the redesigned Collab surface (a later feature). Nothing was
+  // deleted: `workspace`, `git`, `messages` and every retired kind ref keep
+  // their routes, their chords and their menu-editor eligibility — the same
+  // rail-edit posture as 125/126/127.
   { serverId: 'chats', clientId: 'chats' },
-  { serverId: 'work', clientId: 'workspace' },
   // 2026-08-16 (Board tab wave, migration 130): the task kanban is its own
-  // full-bleed tab beside Work — a railless group holding the single `board`
-  // VIEW, the same posture as graph/files/chats. It PRESENTS the task
-  // collection; the `task` kind row stays in the Workspace caret, so this is
-  // a second door to tasks, not a move (the R9 two-doors posture files set).
+  // full-bleed tab — a railless group holding the single `board` VIEW, the
+  // same posture as graph/files/chats. It PRESENTS the task collection; the
+  // `task` kind stays a Home root, so this is a second door to tasks, not a
+  // move (the R9 two-doors posture files set).
   { serverId: 'board', clientId: 'board' },
+  // 2026-08-16 (Craft P1, migration 137): the blueprint studio joins beside
+  // Board — a railless group holding the single `craft` VIEW (chat + canvas
+  // over one `graph` entity's row). Placed between Board and Graph: it sits
+  // with the other full-bleed work surfaces, and tab position is a one-line
+  // edit here if the pending position ruling says otherwise.
+  { serverId: 'craft', clientId: 'craft' },
   { serverId: 'graph', clientId: 'graph' },
-  { serverId: 'channels', clientId: 'channels' },
   { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },
 ] as const;

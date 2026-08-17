@@ -13,7 +13,11 @@
  * fail — which is the point.
  */
 import { describe, expect, it } from 'vitest';
-import type { MenuConfig } from '@tm8/contract';
+import {
+  DEFAULT_MENU_CHANNELS_SPINE,
+  DEFAULT_MENU_WORK_ITEM_SPINE,
+  type MenuConfig,
+} from '@tm8/contract';
 import { SHIPPED_DEFAULT_MENU } from '../domain';
 import { resolveMenu } from '../shell/menu-resolve';
 import {
@@ -38,7 +42,27 @@ import {
   availableViewRefs,
 } from './menu-edit';
 
-const BASE: MenuConfig = SHIPPED_DEFAULT_MENU;
+/**
+ * The ROW-BEARING base. Revision 17's shipped default is five railless
+ * single-view groups (the unified Home owns every kind list), so the editor's
+ * row operations are exercised against the revision-16 arrangement a
+ * server-authored config can still carry — reorder, rename, carets and caps
+ * must keep working for those. The shipped default itself is covered by the
+ * free-refs case at the bottom.
+ */
+const BASE: MenuConfig = {
+  schemaVersion: 1,
+  revision: 16,
+  groups: [
+    { id: 'chats', label: 'Collab', items: [{ type: 'view', ref: 'dashboard' }] },
+    { id: 'workspace', label: 'Work', items: [...DEFAULT_MENU_WORK_ITEM_SPINE] },
+    { id: 'board', label: 'Board', items: [{ type: 'view', ref: 'board' }] },
+    { id: 'graph', label: 'Graph', items: [{ type: 'view', ref: 'graph' }] },
+    { id: 'channels', label: 'Channels', items: [...DEFAULT_MENU_CHANNELS_SPINE] },
+    { id: 'files', label: 'Files', items: [{ type: 'view', ref: 'files' }] },
+    { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
+  ],
+};
 
 function groupIds(config: MenuConfig): string[] {
   return config.groups.map((g) => g.id);
@@ -144,7 +168,7 @@ describe('remove', () => {
 });
 
 describe('add', () => {
-  it('offers exactly the view refs the shipped default leaves free', () => {
+  it('offers exactly the view refs the rowed base leaves free', () => {
     // `MenuViewRef` is a CLOSED union. Until revision 5 the default spent every
     // member and this control had literally nothing to add; the user ruling of
     // 2026-08-01 took Feed, Inbox and Channels off the rail WITHOUT taking any
@@ -163,7 +187,19 @@ describe('add', () => {
     // editor no longer offers it. The round trip is the assertion's whole
     // value — it moved twice without anyone touching this list, because
     // `availableViewRefs` is VIEW_PRESENTATION minus what the draft places.
-    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels']);
+    // …and 'craft' joined it with revision 18 (Craft P1): the rowed BASE
+    // predates the tab, so the editor offers the ref as an add.
+    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels', 'craft']);
+  });
+
+  it('the revision-18 shipped default frees the whole retired set — unrouted, not deleted', () => {
+    // Task 01a00932: Work and Channels retired from the tab row, so their
+    // view refs joined the free set. A viewer who wants a Work group back
+    // can author one — this is the editor-side proof the flip deleted
+    // nothing.
+    expect([...availableViewRefs(startDraft(SHIPPED_DEFAULT_MENU))].sort()).toEqual(
+      ['channels', 'feed', 'git', 'inbox', 'messages', 'workspace'].sort(),
+    );
   });
 
   it('adds a freed view ref back onto the rail', () => {
@@ -172,7 +208,7 @@ describe('add', () => {
     expect(draftConfig(d).groups.find((g) => g.id === 'graph')?.items.map((i) => i.ref))
       .toEqual(['graph', 'feed']);
     // And once used, it stops being on offer.
-    expect(availableViewRefs(d)).toEqual(['inbox', 'channels']);
+    expect(availableViewRefs(d)).toEqual(['inbox', 'channels', 'craft']);
   });
 
   it('offers only refs the rail can actually render, and never a duplicate', () => {

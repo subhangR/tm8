@@ -373,6 +373,8 @@ export interface Seam {
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
   openSpace(spaceId: SpaceId): Promise<void>;
   closeSpace(spaceId: SpaceId): void;
+  /** Force the next open to establish a fresh off-React baseline after resync. */
+  invalidateSpaceBaseline?(spaceId: SpaceId): void;
   dispose(): void;
 
   // -- event stream & connection honesty (LLD §6) ----------------------------

@@ -158,10 +158,11 @@ describe('the SECOND signed-out surface never writes the hash either', () => {
     const view = render(<GateApp seam={seamDemandingAuth()} routerTarget={target} />);
 
     await waitFor(() => screen.getByTestId('auth-frame'));
-    /* Genuinely the IN-SHELL sign-in: the rail is still there. If this ever
-       became AuthGate's full-screen swap, the test would be measuring the
-       surface that is already covered above. */
-    expect(screen.getByTestId('menu-rail')).toBeTruthy();
+    /* Genuinely the IN-SHELL sign-in: the shell's tab bar is still there
+       (revision 17 draws no menu rail on any shipped tab, so the bar is the
+       always-present chrome). If this ever became AuthGate's full-screen
+       swap, the test would be measuring the surface already covered above. */
+    expect(screen.getByTestId('space-tab-bar')).toBeTruthy();
 
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 80));

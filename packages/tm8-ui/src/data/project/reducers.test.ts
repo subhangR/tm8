@@ -2,16 +2,23 @@ import { describe, expect, it } from 'vitest';
 import type { DurableWorkspaceEvent } from '@tm8/contract';
 import {
   ACTIVITY_CAP,
+  DETAIL_CACHE_CAP,
+  EDGE_CACHE_CAP,
+  ENTITY_CACHE_CAP,
+  MESSAGE_ANCHOR_CACHE_CAP,
   MESSAGES_CAP,
+  NOTIFICATION_CAP,
   type DomainState,
   ingestDelivery,
   ingestDetail,
+  ingestEdges,
   ingestHandoffs,
   ingestMessages,
   ingestNotifications,
   ingestSummaries,
   initialDomainState,
   reduceEvent,
+  reduceEvents,
 } from './reducers.js';
 import {
   SPACE, activity, counters, deliveryRecord, detail, edge, event, handoff,
@@ -245,7 +252,182 @@ describe('unknown event types', () => {
   });
 });
 
+describe('batched event reduction', () => {
+  it('is observably equivalent to the sequential reducer for a mixed stream', () => {
+    const events: DurableWorkspaceEvent[] = [
+      event('entity.upsert', { entity: summary('t1') }),
+      event('counter.changed', { entityId: 't1', counters: counters({ messages: 2 }) }),
+      event('entity.upsert', { entity: summary('t2') }),
+      event('edge.upsert', { edge: edge('e1', 't1', 't2') }),
+      event('message.created', { anchorId: 't1', message: message('m1', 't1', '2026-07-28T00:01:00.000Z') }),
+      event('activity.created', { activity: activity('a1') }),
+      event('notification.created', { notification: notification('n1', '2026-07-28T00:02:00.000Z') }),
+      event('menu.updated', { menu: menu(3) }),
+      event('space.default_channel.updated', { channelId: 't1', settingsRevision: 4 }),
+      event('project.association.corrected', {
+        result: { artifactId: 't1', projectId: 'p1', outcome: 'removed', edge: null },
+      }),
+      event('edge.deleted', { edge: edge('e1', 't1', 't2') }),
+    ];
+    let sequential = initialDomainState();
+    for (const item of events) sequential = apply(sequential, item);
+    const initial = initialDomainState();
+    const batched = { ...initial, ...reduceEvents(initial, events) };
+    expect(batched).toEqual(sequential);
+  });
+
+  it('refreshes touched message anchors in the same LRU order as sequential reduction', () => {
+    let state = initialDomainState();
+    for (let i = 0; i < MESSAGE_ANCHOR_CACHE_CAP; i += 1) {
+      state = {
+        ...state,
+        ...ingestMessages(state, `a${i}`, [
+          message(`m${i}`, `a${i}`, '2026-07-28T00:00:00.000Z'),
+        ]),
+      };
+    }
+    const events: DurableWorkspaceEvent[] = [
+      event('message.updated', {
+        anchorId: 'a0',
+        message: message('m0', 'a0', '2026-07-28T00:00:00.000Z', { version: 2 }),
+      }),
+      event('message.created', {
+        anchorId: 'new-anchor',
+        message: message('new-message', 'new-anchor', '2026-07-28T00:01:00.000Z'),
+      }),
+    ];
+    let sequential = state;
+    for (const item of events) sequential = apply(sequential, item);
+    const batched = { ...state, ...reduceEvents(state, events) };
+    expect(Object.keys(batched.messagesByAnchor)).toEqual(Object.keys(sequential.messagesByAnchor));
+    expect(batched.messagesByAnchor.a0?.[0]?.version).toBe(2);
+    expect(batched.messagesByAnchor.a1).toBeUndefined();
+  });
+
+  it('coalesces and bounds a notification burst', () => {
+    const initial = initialDomainState();
+    const events = Array.from({ length: NOTIFICATION_CAP + 50 }, (_, index) =>
+      event('notification.created', {
+        notification: notification(
+          `n${index}`,
+          new Date(Date.UTC(2026, 6, 28, 0, 0, index)).toISOString(),
+        ),
+      }));
+    const state = { ...initial, ...reduceEvents(initial, events) };
+    expect(state.notifications).toHaveLength(NOTIFICATION_CAP);
+    expect(state.notifications[0]?.id).toBe(`n${NOTIFICATION_CAP + 49}`);
+  });
+});
+
 describe('hydration ingestion', () => {
+  it('bounds event-derived entities without evicting a referenced row', () => {
+    const initial = initialDomainState();
+    const rows = Array.from({ length: ENTITY_CACHE_CAP }, (_, index) => summary(`e${index}`));
+    const hydrated = { ...initial, ...ingestSummaries(initial, rows) };
+    const created = event('entity.upsert', { entity: summary('newest') });
+    const state = {
+      ...hydrated,
+      ...reduceEvents(hydrated, [created], new Set(['e0'])),
+    };
+    expect(Object.keys(state.entities)).toHaveLength(ENTITY_CACHE_CAP);
+    expect(state.entities.e0).toBeDefined();
+    expect(state.entities.e1).toBeUndefined();
+    expect(state.entities.newest).toBeDefined();
+  });
+
+  it('bounds event-derived edges without evicting an open entity connection', () => {
+    const initial = initialDomainState();
+    const hydrated = {
+      ...initial,
+      ...ingestEdges(
+        initial,
+        Array.from({ length: EDGE_CACHE_CAP }, (_, index) =>
+          edge(`edge-${index}`, `source-${index}`, `target-${index}`)),
+      ),
+    };
+    const created = event('edge.upsert', {
+      edge: edge('edge-newest', 'source-newest', 'target-newest'),
+    });
+    const state = {
+      ...hydrated,
+      ...reduceEvents(hydrated, [created], new Set(['source-0'])),
+    };
+    expect(Object.keys(state.edges)).toHaveLength(EDGE_CACHE_CAP);
+    expect(state.edges['edge-0']).toBeDefined();
+    expect(state.edges['edge-1']).toBeUndefined();
+    expect(state.edges['edge-newest']).toBeDefined();
+  });
+
+  it('does not let stale detail or message reads regress newer live versions', () => {
+    let state = initialDomainState();
+    state = { ...state, ...ingestSummaries(state, [summary('t1', { title: 'live', version: 3 })]) };
+    state = { ...state, ...ingestDetail(state, detail('t1', { title: 'stale', version: 2 })) };
+    expect(state.entities.t1.title).toBe('live');
+    expect(state.details.t1).toBeUndefined();
+
+    state = {
+      ...state,
+      ...ingestMessages(state, 't1', [
+        message('m1', 't1', '2026-07-28T00:00:00.000Z', { version: 3, content: {
+          kind: 'message', body: 'live', mentions: [], attachments: [],
+        } }),
+      ]),
+    };
+    state = {
+      ...state,
+      ...ingestMessages(state, 't1', [
+        message('m1', 't1', '2026-07-28T00:00:00.000Z', { version: 2, content: {
+          kind: 'message', body: 'stale', mentions: [], attachments: [],
+        } }),
+      ]),
+    };
+    expect(state.messagesByAnchor.t1?.[0]?.content.body).toBe('live');
+  });
+
+  it('does not resurrect an edge deleted after an older detail snapshot began', () => {
+    const staleEdge = edge('e1', 't1', 't2', { updatedAt: '2026-07-28T00:00:00.000Z' });
+    let state = initialDomainState();
+    state = apply(state, event('edge.deleted', {
+      edge: { ...staleEdge, updatedAt: '2026-07-28T00:01:00.000Z' },
+    }));
+    const staleDetail = detail('t1', {
+      connections: {
+        outgoing: [{
+          type: staleEdge.type,
+          direction: 'outgoing',
+          label: 'Related',
+          edges: [staleEdge],
+        }],
+        incoming: [],
+        unresolvedHardDependencyCount: 0,
+      },
+    });
+    state = { ...state, ...ingestDetail(state, staleDetail) };
+    expect(state.edges.e1).toBeUndefined();
+    expect(state.edgeTombstones.e1).toBe('2026-07-28T00:01:00.000Z');
+  });
+
+  it('bounds detail and message-anchor caches while retaining the newest read', () => {
+    let s = initialDomainState();
+    for (let i = 0; i <= DETAIL_CACHE_CAP; i += 1) {
+      s = { ...s, ...ingestDetail(s, detail(`d${i}`)) };
+    }
+    expect(Object.keys(s.details)).toHaveLength(DETAIL_CACHE_CAP);
+    expect(s.details.d0).toBeUndefined();
+    expect(s.details[`d${DETAIL_CACHE_CAP}`]).toBeDefined();
+
+    for (let i = 0; i <= MESSAGE_ANCHOR_CACHE_CAP; i += 1) {
+      s = {
+        ...s,
+        ...ingestMessages(s, `a${i}`, [
+          message(`m${i}`, `a${i}`, '2026-07-28T00:00:00.000Z'),
+        ]),
+      };
+    }
+    expect(Object.keys(s.messagesByAnchor)).toHaveLength(MESSAGE_ANCHOR_CACHE_CAP);
+    expect(s.messagesByAnchor.a0).toBeUndefined();
+  });
+
   it('ingestSummaries merges a batch, overlaying cached details', () => {
     let s = initialDomainState();
     s = { ...s, ...ingestDetail(s, detail('t1')) };

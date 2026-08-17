@@ -72,6 +72,34 @@ describe('seam-real: menu() — the ONE soft fallback (LLD C-4)', () => {
 });
 
 describe('seam-real: openSpace', () => {
+  it('discards retained history off-React and resumes from its high-water', async () => {
+    const delivered: number[] = [];
+    const { seam, pool } = mk((url) => {
+      if (url.includes('/execution/liveness')) {
+        return ok({ liveEntityIds: [], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z' });
+      }
+      if (url.includes('/events')) {
+        return ok({
+          items: [{
+            type: 'entity.upsert', spaceId: 'sp-1', seq: 37,
+            occurredAt: '2026-07-28T12:00:00.000Z', schemaVersion: 1,
+            entity: { id: 'old' },
+          }],
+          nextCursor: '37',
+        });
+      }
+      return ok({});
+    });
+    seam.onEvent((event) => delivered.push(event.seq));
+    await seam.openSpace('sp-1');
+    expect(delivered).toEqual([]);
+    pool.last().openIt();
+    expect(pool.last().frames()).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 37 },
+    ]);
+  });
+
   it('subscribes, resumes and starts the liveness cadence', async () => {
     const { seam, pool, f } = mk((url) =>
       url.includes('/execution/liveness')
@@ -88,6 +116,28 @@ describe('seam-real: openSpace', () => {
     ]);
     expect(f.calls.map((c) => c.url)).toContain('/v2/spaces/sp-1/execution/liveness');
     expect(seam.liveness.statusOf({ id: 'ws-1', workStatus: 'running' })).toBe('live');
+  });
+
+  it('does not discard post-baseline events by rescanning history on a retry', async () => {
+    let eventPolls = 0;
+    const { seam } = mk((url) => {
+      if (url.includes('/execution/liveness')) {
+        return ok({ liveEntityIds: [], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z' });
+      }
+      if (url.includes('/events')) {
+        eventPolls += 1;
+        return ok({ items: [], nextCursor: '0' });
+      }
+      return ok({});
+    });
+    await seam.openSpace('sp-1');
+    seam.closeSpace('sp-1');
+    await seam.openSpace('sp-1');
+    expect(eventPolls).toBe(1);
+
+    seam.invalidateSpaceBaseline?.('sp-1');
+    await seam.openSpace('sp-1');
+    expect(eventPolls).toBe(2);
   });
 
   it('SURVIVES a liveness read that fails — today every one of them 404s', async () => {

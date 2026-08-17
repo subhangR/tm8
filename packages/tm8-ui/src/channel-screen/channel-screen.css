@@ -754,13 +754,15 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   gap: 8px;
 }
 
-.chs-composer__row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
+/* The card and its warnings track Chat Home's width: centred on the feed,
+   capped at the same 760px reading measure. The pickers are absolutely
+   positioned popovers and opt out. */
+.chs-composer > :not(.chs-mention-picker) {
+  box-sizing: border-box;
+  width: min(760px, 100%);
+  margin-inline: auto;
 }
 
-.chs-upload-list,
 .chs-mention-list {
   display: flex;
   flex-wrap: wrap;
@@ -770,7 +772,6 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding: 0;
 }
 
-.chs-upload,
 .chs-mention-list > li {
   display: flex;
   align-items: center;
@@ -783,10 +784,6 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   color: var(--pn-ink-3);
 }
 
-.chs-upload[data-phase='failed'] { border-color: var(--pn-block); }
-.chs-upload__name { color: var(--pn-ink-2); overflow-wrap: anywhere; }
-.chs-upload__error { color: var(--pn-block); }
-.chs-upload button,
 .chs-mention-list button {
   min-width: 44px;
   min-height: 44px;
@@ -929,60 +926,28 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border: 0 !important;
 }
 
-.chs-composer__input {
-  flex: 1;
-  /* Shrinkable below its placeholder's min-content width — without this the
-     flex row overflows narrow hosts (the thread pane) instead of shrinking —
-     but floored well above zero: a verbose disabled-with-reason beside it
-     must wrap its own text, not squeeze the textarea into a one-column
-     sliver. Composers narrower than the wrap threshold stack instead. */
-  min-width: 200px;
-  height: 46px;
-  resize: none;
-  /* Card on surface: the input is the one fillable thing here and reads as a
-     well; surface-on-surface made it vanish into its own chrome. */
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-md);
-  color: var(--pn-ink);
-  font-family: var(--pn-ui);
-  font-size: 13px;
-  line-height: 1.5;
-  padding: 7px 11px;
-  outline: none;
-  box-sizing: border-box;
-}
+/* The field is the shared card's (`.ri-card textarea` in rich-input.css) —
+   borderless inside the bordered card, exactly as Chat Home draws it. */
 
-.chs-composer__input::placeholder { color: var(--pn-ink-3); }
-
-.chs-composer__input:focus {
-  border-color: var(--pn-brand);
-  box-shadow: 0 0 0 3px var(--pn-brand-soft);
-}
-
+/* Send matches Chat Home's: a compact primary at the foot's end. */
 .chs-composer__send {
-  min-height: 44px;
   flex: none;
-  padding: 0 18px;
-  border: none;
-  border-radius: var(--pn-r-md);
-  background: var(--pn-brand);
-  color: var(--pn-paper);
+  margin-left: var(--pn-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
   font-family: var(--pn-ui);
-  font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 9px;
   cursor: pointer;
   transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
-.chs-composer__send:hover:not(:disabled) { background: var(--pn-brand-2); }
+.chs-composer__send:hover:not(:disabled) { background: var(--pn-brand); }
 
-.chs-composer__send:disabled {
-  background: var(--pn-active);
-  color: var(--pn-ink-4);
-  cursor: default;
-}
+.chs-composer__send:disabled { opacity: 0.42; cursor: default; }
 
 /*
  * The exited-session warning is WAIT-toned, not BLOCK-toned, and that is a
@@ -1063,13 +1028,14 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   text-overflow: ellipsis;
 }
 
+/* The keyboard tip rides in the card's foot, pushed against Send — the same
+   seat Chat Home gives it. */
 .chs-composer__hint {
-  margin: 0;
-  display: flex;
-  gap: 10px;
+  margin: 0 0 0 auto;
   font-family: var(--pn-mono);
   font-size: 9px;
   color: var(--pn-ink-4);
+  white-space: nowrap;
 }
 
 /* --- shared small controls ------------------------------------------------ */
@@ -1108,7 +1074,12 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   white-space: normal;
 }
 
+/* Compact by default, like Chat Home's footer sigils; the 440px container
+   block below restores full 44px touch targets where fingers do the work. */
 .chs-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--pn-ink-4);
   background: transparent;
   border: none;
@@ -1118,8 +1089,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-xs);
   cursor: pointer;
   flex: none;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 26px;
+  min-height: 26px;
 }
 
 .chs-iconbtn:hover { color: var(--pn-brand); }
@@ -1130,9 +1101,9 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   align-items: center;
 }
 
-.chs-composer__row .hon-disabled {
-  min-width: 44px;
-  min-height: 44px;
+.ri-card__foot .hon-disabled {
+  min-width: 26px;
+  min-height: 26px;
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -1351,18 +1322,17 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-artifact { grid-template-columns: auto minmax(0, 1fr); }
   .chs-artifact .chs-linkbtn { grid-column: 1 / -1; justify-self: start; }
   .chs-composer { padding-inline: 8px; }
+  /* Touch targets grow back to the full 44px where fingers do the work. */
+  .chs-composer__send { min-height: 44px; }
+  .chs-iconbtn { min-width: 44px; min-height: 44px; }
 }
 
 /* The composer is its own query container (see `.chs-composer`), so this
-   answers to the COMPOSER's width — which is narrow both on a small screen
-   and inside the thread pane on a large one. The textarea takes the full
-   width on top and the controls drop to a row beneath it. 520 = the widest
-   composer whose single row could still squeeze the textarea under its
-   200px floor (3 × 44px icons + Send + gaps + padding). */
+   answers to the COMPOSER's width — narrow both on a small screen and
+   inside the thread pane on a large one. The card stacks field-over-foot
+   at every width; only copy sheds here, exactly as Chat Home's foot does. */
 @container (max-width: 520px) {
-  .chs-composer__row { flex-wrap: wrap; align-items: center; }
-  .chs-composer__input { order: -1; flex-basis: 100%; width: 100%; }
-  .chs-composer__send { margin-left: auto; }
+  .chs-composer__hint { display: none; }
   .chs-composer__uncertain { align-items: flex-start; flex-direction: column; }
 }
 
@@ -1380,7 +1350,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 @media (forced-colors: active) {
   .chs-root { forced-color-adjust: auto; }
   .chs-artifact,
-  .chs-upload,
+  .ri-attachment,
   .chs-mention-picker,
   .chs-ref-chip,
   .chs-attachment,

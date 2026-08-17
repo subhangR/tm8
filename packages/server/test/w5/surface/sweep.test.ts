@@ -567,6 +567,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // top of the 121-vs-116 merge union this comment block already records.
     // Same rule again: both sides carried a pin, neither was the answer, the
     // MERGED tree was asked. `ls db/migrations/*.sql | wc -l` = 123.
+<<<<<<< HEAD
     // 123 -> 124 (2026-08-16): 133_chat_turn_attachments joins the chain --
     // `claim_next_chat_turn` now projects the turn message's `attachments`, so
     // a file the human attached reaches the teammate instead of stopping at
@@ -579,6 +580,29 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // THIS tree, not previous-plus-two: `ls db/migrations/*.sql | wc -l` = 126.
     // Whole-chain digest measured by the command above: cbd409964ce31245.
     expect(server.appliedMigrations.length).toBe(126);
+=======
+    // 123 -> 124 (2026-08-16): 133_chat_turns_select — the claimed-turn wire
+    // marker's select policy. MEASURED: `ls db/migrations/*.sql | wc -l` = 124.
+    // 124 -> 125 (2026-08-16, unified Home merge): 134_menu_home_tab —
+    // revision 17's server twin (task 01a00932). The lane took 134 BECAUSE it
+    // measured 133 as claimed on an unmerged branch; this merge is that
+    // branch landing, so the reservation was exactly right and the histories
+    // add. Both sides carried a pin — 124 here, 124 there — and NEITHER was
+    // the answer: a count pin is DERIVED, only the merged tree can be asked.
+    // MEASURED, never arithmetic: `ls db/migrations/*.sql | wc -l` = 125.
+    // 125 -> 128 (2026-08-16, Craft P1): THREE files in one lane — 135 mints
+    // the `graph` kind (registry + detail table + doors), 136 widens
+    // chat_mode to `craft`, 137 adds the Craft tab (menu revision 18). Three
+    // and not one because each is separately revertible: a disliked tab comes
+    // out without unminting the kind. Numbers taken ABOVE 134 after measuring
+    // ALL remote refs (their max was 134). MEASURED on this tree, never
+    // arithmetic: `ls db/migrations/*.sql | wc -l` = 128.
+    // 128 -> 129 (2026-08-16, same lane): 138 repairs 132's missing PUBLIC
+    // revoke on the task-workflow definer functions — found because the
+    // tm8_delivery_worker surface enumeration was red on every PR.
+    // MEASURED: `ls db/migrations/*.sql | wc -l` = 129.
+    expect(server.appliedMigrations.length).toBe(129);
+>>>>>>> origin/main
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

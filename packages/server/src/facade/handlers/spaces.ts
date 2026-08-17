@@ -315,7 +315,7 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
         anchor_id: string;
         teammate_id: string;
         model: string;
-        chat_mode: 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate';
+        chat_mode: 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate' | 'craft';
         title: string | null;
         reply_count: number;
         created_at: string;

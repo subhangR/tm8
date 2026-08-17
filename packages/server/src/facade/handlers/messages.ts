@@ -101,6 +101,24 @@ export async function toMessageViews(
       order by message_id, seq`,
     [rows.map((r) => r.id)],
   );
+  /*
+   * The wire marker for a claimed chat turn. `createAgentMessage`
+   * (chat/orchestrator.ts) must give the agent's message a body at claim time
+   * — `messages.body` is CHECK-constrained non-empty — so it writes the
+   * 'Agent turn in progress.' placeholder, and `complete_chat_turn` replaces
+   * it. Until then that body is a claim, not content, and clients used to
+   * recognise it by string-matching the sentence. Projecting the turn binding
+   * here lets them suppress by identity instead.
+   */
+  const inFlightRows = await q.query<{ agent_message_id: string }>(
+    `select agent_message_id
+       from public.chat_turns
+      where agent_message_id = any($1::uuid[])
+        and state in ('queued', 'running')`,
+    [rows.map((r) => r.id)],
+  );
+  const inFlight = new Set(inFlightRows.map((r) => r.agent_message_id));
+
   const parts = new Map<string, MessagePart[]>();
   for (const row of partRows) {
     const part = MessagePartSchema.parse({
@@ -143,6 +161,7 @@ export async function toMessageViews(
         .map((id) => replyActors.get(id))
         .filter((actor): actor is NonNullable<typeof actor> => actor !== undefined),
       ...(messageParts ? { parts: messageParts } : {}),
+      ...(inFlight.has(row.id) ? { turnInFlight: true } : {}),
     });
   }
   return views;
