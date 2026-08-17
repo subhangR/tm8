@@ -12,6 +12,22 @@ standalone acceptance table rather than a diff against one I cannot see. If the 
 lands later, §3 is the paragraph to reconcile against it: it agrees with §6's
 *observable* behaviour and deliberately differs on the *mechanism*.
 
+**Reconciliation closed, 2026-08-17: the brief is established non-existent.** Searched
+for by the navigation lane and found nowhere it could exist: never committed under any
+fetched ref (`git log --all` over the path is empty, and a `-S` sweep shows the string
+`MOBILE-DESIGN-BRIEF` only ever entered the repository via files that *cite* it — this
+document, `stores/backContract.ts`, and `docs/features/sharing/SHAREABLE-LINKS-DESIGN.md`
+§9); absent from the tm8 graph (every doc and task enumerated); and the task anchor
+§9 messaged (`019ff655-115e-7c7e-b2b9-38060a23fb29`) no longer resolves. The brief
+existed only as text quoted into tasks, in two fragments: its §3.2 + phase list (quoted
+in SHAREABLE-LINKS-DESIGN §9, satisfied when `attachRouter` was mounted, PR #220) and
+its §6 (quoted in the task behind PR #229, satisfied observationally by this contract).
+Both quoted fragments are answered by shipped code, so there is nothing left to
+reconcile: **§3 as written is the authoritative text**, and the "if the brief lands
+later" clause above is discharged. A document produced *after* this date titled
+MOBILE-DESIGN-BRIEF would be a new proposal to evaluate against this contract, not an
+authority this contract defers to.
+
 **Applies to:** both shells. This is not a mobile rule that desktop happens to
 tolerate; it is one rule, and the phone is simply where it becomes visible.
 
