@@ -48,6 +48,9 @@ describe('grammar (WLT §2.2 verbatim)', () => {
       `#/s/${SPACE}/channel/${id(2)}?msg=${id(3)}`,
       { view: 'channel', channelId: id(2), msg: id(3) },
     ],
+    /* New Session (2026-08-16): hyphenated segment, camel member — the two
+       vocabularies are already deliberately different (`dashboard` ↔ `home`). */
+    [`#/s/${SPACE}/new-session`, { view: 'newSession' }],
     [`#/s/${SPACE}/settings`, { view: 'settings', section: null }],
     [`#/s/${SPACE}/settings/projects`, { view: 'settings', section: 'projects' }],
     [`#/s/${SPACE}/settings/menu`, { view: 'settings', section: 'menu' }],
