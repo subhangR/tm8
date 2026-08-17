@@ -14,14 +14,22 @@ Unified entity-graph rebuild of Maestro. Phase 1 (v1: the node) — one from-con
 
 Then open **http://127.0.0.1:4611**. That is the whole thing: it ends with the
 server and the UI running in your terminal, having verified `/health` says
-`db:ok`. `--no-start` installs without starting; `--env prod --systemd` installs
-as a service instead. Idempotent — re-run it any time. `./install.sh --status`
+`db:ok`. `--no-start` installs without starting; `--env prod --service` installs
+it as an always-on service instead (systemd on Linux, launchd on macOS — it comes
+back after a reboot). Idempotent — re-run it any time. `./install.sh --status`
 reports what is installed, migrated and running. Full guide: [`docs/ops/INSTALL.md`](docs/ops/INSTALL.md).
+
+**To run agents, the host needs a logged-in agent CLI.** tm8 stores no agent
+credential — a spawned session runs the machine's own `claude` or `codex` login.
+Install passes a warning if neither is present; `tm8 doctor` reports presence AND
+login. Without one, a spawn sits at `running` forever with the refusal only in
+the terminal. Install: `npm i -g @anthropic-ai/claude-code` then `claude` to log
+in (or `npm i -g @openai/codex` then `codex login`).
 
 **Nothing in this repo starts Postgres.** `packages/server/src/sidecar/` looks
 like it does and is dead code (only `import type` reaches it), so `bun install &&
 bun run dev` on its own gives you a server that logs `graph: NOT CONFIGURED` and
-answers `501` to all 141 operations. Run the installer once first.
+answers `501` to every operation. Run the installer once first.
 
 ## Workspace layout
 

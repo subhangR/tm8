@@ -344,19 +344,38 @@ export function databaseUrl(env: NodeJS.ProcessEnv): string {
   return `postgres://${user}@${host}:${port}/${db}`;
 }
 
-/** Same discovery order as `db/migrate.mjs` — the sidecar's psql is a keg, not on PATH. */
-const PSQL_CANDIDATES = [
-  '/opt/homebrew/opt/postgresql@18/bin/psql',
-  '/usr/local/opt/postgresql@18/bin/psql',
-  '/usr/lib/postgresql/18/bin/psql',
-];
+/**
+ * The Postgres majors this node will accept, in preference order.
+ *
+ * The RULE lives in deploy/environments.sh — "the one table": major 16 is the
+ * DEFAULT/floor (`TM8_PG_MAJOR:-16`), and a NEWER server is fine because a
+ * client always talks to an older one. This repo's own clusters currently run
+ * 18, so hardcoding a single number here (it used to say 18) contradicted the
+ * table one way or the other. Instead: try the configured major first, then the
+ * newer-and-accepted majors, then the floor. scripts/lib/pg.mjs resolves psql
+ * the same way — keep the three in step.
+ */
+function acceptedPgMajors(io: DoctorIo): string[] {
+  const configured = io.env.TM8_PG_MAJOR?.trim();
+  return [...new Set([configured, '18', '17', '16'].filter((m): m is string => !!m))];
+}
+
+/** Keg/apt psql paths for a major — the sidecar's psql is a keg, not on PATH. */
+function psqlCandidates(major: string): string[] {
+  return [
+    `/opt/homebrew/opt/postgresql@${major}/bin/psql`,
+    `/usr/local/opt/postgresql@${major}/bin/psql`,
+    `/usr/lib/postgresql/${major}/bin/psql`,
+  ];
+}
 
 export async function findPsql(io: DoctorIo): Promise<string | null> {
   const explicit = io.env.TM8_PSQL?.trim();
   if (explicit) return explicit;
   const onPath = await io.which('psql');
   if (onPath) return onPath;
-  for (const candidate of PSQL_CANDIDATES) if (io.exists(candidate)) return candidate;
+  for (const major of acceptedPgMajors(io))
+    for (const candidate of psqlCandidates(major)) if (io.exists(candidate)) return candidate;
   return null;
 }
 
@@ -403,8 +422,9 @@ export const checkPostgres: Check = async ({ io }) => {
         PG_NAME,
         PG_TITLE,
         'no psql client found on PATH or in the known Homebrew/apt locations',
-        'install the Postgres 18 client, or set TM8_PSQL to its path ' +
-          '(`brew --prefix postgresql@18` → <prefix>/bin/psql)',
+        'install a Postgres client — 16 or newer (deploy/environments.sh sets 16 as the ' +
+          "floor; this repo's clusters run 18) — e.g. `brew install postgresql@18`, or set " +
+          'TM8_PSQL to an existing psql',
       ),
     ];
   }
@@ -428,8 +448,10 @@ export const checkPostgres: Check = async ({ io }) => {
         `could not connect to ${shown}: ${why}`,
         /password|authentication|role .* does not exist/i.test(why)
           ? 'authentication failed — note that `pg_isready` would still say OK here. Check TM8_PG_USER/PGPASSWORD, ' +
-            'or start the dev sidecar with `bun run dev` which owns the cluster on TM8_PG_PORT (default 5442)'
-          : `start the database (\`bun run dev\`), or point TM8_DATABASE_URL / TM8_PG_HOST / TM8_PG_PORT / TM8_DB at the right cluster — ` +
+            'or run `./install.sh` — it creates the superuser role and loopback-trusts 127.0.0.1 in pg_hba (the ' +
+            'dev launchers do NOT start or own Postgres; that claim was removed from them because it was false)'
+          : `start the database — \`./install.sh\` creates and owns the cluster on TM8_PG_PORT (default 5442), ` +
+            'or point TM8_DATABASE_URL / TM8_PG_HOST / TM8_PG_PORT / TM8_DB at the right cluster — ' +
             'a dev machine has more than one, and a bare `psql` hits whichever is on the default port',
       ),
     ];

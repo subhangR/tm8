@@ -32,16 +32,24 @@ node --version        # v22+; verified on v25.6.1
 ./install.sh --status        # confirm: migrations N/N, delivery role can authenticate
 ```
 
-tm8 standardises on **Postgres 16** and the cluster is the *system* Postgres — the
-`dev` slot uses `tm8_dev` on port 5442. Nothing in this repo starts a postmaster:
-`packages/server/src/sidecar/` looks like it does and is dead code. See
-[`docs/ops/INSTALL.md`](docs/ops/INSTALL.md).
+tm8 standardises on **Postgres 16** — the FLOOR, not a pin: a newer server (the
+`postgresql@18` these examples use is fine) works because a client always talks
+to an older one. `deploy/environments.sh` is the one table for this. The cluster
+is the *system* Postgres — the `dev` slot uses `tm8_dev` on port 5442. Nothing in
+this repo starts a postmaster: `packages/server/src/sidecar/` looks like it does
+and is dead code. See [`docs/ops/INSTALL.md`](docs/ops/INSTALL.md).
 
 If something is off, ask the doctor rather than guessing:
 
 ```bash
 bun run doctor               # ports, build, AND the database + migration state
+tm8 doctor                   # ALSO checks the agent CLI (claude/codex) + login
 ```
+
+tm8 stores no agent credential — a spawned session runs the HOST's `claude` or
+`codex` login. With neither installed or logged in, a spawn sits at `running`
+and never finishes (the refusal is only in the terminal), so `tm8 doctor` is the
+check that catches a node that installs perfectly but cannot run an agent.
 
 A tm8 with no database still boots, still listens and still answers `/health` —
 while logging `graph: NOT CONFIGURED` and returning `501` to every operation. That
@@ -136,15 +144,16 @@ TM8_PORT=4610 TM8_AGENT_CMD=echo-agent \
 
 ```
 tm8-server listening on http://127.0.0.1:4610
-  catalog: 80 HTTP operations mounted · 28 implemented · the rest answer 501 not_implemented (DEV-13)
+  catalog: 165 HTTP operations mounted · 163 implemented · the rest answer 501 not_implemented (DEV-13)
   graph: connected
   ws: /v2/ws  ·  health: http://127.0.0.1:4610/health
 ```
 
 Two lines are worth reading:
 
-- **`28 implemented`** — how many operations are real. If it says `0`, you
-  started without `TM8_DATABASE_URL` and everything below will 501.
+- **`implemented`** — how many operations are real. Read the FIELD, not this
+  exact number: the count grows as operations land (it was 28, is 163 now). If
+  it says `0`, you started without `TM8_DATABASE_URL` and everything below will 501.
 - **`graph: connected`** — the pool reached Postgres.
 
 > `node packages/server/dist/main.js` is **not** the entry point. It defines
