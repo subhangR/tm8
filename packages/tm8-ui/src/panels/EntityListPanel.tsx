@@ -49,7 +49,7 @@ import {
   workflowTypeOf,
   workflowVocabularyOf,
 } from '../domain';
-import { Avatar, Timestamp, type PillTone } from '../kit';
+import { Avatar, Timestamp, ancestorPath, useTreeDisclosure, type PillTone } from '../kit';
 import {
   CheckingPermission,
   DisabledAction,
@@ -2503,35 +2503,37 @@ function TreeRows({
   attentionIds?: ReadonlySet<string>;
 }) {
   /**
-   * Collapsed, not expanded: rows remain visible by default (the existing
-   * contract and the full-workspace reference both open the active subtree),
-   * while a later-arriving child does not need state bookkeeping to appear.
+   * EXPANDED, NOT COLLAPSED — the inversion is the whole point (user ruling
+   * 2026-08-17, "it's always showing expanded full tree… by default it should
+   * be collapsed"). This used to be a `collapsed` set that started EMPTY, i.e.
+   * default-OPEN: every parent drew its whole subtree on first paint, and a
+   * child arriving later from the event stream appeared inside it unasked. Now
+   * the set holds the rows the VIEWER opened, so an untouched row — and every
+   * row that arrives later — is shut, and the state persists per kind.
+   *
+   * See `kit/useTreeDisclosure` for why the set is safe to persist and how the
+   * selection is kept visible without being written to storage.
    */
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const revealed = useMemo(() => ancestorPath(rows, props.selectedId), [rows, props.selectedId]);
+  const disclosure = useTreeDisclosure(`list:${config.kind}`, revealed);
 
   const roots = useMemo(() => buildTileTree(rows, Boolean(config.list.tree)), [rows, config.list.tree]);
 
   /**
    * Live message traffic, resolved against THIS tree's current shape. Recomputed
-   * when the tree or the collapsed set changes, because a route is only true for
-   * the arrangement that was on screen when it was drawn — collapsing a subtree
-   * mid-flight must re-aim the pulse at the ancestor now standing in for it.
+   * when the tree or the disclosure state changes, because a route is only true
+   * for the arrangement that was on screen when it was drawn — collapsing a
+   * subtree mid-flight must re-aim the pulse at the ancestor now standing in
+   * for it. `isExpanded` (not the raw set) is what is passed, so a row revealed
+   * by the selection routes as the open row it is drawn as.
    */
   const pulse = useMemo(
-    () => resolvePulses(rows, collapsed, props.messagePulses, config),
-    [rows, collapsed, props.messagePulses, config],
+    () => resolvePulses(rows, disclosure.isExpanded, props.messagePulses, config),
+    [rows, disclosure, props.messagePulses, config],
   );
 
-  const toggle = (id: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
   const renderNode = (node: TileTreeNode): React.ReactNode => {
-    const isCollapsed = collapsed.has(node.row.id);
+    const isCollapsed = !disclosure.isExpanded(node.row.id);
     const hasChildren = node.children.length > 0;
     const wire = pulse.segments.get(node.row.id);
     const endpoint = pulse.endpoints.get(node.row.id);
@@ -2556,7 +2558,7 @@ function TreeRows({
           attention={attentionIds?.has(node.row.id) ?? false}
           childCount={node.children.length}
           expanded={!isCollapsed}
-          onToggleChildren={hasChildren ? () => toggle(node.row.id) : undefined}
+          onToggleChildren={hasChildren ? () => disclosure.toggle(node.row.id) : undefined}
         />
         {hasChildren && !isCollapsed ? (
           <div
@@ -2671,7 +2673,13 @@ const NO_PULSES: ResolvedPulses = { segments: new Map(), endpoints: new Map() };
  */
 function resolvePulses(
   rows: readonly EntitySummary[],
-  collapsed: ReadonlySet<string>,
+  /**
+   * Does this row draw its children? A PREDICATE, not the persisted set: a row
+   * on the path to the selection is open on screen without being in storage,
+   * and a route that consulted the set alone would re-aim a pulse at an
+   * ancestor while the real row is plainly visible.
+   */
+  isExpanded: (id: string) => boolean,
   pulses: readonly MessagePulse[] | undefined,
   config: KindConfig,
 ): ResolvedPulses {
@@ -2689,12 +2697,16 @@ function resolvePulses(
   const index = {
     parentOf,
     isVisible: (id: string) => {
-      if (!present.has(id) || collapsed.has(id)) return false;
-      // Rendered means every ancestor is expanded, not just this row's parent.
+      if (!present.has(id)) return false;
+      // A ROW IS VISIBLE WHEN EVERY ANCESTOR IS OPEN — its own disclosure state
+      // is about its CHILDREN, not itself, so it is deliberately not consulted
+      // here. (Under the old default-open set this read `collapsed.has(id)`
+      // first, which was wrong in the same way and merely never observable
+      // while nothing started closed.)
       const guard = new Set<string>();
       let cursor = parentOf(id);
       while (typeof cursor === 'string' && !guard.has(cursor)) {
-        if (collapsed.has(cursor)) return false;
+        if (!isExpanded(cursor)) return false;
         guard.add(cursor);
         cursor = parentOf(cursor);
       }

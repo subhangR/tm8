@@ -23,6 +23,7 @@ import {
 } from '../fixtures';
 import { EntityDetailPanel, EntityListPanel, SharedContextSection, ShareDropTarget } from './index';
 import { HANDLED_SOURCES } from './list/tile-badges';
+import { expandTree } from '../kit/tree-disclosure.testkit';
 import type { DetailReasons } from './EntityDetailPanel';
 
 /**
@@ -548,7 +549,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       .find((tile) => tile.textContent?.includes(attention.title))!;
     expect(within(flagged).getByText('Needs attention').getAttribute('title')).toBe('Choose the API shape');
 
-    // …and the child is still NESTED under it rather than re-rooted.
+    // …and the child is still NESTED under it rather than re-rooted. The tree
+    // ships collapsed (2026-08-17), so the nesting is asserted after opening it
+    // — an attention flag must not re-root a child, whether or not it is drawn.
+    expandTree(view.container);
     const nested = view.getByTestId('list-tile-children');
     expect(nested.textContent).toContain(child.title);
   });
@@ -1023,19 +1027,56 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
 
+    // COLLAPSED IS THE SHIPPED DEFAULT (user ruling 2026-08-17). The parent is
+    // the only tile drawn; its child exists in the row set and is not.
+    expect(getAllByTestId('list-tile')).toHaveLength(1);
+    expect(queryByText('Center sizing law')).toBeNull();
+    const disclosure = getByRole('button', { name: /expand workspace layout, 1 child/i });
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(disclosure);
     expect(getAllByTestId('list-tile')).toHaveLength(2);
     expect(getAllByTestId('list-tile')[1]?.getAttribute('data-depth')).toBe('1');
-    const disclosure = getByRole('button', { name: /collapse workspace layout, 1 child/i });
     expect(disclosure.getAttribute('aria-expanded')).toBe('true');
 
     fireEvent.click(disclosure);
     expect(getAllByTestId('list-tile')).toHaveLength(1);
-    expect(queryByText('Center sizing law')).toBeNull();
-    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
 
     fireEvent.click(disclosure);
     fireEvent.click(getByRole('button', { name: 'Center sizing law' }));
     expect(onSelect).toHaveBeenLastCalledWith(child.id);
+  });
+
+  it('THE SELECTION IS NEVER HIDDEN behind the collapsed default', () => {
+    // The one thing a default-shut tree must not do: leave the viewer looking
+    // at a selection that is not on screen. Arriving on a deep child — a route,
+    // a click from Home, a spawn that selects its new session — opens the path
+    // to it. The parent's caret still reads as open, because it is.
+    const parent: EntitySummary = {
+      ...taskGuideLines,
+      id: 'task-reveal-parent',
+      title: 'Workspace layout',
+      parentId: null,
+    };
+    const child: EntitySummary = {
+      ...taskUuidTitle,
+      id: 'task-reveal-child',
+      title: 'Center sizing law',
+      parentId: parent.id,
+    };
+    const { getAllByTestId, getByRole } = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={rowsFor([parent, child])}
+        ctx={ctx}
+        selectedId={child.id}
+      />,
+    );
+
+    expect(getAllByTestId('list-tile')).toHaveLength(2);
+    expect(
+      getByRole('button', { name: /collapse workspace layout, 1 child/i }).getAttribute('aria-expanded'),
+    ).toBe('true');
   });
 
   it('uses the same hierarchy and semantic status colors for coordinator/session children', () => {
@@ -1060,8 +1101,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
 
-    expect(getAllByTestId('list-tile')).toHaveLength(2);
+    expect(getAllByTestId('list-tile')).toHaveLength(1);
     expect(getAllByTestId('list-tile')[0]?.querySelector('.lp__statusmark--run')).not.toBeNull();
+    fireEvent.click(getByRole('button', { name: /expand coordinator session, 1 child/i }));
+    expect(getAllByTestId('list-tile')).toHaveLength(2);
     fireEvent.click(getByRole('button', { name: /collapse coordinator session, 1 child/i }));
     expect(getAllByTestId('list-tile')).toHaveLength(1);
   });

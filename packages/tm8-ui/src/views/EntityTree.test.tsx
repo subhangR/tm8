@@ -34,16 +34,18 @@ describe('EntityTree card hierarchy', () => {
       </div>,
     );
 
-    expect(view.getAllByRole('treeitem')).toHaveLength(2);
-    expect(view.container.querySelector('.evt-priority--medium')?.textContent).toBe('MEDIUM');
-    expect(view.container.querySelector('.evt-priority--urgent')?.textContent).toBe('URGENT');
-
-    const disclosure = view.getByRole('button', { name: /collapse workspace layout, 1 child/i });
-    fireEvent.click(disclosure);
+    // COLLAPSED IS THE SHIPPED DEFAULT (user ruling 2026-08-17): the root is
+    // the only tree item until the viewer opens it.
     expect(view.getAllByRole('treeitem')).toHaveLength(1);
+    const disclosure = view.getByRole('button', { name: /expand workspace layout, 1 child/i });
     expect(disclosure.getAttribute('aria-expanded')).toBe('false');
 
     fireEvent.click(disclosure);
+    expect(view.getAllByRole('treeitem')).toHaveLength(2);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(view.container.querySelector('.evt-priority--medium')?.textContent).toBe('MEDIUM');
+    expect(view.container.querySelector('.evt-priority--urgent')?.textContent).toBe('URGENT');
+
     fireEvent.click(view.getByRole('button', { name: 'Center sizing law' }));
     expect(onSelect).toHaveBeenLastCalledWith(child.id);
 

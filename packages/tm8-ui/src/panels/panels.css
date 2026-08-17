@@ -1984,6 +1984,15 @@
   opacity: 0;
   transition: opacity var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast), background var(--pn-dur-fast);
 }
+/* A ROW WITH CHILDREN ALWAYS SHOWS ITS CHEVRON. Hover-only was survivable
+   while trees defaulted OPEN — the children were already on screen and the
+   control only ever collapsed them. Since the 2026-08-17 ruling shipped every
+   tree collapsed, this is the sole indication that a row has anything under it
+   at all, and an invisible-but-clickable affordance hides the content behind a
+   16px target nobody knows to look for. Caught in Chrome, not jsdom: the
+   element is in the DOM with a real 16px box either way. Same correction, same
+   0.55, that `.pn-st__arrow` already carries one file over. */
+.cv2-root .lp__disclosure:not(.lp__disclosure--empty) { opacity: 0.55; }
 .cv2-root .lp__tile:hover .lp__disclosure:not(.lp__disclosure--empty),
 .cv2-root .lp__tile:focus-within .lp__disclosure:not(.lp__disclosure--empty),
 .cv2-root .lp__disclosure--expanded { opacity: 1; }
