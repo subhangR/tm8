@@ -101,6 +101,7 @@ export function createChatHomePortFromSeam(
     const labels = new Map(teammates.map((teammate) => [teammate.id, teammate.label]));
     return items.map<ChatThreadSummary>((item) => ({
       rootId: item.rootMessageId,
+      anchorId: item.anchorId,
       // F4: the root body is the only honest title a chat has. The literal
       // 'Conversation' made every real row identical while the fixture port
       // showed real titles — exactly the class of demo-only truth.
@@ -152,6 +153,7 @@ export function createChatHomePortFromSeam(
       return {
         summary: {
           rootId: item.rootMessageId,
+          anchorId: item.anchorId,
           title: root.content.body || 'Conversation',
           // An in-flight turn's body is the claim placeholder ('Agent turn in
           // progress.'), not content — preview the last settled message instead.

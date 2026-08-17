@@ -55,7 +55,32 @@ export interface BlueprintView {
   danglingEdgeCount: number;
   width: number;
   height: number;
+  /**
+   * What is actually DRAWN, as a box — the placement's true extent.
+   *
+   * `width`/`height` above are a MAX EXTENT measured from a pinned 0,0
+   * origin, which is not the same thing and was the whole bug: a row whose
+   * `layout` puts one card far right (or at any negative coordinate — a
+   * legal thing for a row to store, and the fallback grid is only one of
+   * several writers) inflated the extent while every other card stayed near
+   * the origin. Fitting to that box drew a mostly-empty canvas with the
+   * blueprint shrunk into its top-left corner, which is precisely what the
+   * screenshot showed.
+   *
+   * Bows and their labels are folded in too. For cards sitting in the
+   * fallback grid the curve stays inside the union of the two cards, so this
+   * usually changes nothing — but `layout` is whatever the row stores, and
+   * once two connected cards are placed far apart or off the grid the apex
+   * and its label swing outside every card rectangle. Fitting to the cards
+   * alone would then clip the one piece of text saying what the blueprint
+   * MEANS, and it would do it only on the irregular rows, which is the worst
+   * way for a bug to behave.
+   */
+  bounds: { minX: number; minY: number; width: number; height: number };
 }
+
+/** The bow's label sits above its apex; leave room for it and the second line. */
+const LABEL_PAD = 18;
 
 interface RawNode {
   key?: unknown; id?: unknown; ref?: unknown; entityId?: unknown;
@@ -173,5 +198,31 @@ export function blueprintView(content: unknown, refTitles?: RefTitles): Blueprin
 
   const width = Math.max(...cards.map((card) => card.x + CARD_W), PAD) + PAD;
   const height = Math.max(...cards.map((card) => card.y + CARD_H), PAD) + PAD;
-  return { graphType, source, cards, lines, danglingEdgeCount: dangling, width, height };
+
+  /* THE TRUE BOX. Every drawn x and y, min AND max — the cards, the bows'
+     control points (a quadratic never leaves its hull, so the control point
+     bounds the curve), and the label anchors with room for two lines of it.
+     An empty placement answers the origin box rather than ±Infinity: with no
+     cards there is nothing to fit to, and a canvas that renders the empty
+     state never reads this. */
+  const xs: number[] = [];
+  const ys: number[] = [];
+  cards.forEach((card) => {
+    xs.push(card.x, card.x + CARD_W);
+    ys.push(card.y, card.y + CARD_H);
+  });
+  lines.forEach((line) => {
+    xs.push(line.x1, line.x2, line.cx, line.lx);
+    ys.push(line.y1, line.y2, line.cy, line.ly - LABEL_PAD, line.ly + LABEL_PAD);
+  });
+  const minX = xs.length > 0 ? Math.min(...xs) - PAD : 0;
+  const minY = ys.length > 0 ? Math.min(...ys) - PAD : 0;
+  const bounds = {
+    minX,
+    minY,
+    width: xs.length > 0 ? Math.max(...xs) + PAD - minX : width,
+    height: ys.length > 0 ? Math.max(...ys) + PAD - minY : height,
+  };
+
+  return { graphType, source, cards, lines, danglingEdgeCount: dangling, width, height, bounds };
 }

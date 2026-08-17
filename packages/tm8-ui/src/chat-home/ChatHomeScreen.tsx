@@ -20,6 +20,7 @@ import { ChatEntityGraph } from './ChatEntityGraph';
 import type { ChatEntityResolver } from './EntityChip';
 import { ComposerSelect } from './ComposerSelect';
 import { TurnParts } from './TurnParts';
+import { composeThreadColumn } from './thread-column';
 import type {
   ChatHomePort,
   ChatModelOption,
@@ -156,6 +157,42 @@ export interface ChatHomeScreenProps {
    */
   onThreadSelected?: ((id: EntityId | null) => void) | undefined;
   /**
+   * SOLO MODE (Craft): this screen renders the CONVERSATION ALONE, and the
+   * host draws the thread column itself — Craft puts it in a picker on the
+   * chat pane's own header, because a studio that is two panes cannot afford
+   * a third for a list.
+   *
+   * Opt-in for one reason: Home's shape is asserted as "EXACTLY TWO PANES"
+   * (`GateChatHome.test.tsx`), and the way to give Craft one column without
+   * quietly giving Home one too is a prop no Home mount passes.
+   *
+   * Solo hands selection to the host outright. `routeThreadId` becomes
+   * AUTHORITATIVE rather than advisory — including `null`, which means the
+   * new-conversation composer (the host's ＋ New chat) rather than the
+   * merely-bare address it means everywhere else. There is no second
+   * selector left to disagree with it.
+   */
+  soloConversation?: boolean;
+  /**
+   * The loaded thread list, published up for a host that draws its own
+   * selector. ONE read stays behind it: a host that re-listed for its picker
+   * would have a second list free to disagree with this one about what
+   * exists, and they would disagree exactly when it matters — right after a
+   * send creates a root.
+   */
+  onThreadsChange?: ((threads: readonly ChatThreadSummary[]) => void) | undefined;
+  /**
+   * The RESOLVED selection, every time it changes — including the cold-start
+   * auto-open that `onThreadSelected` deliberately withholds.
+   *
+   * The two callbacks answer different questions and a host in solo mode
+   * needs both: "did the viewer navigate" (which the address records) is not
+   * "which conversation is on screen right now" (which the pane header must
+   * name). Withholding the auto-open from a header would leave the picker
+   * captioned with nothing while a conversation is plainly open behind it.
+   */
+  onSelectionChange?: ((id: EntityId | null) => void) | undefined;
+  /**
    * `?graph=full` — the entity graph's fullscreen view, route-owned (plan
    * 01a0094b D2). The host maps the address here and `onGraphFullChange`
    * navigates the param, so Back closes and a reload restores. Hosts
@@ -230,6 +267,9 @@ export function ChatHomeScreen({
   newEntityUnavailable,
   routeThreadId,
   onThreadSelected,
+  soloConversation = false,
+  onThreadsChange,
+  onSelectionChange,
   graphFull,
   onGraphFullChange,
   graphFilters,
@@ -297,11 +337,35 @@ export function ChatHomeScreen({
 
   /* ADOPT the addressed conversation (D1): back/forward and shared links win
      over the current selection; a bare address changes nothing. The select
-     effect below owns loading whatever this lands on. */
+     effect below owns loading whatever this lands on.
+
+     SOLO (Craft) READS `null` AS AN INSTRUCTION, not as silence. With the
+     thread column hosted outside, the host's picker is the ONLY selector —
+     so "the host says no thread" can only mean the new-conversation
+     composer. Everywhere else a bare address coexists with this screen's own
+     column, and overriding the viewer's row click from it would be wrong. */
   useEffect(() => {
-    if (!routeThreadId) return;
-    setSelectedRootId((current) => (current === routeThreadId ? current : routeThreadId));
-  }, [routeThreadId]);
+    if (routeThreadId) {
+      setSelectedRootId((current) => (current === routeThreadId ? current : routeThreadId));
+      return;
+    }
+    if (!soloConversation || routeThreadId !== null) return;
+    setSelectedRootId(null);
+    setDetail(null);
+    stoppedRootRef.current = null;
+    setPhase('idle');
+    setSubmitError(null);
+  }, [routeThreadId, soloConversation]);
+
+  /* Publish the list and the RESOLVED selection to a solo host — see the
+     props' docblocks for why these are two callbacks and not one. */
+  useEffect(() => {
+    onThreadsChange?.(threads);
+  }, [threads, onThreadsChange]);
+
+  useEffect(() => {
+    onSelectionChange?.(selectedRootId);
+  }, [selectedRootId, onSelectionChange]);
 
   const refreshThreads = useCallback(async (preferRoot?: EntityId) => {
     const next = await port.listThreads(spaceId);
@@ -810,7 +874,11 @@ export function ChatHomeScreen({
   }, [port, selectedRootId]);
 
   return (
-    <main className="tch-root" data-testid="chat-home-screen">
+    <main
+      className={`tch-root${soloConversation ? ' tch-root--solo' : ''}`}
+      data-testid="chat-home-screen"
+      data-solo={soloConversation || undefined}
+    >
       {/*
         THE NAVIGATION AXIS (task 01a006f8, generalized by task 01a00932).
         This panel is the full inventory AND the only selector, as one ROOT
@@ -843,10 +911,18 @@ export function ChatHomeScreen({
         When it lands, the accepted default is that the cold-start auto-open
         marks read like any other open.
       */}
-      {/* `id` is what Home's column-A separator points `aria-controls` at
+      {/* SOLO: the column is the host's (Craft's pane-header picker). It is
+          not rendered hidden — a hidden `role="tab"` list and a second
+          searchbox would still be in the a11y tree, offering a keyboard user
+          a selector the screen no longer honours. Not mounting it also keeps
+          the `id` below unique, which is the property the comment there
+          depends on.
+
+          `id` is what Home's column-A separator points `aria-controls` at
           (task 01a00ac2). Only ever one of these mounts at a time — the
           solo-hero arrangement hides this column rather than mounting a
           second grid — so the id stays unique. */}
+      {soloConversation ? null : (
       <aside id="home-view-list" className="tch-sidebar" aria-label="Tasks, chats and sessions">
         {/* THE ROOT HEADER (task 01a00932 R5) — two cells, [Chats ＋] and
             [Kind ＋ ▾]. Each cell's LABEL switches the root (browsing, D6);
@@ -1091,6 +1167,7 @@ export function ChatHomeScreen({
           ) : null}
         </footer>
       </aside>
+      )}
 
       {/*
         REGION B — the selection (D5/D7). The conversation pane is B's CHAT
@@ -1384,42 +1461,6 @@ const UNCAPPED_SESSION_TOTAL = 2_147_483_647;
  * Day buckets in the VIEWER's local time — Today, Yesterday, then Earlier —
  * the same grouping the merged column drew, applied to the thread list.
  */
-function bucketByDay<T>(rows: readonly { at: string; row: T }[]): { label: string; rows: T[] }[] {
-  const sorted = [...rows].sort((a, b) => b.at.localeCompare(a.at));
-  const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  const today = startOfDay(new Date());
-  const dayMs = 24 * 60 * 60 * 1000;
-
-  const buckets: { label: string; rows: T[] }[] = [];
-  for (const entry of sorted) {
-    const at = new Date(entry.at);
-    const stamp = Number.isNaN(at.getTime()) ? 0 : startOfDay(at);
-    const label = stamp >= today ? 'Today' : stamp >= today - dayMs ? 'Yesterday' : 'Earlier';
-    const existing = buckets.find((bucket) => bucket.label === label);
-    if (existing) existing.rows.push(entry.row);
-    else buckets.push({ label, rows: [entry.row] });
-  }
-  return buckets;
-}
-
-function composeThreadColumn(
-  threads: readonly ChatThreadSummary[],
-  query: string,
-): { label: string; rows: ChatThreadSummary[] }[] {
-  const q = query.trim().toLowerCase();
-  return bucketByDay(
-    threads
-      .filter(
-        (thread) =>
-          !q ||
-          `${thread.title} ${thread.preview} ${thread.config.teammateLabel}`
-            .toLowerCase()
-            .includes(q),
-      )
-      .map((thread) => ({ at: thread.updatedAt, row: thread })),
-  );
-}
-
 function Turn({
   turn,
   mode,
