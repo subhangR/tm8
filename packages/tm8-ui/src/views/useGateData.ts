@@ -1159,15 +1159,42 @@ export function useGateData(options: GateOptions): GateData {
       const teammateRows = loaded
         .filter((entry) => entry.kind === 'team_member')
         .flatMap((entry) => entry.items);
-      // Bounded for the same reason as the kind loads: this is one request PER
-      // TEAMMATE, the only boot read whose count scales with the space.
-      const defaults = await mapLimit(teammateRows, BOOT_READ_CONCURRENCY, async (teammate) => {
+      /* NOT AWAITED — THIS READ MUST NOT GATE `ready`.
+         Bounded for the same reason as the kind loads: this is one request PER
+         TEAMMATE, the only boot read whose count scales with the space. That
+         is exactly why it cannot sit on the critical path. Measured on a space
+         with 129 teammates: 136 `entities.connections` round-trips, 23ms of
+         node time each, drained at `BOOT_READ_CONCURRENCY` — 866ms to 3831ms
+         of a 3.9s boot. Every other read a workspace needs was done at 866ms,
+         so three quarters of the wait was this loop and nothing else.
+
+         Detaching it is safe because it gates NOTHING. Its only consumer is
+         the `launch` memo (see `teammateProfileDefaults[row.id]` below), which
+         spreads an OPTIONAL `defaultProfileId` onto picker rows and re-runs
+         when the state lands; until then the picker falls back to
+         `spaceDefaultProfileId`, which hydrate already read synchronously
+         above. The cost of being late is a preselection appearing a beat after
+         the workspace opens. The cost of being awaited was the workspace.
+
+         `isCurrent()` still guards the write, so a space switch mid-flight
+         discards the result exactly as it did when this was awaited; the
+         generation check is what cancellation means here, not the await.
+
+         The real fix is one level down — projecting `defaults_to_profile` onto
+         the `team_member` collection row would make this loop zero requests
+         rather than N. Until the node offers that, this stays off the gate. */
+      void mapLimit(teammateRows, BOOT_READ_CONCURRENCY, async (teammate) => {
         const page = await seam.connections(teammate.id, { limit: 200 }).catch(() => undefined);
         const edge = page?.items.find((candidate) =>
           candidate.type === 'defaults_to_profile' && candidate.source.id === teammate.id);
         return [teammate.id, edge?.target.id ?? null] as const;
-      });
-      if (isCurrent()) setTeammateProfileDefaults(Object.fromEntries(defaults));
+      })
+        // A detached promise owns its own failures: an unhandled rejection here
+        // would surface as a console error on a boot that otherwise succeeded.
+        .then((defaults) => {
+          if (isCurrent()) setTeammateProfileDefaults(Object.fromEntries(defaults));
+        })
+        .catch(() => undefined);
     },
     [seam, options.leftKind, options.rightKind, options.serverBaseUrl, absorb, loadGraph, domain],
   );
