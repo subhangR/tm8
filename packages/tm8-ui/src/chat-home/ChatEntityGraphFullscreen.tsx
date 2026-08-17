@@ -302,10 +302,15 @@ export function ChatEntityGraphFullscreen({
       className="ceg-full__scrim"
       ref={scrimRef}
       data-testid="chat-entity-graph-fullscreen"
-      onMouseDown={(e) => {
+      /* POINTER, NOT MOUSE — same reason as PromptsOverlay's scrim: iOS declines
+         to synthesise mouse events on inert background, so under `onMouseDown`
+         this fullscreen overlay had no dismissal at all on a touch device. The
+         down-and-up-both-on-the-scrim guard is preserved, so a pan that merely
+         ENDS on the scrim still does not close it. */
+      onPointerDown={(e) => {
         downOnScrim.current = e.target === scrimRef.current;
       }}
-      onMouseUp={(e) => {
+      onPointerUp={(e) => {
         if (downOnScrim.current && e.target === scrimRef.current) onClose();
         downOnScrim.current = false;
       }}

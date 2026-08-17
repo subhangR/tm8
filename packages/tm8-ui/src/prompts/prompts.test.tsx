@@ -224,8 +224,8 @@ describe('PromptsOverlay', () => {
     let closed = 0;
     render(<PromptsOverlay open onClose={() => (closed += 1)} />);
     const scrim = screen.getByTestId('prompts-overlay');
-    fireEvent.mouseDown(scrim);
-    fireEvent.mouseUp(scrim);
+    fireEvent.pointerDown(scrim);
+    fireEvent.pointerUp(scrim);
     expect(closed).toBe(1);
   });
 
@@ -233,8 +233,8 @@ describe('PromptsOverlay', () => {
     let closed = 0;
     render(<PromptsOverlay open onClose={() => (closed += 1)} />);
     const scrim = screen.getByTestId('prompts-overlay');
-    fireEvent.mouseDown(screen.getByTestId('prompts-screen'));
-    fireEvent.mouseUp(scrim);
+    fireEvent.pointerDown(screen.getByTestId('prompts-screen'));
+    fireEvent.pointerUp(scrim);
     expect(closed).toBe(0);
   });
 });

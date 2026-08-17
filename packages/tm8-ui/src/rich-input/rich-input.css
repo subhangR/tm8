@@ -44,6 +44,18 @@
   padding: 11px 12px 4px;
 }
 
+/* THE PHONE'S COMPOSER, and 16px here is a behavioural threshold rather than a
+   type choice: iOS Safari zooms the page whenever a text field under 16px takes
+   focus. Inside a `100dvh` frame with `overflow: hidden` that zoom has no way
+   out — no scroll to pan with, no affordance to undo it — so the user taps the
+   box to write a message and the whole app is the wrong size from then on.
+   This is the field the phone actually composes into (measured at 13px on the
+   Home screen at 390x844); desktop keeps 13px. */
+.cv2-root .mobile-frame .ri-card textarea {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
 .ri-card textarea::placeholder { color: var(--pn-ink-4); }
 
 .ri-card__foot {

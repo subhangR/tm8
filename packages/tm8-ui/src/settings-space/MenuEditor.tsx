@@ -27,6 +27,13 @@
  * user can see and never use — the same argument that makes the refusal
  * treatment focusable.
  *
+ * AND WITH EXPLICIT MOVE BUTTONS, because neither of those two reaches a finger:
+ * HTML5 drag-and-drop fires NO events from a touch gesture, and alt+arrow needs
+ * an alt key. Reordering this menu was therefore not awkward on a touch device,
+ * it was impossible — on a control that looked exactly as available as it does
+ * under a mouse. See `Grip` for why buttons rather than a touch-drag, and why
+ * they are revealed by `(pointer: coarse)` rather than by the mobile shell.
+ *
  * LAYOUT lives in `menu-editor.css`, next door, and is written against
  * SECTION-CONTRACT.md. Three things about it are load-bearing and easy to undo
  * by accident:
@@ -286,7 +293,7 @@ export function MenuEditor({
                   data-testid="menu-group-row"
                 >
                   <Grip
-                    label={`reorder ${group.label}`}
+                    name={group.label}
                     disabled={!editable}
                     onMove={(delta) => setDraft((d) => moveGroup(d, gi, gi + delta))}
                   />
@@ -504,7 +511,7 @@ function ItemRows({
         data-testid="menu-item-row"
       >
         <Grip
-          label={`reorder ${labelOf(item)}`}
+          name={labelOf(item)}
           disabled={!editable}
           onMove={(delta) => setDraft((d) => moveItem(d, group.id, itemIndex, itemIndex + delta))}
         />
@@ -531,7 +538,7 @@ function ItemRows({
       {children.map((child, ci) => (
         <div className="set-row set-row--child" key={child.ref} data-testid="menu-child-row">
           <Grip
-            label={`reorder ${labelOf(child)}`}
+            name={labelOf(child)}
             disabled={!editable}
             onMove={(delta) => setDraft((d) => moveChild(d, group.id, itemIndex, ci, ci + delta))}
           />
@@ -586,36 +593,80 @@ function ItemRows({
  * The grip. Draggable by pointer, and alt+↑/↓ by keyboard — a reorder that
  * only exists under a mouse is a control a keyboard user can see and never
  * use, which is the same defect the focusable refusal treatment fixes.
+ *
+ * AND ON TOUCH, NEITHER OF THOSE EXISTS. The rows reorder through HTML5
+ * drag-and-drop (`draggable` / `onDragStart` / `onDrop`), and **HTML5 DnD does
+ * not fire on touch at all** — there is no touch gesture that produces a
+ * `dragstart`. The keyboard path did not cover for it either: alt+arrow needs an
+ * alt key. So reordering this menu was not awkward on a touch device, it was
+ * IMPOSSIBLE, on a control that looks exactly as available as it does on a
+ * desktop. The grip even declared `touch-action: none`, suppressing the page pan
+ * in exchange for a gesture that never arrived.
+ *
+ * The fix is explicit move buttons rather than a touch drag implementation:
+ * a drag needs a target to aim at, and aiming a finger at a 24px row while the
+ * list scrolls under it is a worse control than two buttons that say what they
+ * do. They are rendered always and revealed by `(pointer: coarse)` — not by the
+ * mobile shell, because Settings has NO phone port and serves the refusal screen
+ * at 390px. The surface this is actually for is the coarse-pointer tablet, which
+ * runs the DESKTOP shell. Under a fine pointer the CSS leaves the grip alone and
+ * nothing about the desktop control changes.
  */
 function Grip({
-  label,
+  name,
   disabled,
   onMove,
 }: {
-  label: string;
+  /** The BARE row name ("Home"), not a phrase. Both controls below build their
+   *  own accessible name from it, and they must not collide: a `getByRole` for
+   *  the grip that also matched the move buttons would make every existing
+   *  reorder query ambiguous. */
+  name: string;
   disabled: boolean;
   onMove: (delta: number) => void;
 }) {
   return (
-    <button
-      type="button"
-      className="set-grip"
-      aria-label={`${label} — alt+arrow to move`}
-      disabled={disabled}
-      onKeyDown={(e) => {
-        if (!e.altKey) return;
-        if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          onMove(-1);
-        }
-        if (e.key === 'ArrowDown') {
-          e.preventDefault();
-          onMove(1);
-        }
-      }}
-    >
-      ⠿
-    </button>
+    <span className="set-grip-wrap">
+      <button
+        type="button"
+        className="set-grip"
+        aria-label={`reorder ${name} — alt+arrow to move`}
+        disabled={disabled}
+        onKeyDown={(e) => {
+          if (!e.altKey) return;
+          if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            onMove(-1);
+          }
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            onMove(1);
+          }
+        }}
+      >
+        ⠿
+      </button>
+      <span className="set-move" data-testid="menu-move-controls">
+        <button
+          type="button"
+          className="set-move__btn"
+          aria-label={`move ${name} up`}
+          disabled={disabled}
+          onClick={() => onMove(-1)}
+        >
+          ▲
+        </button>
+        <button
+          type="button"
+          className="set-move__btn"
+          aria-label={`move ${name} down`}
+          disabled={disabled}
+          onClick={() => onMove(1)}
+        >
+          ▼
+        </button>
+      </span>
+    </span>
   );
 }
 

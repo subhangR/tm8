@@ -1707,6 +1707,16 @@
   pointer-events: auto;
   transform: translate(0, -50%);
 }
+/* Same defect as `.lp__rowactions`: invisible AND `pointer-events: none` until
+   a hover a finger cannot produce, so a session tile's actions — copy-id and a
+   destructive button among them — simply were not there on touch. */
+@media (pointer: coarse) {
+  .cv2-root .pn-st__actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(0, -50%);
+  }
+}
 .cv2-root .pn-st__btn { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; color: var(--pn-ink-4); background: transparent; border: 1px solid transparent; border-radius: var(--pn-r-sm); cursor: pointer; transition: color var(--pn-dur-fast), background var(--pn-dur-fast); }
 .cv2-root .pn-st__btn:hover { color: var(--pn-ink); background: var(--pn-active); }
 .cv2-root .pn-st__btn--danger:hover { color: var(--pn-block); }
@@ -1906,6 +1916,18 @@
 .cv2-root .lp__tile:hover .lp__disclosure:not(.lp__disclosure--empty),
 .cv2-root .lp__tile:focus-within .lp__disclosure:not(.lp__disclosure--empty),
 .cv2-root .lp__disclosure--expanded { opacity: 1; }
+/* EXPAND WAS A ONE-WAY DOOR ON TOUCH. This caret is `opacity: 0` until hover,
+   and the only other rule that reveals it is `--expanded` — so a finger could
+   COLLAPSE a row that was already open and then never open it again. A control
+   that works in one direction only is worse than one that is missing, because
+   the user watches the tree close and cannot undo it.
+   `(pointer: coarse)` rather than the mobile shell: these rows are the phone's
+   main screens AND the coarse tablet's, and the tablet runs the desktop shell. */
+@media (pointer: coarse) {
+  .cv2-root .lp__disclosure:not(.lp__disclosure--empty) {
+    opacity: 1;
+  }
+}
 .cv2-root .lp__disclosure > span {
   transition: transform var(--pn-dur-fast) var(--pn-ease-out);
 }
@@ -2034,6 +2056,24 @@
   opacity: 1;
   pointer-events: auto;
   transform: translate(0, -50%);
+}
+/* ON TOUCH THIS CLUSTER DID NOT EXIST. `opacity: 0` AND `pointer-events: none`
+   until `:hover` — so on a phone, where there is no hover, every row action on
+   the main list screens (tasks, sessions, channels) was both invisible and
+   un-tappable. Not hard to find: absent. `:focus-within` does not rescue it
+   either, because a tap on the row does not focus a button inside it.
+
+   Revealed at rest on a coarse pointer, and `transform` reset with it — the 3px
+   offset is an entrance animation for something that is no longer entering. The
+   row does not grow, because this cluster is absolutely positioned and was
+   already outside the height calculation; that was the whole point of floating
+   it, and it is what makes revealing it cheap here. */
+@media (pointer: coarse) {
+  .cv2-root .lp__rowactions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(0, -50%);
+  }
 }
 /* A selected row is not a hovered row, so the backing has to follow it. */
 .cv2-root .lp__tile--selected .lp__rowactions { background: var(--pn-active); }
@@ -2230,6 +2270,26 @@
   outline: none;
 }
 .cv2-root .lp__searchinput::placeholder { color: var(--pn-ink-4); }
+/* 16px IS A BEHAVIOURAL THRESHOLD ON iOS, NOT A TYPE CHOICE.
+   Safari zooms the page when a text field under 16px takes focus. Inside a
+   `100dvh` frame with `overflow: hidden` that zoom has no way back: there is no
+   scroll to pan with and no affordance to undo it, so the user taps a search box
+   and the app is simply the wrong size from then on. Measured on the phone at
+   390x844: this field renders at 11.5px on tasks, sessions AND channels — every
+   list screen the phone has.
+   The 44px floor is the same tap-target law as everywhere else; at 19px tall
+   this was a control a thumb had to aim at. Scoped under `.mobile-frame` —
+   desktop keeps its 11.5px. */
+.cv2-root .mobile-frame .lp__searchinput {
+  font-size: 16px;
+}
+.cv2-root .mobile-frame .lp__searchrow {
+  min-height: 44px;
+}
+/* Same threshold, same reason — the panel composer. */
+.cv2-root .mobile-frame .pn-composer__input {
+  font-size: 16px;
+}
 /* The hint says `f`, not the canvas's `/` — D36 supersedes that pixel. */
 .cv2-root .lp__searchrow-key {
   flex: none;
@@ -2958,6 +3018,18 @@
   opacity: 1;
   visibility: visible;
 }
+/* TAP. Once this caption takes the tooltip presentation it inherits the tooltip
+   PROBLEM: hover and `:focus-visible` are the only two ways to read it and a
+   thumb can produce neither, so in the chip row the refusal went silent on a
+   phone. Set by useReasonDisclosure on the group. */
+.cv2-root .lp__rowdetail--chips .hon-disabled-group[data-reason-open='true'] > .hon-caption {
+  opacity: 1;
+  visibility: visible;
+}
+/* The PHONE presentation for this caption — docked to the frame rather than
+   anchored to the control — is written ONCE in honesty.css, alongside `.hon-tip`
+   and `.auth-tip`, because it is the same geometry derived from the same frame
+   tokens. Do not restate it here. */
 
 /* ONE HEIGHT BAND FOR THE FOUR CHIPS. They arrive from three vocabularies that
    each sized themselves: the assignee face is a `pn-badge`, which the metarow
