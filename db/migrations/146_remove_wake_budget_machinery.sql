@@ -413,8 +413,33 @@ end
 $$;
 
 -- Drop application/reset and cleanup doors before their backing relation.
-drop function public.reset_session_wake_budget_for_member_reply(uuid, text);
-drop function internal.w1_refresh_wake_budget_cleanup_eligibility();
+--
+-- `IF EXISTS` ON THESE THREE FUNCTIONS IS REQUIRED, NOT DEFENSIVE HABIT. It is
+-- the same drift 139 documents: a node that took the orphan
+-- `083_remove_session_wake_budgets.sql` (which never reached main) already
+-- removed this machinery, so an unguarded drop finds nothing and ABORTS THE
+-- DEPLOY. Measured on the deployed node before this was added — `tm8_stable`
+-- carries `083_remove_session_wake_budgets.sql` in `applied_migrations`, and
+-- there:
+--
+--   public.reset_session_wake_budget_for_member_reply  ABSENT
+--   internal.w1_refresh_wake_budget_cleanup_eligibility ABSENT
+--   internal.validate_wake_budget                       ABSENT
+--   session_wake_budgets / pair_active_idx / pair_shape / all three pair columns
+--                                                       PRESENT
+--
+-- so ONLY the three functions need guarding; the relation, index, constraint and
+-- columns below are present on both lineages and are dropped unguarded on
+-- purpose, so that a genuinely unexpected absence still fails loudly.
+--
+-- Rehearsed against a restore of the pre-deploy dump, not reasoned about: this
+-- file previously failed at the line below with
+--   ERROR: function public.reset_session_wake_budget_for_member_reply(uuid, text) does not exist
+-- after 140..145 had each applied cleanly. A chain-built database cannot show
+-- this — 015 and 037 create the function there — so the fresh-chain run is green
+-- either way and only the drifted node reveals it.
+drop function if exists public.reset_session_wake_budget_for_member_reply(uuid, text);
+drop function if exists internal.w1_refresh_wake_budget_cleanup_eligibility();
 
 drop index public.session_message_deliveries_pair_active_idx;
 alter table public.session_message_deliveries
@@ -424,7 +449,10 @@ alter table public.session_message_deliveries
   drop column pair_budget_version;
 
 drop table public.session_wake_budgets;
-drop function internal.validate_wake_budget();
+-- Guarded for the same orphan-083 reason as the two above: absent on a node that
+-- took 083, present on a chain-built one. The table itself is NOT guarded — it
+-- exists on both lineages (a bare stub on the drifted node, per 139's header).
+drop function if exists internal.validate_wake_budget();
 
 -- Reassert the complete delivery-worker allowlist under the smaller signatures.
 revoke execute on function public.reserve_session_message_delivery(uuid,uuid,uuid,integer)
