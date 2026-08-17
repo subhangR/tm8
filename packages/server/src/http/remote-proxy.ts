@@ -35,12 +35,41 @@ function match(req: IncomingMessage): { name: string; upstream: string } | null 
   return { name, upstream: `${upstream}${url.search}` };
 }
 
+/**
+ * COOKIES DO NOT CROSS NODES, and forwarding one is both a leak and a break.
+ *
+ * Cookies are scoped by host and ignore port, so the `__Host-tm8-session`
+ * cookie this node sets for its own origin rides along on every browser
+ * request the relay carries — to a Server that has no business seeing it. Two
+ * consequences, and the second is the one that shows up as a bug report:
+ *
+ *   - DISCLOSURE. The local node's session credential is handed to every
+ *     registered remote, each of which can replay it back here. A remote is
+ *     someone else's machine; it is not inside this node's trust boundary.
+ *   - REFUSAL. Once signed in to the remote, the browser holds a pass for it
+ *     AND this node's cookie. `identity-resolver.ts` requires that two
+ *     present credentials name the same token and otherwise refuses with
+ *     `conflicting authentication credentials` — so EVERY relayed operation
+ *     fails, not just sign-in. `auth.login`/`auth.signup` escape it via the
+ *     dead-carrier strip in `server.ts`, which is why sign-in appears to work
+ *     and everything after it does not.
+ *
+ * `authorization` is deliberately still forwarded: that one IS the remote's
+ * own carrier and is the thing the caller meant to send.
+ *
+ * NOTE THE SHAPE OF THIS FUNCTION, because it is how the bug got here. A
+ * deny-list forwards every header nobody thought to name, so each new
+ * credential header is a leak until someone remembers it. An allow-list would
+ * fail closed instead. That is a wider change than a blocked deploy should
+ * carry, so it is filed rather than smuggled in here.
+ */
 function forwardedHeaders(headers: IncomingHttpHeaders, target: URL): IncomingHttpHeaders {
   const next = { ...headers };
   delete next.host;
   delete next.origin;
   delete next.referer;
   delete next['content-length'];
+  delete next.cookie;
   next.host = target.host;
   next[HOP_HEADER] = '1';
   return next;
