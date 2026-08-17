@@ -394,6 +394,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // one optional-field edit away from a terminal that spawns an agent.
       'startTerminal',
       'terminate',
+      // 2026-08-16 (attention history): `updateAttentionRequest` — the
+      // PER-REQUEST write. `resolveAttention` above is the bulk verb and
+      // cannot address one row or say 'dismissed', so a quarter of the status
+      // enum had no UI path.
+      'updateAttentionRequest',
       // Amendment 4 (2026-08-01): updateProfile — identity display (067).
       // The viewer's OWN profile row; the op names no subject by design.
       'updateProfile',

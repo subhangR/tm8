@@ -1919,3 +1919,115 @@ describe('file-preview renders the real image', () => {
     expect(block.textContent).toContain('no download URL');
   });
 });
+
+/**
+ * THE ATTENTION SECTION LANDS IN EXACTLY ONE PLACE PER KIND.
+ *
+ * The mount rule has two halves and they are complements of each other: the
+ * Content body for every archetype that can host an inline section, and the
+ * Activity tab for the two that cannot — terminal (a live PTY owning its full
+ * height) and `composition: 'chat'` (a body that ends at its composer). Those
+ * are the same two exclusions the attachment strip carries, but the strip
+ * simply DROPS them; this section relocates them, because work sessions are
+ * among the most-escalated entities in a space and CLI-only history for them
+ * was not acceptable (user ruling 2026-08-16).
+ *
+ * Both halves are asserted here, in both directions, because the failure mode
+ * of a two-place rule is a kind that renders it TWICE — which no single
+ * assertion about presence can catch.
+ */
+describe('EntityDetailPanel — the attention section has exactly one home per kind', () => {
+  const SECTION = <div data-testid="attention-section-probe" />;
+
+  /** Every kind with a live fixture, split by which half of the rule it takes. */
+  function kindsBy(relocated: boolean) {
+    return allKinds()
+      .map((config) => ({
+        config,
+        detail: Object.values(fixtureDetails).find((d) => d.kind === config.kind && d.deletedAt == null),
+      }))
+      .filter((r) => r.detail != null)
+      .filter((r) => {
+        const overflow =
+          r.config.panel.archetype === 'terminal' || r.config.panel.composition === 'chat';
+        return overflow === relocated;
+      });
+  }
+
+  it('mounts in the CONTENT body for every kind that can host it inline', () => {
+    const covered = kindsBy(false);
+    // Guards against a vacuous pass if the registry or the fixture set moves.
+    expect(covered.length).toBeGreaterThan(8);
+
+    for (const { config, detail } of covered) {
+      const { getByTestId, unmount } = render(
+        <EntityDetailPanel detail={detail!} reasons={REASONS} ctx={ctx} attentionSection={SECTION} />,
+      );
+      const panel = getByTestId('entity-detail-panel');
+      expect(
+        within(panel).queryAllByTestId('attention-section-probe'),
+        `${config.kind} did not mount the attention section on its content body exactly once`,
+      ).toHaveLength(1);
+      unmount();
+    }
+  });
+
+  it('mounts on the ACTIVITY tab — and NOT in the content body — for terminal and chat', () => {
+    const relocated = kindsBy(true);
+    // work_session (terminal) and channel/voice_channel (chat) today.
+    expect(relocated.length).toBeGreaterThan(0);
+
+    for (const { config, detail } of relocated) {
+      const content = render(
+        <EntityDetailPanel detail={detail!} reasons={REASONS} ctx={ctx} attentionSection={SECTION} />,
+      );
+      expect(
+        within(content.getByTestId('entity-detail-panel')).queryByTestId('attention-section-probe'),
+        `${config.kind} put the attention section inline, under a body that owns its own height`,
+      ).toBeNull();
+      content.unmount();
+
+      const activity = render(
+        <EntityDetailPanel
+          detail={detail!}
+          reasons={REASONS}
+          ctx={ctx}
+          attentionSection={SECTION}
+          activeTab="activity"
+        />,
+      );
+      expect(
+        within(activity.getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
+        `${config.kind} lost its attention history entirely — it is in neither place`,
+      ).toHaveLength(1);
+      activity.unmount();
+    }
+  });
+
+  it('never renders TWICE: a kind that takes the inline mount does not also get the activity one', () => {
+    for (const { config, detail } of kindsBy(false)) {
+      const { getByTestId, unmount } = render(
+        <EntityDetailPanel
+          detail={detail!}
+          reasons={REASONS}
+          ctx={ctx}
+          attentionSection={SECTION}
+          activeTab="activity"
+        />,
+      );
+      expect(
+        within(getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
+        `${config.kind} renders the attention section on BOTH the content body and the activity tab`,
+      ).toHaveLength(0);
+      unmount();
+    }
+  });
+
+  it('an unwired host renders nothing at all — no empty box on every entity in the product', () => {
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel detail={kindsBy(false)[0]!.detail!} reasons={REASONS} ctx={ctx} />,
+    );
+    expect(getByTestId('entity-detail-panel')).toBeTruthy();
+    expect(queryByTestId('attention-section-probe')).toBeNull();
+  });
+});
