@@ -1150,6 +1150,51 @@
   color: var(--pn-ink-3);
   margin: 0;
 }
+/* FIRST RUN — a workspace with no sessions is a blank until it names what a
+   session is and offers the one move that starts one. */
+.cv2-root .shell-empty__firstrun {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 480px;
+}
+.cv2-root .shell-empty__lede {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+  margin: 0;
+}
+.cv2-root .shell-empty__cta {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.cv2-root .shell-empty__cta-btn {
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  padding: 5px 12px;
+  background: var(--pn-card);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .shell-empty__cta-btn:hover { background: var(--pn-hover); }
+.cv2-root .shell-empty__cta-btn--primary {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+}
+.cv2-root .shell-empty__cta-btn--primary:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
+/* Refused: still reads as the control, but flat and unclickable. */
+.cv2-root .shell-empty__cta-btn--off {
+  cursor: default;
+  opacity: 0.55;
+}
+.cv2-root[data-theme='dark'] .shell-empty__cta-btn--primary,
+[data-theme='dark'] .cv2-root .shell-empty__cta-btn--primary { color: var(--pn-brand); }
 .cv2-root .shell-empty__groups {
   /* Was a single flex column, so four status groups of one to three rows each
      stacked into one narrow ribbon down the left of a 625px pane. They are

@@ -37,6 +37,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ActorSummary, EntitySummary } from '@tm8/contract';
 import { getKind } from '../domain';
 import type { SetStateOutcome } from '../domain';
+import { placeholderTitleFor, useNewTask } from '../authoring';
+import { placeholderNameFor } from '../domain/title-grammar';
+import { DisabledIconControl } from '../panels';
 import { AvatarStack, Pill, shortDate } from '../kit';
 import type { Notice } from '../shell/notices';
 import type { GateData } from '../views/useGateData';
@@ -101,6 +104,23 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
   lifecycleRef.current = lifecycle;
 
   const task = getKind('task');
+
+  /* THE CREATE CONTROL the board was shipped without: seven columns of drop
+     targets and no way to add a card read as a working board that silently
+     refused every new task. `useNewTask` makes one immediately (placeholder
+     title, focused on open) — the same flow the docks use — and a null
+     `unavailable` renders it disabled-with-reason rather than hidden. */
+  const newTask = useNewTask({
+    spaceId: data.spaceId,
+    kind: task.kind,
+    placeholderTitle: placeholderNameFor(task, placeholderTitleFor(task.label)),
+    commands: data.seam.commands,
+    onCreated: (id, result) => {
+      data.reconcileCommand(result);
+      onOpenEntity(id);
+    },
+  });
+
   const stateControl = task.list.stateControl;
   const priorityControl = task.list.valueControls?.find((c) => c.source === 'priority');
   const assignControl = task.list.assignControl;
@@ -380,6 +400,26 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
             Clear filters
           </button>
         ) : null}
+
+        {/* THE create control (§1.3): an empty board is a real answer, but a
+            board with no way to add a card is a dead end. `＋ New task` sits at
+            the end of the one chrome row so it never competes with a card. */}
+        {newTask.unavailable === null ? (
+          <button
+            type="button"
+            className="bd__new"
+            data-testid="bd-new-task"
+            onClick={() => void newTask.create()}
+          >
+            ＋ New {task.label.toLowerCase()}
+          </button>
+        ) : (
+          <DisabledIconControl label={`New ${task.label.toLowerCase()}`} reason={newTask.unavailable}>
+            <span className="bd__new bd__new--off" data-testid="bd-new-task">
+              ＋ New {task.label.toLowerCase()}
+            </span>
+          </DisabledIconControl>
+        )}
       </header>
 
       {snapshot?.error ? (
@@ -398,6 +438,17 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
           {!loading && snapshot?.nextCursor != null ? (
             <div className="bd__banner" data-testid="bd-banner">
               {`Showing the ${snapshot.limit} most recently active tasks — headers carry the true totals.`}
+            </div>
+          ) : null}
+          {/* WHAT THE BOARD IS, said once, only when it is genuinely empty (no
+              cards anywhere and no filter hiding them) — the columns below are
+              honest drop targets but say nothing about what belongs on them. */}
+          {!loading && !anyFilterActive(filters) && search.trim() === ''
+            && columns.every((column) => column.items.length === 0) ? (
+            <div className="bd__firstrun" data-testid="bd-firstrun">
+              Every {task.label.toLowerCase()} in this space shows up here, in a column for its
+              status. There are none yet — use ＋ New {task.label.toLowerCase()} above to add the
+              first.
             </div>
           ) : null}
           <div className="bd__cols">

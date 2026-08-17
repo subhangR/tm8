@@ -148,8 +148,10 @@ function LinkedProjectsCard({
         {(items) =>
           items.length === 0 ? (
             <EmptyRegion>
-              No projects are linked to this space. Linking one is how a session gets a working
-              directory to run in.
+              No projects are linked to this space — a linked project is what gives a session a
+              working directory to run in. Link one from the CLI with{' '}
+              <code className="gov-mono">tm8 project link</code>, or add a project when you create a
+              space.
             </EmptyRegion>
           ) : (
             <ul className="gov-rows">
