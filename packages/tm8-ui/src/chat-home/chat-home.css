@@ -980,6 +980,16 @@ button.tch-entity-chip:hover {
   font-size: 11.5px;
 }
 
+/* 16px is the iOS focus-zoom threshold, not a type choice: Safari zooms the page
+   when a field under 16px takes focus, and inside a `100dvh` frame with
+   `overflow: hidden` there is no scroll to pan with and no affordance to undo
+   it — the user taps this box and the app is the wrong size from then on.
+   Measured at 11.5px on the phone's Home screen. Desktop keeps 11.5px. */
+.cv2-root .mobile-frame .tch-find {
+  font-size: 16px;
+  min-height: 44px;
+}
+
 .tch-group__label {
   display: block;
   padding: 8px 9px 3px;

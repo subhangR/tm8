@@ -547,20 +547,11 @@
     transition: none;
   }
 }
-/* Phone: clamped to the frame rather than anchored to the control — the same
-   `left: 0` + 260px overflow `.hon-tip` had, and the same fix. */
-.cv2-root .mobile-frame .auth-tip {
-  position: fixed;
-  left: calc(var(--mobile-safe-left, 0px) + var(--pn-space-3, 12px));
-  right: calc(var(--mobile-safe-right, 0px) + var(--pn-space-3, 12px));
-  bottom: calc(
-    var(--mobile-tabbar-min, 49px) + var(--mobile-safe-bottom, 0px) + var(--pn-space-3, 12px)
-  );
-  top: auto;
-  width: auto;
-  max-width: none;
-  padding: 10px 12px;
-}
+/* The PHONE presentation — docked to the frame instead of anchored to the
+   control, because `left: 0` + 260px is the same viewport-blind geometry
+   `.hon-tip` had — is written ONCE, in honesty.css, over all three spellings of
+   this tooltip. Three copies of a geometry derived from the frame's tokens is
+   three things to drift when a token moves. Do not restate it here. */
 .cv2-root .auth-tip__cause {
   font-size: 11px;
   font-weight: 600;

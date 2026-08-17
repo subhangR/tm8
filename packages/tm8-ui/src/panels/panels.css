@@ -2230,6 +2230,26 @@
   outline: none;
 }
 .cv2-root .lp__searchinput::placeholder { color: var(--pn-ink-4); }
+/* 16px IS A BEHAVIOURAL THRESHOLD ON iOS, NOT A TYPE CHOICE.
+   Safari zooms the page when a text field under 16px takes focus. Inside a
+   `100dvh` frame with `overflow: hidden` that zoom has no way back: there is no
+   scroll to pan with and no affordance to undo it, so the user taps a search box
+   and the app is simply the wrong size from then on. Measured on the phone at
+   390x844: this field renders at 11.5px on tasks, sessions AND channels — every
+   list screen the phone has.
+   The 44px floor is the same tap-target law as everywhere else; at 19px tall
+   this was a control a thumb had to aim at. Scoped under `.mobile-frame` —
+   desktop keeps its 11.5px. */
+.cv2-root .mobile-frame .lp__searchinput {
+  font-size: 16px;
+}
+.cv2-root .mobile-frame .lp__searchrow {
+  min-height: 44px;
+}
+/* Same threshold, same reason — the panel composer. */
+.cv2-root .mobile-frame .pn-composer__input {
+  font-size: 16px;
+}
 /* The hint says `f`, not the canvas's `/` — D36 supersedes that pixel. */
 .cv2-root .lp__searchrow-key {
   flex: none;
@@ -2966,21 +2986,10 @@
   opacity: 1;
   visibility: visible;
 }
-/* Phone: clamped to the frame, like `.hon-tip`. `left: 0` + `max-width: 260px`
-   on a control near the right edge lands off-screen, and the row is clipped. */
-.cv2-root .mobile-frame .lp__rowdetail--chips .hon-caption {
-  position: fixed;
-  left: calc(var(--mobile-safe-left, 0px) + var(--pn-space-3, 12px));
-  right: calc(var(--mobile-safe-right, 0px) + var(--pn-space-3, 12px));
-  bottom: calc(
-    var(--mobile-tabbar-min, 49px) + var(--mobile-safe-bottom, 0px) + var(--pn-space-3, 12px)
-  );
-  top: auto;
-  width: auto;
-  max-width: none;
-  padding: 10px 12px;
-  font-size: 12px;
-}
+/* The PHONE presentation for this caption — docked to the frame rather than
+   anchored to the control — is written ONCE in honesty.css, alongside `.hon-tip`
+   and `.auth-tip`, because it is the same geometry derived from the same frame
+   tokens. Do not restate it here. */
 
 /* ONE HEIGHT BAND FOR THE FOUR CHIPS. They arrive from three vocabularies that
    each sized themselves: the assignee face is a `pn-badge`, which the metarow
