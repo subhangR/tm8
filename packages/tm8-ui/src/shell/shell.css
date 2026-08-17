@@ -1003,18 +1003,48 @@
 }
 
 /* --- Shell frame (§4) ----------------------------------------------------- */
-/* The app column: tab bar (fixed) over the body row (rail + view host).
+/* NO VIEWPORT UNIT MAY SIZE THE SHELL — THE TWO ENGINES DISAGREE ABOUT WHAT
+   ONE MEANS INSIDE `zoom`, AND ONLY A PERCENTAGE CHAIN IS RIGHT IN BOTH.
+
+   `.cv2-root` carries `zoom: 1.1` (app.css, D60). Measured live 2026-08-17 on
+   one machine, same page, same 1.1, ratio of the shell's VISUAL height to
+   `documentElement.clientHeight`:
+
+                                        Chrome 141    Safari 18
+     shell: calc(100vh / 1.1)             1.0000        0.9091   <- was here
+     shell: 100vh                         1.1000        1.0000
+     shell: 100dvh                        1.1000        1.0000
+     cv2-root: 100% + shell: 100%         1.0000        1.0000   <- is here
+
+   Chrome leaves `vh` at the raw viewport, so a plain 100vh renders 1.1x and
+   the bottom tenth hangs below the fold — that is what the `/ 1.1` was for
+   (measured 2026-07-29: 844 visual px in a 767 viewport before, 767 after).
+   Safari already divides `vh` by the zoom, so the same compensation landed a
+   SECOND time and the shell rendered at 1/1.1 of the viewport — the ~79 CSS px
+   white band under the app the user reported in Safari on 2026-08-17
+   (measured on their screenshot: 1572 device px of app in a 1729 device px
+   viewport = 0.9092).
+
+   A percentage resolves against the containing block, and BOTH engines convert
+   that block into the zoomed coordinate space, so the chain
+   `html/body/#root: 100%` (app.css) -> `.shell-scope: 100%` -> here agrees
+   everywhere. `.shell-scope` is the class GateApp puts beside `cv2-root` on
+   the one element that hosts this shell; the height cannot live on `.cv2-root`
+   itself because that class is re-opened as a THEME scope inside the shell
+   (EntityDetailPanel, AlwaysDark) where a 100% height is wrong.
+
+   The `/ 1.1` reciprocal in terminal.css is UNRELATED and stays: it counters a
+   nested `zoom`, not a viewport unit, and zoom composes the same in both
+   engines.
+
+   The app column: tab bar (fixed) over the body row (rail + view host).
    Floored per L4 — `min-height: 0` on the body is what lets its children
    scroll internally instead of pushing the frame past the viewport. */
+.cv2-root.shell-scope {
+  height: 100%;
+}
 .cv2-root .shell-root {
-  /* 100vh DIVIDED BY THE ZOOM (app.css lever, currently 1.1): viewport units
-     do not shrink under CSS zoom, so a plain 100vh renders 1.1x the viewport
-     and the bottom tenth of the app — session footer, context line, panel
-     footer — hangs below the fold. Measured live 2026-07-29: shell-root 844
-     visual px in a 767 viewport before this; exactly 767 after. MUST STAY IN
-     SYNC with app.css's zoom literal and terminal.css's reciprocal — three
-     sites, one number. */
-  height: calc(100vh / 1.1);
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--pn-paper);

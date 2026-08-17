@@ -1465,7 +1465,17 @@ export function GateApp(props: GateAppProps = {}) {
   }
 
   return (
-    <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
+    /* `shell-scope` is the height link, not a style hook: it hands `.shell-root`
+       a containing block that is exactly the viewport, so the shell can size
+       with a percentage instead of a viewport unit. Chrome and Safari disagree
+       about what `vh` means inside `zoom` and agree about what `%` means — see
+       the table over `.cv2-root.shell-scope` in shell.css. It rides beside
+       `cv2-root` rather than on it because `cv2-root` is re-opened as a theme
+       scope INSIDE this shell, where a 100% height would be wrong. */
+    <div
+      className="cv2-root shell-scope"
+      data-theme={theme === 'dark' ? 'dark' : undefined}
+    >
       <div className="shell-root">
         <SpaceTabBar
           /* R1 (2026-08-15): the identity block lives in the TOP ROW now.

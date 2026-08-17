@@ -938,3 +938,30 @@ Source: the sign-out reset (task "Sign-out does not reset: the next user inherit
 **What is NOT ruled by this entry, and stays as it was.** The signed-out GATE still never writes the hash (`views/signed-out-hash.test.tsx`): that law binds the RENDER path, where a tidy-up destroys the deep link of a recipient who has done nothing. This entry is about an ACT a signed-in viewer performs. The distinction is act versus render, and the test that pins the law never signs out.
 
 **Rationale, and the reason it is written down at all.** The address was the one part of this reset with a genuine argument on both sides; everything else it clears (`navStore`, `screenStackStore`, the screen-stack caches, `last-place`, the launch cache) is cross-user exposure with no counter-argument. A choice with a real cost on each side is exactly the kind that gets silently reversed by the next person who reads the code and sees only one of the two costs — so both are recorded here, next to which act pays which.
+
+## D75 — SUPERSEDES D63.3: a viewport unit under `zoom` means two different things, so the shell is sized by a percentage (2026-08-17)
+
+Source: the user, on their own screen — *"What is the white space when I am opening the tm8 app in safari?"* — with a screenshot of a ~79 CSS px white band under the app.
+
+**D63.3 named a law that is only half true.** It said: *"`100vh` (all viewport units) does NOT shrink under CSS `zoom`."* That is a statement about Chrome, written from a Chrome measurement, and it was generalised to CSS. Safari divides viewport units by the zoom, exactly as the CSS Viewport spec now says it should. So D63.3's fix — `height: calc(100vh / 1.1)` on `.shell-root` — is the right compensation in one engine and a SECOND application of it in the other, and the shell rendered at `1/1.1` of the viewport in Safari.
+
+**Measured 2026-08-17**, one machine, one page, the same `zoom: 1.1`, ratio of the shell's visual height to `documentElement.clientHeight`:
+
+| `.shell-root` height | Chrome 141 | Safari 18 |
+| --- | --- | --- |
+| `calc(100vh / 1.1)` (D63.3) | 1.0000 | **0.9091** |
+| `100vh` | **1.1000** | 1.0000 |
+| `100dvh` | **1.1000** | 1.0000 |
+| `100%`, off a `100%` parent | 1.0000 | 1.0000 |
+
+Confirmed on the user's own screenshot before any of it: 1572 device px of app in a 1729 device px viewport = 0.9092. The band was not a stray margin, an unfilled footer or a scroll artifact — it was the shell being told the zoom compensation twice.
+
+**Ruling. No viewport unit may size the shell.** A percentage resolves against the containing block and BOTH engines convert that block into the zoomed coordinate space, so `%` is the one length that means the same thing on both sides of a `zoom`. The chain is `html/body/#root: 100%` (app.css, already there) → `.shell-scope: 100%` → `.shell-root: 100%`.
+
+`.shell-scope` is a new class GateApp puts BESIDE `cv2-root` on the element that hosts the shell. The height cannot live on `.cv2-root` itself: that class is deliberately re-opened as a theme scope INSIDE the shell (`EntityDetailPanel`'s dark work_session panel, `AlwaysDark` around the terminal), and a 100% height on those is wrong. This is the same nesting hazard `.cv2-root .cv2-root { zoom: 1 }` exists for, answered the same way — by not putting frame concerns on the theme scope.
+
+**THE THREE SITES ARE NOW TWO.** D63.3 ruled that the 1.1 literal lived in three places that must move together — app.css (the lever), terminal.css (the glyph reciprocal), shell.css (the vh divisor). The divisor is gone: shell.css no longer names the number at all, and a future scale change cannot break the fold position because nothing about the fold is derived from the scale any more. terminal.css's `calc(1 / 1.1)` STAYS and stays coupled to the lever — it counters a nested `zoom`, not a viewport unit, and `zoom` composes identically in both engines.
+
+**Still open, deliberately not fixed here, same root cause.** `mobile.css`'s `.mobile-frame { height: 100dvh }` is the mirror defect: correct in Safari, 1.1x the viewport in Chrome. `mobile-frame.test.ts` pins `100dvh` and FORBIDS `100vh` in prose, so moving it is a ruling of its own, on the surface where iOS Safari is the primary engine. `projects.css` and `project-folder-picker.css` cap modals with `calc(100vh - 32px)`, which is a 10%-too-generous cap in Chrome and right in Safari.
+
+**The lesson.** D63.3 was measured, and the measurement was correct. What was wrong was the scope claimed for it: one engine's behaviour, written down as "CSS does not". A cross-engine claim needs a cross-engine measurement, and the entry that states one should say which engines it was taken in — this one does.
