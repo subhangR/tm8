@@ -55,8 +55,46 @@ Props:
   carry their own gutter, which full-bleed rows must, so their hairline reaches
   the card edge and reads as a table rule rather than an underline.
 
+- `action` — a control in the head, right-aligned. **Usable, but it costs one
+  extra edit**; see below. It was effectively unusable in the first wave and
+  that was a defect in this document, not in the prop.
+
 Do not pass `style={{ padding: … }}`. That inline was the drift: three sections
 carried it, nine did not, and the three disagreed with the head above them.
+
+### Filling the `action` slot: register the verb, or the guard fails you
+
+`settings.test.tsx` runs a shell-wide sweep (`sweepEnabledControls`) asserting
+that **every enabled control on this surface is on the `LIVE_VERBS` allowlist**.
+The rule it enforces is a real one: *no enabled control may promise an act it
+cannot perform.* Anything not on the list must be `aria-disabled` with a reason.
+
+So a head chip that is not registered fails the suite — and the first wave's §5
+forbade editing the only file where it can be registered. The axes lane built a
+`＋ New axis` chip, measured that, and deleted the chip. That was the correct
+call given what this document said, and this document was wrong.
+
+**You MAY append to `LIVE_VERBS`.** Appending a delimited block to the end of an
+array is the one edit to a shared file that does not conflict between parallel
+lanes — different lines, clean three-way merge. What §5 protects against is
+lanes *rewriting* shared files, not appending to a registry that exists to be
+extended. Add your block at the end, name your section, and say **why the verb
+is live** — that comment is the record of what this surface can actually do:
+
+```js
+  // <Your section>: live because <the seam op that really executes it>, or
+  // "browser-local, so it never asks the seam anything" — the two reasons the
+  // existing entries give. If neither is true, your control is NOT live and
+  // belongs disabled-with-reason instead.
+  /^＋ New axis$/,
+```
+
+Name the control for the thing it acts on (`role for <name>`, `revoke inv_…`),
+so that when the sweep does fail, the offender names itself.
+
+If your control cannot honestly perform its act, do not register it — render it
+`aria-disabled` with a reason. The allowlist is not a way past the guard; it is
+the place you state that the guard's question has a real answer.
 
 ## 3. One scroller per section — this is the rule people break
 
@@ -68,6 +106,28 @@ If your section genuinely needs an internally scrolling pane (a preview beside
 an editor), that pane must have a **bounded height of its own** — a `height`,
 a `max-height`, or a grid track — and must not be `flex: 1` inside the outer
 scroller.
+
+## 3b. A shared class that pads itself cannot be nested in a padded frame
+
+The `.set-stack` lesson, kept because it cost three lanes a measurement each.
+
+`.set-stack` carried its own `12px var(--set-gutter)`. Dropped inside a
+default-padded `SectionFrame` it produced a 36px body gutter under an 18px
+title — every section that used it was visibly out of line with its own
+heading, and nobody noticed until the frame gave the sections a real gutter to
+be out of line WITH.
+
+So: **if you borrow a class from `settings.css`, check whether it pads itself.**
+If it does, either turn the frame's `pad` off and let the class own the gutter,
+or do not borrow it — write your own. Never let both apply.
+
+The same trap is live in the other direction: `.set-invite*` pad to 16px
+because they sit inside `.set-panel`, which is itself inset. Borrowed straight
+into a section body they land 2px inside `--set-gutter`.
+
+`.set-stack` and `.set-kv*` no longer exist — every section moved to its own
+grouped layout, which is the better answer anyway. A key/value dump of a DTO is
+rarely the right arrangement for a record a person reads.
 
 ## 4. The four numbers
 
@@ -94,6 +154,25 @@ Each section is being worked by a different agent **in parallel**. You own
   stop — a coordinator serialises it.
 - Prefix every new class with your section, e.g. `.set-axes__row`. A bare
   `.row` will collide.
+
+**The one exception, and why it is safe.** You MAY *append* a delimited block to
+the end of `LIVE_VERBS` in `settings.test.tsx` to register your section's live
+controls (§2). Nothing else in that file.
+
+The distinction this rule is really drawing is **rewrite vs append**, not
+"shared vs owned". Two lanes rewriting the same block conflict; two lanes
+appending different blocks to the end of the same array merge cleanly. The first
+wave stated the rule as "never touch shared files", which was the right
+instinct and the wrong boundary: it made `SectionFrame`'s `action` prop
+unfillable, and a lane correctly built a chip, measured the guard failure, and
+deleted its own work. Measured after that wave: twelve lanes, zero collisions,
+and `settings.css` / `SettingsShell.tsx` / `types.ts` / `index.ts` still
+byte-identical to the frame commit — the ownership split worked, it was just
+drawn one file too wide.
+
+If appending is not enough — you need to *change* an existing entry, or touch
+any other shared file — stop and say so on your task. That is the case a
+coordinator serialises.
 
 ## 6. Tokens only
 
