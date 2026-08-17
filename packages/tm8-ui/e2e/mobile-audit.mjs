@@ -81,12 +81,24 @@ import { execFileSync, spawn } from 'node:child_process';
  */
 function gitRef(outDir) {
   const git = (...a) => { try { return execFileSync('git', a, { encoding: 'utf8' }).trim(); } catch { return null; } };
-  /* THE INSTRUMENT MUST NOT COUNT ITS OWN OUTPUT. This run rewrites
-     `<outDir>/<label>.json` inside the repo, so a bare `status --porcelain`
-     reports a dirty tree on every single run — a permanent false positive, and
-     a check that always fires is a check nobody reads. Excluded by pathspec so
-     the flag keeps meaning "somebody has uncommitted SOURCE edits". */
-  const status = git('status', '--porcelain', '--', ':(exclude)' + outDir);
+  /*
+   * WHAT "DIRTY" HAS TO MEAN: the sha does not name the tree that was measured.
+   * That is TRACKED modifications, and only those — hence `-uno`.
+   *
+   * Two false positives had to go, and a check that always fires is a check
+   * nobody reads:
+   *   - this run rewrites `<outDir>/<label>.json` inside the repo, so a bare
+   *     `--porcelain` called every run dirty. Excluded by pathspec.
+   *   - a worktree needs an untracked `node_modules` symlink to run at all, so
+   *     counting untracked paths called every worktree dirty too.
+   *
+   * Dropping untracked files does not open a hole: an untracked file can only
+   * affect the render if something imports it, and that importer is a tracked
+   * file which would then show as modified. The count is still reported, so a
+   * reader can see what was set aside rather than take it on trust.
+   */
+  const status = git('status', '--porcelain', '-uno', '--', ':(exclude)' + outDir);
+  const untracked = git('ls-files', '--others', '--exclude-standard', '--', ':(exclude)' + outDir);
   return {
     head: git('rev-parse', 'HEAD'),
     headShort: git('rev-parse', '--short', 'HEAD'),
@@ -94,6 +106,7 @@ function gitRef(outDir) {
     behindMain: Number(git('rev-list', '--count', 'HEAD..origin/main') ?? -1),
     dirty: status === null ? null : status.length > 0,
     dirtyFiles: status ? status.split('\n').slice(0, 20) : [],
+    untrackedCount: untracked ? untracked.split('\n').length : 0,
   };
 }
 
