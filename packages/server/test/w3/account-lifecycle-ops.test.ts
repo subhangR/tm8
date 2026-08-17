@@ -47,14 +47,20 @@ describe('141 account-lifecycle ops — runtime + escalation resistance', () => 
     await server?.close();
   });
 
-  async function makeInvite(role: 'admin' | 'member', maxUses = 1): Promise<string> {
+  interface MadeInvite {
+    code: string;
+    spaceId: string;
+    inviteId: string;
+  }
+
+  async function makeInviteFull(role: 'admin' | 'member', maxUses = 1): Promise<MadeInvite> {
     const space = successData<{ space: { id: string } }>(
       await server.request('POST', '/v2/spaces', {
         name: `probe-${role}-${Math.random()}`,
         clientMutationId: `probe-space-${role}-${Math.random()}`,
       }),
     );
-    const invite = successData<{ invite?: { code: string }; code?: string }>(
+    const invite = successData<{ invite?: { code: string; id: string }; code?: string; id?: string }>(
       await server.request('POST', `/v2/spaces/${space.space.id}/invites`, {
         role,
         maxUses,
@@ -62,8 +68,13 @@ describe('141 account-lifecycle ops — runtime + escalation resistance', () => 
       }),
     );
     const code = invite.invite?.code ?? invite.code;
-    if (!code) throw new Error(`invite create returned no code: ${JSON.stringify(invite)}`);
-    return code;
+    const inviteId = invite.invite?.id ?? invite.id;
+    if (!code || !inviteId) throw new Error(`invite create returned no code/id: ${JSON.stringify(invite)}`);
+    return { code, spaceId: space.space.id, inviteId };
+  }
+
+  async function makeInvite(role: 'admin' | 'member', maxUses = 1): Promise<string> {
+    return (await makeInviteFull(role, maxUses)).code;
   }
 
   it('POSITIVE — invite signup creates a non-admin non-owner account + membership and consumes the invite atomically', async () => {
@@ -239,6 +250,49 @@ describe('141 account-lifecycle ops — runtime + escalation resistance', () => 
     expect(reissue.status).toBe(403);
     expect(errorCode(reissue)).toBe('forbidden');
   }, 30_000);
+
+  it('NO 5xx — every invite-signup failure mode maps to a clean 4xx, never a raw server fault', async () => {
+    // The 500-hunt. The SQLSTATE table (http/errors.ts) degrades anything
+    // unmapped to a 503 upstream_unavailable, so a raw 500 is not structurally
+    // reachable from this seam — but a WELL-FORMED request that trips a 5xx
+    // would still be a finding worth more than the feature. Drive every raise
+    // in signup_via_invite and assert each lands in the 4xx taxonomy.
+
+    // Unknown code -> P0002 -> not_found (404), not 503.
+    const missing = await server.request('POST', '/v2/auth/invite/signup', {
+      code: 'inv_does_not_exist_at_all',
+      username: 'ghost',
+      password: 'ghost-password-123',
+    });
+    expect(missing.status).toBe(404);
+    expect(errorCode(missing)).toBe('not_found');
+
+    // Revoked invite -> 42501 -> forbidden (403), not 503.
+    const revoked = await makeInviteFull('member');
+    successData(
+      await server.request('POST', `/v2/spaces/${revoked.spaceId}/invites/${revoked.inviteId}/revoke`, {
+        clientMutationId: `probe-revoke-${Math.random()}`,
+      }),
+    );
+    const afterRevoke = await server.request('POST', '/v2/auth/invite/signup', {
+      code: revoked.code,
+      username: 'afterrevoke',
+      password: 'afterrevoke-password-123',
+    });
+    expect(afterRevoke.status).toBe(403);
+    expect(afterRevoke.status).toBeLessThan(500);
+
+    // Blank username -> 22023 -> invalid_input (400), not 503.
+    const blank = await server.request('POST', '/v2/auth/invite/signup', {
+      code: (await makeInvite('member')),
+      username: '   ',
+      password: 'blank-password-123',
+    });
+    // (schema may reject the whitespace username as 400 before SQL; either way
+    // it must be a 4xx, never a 5xx.)
+    expect(blank.status).toBeGreaterThanOrEqual(400);
+    expect(blank.status).toBeLessThan(500);
+  }, 40_000);
 });
 
 describe('141 auth.claim.reissue — happy path on an UNCLAIMED node', () => {
