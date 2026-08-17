@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   ArtifactPreviewSession,
   ArtifactsPreviewStartInput,
@@ -6,6 +6,7 @@ import type {
   EntityDetail,
   EntitySummary,
 } from '@tm8/contract';
+import type { ArtifactRevisionsList, ArtifactRevisionSummary } from '../../data/seam';
 import type { ContentBlockRef } from '../../domain';
 import { KindIcon } from '../../domain';
 import { Chip, Eyebrow, Markdown } from '../../kit';
@@ -20,13 +21,16 @@ import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
 import type { EntityListPanelProps } from '../EntityListPanel';
 
 /**
- * The one command this body can execute (threaded from the host's seam
- * assignment, like `AuthoringCommands`): mint a preview capability so the
- * artifact-preview block's Run button renders the bundle. Structural subset
- * of `Seam['commands']` — a host assigns `seam.commands` with no cast.
+ * The artifact viewer's port (threaded from the host's seam assignment, like
+ * `AuthoringCommands`): mint a preview capability, list the published
+ * revisions, and fetch a revision's zip bytes. Structural subset of
+ * `Seam['commands']` — a host assigns `seam.commands` with no cast.
  */
 export interface ArtifactPreviewCommands {
   previewArtifact(id: string, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
+  /** Amendment 12 pair — the revision switcher's read and download's bytes. */
+  listArtifactRevisions(id: string): Promise<ArtifactRevisionsList>;
+  exportArtifactRevision(id: string, revisionNumber: number): Promise<Blob>;
 }
 
 type GenericBodyCommands = Partial<
@@ -142,7 +146,11 @@ function ContentBlock({
       case 'file-preview':
         return <FilePreviewBlock detail={detail} downloadHref={downloadHref} />;
       case 'artifact-preview':
-        return <ArtifactPreviewBlock detail={detail} previewArtifact={commands?.previewArtifact} />;
+        /* Keyed by entity id: a panel that re-points to another artifact must
+           reset the viewer's whole run state (selected revision, mint timer,
+           fullscreen) rather than mint the OLD artifact's revision number
+           against the new id. */
+        return <ArtifactPreviewBlock key={detail.id} detail={detail} commands={commands ?? undefined} />;
       case 'loop-controls':
         return (
           <LoopControls
@@ -353,94 +361,253 @@ function noPreviewWords(mime: string, reachable: boolean): string {
   return `no preview for ${mime || 'this type'}`;
 }
 
+/** Re-mint this far before the capability lapses, so the frame never dies mid-view. */
+const REMINT_MARGIN_MS = 60_000;
 /**
- * ARTIFACT-PREVIEW — metadata, and a Run button that EXECUTES (the two
- * security decisions that gated this — second origin + accepted iframe
- * residual — were ratified 2026-07-31; TM8-ARTIFACTS-DESIGN §9/§12.1).
+ * Floor under the re-mint delay. A session can arrive already inside the
+ * margin — or already past it (the fixture's deterministic clock is in the
+ * past by construction) — and a delay clamped to zero would re-mint in a
+ * tight loop rather than on a cadence.
+ */
+const REMINT_FLOOR_MS = 30_000;
+
+/**
+ * The server's own zip naming (`zipFilename`), mirrored so the two agree.
+ * The empty-name fallback deliberately differs from the server's — §15.2
+ * bans quoted kind literals in this file, and a filename is not worth an
+ * exemption in the scanner.
+ */
+function zipFilename(name: string, revisionNumber: number): string {
+  const base = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\/]/g, '_').trim().slice(0, 80) || 'bundle';
+  return `${base}-r${revisionNumber}.zip`;
+}
+
+/**
+ * ARTIFACT VIEWER — the rendered bundle, in-block, plus the chrome that keeps
+ * that rendering honest: who published it, which revision, and that the page
+ * inside the frame is third-party content.
  *
- * Preview never autoruns (§9.5): the iframe does not exist until the user
- * clicks Run, so list and feed rendering execute nothing and the metadata is
- * visible BEFORE execution. The frame is `sandbox="allow-scripts"` and
+ * AUTORUNS when the detail opens (owner ruling 2026-08-16, superseding the
+ * §9.5 click-gate; the block mounts only inside the artifact DETAIL panel, so
+ * list and feed tiles still execute nothing). The sandbox posture is
+ * UNCHANGED and is the whole security model: `sandbox="allow-scripts"` and
  * NOTHING else — never `allow-same-origin` (with allow-scripts a frame could
- * strip its own sandbox), never top-navigation/popups/downloads/forms — and
- * the src is the server-minted capability URL on the PREVIEW origin,
- * verbatim. This file never builds a preview URL itself: a node without the
- * second-origin listener answers without `previewUrl`, and the honest render
- * is the refusal text, not a broken frame.
+ * strip its own sandbox), never top-navigation/popups/downloads/forms/modals.
+ * `previewUrl` is an OPAQUE server-minted capability used verbatim: this file
+ * never parses or builds one, and it renders from whatever origin the node
+ * chose — the block cannot tell and must not care. A node that answers
+ * without `previewUrl` gets the refusal text, never a broken frame; a mount
+ * with no command executor says so in words.
+ *
+ * The capability expires (~600s), so a successful mint schedules its own
+ * replacement at `expiresAt` minus a margin and swaps the frame src in place —
+ * a panel left open must still show a live page, not a silently dead one.
+ *
+ * The accepted residual (TM8-ARTIFACTS-DESIGN §12.1): a hostile bundle can
+ * draw a pixel-perfect fake tm8 login and POST keystrokes anywhere — open
+ * network inside the frame is server policy. The publisher line and the
+ * third-party wording in the chrome are the compensating control for exactly
+ * that, which is why they render on every phase, not only around a live frame.
  */
 function ArtifactPreviewBlock({
   detail,
-  previewArtifact,
+  commands,
 }: {
   detail: EntityDetail;
-  previewArtifact?: ArtifactPreviewCommands['previewArtifact'];
+  commands?: GenericBodyCommands;
 }) {
+  const previewArtifact = commands?.previewArtifact;
+  const listArtifactRevisions = commands?.listArtifactRevisions;
+  const exportArtifactRevision = commands?.exportArtifactRevision;
+
   const state = detail.state as unknown as Record<string, unknown>;
   const content = detail.content as unknown as Record<string, unknown>;
   const description = typeof content.description === 'string' ? content.description : null;
-  const revision = typeof state.revisionNumber === 'number' ? state.revisionNumber : null;
+  const currentRevision = typeof state.revisionNumber === 'number' ? state.revisionNumber : null;
   const fileCount = typeof content.fileCount === 'number' ? content.fileCount : null;
   const totalBytes = typeof content.totalSizeBytes === 'number' ? content.totalSizeBytes : null;
 
   const [run, setRun] = useState<
-    | { phase: 'idle' }
     | { phase: 'starting' }
-    | { phase: 'running'; previewUrl: string; expiresAt: string }
+    | { phase: 'running'; previewUrl: string; revisionNumber: number }
     | { phase: 'error'; message: string }
-  >({ phase: 'idle' });
+  >({ phase: 'starting' });
+  /** `null` = the artifact's current revision (the server's default). */
+  const [selectedRevision, setSelectedRevision] = useState<number | null>(null);
+  const [revisions, setRevisions] = useState<ArtifactRevisionSummary[] | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [restartNonce, setRestartNonce] = useState(0);
 
-  const facts: string[] = [];
-  if (revision != null) facts.push(`revision ${revision}`);
-  if (fileCount != null) facts.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
-  if (totalBytes != null) facts.push(formatBytes(totalBytes));
-
-  const onRun = async () => {
+  useEffect(() => {
     if (!previewArtifact) return;
-    setRun({ phase: 'starting' });
-    try {
-      const session = await previewArtifact(detail.id, {
-        clientMutationId: crypto.randomUUID(),
-      });
-      if (session.previewUrl) {
-        setRun({ phase: 'running', previewUrl: session.previewUrl, expiresAt: session.expiresAt });
-      } else {
-        setRun({ phase: 'error', message: 'This node does not run a preview origin, so the bundle cannot be rendered here.' });
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const mint = async (isFirst: boolean) => {
+      if (isFirst) setRun({ phase: 'starting' });
+      try {
+        const session = await previewArtifact(detail.id, {
+          clientMutationId: crypto.randomUUID(),
+          ...(selectedRevision != null ? { revisionNumber: selectedRevision } : {}),
+        });
+        if (cancelled) return;
+        if (!session.previewUrl) {
+          setRun({ phase: 'error', message: 'This node did not mint a preview URL, so the bundle cannot be rendered here.' });
+          return;
+        }
+        setRun({ phase: 'running', previewUrl: session.previewUrl, revisionNumber: session.revisionNumber });
+        // A re-mint keeps the frame alive across the TTL; on failure the
+        // catch below reports it instead of leaving a dead frame that still
+        // looks rendered. A malformed expiresAt falls to the floor cadence
+        // rather than to setTimeout(NaN)'s run-now loop.
+        const untilMargin = Date.parse(session.expiresAt) - Date.now() - REMINT_MARGIN_MS;
+        timer = setTimeout(() => void mint(false), Number.isFinite(untilMargin) ? Math.max(untilMargin, REMINT_FLOOR_MS) : REMINT_FLOOR_MS);
+      } catch (err) {
+        if (!cancelled) setRun({ phase: 'error', message: err instanceof Error ? err.message : 'preview could not be started' });
       }
+    };
+    void mint(true);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [detail.id, selectedRevision, restartNonce, previewArtifact]);
+
+  useEffect(() => {
+    if (!listArtifactRevisions) return;
+    let cancelled = false;
+    listArtifactRevisions(detail.id).then(
+      (page) => { if (!cancelled) setRevisions(page.revisions); },
+      // A failed history read degrades to "no switcher", not to a dead viewer:
+      // the frame renders from the current revision either way.
+      () => { if (!cancelled) setRevisions(null); },
+    );
+    return () => { cancelled = true; };
+  }, [detail.id, listArtifactRevisions]);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+
+  const shownRevision = run.phase === 'running' ? run.revisionNumber : selectedRevision ?? currentRevision;
+
+  const onDownload = async () => {
+    if (!exportArtifactRevision) return;
+    const revisionNumber = selectedRevision ?? currentRevision;
+    if (revisionNumber == null) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const blob = await exportArtifactRevision(detail.id, revisionNumber);
+      // RAW BYTES → object URL → anchor click. The URL is revoked immediately:
+      // the click has already handed the blob to the download, and a leaked
+      // object URL pins the whole zip in memory for the panel's lifetime.
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = zipFilename(detail.title, revisionNumber);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (err) {
-      setRun({ phase: 'error', message: err instanceof Error ? err.message : 'preview could not be started' });
+      setExportError(err instanceof Error ? err.message : 'export failed');
+    } finally {
+      setExporting(false);
     }
   };
 
+  const facts: string[] = [];
+  if (fileCount != null) facts.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
+  if (totalBytes != null) facts.push(formatBytes(totalBytes));
+
   return (
-    <div className="pn-preview">
-      {run.phase === 'running' ? (
+    <div className={`pn-preview pn-preview--viewer${fullscreen ? ' pn-preview--fullscreen' : ''}`}>
+      <div className="pn-preview__chrome">
+        <div className="pn-preview__who">
+          <span className="pn-preview__publisher">
+            published by <strong>{detail.createdBy.displayName}</strong>
+            {` (${detail.createdBy.isAgent ? 'agent' : 'human'})`}
+            {shownRevision != null ? ` · revision ${shownRevision}` : ''}
+            {facts.length > 0 ? ` · ${facts.join(' · ')}` : ''}
+          </span>
+          <span className="pn-preview__thirdparty">
+            Third-party content — the page below is the artifact&apos;s own code, not tm8 UI.
+            Never enter tm8 credentials into it.
+          </span>
+        </div>
+        <div className="pn-preview__controls">
+          {revisions !== null && revisions.length > 0 ? (
+            <select
+              className="pn-preview__revpick"
+              aria-label="revision"
+              value={String(selectedRevision ?? currentRevision ?? revisions[0]!.revisionNumber)}
+              onChange={(e) => setSelectedRevision(Number(e.target.value))}
+            >
+              {revisions.map((r) => (
+                <option key={r.revisionNumber} value={String(r.revisionNumber)}>
+                  {`rev ${r.revisionNumber}${r.revisionNumber === currentRevision ? ' · current' : ''}`}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <button
+            type="button"
+            className="pn-btn"
+            disabled={previewArtifact === undefined || run.phase === 'starting'}
+            title="Mint a fresh preview and reload the frame."
+            onClick={() => setRestartNonce((n) => n + 1)}
+          >
+            {run.phase === 'starting' ? 'Starting…' : 'Restart ▷'}
+          </button>
+          <button
+            type="button"
+            className="pn-btn"
+            aria-pressed={fullscreen}
+            onClick={() => setFullscreen((f) => !f)}
+          >
+            {fullscreen ? 'Exit fullscreen' : 'Fullscreen ⛶'}
+          </button>
+          <button
+            type="button"
+            className="pn-btn"
+            disabled={exportArtifactRevision === undefined || exporting || (selectedRevision ?? currentRevision) == null}
+            title={exportArtifactRevision === undefined ? 'Export is not wired here.' : 'Download this revision as a zip.'}
+            onClick={() => void onDownload()}
+          >
+            {exporting ? 'Saving…' : 'Download ⇩'}
+          </button>
+        </div>
+      </div>
+      {previewArtifact === undefined ? (
+        <div className="pn-preview__box pn-preview__box--none">
+          <span className="pn-preview__label">
+            Preview is not wired here — this mount has no command executor, so the bundle stays unexecuted.
+          </span>
+        </div>
+      ) : run.phase === 'running' ? (
         <iframe
           className="pn-preview__frame"
           title={`artifact preview · ${detail.title}`}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           src={run.previewUrl}
-          style={{ width: '100%', minHeight: '320px', border: '1px solid var(--border, #444)', borderRadius: '4px', background: '#fff' }}
         />
       ) : (
         <div className="pn-preview__box pn-preview__box--none">
           <span className="pn-preview__label">
-            {detail.title}
-            {facts.length > 0 ? ` · ${facts.join(' · ')}` : ''}
+            {run.phase === 'starting' ? 'starting preview…' : run.message}
           </span>
         </div>
       )}
       {description ? <p className="pn-prose">{description}</p> : null}
-      {run.phase === 'error' ? <p className="pn-section__empty">{run.message}</p> : null}
-      <button
-        type="button"
-        className="pn-btn"
-        disabled={previewArtifact === undefined || run.phase === 'starting'}
-        title={previewArtifact === undefined ? 'Preview is not wired here.' : 'Render this bundle in a sandboxed frame.'}
-        onClick={() => void onRun()}
-      >
-        {run.phase === 'running' ? 'Restart ▷' : run.phase === 'starting' ? 'Starting…' : 'Run ▷'}
-      </button>
+      {exportError ? <p className="pn-section__empty">{exportError}</p> : null}
     </div>
   );
 }

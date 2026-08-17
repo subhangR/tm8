@@ -438,6 +438,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         return ops.upsertReadMark(anchorId);
       },
       previewArtifact: (id, input) => ops.previewArtifact(id, input),
+      listArtifactRevisions: (id) => ops.listArtifactRevisions(id),
+      exportArtifactRevision: (id, revisionNumber) => ops.exportArtifactRevision(id, revisionNumber),
       spawn: (input) => ops.spawn(input),
       startTerminal: (input) => ops.startTerminal(input),
       dispatch: (input) => ops.dispatch(input),

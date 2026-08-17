@@ -786,9 +786,12 @@ export type ContentBlockKind =
   | 'fields'
   | 'link-summary'
   | 'file-preview'
-  // Artifact wave: metadata-only preview for the `artifact` kind. Execution of
-  // the bundle (the iframe) is release-gated on two open security decisions and
-  // is deliberately NOT part of this block.
+  // Artifact viewer: the artifact kind's rendered bundle, in-block. The iframe
+  // SHIPS here and autoruns when the detail opens (owner ruling 2026-08-16,
+  // superseding the earlier click-gate); the sandbox posture is unchanged —
+  // exactly `allow-scripts`, nothing else — and the preview URL is an opaque
+  // server-minted capability, origin-agnostic and never parsed or built by the
+  // UI. Full posture on `ArtifactPreviewBlock` in GenericBody.
   | 'artifact-preview'
   | 'items'
   | 'lifecycle'

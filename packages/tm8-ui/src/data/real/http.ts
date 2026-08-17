@@ -169,6 +169,14 @@ export interface HttpClient {
   /** Catalog-bound request. The method and path template come from `OPERATIONS`. */
   call<T>(op: OperationName, opts?: RequestOptions): Promise<T>;
   /**
+   * Catalog-bound request for a route that answers RAW BYTES (today exactly
+   * one: `artifacts.export`). Same URL construction, headers and timeout as
+   * `call`, and a non-2xx still carries the JSON error envelope and becomes
+   * the same `CollabError` — but success resolves the body as a `Blob` and
+   * NEVER parses it: a zip through `JSON.parse` is corruption, not a download.
+   */
+  callBytes(op: OperationName, opts?: RequestOptions): Promise<Blob>;
+  /**
    * ESCAPE HATCH for a route the catalog does not declare yet — today exactly
    * one: `execution.liveness` (LLD C-1 / §13 open item). See `ops.ts`; this is
    * not a generic op-name dispatcher and must not grow one.
@@ -285,6 +293,75 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     }
   }
 
+  /**
+   * `callPath` for a bytes route. Kept as its own function rather than a flag
+   * on `callPath` because the two success paths are irreconcilable — one MUST
+   * parse the body and one MUST NOT — and a boolean that flips "parse" is the
+   * kind of parameter that ends with a zip through `JSON.parse`.
+   */
+  async function callPathBytes(method: string, path: string, opts: RequestOptions = {}): Promise<Blob> {
+    if (doFetch === undefined) {
+      throw new CollabError('upstream_unavailable', 'no fetch implementation was provided to createHttpClient()');
+    }
+    const url = `${baseUrl}${path}${buildQuery(opts.query)}`;
+    const guard = armTimeout(timeoutMs);
+    const authToken = getAuthToken?.() ?? null;
+
+    try {
+      let res: Response;
+      try {
+        res = await doFetch(url, {
+          method,
+          headers: {
+            [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+            ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
+          },
+          signal: guard.signal,
+        });
+      } catch (cause) {
+        onTransport?.(false);
+        throw new CollabError(
+          'upstream_unavailable',
+          guard.timedOut()
+            ? `the tm8 node did not answer within ${timeoutMs}ms`
+            : `cannot reach the tm8 node: ${String(cause)}`,
+          { retryable: true, details: { url } },
+        );
+      }
+
+      onTransport?.(true);
+
+      // A refusal is still JSON: the error envelope arrives on the same route
+      // that answers bytes on success, so the failure path parses and the
+      // success path does not.
+      if (!res.ok) {
+        const text = await res.text();
+        let parsed: unknown;
+        try {
+          parsed = text === '' ? undefined : JSON.parse(text);
+        } catch {
+          throw new CollabError('upstream_unavailable', `tm8 returned non-JSON (HTTP ${res.status})`, {
+            details: { url, status: res.status, httpStatus: res.status },
+          });
+        }
+        throw toCollabError(res.status, parsed);
+      }
+
+      try {
+        return await res.blob();
+      } catch (cause) {
+        if (!guard.timedOut()) throw cause;
+        onTransport?.(false);
+        throw new CollabError('upstream_unavailable', `the tm8 node did not answer within ${timeoutMs}ms`, {
+          retryable: true,
+          details: { url },
+        });
+      }
+    } finally {
+      guard.disarm();
+    }
+  }
+
   async function putGrantedBytes(
     uploadUrl: string,
     token: string | null | undefined,
@@ -370,6 +447,10 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     call<T>(op: OperationName, opts: RequestOptions = {}): Promise<T> {
       const binding = getOperation(op);
       return callPath<T>(binding.method, bindPath(op, opts.params ?? {}), opts);
+    },
+    callBytes(op: OperationName, opts: RequestOptions = {}): Promise<Blob> {
+      const binding = getOperation(op);
+      return callPathBytes(binding.method, bindPath(op, opts.params ?? {}), opts);
     },
   };
 }
