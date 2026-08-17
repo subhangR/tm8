@@ -170,7 +170,14 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
     'referrer-policy': 'no-referrer',
     'cache-control': 'no-store',
     'cross-origin-opener-policy': 'same-origin',
-    'cross-origin-resource-policy': 'same-origin',
+    // CORP MUST be `cross-origin`, and this is not a loosening to "harden"
+    // back: the consuming document is OPAQUE-ORIGIN (the CSP sandbox above,
+    // by design), so even its OWN `/p/` subresource loads are cross-origin
+    // from the browser's point of view — `same-origin` here silently blocks
+    // every multi-file bundle's scripts/styles/images (found live,
+    // 2026-08-17). These responses are token-gated capabilities meant for
+    // exactly that sandboxed document; the token is the access control.
+    'cross-origin-resource-policy': 'cross-origin',
     'permissions-policy': PERMISSIONS_POLICY,
   };
 

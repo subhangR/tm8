@@ -302,7 +302,11 @@ describe('the preview listener', () => {
     expect(res.headers['referrer-policy']).toBe('no-referrer');
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.headers['cross-origin-opener-policy']).toBe('same-origin');
-    expect(res.headers['cross-origin-resource-policy']).toBe('same-origin');
+    // `cross-origin`, NOT `same-origin`: the sandboxed document is
+    // opaque-origin, so its own /p/ subresource loads are cross-origin to
+    // the browser — same-origin CORP blocks every multi-file bundle's own
+    // scripts (found in a live browser run, 2026-08-17).
+    expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
     // a6 (server half) — COEP require-corp is DROPPED: CDN assets carry no
     // CORP header and would silently fail under it, defeating open network.
     expect(res.headers['cross-origin-embedder-policy']).toBeUndefined();
@@ -472,6 +476,7 @@ describe('the same-origin /p/ route on the app socket', () => {
     expect(res.headers['referrer-policy']).toBe('no-referrer');
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.headers['cross-origin-embedder-policy']).toBeUndefined();
+    expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
     expect(res.headers['permissions-policy']).toContain('camera=()');
     expect(res.headers['set-cookie']).toBeUndefined();
     // The RLS claims discipline survives the mount: capability row as the
