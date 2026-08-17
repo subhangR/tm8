@@ -83,13 +83,16 @@ tm8 auth claim --token "$(cat ~/.tm8-dev/setup-token)" --username you --password
 ```
 
 …or open **http://127.0.0.1:4611**, and paste the `tm8c_…` token into the
-**SETUP TOKEN** field on the “Create your account on this server.” card.
+**SETUP TOKEN** field on the **“Claim this node.”** card.
 
 Claiming sets a password on the owner account that already exists — it does not
 create a second one, so everything already attributed to the owner stays yours —
 and signs you in.
 
-### After that: the terminal never asks again
+Pick a password you will keep. It is what you use to reach this node later from
+your phone or another laptop; on this machine you will rarely need it again.
+
+### After that, neither door asks again
 
 Over loopback the node recognises the owner with no credential at all:
 
@@ -106,10 +109,9 @@ That is a real account with real permissions, not a guest mode. (There is no
 `tm8 auth whoami` — `auth session` is that command.) If `tm8` is not on your
 PATH, it is `packages/cli/dist/tm8` in your clone.
 
-> **The browser does keep asking.** The web gate has no loopback auto-owner arm
-> yet, so from the second visit on it shows “Welcome back.” and wants your
-> password, on your own machine. Verified against a running node. The fix is
-> open as PR #314 and is not merged.
+The browser does the same thing: from a loopback browser on a claimed node you
+land straight in the workspace — no card, no password. Verified on a running
+node, which answered with the Space open and the tab row live.
 
 ---
 
@@ -223,6 +225,25 @@ are changing.
 ---
 
 ## 5. Put an agent on it
+
+**First, one prerequisite.** tm8 stores no agent credential of its own — a
+session runs *your machine's* `claude` or `codex` login. If neither is installed
+and logged in, a spawn sits at `running` forever and the refusal only ever
+appears inside the terminal. Check before you spawn:
+
+```bash
+tm8 doctor
+```
+
+```
+  PASS  agent CLI: claude-code   claude → /opt/homebrew/bin/claude (authenticated)
+  PASS  agent CLI: codex         codex → /Users/subhang/.local/bin/codex (authenticated (auth_mode=chatgpt))
+```
+
+If it says otherwise: `npm i -g @anthropic-ai/claude-code` then `claude` to log
+in, or `npm i -g @openai/codex` then `codex login`.
+
+Now spawn:
 
 ```bash
 tm8 session spawn --space <space-id> \
@@ -388,22 +409,21 @@ tm8 help --query "spawn agent" # search by intent when you don't know the noun
 
 So you do not spend an afternoon looking for these:
 
-- **The browser does not sign the local owner in automatically** the way the CLI
-  does. You claim once with the token, then sign in with a password (PR #314).
-- **The first-run card shows a placeholder server identity.** It reads
-  `tm8-server v0.9.2 · localhost:8787` regardless of which node you are actually
-  on — a leftover design specimen, not your node. Ignore it; the address bar is
-  the truth. Fix open as PR #313.
-- **The claim card's own explainer names the wrong operations** — it says
-  `auth.signup` / `auth.login` when a first claim is `auth.claim`.
+- **The claim link the server prints does not work on the `dev` slot** — it names
+  the API port, which serves no page there. Open 4611 and paste the token.
 - **A project can only be linked while creating a new Space.** Settings →
   Linked projects is a read-only inventory. Use `tm8 project link`.
-- **The Board is read-only** — it displays cards but has no create control and
-  no Run. Make tasks on Home, in the Work tab, or from the CLI.
 - **The New Session screen has no button yet.** It exists and it works — prompt
   in, running agent out — but nothing links to it. Reach it by URL:
   `#/s/<space-id>/new-session`.
 - **Token sign-in** on the sign-in card is offered and refuses. Use a password.
+
+Fixed while this guide was being written, and verified fixed on a running node —
+noted here because older write-ups still warn about them: the loopback owner now
+lands straight in the workspace instead of a password card (#314); the first-run
+card shows your node's real origin instead of the placeholder
+`tm8-server v0.9.2 · localhost:8787`, and explains itself in words rather than
+operation names (#313); and the Board has a **＋ New task** control (#316).
 
 ---
 
@@ -418,7 +438,19 @@ So you do not spend an afternoon looking for these:
 | See the whole operation catalog | [`api-and-cli/API-CATALOG-GROUPED-GUIDE.md`](api-and-cli/API-CATALOG-GROUPED-GUIDE.md) |
 | Add a second human | [`features/shared-workspace/03-MEMBER-GUIDE.md`](features/shared-workspace/03-MEMBER-GUIDE.md) |
 
-When something is wrong, start with `bun run doctor` — it checks Postgres, the
-database, the migration count and whether the delivery role can authenticate.
+When something is wrong, start with **`tm8 doctor`** — eight checks: both agent
+CLIs and whether they are logged in, Postgres, the migration count, git, the
+data dir, and whether the node answers.
+
+> **One trap in `doctor` itself.** It does not read `.env.<slot>.local`, so it
+> guesses the Postgres user from your username and reports
+> `FAIL — 2 of 8 checks failed` on a completely healthy install, while the same
+> run says `db=ok` two lines further down. If you see that contradiction, pass
+> the user the installer actually created:
+>
+> ```bash
+> TM8_PG_USER=tm8 tm8 doctor      # → OK — 8 of 8 checks passed
+> ```
+
 The troubleshooting table in [`ops/INSTALL.md`](ops/INSTALL.md#troubleshooting)
 covers the failures that actually happen.
