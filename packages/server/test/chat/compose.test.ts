@@ -176,6 +176,38 @@ describe('chat launch composition', () => {
     expect(resolved.allowedTools).not.toContain('Read(/**)');
   });
 
+  it('runs project-less instead of failing the turn when the linked project is not a Git checkout', async () => {
+    // The prod shape this came from: a trusted project whose working_dir is a
+    // plain workspace directory holding several checkouts. `git rev-parse
+    // --show-toplevel` exits non-zero there, and that used to reject out of
+    // launch resolution and kill every turn in the Space with a raw
+    // "Command failed: git -C … rev-parse --show-toplevel".
+    const source = await mkdtemp(join(tmpdir(), 'tm8-chat-source-'));
+    await writeFile(join(source, 'README.md'), 'not a repo\n', 'utf8');
+    const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-data-'));
+    const resolver = createChatLaunchConfigResolver({
+      db: fakeDb(source), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
+    });
+    const resolved = await resolver(launch('build'));
+    expect(resolved.cwd).toBeUndefined();
+    const config = JSON.parse(await readFile(resolved.mcpConfigPath, 'utf8')) as {
+      mcpServers: { tm8: { env: Record<string, string> } };
+    };
+    expect(config.mcpServers.tm8.env.TM8_CHAT_PROJECT_ROOT).toBeUndefined();
+    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch', 'TodoWrite']);
+    expect(resolved.systemPrompt).toContain('is a Git checkout');
+  });
+
+  it('runs project-less when the linked project working_dir does not exist', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-data-'));
+    const resolver = createChatLaunchConfigResolver({
+      db: fakeDb(join(dataDir, 'gone')), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
+    });
+    const resolved = await resolver(launch('ask'));
+    expect(resolved.cwd).toBeUndefined();
+    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch', 'TodoWrite']);
+  });
+
   it('refuses repository provisioning for an untrusted linked project', async () => {
     const source = await mkdtemp(join(tmpdir(), 'tm8-chat-source-'));
     const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-data-'));
