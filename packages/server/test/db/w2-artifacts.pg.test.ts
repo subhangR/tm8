@@ -262,6 +262,50 @@ describe('W2 artifacts service (pg)', () => {
     expect(stored[0]!.token_hash).not.toBe(preview.token);
   });
 
+  it('a1 — preview.start mints previewUrl at the app origin when config carries the same-origin default', async () => {
+    // loadConfig with NO TM8_PREVIEW_* resolves preview to the app origin
+    // (proven in artifact-preview.test.ts); this proves the service turns
+    // that config into a spendable absolute URL.
+    const sameOriginService = new W2ArtifactsService(
+      {
+        db,
+        config: {
+          preview: {
+            host: '127.0.0.1',
+            port: 4610,
+            origin: 'http://127.0.0.1:4610',
+            sameOrigin: true,
+            frameAncestors: ['http://127.0.0.1:4610'],
+          },
+        } as FacadeDeps['config'],
+        owner: async () => owner,
+      },
+      { blobStore, now: () => new Date('2026-07-31T12:00:00.000Z') },
+    );
+    const html = await registerBytes('<!doctype html><title>same-origin preview</title>');
+    const manifest: ArtifactManifest = {
+      schema: 'tm8.web-artifact/1',
+      runtime: 'web-static-v1',
+      entrypoint: 'index.html',
+      files: [{ path: 'index.html', mediaType: 'text/html', size: html.size, sha256: html.sha256 }],
+    };
+    const created = (await sameOriginService.create(
+      ctx('artifacts.create', {}, {
+        clientMutationId: `create-${randomUUID()}`,
+        spaceId: fixture.spaceId,
+        name: 'Same-Origin Preview Target',
+        manifest,
+      } satisfies ArtifactsCreateInput),
+    )) as CommandResult;
+    const artifactId = created.entity!.id;
+    const preview = (await sameOriginService.previewStart(
+      ctx('artifacts.preview.start', { artifactId }, { clientMutationId: `prev-${randomUUID()}` }),
+    )) as { previewSessionId: string; token: string; previewUrl?: string };
+    expect(preview.previewUrl).toBe(
+      `http://127.0.0.1:4610/p/${preview.previewSessionId}/${preview.token}/`,
+    );
+  });
+
   it('rejects a manifest with a traversal path as invalid_input', async () => {
     const bad: ArtifactManifest = {
       schema: 'tm8.web-artifact/1',

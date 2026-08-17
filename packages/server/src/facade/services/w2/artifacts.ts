@@ -345,9 +345,11 @@ export class W2ArtifactsService {
           'its capability token was issued once and cannot be re-derived — retry with a fresh clientMutationId',
       );
     }
-    // `previewUrl` exists only when this node runs the second-origin listener
-    // (design §9.2/§9.3; ratified 2026-07-31). Absent one, the capability is
-    // still minted and the URL is honestly absent — never fabricated.
+    // `previewUrl` points at the configured preview origin — the app origin's
+    // `/p/` route by default (same-origin mount, 2026-08-16), or the
+    // second-origin listener when one is explicitly configured (§9.2/§9.3).
+    // Only a node with preview explicitly disabled mints the capability with
+    // the URL honestly absent — never fabricated.
     const previewOrigin = this.deps.config.preview?.origin;
     return {
       previewSessionId: result.previewSessionId,
