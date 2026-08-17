@@ -3,7 +3,7 @@ import './styles/tokens.css';
 import './styles/canvas-extra.css';
 import './styles/app.css';
 import './kit/kit.css';
-import { BootLoader, type RibbonMotion } from './kit';
+import { BootLoader, BrandMark, type RibbonMotion } from './kit';
 
 /**
  * BOOT LOADER SCRATCH HARNESS — same spirit as terminal-dev.tsx and
@@ -48,15 +48,46 @@ function Panel({ motion, label }: { motion: RibbonMotion; label: string }) {
   );
 }
 
+/* The brand line at the sizes it actually ships at, so the wordmark can be
+   checked where it is small — 11.5px in the tab bar is where a mis-set ribbon
+   stops reading as an 8, and the boot panels above are far too generous to
+   show that. */
+function BrandLine({ size, where }: { size: number; where: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0' }}>
+      <span
+        style={{
+          font: `600 ${size}px var(--pn-mono)`,
+          color: 'var(--pn-brand)',
+          display: 'inline-flex',
+          alignItems: 'center',
+        }}
+      >
+        <BrandMark />
+      </span>
+      <span style={{ font: '400 10px var(--pn-mono)', color: 'var(--pn-ink-4)' }}>
+        {size}px · {where}
+      </span>
+    </div>
+  );
+}
+
 function Row({ theme }: { theme?: 'dark' }) {
   return (
     <div
       className="cv2-root"
       data-theme={theme}
-      style={{ display: 'flex', flexWrap: 'wrap', background: 'var(--pn-paper)' }}
+      style={{ background: 'var(--pn-paper)', padding: '0 0 24px' }}
     >
-      <Panel motion="spin-rewind" label={`${theme ?? 'light'} · spin-rewind`} />
-      <Panel motion="clock-counter" label={`${theme ?? 'light'} · clock-counter`} />
+      <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+        <Panel motion="spin-rewind" label={`${theme ?? 'light'} · spin-rewind`} />
+        <Panel motion="clock-counter" label={`${theme ?? 'light'} · clock-counter`} />
+      </div>
+      <div style={{ padding: '0 24px' }}>
+        <BrandLine size={11.5} where="shell tab bar" />
+        <BrandLine size={13} where="auth / invite stage" />
+        <BrandLine size={22} where="oversize, for reading the join" />
+      </div>
     </div>
   );
 }

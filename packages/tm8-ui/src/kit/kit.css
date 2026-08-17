@@ -260,18 +260,36 @@
   animation: kitBootEnter var(--pn-dur-slow) var(--pn-ease-out) 180ms forwards;
 }
 
+/* Boot draws the wordmark, not a bare mark: "tm" in the editorial serif with
+   the ribbon as the 8. Sized in one place — `font-size` here is the only knob;
+   the ribbon follows it in `em`, so the two can never drift apart. */
 .cv2-root .kit-boot__mark {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: center;
+  gap: 0.04em;
+  font-family: var(--pn-serif);
+  font-weight: 500;
+  font-size: 96px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--pn-ink);
 }
 
-/* The ribbon's design box is 560×700, so the height follows from the width at
-   that 4:5 ratio. Sized here and nowhere else: the geometry inside the viewBox
-   is fixed, and scaling it is the only knob a consumer gets. */
+.cv2-root .kit-boot__letters {
+  /* The serif's own side bearing already spaces the 8; without this the loop
+     drifts right of the letters it belongs to. */
+  margin-right: -0.04em;
+}
+
+/* The wordmark ribbon's design box is 360×520, so width follows from height at
+   that ratio. In `em` so it tracks `.kit-boot__mark`'s font-size — one number
+   sizes the whole wordmark. */
 .cv2-root .kit-boot__ribbon {
-  width: 120px;
-  height: 150px;
+  height: 0.93em;
+  width: calc(0.93em * 360 / 520);
+  position: relative;
+  top: 0.066em;
   transform-origin: 50% 50%;
 }
 
@@ -360,11 +378,32 @@
    it, and a mark that vanishes on the sign-in screen is the whole point of the
    mark missed. `aspect-ratio` reserves the box before the image decodes, so the
    brand line does not reflow on load. */
+/* The wordmark reads as one word, so it is sized in `em` off whatever brand
+   line hosts it — no pixel numbers here, and no type of its own: the letters
+   inherit family, weight and colour from the host. */
 .kit-brandmark {
-  height: 1.15em;
-  width: auto;
-  aspect-ratio: 77 / 128;
-  vertical-align: -0.22em;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.06em;
+}
+.kit-brandmark__letters {
+  letter-spacing: -0.01em;
+}
+/* The ribbon's wordmark box is 360×520, so width follows from height at that
+   ratio. 0.93em is the design's own proportion — it set the box at 520 against
+   type at 560 — and holding to it is what keeps the 8 a letter in a word
+   rather than an ornament the letters are parked beside.
+
+   The nudge is measured, not guessed. A replaced element baseline-aligns by
+   its bottom margin edge, but the ribbon's ink stops ~5.5% short of its box,
+   so with no correction the 8 floats above the line. 0.066em drops it back and
+   leaves ~0.015em of overshoot below the baseline — the small overhang every
+   round glyph needs to look level with flat-bottomed ones. */
+.kit-brandmark__eight {
+  height: 0.93em;
+  width: calc(0.93em * 360 / 520);
+  position: relative;
+  top: 0.066em;
 }
 
 /* --- PanelResizer — the side-column drag handle ---------------------------

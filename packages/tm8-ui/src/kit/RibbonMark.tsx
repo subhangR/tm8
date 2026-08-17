@@ -231,43 +231,67 @@ function useInk(explicit: string | undefined, el: SVGSVGElement | null): V3 {
   return resolved ?? FALLBACK_INK;
 }
 
-function useLoopTime() {
+function useLoopTime(animated: boolean) {
   const [t, setT] = useState(0);
   useEffect(() => {
+    if (!animated) return;
     if (prefersReducedMotion()) return;
     if (typeof requestAnimationFrame !== 'function') return;
     return subscribe(setT);
-  }, []);
-  return t;
+  }, [animated]);
+  return animated ? t : 0;
 }
 
 /* -- the mark -------------------------------------------------------------- */
 
-/** Design-space box. The mark scales by CSS; the geometry never changes. */
-const S = 290;
-const W = 560;
-const H = 700;
+/**
+ * Design-space boxes, both taken from the source's `Piece`. The two layouts are
+ * not the same drawing at two sizes: the wordmark's ribbon sits at a smaller
+ * scale in a tighter box and at a shallower tilt, because next to the letters
+ * it has to read as a glyph on a baseline rather than as a standalone mark.
+ *
+ * The geometry never changes — CSS only ever scales the finished viewBox.
+ */
+const LAYOUT = {
+  mark: { S: 290, W: 560, H: 700, tilt: 9 },
+  wordmark: { S: 208, W: 360, H: 520, tilt: 8 },
+} as const;
+
+export type RibbonLayout = keyof typeof LAYOUT;
 
 export function RibbonMark({
   motion = 'spin-rewind',
+  layout = 'mark',
+  animated = true,
   ink,
   className,
 }: {
   /** Which authored scene list drives the rotation. */
   motion?: RibbonMotion;
+  /** `mark` for the standalone glyph, `wordmark` for the 8 in "tm8". */
+  layout?: RibbonLayout;
+  /**
+   * Turning costs a frame's work forever, so it is opt-out. A transient wait
+   * state (boot, a working indicator) should turn; a brand mark that sits in
+   * the header for the whole session should not — it would burn a rAF for as
+   * long as the app is open and ask the eye to track something that never
+   * resolves. Still marks hold t=0, the pose the loop starts and ends on.
+   */
+  animated?: boolean;
   /** Override the base ink. Defaults to `--pn-brand` for the mounted theme. */
   ink?: string;
   className?: string;
 }) {
   const [el, setEl] = useState<SVGSVGElement | null>(null);
   const baseInk = useInk(ink, el);
-  const T = useLoopTime();
+  const T = useLoopTime(animated);
   const { mid, total, ease } = MOTION[motion];
+  const { S, W, H, tilt: tiltBase } = LAYOUT[layout];
 
   const angle = animate(0, 360, 0, mid, ease)(T) + animate(0, -360, mid, total, ease)(T);
   const flowPhase = ((T / total) * 2) % 1;
   const breathe = 1 + 0.012 * Math.sin((TAU * T) / total);
-  const tilt = 9 + 2.5 * Math.sin((TAU * T) / total);
+  const tilt = tiltBase + 2.5 * Math.sin((TAU * T) / total);
 
   const st = stations();
   const cA = Math.cos((angle * Math.PI) / 180);

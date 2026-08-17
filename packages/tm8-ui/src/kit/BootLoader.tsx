@@ -45,8 +45,13 @@ export function BootLoader({
 }) {
   return (
     <div className="kit-boot" role="status" aria-live="polite" data-testid="boot-loader">
+      {/* The wordmark, with the ribbon as its 8 — so boot shows the product's
+          name being drawn rather than an anonymous mark spinning. Decorative:
+          the label below is what a reader is given, and the letters here would
+          otherwise be announced as a bare "tm". */}
       <div className="kit-boot__mark" aria-hidden="true">
-        <RibbonMark className="kit-boot__ribbon" motion={motion} />
+        <span className="kit-boot__letters">tm</span>
+        <RibbonMark className="kit-boot__ribbon" layout="wordmark" motion={motion} />
       </div>
       <span className="kit-boot__label">{label}</span>
       {detail ? <span className="kit-boot__detail">{detail}</span> : null}

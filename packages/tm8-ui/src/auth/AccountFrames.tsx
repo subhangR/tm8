@@ -48,7 +48,7 @@ export function FrameAccountMenu(props: FrameProps) {
           frame renders standalone so it needs something to hang from. */}
       <div className="auth-appbar">
         <span className="auth-stage__brand">
-          <BrandMark /> tm8
+          <BrandMark />
         </span>
         <span className="auth-appbar__rule" aria-hidden />
         <span className="auth-appbar__space">

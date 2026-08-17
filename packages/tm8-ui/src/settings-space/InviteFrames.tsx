@@ -607,7 +607,7 @@ export function RedeemLanding({
       <div className="set-invites__redeemPage">
         <div className="set-redeem set-invites__redeemCard" data-testid={`redeem-${state}`}>
           <span className="set-redeem__mark">
-            <BrandMark /> tm8
+            <BrandMark />
           </span>
           <span className="set-redeem__title">{REDEEM_DEAD_WORD[state]}</span>
           <span className="set-redeem__sub">ask {invitedBy} for a new link</span>
@@ -631,7 +631,7 @@ export function RedeemLanding({
     <div className="set-invites__redeemPage">
       <div className="set-redeem set-invites__redeemCard" data-testid="redeem-valid">
         <span className="set-redeem__mark">
-          <BrandMark /> tm8
+          <BrandMark />
         </span>
         <span className="set-redeem__title">
           You’re invited to
