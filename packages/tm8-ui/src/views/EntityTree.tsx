@@ -16,11 +16,19 @@
  *
  * The tree is built from the flat query rows by parentId; a row whose parent
  * is not in the current tier's result set roots itself (an orphan is shown,
- * never silently dropped). Default EXPANDED — the canvas draws the
- * coordinator tree open; collapsing is the gesture, not discovering.
+ * never silently dropped).
+ *
+ * DEFAULT COLLAPSED (user ruling 2026-08-17), reversing the original "the
+ * canvas draws the coordinator tree open; collapsing is the gesture". Opening
+ * is the gesture now, and it is REMEMBERED — see `kit/useTreeDisclosure`. The
+ * canvas reference was drawn against a handful of demo rows; against a real
+ * workspace the same rule paints the entire hierarchy on arrival, which is the
+ * wall the ruling is about. The selection is still always on screen: its
+ * ancestors read as open without being recorded as gestures.
  */
 import { useMemo, useState } from 'react';
 import type { EntitySummary } from '@tm8/contract';
+import { ancestorPath, useTreeDisclosure } from '../kit';
 import { KindIcon } from '../domain/KindIcon';
 import { getKind } from '../domain/registry';
 import type { QueryFilter } from '../domain/types';
@@ -115,25 +123,22 @@ export function EntityTree(props: EntityTreeProps) {
   const config = getKind(kind);
   const tiers = config.list.lifecycle ?? null;
   const [tierId, setTierId] = useState<string>(tiers?.[0]?.id ?? 'open');
-  // Collapsed set (not expanded set): default-open needs no bookkeeping for
-  // rows that were never toggled, including rows that arrive later.
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
 
   const activeTier = tiers?.find((t) => t.id === tierId) ?? tiers?.[0] ?? null;
   const rows = rowsFor(activeTier?.filter ?? { deleted: 'exclude' });
   const roots = useMemo(() => buildTree(rows), [rows]);
 
-  const toggle = (id: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  // The EXPANDED set — the viewer's own gestures, persisted per kind. It was a
+  // `collapsed` set starting empty, which is default-open for every row that
+  // exists now and every row that arrives later. The tier is not part of the
+  // scope on purpose: the same subtree opened under `open` should still be open
+  // when it moves to `done`.
+  const revealed = useMemo(() => ancestorPath(rows, selectedId), [rows, selectedId]);
+  const disclosure = useTreeDisclosure(`tree:${kind}`, revealed);
 
   const renderNode = (node: TreeNode): React.ReactNode => {
     const { row, children, depth } = node;
-    const isCollapsed = collapsed.has(row.id);
+    const isCollapsed = !disclosure.isExpanded(row.id);
     const facts = stateFacts(row, props.livenessOf(row.id), props.activity[row.id] ?? false);
     const priority = priorityFor(row);
     return (
@@ -157,7 +162,7 @@ export function EntityTree(props: EntityTreeProps) {
               aria-expanded={!isCollapsed}
               onClick={(e) => {
                 e.stopPropagation();
-                toggle(row.id);
+                disclosure.toggle(row.id);
               }}
             >
               {isCollapsed ? '▸' : '▾'}

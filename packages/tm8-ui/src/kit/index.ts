@@ -19,6 +19,7 @@ export {
   type ParseUnifiedDiffOptions,
 } from './diff-parse';
 export { useMenuAnchor, PANELS_MENU_HEIGHT, type MenuAnchor } from './useMenuAnchor';
+export { useTreeDisclosure, ancestorPath, type TreeDisclosure } from './useTreeDisclosure';
 export { ActorRef } from './ActorRef';
 export { AvatarStack } from './AvatarStack';
 export { VRule, HRule } from './Hairline';

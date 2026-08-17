@@ -209,6 +209,14 @@
   opacity: 0;
   transition: opacity var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast), background var(--pn-dur-fast);
 }
+/* Always visible on a row that HAS children, for the reason `.pn-st__arrow`
+   records and `.lp__disclosure` now shares: since trees ship collapsed
+   (2026-08-17) this chevron is the only thing on screen saying there is more
+   under this task, and hover-to-discover is not discovery. It overlays the
+   status dot exactly as it already does whenever the row is expanded — that
+   trade was made when the chevron was given this slot, and this only makes it
+   symmetric between the two states. */
+.cv2-root .pn-tt__arrow:not(.pn-tt__arrow--empty) { opacity: 0.55; }
 .cv2-root .pn-tt:hover .pn-tt__arrow:not(.pn-tt__arrow--empty),
 .cv2-root .pn-tt:focus-within .pn-tt__arrow:not(.pn-tt__arrow--empty),
 .cv2-root .pn-tt__arrow--expanded { opacity: 1; }
