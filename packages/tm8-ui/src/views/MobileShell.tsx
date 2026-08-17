@@ -33,8 +33,12 @@
 import type { ReactNode } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import { MobileFrame } from '../mobile';
+import '../mobile/mobile-chrome.css';
 import { CopyLinkControl } from '../share';
-import type { MenuTarget } from '../shell';
+import { VectorIcon } from '../kit';
+import { KIND_ART, VIEW_ART, getKind, type KindArt } from '../domain';
+import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
+import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import type { DetailReasons } from '../panels';
 import type { Notice } from '../shell';
@@ -65,13 +69,24 @@ export interface MobileShellProps {
  * are the places you go, and a phone that promises nine is promising nothing.
  * Each is a real route, so every tab is a shareable address.
  */
-const TABS: readonly { readonly label: string; readonly target: MenuTarget }[] = [
-  { label: 'Home', target: { type: 'view', ref: 'dashboard' } },
-  { label: 'Tasks', target: { type: 'kind', ref: 'task' } },
-  { label: 'Sessions', target: { type: 'kind', ref: 'work_session' } },
-  { label: 'Channels', target: { type: 'kind', ref: 'channel' } },
-  { label: 'Inbox', target: { type: 'view', ref: 'inbox' } },
+/*
+ * The marks are the REGISTRY'S artwork (`domain/kind-art.ts`) — the same paths
+ * the desktop icon rail draws for these same destinations. Not a phone icon
+ * set: a second icon language would be the clearest possible statement that
+ * this is a different product, and the tab bar is where a viewer would see it
+ * first. `VectorIcon` strokes them in `currentColor` on a 16x16 grid, so the
+ * active state below is a colour change and nothing else.
+ */
+const TABS: readonly { readonly label: string; readonly art: KindArt; readonly target: MenuTarget }[] = [
+  { label: 'Home', art: VIEW_ART.dashboard, target: { type: 'view', ref: 'dashboard' } },
+  { label: 'Tasks', art: KIND_ART.task, target: { type: 'kind', ref: 'task' } },
+  { label: 'Sessions', art: KIND_ART.work_session, target: { type: 'kind', ref: 'work_session' } },
+  { label: 'Channels', art: KIND_ART.channel, target: { type: 'kind', ref: 'channel' } },
+  { label: 'Inbox', art: VIEW_ART.inbox, target: { type: 'view', ref: 'inbox' } },
 ];
+
+/** The chevron's own geometry, on `VectorIcon`'s 16x16 grid. */
+const CHEVRON_UP_ART: KindArt = ['M10.4 3.6 5.6 8l4.8 4.4'];
 
 function sameTarget(a: MenuTarget | null, b: MenuTarget): boolean {
   if (!a || a.type !== b.type) return false;
@@ -80,15 +95,97 @@ function sameTarget(a: MenuTarget | null, b: MenuTarget): boolean {
   return false;
 }
 
+/**
+ * The screen's own name, for the header.
+ *
+ * Derived from the SAME `activeTarget` the tab bar highlights, so the header
+ * and the selected tab cannot disagree — there is one fact and two renderings
+ * of it.
+ *
+ * A destination with NO tab is the interesting case: a refusal screen reached
+ * by a shared link. `VIEW_PRESENTATION` is the registry the desktop rail names
+ * its rows from, so `settings` reads "Settings" and `files` reads "File
+ * browser" — the same word the viewer saw on the desktop they copied the link
+ * off. Falling through to the bare ref (which is what the header did first, and
+ * what the screenshot caught: a lowercase `settings` under the Space name) puts
+ * an internal slug in the one place the screen states where you are.
+ *
+ * The raw ref REMAINS on the refusal card itself, quoted, and that is correct:
+ * the card explains which arrangement has no phone layout, and naming the thing
+ * exactly is what makes that honest rather than vague.
+ */
+function titleOf(activeTarget: MenuTarget | null): string {
+  if (!activeTarget) return 'Not found';
+  const tab = TABS.find((t) => sameTarget(activeTarget, t.target));
+  if (tab) return tab.label;
+  if (activeTarget.type === 'view') {
+    const view = VIEW_PRESENTATION[activeTarget.ref];
+    if (view) return view.label;
+  }
+  if (activeTarget.type === 'kind') {
+    /* THE SAME LOOKUP THE RAIL USES, INCLUDING ITS MISS CHECK. `getKind` falls
+       back to the `c:*` custom row rather than throwing, so a ref naming no
+       registered kind comes back with a row whose `kind` is NOT the ref — and
+       taking its label would print a generic word for an address the build does
+       not understand. The identity test is what keeps an unknown ref honest,
+       and it is copied from `GateApp`'s `presentKind` rather than reinvented. */
+    const row = getKind(activeTarget.ref);
+    if (row.kind === activeTarget.ref) return row.labelPlural;
+  }
+  return activeTarget.ref;
+}
+
 export function MobileShell(props: MobileShellProps) {
   const { data, activeTarget, navigateTo, spaceId } = props;
+
+  /*
+   * THE UP AFFORDANCE, on the store's blessed seam and nothing else.
+   *
+   * `useScreenStack` is a hook, so it is called UNCONDITIONALLY with a key that
+   * is empty when the active target hosts no stack — an absent key selects an
+   * empty stack, which is the same answer as "nothing is open" without a
+   * conditional hook. Only a KIND screen hosts a stack today, exactly as
+   * `backContract.intentOfRoute` decides it.
+   *
+   * WHY `pop()` AND NOT `history.back()`. The chevron means UP, not BACK. It
+   * pops the screen stack — the desktop's Esc — and `GateApp`'s step-up sync
+   * turns that into the address write, which for a cold arrival from a pasted
+   * link is a REPLACE. So a viewer who followed a shared link taps up, lands on
+   * the list with no phantom history entry, and their phone's own back gesture
+   * then honestly leaves the app. `history.back()` here would exit the app at
+   * that depth instead of showing the list, and it would be a second thing that
+   * decides what BACK means. There is one history, and this is not it.
+   */
+  const stackKey = activeTarget?.type === 'kind' ? screenKeyOf.kind(activeTarget.ref) : '';
+  const screenStack = useScreenStack(stackKey);
+  const title = titleOf(activeTarget);
 
   /* The link affordance is in the header for the same reason it is in the
      desktop tab bar: the thing being shared is THE PAGE. On a phone it matters
      more, not less — a phone is where links are received and forwarded. */
   const header = (
     <div className="mobile-header">
-      <span className="mobile-header__title">{props.spaceLabel ?? 'tm8'}</span>
+      {/* Rendered ONLY when something is open. A chevron at a screen root would
+          be dead chrome that either does nothing or leaves the app, and the tab
+          bar is already the navigation there. */}
+      {screenStack.selected ? (
+        <button
+          type="button"
+          className="mobile-header__back"
+          aria-label={`Up to ${title}`}
+          onClick={() => screenStack.pop()}
+        >
+          <VectorIcon paths={CHEVRON_UP_ART} size={20} strokeWidth={1.6} />
+        </button>
+      ) : null}
+      <span className="mobile-header__titles">
+        <span className="mobile-header__space">{props.spaceLabel ?? 'tm8'}</span>
+        {/* `title` keeps the full string reachable when the ellipsis folds it —
+            truncation hides text, it must not destroy it. */}
+        <span className="mobile-header__title" title={title}>
+          {title}
+        </span>
+      </span>
       <CopyLinkControl
         spaceId={spaceId}
         target={activeTarget ?? { type: 'view', ref: 'workspace' }}
@@ -107,7 +204,13 @@ export function MobileShell(props: MobileShellProps) {
             aria-current={sameTarget(activeTarget, tab.target) ? 'page' : undefined}
             onClick={() => navigateTo(tab.target)}
           >
-            {tab.label}
+            {/* The mark is decorative HERE and only here: the word is drawn
+                right beside it, so a title on the icon would make every tab
+                announce its own name twice. */}
+            <span className="mobile-tabs__icon" aria-hidden="true">
+              <VectorIcon paths={tab.art} size={20} />
+            </span>
+            <span className="mobile-tabs__label">{tab.label}</span>
           </button>
         </li>
       ))}
@@ -133,11 +236,22 @@ export function MobileShell(props: MobileShellProps) {
  */
 function screenFor(props: MobileShellProps): ReactNode {
   const { data, activeTarget, reasons, onNotice } = props;
-  if (!data.ready) return <div className="mobile-empty">Loading…</div>;
+  /* Each line is its own ELEMENT, not a bare text node. `.mobile-empty`'s
+     styling leads with the first child — the statement in the serif face, the
+     explanation under it — and a text node is not a child a selector can
+     reach, so an unwrapped string would silently render as the fallback body
+     copy while looking exactly like it had been styled. */
+  if (!data.ready)
+    return (
+      <div className="mobile-empty">
+        <p>Loading…</p>
+      </div>
+    );
   if (!activeTarget) {
     return (
       <div className="mobile-empty" data-testid="mobile-unrouted">
-        This link doesn’t name a screen this build has. Nothing was opened in its place.
+        <p>This link doesn’t name a screen this build has.</p>
+        <p>Nothing was opened in its place.</p>
       </div>
     );
   }

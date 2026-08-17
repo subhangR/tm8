@@ -1442,8 +1442,17 @@ export function GateApp(props: GateAppProps = {}) {
    * give the two shells two mounts, and two mounts are two histories.
    */
   if (shell === 'mobile' && data.spaceId) {
+    /* `data-shell` MARKS THE ROOT SO THE PHONE CAN DECLINE THE ZOOM LEVER.
+       `app.css` puts `zoom: 1.1` on every `.cv2-root` — a user-ruled taste
+       experiment for a desktop window, and wrong at 390px, where it spends a
+       tenth of the viewport and makes the frame's own `100dvh` render taller
+       than the screen. `mobile-chrome.css` resets it on this attribute alone
+       (owner ruling: scoped off the phone, NOT removed — the desktop shell and
+       its `calc(100vh / 1.1)` reciprocal are untouched). A marker rather than a
+       `:has()` selector because a `:has()` that stops matching fails silently
+       back to a zoomed phone. */
     return (
-      <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
+      <div className="cv2-root" data-shell="mobile" data-theme={theme === 'dark' ? 'dark' : undefined}>
         <MobileShell
           data={data}
           spaceId={data.spaceId}
