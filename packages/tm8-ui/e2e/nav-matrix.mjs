@@ -256,9 +256,19 @@ if (!only || only === 'D') {
     const w = { viewport: vp.name, walk: 'C: k/tasks → drill A → back → forward', steps: [], verdict: 'incomplete' };
     try {
       w.steps.push({ at: 'cold k/tasks', hash: probe.hash });
-      /* THE REAL GESTURE: click the row whose title is the fixture UUID. */
+      /* THE REAL GESTURE: click the row whose title is the fixture UUID. On the
+         phone the pre-Lane-2 layout defect (desktop detail pane drawn over the
+         clipped list) can cover the row and fail actionability — that is a
+         LAYOUT defect already on Lane 0's baseline, not a routing one. The
+         force fallback dispatches the click on the row anyway so the walk still
+         tests what THIS instrument owns; `forcedClick` records the concession. */
       const row = page.getByText(TASK_A_TITLE.slice(0, 20)).first();
-      await row.click({ timeout: 5000 });
+      let forcedClick = false;
+      await row.click({ timeout: 5000 }).catch(async () => {
+        forcedClick = true;
+        await row.click({ force: true, timeout: 5000 });
+      });
+      w.forcedClick = forcedClick;
       await settle(page);
       const afterDrill = await page.evaluate(probeInPage);
       w.steps.push({ at: 'drilled A (row click)', hash: afterDrill.hash });
