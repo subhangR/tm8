@@ -208,6 +208,7 @@ import type {
   TaskAxisInput,
   TaskWorkflow,
   TaskWorkflowInput,
+  UpdateAttentionRequestInput,
   TrackingPrMergeInput,
   TrackingPrMergeResult,
   WorkInput,
@@ -775,6 +776,27 @@ export interface Seam {
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;
+    /**
+     * Write ONE attention request, addressed by its own id.
+     *
+     * The sibling above is the BULK verb: `resolveEntity` flips every open row
+     * on an entity at once, has no per-request granularity and no way to say
+     * `dismissed`. That was the only write this seam carried, which is why
+     * `dismissed` — a full quarter of the status enum (migration 050:16-17) —
+     * had no UI path at all: nothing could reach it, and a queue item could
+     * only ever be *satisfied*, never *declined*.
+     *
+     * OPTIMISTICALLY LOCKED, and the version is the caller's problem: the RPC
+     * raises 40001 when `expectedVersion` is stale (050:128-132), and a stale
+     * version is the EXPECTED case here rather than a rare race — the bulk
+     * resolve that fires when you open an entity bumps `version` on every row
+     * it touches. A caller holding rows fetched before that must refetch, not
+     * retry.
+     */
+    updateAttentionRequest(
+      requestId: string,
+      input: UpdateAttentionRequestInput,
+    ): Promise<AttentionRequestMutationResult>;
     /**
      * Amendment 4: write the VIEWER'S OWN profile row — the DTO names no
      * subject by design (`identity.profile.update`, contract.ts). All fields
