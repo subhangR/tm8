@@ -111,7 +111,13 @@ describe('the channel panel offers the two verbs its registry row declares', () 
   it('the registry is what put them there, in its own order', () => {
     // Not a literal list: read back from the row, so a re-order in the registry
     // moves this assertion rather than breaking it for the wrong reason.
-    expect(getKind('channel').panel.primaries).toEqual(['edit', 'add-child']);
+    //
+    // `run` LEADS since launching was inverted to a denylist: a channel is a
+    // kind you can point an agent at, so `applyLaunch` prepends it — the same
+    // derivation that puts it on the tile. The two assertions above still hold
+    // because this host wires neither launch handler, so Run renders as a
+    // refusal rather than as one of the bar's live buttons.
+    expect(getKind('channel').panel.primaries).toEqual(['run', 'edit', 'add-child']);
   });
 
   it('a verb the host does NOT handle stays disabled-with-reason', () => {

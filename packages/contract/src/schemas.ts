@@ -544,6 +544,12 @@ function entitySummaryShape() {
     counters: EntityCountersSchema,
     state: EntityStateSchema,
     badges: EntityBadgesSchema,
+    // Additive and OPTIONAL — see the field's docblock on `EntitySummary`.
+    // A node that predates the projection omits it, and that must stay legal:
+    // `.strict()` would otherwise turn an older server's every list read into
+    // a parse failure. `EntityDetail` re-declares it REQUIRED after this
+    // spread, so detail keeps the stronger guarantee it always had.
+    capabilities: EntityCapabilitiesSchema.optional(),
   };
 }
 

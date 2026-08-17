@@ -144,6 +144,12 @@ export interface ControlHost {
   onSetState?: (entityId: string, next: string, via: ActionRef) => void;
   onArchive?: (ref: ActionRef, entityId: string) => void;
   /**
+   * Session close. A dedicated prop for the same reason `onArchive` is one:
+   * the list's `onAction` is the session-START dispatcher, so terminate has to
+   * be handed its real executor or it draws live and does nothing.
+   */
+  onTerminate?: (entityId: string) => void;
+  /**
    * `label` rides along beside `source` because a failure notice is USER copy:
    * `source` is the wire field name, and titling a notice with it produced
    * "priority could not be changed" — lowercase mid-sentence. Both come off the
@@ -239,6 +245,127 @@ export interface ControlHost {
  * `variant` decides only how they sit. A second copy of the controls, shaped
  * like chips, is exactly the duplication that produced the bug.
  */
+/**
+ * THE hover cluster, for all three tile anatomies: Collections · Run · Archive.
+ *
+ * ## Why a component and not three registry arrays
+ *
+ * The cluster used to be assembled inline at each anatomy's call site, and the
+ * three drifted exactly as you would expect: the standard tile and the
+ * control-card grew the membership icon on different days and in different
+ * ORDER, and the session tile never rendered the registry at all — its
+ * `rowActions: ['complete','terminate']` had gone unrendered since it was
+ * declared. Order is a design ruling ("Collections · Run · Archive, always"),
+ * and a ruling that lives in three JSX literals is a ruling three files can
+ * break independently. It lives here now, once.
+ *
+ * Deriving the cluster into `list.rowActions` instead — the `applyLaunch`
+ * shape — was the other candidate, and it does not work for these two verbs:
+ *
+ *   - **Collections** is not an `ActionRef` at all. It is `RowMembershipControl`
+ *     driven by `list.membership`, a picker with its own popover, its own
+ *     `onMembership` executor and its own three-way capability rendering. There
+ *     is no bare verb to dispatch, and minting a `collect` ActionRef beside it
+ *     would put TWO collections controls in one strip.
+ *   - **Archive** must reach `props.onArchive`, not the general `onAction`
+ *     dispatcher (see that prop's docblock — routing it through `onAction`
+ *     lights unrelated header verbs). It also HIDES rather than disables, and a
+ *     `rowActions` entry cannot hide itself.
+ *
+ * So `rowActions` stays what it is — the kind's own middle verbs, Run first —
+ * and this component owns the invariant frame around them.
+ *
+ * The disclosure chevron is the `trailing` slot rather than part of the frame:
+ * every anatomy genuinely has its own (different class, different state
+ * source, and the control-card's is a `pn-tt__ind` that the CSS sizes apart).
+ * Its POSITION is still fixed here, which is the part that was drifting.
+ */
+export function RowActionCluster({
+  row,
+  props,
+  config,
+  openFlow,
+  onFlow,
+  onOpenLaunch,
+  trailing,
+}: {
+  row: ControlSubject;
+  props: ControlHost;
+  config: KindConfig;
+  openFlow?: ActionRef | null;
+  onFlow?: (ref: ActionRef | null) => void;
+  /** The launch config's escape to the full sheet, for `flow: 'launch'` verbs. */
+  onOpenLaunch?: (entityId: string) => void;
+  /** The anatomy's own details disclosure — always last. */
+  trailing?: ReactNode;
+}) {
+  const list = config.list;
+  const archived = row.deletedAt != null;
+  const capabilities = props.capabilitiesOf?.(row.id);
+
+  /**
+   * HIDE on a definite refusal; RENDER (refused, with a reason) while unknown.
+   *
+   * The ruling is that Archive is absent exactly where the server refuses it,
+   * and `canDelete` is the only thing allowed to decide that — never a kind
+   * list in this package, which would be a second copy of a rule the DB
+   * already owns and would rot the first time a kind changed. Measured against
+   * `delete_entity` (migration 017): it refuses `member`, `message`,
+   * `work_session`, `project` and `interaction_profile`, and the server's
+   * capability rule now returns `canDelete: false` for exactly those five.
+   *
+   * `undefined` is NOT a refusal and must not hide, or the icon pops in a beat
+   * after the row and the strip reflows under the pointer. Since capabilities
+   * ride the summary this is a genuinely rare state — an entity in neither
+   * cache, or a node too old to send the field — so the honest treatment is to
+   * draw the slot and let `RowAction` refuse it with its reason. The row keeps
+   * its geometry either way.
+   */
+  const archiveRefused = capabilities !== undefined && !capabilities.canDelete;
+
+  return (
+    <>
+      {list.membership ? (
+        <RowMembershipControl row={row} props={props} control={list.membership} variant="icon" />
+      ) : null}
+      {(list.rowActions ?? []).map((ref) => (
+        <RowAction
+          key={ref}
+          ref_={ref}
+          row={row}
+          props={props}
+          openFlow={openFlow}
+          onFlow={onFlow}
+          onOpenLaunch={onOpenLaunch}
+          /* `terminate` has a dedicated host executor for the same reason
+             `archive` does — the list's `onAction` is scoped to the session-
+             START verbs (see the hosts: `onAction={sessionStart.onAction}`), so
+             dispatching terminate through it would draw a live button that
+             does nothing. This is the ONE terminate now: the session tile used
+             to hand-roll its own Close beside a registry verb that never
+             rendered, and two spellings of one verb is how they drift. */
+          onRun={
+            ref === 'terminate' && props.onTerminate
+              ? (_ref, entityId) => props.onTerminate?.(entityId)
+              : undefined
+          }
+        />
+      ))}
+      {archiveRefused ? null : (
+        <RowAction
+          ref_={archived ? 'restore' : 'archive'}
+          row={row}
+          props={props}
+          /* The dedicated executor, exactly as the expanded strip uses. */
+          onRun={props.onArchive}
+          glyph={archived ? <RestoreIcon /> : <BinIcon />}
+        />
+      )}
+      {trailing}
+    </>
+  );
+}
+
 export function EntityControlStrip({
   row,
   props,
@@ -1385,6 +1512,11 @@ export function RowAction({
         .join(' ')}
       title={def.label}
       aria-label={def.label}
+      /* The verb, on the element. CSS needs it (a destructive verb in the
+         cluster must read as destructive without every anatomy hand-rolling a
+         button), and a test asserting cluster ORDER needs something stabler
+         than the label text. */
+      data-action={ref_}
       aria-expanded={opensFlow ? expanded : undefined}
       onClick={(e) => {
         e.stopPropagation();
