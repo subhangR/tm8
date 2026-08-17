@@ -1137,13 +1137,36 @@ function HeaderActions({
   const dispatcherFor = (ref: ActionRef): typeof onAction =>
     wiredActions && !wiredActions.includes(ref) ? undefined : onAction;
   const showCreate = Boolean(quickCreate && (createSlot || onCreate));
-  // `onAction`, NOT `dispatcherFor(...)`: a host with no dispatcher at all
-  // still has nothing to draw, but a host that has one draws every declared
-  // verb — refused where it cannot perform it. Hiding an unwired verb is the
-  // failure mode this panel spent D64 removing, because a control nobody can
-  // see cannot be reported as missing.
-  const showLaunch = Boolean(quickLaunch && onAction);
-  const showStart = Boolean(quickStart && onAction);
+  /*
+   * `dispatcherFor(...)`, NOT `onAction` — USER RULING 2026-08-17, and it
+   * narrows D64 rather than reversing it.
+   *
+   * D64's rule was that an unwired verb renders refused, because a control
+   * nobody can see cannot be reported as missing. That rule earned its keep:
+   * the header once drew NOTHING at all, and drawing `Launch session ▸`
+   * refused is what made task 019ff248 reportable in the first place.
+   *
+   * But `wiredActions` is not "not built yet" — it is the host stating which
+   * verbs it performs. `useSessionStart` omits `launch-session` deliberately
+   * and PERMANENTLY: that verb opens the launch sheet against a subject, and
+   * a list header has no subject to name. So the refusal could never resolve
+   * into a live button no matter what anyone built. A permanently-refused
+   * control is not honesty, it is furniture, and it had been sitting in the
+   * sessions header explaining itself to every reader since 101.
+   *
+   * The distinction the two cases turn on:
+   *   - `onAction` absent entirely   → the host wired NO dispatcher. Draw the
+   *     declared verbs refused; the gap is real and worth reporting. (D64.)
+   *   - `wiredActions` excludes it   → the host wired a dispatcher and said
+   *     this verb is not one of its acts. Do not draw it.
+   *
+   * Scoped to this header ON PURPOSE. `detail/chrome.tsx:303` reads the same
+   * prop and still refuses rather than hides — a detail panel is ABOUT one
+   * entity, so a verb missing from its verb row is a question the reader will
+   * actually ask.
+   */
+  const showLaunch = Boolean(quickLaunch && dispatcherFor(quickLaunch));
+  const showStart = Boolean(quickStart && dispatcherFor(quickStart));
   if (!showCreate && !showLaunch && !showStart) return null;
 
   return (

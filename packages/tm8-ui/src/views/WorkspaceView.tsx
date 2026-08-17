@@ -799,10 +799,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             // since views compose panels. One map at the seam, no cast on
             // either side.
             launch={launchPort}
-            /* The header verbs (101). `wiredActions` is what makes the pair
-               honest: `▮ Terminal` commits, `Launch session ▸` renders its
-               not-wired refusal beside it rather than being drawn as a live
-               button this dispatcher would drop. */
+            /* The header verbs (101). `wiredActions` keeps the row honest,
+               and since the 2026-08-17 ruling it also decides what the row
+               CONTAINS: `▮ Terminal` commits and is drawn; `launch-session`
+               is absent from the list, so it is not drawn at all rather than
+               drawn as a live button this dispatcher would silently drop. */
             onAction={sessionStart.onAction}
             wiredActions={sessionStart.wiredActions}
           />
@@ -913,10 +914,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             capabilitiesOf={data.capabilitiesOf}
             onNeedDetail={(id) => data.pull?.(id)}
             launch={launchPort}
-            /* The header verbs (101). `wiredActions` is what makes the pair
-               honest: `▮ Terminal` commits, `Launch session ▸` renders its
-               not-wired refusal beside it rather than being drawn as a live
-               button this dispatcher would drop. */
+            /* The header verbs (101). `wiredActions` keeps the row honest,
+               and since the 2026-08-17 ruling it also decides what the row
+               CONTAINS: `▮ Terminal` commits and is drawn; `launch-session`
+               is absent from the list, so it is not drawn at all rather than
+               drawn as a live button this dispatcher would silently drop. */
             onAction={sessionStart.onAction}
             wiredActions={sessionStart.wiredActions}
           />

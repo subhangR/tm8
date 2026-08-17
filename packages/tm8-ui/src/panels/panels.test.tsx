@@ -307,7 +307,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
    * VANILLA TERMINALS (101), and the ruling behind the placement: the start
    * controls belong at the TOP of the sessions list, beside Launch session.
    */
-  it('draws ▮ Terminal in the sessions header, beside Launch session', () => {
+  it('draws ▮ Terminal in the sessions header, and NOT the launch verb it cannot perform', () => {
     const onAction = vi.fn();
     const { container, getByTestId } = render(
       <EntityListPanel
@@ -321,9 +321,14 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
     const actions = container.querySelector('.lp__actions');
     expect(actions).toBeTruthy();
-    // BESIDE, not instead of: both verbs are in the one header slot.
     expect(actions?.textContent).toContain('Terminal');
-    expect(actions?.textContent).toContain('Launch session');
+    /* WAS `toContain('Launch session')` until the user ruling of 2026-08-17.
+       The row used to carry both verbs — Terminal live, Launch session
+       refused — because a visible refusal is reportable where an absence is
+       not. That held while the gap might close. It cannot: the sheet needs a
+       launch SUBJECT and a list header has none, so the refusal was permanent
+       furniture. The header now draws exactly what `wiredActions` names. */
+    expect(actions?.textContent).not.toContain('Launch session');
 
     fireEvent.click(getByTestId('list-quick-start'));
     expect(onAction).toHaveBeenCalledWith('start-terminal', '');
@@ -442,11 +447,19 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(slot?.getAttribute('aria-label')).toBe('claude-code');
   });
 
-  it('R5 #9: the unwired half of the pair refuses with a reason, it is not drawn live', () => {
-    // `Terminal` commits and `Launch session ▸` does not, because the sheet
-    // needs a launch SUBJECT the header has no way to name. That asymmetry has
-    // to be VISIBLE — a live button whose click the host's switch drops is the
-    // enabled-inert failure this panel refuses everywhere else.
+  it('R5 #9: a verb outside wiredActions is not drawn at all — and above all not drawn live', () => {
+    /* THE ASSERTION FLIPPED, THE DEFECT IT GUARDS DID NOT (user ruling
+       2026-08-17). This used to require exactly ONE disabled-with-reason in
+       the row: `Terminal` commits, `Launch session ▸` refuses, and the
+       asymmetry had to be visible. The refusal is now removed instead —
+       the header cannot ever name a launch subject, so that control was
+       permanent furniture rather than a reportable gap.
+
+       What must NOT change is the enabled-inert failure this file refuses
+       everywhere: a live button whose click the host's switch silently drops.
+       So the row is checked for the absence of a LAUNCH BUTTON, not merely
+       for the absence of a refusal — hiding the verb and drawing it dead are
+       different bugs and only one of them is now allowed. */
     const { container, getByTestId } = render(
       <EntityListPanel
         kind="work_session"
@@ -457,9 +470,11 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
 
-    const actions = container.querySelector('.lp__actions');
-    expect(within(actions as HTMLElement).getAllByTestId('disabled-with-reason')).toHaveLength(1);
-    // …and the live one is a real button, not a second refusal.
+    const actions = container.querySelector('.lp__actions') as HTMLElement;
+    expect(within(actions).queryAllByTestId('disabled-with-reason')).toHaveLength(0);
+    const labels = [...actions.querySelectorAll('button')].map((b) => b.textContent ?? '');
+    expect(labels.some((label) => /launch/i.test(label))).toBe(false);
+    // …and the verb it DOES perform is a real button, not a refusal.
     expect(getByTestId('list-quick-start').tagName).toBe('BUTTON');
   });
 

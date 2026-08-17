@@ -20,14 +20,19 @@
  * to Start Terminal or claude, or codex is not available" (task 019ff248)
  * rather than as a greyed-out button with a reason on it.
  *
- * `SESSION_START_ACTIONS` is what this hook can PERFORM, and it is
- * deliberately shorter than what the header DRAWS. `launch-session` is not in
- * it: that verb opens the five-section sheet against a launch SUBJECT, and the
- * header has no subject to open it against — picking one here would be this
- * dispatcher guessing what the member meant to launch. So the header renders
- * `Launch session ▸` disabled-with-reason next to a live `▮ Terminal`, which
- * is the honest state of the build and leaves 019ff248 a visible, reportable
- * control instead of an absence.
+ * `SESSION_START_ACTIONS` is what this hook can PERFORM, and it is now also
+ * what the header DRAWS. `launch-session` is not in it: that verb opens the
+ * five-section sheet against a launch SUBJECT, and the header has no subject
+ * to open it against — picking one here would be this dispatcher guessing what
+ * the member meant to launch.
+ *
+ * IT USED TO DRAW ANYWAY, refused, next to a live `▮ Terminal` (101). That was
+ * right while 019ff248 was open: a visible refusal is reportable and an
+ * absence is not. It stopped being right once the reason became permanent —
+ * the header will never have a launch subject, so that button could never
+ * resolve into anything. USER RULING 2026-08-17: remove it. `HeaderActions`
+ * now draws only the verbs `wiredActions` names, so shortening this constant
+ * is what removes the control; the two cannot drift.
  */
 import { useCallback, useMemo } from 'react';
 import type { CommandResult, EntityId } from '@tm8/contract';

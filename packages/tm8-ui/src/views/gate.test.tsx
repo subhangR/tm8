@@ -255,26 +255,32 @@ describe('THE GATE — composed T0-1 master screen', () => {
       // reaches the sheet — and the Sessions header must not be counted as if
       // it did.
       //
-      // THE ASSERTION MOVED IN 101, AND THE RULE DID NOT. It used to be "that
-      // header row does not exist", because the only thing in it was a
-      // DISABLED `Launch session ▸` sentence that had once been miscounted as
-      // proof of reachability. The row exists now: it carries `▮ Terminal`,
-      // which performs a real act (a vanilla shell session). So the check is
-      // written against what was actually wrong — an ENABLED control that
-      // opens nothing — rather than against the row that happened to contain
-      // one. `Launch session ▸` is still in there and still refuses, with its
-      // reason on screen, which is the honest state of this build.
+      // THE ASSERTION MOVED IN 101, AND AGAIN ON 2026-08-17. THE RULE HAS NOT
+      // MOVED EITHER TIME. It was once "that header row does not exist",
+      // because the only thing in it was a DISABLED `Launch session ▸`
+      // sentence that had been miscounted as proof of reachability. Then the
+      // row earned its place by carrying `▮ Terminal`, which performs a real
+      // act (a vanilla shell session). Now the disabled sentence is gone too,
+      // by user ruling: the header can never name a launch subject, so that
+      // refusal was permanent furniture rather than a gap anyone could close.
+      //
+      // Through all three versions the check is written against the thing that
+      // was actually wrong — an ENABLED control that opens nothing — never
+      // against the row that happened to contain one.
       // ASSERTED, NOT GUARDED. An `if (header)` here would go green the day
-      // the header stops rendering — which is precisely the defect this PR
-      // closed (no mount passed `onAction`, so the row drew nothing). A
-      // conditional assertion about a control that must exist cannot notice
-      // the control disappearing.
+      // the header stops rendering — which is precisely the defect 101 closed
+      // (no mount passed `onAction`, so the row drew nothing). A conditional
+      // assertion about a control that must exist cannot notice the control
+      // disappearing.
       const header = container.querySelector('[data-kind="work_session"] .lp__actions');
       expect(header).toBeTruthy();
       const enabled = [...(header as HTMLElement).querySelectorAll('button')].map((b) => b.textContent ?? '');
       expect(enabled.some((label) => /launch/i.test(label))).toBe(false);
-      expect(within(header as HTMLElement).getByTestId('disabled-with-reason').textContent)
-        .toMatch(/launch session/i);
+      // The row still has to CARRY something — `▮ Terminal`. Asserting only
+      // the absence above would pass just as happily on an empty row, which
+      // is the 101 defect wearing a different face.
+      expect(enabled.some((label) => /terminal/i.test(label))).toBe(true);
+      expect(header?.textContent ?? '').not.toMatch(/launch session/i);
     }
   });
 
