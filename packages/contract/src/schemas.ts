@@ -546,6 +546,12 @@ function entitySummaryShape() {
     counters: EntityCountersSchema,
     state: EntityStateSchema,
     badges: EntityBadgesSchema,
+    // Additive and OPTIONAL — see the field's docblock on `EntitySummary`.
+    // A node that predates the projection omits it, and that must stay legal:
+    // `.strict()` would otherwise turn an older server's every list read into
+    // a parse failure. `EntityDetail` re-declares it REQUIRED after this
+    // spread, so detail keeps the stronger guarantee it always had.
+    capabilities: EntityCapabilitiesSchema.optional(),
   };
 }
 
@@ -1586,6 +1592,23 @@ export const CredentialsDeleteResultSchema: z.ZodType<CredentialsDeleteResult> =
   }).strict()),
 }).strict();
 
+/**
+ * One terminal dimension, for every operation that boots a PTY.
+ *
+ * The 1..1000 bound is PtyHostService's own clamp, restated here so a nonsense
+ * value is refused at the edge with a contract error rather than silently
+ * collapsing to the 80x24 default deep inside the PTY host. Shared rather than
+ * respelled per op: this was written three different ways (`min(1)` twice,
+ * `positive()` once) before it had a name, and three spellings of one rule is
+ * three chances for them to drift apart.
+ *
+ * NOT the same as the PTY SOCKET's resize bound, which is narrower (cols >= 2,
+ * rows <= 500). That asymmetry is pre-existing and left alone deliberately, but
+ * it does mean a session spawned taller than 500 rows can never be resized back
+ * to that height over the socket.
+ */
+const TerminalDimSchema = z.number().int().min(1).max(1000).optional();
+
 export const CredentialsLoginSessionStartInputSchema:
   z.ZodType<CredentialsLoginSessionStartInput> = z.object({
     spaceId: EntityIdSchema,
@@ -1593,8 +1616,8 @@ export const CredentialsLoginSessionStartInputSchema:
     // Geometry is the ONLY client input this operation accepts, and it is
     // bounded so a hostile value cannot reach `pty.spawn` as a resource claim.
     // There is deliberately no command/args/flags field: see the DTO.
-    cols: z.number().int().min(1).max(1000).optional(),
-    rows: z.number().int().min(1).max(1000).optional(),
+    cols: TerminalDimSchema,
+    rows: TerminalDimSchema,
     clientMutationId: z.string().min(1).optional(),
   }).strict();
 
@@ -2464,6 +2487,7 @@ export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion(
 ]);
 
 const SpawnUuidSchema = z.string().uuid();
+
 const CredentialSourceSchema = z.enum(['member', 'node']);
 const CredentialSourcesSchema = z.object({
   anthropic: CredentialSourceSchema.optional(),
@@ -2494,6 +2518,8 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
+  cols: TerminalDimSchema,
+  rows: TerminalDimSchema,
 }).strict();
 
 /**
@@ -2513,8 +2539,8 @@ export const ExecutionTerminalStartInputSchema: z.ZodType<ExecutionTerminalStart
   projectId: SpawnUuidSchema.nullable().optional(),
   confirmUntrusted: z.literal(true).optional(),
   title: z.string().max(200).optional(),
-  cols: z.number().int().positive().max(1000).optional(),
-  rows: z.number().int().positive().max(1000).optional(),
+  cols: TerminalDimSchema,
+  rows: TerminalDimSchema,
 }).strict();
 
 /**
@@ -2562,6 +2588,8 @@ export const ExecutionTerminateInputSchema: z.ZodType<ExecutionTerminateInput> =
 export const ExecutionResumeInputSchema: z.ZodType<ExecutionResumeInput> = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
+  cols: TerminalDimSchema,
+  rows: TerminalDimSchema,
 }).strict();
 
 export const ExecutionStreamsAttachInputSchema: z.ZodType<ExecutionStreamsAttachInput> = z.object({

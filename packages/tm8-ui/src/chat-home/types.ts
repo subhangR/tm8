@@ -70,6 +70,18 @@ export interface ChatThreadConfig {
 
 export interface ChatThreadSummary {
   rootId: EntityId;
+  /**
+   * The entity this conversation hangs off — the seeded default channel for
+   * bare Home, the crafted `graph` row for a Craft thread.
+   *
+   * SURFACED BECAUSE A HOST CANNOT SCOPE WITHOUT IT. `listThreads` is
+   * space-wide by construction, so a contextual surface (Craft) that wants
+   * "the conversations about THIS object" had no way to ask: the L2 read has
+   * carried `anchorId` all along (`ChatThreadListItem`) and the fold to a
+   * summary simply dropped it. Filtering here is honest — same rows, fewer —
+   * where a second anchored read would be a second source of truth.
+   */
+  anchorId: EntityId;
   title: string;
   preview: string;
   updatedAt: string;

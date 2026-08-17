@@ -120,6 +120,43 @@ export interface EntitySummary {
   counters: EntityCounters;
   state: EntityState;             // discriminator-specific Z1/Z2 fields
   badges: EntityBadges;
+  /**
+   * What the RPCs will actually permit on this row — the SAME fact
+   * `EntityDetail` carries, projected onto the summary so a TILE can reach it.
+   *
+   * ## Why the summary needs it at all
+   *
+   * Every capability-gated row action resolves through `capabilityGate`, which
+   * refuses whenever capabilities are absent ("absent ⇒ not permitted", and
+   * that rule is correct — an optimistic all-true would claim a permission
+   * nobody granted). But a list row is an `EntitySummary`, and capabilities
+   * lived only on `EntityDetail`, so the client's only source was the detail
+   * cache. A freshly-paged row is not in that cache, so on a collapsed tile
+   * EVERY such verb — Run, Archive, Collections — sat permanently refused, and
+   * the only thing that asked for a detail was the EXPANDED strip. The verb
+   * was drawn, and dead, and the honest refusal made it look deliberate.
+   *
+   * This is the `badges.workingActors` / `LinkedPullRequestBadge` ruling again,
+   * for the same reason: a fact that arrives WITH the row it describes has no
+   * hydration lottery. Any tile that renders at all can gate honestly.
+   *
+   * ## Why it costs nothing
+   *
+   * `capabilitiesOf` is a pure function of the entity row the summary is
+   * already assembled from — kind, liveness and work_status, nothing else. It
+   * adds no query and cannot introduce an N+1, and because it reads only a row
+   * that already cleared RLS it cannot widen what a viewer sees.
+   *
+   * ## OPTIONAL, deliberately
+   *
+   * Additive like `docs`/`memories`/`assignments` and under the same law: a
+   * rolling node that predates this omits the key, and ABSENCE IS NOT A
+   * VERDICT — it means "this server never told us", which the client already
+   * renders as `CheckingPermission`, i.e. exactly today's behaviour. Required
+   * here would make an older node's every list read fail `.strict()` parsing,
+   * turning a missing affordance into a blank panel.
+   */
+  capabilities?: EntityCapabilities;
 }
 
 /** Provenance for one task's current `assigned_to` edge. */
@@ -3119,6 +3156,18 @@ export interface ExecutionSpawnInput extends CommandContext {
    * `remembers` set; nothing is written to the graph.
    */
   memoryIds?: EntityId[];
+  /**
+   * The terminal geometry the client has measured for the pane this session
+   * will be shown in, so the PTY BOOTS at the real width instead of the 80x24
+   * default. Load-bearing, not cosmetic: a full-screen agent TUI lays its
+   * entire frame out for the width it is given at startup, and the browser can
+   * only correct that afterwards via a resize round trip — which the PTY socket
+   * suppresses when the fitted size happens to match what it already has,
+   * leaving the 80-column frame frozen on screen until a human resizes the
+   * window. Omitted (a headless or non-visual caller) keeps the 80x24 default.
+   */
+  cols?: number;
+  rows?: number;
 }
 
 /**
@@ -3239,6 +3288,9 @@ export interface ExecutionTerminateInput extends CommandContext {
  */
 export interface ExecutionResumeInput extends CommandContext {
   clientMutationId: string;
+  /** Same geometry contract as `ExecutionSpawnInput` — a resume re-spawns the PTY. */
+  cols?: number;
+  rows?: number;
 }
 
 /**

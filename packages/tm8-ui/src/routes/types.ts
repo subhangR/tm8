@@ -99,6 +99,21 @@ export type NavView =
   /* The Craft studio (2026-08-16): whole-centre split pane, flat segment. */
   | { view: 'craft' }
   /*
+   * NEW SESSION (2026-08-16): the create screen that mints a task from a typed
+   * prompt and spawns on it. Flat segment, no parameters.
+   *
+   * ROUTE-ONLY, AND DELIBERATELY NOT A `MenuViewRef`. The rail members above
+   * are contract enum entries and adding one costs a menu revision and a
+   * migration. This screen is reached from a quick action and from the
+   * sessions empty state, not from the rail, so it needs addressability and
+   * nothing else — `VIEW_REF_ROUTE` stays total over `MenuViewRef` without it.
+   *
+   * It carries no id because the screen exists BEFORE the thing it creates:
+   * once the session is spawned the app replaces this route with the session's
+   * own, so a New Session URL is never a link to a particular session.
+   */
+  | { view: 'newSession' }
+  /*
    * A VOICE ROOM. Added 2026-08-14 to close a latent break, not to add a
    * feature.
    *

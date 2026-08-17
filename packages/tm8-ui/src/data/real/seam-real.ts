@@ -413,6 +413,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),
       resolveAttention: (id, input) => ops.resolveAttention(id, input),
+      updateAttentionRequest: (requestId, input) => ops.updateAttentionRequest(requestId, input),
       updateProfile: (input) => ops.updateProfile(input),
       setMemberRole: (spaceId, memberId, input) => ops.setMemberRole(spaceId, memberId, input),
       createInvite: (spaceId, input) => ops.createInvite(spaceId, input),
@@ -438,6 +439,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         return ops.upsertReadMark(anchorId);
       },
       previewArtifact: (id, input) => ops.previewArtifact(id, input),
+      listArtifactRevisions: (id) => ops.listArtifactRevisions(id),
+      exportArtifactRevision: (id, revisionNumber) => ops.exportArtifactRevision(id, revisionNumber),
       spawn: (input) => ops.spawn(input),
       startTerminal: (input) => ops.startTerminal(input),
       dispatch: (input) => ops.dispatch(input),

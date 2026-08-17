@@ -99,6 +99,25 @@
   padding: 5px 8px;
 }
 
+/* The create control — a quiet brass primary, sat at the tail of the bar. */
+.bd__new {
+  appearance: none;
+  flex: none;
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 5px 12px;
+  white-space: nowrap;
+}
+.bd__new:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
+.bd__new--off { cursor: default; opacity: 0.55; }
+[data-theme='dark'] .bd__new { color: var(--pn-brand); }
+
 /* ---- filter selects ---- */
 
 .bd__selwrap {
@@ -294,6 +313,15 @@
   color: var(--pn-ink-3);
   background: var(--pn-hover);
   border-bottom: 1px solid var(--pn-line);
+}
+
+/* First-run: one line naming what the board is, above the empty columns. */
+.bd__firstrun {
+  padding: 10px 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+  max-width: 620px;
 }
 
 .bd__error {

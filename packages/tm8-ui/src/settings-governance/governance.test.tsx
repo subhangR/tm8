@@ -155,6 +155,11 @@ describe('T2-2 — projects & trust', () => {
     expect(container.querySelector('[data-testid="empty-region"]')?.textContent).toContain(
       'No projects are linked',
     );
+    // The empty state is ACTIONABLE: the refusal to link here is honest, but it
+    // names the real way — the CLI — instead of dead-ending.
+    expect(container.querySelector('[data-testid="empty-region"]')?.textContent).toContain(
+      'tm8 project link',
+    );
   });
 
   it('distinguishes loading from failed from empty', () => {

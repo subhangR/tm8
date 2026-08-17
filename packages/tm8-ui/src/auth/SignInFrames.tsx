@@ -10,6 +10,7 @@
  * what makes the lie unbuildable.
  */
 import { useState, type ReactNode } from 'react';
+import { useReasonDisclosure } from '../panels/honesty/useReasonDisclosure';
 import {
   AuthAction,
   AuthAlert,
@@ -181,7 +182,11 @@ export function FrameLogin(_props: FrameProps) {
         )}
 
         <AuthRule />
-        <AuthFootnote>{LOGIN.footer}</AuthFootnote>
+        {/* Board keeps the oracle footer; the live gate must not: "forge" is a
+            specimen server name and "flow C" is reviewer vocabulary, and both
+            were being shown to real signed-out viewers. `gateFooter` says what
+            is true of THIS node instead. */}
+        <AuthFootnote>{actions ? LOGIN.gateFooter : LOGIN.footer}</AuthFootnote>
       </AuthCard>
     </AuthStage>
   );
@@ -329,8 +334,13 @@ export function AuthInlineRefusal({
   children: ReactNode;
 }) {
   const id = `auth-inline-${reason.cause.replace(/\W+/g, '-').toLowerCase()}`;
+  /* Tap opens the reason. `.auth-tip` was revealed by `:hover`/`:focus-within`
+     only, so on a phone this refusal was silent — and this one sits on the SIGN-IN
+     screen, where a user who cannot read the reason cannot get into the product
+     at all. See panels/honesty/useReasonDisclosure. */
+  const tip = useReasonDisclosure();
   return (
-    <span className="auth-inline-refusal">
+    <span className="auth-inline-refusal" {...tip.hostProps}>
       <span
         className="auth-link auth-link--refused"
         role="button"
@@ -338,6 +348,7 @@ export function AuthInlineRefusal({
         aria-describedby={id}
         tabIndex={0}
         data-testid="disabled-with-reason"
+        {...tip.triggerProps}
       >
         {children}
       </span>

@@ -1,11 +1,17 @@
 /**
- * The artifact-preview listener — the SECOND HTTP listener, whose only job is
- * serving untrusted bundle content from its own origin (TM8-ARTIFACTS-DESIGN
- * §9, user-ratified 2026-07-31: app `127.0.0.1:4610`, preview
- * `localhost:4613`; the origin-isolation boot refusal lives in ./config.ts).
+ * The artifact-preview renderer — ONE request handler, two mounts.
  *
- * A separate router sharing NO middleware, by design (§9.4): no `/v2/*`
- * routes, no catalog, no cookie parsing, no `Set-Cookie`, no identity
+ * By DEFAULT (amended 2026-08-16) `createArtifactPreviewHandler` is mounted
+ * as the `/p/` route ON THE APP SOCKET (./server.ts), same origin as the UI.
+ * `createArtifactPreviewServer` wraps the SAME handler in a standalone
+ * second-origin listener for operators who set an explicit
+ * TM8_PREVIEW_HOST/TM8_PREVIEW_PORT and want true origin isolation back
+ * (TM8-ARTIFACTS-DESIGN §9, user-ratified 2026-07-31; the origin-isolation
+ * boot refusal lives in ./config.ts). One handler, one header set — a second
+ * copy would drift, and drift here is a security regression.
+ *
+ * The handler shares NO middleware with the catalog pipeline, by design
+ * (§9.4): no `/v2/*` routes, no cookie parsing, no `Set-Cookie`, no identity
  * resolution beyond capability lookup, no static fallback. The ONLY route is
  *
  *   GET /p/<previewSessionId>/<token>/<asset-path>
@@ -20,7 +26,10 @@
  * most important line is `sandbox allow-scripts` INSIDE the CSP header: a
  * preview URL opened TOP-LEVEL (pasted, linked, redirected) is still forced
  * into an opaque origin because the header travels with the response; the
- * iframe attribute alone would only cover the framed case.
+ * iframe attribute alone would only cover the framed case. In the same-origin
+ * default, that server-enforced sandbox — not origin separation — is what
+ * contains the bundle, together with ./security.ts refusing `Origin: null`
+ * callers so the opaque-origin frame cannot land API mutations.
  *
  * Asset lookup is an equality match on a stored path (`revision_id = $1 AND
  * path = $2`), then bytes by content hash through the blob store — there is
@@ -47,15 +56,28 @@ export interface PreviewBlobReader {
   read(storagePath: string, expectedSpaceId: string): Promise<Buffer>;
 }
 
-export interface ArtifactPreviewServerOptions {
+export interface ArtifactPreviewHandlerOptions {
   readonly preview: PreviewConfig;
-  /** The BIND address — shared with the app listener (both loopback). */
-  readonly bindHost: string;
   readonly db: PreviewDb;
   readonly blobStore: PreviewBlobReader;
   readonly owner: () => Promise<LoopbackOwner>;
   readonly now?: () => Date;
 }
+
+export interface ArtifactPreviewServerOptions extends ArtifactPreviewHandlerOptions {
+  /** The BIND address — shared with the app listener (both loopback). */
+  readonly bindHost: string;
+}
+
+/**
+ * The mounted form: answers every request it is given (the caller matches on
+ * the `/p/` prefix) and never rejects — failures land as a 500 refusal
+ * carrying the same hardened header set as everything else.
+ */
+export type ArtifactPreviewRequestHandler = (
+  req: IncomingMessage,
+  res: ServerResponse,
+) => Promise<void>;
 
 export interface ArtifactPreviewServer {
   readonly http: Server;
@@ -92,20 +114,39 @@ const PERMISSIONS_POLICY = [
 ].map((name) => `${name}=()`).join(', ');
 
 /**
- * The §9.4 policy, verbatim. `'unsafe-inline'`/`'unsafe-eval'` are kept ON
- * PURPOSE: the whole document is attacker-controlled by assumption, so nonces
- * buy nothing — what contains the bundle is `connect-src 'none'`, the opaque
- * origin, and the absence of anything privileged on this origin.
+ * THE WHOLE POLICY, in exactly one place — the renderer never assembles CSP
+ * anywhere else, so when artifacts become shareable this is the single seam
+ * where a per-space tightening plugs in without touching the renderer.
+ *
+ * OPEN NETWORK ACCESS (owner-ruled 2026-08-16): bundles may load CDN
+ * scripts, web fonts, images and media from any https host, and fetch live
+ * data (`connect-src https:`). Accepted ONLY while our own agents are the
+ * sole publishers — the honest residual is that a hostile bundle can render
+ * a fake UI and POST what the user types to any https server; no sandbox
+ * token stops that.
+ *
+ * `'unsafe-inline'`/`'unsafe-eval'` are kept ON PURPOSE: the whole document
+ * is attacker-controlled by assumption, so nonces buy nothing.
+ *
+ * What still contains the bundle: `sandbox allow-scripts` (server-enforced,
+ * so a top-level load of a leaked URL is still an opaque origin — NEVER add
+ * a token to make something work), `frame-ancestors`, the all-'none' object/
+ * frame/base/form directives, and a `connect-src` that excludes the http
+ * loopback app origin EXCEPT its own `/p/` subtree — so a bundle can
+ * fetch() its own files on an http dev node, but cannot even attempt the
+ * tm8 API by fetch. The `/p/` path scope is the load-bearing part of that
+ * source: widening it to the bare app origin would open an (unreadable,
+ * S3-refused, but still sendable) request channel to every API path.
  */
 function contentSecurityPolicy(preview: PreviewConfig): string {
   return [
     `default-src 'none'`,
-    `script-src ${preview.origin} 'unsafe-inline' 'unsafe-eval'`,
-    `style-src ${preview.origin} 'unsafe-inline'`,
-    `img-src ${preview.origin} data: blob:`,
-    `font-src ${preview.origin}`,
-    `media-src ${preview.origin}`,
-    `connect-src 'none'`,
+    `script-src ${preview.origin} https: data: blob: 'unsafe-inline' 'unsafe-eval'`,
+    `style-src ${preview.origin} https: data: 'unsafe-inline'`,
+    `img-src ${preview.origin} https: data: blob:`,
+    `font-src ${preview.origin} https: data:`,
+    `media-src ${preview.origin} https: data: blob:`,
+    `connect-src ${preview.origin}/p/ https:`,
     `worker-src 'none'`,
     `object-src 'none'`,
     `frame-src 'none'`,
@@ -118,19 +159,38 @@ function contentSecurityPolicy(preview: PreviewConfig): string {
   ].join('; ');
 }
 
-export function createArtifactPreviewServer(opts: ArtifactPreviewServerOptions): ArtifactPreviewServer {
+export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions): ArtifactPreviewRequestHandler {
   const { preview, db, blobStore, owner } = opts;
   const now = opts.now ?? (() => new Date());
   const csp = contentSecurityPolicy(preview);
 
+  // NO `cross-origin-embedder-policy: require-corp` here, deliberately
+  // (2026-08-16): nearly every CDN asset ships without a CORP header, so
+  // under COEP they all silently fail — which would defeat the open-network
+  // ruling the CSP above implements. Its absence is asserted by test.
   const baseHeaders: Record<string, string> = {
     'content-security-policy': csp,
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
     'cache-control': 'no-store',
     'cross-origin-opener-policy': 'same-origin',
-    'cross-origin-resource-policy': 'same-origin',
-    'cross-origin-embedder-policy': 'require-corp',
+    // CORP MUST be `cross-origin`, and this is not a loosening to "harden"
+    // back: the consuming document is OPAQUE-ORIGIN (the CSP sandbox above,
+    // by design), so even its OWN `/p/` subresource loads are cross-origin
+    // from the browser's point of view — `same-origin` here silently blocks
+    // every multi-file bundle's scripts/styles/images (found live,
+    // 2026-08-17). These responses are token-gated capabilities meant for
+    // exactly that sandboxed document; the token is the access control.
+    'cross-origin-resource-policy': 'cross-origin',
+    // Same reasoning, one layer up: a cors-mode fetch() from that
+    // opaque-origin document can only READ a response that carries an ACAO
+    // header, so without this a bundle's fetch of its own `data/*.json`
+    // fails on EVERY deployment, http or https (found live, 2026-08-17).
+    // `*` is correct for a capability URL — the token in the path is the
+    // access control, and `*` never permits credentialed requests. The tm8
+    // API stays unreachable from the frame regardless: connect-src scopes
+    // the app origin to `/p/` and API responses carry no ACAO.
+    'access-control-allow-origin': '*',
     'permissions-policy': PERMISSIONS_POLICY,
   };
 
@@ -148,14 +208,19 @@ export function createArtifactPreviewServer(opts: ArtifactPreviewServerOptions):
       return;
     }
 
-    // The INVERSE of the app's S2 partition: this socket answers ONLY to the
-    // preview hostname. Reached by any other name — including the app's —
-    // the origin split is being bypassed and the answer is a refusal.
-    const host = req.headers.host;
-    const hostname = host === undefined ? null : hostnameOf(host);
-    if (hostname !== preview.host) {
-      refuse(res, 403, `this origin serves artifact previews only as ${preview.origin}`);
-      return;
+    // Second-origin mode only — the INVERSE of the app's S2 partition: that
+    // socket answers ONLY to the preview hostname; reached by any other name
+    // (including the app's) the origin split is being bypassed and the
+    // answer is a refusal. In the same-origin default the app pipeline's own
+    // S2 host allowlist has already run before this handler is reached, and
+    // every app name is a legitimate preview name.
+    if (!preview.sameOrigin) {
+      const host = req.headers.host;
+      const hostname = host === undefined ? null : hostnameOf(host);
+      if (hostname !== preview.host) {
+        refuse(res, 403, `this origin serves artifact previews only as ${preview.origin}`);
+        return;
+      }
     }
 
     const pathname = new URL(req.url ?? '/', 'http://preview.invalid').pathname;
@@ -243,14 +308,21 @@ export function createArtifactPreviewServer(opts: ArtifactPreviewServerOptions):
     res.end(method === 'HEAD' ? undefined : bytes);
   }
 
-  const http = createServer((req, res) => {
-    void handle(req, res).catch(() => {
+  return (req, res) =>
+    handle(req, res).catch(() => {
       try {
         refuse(res, 500, 'preview unavailable');
       } catch {
         res.destroy();
       }
     });
+}
+
+export function createArtifactPreviewServer(opts: ArtifactPreviewServerOptions): ArtifactPreviewServer {
+  const { preview } = opts;
+  const handler = createArtifactPreviewHandler(opts);
+  const http = createServer((req, res) => {
+    void handler(req, res);
   });
 
   return {

@@ -65,6 +65,7 @@ import type {
   ExecutionDispatchResult,
   ExecutionLiveness,
   ExecutionPromptInput,
+  ExecutionResumeInput,
   ExecutionSpawnInput,
   ExecutionTerminalStartInput,
   ExecutionStreamsAttachInput,
@@ -2425,6 +2426,13 @@ function registerHandlers(
       title: input.title ?? null,
       promptExtra: input.promptExtra ?? null,
       ...(input.memoryIds?.length ? { memoryIds: input.memoryIds } : {}),
+      // Spread rather than `?? undefined` so an absent geometry stays ABSENT:
+      // PtyHostService's clampDim falls back to 80x24 on any falsy value, and
+      // an explicit `cols: undefined` would read the same way — but only the
+      // omitted form survives the exactOptionalPropertyTypes contract
+      // SpawnRequest is written under.
+      ...(input.cols === undefined ? {} : { cols: input.cols }),
+      ...(input.rows === undefined ? {} : { rows: input.rows }),
       clientMutationId: envelope.clientMutationId ?? null,
     };
 
@@ -2620,10 +2628,15 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
+    const resumeInput = ctx.body as ExecutionResumeInput;
     const result = await rethrowing(() =>
       spawnService.resume(claims, {
         sessionId: requireUuidParam(ctx, 'id'),
         clientMutationId: envelope.clientMutationId ?? null,
+        // A resume re-spawns the PTY, so it needs the browser's geometry for
+        // the same reason spawn does — see ExecutionSpawnInput.cols.
+        ...(resumeInput?.cols === undefined ? {} : { cols: resumeInput.cols }),
+        ...(resumeInput?.rows === undefined ? {} : { rows: resumeInput.rows }),
       }),
     );
     return json(await assembleCommandResult(db, claims, result.commandResult, owner.identityId));

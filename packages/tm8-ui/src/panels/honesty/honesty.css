@@ -96,10 +96,155 @@
   opacity: 1;
   visibility: visible;
 }
+
+/* THE THIRD TRIGGER: TAP.
+   Hover does not exist on a touch device, and `:focus-visible` deliberately
+   does NOT match a pointer interaction — that is the whole difference between
+   it and `:focus`. So the two rules above, which were the only way to read a
+   refusal, both resolve to "never" on a phone: every explanation of why a
+   control will not work was silent, and the user got a dead affordance with no
+   reason. `useReasonDisclosure` sets this attribute on tap. */
+.cv2-root .hon-disabled[data-reason-open='true'] > .hon-tip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ── THE NOTE HOST (`ReasonNote`) ─────────────────────────────────────────
+   A `title=` renders as a tooltip on hover and in NO other circumstance, so on
+   a touch device the text does not become awkward to reach, it does not exist.
+   Around forty of this codebase's attributes carried their information nowhere
+   else, and every one of them is an explanation — why an entity wants
+   attention, why a command is unavailable, why an option is barred.
+
+   This is a HOST, not a second vocabulary: it renders the same `.hon-tip`
+   bubble, in the same cause/remedy voice, opened by the same disclosure and
+   clamped by the same phone rule below. It exists only because the hosts that
+   already had one are all refused CONTROLS, and most of these sites are
+   ordinary text that must not start looking disabled. */
+.cv2-root .hon-note {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+/* The dotted underline is the whole affordance: it says "there is more here"
+   without claiming the thing is a button or that it is refused. Same mark
+   `.hon-hollow-inline` already uses for "ask me about this value". */
+.cv2-root .hon-note__trigger {
+  cursor: help;
+  border-bottom: 1px dotted var(--pn-line-2);
+}
+.cv2-root .hon-note:hover > .hon-tip,
+.cv2-root .hon-note__trigger:focus-visible ~ .hon-tip,
+.cv2-root .hon-note[data-reason-open='true'] > .hon-tip {
+  opacity: 1;
+  visibility: visible;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cv2-root .hon-tip {
     transition: none;
   }
+}
+
+/* ── THE PHONE PRESENTATION ───────────────────────────────────────────────
+   On the mobile shell the reason stops being a tooltip anchored to its control
+   and becomes a strip docked to the FRAME. Two reasons, both measured:
+
+   1. IT WAS THE WORST OVERFLOW IN THE PROGRAM. `position: absolute; left: 0`
+      with `width: max-content` up to 260px has no idea a viewport exists. On
+      the audit at 390x844 (ref 3bc882f4) this element was the single worst
+      right edge on THREE screens — tasks 449, sessions 504, channels 471 —
+      and `.mobile-frame` is `overflow: hidden`, so the reason was not scrolled
+      off, it was destroyed. Setting BOTH `left` and `right` clamps it by
+      construction, at every anchor position, open and closed alike.
+
+   2. A TOOLTIP UNDER A THUMB IS UNDER THE THUMB. Anchored below its control it
+      lands exactly where the finger that opened it is resting, and a reason the
+      user is covering is not a reason. Docked above the tab bar it never
+      occludes the control it explains.
+
+   ONE RULE FOR ALL THREE SPELLINGS OF THIS TOOLTIP, and it lives here because
+   this file owns the vocabulary: `.hon-tip`, `.auth-tip` (auth.css, the same
+   treatment restated) and the chip-row `.hon-caption` (panels.css, which takes
+   the tooltip presentation so a refusal cannot cost the row its second line).
+   Written once rather than three times on purpose — three copies of a geometry
+   derived from frame tokens is three things to drift when a token moves.
+
+   THE GEOMETRY IS `.mobile-frame__notices`' VERBATIM (mobile/mobile.css), on
+   Lane 1's call: that region is already "above the tab bar, inside the safe-area
+   gutters", derived from these same tokens, and exists precisely because a
+   screen does not know where the tab bar is. It is not hand-rolled here, and no
+   literal stands in for a token. `position: fixed` rather than that region's
+   `absolute` because the nearest positioned ancestor is `.hon-disabled` itself,
+   which is the control we are trying NOT to anchor to; for a `100dvh` frame the
+   two resolve to the same box. The inherited `z-index: 70` sits above the
+   notices region's 20 deliberately — a refusal is the direct answer to a tap the
+   user just made, and it outranks an ambient notice for the moment it is open.
+
+   Same ink and paper as the desktop tooltip: one vocabulary rendered for a
+   different hand, not a second one. Radius and shadow step up (`--pn-r-md`,
+   `--pn-sh-md`) because at full width `pop`'s 34px blur reads as a modal and
+   pulls focus off the control it is explaining. */
+.cv2-root .mobile-frame .hon-tip,
+.cv2-root .mobile-frame .auth-tip,
+.cv2-root .mobile-frame .lp__rowdetail--chips .hon-caption {
+  position: fixed;
+  left: var(--mobile-safe-left, 0px);
+  right: var(--mobile-safe-right, 0px);
+  bottom: calc(var(--mobile-safe-bottom, 0px) + var(--mobile-tabbar-min, 49px));
+  top: auto;
+  width: auto;
+  max-width: none;
+  /* The visual gutter is margin, not inset, so the anchor above stays a verbatim
+     copy of the notices region rather than a variant of it. */
+  margin-block: var(--pn-space-3);
+  margin-inline: auto;
+  /* Short reasons read as deliberate rather than stretched — the measure Lane 1
+     set on `.mobile-empty`. The `min()` keeps the gutter even where 34ch would
+     not fit, so the clamp never depends on the text being short. */
+  max-inline-size: min(34ch, calc(100% - 2 * var(--pn-space-3)));
+  padding: 10px 12px;
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-md);
+}
+/* ON THE PHONE THE TAP IS THE ONLY TRIGGER, and this is not tidiness.
+   `:hover` STICKS after a tap on iOS Safari and in Chrome's touch emulation —
+   the element keeps matching `:hover` until the user taps somewhere else. So a
+   hover-revealed tip survives its own dismissal: measured here, an outside
+   `pointerdown` correctly set `aria-expanded="false"` while the tip stayed
+   `visibility: visible`, held open by nothing but a stale hover. A reason the
+   user cannot put away is the same defect as one they cannot open.
+
+   Written as `:not([data-reason-open='true'])` so it suppresses ONLY the
+   implicit triggers and never fights the explicit one, whatever the source
+   order. Desktop is untouched — this is scoped under `.mobile-frame`. */
+.cv2-root .mobile-frame .hon-disabled:not([data-reason-open='true']):hover > .hon-tip,
+.cv2-root .mobile-frame .hon-disabled:not([data-reason-open='true']):focus-visible > .hon-tip,
+.cv2-root .mobile-frame .auth-inline-refusal:not([data-reason-open='true']):hover > .auth-tip,
+.cv2-root .mobile-frame .auth-inline-refusal:not([data-reason-open='true']):focus-within > .auth-tip,
+.cv2-root .mobile-frame .hon-note:not([data-reason-open='true']):hover > .hon-tip,
+.cv2-root
+  .mobile-frame
+  .hon-note:not([data-reason-open='true'])
+  .hon-note__trigger:focus-visible
+  ~ .hon-tip,
+.cv2-root
+  .mobile-frame
+  .lp__rowdetail--chips
+  .hon-disabled-group:not([data-reason-open='true']):hover
+  > .hon-caption {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.cv2-root .mobile-frame .hon-tip__cause,
+.cv2-root .mobile-frame .auth-tip__cause {
+  font-size: 13px;
+}
+.cv2-root .mobile-frame .hon-tip__remedy,
+.cv2-root .mobile-frame .auth-tip__remedy,
+.cv2-root .mobile-frame .lp__rowdetail--chips .hon-caption {
+  font-size: 11px;
 }
 
 /* Line 1 = bold cause. Line 2 = mono remedy — the "voice" split is what

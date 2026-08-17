@@ -131,7 +131,10 @@ export function intentOfRoute(view: NavView): ScreenStackIntent {
      `openEntity` for the `entity` route alone and that route's target is always
      a kind, so this narrows rather than assumes — and a future stack-hosting
      screen fails this check loudly instead of being silently mis-keyed. */
-  if (landing.target.type !== 'kind') return NONE;
+  /* `target: null` is a real screen with no rail seat (New Session), and a
+     screen that is not a kind hosts no stack either way — both land on NONE,
+     which is the same answer for the same reason. */
+  if (!landing.target || landing.target.type !== 'kind') return NONE;
   const key = screenKeyOf.kind(landing.target.ref);
   return landing.openEntity ? { kind: 'open', key, entity: landing.openEntity } : { kind: 'clear', key };
 }

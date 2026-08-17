@@ -38,8 +38,11 @@ export const SERVER = {
   /** Oracle L309 — how a resolved server identifies itself. */
   resolvedMeta: 'tm8-server v0.9.2 · protocol v3',
   /* GATE COPY — not oracle. The chrome must claim exactly what it has: a
-     server-backed sign-in against the node this browser is pointed at. */
-  localMeta: 'server sign-in · auth.login',
+     server-backed sign-in against the node this browser is pointed at.
+     It says so in words rather than by naming the operation — this line is
+     rendered in the LIVE gate (SignInFrames' AuthStage meta), so `auth.login`
+     was implementation vocabulary shown to somebody about to type a password. */
+  localMeta: 'sign in to this tm8 server',
   localEndpoint: 'account on this server',
 } as const;
 
@@ -69,8 +72,39 @@ export const CLAIM = {
       loopback owner already exists), and a button must not promise a role
       the operation cannot grant. */
   gateAction: 'Create account',
+  /**
+   * Also rewritten for the person. The operation names belong in the docblocks
+   * and the review board, not in a paragraph read by somebody deciding whether
+   * to type a password. What the reader needs is: where does this account live,
+   * what will happen, and what do I do if it refuses.
+   */
   gateBody:
-    'This creates a real account on the tm8 node (auth.signup) and signs you in (auth.login). Account creation is the node admin’s act: from the server’s own machine it is authorized automatically; on a shared server it may be refused — ask the operator for an account and a space invite.',
+    'Accounts live on this tm8 server, not in the cloud. Creating one here signs you in on this machine. If someone else runs this server they may not allow new accounts — ask them to send you an invite link instead.',
+  /**
+   * The UNCLAIMED first-run body — and a different act from `gateBody`. On a
+   * node nobody has claimed the card performs `auth.claim`, authorized by the
+   * setup TOKEN, not by a node-admin session. That path works from ANY machine
+   * — it is the entire point of the claim lane (design §3.2, §5.1) — so the
+   * copy must not repeat `gateBody`'s "on a shared server it may be refused"
+   * dead end, which describes the door this lane was built to remove. Contains
+   * "on the tm8 node" because that is literally where the credential is set.
+   */
+  claimTitle: 'Claim this node.',
+  /**
+   * WRITTEN FOR THE PERSON, NOT THE REVIEWER. This is the first screen a human
+   * ever sees, and the previous version explained itself in operation names
+   * (`auth.claim`) and told the reader to go find `<dataDir>/setup-token` — a
+   * documentation placeholder, printed at somebody who has no idea what a data
+   * dir is. Nobody can act on that.
+   *
+   * What they CAN act on: tm8 printed a link in the terminal they just started
+   * it in. That is the whole answer, and it needs no path, no file, and no
+   * vocabulary. The recovery line is true — `announceNodeClaim` reuses the live
+   * token across an ordinary restart rather than rotating it, so "start it
+   * again and it prints the same link" is a promise the boot path keeps.
+   */
+  claimBody:
+    'Nobody owns this tm8 server yet — claiming it makes you the owner. When tm8 started, it printed a one-time setup link in your terminal; open that link and the code below fills itself in. Then pick a name and a password. They are stored on this server only, and they are what you will use to reach it later from your phone or another laptop.',
   handleHintTail: 'how agents and members mention you',
   nameHintEmpty: 'your handle is derived from this name',
   gatePasswordHint: '8+ characters · sent to this server, stored only as a hash — use HTTPS off this machine',
@@ -84,6 +118,20 @@ export const CLAIM = {
   stepsNote:
     'Steps 2 and 3 of the oracle’s first run — name the server, create the first space — are not connected: nothing sets a server’s name, and spaces.create is a contract operation the seam does not expose. The gate completes at step 1.',
 } as const;
+
+/**
+ * ORACLE DRAWINGS, NOT LIVE PATHS. `NAME_STEP` (1b) and `FIRST_SPACE` (1c)
+ * render ONLY on the review board — the live gate never reaches them
+ * (`defaultSignedOutFrame` returns only `1a`/`1d`, and the first-run ruling of
+ * 2026-08-16 / PR #313 is a one-step claim gate whose first-Space step is the
+ * app's post-claim zero-spaces welcome → `NewSpaceProjectDialog`, not an
+ * in-gate 1b/1c; see FIRST-RUN-CLAIM-DESIGN.md §10.1). Because nothing renders
+ * them, their copy is NOT maintained against the shipping shell — e.g.
+ * `FIRST_SPACE.menuNote` still names a four-tab menu though the shell now has
+ * seven tabs. That staleness is deliberate: this is the oracle transcription
+ * for the board diff, so it must not be "fixed" — and it must not be rendered
+ * live, where a stale specimen becomes a lie waiting to be believed.
+ */
 
 /** 1b — naming the server. Oracle L58–L66. */
 export const NAME_STEP = {
@@ -121,6 +169,13 @@ export const LOGIN = {
   toPassword: 'use a password instead',
   footer:
     'No self-serve signup — accounts on forge are created by invite. Have a link? It opens flow C.',
+  /* GATE COPY — not oracle. The oracle footer names "forge" (a specimen
+     server) and "flow C" (reviewer vocabulary), neither of which a real
+     signed-out viewer should be shown. The live gate says what is actually
+     true of THIS node: sign-in mints a session (auth.login), and a new
+     account here is a node-admin act, not self-serve. */
+  gateFooter:
+    'No self-serve signup here — a node admin creates accounts. Signing in starts a session on this node (auth.login).',
 } as const;
 
 /**

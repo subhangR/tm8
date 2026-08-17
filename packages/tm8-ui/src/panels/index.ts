@@ -54,3 +54,4 @@ export {
   type UnavailableReason,
 } from './honesty/DisabledWithReason';
 export { HollowInline, HollowStat } from './honesty/HollowValue';
+export { ReasonNote } from './honesty/ReasonNote';

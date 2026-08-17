@@ -130,6 +130,81 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     expect(onNavigate).toHaveBeenCalledWith({ type: 'entity', ref: 'vc-studio', kind: 'voice_channel' });
   });
 
+  /**
+   * NESTED DYNAMIC ROWS DEFAULT SHUT (user ruling 2026-08-17). These rows used
+   * to recurse unconditionally with no disclosure state anywhere, so a channel
+   * with children printed its whole hierarchy on first paint and offered no way
+   * to close it — the one hierarchy in this rail that disagreed with the
+   * revision-11 "every caret CLOSED" ruling above.
+   */
+  it('a nested dynamic entity row ships CLOSED and opens on its own caret', () => {
+    const onNavigate = vi.fn();
+    const nested = {
+      channels: {
+        items: [
+          { id: 'ch-root', kind: 'channel', label: 'design', icon: '#' },
+          { id: 'ch-kid', kind: 'channel', label: 'design-crit', icon: '#', parentId: 'ch-root' },
+        ],
+      },
+    };
+    const { container, getByLabelText, queryByText } = renderRail({ onNavigate, dynamicGroups: nested });
+
+    expect(queryByText('design')).toBeTruthy();
+    expect(queryByText('design-crit'), 'the child is not drawn until asked for').toBeNull();
+
+    // The caret opens it WITHOUT navigating — same independence the static
+    // caret rows have.
+    fireEvent.click(getByLabelText('Expand design'));
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(queryByText('design-crit')).toBeTruthy();
+    expect(container.querySelectorAll('[data-entity-id]')).toHaveLength(2);
+
+    fireEvent.click(getByLabelText('Collapse design'));
+    expect(queryByText('design-crit')).toBeNull();
+  });
+
+  it('a childless dynamic row draws NO caret — the affordance follows the data', () => {
+    const { queryByLabelText } = renderRail({
+      dynamicGroups: {
+        channels: { items: [{ id: 'ch-flat', kind: 'channel', label: 'general', icon: '#' }] },
+      },
+    });
+    expect(queryByLabelText('Expand general')).toBeNull();
+  });
+
+  it('the ICON-ONLY rail still shows every descendant, exactly as its leaves do', () => {
+    // Identical reasoning to the static leaves: the caret control renders only
+    // in the expanded rail, so honouring a closed caret at 48px would strand
+    // these rows with no affordance anywhere to reach them.
+    const { queryByText } = renderRail({
+      collapsed: true,
+      dynamicGroups: {
+        channels: {
+          items: [
+            { id: 'ch-root', kind: 'channel', label: 'design', icon: '#' },
+            { id: 'ch-kid', kind: 'channel', label: 'design-crit', icon: '#', parentId: 'ch-root' },
+          ],
+        },
+      },
+    });
+    expect(queryByText('design-crit')).toBeTruthy();
+  });
+
+  it('the ACTIVE row reveals itself — navigating to a nested channel opens its parent', () => {
+    const { queryByText } = renderRail({
+      activeTarget: { type: 'entity', ref: 'ch-kid', kind: 'channel' },
+      dynamicGroups: {
+        channels: {
+          items: [
+            { id: 'ch-root', kind: 'channel', label: 'design', icon: '#' },
+            { id: 'ch-kid', kind: 'channel', label: 'design-crit', icon: '#', parentId: 'ch-root' },
+          ],
+        },
+      },
+    });
+    expect(queryByText('design-crit'), 'the current row is never hidden behind a shut parent').toBeTruthy();
+  });
+
   it('GRAMMAR 2: a plain item renders one navigating row with its glyph', () => {
     const onNavigate = vi.fn();
     const { getByText } = renderRail({ onNavigate });

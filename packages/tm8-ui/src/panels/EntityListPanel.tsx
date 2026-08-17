@@ -49,7 +49,7 @@ import {
   workflowTypeOf,
   workflowVocabularyOf,
 } from '../domain';
-import { Avatar, Timestamp, type PillTone } from '../kit';
+import { Avatar, Timestamp, ancestorPath, useTreeDisclosure, type PillTone } from '../kit';
 import {
   CheckingPermission,
   DisabledAction,
@@ -58,11 +58,13 @@ import {
   toReason,
   type UnavailableReason,
 } from './honesty/DisabledWithReason';
+import { ReasonNote } from './honesty/ReasonNote';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
 import {
   EntityControlStrip,
   RowAction,
+  RowActionCluster,
   RowMembershipControl,
   RowStateControl,
   type ControlHost,
@@ -2502,35 +2504,37 @@ function TreeRows({
   attentionIds?: ReadonlySet<string>;
 }) {
   /**
-   * Collapsed, not expanded: rows remain visible by default (the existing
-   * contract and the full-workspace reference both open the active subtree),
-   * while a later-arriving child does not need state bookkeeping to appear.
+   * EXPANDED, NOT COLLAPSED — the inversion is the whole point (user ruling
+   * 2026-08-17, "it's always showing expanded full tree… by default it should
+   * be collapsed"). This used to be a `collapsed` set that started EMPTY, i.e.
+   * default-OPEN: every parent drew its whole subtree on first paint, and a
+   * child arriving later from the event stream appeared inside it unasked. Now
+   * the set holds the rows the VIEWER opened, so an untouched row — and every
+   * row that arrives later — is shut, and the state persists per kind.
+   *
+   * See `kit/useTreeDisclosure` for why the set is safe to persist and how the
+   * selection is kept visible without being written to storage.
    */
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const revealed = useMemo(() => ancestorPath(rows, props.selectedId), [rows, props.selectedId]);
+  const disclosure = useTreeDisclosure(`list:${config.kind}`, revealed);
 
   const roots = useMemo(() => buildTileTree(rows, Boolean(config.list.tree)), [rows, config.list.tree]);
 
   /**
    * Live message traffic, resolved against THIS tree's current shape. Recomputed
-   * when the tree or the collapsed set changes, because a route is only true for
-   * the arrangement that was on screen when it was drawn — collapsing a subtree
-   * mid-flight must re-aim the pulse at the ancestor now standing in for it.
+   * when the tree or the disclosure state changes, because a route is only true
+   * for the arrangement that was on screen when it was drawn — collapsing a
+   * subtree mid-flight must re-aim the pulse at the ancestor now standing in
+   * for it. `isExpanded` (not the raw set) is what is passed, so a row revealed
+   * by the selection routes as the open row it is drawn as.
    */
   const pulse = useMemo(
-    () => resolvePulses(rows, collapsed, props.messagePulses, config),
-    [rows, collapsed, props.messagePulses, config],
+    () => resolvePulses(rows, disclosure.isExpanded, props.messagePulses, config),
+    [rows, disclosure, props.messagePulses, config],
   );
 
-  const toggle = (id: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
   const renderNode = (node: TileTreeNode): React.ReactNode => {
-    const isCollapsed = collapsed.has(node.row.id);
+    const isCollapsed = !disclosure.isExpanded(node.row.id);
     const hasChildren = node.children.length > 0;
     const wire = pulse.segments.get(node.row.id);
     const endpoint = pulse.endpoints.get(node.row.id);
@@ -2555,7 +2559,7 @@ function TreeRows({
           attention={attentionIds?.has(node.row.id) ?? false}
           childCount={node.children.length}
           expanded={!isCollapsed}
-          onToggleChildren={hasChildren ? () => toggle(node.row.id) : undefined}
+          onToggleChildren={hasChildren ? () => disclosure.toggle(node.row.id) : undefined}
         />
         {hasChildren && !isCollapsed ? (
           <div
@@ -2670,7 +2674,13 @@ const NO_PULSES: ResolvedPulses = { segments: new Map(), endpoints: new Map() };
  */
 function resolvePulses(
   rows: readonly EntitySummary[],
-  collapsed: ReadonlySet<string>,
+  /**
+   * Does this row draw its children? A PREDICATE, not the persisted set: a row
+   * on the path to the selection is open on screen without being in storage,
+   * and a route that consulted the set alone would re-aim a pulse at an
+   * ancestor while the real row is plainly visible.
+   */
+  isExpanded: (id: string) => boolean,
   pulses: readonly MessagePulse[] | undefined,
   config: KindConfig,
 ): ResolvedPulses {
@@ -2688,12 +2698,16 @@ function resolvePulses(
   const index = {
     parentOf,
     isVisible: (id: string) => {
-      if (!present.has(id) || collapsed.has(id)) return false;
-      // Rendered means every ancestor is expanded, not just this row's parent.
+      if (!present.has(id)) return false;
+      // A ROW IS VISIBLE WHEN EVERY ANCESTOR IS OPEN — its own disclosure state
+      // is about its CHILDREN, not itself, so it is deliberately not consulted
+      // here. (Under the old default-open set this read `collapsed.has(id)`
+      // first, which was wrong in the same way and merely never observable
+      // while nothing started closed.)
       const guard = new Set<string>();
       let cursor = parentOf(id);
       while (typeof cursor === 'string' && !guard.has(cursor)) {
-        if (collapsed.has(cursor)) return false;
+        if (!isExpanded(cursor)) return false;
         guard.add(cursor);
         cursor = parentOf(cursor);
       }
@@ -3035,7 +3049,9 @@ export function Tile({
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
         onSelect={() => props.onSelect?.(row.id)}
-        onClose={props.onTerminate ? () => props.onTerminate?.(row.id) : undefined}
+        actions={
+          <RowActionCluster row={row} props={props} config={config} openFlow={flowRef} onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions} />
+        }
         detail={<EntityControlStrip row={row} props={props} config={config} />}
       />
       {relatedBlock}
@@ -3093,32 +3109,18 @@ export function Tile({
         assignees={controlFacts.assignees}
         creator={controlFacts.creator}
         badges={tileBadges}
-        actions={[
-          ...(list.rowActions ?? []).map((ref) => (
-            <RowAction
-              key={ref}
-              ref_={ref}
-              row={row}
-              props={props}
-              openFlow={flowRef}
-              onFlow={setFlowRef}
-              onOpenLaunch={props.launch?.onFullOptions}
-            />
-          )),
-          /* The collapsed control-card gets the same icon-anatomy membership
-             control as the standard tile — one component, not a second copy. */
-          ...(list.membership
-            ? [
-                <RowMembershipControl
-                  key="membership"
-                  row={row}
-                  props={props}
-                  control={list.membership}
-                  variant="icon"
-                />,
-              ]
-            : []),
-        ]}
+        /* The same cluster the standard tile draws, in the same order — one
+           component, not a second copy. The control-card's own chevron lives
+           inside `MaestroTaskTile` after this slot, so no `trailing` here. */
+        actions={
+          <RowActionCluster
+            row={row}
+            props={props}
+            config={config}
+            openFlow={flowRef}
+            onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions}
+          />
+        }
         detailsExpanded={controlExpanded}
         flowOpen={flowRef !== null}
         onToggleDetails={() => {
@@ -3282,9 +3284,25 @@ export function Tile({
               never grows, so hovering cannot reflow the list under the cursor. */}
           <span className="lp__badges">
             {attention ? (
-              <span className="lp__attention-label" title={row.badges.attention?.latestReason}>
-                Needs attention
-              </span>
+              /* WHY it needs attention was `title`-only, and `title` renders on
+                 hover and nowhere else — so on a phone this row said "Needs
+                 attention" and refused to say why, with the reason present in
+                 the data and reachable by nobody. Attention is a core concept
+                 here; a request with an unreadable reason is a demand.
+                 The mouse loses nothing: `.hon-tip` still opens on hover, and
+                 now on focus and on tap as well. */
+              row.badges.attention?.latestReason ? (
+                <ReasonNote
+                  className="lp__attention-label"
+                  reason={row.badges.attention.latestReason}
+                  label="Needs attention — why"
+                  testid="attention-reason"
+                >
+                  Needs attention
+                </ReasonNote>
+              ) : (
+                <span className="lp__attention-label">Needs attention</span>
+              )
             ) : null}
             {statusWord ? (
               <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
@@ -3293,46 +3311,40 @@ export function Tile({
             ) : null}
           </span>
 
-          <span className="lp__rowactions">
-            {(list.rowActions ?? []).map((ref) => (
-              <RowAction
-                key={ref}
-                ref_={ref}
-                row={row}
-                props={props}
-                openFlow={flowRef}
-                onFlow={setFlowRef}
-                onOpenLaunch={props.launch?.onFullOptions}
-              />
-            ))}
-            {/* Add-to-collection on the COLLAPSED tile (user ruling
-                2026-08-13) — the expanded strip already carries the labelled
-                form; a curation verb two clicks deep is one the user reported
-                as absent. Same component, icon anatomy, same gates. */}
-            {list.membership ? (
-              <RowMembershipControl row={row} props={props} control={list.membership} variant="icon" />
-            ) : null}
-            {/* D67 — the details disclosure, on EVERY standard tile.
-                DELIBERATELY NOT the leading `lp__disclosure`: that chevron
-                means "show this row's CHILDREN" on tree kinds, and giving one
-                control two meanings would make a doc's expand ambiguous. This
-                one trails the row, matching the control-card's `pn-tt__ind`. */}
-            <button
-              type="button"
-              className={
-                detailsExpanded ? 'lp__rowaction lp__rowaction--on' : 'lp__rowaction'
+          <span className="lp__rowactions lp__cluster">
+            {/* Collections · Run · Archive — the shared frame. See
+                `RowActionCluster` for why the order lives there and not in
+                three separate JSX literals. */}
+            <RowActionCluster
+              row={row}
+              props={props}
+              config={config}
+              openFlow={flowRef}
+              onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions}
+              trailing={
+                /* D67 — the details disclosure, on EVERY standard tile.
+                   DELIBERATELY NOT the leading `lp__disclosure`: that chevron
+                   means "show this row's CHILDREN" on tree kinds, and giving one
+                   control two meanings would make a doc's expand ambiguous. This
+                   one trails the row, matching the control-card's `pn-tt__ind`. */
+                <button
+                  type="button"
+                  className={
+                    detailsExpanded ? 'lp__rowaction lp__rowaction--on' : 'lp__rowaction'
+                  }
+                  title="Details"
+                  aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} details for ${row.title}`}
+                  aria-expanded={detailsExpanded}
+                  data-testid="row-details-toggle"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDetailsExpanded((open) => !open);
+                  }}
+                >
+                  <span aria-hidden><TileChevron /></span>
+                </button>
               }
-              title="Details"
-              aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} details for ${row.title}`}
-              aria-expanded={detailsExpanded}
-              data-testid="row-details-toggle"
-              onClick={(event) => {
-                event.stopPropagation();
-                setDetailsExpanded((open) => !open);
-              }}
-            >
-              <span aria-hidden><TileChevron /></span>
-            </button>
+            />
           </span>
 
         </div>

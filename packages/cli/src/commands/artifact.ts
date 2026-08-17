@@ -20,21 +20,25 @@
  * second copy of those rules. Identical bytes produce an identical manifest hash
  * regardless of who or what produced the bundle (§3).
  *
- * BLOB UPLOAD IS PHASE-1-INCOMPLETE, AND THAT IS SURFACED, NOT HIDDEN. The
- * create/publish RPCs reference blobs by the `sha256` inside the manifest; the
- * server resolves those against `stored_blobs`. That storage linkage is not yet
- * wired (design §5.1, §8.1), so the Server may answer `unknown_blob`
- * (`22023` → `invalid_input`). The composition does NOT pre-swallow that: it POSTs
- * the manifest and lets the typed refusal reach the caller through the ordinary
- * funnel, because a silent success here would be the worst possible lie.
+ * THE BYTES TRAVEL INLINE WITH THE MANIFEST. The create/publish RPCs reference
+ * blobs by the `sha256` inside the manifest; the server resolves those against
+ * `stored_blobs`, and `files: [{path, contentBase64}]` in the same body stages
+ * any blob it has not seen before. The bytes sent are the SAME buffers that were
+ * hashed — a file changing on disk between hash and send still produces a
+ * coherent request, and the server recomputes every hash rather than trusting
+ * the wire. Inline base64 inflates the request 4/3, so the server's request-body
+ * cap (`TM8_MAX_BODY_BYTES`, default 8 MiB) bounds a publish well below the
+ * manifest's 25 MiB total: the preflight in `buildManifest` refuses an oversized
+ * bundle here, with the effective cap named, instead of letting it die as an
+ * opaque 413. Batch blob upload (Phase 2) will lift that ceiling.
  *
  * `artifact export` answers RAW ZIP BYTES (§9.6) — the documented bytes exception
  * this client already models for `file download`. Bytes and structured output are
  * mutually exclusive on stdout, so `--out <path>` writes the zip there and leaves
  * stdout empty. `artifact preview` PRINTS what the Server returns and opens
  * nothing: a CLI opening a browser would be an outward-facing side effect the
- * caller did not ask for, and no usable preview URL exists until the
- * preview-origin isolation decision lands (§9.1-§9.3).
+ * caller did not ask for. The Server returns a `previewUrl` when the node has a
+ * preview origin configured; it is printed verbatim, never fabricated.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -90,6 +94,22 @@ const MEDIA_TYPE_BY_EXT: Readonly<Record<string, ArtifactMediaType>> = {
 };
 
 const DEFAULT_ENTRYPOINT = 'index.html';
+
+/**
+ * The server refuses request bodies over `TM8_MAX_BODY_BYTES` (default 8 MiB)
+ * before any handler runs. The CLI cannot read the server's env, so it assumes
+ * the default; a node configured lower will still 413, one configured higher
+ * needs Phase 2's batch blob upload anyway.
+ */
+const SERVER_DEFAULT_MAX_BODY_BYTES = 8 * 1024 * 1024;
+/** Headroom for the non-`files` body fields (manifest is measured separately). */
+const INLINE_BODY_SLACK_BYTES = 64 * 1024;
+
+/** One inline blob, exactly as `artifacts.create`/`artifacts.publish` accept it. */
+interface InlineFile {
+  path: string;
+  contentBase64: string;
+}
 
 interface WalkedFile {
   /** POSIX-separated path relative to the published directory, NFC-normalised. */
@@ -157,9 +177,15 @@ function walk(root: string): { files: WalkedFile[]; skippedHidden: string[] } {
  * Walk, enforce the contract's limits locally, hash each file, and build the
  * manifest — then validate it with the contract's own strict parser so an
  * unsorted, duplicate, non-NFC, or bad-entrypoint bundle is refused HERE with a
- * concrete reason rather than as an opaque server 400.
+ * concrete reason rather than as an opaque server 400. The returned `files` are
+ * the inline blobs for the create/publish body, encoded from the SAME buffers
+ * the manifest hashes were computed from and keyed by the manifest's own
+ * NFC-normalised paths, so hash, size, and bytes can never disagree on the wire.
  */
-function buildManifest(cmd: CommandContext, dir: string): { manifest: ArtifactManifest; totalBytes: number } {
+function buildManifest(
+  cmd: CommandContext,
+  dir: string,
+): { manifest: ArtifactManifest; totalBytes: number; inlineFiles: InlineFile[] } {
   if (!existsSync(dir)) {
     throw new CliError(`${dir} does not exist`, EXIT_USAGE, {
       hint: 'pass the directory whose files make up the bundle',
@@ -186,6 +212,7 @@ function buildManifest(cmd: CommandContext, dir: string): { manifest: ArtifactMa
   }
 
   let totalBytes = 0;
+  const contentBase64ByPath = new Map<string, string>();
   const entries: ArtifactManifestFile[] = files.map((file) => {
     if (file.size > ARTIFACT_MAX_FILE_BYTES) {
       throw new CliError(
@@ -193,12 +220,15 @@ function buildManifest(cmd: CommandContext, dir: string): { manifest: ArtifactMa
         EXIT_USAGE,
       );
     }
-    totalBytes += file.size;
     const bytes = readFileSync(file.absPath);
+    // The manifest declares the HASHED buffer's length, and the same buffer is
+    // what travels — a file mutating on disk mid-publish cannot desync the two.
+    totalBytes += bytes.length;
+    contentBase64ByPath.set(file.path, bytes.toString('base64'));
     return {
       path: file.path,
       mediaType: mediaTypeFor(file.path),
-      size: file.size,
+      size: bytes.length,
       sha256: createHash('sha256').update(bytes).digest('hex'),
     };
   });
@@ -226,8 +256,9 @@ function buildManifest(cmd: CommandContext, dir: string): { manifest: ArtifactMa
     entrypoint,
     files: entries,
   };
+  let manifest: ArtifactManifest;
   try {
-    return { manifest: parseArtifactManifest(draft), totalBytes };
+    manifest = parseArtifactManifest(draft);
   } catch (err) {
     const message =
       err && typeof err === 'object' && 'issues' in err
@@ -239,6 +270,39 @@ function buildManifest(cmd: CommandContext, dir: string): { manifest: ArtifactMa
           : String(err);
     throw new CliError(`the bundle manifest is invalid: ${message}`, EXIT_USAGE);
   }
+
+  // The blobs ride inline in the same request body, keyed by the manifest's
+  // validated (NFC-normalised, sorted) paths so the server's path lookup and
+  // hash recomputation both match.
+  const inlineFiles: InlineFile[] = manifest.files.map((entry) => ({
+    path: entry.path,
+    contentBase64: contentBase64ByPath.get(entry.path) as string,
+  }));
+
+  // Preflight the server's request-body cap: base64 inflates 4/3, so the real
+  // inline ceiling is well under the manifest's own total limit. Measure the
+  // dominant body parts exactly rather than estimating.
+  const measuredBytes =
+    Buffer.byteLength(JSON.stringify({ manifest, files: inlineFiles }), 'utf8') +
+    INLINE_BODY_SLACK_BYTES;
+  if (measuredBytes > SERVER_DEFAULT_MAX_BODY_BYTES) {
+    const effectiveRawCap = Math.floor(
+      ((SERVER_DEFAULT_MAX_BODY_BYTES - INLINE_BODY_SLACK_BYTES) * 3) / 4,
+    );
+    throw new CliError(
+      `bundle is ${totalBytes} bytes, which base64-encodes past the server's ` +
+        `${SERVER_DEFAULT_MAX_BODY_BYTES}-byte request-body cap; the effective bundle ` +
+        `limit for inline publish is about ${effectiveRawCap} bytes`,
+      EXIT_USAGE,
+      {
+        hint:
+          'larger bundles need batch blob upload, which is not implemented yet (Artifacts Phase 2); ' +
+          'shrink the bundle for now',
+      },
+    );
+  }
+
+  return { manifest, totalBytes, inlineFiles };
 }
 
 // ── the composed publish ─────────────────────────────────────────────────────
@@ -262,7 +326,7 @@ async function artifactPublish(cmd: CommandContext): Promise<ExitCode> {
     );
   }
 
-  const { manifest, totalBytes } = buildManifest(cmd, dir);
+  const { manifest, totalBytes, inlineFiles } = buildManifest(cmd, dir);
   const contentHash = manifestSha256(manifest);
   cmd.out.note(
     `manifest: ${manifest.files.length} file(s), ${totalBytes} bytes, entrypoint ${manifest.entrypoint}, sha256 ${contentHash}`,
@@ -275,7 +339,7 @@ async function artifactPublish(cmd: CommandContext): Promise<ExitCode> {
     if (expectedVersion === undefined || expectedVersion <= 0) {
       throw new CliError('--expect-version expects a positive version', EXIT_USAGE);
     }
-    const body = withActor(cmd, { clientMutationId, expectedVersion, manifest });
+    const body = withActor(cmd, { clientMutationId, expectedVersion, manifest, files: inlineFiles });
     const data = await observedInvoke<unknown>(client, 'artifacts.publish', {
       params: { artifactId },
       body,
@@ -291,7 +355,7 @@ async function artifactPublish(cmd: CommandContext): Promise<ExitCode> {
       hint: 'the directory name could not be used as an artifact name',
     });
   }
-  const body: Record<string, unknown> = { clientMutationId, spaceId, name, manifest };
+  const body: Record<string, unknown> = { clientMutationId, spaceId, name, manifest, files: inlineFiles };
   const description = cmd.options.value('description');
   if (description !== undefined) body.description = description;
 
@@ -344,8 +408,8 @@ async function artifactPreview(cmd: CommandContext): Promise<ExitCode> {
   });
   cmd.out.data(data, renderPreview);
   cmd.out.note(
-    'a usable preview URL does not exist until the preview-origin isolation decision lands; ' +
-      'the fields above are the whole preview session',
+    'a `previewUrl` above is served by the node itself; without one, the node has ' +
+      'no preview origin configured and the fields above are the whole preview session',
   );
   return EXIT_OK;
 }
@@ -529,7 +593,7 @@ function renderPreview(dto: unknown): string {
       }
     }
   };
-  show('sessionId', 'sessionId', 'id');
+  show('sessionId', 'previewSessionId', 'sessionId', 'id');
   show('token', 'token');
   show('expiresAt', 'expiresAt', 'expiry');
   show('revisionNumber', 'revisionNumber', 'revision');

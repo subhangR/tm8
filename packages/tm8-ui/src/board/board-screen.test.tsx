@@ -260,3 +260,18 @@ describe('the filter chrome', () => {
     view.unmount();
   });
 });
+
+describe('the create control', () => {
+  /* The board shipped with seven columns of drop targets and no way to add a
+     card — it looked like a working kanban that silently refused every task.
+     The bar now carries the create control the screen was missing. */
+  it('renders a live ＋ New task in the bar', async () => {
+    const view = await mountBoard();
+    const control = view.getByTestId('bd-new-task');
+    expect(control).toBeTruthy();
+    // Live, not a refused span: the fixture seam carries a command executor.
+    expect(control.tagName).toBe('BUTTON');
+    expect(control.textContent).toContain('New task');
+    view.unmount();
+  });
+});

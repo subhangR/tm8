@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- The SAME viewport meta production ships. Without it Chrome lays a phone
+         out at 980px and then scales, so every measurement below would be taken
+         against a viewport the device never has. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="/fonts/HankenGrotesk-400-latin.woff2" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48 32x32 16x16" />
+    <title>tm8 — mobile audit fixture</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/mobile-audit-entry.tsx"></script>
+  </body>
+</html>

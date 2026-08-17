@@ -177,7 +177,7 @@ describe('the sessions chip and the inline group', () => {
     // The row is the sessions list's own tile, not a poorer chip.
     const tile = within(group).getByText(sessionLive.title);
     expect(group.querySelector('.pn-st')).not.toBeNull();
-    fireEvent.click(within(group).getByLabelText('Close session'));
+    fireEvent.click(within(group).getByLabelText('Terminate'));
     expect(onTerminate).toHaveBeenCalledWith(sessionLive.id);
     fireEvent.click(tile);
     expect(onSelect).toHaveBeenCalledWith(sessionLive.id);

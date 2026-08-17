@@ -7,7 +7,9 @@
  *   2. transport checks (./security.ts — S1 aside, deferred no-ops today)
  *   3. `/health` — the liveness probe, deliberately OUTSIDE the catalog and
  *      outside the envelope: it is infrastructure, not an operation
- *   4. narrowly matched support transports (raw FileUploadGrant PUT)
+ *   4. narrowly matched support transports (the `/p/` artifact-preview
+ *      route — capability-token auth, never cookie identity — and the raw
+ *      FileUploadGrant PUT)
  *   5. read + JSON-parse the body → `payload_too_large` / `invalid_input`
  *   6. route against the catalog → `not_found`
  *   7. resolve identity (S5 auto-owner today)
@@ -42,6 +44,7 @@ import { Router } from './router.js';
 import {
   autoOwnerResolver,
   BASE_SECURITY_HEADERS,
+  checkHost,
   checkTransport,
   checkUpgradeTransport,
 } from './security.js';
@@ -92,6 +95,18 @@ export interface FacadeServerOptions {
   readonly voiceWebhookRoute?: VoiceWebhookRoute;
   /** Same-origin relay for node-local named Server connections. */
   readonly remoteServerProxy?: RemoteServerProxy;
+  /**
+   * The artifact-preview renderer mounted same-origin (the default preview
+   * deployment): every `/p/...` request is handed to it wholesale. It
+   * authenticates by the capability token IN THE PATH and must never go
+   * through `resolveIdentity` — a preview is viewer-bound by its token, not
+   * by whoever's cookie happens to ride the request. It is dispatched after
+   * S2 (host allowlist) but BEFORE the rest of checkTransport — the sandboxed
+   * document's own fetches arrive as `Origin: null`, which S3 rightly refuses
+   * everywhere credentials live (see the dispatch site). The handler owns
+   * everything under `/p/`, refusals included, with its own hardened headers.
+   */
+  readonly artifactPreviewRoute?: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
   /**
    * Answers "can this node actually serve a read right now?" — in practice, a
    * `select 1` through the SAME pool every space-scoped read uses. `/health`
@@ -185,6 +200,25 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
     const pathname = url.pathname;
 
     try {
+      // Artifact previews dispatch BEFORE checkTransport, deliberately — but
+      // AFTER S2: the host allowlist still applies (DNS-rebinding names are
+      // refused). What `/p/` skips is S3/S4/CSRF, the browser-origin gates
+      // that exist to protect COOKIE-backed endpoints: this route carries no
+      // ambient credentials at all (capability token in the path, GET/HEAD
+      // only, enforced by the handler). It MUST skip S3, because the
+      // sandboxed preview document is an opaque origin and its cors-mode
+      // fetch() of its OWN `/p/` files arrives as `Origin: null` — S3's
+      // refusal of exactly that value is what protects the cookie'd API, and
+      // it would otherwise refuse the bundle's own data fetches (found live,
+      // 2026-08-17). Every API path below still passes the full transport
+      // gate, so `Origin: null` remains refused where credentials live.
+      if (opts.artifactPreviewRoute && (pathname === '/p' || pathname.startsWith('/p/'))) {
+        const host = checkHost(req.headers, config);
+        if (host.refusal) throw fail(host.refusal.code, host.refusal.message);
+        await opts.artifactPreviewRoute(req, res);
+        return;
+      }
+
       const decision = checkTransport(method, req.headers, config);
       if (decision.refusal) throw fail(decision.refusal.code, decision.refusal.message);
 
@@ -254,6 +288,9 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // on a fixed 500ms tick regardless of output, so a fast agent arrived in
       // visible bursts. Do not reintroduce it as a fallback; a live PTY has one
       // delivery path and a second one desynchronizes the offset accounting.
+
+      // NOTE: the `/p/` artifact-preview dispatch lives at the TOP of this
+      // try block, ahead of checkTransport — see the comment there for why.
 
       const isApiPath = pathname === BASE_PATH || pathname.startsWith(`${BASE_PATH}/`);
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntitySummary } from '@tm8/contract';
 import type { ActionContext, ActionRef } from '../domain';
 import { KindIcon, deferredActions, getKind, resolveAction } from '../domain';
+import { ReasonNote } from '../panels/honesty/ReasonNote';
 import './palette.css';
 
 /**
@@ -234,7 +235,6 @@ function PaletteRow({
         className="pal__row pal__row--disabled"
         data-testid="palette-disabled-row"
         aria-disabled="true"
-        title={row.disabled}
       >
         <span className="pal__row-glyph" aria-hidden>
           {row.glyph}
@@ -242,8 +242,25 @@ function PaletteRow({
         <span className="pal__row-label">{row.label}</span>
         <span className="pal__spacer" />
         {/* The reason is INLINE and right-aligned, not a tooltip: a row the
-            keyboard skips would never surface a hover-only explanation. */}
-        <span className="pal__row-reason">{shortReason(row.disabled)}</span>
+            keyboard skips would never surface a hover-only explanation.
+
+            BUT THE INLINE FORM IS NOT THE WHOLE REASON. `shortReason` keeps only
+            the text before the first `:` or em-dash, and falls back to the
+            generic "not available yet" once that head passes 40 characters — so
+            the REMEDY half was dropped on every platform, and a long cause
+            degraded to a placeholder carrying nothing at all. The full sentence
+            lived only in `title`, which renders on hover and nowhere else.
+            Wrapping the short form in `ReasonNote` keeps the glanceable line
+            exactly as it was and makes the whole reason reachable by hover,
+            focus OR tap. */}
+        <ReasonNote
+          className="pal__row-reason"
+          reason={row.disabled}
+          label={`${row.label} — why it is unavailable`}
+          testid="palette-disabled-reason"
+        >
+          {shortReason(row.disabled)}
+        </ReasonNote>
       </div>
     );
   }

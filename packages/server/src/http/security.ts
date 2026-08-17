@@ -37,17 +37,28 @@
  *        as soon as an unrelated app on this loopback host sets one. See
  *        `carriesTm8Cookie`.
  *
- * THE PREVIEW-ORIGIN PARTITION (design §9.2/§9.3, user-ratified 2026-07-31):
- * when the artifact-preview listener is configured, its hostname is REMOVED
- * from the app allowlist below — the loopback trio included. A hostname is
- * only distinct if the other listener refuses it: the node binds loopback and
- * answers to every loopback name it is reached by, so leaving `localhost` in
- * the app's allowlist while the preview claims `localhost:4613` would be two
- * names for one socket and no separation at all. The preview listener's own
- * (inverse) Host check lives with it in ./artifact-preview.ts; the boot
- * refusal that keeps the two origins disjoint lives in ./config.ts.
- * Consequence, deliberate: the app is reached at `http://127.0.0.1:4610`,
- * never `http://localhost:4610` — that name now belongs to the preview.
+ * THE PREVIEW ORIGIN (design §9.2/§9.3, amended 2026-08-16): by DEFAULT the
+ * preview is a `/p/` route on the app socket — same origin, same allowlist,
+ * nothing removed. That deliberately gives up true origin separation; what
+ * contains an untrusted bundle in the default deployment is the renderer's
+ * server-enforced CSP sandbox (`sandbox allow-scripts` inside the response
+ * header, ./artifact-preview.ts) plus this file's refusal of `Origin: null`
+ * callers on every API path, which keeps the resulting opaque-origin frame
+ * off the API. (`/p/` itself is dispatched ahead of S3 in server.ts — the
+ * frame's fetch of its OWN files arrives as `Origin: null` too, and that
+ * route carries no ambient credentials for S3 to protect.)
+ *
+ * SECOND-ORIGIN MODE (an explicit TM8_PREVIEW_HOST/TM8_PREVIEW_PORT) keeps
+ * the original partition: the preview hostname is REMOVED from the app
+ * allowlist below — the loopback trio included. A hostname is only distinct
+ * if the other listener refuses it: the node binds loopback and answers to
+ * every loopback name it is reached by, so leaving `localhost` in the app's
+ * allowlist while the preview claims `localhost:4613` would be two names for
+ * one socket and no separation at all. The preview listener's own (inverse)
+ * Host check lives with it in ./artifact-preview.ts; the boot refusal that
+ * keeps the two origins disjoint lives in ./config.ts. Consequence there,
+ * deliberate: the app is reached at `http://127.0.0.1:4610`, never
+ * `http://localhost:4610` — that name belongs to the preview.
  */
 import type { IncomingHttpHeaders } from 'node:http';
 import { TM8_CLIENT_HEADER } from '@tm8/contract';
@@ -88,10 +99,12 @@ function hostnameOfHostHeader(host: string): string | null {
 function allowedHostnames(config: ServerConfig): Set<string> {
   const set = new Set(LOOPBACK_HOSTNAMES);
   for (const name of config.extraAllowedHostnames ?? []) set.add(name.toLowerCase());
-  // The preview-origin partition (header note): the preview hostname is the
-  // OTHER listener's name, and this socket must refuse it — Host and Origin
-  // both, since both checks read this set.
-  if (config.preview) set.delete(config.preview.host);
+  // The preview-origin partition (header note) applies only in second-origin
+  // mode: there the preview hostname is the OTHER listener's name, and this
+  // socket must refuse it — Host and Origin both, since both checks read this
+  // set. In the same-origin default the preview host IS an app name, and
+  // deleting it is exactly the bug that broke UI access at `localhost`.
+  if (config.preview && !config.preview.sameOrigin) set.delete(config.preview.host);
   return set;
 }
 

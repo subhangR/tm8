@@ -41,7 +41,7 @@ import {
   MICROS,
   actorOf,
   assembleSummaries,
-  capabilitiesOf,
+  entityCapabilities,
   contentOf,
   ENTITY_COLUMNS,
   ENTITY_FROM,
@@ -195,45 +195,6 @@ function customScalarFields(value: unknown): Record<string, CustomFieldValue> {
     }
   }
   return fields;
-}
-
-function capabilitiesFor(row: EntityRow, summary: EntitySummary): EntityCapabilities {
-  const base = capabilitiesOf(row);
-  if (summary.kind === 'project' || summary.kind === 'interaction_profile') {
-    return {
-      canEdit: false,
-      canDelete: false,
-      canAddChild: false,
-      canLink: summary.deletedAt === null,
-      canPull: false,
-      canReact: summary.deletedAt === null,
-      canGrantPoints: false,
-      canComplete: false,
-    };
-  }
-  if (summary.kind === 'message') {
-    return { ...base, canEdit: false, canDelete: false, canAddChild: false };
-  }
-  // A session is still not deletable and has no children — it is born from a
-  // spawn and it exits. But its canEdit is now left as `capabilitiesOf`
-  // computed it, which since 085 is true for a live session and means exactly
-  // one thing: the display title. Forcing it false here would leave the panel
-  // dressing the title as locked while the patch door accepts the rename.
-  if (summary.kind === 'work_session') {
-    return { ...base, canDelete: false, canAddChild: false };
-  }
-  if (summary.kind === 'pull_request' || summary.kind === 'commit' || summary.kind === 'file') {
-    return { ...base, canEdit: summary.deletedAt === null };
-  }
-  if (summary.kind.startsWith('c:')) {
-    return {
-      ...base,
-      canEdit: summary.deletedAt === null,
-      canAddChild: summary.deletedAt === null,
-      canPull: summary.deletedAt === null,
-    };
-  }
-  return base;
 }
 
 function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): EntitySummary {
@@ -743,7 +704,7 @@ async function buildUniversalDetail(
       incoming: byType('incoming'),
       unresolvedHardDependencyCount,
     },
-    capabilities: capabilitiesFor(row, summary),
+    capabilities: entityCapabilities(row),
   };
 }
 

@@ -20,6 +20,25 @@ export { AlwaysDark } from './AlwaysDark';
 export { TerminalChromeStrip, StatusPill } from './TerminalChromeStrip';
 export { TerminalHost, TERMINAL_PLACEHOLDER } from './TerminalHost';
 export { LiveTerminal, type LiveTerminalHandle, type LiveTerminalProps } from './LiveTerminal';
+export { TerminalModifierBar, type TerminalModifierBarProps } from './TerminalModifierBar';
+export { useKeyboardInset } from './useKeyboardInset';
+export {
+  ESC,
+  MOBILE_FONT_SIZES,
+  TAB,
+  TERMINAL_FONT_SIZE_KEY,
+  WIDTH_NOTE,
+  arrowSequence,
+  columnsFor,
+  ctrlByte,
+  nearestFontSize,
+  stepFontSize,
+  widthVerdict,
+  type ArrowName,
+  type MobileFontSize,
+  type WidthVerdict,
+} from './mobileKeys';
+export { TERMINAL_FONT_SIZE } from './terminalTheme';
 export { isLiveTerminalEnabled } from './liveTerminalFlag';
 export { ExitedFallback, StaleFallback, UnverifiedFallback } from './SessionFallback';
 export { NeedsYouBanner } from './NeedsYouBanner';

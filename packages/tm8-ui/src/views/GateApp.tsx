@@ -41,6 +41,7 @@ import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { CraftScreen } from '../craft';
+import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { NavView } from '../routes';
@@ -56,6 +57,7 @@ import {
   presenceHollowReason,
 } from '../fixtures';
 import type { Seam } from '../data/seam';
+import { JoinScreen, clearPendingJoin, newJoinMutationId } from '../join';
 import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
@@ -250,6 +252,21 @@ export interface GateAppProps {
    * is an app whose links work only sometimes.
    */
   routerTarget?: RouterTarget;
+  /**
+   * A join code this boot arrived with, already parked by `App`.
+   *
+   * It lands HERE, below the auth gate, because redeeming needs both an
+   * identity (which the gate has now ensured) and a seam (which `useGateData`
+   * constructs and App.tsx deliberately keeps at this level so a second one
+   * cannot open a duplicate connection). This is the only layer where both are
+   * true.
+   *
+   * It is also where the need is sharpest: an account that just accepted its
+   * first invite has NO spaces, and boot's honest answer for that is "this
+   * node has no spaces" — a dead end for the one person holding the thing that
+   * fixes it.
+   */
+  pendingJoin?: string | null;
 }
 
 /**
@@ -272,6 +289,10 @@ export function GateApp(props: GateAppProps = {}) {
   // would silently disable persistence altogether — the storage key would never
   // match the one the next session reads.
   const activeServer = props.activeServer ?? LOCAL_SERVER;
+
+  /** The join code this boot arrived with, dismissable. See `GateAppProps`. */
+  const [joinCode, setJoinCode] = useState<string | null>(props.pendingJoin ?? null);
+
   const data = useGateData({
     leftKind: DEFAULT_LEFT_KIND,
     rightKind: DEFAULT_RIGHT_KIND,
@@ -600,7 +621,7 @@ export function GateApp(props: GateAppProps = {}) {
     /* Only a kind screen can host one today: `landingOfRoute` produces an
        `openEntity` for the `entity` route alone, and that route's target is
        always a kind. Narrowed rather than assumed. */
-    if (landing.target.type !== 'kind') return;
+    if (!landing.target || landing.target.type !== 'kind') return;
     screenStackStore.getState().open(screenKeyOf.kind(landing.target.ref), landing.openEntity);
   }, [navView, navSpaceId]);
 
@@ -1441,8 +1462,17 @@ export function GateApp(props: GateAppProps = {}) {
    * give the two shells two mounts, and two mounts are two histories.
    */
   if (shell === 'mobile' && data.spaceId) {
+    /* `data-shell` MARKS THE ROOT SO THE PHONE CAN DECLINE THE ZOOM LEVER.
+       `app.css` puts `zoom: 1.1` on every `.cv2-root` — a user-ruled taste
+       experiment for a desktop window, and wrong at 390px, where it spends a
+       tenth of the viewport and makes the frame's own `100dvh` render taller
+       than the screen. `mobile-chrome.css` resets it on this attribute alone
+       (owner ruling: scoped off the phone, NOT removed — the desktop shell and
+       its `calc(100vh / 1.1)` reciprocal are untouched). A marker rather than a
+       `:has()` selector because a `:has()` that stops matching fails silently
+       back to a zoomed phone. */
     return (
-      <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
+      <div className="cv2-root" data-shell="mobile" data-theme={theme === 'dark' ? 'dark' : undefined}>
         <MobileShell
           data={data}
           spaceId={data.spaceId}
@@ -1464,8 +1494,64 @@ export function GateApp(props: GateAppProps = {}) {
     );
   }
 
+  /**
+   * A HELD JOIN CODE TAKES THE WHOLE SCREEN, ahead of the workspace and ahead
+   * of every boot state — including "this node has no spaces", which is
+   * precisely the state a first-time invitee is in and the one place a spinner
+   * or an error card would strand them.
+   *
+   * After every hook above, so hook order is identical on both branches;
+   * `JoinScreen` owns its own state and does its own reads.
+   */
+  if (joinCode !== null) {
+    return (
+      <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
+        <JoinScreen
+          code={joinCode}
+          onPreview={(code) => data.seam.previewInvite(code)}
+          // Offered only when somebody is actually signed in — `redeem_invite`
+          // requires an identity, so with no account there is nothing to click
+          // and the screen names the missing step instead.
+          {...(authAccount
+            ? {
+                onRedeem: (code: string) =>
+                  data.seam.commands.redeemInvite({
+                    code,
+                    clientMutationId: newJoinMutationId(),
+                  }),
+              }
+            : {})}
+          onJoined={(spaceId) => {
+            clearPendingJoin();
+            // A FULL RELOAD, not a state flip. Membership is an INPUT to boot:
+            // the spaces list, the menu, the counts and the socket
+            // subscription were all resolved for an account that was not in
+            // this space, and there is no partial-refresh path that re-derives
+            // them. Landing on the space's own address is the honest arrival,
+            // and this happens once per invite, never on a hot path.
+            location.assign(`/#/s/${spaceId}`);
+          }}
+          onDismiss={() => {
+            clearPendingJoin();
+            setJoinCode(null);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
+    /* `shell-scope` is the height link, not a style hook: it hands `.shell-root`
+       a containing block that is exactly the viewport, so the shell can size
+       with a percentage instead of a viewport unit. Chrome and Safari disagree
+       about what `vh` means inside `zoom` and agree about what `%` means — see
+       the table over `.cv2-root.shell-scope` in shell.css. It rides beside
+       `cv2-root` rather than on it because `cv2-root` is re-opened as a theme
+       scope INSIDE this shell, where a 100% height would be wrong. */
+    <div
+      className="cv2-root shell-scope"
+      data-theme={theme === 'dark' ? 'dark' : undefined}
+    >
       <div className="shell-root">
         <SpaceTabBar
           /* R1 (2026-08-15): the identity block lives in the TOP ROW now.
@@ -1566,7 +1652,36 @@ export function GateApp(props: GateAppProps = {}) {
               screen renders the designed error state with retry; the rail and
               tab bar above stay live for navigating away. */}
           <CatchBoundary label="view">
-          {data.ready &&
+          {/*
+            NEW SESSION is matched on the ROUTE, not on `activeTarget`, and it
+            is the only arm in this chain that is. That is deliberate: every
+            other screen here is a `MenuViewRef` — a rail destination — and
+            `activeTarget` is derived from `landingOfRoute(...).target`, which
+            can only speak that vocabulary. New Session is reached from a quick
+            action and from the sessions empty state, never from the rail, so
+            making it a `MenuViewRef` would mean a contract enum, a menu
+            revision and a DB migration bought purely to satisfy this lookup —
+            and would then put a seat in the rail nobody asked for.
+            `landingOfRoute` returns `target: null` for it (a real screen with
+            no rail representation), so nothing highlights and no stack is
+            touched, which is exactly right.
+          */}
+          {data.ready && navView.view === 'newSession' ? (
+            <NewSessionScreen
+              spaceId={data.spaceId as SpaceId}
+              commands={data.seam.commands}
+              spawn={data.spawn}
+              launch={data.launch}
+              serverBaseUrl={activeServer.routeBaseUrl}
+              onSessionReady={(sessionId) => {
+                /* REPLACE, not push: the prompt this screen carried has been
+                   consumed, so Back must return where the user came FROM
+                   rather than to a create screen that would re-create it. */
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(sessionId);
+              }}
+            />
+          ) : data.ready &&
             activeTarget?.type === 'entity' &&
             activeTarget.kind === voiceKind.kind ? (
             /* THE MISROUTE FIX. The branch below tested only `type === 'entity'`
@@ -1684,9 +1799,25 @@ export function GateApp(props: GateAppProps = {}) {
               skillOptions={data.skillOptions}
               viewerName={data.viewerActor?.displayName}
               viewerId={data.viewerActor?.id}
-              onOpenEntity={(id) => {
-                navigateTo(WORKSPACE_TARGET);
-                nav.push(id as EntityId);
+              /* A chip press opens region C INSIDE Craft now, so no
+                 `onOpenEntity` is passed: the old handler navigated to the
+                 workspace, which unmounted the studio and took the selected
+                 graph, thread and glow baseline with it. Nothing is stubbed in
+                 its place — passing no handler is how a host says it has
+                 nothing to do, and a stub is banned outright. */
+              panelHost={{
+                data,
+                reasons,
+                serverBaseUrl: activeServer.routeBaseUrl,
+                viewerMemberId,
+                onNotice: (text) =>
+                  notices.push({
+                    id: `crf:${Date.now()}`,
+                    tone: 'info',
+                    title: 'Craft',
+                    body: text,
+                    ttlMs: 6000,
+                  }),
               }}
               onNotice={(text) =>
                 notices.push({
@@ -2069,14 +2200,41 @@ export function GateApp(props: GateAppProps = {}) {
                (nothing to retry — there is nothing to open), and a node that
                answered this Space's reads with a REFUSAL. */
             data.bootError.startsWith('this node has no spaces') ? (
-              <div className="shell-boot" role="alert">
-                <strong>No spaces on this node.</strong>
-                <div>Create a Space and connect the local folder where its project work should be saved.</div>
-                {projectOnboardingPort ? (
-                  <button type="button" className="gov-btn gov-btn--ink" onClick={() => setNewSpaceOpen(true)}>
-                    Create Space & add project
-                  </button>
-                ) : <div>{data.bootError}</div>}
+              /* A NODE WITH ZERO SPACES IS NOT AN ERROR — it is a brand-new
+                 install meeting its first user, and it must NOT wear the outage
+                 skin. This used to render inside `.shell-boot role="alert"` (a
+                 mono status strip built for failures) with a `gov-btn--ink`
+                 CTA whose only stylesheet is `settings-governance/governance.css`
+                 — a file a first-time user has never caused to load, so the
+                 primary call to action fell back to a raw browser button. It is
+                 now its own welcome surface, styled with the shell's own tokens,
+                 and it says what a Space IS before asking the reader to make one. */
+              <div className="shell-welcome" data-testid="welcome-no-spaces">
+                <div className="shell-welcome__card">
+                  <span className="shell-welcome__eyebrow">Welcome to tm8</span>
+                  <h1 className="shell-welcome__title">Create your first Space</h1>
+                  <p className="shell-welcome__body">
+                    A Space is a sharing boundary — its own graph of tasks and docs, its
+                    own members, and its own tabs. Everything you and your agents make
+                    lives in one, and you can create more anytime.
+                  </p>
+                  <p className="shell-welcome__body">
+                    Connecting a project folder points the Space at a directory on this
+                    machine, so the work your agents do is saved there as real files you
+                    can open. A Space works without one — you can add a project later.
+                  </p>
+                  {projectOnboardingPort ? (
+                    <button
+                      type="button"
+                      className="shell-welcome__cta"
+                      onClick={() => setNewSpaceOpen(true)}
+                    >
+                      Create Space &amp; add project
+                    </button>
+                  ) : (
+                    <p className="shell-welcome__note">{data.bootError}</p>
+                  )}
+                </div>
               </div>
             ) : data.bootErrorCode === 'forbidden' ? (
               /* A REFUSAL IS AN ANSWER, AND IT MUST NOT WEAR THE OUTAGE'S

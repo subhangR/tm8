@@ -870,6 +870,21 @@ export const customRitual = summary({
   state: { kind: 'c:ritual', fields: { cadence: 'daily', hour: 9, active: true, notes: null } },
 });
 
+/**
+ * Artifact — a versioned static-web bundle. Revision 3, not 1, so the
+ * revision switcher has a real history to list; published by an AGENT so the
+ * viewer's publisher chrome exercises the agent wording rather than only the
+ * human one.
+ */
+export const artifactPulseBoard = summary({
+  id: 'artifact-pulse-board',
+  kind: 'artifact',
+  title: 'Pulse board',
+  excerpt: 'Single-file status dashboard published from the forge lane.',
+  createdBy: forge,
+  state: { kind: 'artifact', revisionNumber: 3 },
+});
+
 // ---------------------------------------------------------------------------
 // roster
 // ---------------------------------------------------------------------------
@@ -887,7 +902,7 @@ export const fixtureSummaries: EntitySummary[] = [
   loopDreamer, loopFailing,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
-  profileHouseStyle, customRitual,
+  profileHouseStyle, customRitual, artifactPulseBoard,
 ];
 
 // ---------------------------------------------------------------------------
@@ -1271,5 +1286,17 @@ export const fixtureDetails: Record<string, EntityDetail> = {
 
   [customRitual.id]: detail(customRitual, {
     content: { kind: 'c:ritual', fields: { cadence: 'daily', hour: 9, active: true, notes: null } },
+  }),
+
+  [artifactPulseBoard.id]: detail(artifactPulseBoard, {
+    content: {
+      kind: 'artifact',
+      description: 'A one-page dashboard: build state, open lanes and the merge queue at a glance.',
+      currentRevisionNumber: 3,
+      entrypoint: 'index.html',
+      manifestSha256: '9b3f2a10c4d5e6f7a8b9c0d1e2f30415263748596a7b8c9d0e1f2a3b4c5d6e7f',
+      fileCount: 1,
+      totalSizeBytes: 4096,
+    },
   }),
 };

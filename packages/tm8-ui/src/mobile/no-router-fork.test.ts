@@ -73,6 +73,24 @@ const CANDIDATE_DIRS = ['mobile', 'shell-mobile', 'views/mobile', 'shell/mobile'
 /** Any path SEGMENT that marks a file as belonging to the small-screen shell. */
 const MOBILE_SEGMENT = /^(mobile|phone|compact|small-screen)$/i;
 
+/**
+ * MOBILE-ONLY FILES THAT LIVE OUTSIDE A MOBILE DIRECTORY, named one by one.
+ *
+ * The segment sweep above deliberately does not catch a file merely NAMED
+ * `MobileFoo.tsx` in shared code — a shared component with a responsive branch
+ * is the design. But `views/MobileShell.tsx` is not that: it is the phone
+ * shell's own render switch, rendered ONLY under the mobile fork, and it sat
+ * outside every path the sweep looks at — so the mechanical ban did not cover
+ * the one component most likely to grow phone-only navigation. Found by the
+ * Lane 1 reviewee, honestly, while citing this test as their compliance check.
+ *
+ * Each entry is asserted to EXIST, so a rename retires the entry loudly
+ * instead of leaving a dead string that scans nothing — the same anti-vacuity
+ * posture as legs 1–3 below. `views/GateApp.tsx` must never be added here: it
+ * legitimately mounts the router for both shells.
+ */
+const EXPLICIT_SHELL_FILES = ['views/MobileShell.tsx'];
+
 function walk(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
@@ -123,10 +141,12 @@ const shellRootFiles = walk(SHELL_ROOT).filter(isShipped);
 const mobileFiles = allSource.filter((file) => {
   const rel = relative(SRC, file);
   if (CANDIDATE_DIRS.some((dir) => rel === dir || rel.startsWith(dir + sep))) return true;
+  if (EXPLICIT_SHELL_FILES.some((named) => rel === named.split('/').join(sep))) return true;
   /* A file NAMED `MobileFoo.tsx` inside the shared shell is deliberately NOT
      caught — a shared component with a responsive branch is the design, and
      banning the word would ban the thing this law permits. It is the DIRECTORY
-     that marks a fork. */
+     that marks a fork — plus the named exceptions above, which are mobile-only
+     files that happen to live in shared directories. */
   return rel
     .split(sep)
     .slice(0, -1)
@@ -169,6 +189,19 @@ describe('§4.3 — the shell forks and the router does not', () => {
       mobileFiles.length,
       'The package-wide mobile sweep no longer contains the shell root it is scanning from.',
     ).toBeGreaterThanOrEqual(shellRootFiles.length);
+
+    /* Every NAMED shell file must actually exist. A rename that misses this
+       list would otherwise leave a dead string that scans nothing while
+       reading as coverage — the exact vacuity failure legs 2 and 3 exist to
+       refuse, arriving through the front door. */
+    for (const named of EXPLICIT_SHELL_FILES) {
+      const full = join(SRC, ...named.split('/'));
+      expect(
+        allSource.includes(full),
+        `EXPLICIT_SHELL_FILES names '${named}', which no longer exists under src/ — ` +
+          'if the file moved, move this entry with it; a dead entry enforces nothing.',
+      ).toBe(true);
+    }
   });
 
   it('every rule below still matches something (no rule has quietly gone dead)', () => {

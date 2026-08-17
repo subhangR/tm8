@@ -32,7 +32,7 @@
  *
  * ESC WALKS DOWN ONE RUNG PER PRESS: aux → detail → list.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntityId, EntityKind, ExecutionSpawnInput, WorkSessionInteractionProfileProjection } from '@tm8/contract';
 import {
   EntityDetailPanel,
@@ -62,6 +62,7 @@ import {
 } from '../authoring';
 import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
+import { MobileSheet, useMobileSurface } from '../mobile';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';
@@ -78,6 +79,7 @@ import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
+import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { taskGitSectionFor } from './taskGitSection';
@@ -210,6 +212,18 @@ export function EntityView(props: EntityViewProps) {
    * restores what was open, and a different screen's stack is unreachable
    * from here.
    */
+  /*
+   * ONE SURFACE, OR THREE.
+   *
+   * Asked of the HOST, not of the window: `MobileShell` is only mounted when
+   * `shellFor` says phone, so it already holds this answer and a second,
+   * independently-timed copy here is how two shells drift apart. Off the phone
+   * this is `false` and every branch it guards below is unreachable — which is
+   * what lets this screen gain a phone arrangement without its desktop
+   * arrangement being touched at all.
+   */
+  const { oneSurface } = useMobileSurface();
+
   const screen = useScreenStack(screenKeyOf.kind(kind));
   const selectedId = screen.selected;
   const setSelectedId = useCallback(
@@ -396,7 +410,7 @@ export function EntityView(props: EntityViewProps) {
       kind: config.kind,
       ctx,
       livenessOf: data.livenessOf,
-      capabilitiesOf: (id) => data.detailOf(id)?.capabilities,
+      capabilitiesOf: (id) => data.capabilitiesOf(id),
       /* See WorkspaceView's copy: without this the expanded row's controls
          never learn their permissions and Archive never fires. */
       onNeedDetail: (id: string) => data.pull?.(id),
@@ -752,6 +766,7 @@ export function EntityView(props: EntityViewProps) {
           }}
         />
       ) : undefined}
+      attentionSection={detail ? attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId)) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
@@ -796,6 +811,27 @@ export function EntityView(props: EntityViewProps) {
       }}
     />
   ) : null;
+
+  /*
+   * The aux column's CONTAINER, chosen by arrangement.
+   *
+   * A function rather than two copies of the column, because the column's body
+   * is ~60 lines of ports wired to this screen's state. Two copies would be two
+   * things to keep in step, and the one that drifts would be the phone's —
+   * the arrangement nobody has open while they work.
+   */
+  const wrapAux = (column: ReactNode): ReactNode =>
+    oneSurface ? (
+      <MobileSheet
+        title={aux ? auxCrumb(aux, auxDetail?.title) : 'Related'}
+        onDismiss={() => setAux(null)}
+        testId="entity-view-aux-sheet"
+      >
+        {column}
+      </MobileSheet>
+    ) : (
+      column
+    );
 
   return (
     <div
@@ -872,6 +908,19 @@ export function EntityView(props: EntityViewProps) {
           screen now, and collapsing the subject would leave the screen with
           nothing the viewer came for. The detail column is the one that opens
           and closes, and it closes through its own ✕. */}
+      {/*
+        ONE SURFACE: THE LIST IS THE SCREEN, OR IT IS NOT THE SCREEN.
+
+        Not `display: none` — the list stays MOUNTED under a hidden column and
+        that is the wrong trade twice over. `display: none` drops the layout box
+        and takes the scroll offset with it, so the list is reset to the top
+        anyway; and a mounted list keeps its rows, its polling and its
+        subscriptions live behind a detail the viewer is actually reading. If
+        scroll restoration is wanted later it has to be state that survives an
+        unmount, which is a separate piece of work and not a side effect of
+        hiding a column.
+      */}
+      {oneSurface && selectedId ? null : (
       <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}
@@ -905,11 +954,11 @@ export function EntityView(props: EntityViewProps) {
           activity={data.activity}
           messagePulses={data.messagePulses}
           linkedPullRequestsOf={data.linkedPullRequestsOf}
-          // Capability truth comes from the DETAIL, never the summary: a row
-          // whose detail is not hydrated genuinely has unknown capabilities
-          // and correctly stays refused (WorkspaceView states the same rule).
-          // `onNeedDetail` is how an expanded row leaves that state.
-          capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          // Capability truth rides the SUMMARY (WorkspaceView states the rule
+          // in full). `data.capabilitiesOf` is the one authority — summary
+          // first, detail as fallback. Absence still means refused; it is just
+          // no longer the permanent state of every collapsed row.
+          capabilitiesOf={data.capabilitiesOf}
           onNeedDetail={(id) => data.pull?.(id)}
           selectedId={selectedId}
           onSelect={selectFromList}
@@ -935,11 +984,17 @@ export function EntityView(props: EntityViewProps) {
           wiredActions={sessionStart.wiredActions}
         />
       </section>
+      )}
 
       {/* The detail column's drag handle — the control the panel it sizes
           hangs on, exactly as in the workspace. `side="right"` because the
-          column it controls sits to the handle's right. */}
-      {boardMode ? null : (
+          column it controls sits to the handle's right.
+
+          NOT ON ONE SURFACE. It resizes a column against its neighbour, and
+          there is no neighbour. It measured 8x384 in the tap census — the
+          single worst target on Tasks, and a control a thumb can only be
+          disappointed by. */}
+      {boardMode || oneSurface ? null : (
         <PanelResizer
           side="right"
           label={`${config.label} detail`}
@@ -956,7 +1011,22 @@ export function EntityView(props: EntityViewProps) {
       {/* NOT RENDERED ON THE BOARD. The board took this width; a column that
           is only display:none would still mount the open entity's panel — its
           chat surface, its terminal, its polling — behind an invisible region. */}
-      {boardMode ? null : (
+      {/*
+        ON ONE SURFACE THIS RENDERS ONLY WHILE SOMETHING IS OPEN.
+
+        The empty-state arm below is the defect stated in one expression. With
+        nothing selected it mounts `AttentionInbox`, whose copy is written for a
+        column sitting BESIDE a list — "…your attention.", "…the list to open it
+        here." On the phone there was no list beside it, so that text was drawn
+        under the 200px list card and bled out of the right edge: a sentence
+        about a control the viewer could not see, pointing at a place that was
+        not there.
+
+        Withheld rather than hidden, for the same reason the list is: an
+        invisible `AttentionInbox` still runs its space-wide attention query on
+        every phone screen, and the phone is where that costs the most.
+      */}
+      {boardMode || (oneSurface && !selectedId) ? null : (
         <main className="ev-detail" aria-label={`${config.label} detail`} data-testid="entity-view-detail">
           {/* The empty detail column is the space-wide triage list, not a
               placeholder: every entity waiting on a human, its requests
@@ -974,7 +1044,7 @@ export function EntityView(props: EntityViewProps) {
         </main>
       )}
 
-      {aux ? (
+      {aux && !oneSurface ? (
         <PanelResizer
           side="right"
           label="Related"
@@ -987,7 +1057,26 @@ export function EntityView(props: EntityViewProps) {
         />
       ) : null}
 
-      {aux ? (
+      {/*
+        THE THIRD COLUMN, AS A SHEET.
+
+        Same panel, same ports, same body — only its CONTAINER changes. The
+        desktop promise of this column is that a reference opens BESIDE what
+        you are reading so you do not lose your place; a phone has no "beside",
+        and a sheet is that promise kept differently: the detail stays mounted
+        underneath and the reference covers it temporarily.
+
+        Which is why it is a SHEET and not a pushed screen. A push would put a
+        referenced entity into the screen stack, and backing out of it would
+        then walk that stack instead of returning the viewer to the paragraph
+        they tapped from.
+
+        `.ev-aux__head` is hidden by `mobile-screens.css` here — the sheet
+        draws its own header, and two crumb rows stacked would be the clearest
+        possible sign that a desktop column had been dropped into a phone
+        without being reconsidered.
+      */}
+      {aux ? wrapAux(
         <aside className="ev-aux" id="entity-view-aux" aria-label="Related" data-testid="entity-view-aux">
           <div className="ev-aux__head">
             <span className="ev-aux__crumb">{auxCrumb(aux, auxDetail?.title)}</span>
@@ -1064,7 +1153,7 @@ export function EntityView(props: EntityViewProps) {
               <EmptyBody sentence="The entity this panel belongs to is no longer open." />
             )}
           </div>
-        </aside>
+        </aside>,
       ) : null}
     </div>
   );

@@ -1642,6 +1642,63 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   };
 }
 
+/**
+ * The WHOLE capability rule: the base above, plus the per-kind narrowings.
+ *
+ * `capabilitiesOf` alone is NOT the answer any surface should render. It is
+ * the kind-and-liveness base, and several kinds refuse more than it knows —
+ * most importantly `canDelete`, which it grants to everything except `member`
+ * while `message`, `work_session`, `project` and `interaction_profile` all
+ * genuinely refuse deletion. A caller that renders the base draws an Archive
+ * control on four kinds that will bounce it.
+ *
+ * This lived privately in the w2 service, which is what serves `entities.get`,
+ * so the live detail read applied these narrowings and the OTHER detail
+ * assembler (`buildDetail`, behind command results) did not — the same entity
+ * answered differently depending on which door you came through. Hoisted here,
+ * beside the base it wraps, so summary, detail and command result cannot
+ * disagree.
+ *
+ * Takes the ROW, not the assembled summary: it only ever consulted `kind` and
+ * `deletedAt`, both of which are the row's own `kind` and `deleted_at`. Reading
+ * the row directly is what lets `toEntitySummary` call it while the summary it
+ * would otherwise need is still being built.
+ */
+export function entityCapabilities(row: EntityRow): EntityCapabilities {
+  const base = capabilitiesOf(row);
+  const live = row.deleted_at === null;
+  if (row.kind === 'project' || row.kind === 'interaction_profile') {
+    return {
+      canEdit: false,
+      canDelete: false,
+      canAddChild: false,
+      canLink: live,
+      canPull: false,
+      canReact: live,
+      canGrantPoints: false,
+      canComplete: false,
+    };
+  }
+  if (row.kind === 'message') {
+    return { ...base, canEdit: false, canDelete: false, canAddChild: false };
+  }
+  // A session is still not deletable and has no children — it is born from a
+  // spawn and it exits. But its canEdit is now left as `capabilitiesOf`
+  // computed it, which since 085 is true for a live session and means exactly
+  // one thing: the display title. Forcing it false here would leave the panel
+  // dressing the title as locked while the patch door accepts the rename.
+  if (row.kind === 'work_session') {
+    return { ...base, canDelete: false, canAddChild: false };
+  }
+  if (row.kind === 'pull_request' || row.kind === 'commit' || row.kind === 'file') {
+    return { ...base, canEdit: live };
+  }
+  if (row.kind.startsWith('c:')) {
+    return { ...base, canEdit: live, canAddChild: live, canPull: live };
+  }
+  return base;
+}
+
 export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySummary {
   const summary: EntitySummary = {
     id: row.id,
@@ -1674,6 +1731,21 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
     },
     state: stateOf(row, ctx),
     badges: badgesOf(row, ctx),
+    // The SAME rule the detail read applies, from the SAME helper — not a fork
+    // of it, and deliberately the FULL rule rather than the `capabilitiesOf`
+    // base (a base-only projection would promise `canDelete` on the four kinds
+    // that refuse deletion, and a tile that hides Archive on server truth would
+    // then show it exactly where it bounces).
+    //
+    // A tile gates its row actions on this. Before it rode the summary, a list
+    // row had to wait for a detail read to learn its own permissions — and a
+    // COLLAPSED row never gets one, so every capability-gated verb was refused
+    // there permanently.
+    //
+    // Free, and safe: the rule reads only the row already in hand (kind,
+    // liveness, work_status), so it adds no query, cannot become an N+1, and
+    // cannot widen a viewer's view — the row already cleared RLS to get here.
+    capabilities: entityCapabilities(row),
   };
   const ex = excerptOf(row);
   return ex === undefined ? summary : { ...summary, excerpt: ex };
