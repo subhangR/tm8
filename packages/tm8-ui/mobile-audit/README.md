@@ -62,6 +62,23 @@ The check that sees it is per-element: `el.getBoundingClientRect().right > viewp
 | `worstLeftEdge` | Secondary: content clipped off the *left*. A right-edge-only instrument scores that 0. |
 | `shell` / `shellOk` | Which shell actually rendered, and whether it is the one this viewport is supposed to get. |
 | `problems` | Top-level. **If this array is not empty, the run is not evidence.** Read it before reading any number. |
+| `ref` | Top-level. The commit the numbers were taken at — `head`, `branch`, `behindMain`, `dirty`. Captured by the script, never passed in. |
+
+### Always check `ref` before you trust a number
+
+`main` moves several times a day. A measurement without its ref cannot be compared to anything, so
+the script records its own and puts two things in `problems`:
+
+- **`dirty: true`** — somebody has uncommitted *tracked* edits, so the sha names a tree that is not
+  the one measured and the run cannot be reproduced. Not evidence.
+- **`behindMain` in the hundreds** — you are measuring code `main` has moved past. A sibling lane
+  retracted a complete set of measurements taken in a shared checkout **678 commits behind main**,
+  on code that had since been rewritten. Its headline number was false.
+
+**Work in your own spawned worktree** (`.local/share/tm8/data/worktrees/…`, on a `tm8/<hex>`
+branch). The trap is `cd`-ing out of it into the shared checkout at `~/Desktop/projects/tm8`, which
+sits on an ancient branch. Take your BEFORE and AFTER on the **same ref**, and do not rebase in
+between.
 
 ### Counts are not comparable across viewports
 

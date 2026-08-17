@@ -54,7 +54,61 @@
  */
 import { chromium } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+
+/**
+ * THE REF THE NUMBERS WERE TAKEN AT — captured by this script, never passed in.
+ *
+ * A measurement without its ref cannot be compared to anything later, and this
+ * baseline is what eight other lanes are judged against. It was an env var the
+ * caller had to remember, which is not a mechanism: forget it once and the file
+ * records `null` while looking exactly like a good one.
+ *
+ * It captures three things, because "which commit" is three questions:
+ *
+ *   - `head`/`branch` — what was measured.
+ *   - `behindMain` — how stale it already is. main moved three times during this
+ *     lane's own build.
+ *   - `dirty` — THE ONE THAT MATTERS MOST. A sha names a tree; uncommitted edits
+ *     mean the sha is a lie and nobody can ever reproduce the run. A dirty
+ *     baseline is not evidence, so it is recorded and shouted about rather than
+ *     quietly rolled into the numbers.
+ *
+ * A sibling lane retracted a complete set of measurements taken in a shared
+ * checkout sitting 678 commits behind main on code that had since been
+ * rewritten. `branch` and `behindMain` in every output file are how that gets
+ * caught by reading the file instead of by someone noticing.
+ */
+function gitRef(outDir) {
+  const git = (...a) => { try { return execFileSync('git', a, { encoding: 'utf8' }).trim(); } catch { return null; } };
+  /*
+   * WHAT "DIRTY" HAS TO MEAN: the sha does not name the tree that was measured.
+   * That is TRACKED modifications, and only those — hence `-uno`.
+   *
+   * Two false positives had to go, and a check that always fires is a check
+   * nobody reads:
+   *   - this run rewrites `<outDir>/<label>.json` inside the repo, so a bare
+   *     `--porcelain` called every run dirty. Excluded by pathspec.
+   *   - a worktree needs an untracked `node_modules` symlink to run at all, so
+   *     counting untracked paths called every worktree dirty too.
+   *
+   * Dropping untracked files does not open a hole: an untracked file can only
+   * affect the render if something imports it, and that importer is a tracked
+   * file which would then show as modified. The count is still reported, so a
+   * reader can see what was set aside rather than take it on trust.
+   */
+  const status = git('status', '--porcelain', '-uno', '--', ':(exclude)' + outDir);
+  const untracked = git('ls-files', '--others', '--exclude-standard', '--', ':(exclude)' + outDir);
+  return {
+    head: git('rev-parse', 'HEAD'),
+    headShort: git('rev-parse', '--short', 'HEAD'),
+    branch: git('rev-parse', '--abbrev-ref', 'HEAD'),
+    behindMain: Number(git('rev-list', '--count', 'HEAD..origin/main') ?? -1),
+    dirty: status === null ? null : status.length > 0,
+    dirtyFiles: status ? status.split('\n').slice(0, 20) : [],
+    untrackedCount: untracked ? untracked.split('\n').length : 0,
+  };
+}
 
 /**
  * The fixture's space. `mobile-audit-entry.tsx` arms the FIXTURE seam, whose
@@ -279,10 +333,36 @@ const noShots = argv.includes('--no-screenshots');
  * deliberately NOT used with an ephemeral port — we let the OS choose and read
  * the choice back off vite's banner.
  */
+/**
+ * A FREE PORT, CHOSEN HERE AND THEN PINNED — never `--port 0`.
+ *
+ * `--port 0` looked like the clean way to say "pick one". It is not: vite does
+ * not honour it, silently falls back to its DEFAULT port, and then either dies
+ * on a collision or — much worse — a `strictPort`-less run lands on a port
+ * another lane's dev server already holds and the harness measures SOMEBODY
+ * ELSE'S APP while reporting confidently. Lanes run in parallel worktrees on
+ * this machine, so that is a live hazard, not a theoretical one.
+ *
+ * So the port is obtained by binding an ephemeral socket, reading what the OS
+ * gave us, and releasing it. There is a race between the release and vite's
+ * bind, and `--strictPort` is what makes that race SAFE: if anything took the
+ * port in between, vite exits loudly instead of quietly serving from elsewhere.
+ * A crash is a fine outcome; a silent wrong-app measurement is not.
+ */
+async function freePort() {
+  const { createServer } = await import('node:net');
+  return new Promise((resolve, reject) => {
+    const s = createServer();
+    s.once('error', reject);
+    s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); });
+  });
+}
+
 async function startVite() {
   const existing = process.env.AUDIT_BASE;
   if (existing) return { base: existing, stop: () => {} };
-  const proc = spawn('./node_modules/.bin/vite', ['--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const port = await freePort();
+  const proc = spawn('./node_modules/.bin/vite', ['--port', String(port), '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
   const base = await new Promise((resolve, reject) => {
     let buf = '';
     const t = setTimeout(() => reject(new Error('vite did not report a URL in 30s:\n' + buf)), 30_000);
@@ -296,6 +376,9 @@ async function startVite() {
   });
   return { base, stop: () => proc.kill('SIGTERM') };
 }
+
+const ref = gitRef(outDir);
+console.log(`ref: ${ref.headShort} on ${ref.branch}  (${ref.behindMain} behind origin/main)${ref.dirty ? '  ** DIRTY TREE **' : ''}\n`);
 
 const { base, stop } = await startVite();
 mkdirSync(outDir, { recursive: true });
@@ -381,12 +464,17 @@ for (const vp of VIEWPORTS) {
 await browser.close();
 stop();
 
+/* A DIRTY TREE IS A PROBLEM, not a footnote: the sha in this file would name a
+   tree that is not the one measured, and nobody could reproduce the run. */
+if (ref.dirty) problems.push(`working tree is DIRTY at ${ref.headShort} — this run is not reproducible and its ref is a lie (${ref.dirtyFiles.length} changed path(s))`);
+if (ref.behindMain > 50) problems.push(`HEAD is ${ref.behindMain} commits behind origin/main — measuring code main has moved past`);
+
 const report = {
   label,
-  /* Stamped by the caller, not by this script: a timestamp written here would
-     change the file on every run and make `git diff` on the committed baseline
-     useless for seeing whether the NUMBERS moved. */
-  commit: process.env.AUDIT_COMMIT ?? null,
+  /* Captured by this script, never passed in — see `gitRef`. No timestamp: it
+     would change the file on every run and make `git diff` on the committed
+     baseline useless for seeing whether the NUMBERS moved. */
+  ref,
   minTapPx: MIN_TAP,
   epsilonPx: EPS,
   space: SPACE,
