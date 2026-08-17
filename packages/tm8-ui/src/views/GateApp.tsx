@@ -1317,6 +1317,54 @@ export function GateApp(props: GateAppProps = {}) {
     [data.seam, data.spaceId],
   );
 
+  /**
+   * ⛭ SETTINGS — built ONCE, for both shells.
+   *
+   * It used to be written inline in the desktop branch. The phone needs the
+   * same screen, and the three things that make it whole — the settings port,
+   * the credentials section and the branch-topology section — are all wired
+   * HERE, by the host, because the host is what holds the seam. Rebuilding
+   * them inside `MobileShell` would be three more port constructions to keep
+   * in step, and the copy that drifts is always the phone's.
+   *
+   * More to the point, an unsupplied `sections` entry does not render nothing
+   * — it renders "this section is built in another module and is not mounted
+   * here", which on a phone would be FALSE: Agent credentials and Linked
+   * projects are mounted, just not by that copy. One element means the phone
+   * cannot tell that lie.
+   *
+   * `null` when the space has no settings port. Both shells then fall through
+   * to their own honest state — the desktop's unbuilt-view card, the phone's
+   * refusal screen — rather than to a blank pane.
+   *
+   * The PHONE ARRANGEMENT is inside `SettingsShell` itself (a drilldown off
+   * `useMobileSurface`), not here: this file states which screen, never how
+   * wide it is.
+   */
+  const settingsScreen = settingsPort ? (
+    <SettingsShell
+      port={settingsPort}
+      nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
+      /* W2 -> W1/W3: an axis write must reach the workspace's own pickers and
+         board options; axis rows are not entities, so no event will do it. */
+      onAxesChanged={data.refreshTaskAxes}
+      sections={
+        credentialsPort || branchesPort
+          ? {
+              ...(branchesPort ? { projects: <ProjectBranchesSection port={branchesPort} /> } : {}),
+              ...(credentialsPort
+                ? {
+                    credentials: (
+                      <CredentialsSection port={credentialsPort} serverBaseUrl={activeServer.routeBaseUrl} />
+                    ),
+                  }
+                : {}),
+            }
+          : undefined
+      }
+    />
+  ) : null;
+
   const reasons = useMemo<DetailReasons>(
     () => ({
       presenceHollow: presenceHollowReason,
@@ -1464,6 +1512,11 @@ export function GateApp(props: GateAppProps = {}) {
           onNotice={notices.push}
           nodeKey={nodeKey}
           {...(viewerMemberId ? { viewerMemberId } : {})}
+          /* The SAME element the desktop branch renders. A ref left out of
+             this record keeps the shell's honest refusal, which is how the
+             remaining destinations land one at a time. `workspace` is not
+             coming: it keeps the refusal by owner ruling. */
+          viewScreens={{ ...(settingsScreen ? { settings: settingsScreen } : {}) }}
           {...(channelEntities[0]?.id ? { chatAnchorId: channelEntities[0].id } : {})}
           {...(data.spaces.find((sp) => sp.id === data.spaceId)?.name
             ? { spaceLabel: data.spaces.find((sp) => sp.id === data.spaceId)?.name }
@@ -1950,39 +2003,16 @@ export function GateApp(props: GateAppProps = {}) {
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             activeTarget.ref === 'settings' &&
-            settingsPort ? (
+            settingsScreen ? (
             /* ⛭ Settings — the T2 shell, mounted at last (identity-display
                lane, 2026-08-01): this ref rendered the unbuilt-view card while
                the whole module sat built and unmounted in settings-space/.
                Sections another module owns (projects/kinds) keep their honest
-               not-mounted state inside the shell itself. */
-            <SettingsShell
-              port={settingsPort}
-              nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
-              /* W2 -> W1/W3: an axis write must reach the workspace's own
-                 pickers and board options; axis rows are not entities, so no
-                 event will do it. */
-              onAxesChanged={data.refreshTaskAxes}
-              sections={
-                credentialsPort || branchesPort
-                  ? {
-                      ...(branchesPort
-                        ? { projects: <ProjectBranchesSection port={branchesPort} /> }
-                        : {}),
-                      ...(credentialsPort
-                        ? {
-                            credentials: (
-                              <CredentialsSection
-                                port={credentialsPort}
-                                serverBaseUrl={activeServer.routeBaseUrl}
-                              />
-                            ),
-                          }
-                        : {}),
-                    }
-                  : undefined
-              }
-            />
+               not-mounted state inside the shell itself.
+
+               Built above rather than here, because the phone shell renders
+               the SAME element — see `settingsScreen`. */
+            settingsScreen
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             (isUnbuiltViewRef(activeTarget.ref) ||

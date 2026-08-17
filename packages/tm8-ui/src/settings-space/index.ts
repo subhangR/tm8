@@ -14,6 +14,9 @@ import '../styles/tokens.css';
 import '../styles/canvas-extra.css';
 import '../panels/honesty/honesty.css';
 import './settings.css';
+/* The phone drilldown. Scoped entirely under `.cv2-root[data-shell='mobile']`,
+   so on a desktop it is inert — see the file's own header. */
+import './settings-mobile.css';
 
 /* ── the mount contract ───────────────────────────────────────────────────── */
 export { SettingsShell } from './SettingsShell';

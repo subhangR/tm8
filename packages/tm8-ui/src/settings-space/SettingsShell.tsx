@@ -25,6 +25,8 @@
  * host passes them through `sections`. Neither lane imports the other.
  */
 import { useEffect, useState } from 'react';
+import { useMobileSurface } from '../mobile';
+import { VectorIcon } from '../kit';
 import { MembersSection } from './MembersSection';
 import { ModelsSection } from './ModelsSection';
 import { InvitesPanel } from './InviteFrames';
@@ -38,6 +40,12 @@ import { SectionAbsent, SectionFrame } from './SectionFrame';
 import { SECTION_NOT_MOUNTED } from './reasons';
 import { SETTINGS_SECTIONS, type SettingsData, type SettingsSectionId, type SettingsShellProps } from './types';
 
+/* The drilldown's two marks, on `VectorIcon`'s 16x16 grid — the same geometry
+   the phone shell's own header chevron uses, mirrored. Not an icon import: a
+   chevron is one path, and this surface already draws all of its own marks. */
+const CHEVRON_RIGHT: readonly string[] = ['M5.6 3.6 10.4 8l-4.8 4.4'];
+const CHEVRON_LEFT: readonly string[] = ['M10.4 3.6 5.6 8l4.8 4.4'];
+
 export function SettingsShell({
   port,
   sections,
@@ -46,7 +54,34 @@ export function SettingsShell({
   nodeKey = 'local',
   onAxesChanged,
 }: SettingsShellProps) {
-  const [active, setActive] = useState<SettingsSectionId>(initialSection);
+  /*
+   * ── THE PHONE ARRANGEMENT ────────────────────────────────────────────────
+   *
+   * `oneSurface` is true only under the phone shell, so every branch below
+   * that reads it is unreachable on a desktop BY CONSTRUCTION — there is no
+   * provider on that path. The desktop screen is not touched by this file's
+   * phone work; that is the property being relied on, not a selector that has
+   * to be kept correct.
+   *
+   * COLLAPSE, DO NOT NARROW. The desktop is a 160px nav BESIDE a body. At
+   * 390px that leaves ~214px, and `.set-menu__editor` alone is authored
+   * against 470px — so narrowing gives a screen where both halves are too
+   * small, which is the defect, not the fix. The phone shows the nav as a
+   * full-width INDEX, and opening a section REPLACES it.
+   *
+   * `active === null` IS the index, and it is the only state that says so.
+   * The alternative — keeping `active` non-null and adding a second
+   * `atIndex` boolean — is two variables for one fact, and the one that
+   * drifts is the phone's. Null is unreachable on a desktop: nothing sets it
+   * there, and the render below proves it to the compiler.
+   *
+   * `initialSection` is deliberately NOT honoured on a phone. It names which
+   * pane opens BESIDE the nav; there is no beside here, and opening straight
+   * into a section would put the viewer one level down with no sense of what
+   * they had skipped past.
+   */
+  const { oneSurface } = useMobileSurface();
+  const [active, setActive] = useState<SettingsSectionId | null>(oneSurface ? null : initialSection);
   const [data, setData] = useState<SettingsData>({
     space: null,
     members: [],
@@ -169,59 +204,96 @@ export function SettingsShell({
 
   const spaceLabel = data.space?.name ?? '—';
 
+  /* One definition, two possible homes. On a desktop it belongs above the
+     section body, which is where a reader is looking. On a phone the body
+     may not be rendered at all, so it is hoisted to the card — a failed read
+     is a fact about the whole screen and must not be reachable only by
+     drilling into a section. */
+  const errorBlock = loadError ? (
+    <div className="set-absent" data-testid="settings-load-error">
+      <span className="set-absent__head">{loadError}</span>
+      <span className="set-absent__why">
+        the sections below show what did load — nothing here is filled in from a cache
+      </span>
+    </div>
+  ) : null;
+
+  /* WITHHOLD, DO NOT HIDE (Lane 2's rule). `display: none` drops the layout
+     box and takes the scroll offset with it, so nothing is saved by keeping
+     the pane — and it leaves that pane's reads running behind something the
+     viewer is actually looking at. On a desktop both are true and this is
+     the arrangement that ships today, unchanged. */
+  const showIndex = !oneSurface || active === null;
+  const showBody = active !== null;
+
+  const navRow = (s: (typeof SETTINGS_SECTIONS)[number]) => (
+    <button
+      key={s.id}
+      type="button"
+      className={s.danger ? 'set-nav__row set-nav__row--danger' : 'set-nav__row'}
+      /* NOT CURRENT ON A PHONE. `aria-current` marks which of two panes the
+         body belongs to; at the index no section is showing, so announcing
+         one as the current page is simply false. */
+      aria-current={!oneSurface && active === s.id ? 'true' : undefined}
+      onClick={() => go(s.id)}
+    >
+      {oneSurface ? <span className="set-nav__row-grow">{s.label}</span> : s.label}
+      {/* The mark is what promises a DRILLDOWN rather than a pane switch.
+          Decorative: the label is right beside it. */}
+      {oneSurface ? (
+        <span className="set-nav__row-chevron" aria-hidden="true">
+          <VectorIcon paths={CHEVRON_RIGHT} size={16} strokeWidth={1.6} />
+        </span>
+      ) : null}
+    </button>
+  );
+
   return (
     <div className="set-root cv2-root">
       <div className="set-card">
-        <nav className="set-nav" aria-label="Space settings sections">
-          <span className="set-nav__eyebrow">Space · {spaceLabel}</span>
-          {SETTINGS_SECTIONS.filter((s) => !s.danger).map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className="set-nav__row"
-              aria-current={active === s.id ? 'true' : undefined}
-              onClick={() => go(s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
-          <div className="set-nav__spacer" />
-          {SETTINGS_SECTIONS.filter((s) => s.danger).map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className="set-nav__row set-nav__row--danger"
-              aria-current={active === s.id ? 'true' : undefined}
-              onClick={() => go(s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
-        </nav>
+        {oneSurface ? errorBlock : null}
 
-        <div className="set-body">
-          {loadError ? (
-            <div className="set-absent" data-testid="settings-load-error">
-              <span className="set-absent__head">{loadError}</span>
-              <span className="set-absent__why">
-                the sections below show what did load — nothing here is filled in from a cache
-              </span>
-            </div>
-          ) : null}
-          <SectionBody
-            id={active}
-            data={data}
-            sections={sections}
-            onGo={go}
-            port={port}
-            onProfileSaved={refreshIdentity}
-            onMembersChanged={refreshMembers}
-            onInvitesChanged={refreshInvites}
-            onAxesChanged={refreshAxes}
-            onWorkflowsChanged={refreshWorkflows}
-            nodeKey={nodeKey}
-          />
-        </div>
+        {showIndex ? (
+          <nav className="set-nav" aria-label="Space settings sections">
+            <span className="set-nav__eyebrow">Space · {spaceLabel}</span>
+            {SETTINGS_SECTIONS.filter((s) => !s.danger).map(navRow)}
+            <div className="set-nav__spacer" />
+            {SETTINGS_SECTIONS.filter((s) => s.danger).map(navRow)}
+          </nav>
+        ) : null}
+
+        {showBody && active !== null ? (
+          <div className="set-body">
+            {/* UP, owned by this screen. The phone shell's header chevron pops
+                the SCREEN STACK, and a settings section is not on it: it has
+                no entity id and it is not in the address on either shell.
+                Putting a non-address behind the one control whose contract is
+                that it agrees with the URL is how the two shells' back
+                buttons start disagreeing. */}
+            {oneSurface ? (
+              <button type="button" className="set-up" onClick={() => setActive(null)}>
+                <span className="set-up__chevron" aria-hidden="true">
+                  <VectorIcon paths={CHEVRON_LEFT} size={16} strokeWidth={1.6} />
+                </span>
+                All settings
+              </button>
+            ) : null}
+            {oneSurface ? null : errorBlock}
+            <SectionBody
+              id={active}
+              data={data}
+              sections={sections}
+              onGo={go}
+              port={port}
+              onProfileSaved={refreshIdentity}
+              onMembersChanged={refreshMembers}
+              onInvitesChanged={refreshInvites}
+              onAxesChanged={refreshAxes}
+              onWorkflowsChanged={refreshWorkflows}
+              nodeKey={nodeKey}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

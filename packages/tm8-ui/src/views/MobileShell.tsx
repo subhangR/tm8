@@ -31,7 +31,7 @@
  * honesty rule the desktop switch was repaired to follow.
  */
 import { useState, type ReactNode } from 'react';
-import type { EntityId, SpaceId } from '@tm8/contract';
+import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
 import { MobileFrame, MobileSurfaceProvider } from '../mobile';
 import '../mobile/mobile-chrome.css';
 import '../mobile/mobile-screens.css';
@@ -63,6 +63,21 @@ export interface MobileShellProps {
   nodeKey: string;
   chatAnchorId?: EntityId;
   spaceLabel?: string;
+  /**
+   * VIEW SCREENS THE HOST BUILDS, because the host holds their ports.
+   *
+   * A view-ref screen needs a seam adapter, and `GateApp` already constructs
+   * every one of them. The shell rebuilding them would be a second copy of
+   * each — and the copy that drifts is always the phone's, because it is the
+   * arrangement nobody has open while they work. So the host states which
+   * element, and this file states only WHERE it goes. Same slot idiom the
+   * settings shell uses for the sections other modules own.
+   *
+   * A ref with no entry falls through to the refusal screen, which is the
+   * property that lets the remaining destinations land ONE AT A TIME: the
+   * switch stays total and the ones not yet built keep saying so.
+   */
+  viewScreens?: Partial<Record<MenuViewRef, ReactNode>>;
 }
 
 /**
@@ -345,17 +360,30 @@ function screenFor(props: MobileShellProps): ReactNode {
           {...(props.chatAnchorId ? { anchorId: props.chatAnchorId } : {})}
         />
       );
-    default:
-      /* WORKSPACE, GRAPH, GIT, FILES, MESSAGES, SETTINGS, FEED — real screens
-         with no phone arrangement yet. Named individually rather than lumped,
-         because "not built for this screen size" is a different statement from
-         "does not exist", and a viewer who followed a link here should be told
-         which one it is. The link itself is still valid on a desktop. */
+    default: {
+      /* A SCREEN THE HOST SUPPLIED. Checked before the refusal so that a
+         destination gaining a phone arrangement is one entry in `viewScreens`
+         and no edit here — and, more importantly, so the refusal below stays
+         the ONLY thing this switch says about a destination that has none.
+         `undefined` means not supplied; a supplied `null` would be a host
+         saying "nothing here", which is not a thing any host does today. */
+      const supplied = props.viewScreens?.[activeTarget.ref];
+      if (supplied !== undefined) return <>{supplied}</>;
+
+      /* WORKSPACE, GRAPH, GIT, FILES, MESSAGES, FEED — real screens with no
+         phone arrangement yet. Named individually rather than lumped, because
+         "not built for this screen size" is a different statement from "does
+         not exist", and a viewer who followed a link here should be told which
+         one it is. The link itself is still valid on a desktop.
+
+         WORKSPACE STAYS HERE BY OWNER RULING: the three-column panel stack
+         gets no phone port. It is not an unfinished entry in `viewScreens`. */
       return (
         <div className="mobile-empty" data-testid="mobile-not-on-phone">
           <p>“{activeTarget.ref}” doesn’t have a phone layout yet.</p>
           <p>This link still works on a desktop — nothing about it is broken.</p>
         </div>
       );
+    }
   }
 }
