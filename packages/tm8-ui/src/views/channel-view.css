@@ -21,20 +21,23 @@
   background: var(--pn-card);
 }
 
+/* Slimmer than it was: the header states which room you are in and gets out
+   of the way — the feed is the point of this screen. Type sits on the chat
+   scale (13px body, ~12px meta) instead of the 9–11px microcopy it had. */
 .chv-header {
-  min-height: 66px;
+  min-height: 54px;
   flex: none;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 18px;
+  gap: 10px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--pn-line);
   background: var(--pn-surface);
 }
 
 .chv-header__hash {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   flex: none;
   display: grid;
   place-items: center;
@@ -42,24 +45,35 @@
   border-radius: var(--pn-r-sm);
   color: var(--pn-brand);
   font-family: var(--pn-mono);
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 600;
   background: var(--pn-card);
 }
 
-.chv-header__copy { flex: 1; min-width: 0; }
+.chv-header__copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
 .chv-header__copy h1 {
   margin: 0;
   color: var(--pn-ink);
   font-family: var(--pn-serif);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 500;
   line-height: 1.2;
+  white-space: nowrap;
 }
 .chv-header__copy p {
-  margin: 2px 0 0;
+  margin: 0;
+  min-width: 0;
   color: var(--pn-ink-3);
-  font-size: 11.5px;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chv-header__status {
@@ -68,60 +82,65 @@
   gap: 8px;
   color: var(--pn-run);
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: 10.5px;
 }
 
 .chv-header__status span:last-child { color: var(--pn-brand); }
 
+/* One row, not a stacked section: the eyebrow sits INLINE beside the chips,
+   so the pinned shelf costs a single slim band instead of a label floor
+   over a chip floor. */
 .chv-shelf {
   flex: none;
-  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
   border-bottom: 1px solid var(--pn-line);
   background: var(--pn-card);
 }
 .chv-eyebrow {
-  display: block;
-  margin-bottom: 5px;
+  flex: none;
   color: var(--pn-ink-4);
   font-family: var(--pn-mono);
-  font-size: 8.5px;
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: .1em;
 }
-.chv-shelf__items { display: flex; flex-wrap: wrap; gap: 5px; }
+.chv-shelf__items { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .chv-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
+  gap: 6px;
+  padding: 3px 10px;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
   color: var(--pn-ink-2);
   background: var(--pn-surface);
-  font: 500 10.5px var(--pn-ui);
+  font: 500 11.5px var(--pn-ui);
   cursor: pointer;
 }
 .chv-chip:hover { border-color: var(--pn-brand); color: var(--pn-ink); }
 
 .chv-tabs {
-  min-height: 34px;
+  min-height: 36px;
   flex: none;
   display: flex;
   align-items: end;
   gap: 2px;
-  padding: 0 14px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--pn-line);
   background: var(--pn-surface);
   overflow-x: auto;
 }
 .chv-tab {
-  height: 33px;
-  padding: 0 10px;
+  height: 35px;
+  padding: 0 12px;
   border: 0;
   border-bottom: 2px solid transparent;
   color: var(--pn-ink-3);
   background: transparent;
-  font: 500 11px var(--pn-ui);
+  font: 500 12px var(--pn-ui);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -153,7 +172,7 @@
   align-items: flex-start;
   gap: 8px;
   color: var(--pn-ink-3);
-  font-size: 12px;
+  font-size: 13px;
 }
 .chv-error strong { color: var(--pn-block); }
 .chv-error button {
@@ -184,7 +203,7 @@
 .chv-collection button:hover { background: var(--pn-hover); }
 .chv-collection__glyph { width: 18px; color: var(--pn-brand); text-align: center; }
 .chv-collection__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chv-collection__kind { color: var(--pn-ink-4); font: 9.5px var(--pn-mono); }
+.chv-collection__kind { color: var(--pn-ink-4); font: 10.5px var(--pn-mono); }
 
 .chv-root--full { display: flex; flex-direction: column; }
 .chv-full__head {

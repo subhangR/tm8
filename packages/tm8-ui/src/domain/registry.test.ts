@@ -49,11 +49,12 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
     // then `memory`, `worktree` and `artifact` landed the same day → 19;
-    // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20.
+    // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20;
+    // then `graph` joined with migration 135 (Craft P1) → 21.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(20);
+    expect(CORE_KINDS.length).toBe(21);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -610,6 +611,34 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
   it('D51.3 — the immutability caption exists to be shown BEFORE commit', () => {
     expect(PROFILE_PINNED_CAPTION).toContain('Pinned at launch');
     expect(PROFILE_PINNED_CAPTION).toContain('even if the profile is edited or retired later');
+  });
+
+  it('carries caller-stated terminal geometry, and omits the fields entirely without it', () => {
+    // A create flow spawns with NO terminal on screen, so the ops layer's
+    // measurement fallback has nothing real to read — it returns a stale global
+    // or nothing at all. Such a caller must be able to STATE its geometry, and
+    // an absent statement must stay absent so the measurement still wins.
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-sonnet-5' });
+    const stated = buildSpawnInput({
+      clientMutationId: 'c', spaceId: 's', config, geometry: { cols: 173, rows: 44 },
+    });
+    expect(stated.cols).toBe(173);
+    expect(stated.rows).toBe(44);
+
+    // Key-ABSENCE, not `undefined`: the ops layer resolves geometry per field
+    // and JSON.stringify drops undefined, so an explicitly-undefined key and a
+    // missing one are the same on the wire but not in the type. Assert the
+    // stronger of the two.
+    const silent = buildSpawnInput({ clientMutationId: 'c', spaceId: 's', config });
+    expect('cols' in silent).toBe(false);
+    expect('rows' in silent).toBe(false);
+
+    // A HALF-stated geometry is unrepresentable — `geometry` is one object with
+    // both fields required, so this is a compile error rather than a value that
+    // gets silently discarded at runtime. Kept as a type-level assertion
+    // because that is where the guarantee lives.
+    // @ts-expect-error partial geometry must not type-check
+    buildSpawnInput({ clientMutationId: 'c', spaceId: 's', config, geometry: { cols: 173 } });
   });
 
   it('D51.4 — extra projects are ADDITIVE and never silently accepted', () => {

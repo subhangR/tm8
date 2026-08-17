@@ -19,6 +19,12 @@ export function resetChatEntityResolutionCache(): void {
   resolutionCache.clear();
 }
 
+/** Shared with the entity graph (R7c): one read per id per session, whether
+ *  the first asker was a chip or a graph card. */
+export function resolveChatEntity(id: string, resolve: ChatEntityResolver): Promise<ChatEntityRef> {
+  return resolveCached(id, resolve);
+}
+
 function resolveCached(id: string, resolve: ChatEntityResolver): Promise<ChatEntityRef> {
   const cached = resolutionCache.get(id);
   if (cached) return cached;

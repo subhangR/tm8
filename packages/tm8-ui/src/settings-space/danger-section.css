@@ -1,0 +1,118 @@
+/**
+ * DANGER ZONE — the bulkhead treatment.
+ *
+ * Owned by `DangerSection.tsx` and imported from it, per SECTION-CONTRACT.md
+ * §5: `settings.css` is shared by twelve parallel lanes and is not mine.
+ *
+ * WHY THIS FILE EXISTS. Two things were measurably wrong and neither was a
+ * frame problem:
+ *
+ * 1. DOUBLE GUTTER. The body was a `.set-stack`, which carries its own
+ *    `padding: 12px var(--set-gutter)`, nested inside `SectionFrame`'s
+ *    `.set-section__pad`, which carries `12px var(--set-gutter) 20px`. The two
+ *    add: the prose started 36px from the card edge against an 18px head. Not
+ *    a shared-CSS bug — `.set-stack` predates the frame and is correct on its
+ *    own; this section simply must stop nesting one inside the other.
+ * 2. NO BULKHEAD. The nav row for this section is block-coloured (L43) and the
+ *    body it led to was ink on paper, identical to Profile's. The one screen
+ *    where the reader must know where they are looked exactly like the eleven
+ *    where it does not matter.
+ *
+ * Everything here is scoped under `.set-danger`, so nothing in this file can
+ * reach another lane's section.
+ */
+
+/* The bulkhead. A block wash and a 3px block rule down the left edge — the
+   same mark the nav row wears, so arriving here is continuous with clicking
+   the row that got you here. Read before a word of it is read. */
+.cv2-root .set-danger {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 18px 4px;
+  border: 1px solid color-mix(in srgb, var(--pn-block) 34%, transparent);
+  border-left: 3px solid var(--pn-block);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-block-soft);
+  /* THE BOX HUGS ITS OWN MEASURE. Left at the frame's 860px it drew a tinted
+     panel whose right half was empty — measured at 1508×882: box 860px wide,
+     longest line 84 characters ≈ 470px. A notice with 390px of blank wash
+     beside it reads as a rendering fault, not as emphasis. Capping the BOX
+     instead of each block inside it also makes the wrap point one number
+     rather than three that can drift apart.
+
+     520px is chosen from the RENDERED line, not from `--set-measure`: this
+     body's prose is 11px, where 860px runs 152 characters (measured on the old
+     build) against the ~95 the frame token is named for. At 520px the longest
+     rendered line is 97 characters. `ch` would have been the honest unit but resolves
+     against `.set-danger`'s inherited sans, not the 11px prose inside it. */
+  max-width: 520px;
+}
+
+/* The WHY, and it sits FIRST — a reader meets the reason the two dead buttons
+   are drawn at all before meeting the buttons.
+
+   `62ch` rather than the frame's `--set-measure`: 860px is ~95 characters at
+   the ~14px body size the token was sized for, and this prose renders at 11px,
+   where the same 860px runs ~150 characters — well past the measure the token
+   is named for. A `ch` cap is the same intent stated in the unit that holds
+   when the font size changes. */
+.cv2-root .set-danger__prose {
+  margin: 0 0 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+}
+
+.cv2-root .set-danger__acts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* One act per row, separated by a hairline. Two refused buttons in a flat
+   column read as a form — as two fields of one thing. A ruled row apiece reads
+   as what they are: two separate irreversible acts that happen to live on the
+   same shelf. */
+.cv2-root .set-danger__act {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 12px 0;
+  /* On EVERY act, not just the siblings. The first rule is what separates the
+     "why these dead buttons are drawn at all" prose from the acts themselves —
+     without it the intro and the first consequence read as two paragraphs of
+     one statement, which is exactly the flat-form reading this section had. */
+  border-top: 1px solid color-mix(in srgb, var(--pn-block) 20%, transparent);
+}
+
+/* What the act would destroy, in one line, and different per act — the thing
+   the old flat pair could not tell you, because both buttons carried the same
+   caption verbatim and nothing else. */
+/* A step up from the intro prose in both size and ink: the explanation is
+   why the section exists, but WHAT EACH ACT DESTROYS is the thing a reader
+   came here to weigh. */
+.cv2-root .set-danger__act-what {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pn-ink);
+  text-wrap: pretty;
+}
+
+/* The honesty primitive's caption is unbounded by default, and its group is an
+   `inline-flex` that shrink-wraps — so left alone the caption sets the group's
+   width and runs one 143-character mono line (measured, old build, 1508×882).
+   Bounding the group to the bulkhead is what wraps it; the line-height is
+   because 9.5px mono at the primitive's default leading is unreadable once it
+   is more than one line. */
+.cv2-root .set-danger__act .hon-disabled-group {
+  align-self: stretch;
+  max-width: 100%;
+}
+
+.cv2-root .set-danger__act .hon-caption {
+  line-height: 1.5;
+}

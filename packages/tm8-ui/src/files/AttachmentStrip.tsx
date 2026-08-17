@@ -1,6 +1,7 @@
 /**
- * THE ATTACHMENT STRIP — files attached to ONE entity, rendered inside the
- * entity panel's content body.
+ * THE ATTACHMENT TILES — files attached to ONE entity, rendered inside the
+ * entity panel's content body (2026-08-16 addendum: a row of uniform 64px
+ * tiles at the bottom of the description block, not a section of its own).
  *
  * WHY IT IS NOT A FIFTH TAB (user ruling, 2026-08-01): D3 fixes the panel at
  * four tabs — Content · Discussion · Connections · Activity — for every kind,
@@ -12,20 +13,20 @@
  * work_session, a custom `c:*` kind. A per-kind attachment component would be
  * inventing a restriction the server does not have. Nothing in this file asks
  * what kind the anchor is; the strip reads the anchor's own `attached_to`
- * edges and renders the peer files.
+ * edges and renders the peer files. It is BUILT in `EntityDetailPanel` (so no
+ * archetype can forget it) and handed to bodies as an `attachmentSlot`; a body
+ * that consumes the slot decides only WHERE it sits, never what it is.
  *
  * THE SVG RULE, matched to the server rather than guessed at. The node sets
  * `Content-Disposition: inline` for `image/*`, `audio/*` and `video/*` and
  * EXPLICITLY EXCLUDES `image/svg+xml` (server files.ts:128-145) — an SVG is a
  * script-bearing document, not a picture, and serving one inline from the app
  * origin would be stored XSS. An `<img src>` is a request for that inline
- * byte stream, so the UI must not make one either: SVG gets a chip. Rendering
- * an `<img>` there would produce a broken image on a correct server, which
- * would read as "the file is broken" rather than "we don't inline SVG".
+ * byte stream, so the UI must not make one either — in the tile face NOR in
+ * the lightbox. SVG gets the glyph face and file info.
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
-import { Eyebrow } from '../kit';
 import { formatSizeChip, glyphFor, previewKindOf, type FileRow } from './model';
 import { safeUploadReason, type FileUploadTask } from './upload';
 import type { DownloadHref } from './FilesScreen';
@@ -34,32 +35,32 @@ import { ProjectFolderPicker } from './ProjectFolderPicker';
 import './attachment-strip.css';
 
 export interface AttachmentStripProps {
-  /** The anchor. Uploads attach here; the rows below hang off the same id. */
+  /** The anchor. Uploads attach here; the tiles below hang off the same id. */
   anchorId: EntityId;
   /** Already-attached files, derived from the anchor's `attached_to` edges. */
   files: readonly FileRow[];
   /**
    * Resolves the bytes URL for a file. Absent ⇒ no thumbnails and no download
-   * links; every row still renders its name and size, and says why it cannot
-   * be fetched rather than offering a link that goes nowhere.
+   * links; every tile still renders its name, and the lightbox says why the
+   * bytes cannot be fetched rather than offering a link that goes nowhere.
    */
   downloadHref?: DownloadHref;
   /**
    * Starts one upload against the anchor. Absent ⇒ no upload affordance is
-   * drawn at all: an inert dropzone that silently swallows a dragged file is
-   * worse than no dropzone, because the user believes the file landed.
+   * drawn at all: an inert ＋ tile that silently swallows a dragged file is
+   * worse than no tile, because the user believes the file landed.
    */
   startUpload?: (file: File, anchorId: EntityId) => FileUploadTask;
   /**
-   * Browsing a connected project folder on the node. Absent ⇒ no folder
-   * affordance is drawn, for the same reason `startUpload`'s absence removes
-   * the dropzone: an inert browse button is worse than none.
+   * Browsing a connected project folder on the node. Absent ⇒ that menu item
+   * is not drawn, for the same reason `startUpload`'s absence removes the
+   * upload path: an inert browse control is worse than none.
    */
   projectFolder?: ProjectFolderPort;
   /** An upload finished. The host refetches the anchor so the new edge shows. */
   onUploaded?: () => void;
   /**
-   * Cuts one `attached_to` edge. Absent ⇒ no remove control is drawn, on the
+   * Cuts one `attached_to` edge. Absent ⇒ no Remove control is drawn, on the
    * same reasoning as `startUpload`: a Remove that cannot remove is worse than
    * no Remove, because the user believes the file went away.
    *
@@ -70,7 +71,6 @@ export interface AttachmentStripProps {
   onDetach?: (edgeId: string) => Promise<void>;
   /** A detach landed. Same contract as `onUploaded`: the host refetches. */
   onDetached?: () => void;
-  label?: string;
 }
 
 interface PendingUpload {
@@ -80,11 +80,6 @@ interface PendingUpload {
   error: string | null;
 }
 
-/**
- * An image we are willing to put in an `<img>`. Two conditions, both required:
- * the mime is an image at all, and it is not the one image type the server
- * refuses to serve inline. See the header.
- */
 /**
  * A CLOSED vocabulary for a failed detach, mapped from the contract's refusal
  * codes — the same law `safeUploadReason` follows next door, for the same
@@ -106,9 +101,21 @@ function reasonOf(error: unknown): string {
   return (code ? SAFE_DETACH_ERRORS[code] : undefined) ?? 'Could not remove this attachment. Try again.';
 }
 
+/**
+ * An image we are willing to put in an `<img>`. Two conditions, both required:
+ * the mime is an image at all, and it is not the one image type the server
+ * refuses to serve inline. See the header.
+ */
 export function canThumbnail(mime: string): boolean {
   if (previewKindOf(mime) !== 'image') return false;
   return !/^image\/svg(\+xml)?$/i.test(mime.trim().toLowerCase());
+}
+
+/** The uppercase extension for a non-image tile face; null when there is none. */
+function extensionOf(name: string): string | null {
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0 || dot === name.length - 1) return null;
+  return name.slice(dot + 1).toUpperCase().slice(0, 4);
 }
 
 export function AttachmentStrip({
@@ -120,7 +127,6 @@ export function AttachmentStrip({
   onUploaded,
   onDetach,
   onDetached,
-  label = 'ATTACHMENTS',
 }: AttachmentStripProps) {
   const [pending, setPending] = useState<readonly PendingUpload[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -131,19 +137,48 @@ export function AttachmentStrip({
      failed and no longer said why. */
   const [detachErrors, setDetachErrors] = useState<Readonly<Record<string, string>>>({});
   const [picking, setPicking] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  /** The open lightbox, by file entity id — null when closed. */
+  const [activeId, setActiveId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const plusRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  /** The tile that opened the lightbox — focus returns here on close. */
+  const restoreRef = useRef<HTMLElement | null>(null);
+
+  const active = activeId != null ? files.find((f) => f.fileEntityId === activeId) ?? null : null;
+
+  // A refetch that removed the active file (its edge was cut, here or
+  // elsewhere) closes the lightbox rather than showing a ghost.
+  useEffect(() => {
+    if (activeId != null && !files.some((f) => f.fileEntityId === activeId)) {
+      setActiveId(null);
+    }
+  }, [activeId, files]);
+
+  const closeLightbox = useCallback(() => {
+    setActiveId(null);
+    // Restore focus to the originating tile; a tile that vanished with its
+    // edge falls back to the ＋ tile so the keyboard is never dropped.
+    queueMicrotask(() => {
+      const target = restoreRef.current;
+      if (target && target.isConnected) target.focus();
+      else plusRef.current?.focus();
+    });
+  }, []);
 
   /**
    * NO CONFIRMATION DIALOG, deliberately: this removes a LINK, and the file
    * itself survives in the space's files with its bytes intact, so the act is
    * reversible by re-attaching rather than destructive. What is NOT optional is
-   * saying so when it fails — a row that silently stays put after Remove reads
-   * as a broken button.
+   * saying so when it fails — a lightbox that silently stays put after Remove
+   * reads as a broken button, so failure keeps it OPEN with the reason inline.
    */
   const detach = useCallback(
     (edgeId: string) => {
       if (!onDetach) return;
-      // Only THIS row's previous explanation is cleared — a retry here says
+      // Only THIS edge's previous explanation is cleared — a retry here says
       // nothing about the row that failed next to it.
       setDetachErrors((current) => {
         if (current[edgeId] === undefined) return current;
@@ -155,6 +190,9 @@ export function AttachmentStrip({
       void onDetach(edgeId).then(
         () => {
           setDetaching((current) => current.filter((id) => id !== edgeId));
+          // Remove is only reachable from the open lightbox, so a success is
+          // that lightbox's success: close it and hand focus back.
+          closeLightbox();
           onDetached?.();
         },
         (error: unknown) => {
@@ -163,7 +201,7 @@ export function AttachmentStrip({
         },
       );
     },
-    [onDetach, onDetached],
+    [closeLightbox, onDetach, onDetached],
   );
 
   const begin = useCallback(
@@ -179,8 +217,8 @@ export function AttachmentStrip({
             onUploaded?.();
           },
           (error: unknown) => {
-            // A cancelled task leaves nothing to report — the row goes away.
-            // Everything else keeps its row so the user can read the reason.
+            // A cancelled task leaves nothing to report — the tile goes away.
+            // Everything else keeps its tile so the user can read the reason.
             const why = safeUploadReason(error);
             setPending((current) =>
               why === 'Upload cancelled.'
@@ -195,104 +233,205 @@ export function AttachmentStrip({
   );
 
   /**
+   * THE WHOLE DESCRIPTION BLOCK IS THE DROP TARGET (addendum §5). The strip
+   * cannot own that element — it is built in `EntityDetailPanel` and only
+   * PLACED inside a body — so the CONSUMING BODY marks its own host with
+   * `data-attachment-drophost` and the strip hangs the listeners on its
+   * closest marker. No body class names here: this file stays as agnostic of
+   * its host's anatomy as it is of the anchor's kind (see the header), and a
+   * future archetype opts in by marking its own element rather than adopting
+   * a foreign class. Mounted with no marked ancestor, the strip is its own
+   * host — exactly the old behaviour. Same `begin` semantics; only the
+   * element and the styling changed.
+   */
+  useEffect(() => {
+    if (!startUpload) return;
+    const node = rootRef.current;
+    if (!node) return;
+    const host = (node.closest('[data-attachment-drophost]') ?? node) as HTMLElement;
+    let depth = 0;
+    const over = (event: DragEvent) => {
+      event.preventDefault();
+    };
+    const enter = () => {
+      depth += 1;
+      setDragging(true);
+    };
+    const leave = () => {
+      depth -= 1;
+      if (depth <= 0) {
+        depth = 0;
+        setDragging(false);
+      }
+    };
+    const drop = (event: DragEvent) => {
+      event.preventDefault();
+      depth = 0;
+      setDragging(false);
+      if (event.dataTransfer) begin([...event.dataTransfer.files]);
+    };
+    host.addEventListener('dragover', over);
+    host.addEventListener('dragenter', enter);
+    host.addEventListener('dragleave', leave);
+    host.addEventListener('drop', drop);
+    return () => {
+      host.removeEventListener('dragover', over);
+      host.removeEventListener('dragenter', enter);
+      host.removeEventListener('dragleave', leave);
+      host.removeEventListener('drop', drop);
+    };
+  }, [begin, startUpload]);
+
+  // The highlight rides the host element, which may be outside this tree.
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return;
+    const host = (node.closest('[data-attachment-drophost]') ?? node) as HTMLElement;
+    host.classList.toggle('fn-drophost--active', dragging);
+    return () => host.classList.remove('fn-drophost--active');
+  }, [dragging]);
+
+  // The ＋ menu dismisses on outside interaction; Esc and blur are handled on
+  // the wrapper itself. Never `alert`/`confirm` — those block the page.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (event: MouseEvent) => {
+      const wrap = menuRef.current;
+      if (wrap && event.target instanceof Node && !wrap.contains(event.target)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [menuOpen]);
+
+  /**
    * A designed empty, not an accidental one. With nothing attached AND no way
-   * to attach, the strip renders NOTHING — an empty bordered box under every
+   * to attach, the strip renders NOTHING — an empty tile row under every
    * entity in the workspace would be chrome claiming a feature that is not
-   * wired here. With an uploader present, the dropzone alone is the empty
-   * state: it is the invitation, so it needs no separate "no attachments" row.
+   * wired here. With a path present, the ＋ tile alone IS the empty state:
+   * it is the invitation, so it needs no "no attachments" prose.
    */
   if (files.length === 0 && pending.length === 0 && !startUpload && !projectFolder) return null;
 
+  const openUpload = () => {
+    setMenuOpen(false);
+    inputRef.current?.click();
+  };
+  const openFolder = () => {
+    setMenuOpen(false);
+    setPicking(true);
+  };
+  // With exactly one wired path, ＋ acts directly — a one-item menu is a
+  // click tax (addendum §4).
+  const plusAct =
+    startUpload && projectFolder ? () => setMenuOpen((open) => !open) : startUpload ? openUpload : openFolder;
+
   return (
-    <section
-      className={`fn-strip${dragging ? ' fn-strip--dragging' : ''}`}
+    <div
+      className="fn-tiles"
       data-testid="attachment-strip"
       data-count={files.length}
-      onDragOver={(event) => {
-        if (!startUpload) return;
-        event.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(event) => {
-        if (!startUpload) return;
-        event.preventDefault();
-        setDragging(false);
-        begin([...event.dataTransfer.files]);
+      ref={rootRef}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && menuOpen) {
+          event.stopPropagation();
+          setMenuOpen(false);
+          plusRef.current?.focus();
+        }
       }}
     >
-      <Eyebrow faint>
-        {label}
-        {files.length > 0 ? ` · ${files.length}` : ''}
-      </Eyebrow>
+      {files.map((file) => (
+        <AttachmentTile
+          key={file.fileEntityId}
+          file={file}
+          downloadHref={downloadHref}
+          onOpen={(tile) => {
+            restoreRef.current = tile;
+            setActiveId(file.fileEntityId);
+          }}
+        />
+      ))}
 
-      {files.length > 0 ? (
-        <div className="fn-strip__items">
-          {files.map((file) => (
-            <AttachmentItem
-              key={file.fileEntityId}
-              file={file}
-              downloadHref={downloadHref}
-              /* Bound HERE, so the row never has to re-derive whether it is
-                 detachable — no edge, no callback, no control. */
-              onDetach={onDetach && file.edgeId ? () => detach(file.edgeId as string) : undefined}
-              detaching={file.edgeId !== null && detaching.includes(file.edgeId)}
-              detachWhy={file.edgeId !== null ? detachErrors[file.edgeId] ?? null : null}
-            />
-          ))}
-        </div>
-      ) : null}
-
+      {/* In-flight uploads are tiles too (addendum §7): a failed one keeps its
+          tile and its safe reason; a cancelled one disappears. */}
       {pending.map((item) => (
-        <p className="fn-strip__pending" key={item.key} data-testid="attachment-pending">
-          <span className="fn-strip__pending-name">{item.name}</span>
+        <div
+          className={item.error ? 'fn-tile fn-tile--pending fn-tile--failed' : 'fn-tile fn-tile--pending'}
+          data-testid="attachment-pending"
+          key={item.key}
+          title={item.error ?? `${item.name} — uploading…`}
+        >
+          <span className="fn-tile__face" aria-hidden>
+            {item.error ? '!' : <span className="fn-tile__spin" />}
+          </span>
+          <span className="fn-tile__name">{item.name}</span>
           {item.error ? (
-            <span className="fn-strip__pending-why" role="alert">
+            <span className="fn-tile__why" role="alert">
               {item.error}
             </span>
           ) : (
-            <>
-              <span className="fn-strip__pending-why">uploading…</span>
-              <button type="button" className="fn-strip__cancel" onClick={() => item.task.cancel()}>
-                cancel
-              </button>
-            </>
+            <button type="button" className="fn-tile__cancel" onClick={() => item.task.cancel()}>
+              cancel
+            </button>
           )}
-        </p>
+        </div>
       ))}
 
-      {startUpload ? (
-        <div className="fn-strip__drop">
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            className="fn-strip__input"
-            data-testid="attachment-file-input"
-            onChange={(event) => {
-              begin([...(event.target.files ?? [])]);
-              // Same file twice in a row must fire change twice.
-              event.target.value = '';
-            }}
-          />
-          <button type="button" className="fn-strip__btn" onClick={() => inputRef.current?.click()}>
-            ＋ Attach a file
+      {startUpload || projectFolder ? (
+        <span className="fn-plus" ref={menuRef} onBlur={(event) => {
+          const wrap = menuRef.current;
+          if (wrap && event.relatedTarget instanceof Node && wrap.contains(event.relatedTarget)) return;
+          setMenuOpen(false);
+        }}>
+          <button
+            type="button"
+            className="fn-tile fn-tile--plus"
+            data-testid="attachment-add"
+            ref={plusRef}
+            aria-haspopup={startUpload && projectFolder ? 'menu' : undefined}
+            aria-expanded={startUpload && projectFolder ? menuOpen : undefined}
+            title="Attach a file to this entity"
+            onClick={plusAct}
+          >
+            <span className="fn-tile__face fn-tile__face--plus" aria-hidden>
+              ＋
+            </span>
+            <span className="fn-tile__name">attach</span>
           </button>
-          <span className="fn-strip__hint">or drop files here</span>
-        </div>
+          {menuOpen && startUpload && projectFolder ? (
+            <div className="fn-menu" role="menu" aria-label="Attach a file">
+              <button type="button" className="fn-menu__item" role="menuitem" onClick={openUpload}>
+                <span className="fn-menu__label">＋ Upload from this device</span>
+                <span className="fn-menu__hint">or drop files on the description</span>
+              </button>
+              {/* A SECOND, DIFFERENT SOURCE — not a second way to do the same
+                  thing. The input sends bytes from this machine; this names a
+                  file already sitting in a project folder on the node, which
+                  the input cannot reach because it never learns an absolute
+                  path. */}
+              <button type="button" className="fn-menu__item" role="menuitem" onClick={openFolder}>
+                <span className="fn-menu__label">▱ From a project folder</span>
+                <span className="fn-menu__hint">read on the node, not uploaded</span>
+              </button>
+            </div>
+          ) : null}
+        </span>
       ) : null}
 
-      {/* A SECOND, DIFFERENT SOURCE — not a second way to do the same thing.
-          The input above sends bytes from this machine; this one names a file
-          already sitting in a project folder on the node, which the input
-          cannot reach because it never learns an absolute path. */}
-      {projectFolder ? (
-        <div className="fn-strip__drop">
-          <button type="button" className="fn-strip__btn" onClick={() => setPicking(true)}>
-            ▱ From a project folder
-          </button>
-          <span className="fn-strip__hint">read on the node, not uploaded</span>
-        </div>
+      {startUpload ? (
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          className="fn-tiles__input"
+          data-testid="attachment-file-input"
+          onChange={(event) => {
+            begin([...(event.target.files ?? [])]);
+            // Same file twice in a row must fire change twice.
+            event.target.value = '';
+          }}
+        />
       ) : null}
 
       {picking && projectFolder ? (
@@ -306,89 +445,230 @@ export function AttachmentStrip({
           }}
         />
       ) : null}
-    </section>
+
+      {active ? (
+        <AttachmentLightbox
+          file={active}
+          downloadHref={downloadHref}
+          /* Bound HERE, so the lightbox never has to re-derive whether the
+             file is detachable — no edge, no callback, no control. */
+          onDetach={onDetach && active.edgeId ? () => detach(active.edgeId as string) : undefined}
+          detaching={active.edgeId !== null && detaching.includes(active.edgeId)}
+          detachWhy={active.edgeId !== null ? detachErrors[active.edgeId] ?? null : null}
+          onClose={closeLightbox}
+        />
+      ) : null}
+    </div>
   );
 }
 
-function AttachmentItem({
+/**
+ * One 64×64 tile: image files fill it (`object-fit: cover`, so every tile is
+ * identical whatever the source dimensions), everything else — SVG included,
+ * see the header — gets the glyph + uppercase extension face. The truncated
+ * filename sits below; the full name and size ride the title and the
+ * accessible name so the ellipsis loses nothing. Clicking opens the lightbox;
+ * there is deliberately NO hover × here — Remove lives in the lightbox, which
+ * is what keeps the row clean.
+ */
+function AttachmentTile({
+  file,
+  downloadHref,
+  onOpen,
+}: {
+  file: FileRow;
+  downloadHref?: DownloadHref;
+  onOpen: (tile: HTMLElement) => void;
+}) {
+  const href = downloadHref ? downloadHref(file.fileEntityId) : null;
+  const size = formatSizeChip(file.sizeBytes);
+  const thumb = href !== null && canThumbnail(file.mime);
+  const name = size ? `${file.name} · ${size}` : file.name;
+  const ext = extensionOf(file.name);
+
+  return (
+    <button
+      type="button"
+      className="fn-tile"
+      data-testid="attachment-item"
+      data-mime={file.mime}
+      data-thumb={thumb ? 'true' : 'false'}
+      title={name}
+      aria-label={name}
+      aria-haspopup="dialog"
+      onClick={(event) => onOpen(event.currentTarget)}
+    >
+      <span className="fn-tile__face">
+        {thumb ? (
+          <img
+            className="fn-tile__img"
+            src={href}
+            alt={file.name}
+            loading="lazy"
+            /* THE SIZE GUARD lives on the element as well as in the
+               stylesheet: a 5000px-wide photo must not blow out the tile even
+               if this component is ever rendered somewhere the stylesheet did
+               not load. */
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        ) : (
+          <>
+            <span className="fn-tile__glyph" aria-hidden>
+              {glyphFor(file.mime)}
+            </span>
+            {ext ? <span className="fn-tile__ext" aria-hidden>{ext}</span> : null}
+          </>
+        )}
+      </span>
+      <span className="fn-tile__name">{file.name}</span>
+    </button>
+  );
+}
+
+/**
+ * THE LIGHTBOX — click a tile, see the file; Download and Remove live here
+ * (addendum §6). Focus-trapped, Esc and scrim-click close, focus returns to
+ * the originating tile. Non-images and SVG render file info only: an SVG in
+ * an `<img>` is the request the server refuses, in the large frame exactly as
+ * in the tile.
+ */
+function AttachmentLightbox({
   file,
   downloadHref,
   onDetach,
   detaching,
   detachWhy,
+  onClose,
 }: {
   file: FileRow;
   downloadHref?: DownloadHref;
   onDetach?: () => void;
   detaching: boolean;
   detachWhy: string | null;
+  onClose: () => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const titleId = useId();
   const href = downloadHref ? downloadHref(file.fileEntityId) : null;
-  const size = formatSizeChip(file.sizeBytes);
   const thumb = href !== null && canThumbnail(file.mime);
+  const size = formatSizeChip(file.sizeBytes);
 
-  const body = thumb ? (
-    <img
-      className="fn-strip__thumb"
-      src={href}
-      alt={file.name}
-      title={file.name}
-      loading="lazy"
-      /* THE SIZE GUARD lives on the element as well as in the stylesheet: a
-         5000px-wide photo must not blow out a 440px panel column even if this
-         component is ever rendered somewhere the stylesheet did not load. */
-      style={{ maxWidth: '100%', maxHeight: '160px', objectFit: 'contain' }}
-    />
-  ) : (
-    <span className="fn-strip__chip-face">
-      <span className="fn-strip__glyph" aria-hidden="true">
-        {glyphFor(file.mime)}
-      </span>
-      <span className="fn-strip__name">{file.name}</span>
-      {size ? <span className="fn-strip__size">{size}</span> : null}
-    </span>
-  );
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
+
+  const trap = (event: React.KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusable = [
+      ...dialog.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), [tabindex]:not([tabindex="-1"])'),
+    ];
+    if (focusable.length === 0) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   return (
     <div
-      className={thumb ? 'fn-strip__item fn-strip__item--thumb' : 'fn-strip__item'}
-      data-testid="attachment-item"
-      data-mime={file.mime}
-      data-thumb={thumb ? 'true' : 'false'}
+      className="fn-lightbox"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
-      {href !== null ? (
-        <a className="fn-strip__link" href={href} download={file.name} title={`Download ${file.name}`}>
-          {body}
-        </a>
-      ) : (
-        <>
-          {body}
-          {/* L6: the control is visible, dead, and says why — never a link
-              that resolves to the current page. */}
-          <span className="fn-strip__nolink" title="No download URL was supplied to this panel.">
-            no download here
+      <div
+        className="fn-lightbox__dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        ref={dialogRef}
+        tabIndex={-1}
+        onKeyDown={trap}
+      >
+        <div className="fn-lightbox__head">
+          <span className="fn-lightbox__title" id={titleId}>
+            {file.name}
+            {size ? ` · ${size}` : ''} · {file.mime}
           </span>
-        </>
-      )}
+          <button type="button" className="fn-lightbox__close" aria-label="Close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
 
-      {onDetach ? (
-        <button
-          type="button"
-          className="fn-strip__detach"
-          data-testid="attachment-detach"
-          disabled={detaching}
-          title={`Remove ${file.name} from this entity — the file itself is kept`}
-          onClick={onDetach}
-        >
-          {detaching ? '…' : '×'}
-        </button>
-      ) : null}
+        {thumb ? (
+          <img className="fn-lightbox__img" src={href} alt={file.name} />
+        ) : (
+          <dl className="fn-lightbox__info">
+            <dt>name</dt>
+            <dd>{file.name}</dd>
+            <dt>type</dt>
+            <dd>{file.mime}</dd>
+            {size ? (
+              <>
+                <dt>size</dt>
+                <dd>{size}</dd>
+              </>
+            ) : null}
+          </dl>
+        )}
 
-      {detachWhy ? (
-        <span className="fn-strip__detach-why" role="alert">
-          {detachWhy}
-        </span>
-      ) : null}
+        <div className="fn-lightbox__actions">
+          {href !== null ? (
+            <a className="fn-lightbox__btn" href={href} download={file.name} title={`Download ${file.name}`}>
+              Download
+            </a>
+          ) : (
+            /* L6: the control is visible, dead, and says why — never a link
+               that resolves to the current page. */
+            <span className="fn-lightbox__nolink" title="No download URL was supplied to this panel.">
+              no download here
+            </span>
+          )}
+          {onDetach ? (
+            /* NEVER natively disabled, even mid-flight: a disabled control
+               leaves the tab order, the browser blurs it, and the next Tab
+               walks out of a dialog that is still aria-modal — precisely when
+               a failure needs the trap intact. Busy instead: focusable, says
+               so, and the guard keeps it from firing twice. */
+            <button
+              type="button"
+              className="fn-lightbox__btn fn-lightbox__btn--remove"
+              data-testid="attachment-detach"
+              aria-busy={detaching || undefined}
+              title={
+                detaching
+                  ? `Removing ${file.name} — a removal is already in progress`
+                  : `Remove ${file.name} from this entity — the file itself is kept`
+              }
+              onClick={() => {
+                if (detaching) return;
+                onDetach();
+              }}
+            >
+              {detaching ? '…' : 'Remove'}
+            </button>
+          ) : null}
+        </div>
+
+        {detachWhy ? (
+          <p className="fn-lightbox__why" role="alert">
+            {detachWhy}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

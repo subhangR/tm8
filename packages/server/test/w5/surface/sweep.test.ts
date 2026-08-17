@@ -567,7 +567,45 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // top of the 121-vs-116 merge union this comment block already records.
     // Same rule again: both sides carried a pin, neither was the answer, the
     // MERGED tree was asked. `ls db/migrations/*.sql | wc -l` = 123.
-    expect(server.appliedMigrations.length).toBe(123);
+    // 123 -> 124 (2026-08-16): 133_chat_turns_select — the claimed-turn wire
+    // marker's select policy. MEASURED: `ls db/migrations/*.sql | wc -l` = 124.
+    // 124 -> 125 (2026-08-16, unified Home merge): 134_menu_home_tab —
+    // revision 17's server twin (task 01a00932). The lane took 134 BECAUSE it
+    // measured 133 as claimed on an unmerged branch; this merge is that
+    // branch landing, so the reservation was exactly right and the histories
+    // add. Both sides carried a pin — 124 here, 124 there — and NEITHER was
+    // the answer: a count pin is DERIVED, only the merged tree can be asked.
+    // MEASURED, never arithmetic: `ls db/migrations/*.sql | wc -l` = 125.
+    // 125 -> 128 (2026-08-16, Craft P1): THREE files in one lane — 135 mints
+    // the `graph` kind (registry + detail table + doors), 136 widens
+    // chat_mode to `craft`, 137 adds the Craft tab (menu revision 18). Three
+    // and not one because each is separately revertible: a disliked tab comes
+    // out without unminting the kind. Numbers taken ABOVE 134 after measuring
+    // ALL remote refs (their max was 134). MEASURED on this tree, never
+    // arithmetic: `ls db/migrations/*.sql | wc -l` = 128.
+    // 128 -> 129 (2026-08-16, same lane): 138 repairs 132's missing PUBLIC
+    // revoke on the task-workflow definer functions — found because the
+    // tm8_delivery_worker surface enumeration was red on every PR.
+    // MEASURED: `ls db/migrations/*.sql | wc -l` = 129.
+    // 129 -> 130 (2026-08-16): 139 restores
+    // `session_message_deliveries.pair_budget_version` on nodes that applied an
+    // orphan `083_remove_session_wake_budgets.sql` that never reached main.
+    // Nothing in THIS chain drops that column, so on a tree built from these
+    // files 139 is a no-op — it exists because plpgsql is late-bound, so 120's
+    // reserve body CREATES fine against a drifted table and only raises 42703
+    // when called, which reads as "PTY injection is dead" with a green deploy.
+    // Numbered 139 after measuring every remote ref (max was 138).
+    // 130 -> 131 (2026-08-16): 140 returns the WORK tab — the three-panel
+    // workspace as its own railless group, menu revision 18 -> 19. Payload
+    // half only: `workspace` has been a registered, implemented view ref
+    // since 029, so re-adding a retired tab widens no constraint and inserts
+    // no registry row. Numbered 140 after measuring every ref, remote and
+    // local (max was 139).
+    // MEASURED, never arithmetic: `ls db/migrations/*.sql | wc -l` = 131.
+    // RE-MEASURE ON THE MERGED TREE, not on this branch: this number is the
+    // one thing here that another lane can invalidate without touching this
+    // file, and delta arithmetic across a merge is how it goes wrong.
+    expect(server.appliedMigrations.length).toBe(131);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

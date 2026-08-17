@@ -2,7 +2,7 @@ import type { ChatMode } from '@tm8/contract';
 
 export type ToolPermission = 'allow' | 'ask' | 'deny';
 
-export const CHAT_MODES: readonly ChatMode[] = ['ask', 'explain', 'plan', 'build', 'orchestrate'];
+export const CHAT_MODES: readonly ChatMode[] = ['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft'];
 
 export const DIRECT_TOOL_NAMES = [
   'repo_read_file', 'repo_glob', 'repo_grep',

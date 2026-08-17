@@ -731,6 +731,22 @@
 }
 .cv2-root .pn-body > .pn-section { padding: 0 0 10px; }
 
+/* THE MEASURED COLUMN (task-panel redesign, 2026-08-16). A body that opts in
+   caps every child at the reading measure and centers the column; the panel
+   chrome (header, tabs, controls band, footer) stays full-bleed. Opt-IN by
+   class rather than applied to `.pn-body` wholesale: the graph body measures a
+   canvas from its box, terminal/chat bodies own their full width, and the
+   other tab bodies keep their current anatomy until each is verified by eye. */
+.cv2-root .pn-body--measured {
+  align-items: center;
+  padding: var(--pn-space-6) var(--pn-space-4);
+  gap: var(--pn-space-5);
+}
+.cv2-root .pn-body--measured > * {
+  width: 100%;
+  max-width: var(--pn-read-measure);
+}
+
 /* Connections has TWO renderings of ONE fact, so the switch is a segmented
    control rather than a tab: List and Graph are the same edges, read
    differently. It sits above the surface it governs and never scrolls with it. */
@@ -1501,26 +1517,22 @@
 /* --- entity cards — Maestro surface + T0-1 hierarchy ----------------------- */
 /* Rounded, elevated card shell from the Maestro reference; disclosure column,
    status control, attached children and inline config from the workspace file. */
-/* EVERY LIST IS ONE UNBROKEN COLUMN — the session list's, for all three
-   anatomies. No gap between siblings: rows are separated by their own bottom
-   hairline, which is what makes a list read as a table rather than as a stack
-   of floating cards. The gapped variant was the default for every kind that
-   was not a session, and it is the single biggest reason those lists did not
-   look like the session list even where the rows themselves matched. */
+/* Entity rows use the same quiet tile rhythm as the Home chat list: no table
+   rules, a little air between targets, and rounded interaction states. The
+   resting surface stays quiet; hover and selection provide the shape. */
 .cv2-root .lp__tree {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 3px;
   min-width: 0;
 }
-/* Rows bleed past `lp__body`'s 8px gutter so each hairline runs edge to edge.
-   The band eyebrows stay inset, which is what makes the rows read as a table
-   under a label. */
+/* Keep tiles inside the body's existing gutter. This gives rounded ends room
+   to read and keeps the focus/hover surface from clipping against the rail. */
 .cv2-root .lp__tree--control,
 .cv2-root .lp__tree--session,
 .cv2-root .lp__tree {
-  margin-inline: -8px;
-  border-top: 1px solid var(--pn-line);
+  margin-inline: 0;
+  border-top: 0;
 }
 .cv2-root .lp__branch { min-width: 0; }
 /* ONE TREE, THREE ANATOMIES. Every nested level is one wrapper, 19px in, with
@@ -1532,7 +1544,7 @@
 .cv2-root .lp__children {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 3px;
   min-width: 0;
   margin: 0 0 0 19px;
   padding-left: 0;
@@ -1617,14 +1629,16 @@
   min-width: 0;
   cursor: pointer;
   user-select: none;
-  border-bottom: 1px solid var(--pn-line);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  overflow: hidden;
   transition:
     background var(--pn-dur-base) var(--pn-ease-standard),
     box-shadow var(--pn-dur-base) var(--pn-ease-out);
 }
 .cv2-root .pn-st:hover {
   background: var(--pn-hover);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--pn-brand) 58%, transparent);
+  box-shadow: none;
 }
 .cv2-root .pn-st--selected { background: var(--pn-active); }
 .cv2-root .pn-st--attention { background: var(--pn-wait-soft); }
@@ -1635,16 +1649,30 @@
    be held to that number (`maestro-task-tile.css`) rather than being measured
    by hand and drifting. Sessions define it; tasks follow it. */
 .cv2-root { --pn-listrow-h: 29px; }
-.cv2-root .pn-st__main { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px 6px 7px; cursor: pointer; }
+.cv2-root .pn-st__main { position: relative; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px 6px 7px; cursor: pointer; }
+/* IN FLOW, NOT OVER THE ICON (was: absolute at the icon's own origin, z-index
+   3, faded in on hover). That overlay silently cost a parent row its agent
+   glyph — every row WITH sub-sessions showed a chevron where its tool mark
+   should have been — and it cannot coexist with an icon that now carries three
+   facts. The chevron takes its own 16px column; `--empty` keeps the column on
+   leaf rows so nothing re-indents. */
 .cv2-root .pn-st__arrow {
-  position: relative; width: 16px; height: 16px; flex: 0 0 auto; display: grid; place-items: center;
-  padding: 0; color: var(--pn-ink-4); background: none; border: none; border-radius: 4px; cursor: pointer;
+  flex: 0 0 auto; width: 16px; height: 16px; display: grid; place-items: center;
+  padding: 0; color: var(--pn-ink-4); background: var(--pn-hover); border: none; border-radius: 4px; cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast), background var(--pn-dur-fast);
 }
+/* A chevron that owns a column must not vanish on a row that HAS children —
+   invisible-but-clickable was tolerable while it overlaid the icon and the
+   count printed elsewhere; it is the only disclosure affordance now. */
+.cv2-root .pn-st__arrow:not(.pn-st__arrow--empty) { opacity: 0.55; }
+.cv2-root .pn-st:hover .pn-st__arrow:not(.pn-st__arrow--empty),
+.cv2-root .pn-st:focus-within .pn-st__arrow:not(.pn-st__arrow--empty),
+.cv2-root .pn-st__arrow--expanded { opacity: 1; }
 .cv2-root .pn-st__arrow:hover:not(:disabled) { color: var(--pn-ink-2); background: var(--pn-active); }
 .cv2-root .pn-st__arrow svg { width: 13px; height: 13px; transition: transform 140ms; }
 .cv2-root .pn-st__arrow--expanded svg { transform: rotate(90deg); }
 .cv2-root .pn-st__arrow--empty { color: var(--pn-line); }
-.cv2-root .pn-st__arrowCount { flex: 0 0 auto; font-family: var(--pn-mono); font-size: 8.5px; font-weight: 600; color: var(--pn-ink-3); }
 .cv2-root .pn-st__title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; cursor: pointer; }
 .cv2-root .pn-st__titleText { min-width: 0; overflow: hidden; color: var(--pn-ink); font-size: 12.5px; font-weight: 600; letter-spacing: -0.005em; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .cv2-root .pn-st__model { max-width: 88px; flex: 0 1 auto; overflow: hidden; color: var(--pn-ink-3); font-family: var(--pn-mono); font-size: 9px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
@@ -1683,7 +1711,7 @@
 .cv2-root .pn-st__btn:hover { color: var(--pn-ink); background: var(--pn-active); }
 .cv2-root .pn-st__btn--danger:hover { color: var(--pn-block); }
 .cv2-root .pn-st__btn svg { transition: transform var(--pn-dur-fast) var(--pn-ease-out); }
-.cv2-root .pn-st__tasklines { display: flex; flex-direction: column; gap: 3px; padding: 0 10px 6px 35px; cursor: pointer; }
+.cv2-root .pn-st__tasklines { display: flex; flex-direction: column; gap: 3px; padding: 0 10px 6px 30px; cursor: pointer; }
 .cv2-root .pn-st__taskline { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .cv2-root .pn-st__tasklineLabel { min-width: 0; overflow: hidden; color: var(--pn-ink-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .cv2-root .pn-agent { width: 17px; height: 17px; flex: 0 0 auto; display: grid; place-items: center; background: transparent; border: 0; cursor: pointer; }
@@ -1699,6 +1727,31 @@
 }
 .cv2-root .pn-agent[data-agent-kind='gemini'] .pn-agent__mark { color: var(--pn-info); }
 .cv2-root .pn-agent[data-agent-kind='hermes'] .pn-agent__mark { color: var(--pn-wait); }
+/* THREE FACTS, ONE ICON: the teammate's face, the tool on the top-left corner,
+   the sub-session count on the bottom-right. Both badges are POSITIONED, not
+   laid out — the slot's `place-items: center` would otherwise stack them over
+   the monogram — and both stay INSIDE the slot box, because `.pn-st__title`
+   clips and that overflow is the title's ellipsis, not ours to relax. */
+.cv2-root .pn-agent { position: relative; }
+.cv2-root .pn-agent--persona { width: 19px; height: 19px; }
+.cv2-root .pn-agent__tool {
+  position: absolute; top: -1px; left: -1px;
+  font-size: 9px;
+  /* Reads against whatever the avatar tone happens to be, without a second
+     colour rule per tool. */
+  text-shadow: 0 0 2px var(--pn-card), 0 0 2px var(--pn-card), 0 0 2px var(--pn-card);
+}
+.cv2-root .pn-agent__kids {
+  position: absolute; right: 0; bottom: 0;
+  min-width: 9px; height: 9px; padding: 0 1.5px;
+  box-sizing: border-box; border-radius: 999px;
+  background: var(--pn-ink-2); color: var(--pn-card);
+  font-size: 7px; line-height: 9px; font-weight: 700; text-align: center;
+  /* A count is compared down a column, so its digits must not shift width. */
+  font-variant-numeric: tabular-nums;
+  /* Separates the pill from the face it sits on, in either theme. */
+  box-shadow: 0 0 0 1.5px var(--pn-card);
+}
 .cv2-root .pn-stat { display: inline-grid; place-items: center; flex: 0 0 auto; color: var(--pn-idle); }
 .cv2-root .pn-stat--running, .cv2-root .pn-stat--working, .cv2-root .pn-stat--exited, .cv2-root .pn-stat--done { color: var(--pn-run); }
 .cv2-root .pn-stat--spawning, .cv2-root .pn-stat--pulled, .cv2-root .pn-stat--in_review { color: var(--pn-info); }
@@ -1732,8 +1785,7 @@
   flex-direction: column;
   min-width: 0;
   border: 0;
-  border-bottom: 1px solid var(--pn-line);
-  border-radius: 0;
+  border-radius: var(--pn-r-sm);
   box-shadow: none;
   overflow: hidden;
   box-sizing: border-box;
@@ -1744,7 +1796,7 @@
 }
 .cv2-root .lp__tile:hover {
   background: var(--pn-hover);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--pn-brand) 58%, transparent);
+  box-shadow: none;
   transform: none;
 }
 .cv2-root .lp__tile--selected {
@@ -1827,11 +1879,14 @@
   white-space: nowrap;
 }
 
-/* The caret always owns a column, including on leaves, so titles never jump. */
+/* The caret overlays the leading status/kind mark on hover, like the Home
+   conversation list, rather than reserving an empty column in every row. */
 .cv2-root .lp__disclosure {
   appearance: none;
-  flex: none;
-  /* 16px, the session caret's column (`pn-st__arrow`). */
+  position: absolute;
+  top: 6px;
+  left: 7px;
+  z-index: 3;
   width: 16px;
   height: 16px;
   display: grid;
@@ -1839,13 +1894,18 @@
   padding: 0;
   border: 0;
   border-radius: var(--pn-r-xs);
-  background: transparent;
+  background: var(--pn-hover);
   color: var(--pn-ink-4);
   font-family: var(--pn-ui);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast), background var(--pn-dur-fast);
 }
+.cv2-root .lp__tile:hover .lp__disclosure:not(.lp__disclosure--empty),
+.cv2-root .lp__tile:focus-within .lp__disclosure:not(.lp__disclosure--empty),
+.cv2-root .lp__disclosure--expanded { opacity: 1; }
 .cv2-root .lp__disclosure > span {
   transition: transform var(--pn-dur-fast) var(--pn-ease-out);
 }
@@ -2798,9 +2858,16 @@
    both. Under the tabs it is a band in its own right, so the band supplies
    them; the strip inside keeps its chip layout unchanged. */
 .cv2-root .pn-controls {
-  padding: 6px 10px;
+  padding: 6px var(--pn-space-4);
   border-bottom: 1px solid var(--pn-line);
   background: color-mix(in srgb, var(--pn-surface) 72%, var(--pn-card));
+}
+/* The BAND stays full-bleed (background + hairline span the panel); its
+   CONTENTS ride the same reading measure as the body below it. */
+.cv2-root .pn-controls__measure {
+  width: 100%;
+  max-width: var(--pn-read-measure);
+  margin-inline: auto;
 }
 
 /* A REFUSED CHIP MUST NOT COST THE ROW ITS SECOND DIMENSION.
@@ -3102,16 +3169,107 @@
   cursor: pointer;
 }
 
-/* Session tile chip slot (mirrors the task tile's badges row). Left padding
-   matches the 35px sub-row indent .pn-st__tasklines established, so the chips
-   start where the title text starts, not at the tile edge (user screenshot,
-   2026-08-13) — the rule itself was lost to a branch hop in #185/#187 and the
-   unstyled div rendered flush left. */
+/* Session secondary facts begin directly under the title text: 7px row inset,
+   then the 17px agent mark and its 6px gap. */
 .cv2-root .pn-st__badges {
   min-width: 0;
-  padding: 0 10px 6px 35px;
+  padding: 0 10px 6px 30px;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 8px;
+}
+
+/* ---------------------------------------------------------------------------
+   THE RELATIONAL PANEL (user ruling 2026-08-16) — relation chips + inline
+   groups. A count badge that names a real collection kind is a BUTTON now:
+   it opens that kind's linked entities under the tile, one group per tile.
+--------------------------------------------------------------------------- */
+.cv2-root .pn-st__count--btn {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  /* WCAG 2.2 §2.5.8: the visual chip stays badge-sized, but the HIT AREA
+     does not — the border box itself clears the 24×24 minimum (min-width /
+     min-height, not negative-margin arithmetic, which never enlarges the
+     target). The negative margin only returns the VISUAL footprint to the
+     badge row's rhythm. */
+  box-sizing: border-box;
+  min-width: 24px;
+  min-height: 24px;
+  justify-content: center;
+  padding: 6px;
+  margin: -6px -4px;
+  border-radius: 4px;
+  transition: background 120ms, color 120ms;
+}
+.cv2-root .pn-st__count--btn:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.cv2-root .pn-st__count--btn:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.cv2-root .pn-st__count--open { color: var(--pn-ink-1); background: var(--pn-active); }
+
+/* The open group: SAME LEVEL as its owner (offset is the hierarchy tree's
+   vocabulary, ruled 2026-08-16), so ownership is said by the thin rail and
+   the eyebrow, not by indent. The rail is deliberately the only geometry. */
+.cv2-root .lp__related {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 6px;
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid var(--pn-line);
+}
+.cv2-root .lp__related-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--pn-ink-4);
+}
+/* The group's own close — the guaranteed collapse when a live update takes
+   the opening chip away (PR #272 review, 4). */
+.cv2-root .lp__related-close {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  /* 24×24 border box — WCAG 2.2 §2.5.8 minimum (re-review). */
+  width: 24px;
+  height: 24px;
+  margin-top: -7px;
+  margin-bottom: -7px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--pn-ink-4);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.cv2-root .lp__related-close:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.cv2-root .lp__related-close:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+/* The standard tile's relation band — its own sub-row so the 17px main-row
+   floor holds (PR #272 review, blocking 2). */
+.cv2-root .lp__tile-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 0 8px 4px 26px;
+}
+.cv2-root .lp__related-note {
+  margin: 0;
+  padding: 2px 0 4px;
+  font-size: 11px;
+  color: var(--pn-ink-4);
 }

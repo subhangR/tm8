@@ -65,7 +65,7 @@ async function sendInto(port: ChatHomePort) {
     target: { value: 'Keep going.' },
   });
   fireEvent.click(view.getByRole('button', { name: /send/i }));
-  await waitFor(() => expect(view.getByText('Agent is working')).toBeTruthy());
+  await waitFor(() => expect(view.getByTestId('tch-send-working')).toBeTruthy());
   return view;
 }
 
@@ -115,16 +115,19 @@ describe('Chat Home', () => {
     expect(titles()).toEqual(before);
   });
 
-  it('renders a thread, one stateful tool card, and actual usage', async () => {
+  it('renders a thread, the entities its calls touched, and actual usage', async () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
 
-    await waitFor(() => expect(view.getAllByTestId('chat-tool-card')).toHaveLength(1));
-    expect(within(view.getByTestId('chat-tool-card')).getByText('completed')).toBeTruthy();
+    // The tool call itself draws nothing; only what it touched, and the usage.
+    await waitFor(() => expect(view.getAllByTestId('chat-touched-entities')).toHaveLength(1));
+    expect(view.queryByTestId('chat-tool-card')).toBeNull();
     expect(view.getByTestId('chat-usage-card').textContent).toContain('$0.0073');
-    expect((view.getByLabelText('Chat teammate') as HTMLSelectElement).disabled).toBe(true);
-    expect((view.getByLabelText('Chat mode') as HTMLSelectElement).disabled).toBe(true);
-    expect(view.getAllByText('plan').length).toBeGreaterThan(0);
+    // A configured thread still SAYS what it runs as; it just cannot be edited.
+    expect((view.getByLabelText('Chat teammate') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.getByLabelText('Chat model') as HTMLButtonElement).disabled).toBe(true);
+    expect(view.getByLabelText('Chat mode').textContent).toContain('plan');
     expect(view.getByText('pinned for this thread')).toBeTruthy();
   });
 
@@ -141,14 +144,18 @@ describe('Chat Home', () => {
 
     await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
     fireEvent.click(view.getByRole('button', { name: /new chat/i }));
-    /* R4: a NEW thread's teammate and mode are composer chips (the TO row and
-       the mode radios); the model keeps its header select. */
-    const toRow = view.getByRole('radiogroup', { name: 'Send to teammate' });
-    expect(within(toRow).getAllByRole('radio').length).toBeGreaterThan(0);
-    fireEvent.change(view.getByLabelText('Chat model'), { target: { value: 'gpt-5.6-sol' } });
-    fireEvent.click(
-      within(view.getByRole('radiogroup', { name: 'Chat mode' })).getByRole('radio', { name: 'build' }),
-    );
+    /* R4: a NEW thread's teammate, mode and model are all drop-ups on the
+       composer's own foot — there is no configuration panel above it. */
+    fireEvent.click(view.getByLabelText('Chat teammate'));
+    expect(
+      within(view.getByTestId('tch-teammate-menu')).getAllByRole('option').length,
+    ).toBeGreaterThan(0);
+    fireEvent.keyDown(view.getByLabelText('Chat teammate'), { key: 'Escape' });
+
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-gpt-5.6-sol'));
+    fireEvent.click(view.getByLabelText('Chat mode'));
+    fireEvent.click(view.getByTestId('tch-mode-build'));
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Audit the release blockers.' },
     });
@@ -168,7 +175,7 @@ describe('Chat Home', () => {
     });
     expect(controls.configs[0]?.rootMessageId).toMatch(/^019f/);
     expect(controls.posts).toHaveLength(0);
-    expect(view.getByText('Agent is working')).toBeTruthy();
+    expect(view.getByTestId('tch-send-working')).toBeTruthy();
   });
 
   it('offers Explain and persists it in the write-once thread configuration', async () => {
@@ -184,10 +191,10 @@ describe('Chat Home', () => {
 
     await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
     fireEvent.click(view.getByRole('button', { name: /new chat/i }));
-    const modeRow = view.getByRole('radiogroup', { name: 'Chat mode' });
-    const explain = within(modeRow).getByRole('radio', { name: 'explain' });
-    fireEvent.click(explain);
-    expect(explain.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(view.getByLabelText('Chat mode'));
+    fireEvent.click(view.getByTestId('tch-mode-explain'));
+    // The trigger states the selection without being opened.
+    expect(view.getByLabelText('Chat mode').textContent).toContain('explain');
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Explain the request flow with a diagram.' },
     });
@@ -196,9 +203,9 @@ describe('Chat Home', () => {
     await waitFor(() => expect(controls.configs).toHaveLength(1));
     expect(controls.configs[0]).toMatchObject({ mode: 'explain' });
     await waitFor(() => {
-      expect((view.getByLabelText('Chat mode') as HTMLSelectElement).disabled).toBe(true);
+      expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
     });
-    expect((view.getByLabelText('Chat mode') as HTMLSelectElement).value).toBe('explain');
+    expect(view.getByLabelText('Chat mode').textContent).toContain('explain');
     expect(view.getByText('pinned for this thread')).toBeTruthy();
   });
 
@@ -219,7 +226,7 @@ describe('Chat Home', () => {
       });
     });
     await waitFor(() => expect(view.getByText('Live result arrived.')).toBeTruthy());
-    expect(view.getByText('Agent is working')).toBeTruthy();
+    expect(view.getByTestId('tch-send-working')).toBeTruthy();
 
     act(() => {
       controls.emit({
@@ -229,7 +236,7 @@ describe('Chat Home', () => {
         usage: {},
       });
     });
-    await waitFor(() => expect(view.queryByText('Agent is working')).toBeNull());
+    await waitFor(() => expect(view.queryByTestId('tch-send-working')).toBeNull());
     expect(view.getAllByTestId('chat-usage-card')).toHaveLength(1);
   });
 
@@ -265,7 +272,7 @@ describe('Chat Home', () => {
       target: { value: 'Read the current context.' },
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
-    await waitFor(() => expect(view.getByText('Agent is working')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId('tch-send-working')).toBeTruthy());
     fireEvent.click(view.getByRole('button', { name: /stop/i }));
 
     await waitFor(() => expect(view.getByText('Stopped · continuable')).toBeTruthy());
@@ -301,7 +308,7 @@ describe('Chat Home', () => {
       threadRootId: stopped.summary.rootId,
       body: 'Continue from the persisted result.',
     });
-    expect(view.getByText('Agent is working')).toBeTruthy();
+    expect(view.getByTestId('tch-send-working')).toBeTruthy();
   });
 
   /**
@@ -317,7 +324,7 @@ describe('Chat Home', () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
 
-    await waitFor(() => expect(view.getAllByTestId('chat-tool-card')).toHaveLength(1));
+    await waitFor(() => expect(view.getAllByTestId('chat-touched-entities')).toHaveLength(1));
     expect(
       view.getAllByText(/I mapped the work into three dependency-safe lanes/, {
         selector: '.tch-transcript *',
@@ -477,6 +484,25 @@ describe('Chat Home', () => {
   });
 
   /**
+   * The same reload, on a server that projects the wire marker (migration
+   * 133): `turnInFlight` identifies the claimed turn by the server's own
+   * record, so the placeholder is suppressed and the pulse covers it even
+   * with no arrival snapshot to lean on.
+   */
+  it('suppresses the placeholder on reload when the wire marker is present', async () => {
+    const thread = structuredClone(CHAT_HOME_FIXTURE_THREAD);
+    thread.summary.state = 'streaming';
+    thread.turns = [thread.turns[0]!, { ...placeholderTurn(), turnInFlight: true }];
+    const { port } = createChatHomeFixturePort([thread]);
+    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+
+    await waitFor(() => expect(view.getByTestId('chat-thinking')).toBeTruthy());
+    expect(view.queryByText('Agent turn in progress.')).toBeNull();
+    // And the composer carries the running state as the send-button loader.
+    expect(view.getByTestId('tch-send-working')).toBeTruthy();
+  });
+
+  /**
    * `projectTurnParts` drops `done`, so a turn that terminated without output
    * holds one stored part and DRAWS nothing. Suppressing its body on
    * `parts.length` left an empty bubble where the durable fallback belongs.
@@ -513,9 +539,8 @@ describe('Chat Home', () => {
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
 
-    await waitFor(() => expect(view.getByText('Agent is working')).toBeTruthy());
-    const stop = view.getByRole('button', { name: 'Stop this turn' });
-    expect(stop.getAttribute('aria-disabled')).toBe('true');
-    expect(view.getByText(/no chat interrupt operation is exposed/)).toBeTruthy();
+    const working = await view.findByTestId('tch-send-working');
+    expect(working.getAttribute('aria-disabled')).toBe('true');
+    expect(working.getAttribute('title')).toMatch(/no chat interrupt operation is exposed/);
   });
 });

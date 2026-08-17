@@ -50,7 +50,7 @@ function fakeDb(workingDir?: string, trust = 'trusted'): Db {
 }
 
 describe('chat launch composition', () => {
-  const MODES: readonly ChatMode[] = ['ask', 'explain', 'plan', 'build', 'orchestrate'];
+  const MODES: readonly ChatMode[] = ['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft'];
 
   it('gives every mode the same native surface and prefers it over duplicate MCP tools', () => {
     for (const mode of MODES) {
@@ -104,6 +104,10 @@ describe('chat launch composition', () => {
     expect(chatSystemPrompt(launch('plan'), true)).toContain('Approve → dispatch');
     expect(chatSystemPrompt(launch('build'), true)).toContain('edits are real writes');
     expect(chatSystemPrompt(launch('orchestrate'), true)).toContain('ORCHESTRATE coordinates');
+    // Craft P1: the blueprint norms ride the prompt — style, never permission.
+    expect(chatSystemPrompt(launch('craft'), true)).toContain('CRAFT sketches a blueprint');
+    expect(chatSystemPrompt(launch('craft'), true)).toContain('Materialize nothing until approval lands in this thread');
+    expect(chatSystemPrompt(launch('craft'), true)).toContain('One guarded patch per turn');
     // A variant may no longer deny a capability the mode now has. Both
     // phrasings the old prompt used are banned outright.
     for (const mode of MODES) {

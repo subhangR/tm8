@@ -34,8 +34,10 @@ import type {
 } from '@tm8/contract';
 import type { Seam, Unsubscribe } from '../seam.js';
 import {
+  type CacheDraft,
   type DomainState,
   type SpaceSettings,
+  enforceCacheBounds,
   ingestDelivery,
   ingestDetail,
   ingestEdges,
@@ -45,7 +47,7 @@ import {
   ingestSummaries,
   initialDomainState,
   mergeSummary,
-  reduceEvent,
+  reduceEvents,
 } from './reducers.js';
 import { createJournal, type Journal } from './journal.js';
 
@@ -64,6 +66,8 @@ export interface DomainActions {
   ingestHandoffs(workSessionId: EntityId, handoffs: HandoffView[]): void;
   /** Event stream entry point (wired to seam.onEvent by createDomainStore). */
   applyEvent(e: DurableWorkspaceEvent): void;
+  /** Ordered burst entry point. Produces at most one Zustand notification. */
+  applyEvents(events: readonly DurableWorkspaceEvent[]): void;
   // optimistic journal
   applyOptimistic(clientMutationId: string, patches: EntitySummary[]): void;
   reconcile(clientMutationId: string): void;
@@ -82,25 +86,67 @@ export interface DomainStoreHandle {
   store: StoreApi<DomainStoreState>;
   /** The underlying journal (exposed for tests and advanced wiring). */
   journal: Journal;
+  /** Stage seam events while a current-state snapshot is being hydrated. */
+  beginEventBuffering(): void;
+  /** Publish staged events in bounded chunks, then resume frame batching. */
+  releaseBufferedEvents(): Promise<void>;
+  /** Drop staged/pending events when their space generation is abandoned. */
+  discardBufferedEvents(): void;
   /** Unsubscribe from the seam event stream. Does not reset state. */
   dispose(): void;
 }
+
+export interface DomainStoreOptions {
+  /** A frame-sized window batches WebSocket message tasks into one commit. */
+  batchWindowMs?: number;
+  /** Bound reducer work per turn so a large burst yields to input/paint. */
+  maxBatchSize?: number;
+  /** Entity ids referenced by live rows/graph/details and ineligible for eviction. */
+  retainedEntityIds?: () => ReadonlySet<string>;
+  timers?: {
+    setTimeout(fn: () => void, ms: number): unknown;
+    clearTimeout(handle: unknown): void;
+  };
+}
+
+const DEFAULT_BATCH_WINDOW_MS = 16;
+const DEFAULT_MAX_BATCH_SIZE = 250;
 
 /**
  * Create the domain store and (when a seam is given) subscribe it to the
  * durable event stream. Pass no seam to drive `applyEvent` manually.
  */
-export function createDomainStore(seam?: DomainEventSource): DomainStoreHandle {
+export function createDomainStore(
+  seam?: DomainEventSource,
+  options: DomainStoreOptions = {},
+): DomainStoreHandle {
   const journal = createJournal();
+  const timers = options.timers ?? {
+    setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+    clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  };
+  const batchWindowMs = options.batchWindowMs ?? DEFAULT_BATCH_WINDOW_MS;
+  const maxBatchSize = options.maxBatchSize ?? DEFAULT_MAX_BATCH_SIZE;
+  let discardBufferedEvents = () => {};
+  const NOTHING_RETAINED: ReadonlySet<string> = new Set();
+  const retained = (): ReadonlySet<string> => options.retainedEntityIds?.() ?? NOTHING_RETAINED;
 
   const store = createStore<DomainStoreState>()((set, get) => ({
     ...initialDomainState(),
     pendingMutations: {},
 
-    ingestSummaries: (list) => set((state) => ingestSummaries(state, list)),
-    ingestEdges: (list) => set((state) => ingestEdges(state, list)),
-    ingestDetail: (detail) => set((state) => ingestDetail(state, detail)),
-    ingestMessages: (anchorId, messages) => set((state) => ingestMessages(state, anchorId, messages)),
+    // EVERY WRITE PATH PASSES THE RETAINED SET, not just the event path.
+    // A read is the way a browsing session grows these caches, so a read that
+    // skipped the sweep meant the bound only ever described a client sitting
+    // still. `retained` is read at call time, so it is always the CURRENT
+    // render's references (see `enforceCacheBounds`).
+    ingestSummaries: (list) => set((state) => ingestSummaries(state, list, retained())),
+    ingestEdges: (list) => set((state) => ingestEdges(state, list, retained())),
+    ingestDetail: (detail) => set((state) => ingestDetail(state, detail, retained())),
+    // The retained set pins the OPEN thread: `messagesByAnchor` is keyed by
+    // anchor entity id, so an anchor with a panel on it is already in the set.
+    ingestMessages: (anchorId, messages) =>
+      set((state) => ingestMessages(state, anchorId, messages, retained())),
     ingestNotifications: (items) => set((state) => ingestNotifications(state, items)),
     ingestMenu: (spaceId, menu) => set((state) => {
       if (menu === null) {
@@ -115,17 +161,40 @@ export function createDomainStore(seam?: DomainEventSource): DomainStoreHandle {
     ingestDelivery: (messageId, records) => set((state) => ingestDelivery(state, messageId, records)),
     ingestHandoffs: (workSessionId, handoffs) => set((state) => ingestHandoffs(state, workSessionId, handoffs)),
 
-    applyEvent: (e) => {
-      set((state) => reduceEvent(state, e));
-      // Any event echoing a journaled clientMutationId reconciles it —
-      // idempotent, first-wins with the CommandResult path (LLD §7).
-      if (e.clientMutationId) get().reconcile(e.clientMutationId);
+    applyEvent: (e) => get().applyEvents([e]),
+
+    applyEvents: (events) => {
+      if (events.length === 0) return;
+      // Reconcile echoes inside the SAME store update as their authoritative
+      // projection. A burst used to cost one commit per event plus a second
+      // commit for every echoed optimistic mutation.
+      const reconciled = new Set<string>();
+      for (const event of events) {
+        if (!event.clientMutationId || reconciled.has(event.clientMutationId)) continue;
+        reconciled.add(event.clientMutationId);
+        journal.reconcile(event.clientMutationId);
+      }
+      set((state) => {
+        const patch = reduceEvents(state, events, options.retainedEntityIds?.());
+        let pendingMutations: DomainStoreState['pendingMutations'] | undefined;
+        for (const clientMutationId of reconciled) {
+          if (!state.pendingMutations[clientMutationId]) continue;
+          pendingMutations ??= { ...state.pendingMutations };
+          delete pendingMutations[clientMutationId];
+        }
+        if (Object.keys(patch).length === 0 && pendingMutations === undefined) return state;
+        return pendingMutations === undefined ? patch : { ...patch, pendingMutations };
+      });
     },
 
     applyOptimistic: (clientMutationId, patches) => {
       const current = get();
       journal.applyOptimistic(clientMutationId, patches, (id) => current.entities[id]);
       set((state) => {
+        // The merge stays UNCONDITIONAL — an optimistic patch is the local
+        // truth for a row the user just acted on and does not bump `version`,
+        // so routing it through `ingestSummaries`' version guard would drop
+        // exactly the writes this path exists to show.
         let entities = state.entities;
         let details = state.details;
         for (const patch of patches) {
@@ -133,9 +202,25 @@ export function createDomainStore(seam?: DomainEventSource): DomainStoreHandle {
           entities = merged.entities;
           details = merged.details ?? details;
         }
+        // NO PATCHES ⇒ NOTHING CLONED, and handing `state.entities` to the
+        // sweep as a draft would let it delete keys out of LIVE STATE in
+        // place — a mutation Zustand cannot see and no subscriber is told
+        // about. There is nothing to bound in that case anyway; the caller
+        // still gets its pending marker.
+        if (entities === state.entities && details === state.details) {
+          return { pendingMutations: { ...state.pendingMutations, [clientMutationId]: true } };
+        }
+        // AN OPTIMISTIC ROW IS RETAINED BY DEFINITION: it is on screen because
+        // the user just acted on it, and the journal holds a rollback entry
+        // that names it. Evicting it here would make `rollback` restore a
+        // summary into a table the row is no longer in.
+        const draft: CacheDraft = { entities, ...(details === state.details ? {} : { details }) };
+        enforceCacheBounds(state, draft, new Set([...retained(), ...patches.map((p) => p.id)]));
         return {
-          entities,
-          details,
+          entities: draft.entities ?? entities,
+          details: draft.details ?? details,
+          ...(draft.edges ? { edges: draft.edges } : {}),
+          ...(draft.edgeIdsByEntity ? { edgeIdsByEntity: draft.edgeIdsByEntity } : {}),
           pendingMutations: { ...state.pendingMutations, [clientMutationId]: true },
         };
       });
@@ -192,16 +277,95 @@ export function createDomainStore(seam?: DomainEventSource): DomainStoreHandle {
   }));
 
   let unsubscribe: Unsubscribe | null = null;
+  let disposed = false;
+  let buffering = false;
+  let eventTimer: unknown = null;
+  let queuedEvents: DurableWorkspaceEvent[] = [];
+  let enqueuedCount = 0;
+  let appliedCount = 0;
+  let releaseWaiters: Array<{ target: number; resolve: () => void }> = [];
+
+  const settleRelease = () => {
+    const ready = releaseWaiters.filter((waiter) => waiter.target <= appliedCount);
+    releaseWaiters = releaseWaiters.filter((waiter) => waiter.target > appliedCount);
+    for (const waiter of ready) waiter.resolve();
+  };
+
+  const flushEventChunk = () => {
+    eventTimer = null;
+    if (disposed || buffering) {
+      settleRelease();
+      return;
+    }
+    const events = queuedEvents.splice(0, maxBatchSize);
+    if (events.length > 0) {
+      store.getState().applyEvents(events);
+      appliedCount += events.length;
+    }
+    if (queuedEvents.length > 0) {
+      // Yield between chunks. A retained burst must not monopolise the main
+      // thread even though it now costs only a handful of React commits.
+      eventTimer = timers.setTimeout(flushEventChunk, 0);
+    }
+    settleRelease();
+  };
+
+  const scheduleEventFlush = () => {
+    if (disposed || buffering || eventTimer !== null || queuedEvents.length === 0) return;
+    eventTimer = timers.setTimeout(flushEventChunk, batchWindowMs);
+  };
+
+  discardBufferedEvents = () => {
+    queuedEvents = [];
+    appliedCount = enqueuedCount;
+    if (eventTimer !== null) {
+      timers.clearTimeout(eventTimer);
+      eventTimer = null;
+    }
+    buffering = false;
+    settleRelease();
+  };
+
   if (seam) {
-    unsubscribe = seam.onEvent((e) => store.getState().applyEvent(e));
+    unsubscribe = seam.onEvent((event) => {
+      if (disposed) return;
+      if (batchWindowMs <= 0 && !buffering) {
+        store.getState().applyEvent(event);
+        return;
+      }
+      queuedEvents.push(event);
+      enqueuedCount += 1;
+      scheduleEventFlush();
+    });
   }
 
   return {
     store,
     journal,
+    beginEventBuffering: () => {
+      if (disposed) return;
+      buffering = true;
+      if (eventTimer !== null) {
+        timers.clearTimeout(eventTimer);
+        eventTimer = null;
+      }
+    },
+    releaseBufferedEvents: () => {
+      if (disposed) return Promise.resolve();
+      buffering = false;
+      const target = enqueuedCount;
+      if (appliedCount >= target) return Promise.resolve();
+      const done = new Promise<void>((resolve) => releaseWaiters.push({ target, resolve }));
+      scheduleEventFlush();
+      return done;
+    },
+    discardBufferedEvents,
     dispose: () => {
+      if (disposed) return;
+      disposed = true;
       unsubscribe?.();
       unsubscribe = null;
+      discardBufferedEvents();
     },
   };
 }

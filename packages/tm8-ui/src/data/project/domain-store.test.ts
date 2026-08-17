@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { DurableWorkspaceEvent } from '@tm8/contract';
 import {
   createDomainStore,
@@ -36,9 +36,98 @@ function fakeSeam() {
 }
 
 describe('createDomainStore wiring', () => {
+  it('publishes a 2,000-event burst in bounded frame chunks', async () => {
+    vi.useFakeTimers();
+    try {
+      const seam = fakeSeam();
+      const { store, dispose } = createDomainStore(seam, {
+        batchWindowMs: 16,
+        maxBatchSize: 250,
+      });
+      let notifications = 0;
+      const unsubscribe = store.subscribe(() => { notifications += 1; });
+      for (let i = 0; i < 2_000; i += 1) {
+        seam.emit(event('entity.upsert', { entity: summary(`t${i}`) }));
+      }
+      expect(notifications).toBe(0);
+      await vi.runAllTimersAsync();
+      expect(notifications).toBe(8);
+      expect(Object.keys(store.getState().entities)).toHaveLength(2_000);
+      unsubscribe();
+      dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stages post-cursor events until hydration releases them', async () => {
+    vi.useFakeTimers();
+    try {
+      const seam = fakeSeam();
+      const domain = createDomainStore(seam, { batchWindowMs: 16 });
+      domain.beginEventBuffering();
+      seam.emit(event('entity.upsert', { entity: summary('after-hwm') }));
+      await vi.runAllTimersAsync();
+      expect(selectEntity('after-hwm')(domain.store.getState())).toBeUndefined();
+      const released = domain.releaseBufferedEvents();
+      await vi.runAllTimersAsync();
+      await released;
+      expect(selectEntity('after-hwm')(domain.store.getState())).toBeDefined();
+      domain.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('releases the staged prefix even while newer live events keep arriving', async () => {
+    const scheduled: Array<() => void> = [];
+    const seam = fakeSeam();
+    const domain = createDomainStore(seam, {
+      batchWindowMs: 16,
+      maxBatchSize: 1,
+      timers: {
+        setTimeout(fn) { scheduled.push(fn); return fn; },
+        clearTimeout(handle) {
+          const at = scheduled.indexOf(handle as () => void);
+          if (at >= 0) scheduled.splice(at, 1);
+        },
+      },
+    });
+    domain.beginEventBuffering();
+    seam.emit(event('entity.upsert', { entity: summary('buffered-1') }));
+    seam.emit(event('entity.upsert', { entity: summary('buffered-2') }));
+    const released = domain.releaseBufferedEvents();
+    seam.emit(event('entity.upsert', { entity: summary('live-after-release') }));
+
+    scheduled.shift()?.();
+    scheduled.shift()?.();
+    await released;
+    expect(Object.keys(domain.store.getState().entities)).toEqual(['buffered-1', 'buffered-2']);
+    expect(scheduled).toHaveLength(1);
+    scheduled.shift()?.();
+    expect(Object.keys(domain.store.getState().entities)).toEqual([
+      'buffered-1',
+      'buffered-2',
+      'live-after-release',
+    ]);
+    domain.dispose();
+  });
+
+  it('does not notify Zustand subscribers for an unknown-event batch', () => {
+    const { store } = createDomainStore();
+    let notifications = 0;
+    store.subscribe(() => { notifications += 1; });
+    const unknown = { ...event('activity.created', { activity: { id: 'a' } }) } as unknown as {
+      type: string;
+    };
+    unknown.type = 'future.unknown';
+    store.getState().applyEvents([unknown as DurableWorkspaceEvent]);
+    expect(notifications).toBe(0);
+  });
+
   it('folds seam events through the reducers into domain state', () => {
     const seam = fakeSeam();
-    const { store, dispose } = createDomainStore(seam);
+    const { store, dispose } = createDomainStore(seam, { batchWindowMs: 0 });
 
     seam.emit(event('entity.upsert', { entity: summary('t1') }));
     seam.emit(event('edge.upsert', { edge: edge('e1', 't1', 't2') }));
@@ -59,7 +148,7 @@ describe('createDomainStore wiring', () => {
 
   it('dispose unsubscribes from the seam; state stays but stops advancing', () => {
     const seam = fakeSeam();
-    const { store, dispose } = createDomainStore(seam);
+    const { store, dispose } = createDomainStore(seam, { batchWindowMs: 0 });
     seam.emit(event('entity.upsert', { entity: summary('t1') }));
     expect(seam.subscriberCount()).toBe(1);
 
@@ -149,7 +238,7 @@ describe('optimistic journal integration', () => {
 
   it('event echo carrying the clientMutationId reconciles first; later reconcile is a no-op', () => {
     const seam = fakeSeam();
-    const { store, journal } = createDomainStore(seam);
+    const { store, journal } = createDomainStore(seam, { batchWindowMs: 0 });
     store.getState().applyOptimistic('cm1', [summary('t1', { title: 'optimistic' })]);
 
     seam.emit(event('entity.upsert', { entity: summary('t1', { title: 'echoed', version: 2 }), clientMutationId: 'cm1' }));
@@ -186,7 +275,7 @@ describe('optimistic journal integration', () => {
 
   it('rollback after an echo reconcile does not clobber authoritative state', () => {
     const seam = fakeSeam();
-    const { store } = createDomainStore(seam);
+    const { store } = createDomainStore(seam, { batchWindowMs: 0 });
     store.getState().ingestSummaries([summary('t1', { title: 'original' })]);
     store.getState().applyOptimistic('cm1', [summary('t1', { title: 'optimistic' })]);
     seam.emit(event('entity.upsert', { entity: summary('t1', { title: 'authoritative' }), clientMutationId: 'cm1' }));
@@ -219,7 +308,7 @@ describe('reads feeding the domain slice', () => {
 describe('invalidation lifecycle', () => {
   it('association-corrected marks connections stale until the consumer clears it', () => {
     const seam = fakeSeam();
-    const { store } = createDomainStore(seam);
+    const { store } = createDomainStore(seam, { batchWindowMs: 0 });
     seam.emit(event('project.association.corrected', {
       result: { artifactId: 't1', projectId: 'p1', outcome: 'demoted', edge: null },
     }));

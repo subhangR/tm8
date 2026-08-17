@@ -50,13 +50,12 @@ beforeEach(() => {
 
 async function openTasksScreen() {
   const view = render(<GateApp />);
-  /* Revision 12: no-memory boots land on the merged Home; Tasks rides the
-     Workspace caret ON THE WORK TAB — the rail is the active tab's contents. */
+  /* Revision 17: the Work tab retired with the unified Home (task 01a00932)
+     — the kind screens are reached by their GUARANTEED chord (`g t`), the
+     door the keyboard contract promises survives any menu arrangement. */
   await waitFor(() => view.getByTestId('home-page'));
-  fireEvent.click(within(view.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
-  const rail = within(view.getByTestId('menu-rail'));
-  fireEvent.click(rail.getByLabelText('Expand Workspace'));
-  fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+  fireEvent.keyDown(window, { key: 'g' });
+  fireEvent.keyDown(window, { key: 't' });
   await waitFor(() => view.getByTestId('entity-view'));
   return view;
 }

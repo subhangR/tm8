@@ -49,7 +49,6 @@
   font-size: 11px;
 }
 
-.tch-new,
 .tch-send,
 .tch-stop {
   border: 1px solid var(--pn-line-2);
@@ -63,7 +62,6 @@
   cursor: pointer;
 }
 
-.tch-new:hover,
 .tch-stop:hover {
   background: var(--pn-hover);
 }
@@ -143,45 +141,6 @@
 
 .tch-conversation__head { padding-inline: var(--pn-space-4); }
 
-.tch-selector {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--pn-space-2);
-  flex: none;
-}
-
-.tch-selector label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  color: var(--pn-ink-3);
-  font-family: var(--pn-mono);
-  font-size: 8px;
-  text-transform: uppercase;
-  letter-spacing: var(--pn-track-label);
-}
-
-.tch-selector select {
-  max-width: 150px;
-  min-height: 26px;
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-xs);
-  background: var(--pn-card);
-  color: var(--pn-ink-2);
-  font: 10.5px var(--pn-ui);
-  padding-inline: 7px;
-}
-
-.tch-selector select:disabled { opacity: 0.7; }
-
-.tch-selector__provider,
-.tch-selector__pin {
-  align-self: center;
-  color: var(--pn-ink-4);
-  font: 8.5px var(--pn-mono);
-  white-space: nowrap;
-}
-
 .tch-mode-chip {
   color: var(--pn-info);
   border: 1px solid var(--pn-line);
@@ -193,12 +152,6 @@
   white-space: nowrap;
 }
 
-.tch-selector__pin {
-  color: var(--pn-info);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-pill);
-  padding: 2px 6px;
-}
 
 .tch-transcript {
   display: flex;
@@ -252,12 +205,21 @@
 
 .tch-turn__byline {
   display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
   align-items: center;
   gap: 6px;
   margin-bottom: var(--pn-space-2);
   color: var(--pn-ink-3);
   font-size: 10px;
 }
+
+/* Byline sidedness: the viewer's identity block sits left, everyone else's
+   right — avatar, name, mode chip and timestamp travel as ONE unit. Purely
+   visual: `justify-content`, never `row-reverse`, so DOM order (and with it
+   screen-reader and tab order) is identical on both sides. Bodies
+   (`tch-user-body`, `tch-parts`) are siblings and do not move. */
+.tch-turn[data-self='false'] .tch-turn__byline { justify-content: flex-end; }
 
 .tch-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
 .tch-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
@@ -291,56 +253,6 @@
 .tch-thinking p { margin: 5px 0 0; padding-left: 10px; border-left: 2px solid var(--pn-line-2); }
 .tch-answer { font-size: 13px; }
 
-.tch-tool {
-  overflow: hidden;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
-  background: var(--pn-surface);
-}
-
-/* A real button now (it discloses the call), so the button chrome is reset back
-   to the header it has always looked like — the press is the only new thing. */
-.tch-tool__head {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  padding: 0 9px;
-  border: 0;
-  border-bottom: 1px solid var(--pn-line);
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.tch-tool__head:hover { background: var(--pn-hover); }
-
-.tch-tool__mark { color: var(--pn-brand-2); }
-.tch-tool code { color: var(--pn-ink-2); font: 10px var(--pn-mono); }
-
-.tch-tool__state {
-  margin-left: auto;
-  color: var(--pn-run);
-  font: 8.5px var(--pn-mono);
-}
-
-.tch-tool[data-state='running'] .tch-tool__state { color: var(--pn-wait); }
-.tch-tool[data-state='error'] .tch-tool__state { color: var(--pn-block); }
-
-.tch-tool__detail {
-  padding: 5px 9px;
-  color: var(--pn-ink-3);
-  font-size: 9px;
-}
-
-.tch-tool__detail + .tch-tool__detail { border-top: 1px solid var(--pn-line); }
-.tch-tool__detail summary { cursor: pointer; font-family: var(--pn-mono); }
-.tch-tool__detail pre { overflow-x: auto; margin: 6px 0 0; color: var(--pn-ink-2); font: 9.5px/1.45 var(--pn-mono); }
-.tch-tool__detail[data-error] { color: var(--pn-block); }
-
 /* Explain-mode presentation tools. Their structured payload is the secondary
    disclosure; the diagram/graph/code/asset is the thing the human asked for. */
 .tch-explain {
@@ -350,22 +262,6 @@
   background: var(--pn-card);
   box-shadow: var(--pn-sh-sm);
 }
-
-.tch-explain__toolhead {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 31px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--pn-line);
-  background: var(--pn-surface);
-}
-
-.tch-explain__mark { color: var(--pn-brand-2); font: 11px var(--pn-mono); }
-.tch-explain__toolhead code { color: var(--pn-ink-3); font: 9px var(--pn-mono); }
-.tch-explain__state { margin-left: auto; color: var(--pn-run); font: 8.5px var(--pn-mono); }
-.tch-explain[data-state='running'] .tch-explain__state { color: var(--pn-wait); }
-.tch-explain[data-state='error'] .tch-explain__state { color: var(--pn-block); }
 
 .tch-explain__body { padding: 14px; }
 .tch-explain__heading { min-width: 0; }
@@ -397,8 +293,7 @@
   color: var(--pn-ink-3);
   font: 9px var(--pn-mono);
 }
-.tch-explain__source summary,
-.tch-explain__raw summary { cursor: pointer; }
+.tch-explain__source summary { cursor: pointer; }
 .tch-explain__source pre {
   overflow-x: auto;
   margin: 7px 0 0;
@@ -408,23 +303,6 @@
   background: var(--pn-surface);
   color: var(--pn-ink-2);
   font: 9px/1.5 var(--pn-mono);
-}
-
-.tch-explain__raw {
-  border-top: 1px solid var(--pn-line);
-  padding: 6px 10px;
-  color: var(--pn-ink-4);
-  font: 8.5px var(--pn-mono);
-}
-.tch-explain__raw > div { margin: 7px 0; }
-.tch-explain__raw > div + div { padding-top: 7px; border-top: 1px solid var(--pn-line); }
-.tch-explain__raw > div[data-error] { color: var(--pn-block); }
-.tch-explain__raw pre {
-  overflow-x: auto;
-  max-height: 240px;
-  margin: 4px 0 0;
-  color: var(--pn-ink-3);
-  font: 8.5px/1.45 var(--pn-mono);
 }
 
 /* Mermaid already owns its safe lazy renderer; this only tunes its frame in a
@@ -583,14 +461,14 @@
 .tch-durable__state[data-state='error'] { color: var(--pn-block); }
 .tch-durable__state[data-state='running'] { color: var(--pn-wait); }
 
-/* Entity chips — graph entities a tool call touched, first-class in the
-   transcript. Same visual family as list rows: kind mark + title + kind word. */
-.tch-tool__entities {
+/* Entity chips — the graph entities a turn touched, and now the ONLY surviving
+   trace of its plain tool calls. Standing free in the transcript instead of
+   inside a card, they carry no border and no card padding: the chips ARE the
+   object. Same visual family as list rows: kind mark + title + kind word. */
+.tch-touched {
   display: flex;
   flex-wrap: wrap;
   gap: var(--pn-space-1);
-  padding: var(--pn-space-1) 9px var(--pn-space-2);
-  border-top: 1px solid var(--pn-line);
 }
 
 .tch-entity-chip {
@@ -675,10 +553,15 @@ button.tch-entity-chip:hover {
      block is .ri-host (position: relative), not this ancestor. */
   container-type: inline-size;
 }
-/* The keyboard hint is the first thing to go when the foot runs out of room —
-   losing a tip beats the Send button wrapping onto its own line. */
+/* The foot sheds copy before it sheds controls: the keyboard tip goes first,
+   then the phase word and the pinned note. Losing a label beats the three
+   thread-setting triggers or Send wrapping onto a second line. */
 @container (max-width: 620px) {
   .tch-hint { display: none; }
+}
+@container (max-width: 480px) {
+  .tch-phase,
+  .tch-pinned { display: none; }
 }
 
 /* THE EMPTY STATE CENTRES THE PAIR (ref mockup 02-home-empty): greeting and
@@ -710,47 +593,8 @@ button.tch-entity-chip:hover {
   border-color: color-mix(in srgb, var(--pn-wait) 45%, var(--pn-border));
 }
 
-.tch-composer {
-  /* VISIBLE, and that is a change with a reason: the skill picker pins above
-     the field (`.ri-host` + `.ri-popover`), and `hidden` clips an absolutely
-     positioned descendant. It was here to round the textarea's corners
-     against the card, and the textarea's background is transparent — so the
-     rounding it bought was already the card's own. */
-  overflow: visible;
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-md);
-  background: var(--pn-card);
-  box-shadow: var(--pn-sh-md);
-}
-
-.tch-composer:focus-within { border-color: var(--pn-brand); }
-
-.tch-composer textarea {
-  display: block;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 58px;
-  resize: none;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--pn-ink);
-  font: 13px/1.45 var(--pn-ui);
-  padding: 11px 12px 4px;
-}
-
-.tch-composer textarea::placeholder { color: var(--pn-ink-4); }
-
-.tch-composer__foot {
-  display: flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 3px 7px 6px 11px;
-}
-
-/* Chips and the paste refusal sit ABOVE the field, inside the composer card,
-   so an attachment reads as part of the message being written. */
-.tch-composer .ri-attachments { padding: 9px 11px 0; }
+/* The card shell (border, field, foot geometry) is `ComposerCard`'s —
+   `.ri-card` in rich-input.css. Only what is genuinely Chat Home's stays. */
 
 /* The two sigil-and-file controls in the footer. Sized to the phase label
    beside them rather than to the Send button, which is the primary. */
@@ -795,6 +639,33 @@ button.tch-entity-chip:hover {
 .tch-send[aria-disabled='true'] { opacity: 0.42; cursor: default; }
 .tch-stop { color: var(--pn-block); }
 
+/* The send button carrying the agent-running state: same footprint, plus a
+   spinner. Disabled here means "no interrupt on this node", not "inert UI",
+   so it keeps more presence than a refused send. */
+.tch-send--working {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tch-send--working[aria-disabled='true'] { opacity: 0.72; cursor: default; }
+
+.tch-spin {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--pn-card) 40%, transparent);
+  border-top-color: var(--pn-card);
+  animation: tch-spin 0.8s linear infinite;
+}
+
+@keyframes tch-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tch-spin { animation-duration: 2.4s; }
+}
+
 .tch-loading,
 .tch-thinking {
   display: flex;
@@ -838,8 +709,6 @@ button.tch-entity-chip:hover {
   .tch-thread-list { display: flex; gap: 4px; overflow-x: auto; padding: 5px 8px; }
   .tch-thread { flex: 0 0 210px; margin: 0; }
   .tch-conversation__head { align-items: flex-start; flex-direction: column; }
-  .tch-selector { width: 100%; overflow-x: auto; }
-  .tch-selector__pin { display: none; }
   .tch-transcript { padding: var(--pn-space-4); }
   .tch-composer-wrap { width: calc(100% - 20px); }
 }
@@ -849,32 +718,51 @@ button.tch-entity-chip:hover {
    time-grouped, with the launch actions, the loaded-list filter, and the
    slots/workspace foot. */
 
-.tch-sidebar__actions {
+/* THE ROOT HEADER (task 01a00932 R5): [Chats ＋][Kind ＋ ▾]. Two segmented
+   cells sharing one strip — the label half switches the root, the ＋ half
+   creates, the caret opens the kind menu. Labels only — no counts (D16). */
+/* THE ROOT HEADER LINE — the segmented tablist, plus the hosted list's layout
+   switcher pinned to the right. The margin moved OFF `.tch-roots` and onto
+   this bar so both halves share one line box; the tablist keeps its own
+   border and background, which is what makes the switcher read as beside the
+   segmented control rather than inside it. */
+.tch-rootbar {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
   flex: none;
-  padding: var(--pn-space-2) var(--pn-space-3) 0;
-}
-.tch-sidebar__actions .tch-new { flex: 1; text-align: center; }
-.tch-new--task { background: var(--pn-active); }
-.tch-new--task[aria-disabled='true'] {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-/* D1: the tab strip. Labels only — no counts (D16). */
-.tch-tabs {
-  display: flex;
-  gap: 2px;
-  flex: none;
+  min-width: 0;
   margin: var(--pn-space-2) var(--pn-space-3) 0;
+}
+/* The tablist takes the slack and the switcher takes its natural width: the
+   kind label already ellipsizes (`.tch-rootcell__label`), so a long plural
+   like "Work sessions" shortens itself rather than pushing the switcher out
+   of the 280px column. */
+.tch-rootbar > .tch-roots { flex: 1; min-width: 0; }
+.tch-rootbar > .lp__views { flex: none; }
+
+.tch-roots {
+  display: flex;
+  gap: 4px;
+  flex: none;
   padding: 2px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
   background: var(--pn-card);
 }
-.tch-tab {
-  flex: 1;
+.tch-rootcell {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+}
+.tch-rootcell--kind { flex: 1; min-width: 0; }
+.tch-rootcell__label,
+.tch-rootcell__plus,
+.tch-rootcell__caret {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 4px 6px;
   border: 0;
   border-radius: calc(var(--pn-r-sm) - 2px);
@@ -884,13 +772,61 @@ button.tch-entity-chip:hover {
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
-.tch-tab:hover { color: var(--pn-ink); }
-.tch-tab--active,
-.tch-tab[aria-selected='true'] {
-  background: var(--pn-active);
-  color: var(--pn-ink);
+.tch-rootcell__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tch-rootcell--kind .tch-rootcell__label { flex: 1; }
+.tch-rootcell__plus,
+.tch-rootcell__caret {
+  flex: none;
+  padding: 4px 5px;
 }
+.tch-rootcell__plus[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.tch-rootcell__label:hover,
+.tch-rootcell__plus:hover,
+.tch-rootcell__caret:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.tch-rootcell--active { background: var(--pn-active); }
+.tch-rootcell--active .tch-rootcell__label { color: var(--pn-ink); }
+.tch-rootcell__glyph { display: inline-flex; flex: none; }
+
+/* The kind menu — a portal-free popover is safe here: the sidebar clips
+   nothing (`.tch-sidebar` declares no overflow), unlike the panel tiles. */
+.tch-rootmenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 168px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-shadow-2, 0 8px 24px rgba(16, 18, 24, 0.16));
+}
+.tch-rootopt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.tch-rootopt:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.tch-rootopt--current { background: var(--pn-active); color: var(--pn-ink); }
 
 /* A tile groups a row button with its NON-BUTTON siblings (the Run control,
    the badge sub-row — PR chips carry real links, which cannot nest inside a
@@ -989,12 +925,26 @@ button.tch-entity-chip:hover {
   padding: 7px 6px;
   gap: 5px;
 }
+/* The disclosure caret OVERLAYS the status mark on hover, so it has to land on
+   the mark's box, not on the workspace panel's. This coat re-cuts the row to a
+   7px/6px inset; the caret's own `top: 6px; left: 7px` left it a pixel high and
+   a pixel right of the dot it is meant to replace, which is what made the
+   status marks look off-column as the pointer travelled the list. */
+.cv2-root .tch-panel-host .pn-tt__arrow {
+  top: 7px;
+  left: 6px;
+}
 .cv2-root .tch-panel-host .pn-tt__title {
   font-size: 12px;
   font-weight: 600;
 }
 .cv2-root .tch-panel-host .pn-tt__status-text { font-size: 9.5px; }
-.cv2-root .tch-panel-host .pn-tt__badges { padding: 0 8px 6px; }
+/* The badge sub-row hangs off the TITLE, not off the tile edge. This coat
+   re-cuts `pn-tt__main` to a 6px inset and a 5px gap, so the title starts at
+   6 + 16px status mark + 5px = 27px and the chips must start there too. A bare
+   `padding: 0 8px 6px` put them at the beginning of the row instead — the
+   workspace panel's own rule was already correct, so only Home read as broken. */
+.cv2-root .tch-panel-host .pn-tt__badges { padding: 0 8px 6px 27px; }
 .cv2-root .tch-panel-host .pn-tt__meta { padding: 6px 8px 8px; }
 
 /* REGION B when a task/session is selected (D7): the host's panel takes the
@@ -1102,82 +1052,92 @@ button.tch-entity-chip:hover {
   font-family: var(--pn-mono);
   font-size: 10.5px;
 }
-.tch-open-workspace {
-  align-self: flex-start;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  color: var(--pn-brand);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.tch-open-workspace:hover { text-decoration: underline; }
 
-/* Composer config for a NEW thread: mode chips + the TO row. */
-.tch-mode-row {
+/* THE THREAD'S CONFIGURATION, INSIDE THE BOX. Three triggers on the composer's
+   own foot: constant height whatever the roster is, and the transcript keeps
+   the top of the canvas that the old header panel and chip rows were taking. */
+.tch-picks {
   display: flex;
   align-items: center;
   gap: 5px;
-  flex-wrap: wrap;
-  padding: 2px 2px 6px;
+  min-width: 0;
+  margin-left: var(--pn-space-1);
 }
-.tch-mode-choice {
-  padding: 2px 10px;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-pill);
-  background: var(--pn-card);
-  color: var(--pn-ink-2);
-  font-family: var(--pn-mono);
-  font-size: 10.5px;
-  cursor: pointer;
-}
-.tch-mode-choice:hover { background: var(--pn-hover); }
-.tch-mode-choice--active {
-  background: var(--pn-active);
-  border-color: var(--pn-line-2);
-  color: var(--pn-ink);
-  font-weight: 600;
-}
-.tch-mode-hint {
-  margin-left: auto;
-  color: var(--pn-ink-4);
-  font-size: 10.5px;
-  font-style: italic;
-}
-.tch-to-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin-right: auto;
-}
-.tch-to-label {
-  color: var(--pn-ink-4);
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.tch-to-chip {
+.tch-pick { display: inline-flex; }
+.tch-pick__trigger {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 8px 2px 3px;
+  max-width: 150px;
+  min-height: 24px;
+  padding: 2px 6px 2px 5px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
   background: var(--pn-card);
   color: var(--pn-ink-2);
-  font: inherit;
-  font-size: 11px;
+  font: 10.5px var(--pn-ui);
   cursor: pointer;
 }
-.tch-to-chip:hover { background: var(--pn-hover); }
-.tch-to-chip--active {
-  background: var(--pn-active);
+.tch-pick__trigger:hover:not(:disabled) {
+  background: var(--pn-hover);
   border-color: var(--pn-line-2);
-  color: var(--pn-ink);
-  font-weight: 600;
 }
+/* Pinned, not broken: the thread's write-once facts stay READABLE when they
+   can no longer be edited, so a configured thread still says what it runs as.
+   The `pinned for this thread` note beside them is the reason. */
+.tch-pick__trigger:disabled { cursor: default; opacity: 0.75; }
+.tch-pick__trigger:disabled .tch-pick__caret { visibility: hidden; }
+.tch-pick__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tch-pick__caret { color: var(--pn-ink-4); font-size: 9px; }
+
+.tch-pinned {
+  color: var(--pn-info);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  padding: 2px 6px;
+  font: 8.5px var(--pn-mono);
+  white-space: nowrap;
+}
+
+/* Portalled by `useMenuAnchor` — positioned inline, sized here. */
+.tch-pickmenu {
+  max-height: 260px;
+  width: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-md);
+}
+.tch-pickmenu__note { margin: 4px 6px; color: var(--pn-ink-4); font-size: 10.5px; }
+.tch-pickmenu__opt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.tch-pickmenu__opt[data-active] { background: var(--pn-hover); }
+.tch-pickmenu__opt[aria-selected='true'] { color: var(--pn-ink); font-weight: 600; }
+.tch-pickmenu__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.tch-pickmenu__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tch-pickmenu__hint {
+  color: var(--pn-ink-4);
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+.tch-pickmenu__mark { color: var(--pn-brand); font-size: 10px; }

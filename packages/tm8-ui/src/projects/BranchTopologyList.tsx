@@ -28,7 +28,9 @@
 import { useEffect, useState } from 'react';
 import { isCollabError, type ProjectBranchTopology, type ProjectResource } from '@tm8/contract';
 import { Pill } from '../kit';
+import { SectionAbsent, SectionFrame } from '../settings-space';
 import './branch-topology.css';
+import './project-branches.css';
 
 /** What `defaultBranch` is a claim FROM — rendered, never dropped. */
 const TRUNK_SOURCE_LABEL: Record<ProjectBranchTopology['defaultBranchSource'], string> = {
@@ -165,33 +167,35 @@ export function ProjectBranchesSection({ port }: { port: ProjectBranchesPort }) 
   }, [port]);
 
   return (
-    <div className="brt-section" data-testid="project-branches-section">
-      <div className="brt-section__head">
-        <span className="brt-section__title">Linked projects</span>
+    <SectionFrame title="Linked projects" bodyTestId="project-branches-scroll">
+      <div className="brt-section" data-testid="project-branches-section">
+        <p className="brt-section__note">
+          Branches are read live from each project’s working directory — argv-only git, nothing is
+          checked out or written.
+        </p>
+        {loadError !== null ? (
+          <SectionAbsent
+            testId="projects-error"
+            head="The linked-projects read failed."
+            why={`${loadError} — nothing below is filled in from a cache, so this list is empty rather than stale.`}
+          />
+        ) : projects === null ? (
+          <p className="brt__loading">loading linked projects…</p>
+        ) : projects.length === 0 ? (
+          <SectionAbsent
+            testId="projects-empty"
+            head="No projects are linked to this space."
+            why="Linking one is how a session gets a working directory — and how this screen gets a repository to describe."
+          />
+        ) : (
+          <ul className="brt-section__projects">
+            {projects.map((p) => (
+              <ProjectBranchesRow key={p.id} project={p} port={port} />
+            ))}
+          </ul>
+        )}
       </div>
-      <p className="brt-section__note">
-        Branches are read live from each project’s working directory — argv-only git, nothing is
-        checked out or written.
-      </p>
-      {loadError !== null ? (
-        <p className="brt__error" data-testid="projects-error">
-          The linked-projects read failed: {loadError}
-        </p>
-      ) : projects === null ? (
-        <p className="brt__loading">loading linked projects…</p>
-      ) : projects.length === 0 ? (
-        <p className="brt__empty">
-          No projects are linked to this space. Linking one is how a session gets a working
-          directory — and how this screen gets a repository to describe.
-        </p>
-      ) : (
-        <ul className="brt-section__projects">
-          {projects.map((p) => (
-            <ProjectBranchesRow key={p.id} project={p} port={port} />
-          ))}
-        </ul>
-      )}
-    </div>
+    </SectionFrame>
   );
 }
 
@@ -226,26 +230,33 @@ function ProjectBranchesRow({ project, port }: { project: ProjectResource; port:
 
   return (
     <li className="brt-project" data-testid="project-branches-row">
+      {/* TWO LINES, NOT ONE. The name and the working directory used to share a
+          row with both buttons: a real worktree path is ~100 monospace
+          characters, it could not shrink (a flex item's `min-width` is `auto`,
+          so `text-overflow: ellipsis` never got a chance), and at 900x600 it
+          pushed BOTH controls clean off the card — measured 1123px of content
+          in an 868px box, with `refresh`, `show branches` and `hide branches`
+          all outside the card's right edge. The path now owns its own line and
+          the controls sit beside the NAME, which is short. */}
       <div className="brt-project__head">
         <span aria-hidden className="brt-project__glyph">
           ⬒
         </span>
         <span className="brt-project__name">{project.name}</span>
-        <span className="brt__mono brt-project__dir">{project.workingDir}</span>
         <span className="brt__spacer" />
-        {open && state.phase === 'loaded' ? (
-          <button type="button" className="brt-project__btn" onClick={() => void load()}>
-            refresh
+        <span className="brt-project__actions">
+          {open && state.phase === 'loaded' ? (
+            <button type="button" className="brt-project__btn" onClick={() => void load()}>
+              refresh
+            </button>
+          ) : null}
+          <button type="button" className="brt-project__btn" aria-expanded={open} onClick={toggle}>
+            {open ? 'hide branches' : 'show branches'}
           </button>
-        ) : null}
-        <button
-          type="button"
-          className="brt-project__btn"
-          aria-expanded={open}
-          onClick={toggle}
-        >
-          {open ? 'hide branches' : 'show branches'}
-        </button>
+        </span>
+      </div>
+      <div className="brt-project__dir" title={project.workingDir}>
+        <span className="brt__mono brt-project__dir-path">{project.workingDir}</span>
       </div>
       {open ? (
         state.phase === 'loading' ? (

@@ -40,6 +40,7 @@ import { MobileShell } from './MobileShell';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
+import { CraftScreen } from '../craft';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
@@ -64,13 +65,10 @@ import { useTheme } from '../theme/useTheme';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
-import { ChatHomeSurface, type ChatSessionRow, type ChatTaskRow } from '../chat-home';
-import { homeRowOf } from '../home';
+import { ChatHomeSurface } from '../chat-home';
 import { HomeView } from './HomeView';
-import { homeRegionStore } from '../stores/homeRegionStore';
-import { LinkedPullRequestChips } from '../pull-requests';
-import { SessionLaneLine, sessionLaneOf } from '../git/SessionLane';
-import { TileCountBadges, hasTileCounts } from '../panels/list/TileCountBadges';
+import { rememberHomeRoot } from '../stores/homeRegionStore';
+import { slugOfKind } from '../domain';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
@@ -114,14 +112,6 @@ const DEFAULT_RIGHT_KIND = 'work_session';
  * for. Named for what it is instead.
  */
 const LIVE_COUNT_KIND = 'work_session';
-/** Home's Tasks tab population (task 01a006f8, Q1 provisional). */
-const HOME_TASK_KIND = 'task';
-/** Open-first ordering: a settled task sinks below every open one. The two
- *  closed statuses mirror the registry's `TASK_CLOSED_STATUSES`. */
-function isSettledWorkStatus(state: unknown): boolean {
-  const status = (state as { workStatus?: string }).workStatus;
-  return status === 'done' || status === 'cancelled';
-}
 
 /** The three-panel workspace — the handoff destination entity opens use. */
 const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
@@ -170,6 +160,8 @@ const VIEW_REF_SCREENS = {
   messages: 'mounted',
   /* The task Board (2026-08-16): the kanban screen, mounted below. */
   board: 'mounted',
+  /* The Craft studio (2026-08-16): the blueprint split pane, mounted below. */
+  craft: 'mounted',
   workspace: 'workspace',
   /* The last genuinely unbuilt view ref. */
   feed: 'unbuilt',
@@ -290,6 +282,7 @@ export function GateApp(props: GateAppProps = {}) {
     // component on the server id, so a server switch remounts with the right
     // store entry anyway.
     getAuthToken: () => authTokenFor(activeServer.id),
+    cursorScope: `${activeServer.id}:${authAccount?.accountId ?? 'anonymous'}`,
     ...(props.seam ? { seam: props.seam } : {}),
   });
   const kinds = useSidePanelKinds({
@@ -305,7 +298,7 @@ export function GateApp(props: GateAppProps = {}) {
   useEffect(() => {
     data.ensureKind(kinds.leftKind);
     data.ensureKind(kinds.rightKind);
-  }, [data, kinds.leftKind, kinds.rightKind]);
+  }, [data.ensureKind, kinds.leftKind, kinds.rightKind]);
 
   // A pass minted from the in-workspace sign-in must be keyed by this server's
   // ORIGIN, not the `name:<id>` fallback. Normally the registry caches the
@@ -331,23 +324,26 @@ export function GateApp(props: GateAppProps = {}) {
   /**
    * THE MENU RAIL STARTS COLLAPSED, and remembers what the viewer did next.
    *
-   * Two halves, both asked for. The rail already rendered ICON-ONLY at 48px
-   * when collapsed — every view and kind row carries a vector icon precisely so
-   * that state is legible — but it opened expanded on every load and the choice
-   * to collapse it was unpersisted `useState`, so every reload threw it away.
-   * Collapsed-by-default gives the screen its 117px back; persistence is what
-   * makes the ⌘\ toggle and the footer control mean something beyond this tab.
-   *
    * The solver reads this as `menuCollapsedByUser` and never re-expands a rail
    * the viewer collapsed (geometry.ts §5.1 step 1) — so the default has to be a
    * PREFERENCE rather than a solved state, which is why it lives here and not
    * in the geometry module.
+   *
+   * Revision 11 flipped this to EXPANDED with an argument that only held while
+   * COLLAPSED MEANT ICON-ONLY: a rail of unlabelled 48px glyphs is a rail you
+   * have to learn, so paying 117px for legible navigation was the better deal.
+   * The collapsed rail now keeps every word under its mark at 72px (owner
+   * ruling, 2026-08-16), which settles that trade the other way — the whole map
+   * is still readable on first paint and the screen keeps 93px.
+   *
+   * The viewer's persisted choice still wins; this is only where a fresh
+   * profile starts.
    */
-  /* Revision 11 flips the default back to EXPANDED: the redesigned rail is ~8
-     rows plus the identity block, so the 117px it costs buys the whole
-     navigation being legible on first paint. The viewer's persisted choice
-     still wins — this is only the value a fresh profile starts from. */
-  const [menuCollapsed, setMenuCollapsed] = usePanelFlag('menu-rail-collapsed', false);
+  const [menuCollapsed, setMenuCollapsed] = usePanelFlag('menu-rail-collapsed', true);
+  /* Home's focus mode — icon rail + column A collapsed as one (task 01a00ac2).
+     It lives up here rather than in `HomeView` because Mod+\ is handled on the
+     window, and the shortcut and the chevron must write the SAME state. */
+  const [homeFocus, setHomeFocus] = usePanelFlag('home-focus', false);
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
@@ -396,6 +392,9 @@ export function GateApp(props: GateAppProps = {}) {
     () => unroutableTarget ?? landingOfRoute(navView)?.target ?? null,
     [unroutableTarget, navView],
   );
+
+  /** Home. Named once because both the render branch and Mod+\ ask for it. */
+  const onDashboard = activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
 
   /**
    * EVERY user navigation goes through here, so there is no second write path
@@ -960,8 +959,13 @@ export function GateApp(props: GateAppProps = {}) {
            the new session takes region B and the left column flips to
            Sessions. Everywhere else keeps the workspace hand-off. */
         if (activeTarget?.type === 'view' && activeTarget.ref === 'dashboard') {
-          homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
-          homeRegionStore.getState().setTab(data.spaceId, 'sessions');
+          /* Route-owned now (task 01a00932 D1): the session ROOTS the centre
+             trail and the address flips to the sessions root. */
+          rememberHomeRoot(data.spaceId, LIVE_COUNT_KIND);
+          navStore
+            .getState()
+            .navigate({ view: 'home', root: { type: 'kind', slug: slugOfKind(LIVE_COUNT_KIND) ?? '' } });
+          navStore.getState().openCenter(sessionId as EntityId);
         } else {
           navigateTo(WORKSPACE_TARGET);
           nav.push(sessionId);
@@ -1153,7 +1157,14 @@ export function GateApp(props: GateAppProps = {}) {
       // differently — losing a shipped shortcut would be its own regression.
       if (event.key === '\\' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        setMenuCollapsed((collapsed) => !collapsed);
+        /* ON HOME THE KEY MEANS HOME'S LEFT SIDE (task 01a00ac2). `dashboard`
+           is a RAILLESS view — no menu rail is drawn there at all — so the
+           binding was toggling a flag with nothing on screen behind it, which
+           is a shipped shortcut that does nothing where it is pressed. The
+           rail it CAN mean there is Home's own, and the ruled focus toggle
+           takes it with column A. Everywhere else the key is unchanged. */
+        if (onDashboard) setHomeFocus((collapsed) => !collapsed);
+        else setMenuCollapsed((collapsed) => !collapsed);
         return;
       }
       const result = kb.handle({
@@ -1168,7 +1179,7 @@ export function GateApp(props: GateAppProps = {}) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [paletteOpen, promptsOpen, launch]);
+  }, [paletteOpen, promptsOpen, launch, onDashboard, setHomeFocus, setMenuCollapsed]);
 
   /**
    * Kind refs resolve through the DOMAIN REGISTRY (§15.2) — shell never maps a
@@ -1227,122 +1238,6 @@ export function GateApp(props: GateAppProps = {}) {
     },
   }), [data.seam]);
 
-  /**
-   * Work sessions for Home's MERGED conversation column (R4, 2026-08-15),
-   * composed HERE because the chat module must not re-derive status: the
-   * word/tone come from `homeRowOf` — the registry projection every other
-   * surface uses, where the liveness VERDICT outranks the stored record and
-   * `idle` is a legal live state. Credential login terminals are filtered
-   * OUT (they are plumbing, not conversations).
-   */
-  const homeSessionRows = useMemo<ChatSessionRow[]>(
-    () =>
-      data
-        .rowsFor(LIVE_COUNT_KIND)(undefined)
-        .filter((row) => (row.state as { sessionKind?: string }).sessionKind !== 'credential')
-        .map((row) => {
-          const projected = homeRowOf(row, {
-            liveness: data.livenessOf(row.id),
-            streaming: data.activity[row.id] === true,
-            compact: true,
-          });
-          const state = row.state as { agentTool?: string; model?: string };
-          const detailParts = [state.agentTool, state.model].filter(
-            (part): part is string => typeof part === 'string' && part.length > 0,
-          );
-          /* "Yours" = you spawned it, or one of YOUR agents did. Listing has
-             no owner gate; terminal attach does (owner-only) — this flag only
-             labels the row, the attach refusal itself lives on the session
-             surface. */
-          const mine =
-            viewerMemberId !== undefined &&
-            (row.createdBy.id === viewerMemberId || row.createdBy.ownerMemberId === viewerMemberId);
-          /* THE WORKSPACE TILE'S OWN BADGE SUB-ROW, reused verbatim: the
-             lane facts (⎇ branch + worktree/shared/scratch, riding the
-             summary state per 107), the PR chips resolved through the same
-             index the tiles read, and the glyph counts. The chat module
-             renders the node; nothing is re-derived there. */
-          const lane = sessionLaneOf(row.state);
-          const pullRequests = data.linkedPullRequestsOf?.(row.id) ?? [];
-          const badges =
-            lane !== null || pullRequests.length > 0 || hasTileCounts(row.counters) ? (
-              <>
-                {lane !== null ? <SessionLaneLine lane={lane} /> : null}
-                {pullRequests.length > 0 ? (
-                  <LinkedPullRequestChips pullRequests={pullRequests} placement="tile" />
-                ) : null}
-                <TileCountBadges
-                  counters={row.counters}
-                  humanAuthors={row.badges.humanMessageAuthors}
-                />
-              </>
-            ) : undefined;
-          return {
-            id: row.id,
-            title: row.title,
-            statusWord: projected.word ?? '',
-            tone: projected.tone,
-            live: data.livenessOf(row.id) === 'live',
-            ...(detailParts.length > 0 ? { detail: detailParts.join(' · ') } : {}),
-            updatedAt: row.activityAt,
-            ...(mine ? {} : { viewOnly: true }),
-            ...(badges !== undefined ? { badges } : {}),
-          };
-        }),
-    [data, viewerMemberId],
-  );
-  /**
-   * Tasks for Home's TASKS TAB (task 01a006f8 D1; Q1 provisional pending
-   * Subhang's answer): every task the viewer can see, open-first then by
-   * recent activity. Same law as the session rows — the word/tone come from
-   * `homeRowOf`, the registry projection, and the CHAT MODULE re-derives
-   * nothing. `rowsFor` issues its own query on first read, so no ensureKind
-   * bootstrap is needed here.
-   */
-  const homeTaskRows = useMemo<ChatTaskRow[]>(
-    () =>
-      [...data.rowsFor(HOME_TASK_KIND)(undefined)]
-        .sort((a, b) => {
-          const aDone = isSettledWorkStatus(a.state);
-          const bDone = isSettledWorkStatus(b.state);
-          if (aDone !== bDone) return aDone ? 1 : -1;
-          return b.activityAt.localeCompare(a.activityAt);
-        })
-        .map((row) => {
-          const projected = homeRowOf(row, {
-            liveness: data.livenessOf(row.id),
-            streaming: data.activity[row.id] === true,
-            compact: true,
-          });
-          const priority = (row.state as { priority?: string }).priority;
-          /* Same badge sub-row as the workspace task tiles: PR chips through
-             the tracks index + the entity glyph counts (docs, messages,
-             memories). One vocabulary; the chat module renders it verbatim. */
-          const pullRequests = data.linkedPullRequestsOf?.(row.id) ?? [];
-          const badges =
-            pullRequests.length > 0 || hasTileCounts(row.counters) ? (
-              <>
-                {pullRequests.length > 0 ? (
-                  <LinkedPullRequestChips pullRequests={pullRequests} placement="tile" />
-                ) : null}
-                <TileCountBadges
-                  counters={row.counters}
-                  humanAuthors={row.badges.humanMessageAuthors}
-                />
-              </>
-            ) : undefined;
-          return {
-            id: row.id,
-            title: row.title,
-            statusWord: projected.word ?? '',
-            tone: projected.tone,
-            ...(typeof priority === 'string' && priority.length > 0 ? { detail: priority } : {}),
-            updatedAt: row.activityAt,
-            ...(badges !== undefined ? { badges } : {}),
-          };
-        }),
-    [data],
-  );
   const homeSlots = useMemo(
     () =>
       data.launch.capacity
@@ -1453,7 +1348,7 @@ export function GateApp(props: GateAppProps = {}) {
       }
     }
     return out;
-  }, [paletteQuery, data]);
+  }, [paletteQuery, data.rowsFor]);
 
   const paletteViews = useMemo<PaletteView[]>(
     () => [
@@ -1806,6 +1701,33 @@ export function GateApp(props: GateAppProps = {}) {
                 nav.push(id as EntityId);
               }}
             />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'craft' ? (
+            /* ✎ Craft (Craft P1, 2026-08-16) — the blueprint studio: a
+               craft-mode chat anchored to a `graph` entity beside a canvas
+               rendering that entity's ROW. Full-bleed like Board; the thread
+               and the canvas are the navigation. */
+            <CraftScreen
+              seam={data.seam}
+              spaceId={data.spaceId as SpaceId}
+              nodeKey={nodeKey}
+              bridge={chatBridge}
+              skillOptions={data.skillOptions}
+              viewerName={data.viewerActor?.displayName}
+              viewerId={data.viewerActor?.id}
+              onOpenEntity={(id) => {
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id as EntityId);
+              }}
+              onNotice={(text) =>
+                notices.push({
+                  id: `crf:${Date.now()}`,
+                  tone: 'info',
+                  title: 'Craft',
+                  body: text,
+                  ttlMs: 6000,
+                })
+              }
+            />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'inbox' ? (
             /* ◹ Inbox — the finished screen that was never mounted. Nothing
                was built for this branch; `src/inbox/` has been complete and
@@ -1908,12 +1830,18 @@ export function GateApp(props: GateAppProps = {}) {
               serverBaseUrl={activeServer.routeBaseUrl}
               viewerMemberId={viewerMemberId}
               onNotice={notices.push}
+              focus={homeFocus}
+              onToggleFocus={() => setHomeFocus((collapsed) => !collapsed)}
               onSpawn={async (input) => {
                 /* D11: a spawn committed on Home STAYS on Home — the session
-                   takes region B and the column flips to Sessions. */
+                   takes region B and the column flips to the sessions root. */
                 const sessionId = await data.spawn(input);
-                homeRegionStore.getState().selectCenter(data.spaceId, sessionId as EntityId);
-                homeRegionStore.getState().setTab(data.spaceId, 'sessions');
+                /* Route-owned now (task 01a00932 D1). */
+                rememberHomeRoot(data.spaceId, LIVE_COUNT_KIND);
+                navStore
+                  .getState()
+                  .navigate({ view: 'home', root: { type: 'kind', slug: slugOfKind(LIVE_COUNT_KIND) ?? '' } });
+                navStore.getState().openCenter(sessionId as EntityId);
               }}
               onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
               /* D12: the ONE route out of Home — region C's explicit header
@@ -1948,27 +1876,32 @@ export function GateApp(props: GateAppProps = {}) {
                   /* One read per space, shared with every other rich input in
                      the shell — see `useGateData`. */
                   skillOptions={data.skillOptions}
-                  /* The three-tab column (task 01a006f8): sessions keep the
-                     R4 composition (liveness-first, credential terminals
-                     filtered, "view only" labels), tasks are composed above
-                     under the same registry-projection law. There is NO New
-                     session button any more (D2): a session is created by
-                     RUNNING a task, which is `onRunTask` → the launch sheet. */
-                  sessions={homeSessionRows}
-                  tasks={homeTaskRows}
-                  onRunTask={(id) => launch.open(id as EntityId)}
-                  renderTabList={regions.renderTabList}
-                  tab={regions.tab}
-                  onTab={regions.onTab}
+                  /* The root column (tasks 01a006f8/01a00932): every kind
+                     root mounts the workspace's own list through
+                     `renderRootList`; there is NO New session button (D2) —
+                     a session is created by RUNNING a task, whose Run lives
+                     on the hosted tile itself. */
+                  renderRootList={regions.renderRootList}
+                  renderRootAside={regions.renderRootAside}
+                  root={regions.root}
+                  onRoot={regions.onRoot}
+                  kindCell={regions.kindCell}
+                  rootKindOptions={regions.rootKindOptions}
                   selectedEntityId={regions.selectedEntityId}
                   onSelectEntity={regions.onSelectEntity}
                   onShowChat={regions.onShowChat}
-                  onNewTask={regions.onNewTask}
-                  newTaskUnavailable={regions.newTaskUnavailable}
+                  onNewEntity={regions.onNewEntity}
+                  newEntityUnavailable={regions.newEntityUnavailable}
+                  routeThreadId={regions.routeThreadId}
+                  onThreadSelected={regions.onThreadSelected}
+                  graphFull={regions.graphFull}
+                  onGraphFullChange={regions.onGraphFullChange}
+                  graphFilters={regions.graphFilters}
+                  onGraphFiltersChange={regions.onGraphFiltersChange}
                   centerOverride={regions.centerOverride}
                   slots={homeSlots}
-                  onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
                   viewerName={data.viewerActor?.displayName}
+                  viewerId={data.viewerActor?.id}
                   /* IN PLACE, not away (user report 2026-08-16): a chip inside
                      a conversation you are still having opens the entity in
                      Home's own column. Leaving for the workspace is the right

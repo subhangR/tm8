@@ -83,6 +83,7 @@ import {
   type ConnectionManager,
   type Timers,
 } from './connection';
+import { createCursorCache } from './cursor-cache';
 import { createLivenessManager, type LivenessConfig } from './liveness';
 import type { WebSocketFactory } from './socket';
 
@@ -118,6 +119,8 @@ export interface RealSeamOptions {
   newClientMutationId?: (prefix: string) => string;
   /** Non-fatal transport noise (malformed frames, failed polls, liveness reads). */
   onError?: (error: unknown, context: string) => void;
+  /** Stable `node + viewer` namespace. Never include the auth token itself. */
+  cursorScope?: string;
 }
 
 /**
@@ -170,6 +173,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   // access logs, browser history and diagnostics. HTTP still reads the pass
   // below while old sessions transition to the cookie-backed path.
   const wsUrl = options.wsUrl ?? deriveWsUrl(baseUrl, options.origin);
+  const cursorCache = options.cursorScope ? createCursorCache(options.cursorScope) : null;
+  const bootIds = new Map<SpaceId, string>();
+  const preparedSpaces = new Set<SpaceId>();
+  const invalidatedSpaces = new Set<SpaceId>();
 
   // Late-bound so http can signal transport reachability into a manager that
   // does not exist yet — the alternative is an extra setter on http, which
@@ -193,6 +200,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     now: options.now,
     random: options.random,
     config: options.connection,
+    onCursor: (spaceId, cursor) => {
+      const bootId = bootIds.get(spaceId);
+      if (bootId) cursorCache?.schedule(bootId, spaceId, cursor);
+    },
     onError,
   });
   conn = connection;
@@ -213,8 +224,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     // -- lifecycle -----------------------------------------------------------
 
     /**
-     * Resolves once the space is subscribed and the liveness cadence has
-     * STARTED — deliberately not once either has succeeded:
+     * Resolves once the retained cursor has been scanned off-React, the space
+     * is subscribed, and the liveness cadence has STARTED:
      *
      *  - the socket protocol has no positive ack, so there is nothing to await
      *    (a refusal arrives later, via `realControls.onSpaceRefused`);
@@ -230,6 +241,29 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     async openSpace(spaceId: SpaceId): Promise<void> {
       const refusal = connection.refusalOf(spaceId);
       if (refusal !== undefined) throw refusal;
+      // No read endpoint currently carries the event HWM. Scan the existing
+      // poll cursor to its tail without dispatching payloads, then resume from
+      // that barrier. Historical events therefore never enter Zustand/React.
+      const snapshot = await liveness.refresh(spaceId).catch(() => undefined);
+      const previousBootId = bootIds.get(spaceId);
+      const invalidated = invalidatedSpaces.delete(spaceId);
+      const bootChanged = snapshot !== undefined
+        && previousBootId !== undefined
+        && previousBootId !== snapshot.nodeBootId;
+      if (bootChanged || invalidated) {
+        preparedSpaces.delete(spaceId);
+        connection.closeSpace(spaceId);
+        connection.clearCursor(spaceId);
+      }
+      if (snapshot) bootIds.set(spaceId, snapshot.nodeBootId);
+      if (!preparedSpaces.has(spaceId)) {
+        const persisted = !invalidated && snapshot
+          ? cursorCache?.read(snapshot.nodeBootId, spaceId) ?? 0
+          : 0;
+        const cursor = await connection.prepareSpace(spaceId, persisted);
+        if (snapshot) cursorCache?.schedule(snapshot.nodeBootId, spaceId, cursor);
+        preparedSpaces.add(spaceId);
+      }
       connection.openSpace(spaceId);
       liveness.noteSpaceOpened(spaceId);
     },
@@ -239,9 +273,21 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       liveness.noteSpaceClosed(spaceId);
     },
 
+    invalidateSpaceBaseline(spaceId: SpaceId): void {
+      invalidatedSpaces.add(spaceId);
+      preparedSpaces.delete(spaceId);
+      connection.closeSpace(spaceId);
+      connection.clearCursor(spaceId);
+      liveness.noteSpaceClosed(spaceId);
+    },
+
     dispose(): void {
       connection.dispose();
       liveness.dispose();
+      cursorCache?.dispose();
+      bootIds.clear();
+      preparedSpaces.clear();
+      invalidatedSpaces.clear();
     },
 
     // -- event stream & connection honesty -----------------------------------

@@ -158,11 +158,10 @@ describe('screen → URL', () => {
     const before = target.entries.length;
 
     {
-      /* Revision 11: Tasks rides the closed Workspace caret. */
-      const rail = within(view.getByTestId('menu-rail'));
-      const caret = rail.queryByLabelText('Expand Workspace');
-      if (caret) fireEvent.click(caret);
-      fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+      /* Revision 17: the Work tab retired — the guaranteed `g t` chord is
+         the user-navigation door to the Tasks screen. */
+      fireEvent.keyDown(window, { key: 'g' });
+      fireEvent.keyDown(window, { key: 't' });
     }
     await waitFor(() => view.getByTestId('entity-view'));
     await settle();
@@ -180,10 +179,10 @@ describe('screen → URL', () => {
     const a = mount(first);
     await waitFor(() => a.getByTestId('workspace-grid'));
     {
-      const rail = within(a.getByTestId('menu-rail'));
-      const caret = rail.queryByLabelText('Expand Workspace');
-      if (caret) fireEvent.click(caret);
-      fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+      /* Revision 17: the Work tab retired — the guaranteed `g t` chord is
+         the user-navigation door to the Tasks screen. */
+      fireEvent.keyDown(window, { key: 'g' });
+      fireEvent.keyDown(window, { key: 't' });
     }
     await waitFor(() => a.getByTestId('entity-view'));
     await settle();
@@ -290,11 +289,10 @@ describe('back and forward', () => {
     await waitFor(() => view.getByTestId('workspace-grid'));
 
     {
-      /* Revision 11: Tasks rides the closed Workspace caret. */
-      const rail = within(view.getByTestId('menu-rail'));
-      const caret = rail.queryByLabelText('Expand Workspace');
-      if (caret) fireEvent.click(caret);
-      fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+      /* Revision 17: the Work tab retired — the guaranteed `g t` chord is
+         the user-navigation door to the Tasks screen. */
+      fireEvent.keyDown(window, { key: 'g' });
+      fireEvent.keyDown(window, { key: 't' });
     }
     await waitFor(() => view.getByTestId('entity-view'));
     await settle();
@@ -325,10 +323,10 @@ describe('R3 — an addressable hash at boot OUTRANKS last-place', () => {
     const a = mount(warm);
     await waitFor(() => a.getByTestId('workspace-grid'));
     {
-      const rail = within(a.getByTestId('menu-rail'));
-      const caret = rail.queryByLabelText('Expand Workspace');
-      if (caret) fireEvent.click(caret);
-      fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+      /* Revision 17: the Work tab retired — the guaranteed `g t` chord is
+         the user-navigation door to the Tasks screen. */
+      fireEvent.keyDown(window, { key: 'g' });
+      fireEvent.keyDown(window, { key: 't' });
     }
     await waitFor(() => a.getByTestId('entity-view'));
     await settle();
@@ -353,10 +351,10 @@ describe('R3 — an addressable hash at boot OUTRANKS last-place', () => {
     const a = mount(warm);
     await waitFor(() => a.getByTestId('workspace-grid'));
     {
-      const rail = within(a.getByTestId('menu-rail'));
-      const caret = rail.queryByLabelText('Expand Workspace');
-      if (caret) fireEvent.click(caret);
-      fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+      /* Revision 17: the Work tab retired — the guaranteed `g t` chord is
+         the user-navigation door to the Tasks screen. */
+      fireEvent.keyDown(window, { key: 'g' });
+      fireEvent.keyDown(window, { key: 't' });
     }
     await waitFor(() => a.getByTestId('entity-view'));
     await settle();

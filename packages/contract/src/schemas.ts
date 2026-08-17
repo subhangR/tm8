@@ -130,6 +130,9 @@ export const CoreEntityKindSchema = z.enum([
   'worktree',
   'artifact',
   'loop',
+  // Craft P1 (2026-08-16): the graph/blueprint kind — one row holding
+  // vertices AND edges, content-discriminated by graphType (R1/R3).
+  'graph',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -139,6 +142,62 @@ export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
 
 export const EntityKindSchema: z.ZodType<EntityKind> =
   z.union([CoreEntityKindSchema, CustomEntityKindSchema]);
+
+/**
+ * Craft P1 — the lean blueprint vocabulary (rulings R1-R3), SOFT by design.
+ * A node is `{id, ref?, spec?}`: `id` is the ROW-LOCAL key edges name, `ref`
+ * the entity id when the node is a reference, `spec` the sketch when it is
+ * not. See `GraphNode` in contract.ts for the full pin and its legacy
+ * aliases. `passthrough` everywhere: the orchestrating agent interprets, and
+ * the schema only keeps the shapes recognizably graph-ish.
+ *
+ * The ONE thing this door refuses is the mistake that caused the defect: a
+ * `ref` that is not an entity id. `ref` is now the sole word meaning "this
+ * exists", so it must be typed, or the ambiguity walks straight back in.
+ */
+const ENTITY_ID_FORM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const GraphNodeRefSchema = z.string().regex(
+  ENTITY_ID_FORM,
+  '`ref` must be an entity id — use `id` for the row-local key edges name',
+);
+
+export const GraphNodeInputSchema = z.object({
+  /** Row-local key — the edge namespace. NOT an entity id. */
+  id: z.string().min(1).optional(),
+  /** Present ⇔ this node references a real entity. */
+  ref: GraphNodeRefSchema.optional(),
+  spec: z.object({
+    kind: z.string().min(1).optional(),
+    title: z.string().optional(),
+    hint: z.string().optional(),
+  }).passthrough().optional(),
+  /** @deprecated legacy alias for `id`; honored, and it wins over `id`. */
+  key: z.string().min(1).optional(),
+  /** @deprecated legacy alias for `ref`. */
+  entityId: GraphNodeRefSchema.optional(),
+}).passthrough();
+
+export const GraphEdgeInputSchema = z.object({
+  src: z.string().min(1).optional(),
+  dst: z.string().min(1).optional(),
+  type: z.string().optional(),
+  note: z.string().optional(),
+}).passthrough();
+
+/**
+ * What `entities.create`/`entities.patch` accept as a `graph` row's content —
+ * the door-side twin of the read arm below. Everything optional: a patch may
+ * carry only the members it changes, and a graphType this schema has never
+ * heard of is a future type, not an error (R3).
+ */
+export const GraphContentInputSchema = z.object({
+  graphType: z.string().min(1).optional(),
+  nodes: z.array(GraphNodeInputSchema).optional(),
+  edges: z.array(GraphEdgeInputSchema).optional(),
+  layout: z.record(z.object({ x: z.number(), y: z.number() }).passthrough()).nullable().optional(),
+  source: z.string().nullable().optional(),
+}).passthrough();
 
 export const WorkStatusSchema = z.enum(['open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled']);
 export const VisibilitySchema = z.enum(['space', 'restricted']);
@@ -308,6 +367,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // explicit null checkoutBranch = measured absence (no repo/detached HEAD).
     checkoutBranch: z.string().nullable().optional(),
     workdirMode: WorkSessionWorkdirModeSchema.optional(),
+    // The persona this run acts as, from its latest `participates_in` edge.
+    // Absent = a node that predates the field; explicit null = a run with no
+    // persona, which renders the tool alone. See the DTO note in contract.ts.
+    teammate: ActorSummarySchema.nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),
@@ -356,6 +419,12 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     nextRunAt: z.string().nullable(),
     lastRunAt: z.string().nullable(),
     lastError: z.string().nullable(),
+  }).strict(),
+  z.object({
+    kind: z.literal('graph'),
+    graphType: z.string().min(1),
+    nodeCount: z.number().int().nonnegative(),
+    edgeCount: z.number().int().nonnegative(),
   }).strict(),
   z.object({
     kind: z.literal('artifact'),
@@ -644,6 +713,17 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     lastRunAt: z.string().nullable(),
     lastError: z.string().nullable(),
   }).strict(),
+  // Craft P1: LEAN BY LAW (R2) — nodes and edges are sketches the
+  // orchestrating agent interprets, so members beyond the discriminants stay
+  // open (`passthrough`) and nothing here grows into a program schema.
+  z.object({
+    kind: z.literal('graph'),
+    graphType: z.string().min(1),
+    nodes: z.array(GraphNodeInputSchema),
+    edges: z.array(GraphEdgeInputSchema),
+    layout: z.record(z.object({ x: z.number(), y: z.number() }).passthrough()),
+    source: z.string().nullable(),
+  }).passthrough(),
   z.object({
     kind: z.literal('artifact'),
     description: z.string().nullable(),
@@ -895,7 +975,7 @@ export const ChatThreadSummarySchema: z.ZodType<ChatThreadSummary> = z.object({
   anchorId: EntityIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),
-  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate']),
+  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
   createdAt: IsoTimestamp,
   lastReplyAt: IsoTimestamp.nullable(),
   title: z.string().nullable().optional(),
@@ -906,7 +986,7 @@ export const StartChatThreadInputSchema: z.ZodType<StartChatThreadInput> = z.obj
   rootMessageId: EntityIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),
-  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate']),
+  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']),
   clientMutationId: z.string().min(1),
 }).strict();
 
@@ -940,6 +1020,7 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   lastReplyAt: z.string().nullable().optional(),
   replyParticipants: z.array(ActorSummarySchema).optional(),
   parts: z.array(MessagePartSchema).optional(),
+  turnInFlight: z.boolean().optional(),
 }).strict());
 
 export const MessageBatchResultSchema: z.ZodType<MessageBatchResult> = z.lazy(() => z.object({
@@ -1456,6 +1537,23 @@ export const CredentialsDeleteResultSchema: z.ZodType<CredentialsDeleteResult> =
   }).strict()),
 }).strict();
 
+/**
+ * One terminal dimension, for every operation that boots a PTY.
+ *
+ * The 1..1000 bound is PtyHostService's own clamp, restated here so a nonsense
+ * value is refused at the edge with a contract error rather than silently
+ * collapsing to the 80x24 default deep inside the PTY host. Shared rather than
+ * respelled per op: this was written three different ways (`min(1)` twice,
+ * `positive()` once) before it had a name, and three spellings of one rule is
+ * three chances for them to drift apart.
+ *
+ * NOT the same as the PTY SOCKET's resize bound, which is narrower (cols >= 2,
+ * rows <= 500). That asymmetry is pre-existing and left alone deliberately, but
+ * it does mean a session spawned taller than 500 rows can never be resized back
+ * to that height over the socket.
+ */
+const TerminalDimSchema = z.number().int().min(1).max(1000).optional();
+
 export const CredentialsLoginSessionStartInputSchema:
   z.ZodType<CredentialsLoginSessionStartInput> = z.object({
     spaceId: EntityIdSchema,
@@ -1463,8 +1561,8 @@ export const CredentialsLoginSessionStartInputSchema:
     // Geometry is the ONLY client input this operation accepts, and it is
     // bounded so a hostile value cannot reach `pty.spawn` as a resource claim.
     // There is deliberately no command/args/flags field: see the DTO.
-    cols: z.number().int().min(1).max(1000).optional(),
-    rows: z.number().int().min(1).max(1000).optional(),
+    cols: TerminalDimSchema,
+    rows: TerminalDimSchema,
     clientMutationId: z.string().min(1).optional(),
   }).strict();
 
@@ -1922,7 +2020,7 @@ export const UpdateMemberRoleInputSchema: z.ZodType<UpdateMemberRoleInput> = z.o
 // `git` widened 2026-08-12 in the same lockstep (Git UI wave: the project git screen).
 // `messages` widened 2026-08-13 in the same lockstep (the Messages surface).
 // `board` widened 2026-08-16 in the same lockstep (the task kanban tab).
-export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board']);
+export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings', 'git', 'messages', 'board', 'craft']);
 // `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
 // menu-visible, still not menu-creatable (creation stays with the saga).
 // `channel` un-excluded 2026-08-01, same lockstep — it became a collection
@@ -2334,6 +2432,7 @@ export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion(
 ]);
 
 const SpawnUuidSchema = z.string().uuid();
+
 const CredentialSourceSchema = z.enum(['member', 'node']);
 const CredentialSourcesSchema = z.object({
   anthropic: CredentialSourceSchema.optional(),
@@ -2364,6 +2463,8 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
+  cols: TerminalDimSchema,
+  rows: TerminalDimSchema,
 }).strict();
 
 /**
@@ -2383,8 +2484,8 @@ export const ExecutionTerminalStartInputSchema: z.ZodType<ExecutionTerminalStart
   projectId: SpawnUuidSchema.nullable().optional(),
   confirmUntrusted: z.literal(true).optional(),
   title: z.string().max(200).optional(),
-  cols: z.number().int().positive().max(1000).optional(),
-  rows: z.number().int().positive().max(1000).optional(),
+  cols: TerminalDimSchema,
+  rows: TerminalDimSchema,
 }).strict();
 
 /**
@@ -2432,6 +2533,8 @@ export const ExecutionTerminateInputSchema: z.ZodType<ExecutionTerminateInput> =
 export const ExecutionResumeInputSchema: z.ZodType<ExecutionResumeInput> = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
+  cols: TerminalDimSchema,
+  rows: TerminalDimSchema,
 }).strict();
 
 export const ExecutionStreamsAttachInputSchema: z.ZodType<ExecutionStreamsAttachInput> = z.object({

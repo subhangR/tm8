@@ -3,7 +3,7 @@ import type { EntityId, MessageView } from '@tm8/contract';
 import type { ConnectionState } from '../data/seam';
 import { Avatar } from '../kit';
 import { DisabledAction, DisabledIconControl } from '../panels/honesty/DisabledWithReason';
-import { skillReference, useRichInput, type TriggerOption } from '../rich-input';
+import { AttachmentChips, ComposerCard, skillReference, useRichInput, type TriggerOption } from '../rich-input';
 import type { ChannelPostInput } from './feed-model';
 import type { ComposerMentionOption } from './channel-tags';
 import type { ChatAttachmentUploadTask } from './chat-attachments';
@@ -306,7 +306,20 @@ export function Composer({
   };
 
   return (
-    <div className="chs-composer">
+    <div
+      className="chs-composer"
+      onDragOver={(event) => {
+        if (onStartAttachmentUpload && event.dataTransfer.types.includes('Files')) event.preventDefault();
+      }}
+      onDrop={(event) => {
+        // A drop on the textarea itself was already taken by the hook and
+        // bubbles up here — without this guard the same files would stage twice.
+        if (event.defaultPrevented) return;
+        if (!onStartAttachmentUpload || event.dataTransfer.files.length === 0) return;
+        event.preventDefault();
+        attachments.addFiles(event.dataTransfer.files);
+      }}
+    >
       {sessionExited ? (
         <p className="chs-composer__warn" data-testid="chs-exited">
           Session exited — Send stores the message; nothing is delivered, nothing wakes.
@@ -316,13 +329,6 @@ export function Composer({
       {error ? (
         <p className="chs-composer__error" role="alert">
           {error}
-        </p>
-      ) : null}
-
-      {attachments.refusal ? (
-        <p className="chs-composer__error" role="alert" data-testid="chs-paste-refusal">
-          {attachments.refusal}
-          <button type="button" onClick={attachments.clearRefusal} aria-label="Dismiss">✕</button>
         </p>
       ) : null}
 
@@ -339,6 +345,13 @@ export function Composer({
         </div>
       ) : null}
 
+      {/* THE CARD IS THE SHARED ONE — Chat Home's `ComposerCard` shell. The
+          reply strip, chips and pickers ride in its `above` slot; the send
+          layers and this surface's own pickers stay this file's. The pickers
+          keep anchoring to `.chs-composer` (the positioned ancestor), so
+          `bottom: 100%` still floats them above the whole composer. */}
+      <ComposerCard
+        above={<>
       {replyTo ? (
         <div className="chs-replying" data-testid="chs-replying">
           {replyAuthor ? (
@@ -366,28 +379,9 @@ export function Composer({
         </div>
       ) : null}
 
-      {attachments.staged.length ? (
-        <ul className="chs-upload-list" aria-label="Attachments" aria-live="polite">
-          {attachments.staged.map((item) => (
-            <li key={item.id} className="chs-upload" data-phase={item.phase}>
-              <span className="chs-upload__name">{item.file.name}</span>
-              {item.phase === 'uploading' ? <span role="status">uploading…</span> : null}
-              {item.phase === 'uploaded' ? <span>✓ uploaded</span> : null}
-              {item.phase === 'failed' ? (
-                <span role="alert" className="chs-upload__error">{item.reason}</span>
-              ) : null}
-              {item.phase === 'failed' ? (
-                <button type="button" onClick={() => attachments.retry(item.id)} aria-label={`Try ${item.file.name} again`}>
-                  Try again
-                </button>
-              ) : null}
-              <button type="button" onClick={() => attachments.remove(item.id)} aria-label={`Remove ${item.file.name}`}>
-                {item.phase === 'uploading' ? 'Cancel' : 'Remove'}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {/* Staged uploads and the paste refusal are the shared chips —
+          `AttachmentChips`, the same view Chat Home mounts. */}
+      <AttachmentChips attachments={attachments} testId="chs-attachments" />
 
       {attachedEntities.length ? (
         <ul className="chs-mention-list" aria-label="Attached workspace entities">
@@ -545,20 +539,23 @@ export function Composer({
         </div>
       ) : null}
 
-      <div
-        className="chs-composer__row"
-        onDragOver={(event) => {
-          if (onStartAttachmentUpload && event.dataTransfer.types.includes('Files')) event.preventDefault();
-        }}
-        onDrop={(event) => {
-          // A drop on the textarea itself was already taken by the hook and
-          // bubbles up here — without this guard the same files would stage twice.
-          if (event.defaultPrevented) return;
-          if (!onStartAttachmentUpload || event.dataTransfer.files.length === 0) return;
-          event.preventDefault();
-          attachments.addFiles(event.dataTransfer.files);
-        }}
-      >
+        </>}
+        field={
+          <textarea
+            ref={textarea}
+            className="chs-composer__input"
+            aria-label={`Message ${anchorNoun}`}
+            placeholder={`Message ${anchorNoun}…`}
+            /* The textarea IS the picker's text input, so it carries the
+               active-row pointer. `aria-expanded` is deliberately absent: it is
+               not an allowed attribute on role=textbox, and promoting this to
+               role=combobox would change how every existing query finds it. */
+            value={text}
+            disabled={busy}
+            {...rich.areaProps}
+          />
+        }
+        foot={<>
         {onStartAttachmentUpload ? (
           <>
             <button type="button" className="chs-iconbtn" aria-label="Attach a file" onClick={() => fileInput.current?.click()}>
@@ -635,19 +632,7 @@ export function Composer({
             <span aria-hidden>/</span>
           </button>
         ) : null}
-        <textarea
-          ref={textarea}
-          className="chs-composer__input"
-          aria-label={`Message ${anchorNoun}`}
-          placeholder={`Message ${anchorNoun}…`}
-          /* The textarea IS the picker's text input, so it carries the
-             active-row pointer. `aria-expanded` is deliberately absent: it is
-             not an allowed attribute on role=textbox, and promoting this to
-             role=combobox would change how every existing query finds it. */
-          value={text}
-          disabled={busy}
-          {...rich.areaProps}
-        />
+        <span className="chs-composer__hint">Enter sends · Shift+Enter newline</span>
         <SendControl
           disconnected={disconnected}
           wired={Boolean(onPost)}
@@ -657,11 +642,8 @@ export function Composer({
           attachmentBlocked={attachments.blocked}
           onClick={() => void submit()}
         />
-      </div>
-
-      <p className="chs-composer__hint">
-        <span>Enter sends · Shift+Enter newline</span>
-      </p>
+        </>}
+      />
     </div>
   );
 }
@@ -758,7 +740,7 @@ function SendControl({
   }
   return (
     <button type="button" className="chs-composer__send" disabled={busy || empty} onClick={onClick}>
-      {busy ? '…' : 'Send'}
+      {busy ? '…' : <>Send <span aria-hidden>↑</span></>}
     </button>
   );
 }

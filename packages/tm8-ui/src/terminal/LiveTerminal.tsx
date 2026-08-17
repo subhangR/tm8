@@ -133,6 +133,25 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   const resizeTimeoutRef = useRef<number | null>(null);
   const resizeRetryCountRef = useRef(0);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  /**
+   * One-shot: has this view already asked the agent to repaint?
+   *
+   * Scoped to the MOUNT, not to the attach, and that is a known narrowing. It
+   * is not re-armed after a reconnect or a visibility-driver resume, so on
+   * those paths the client asks for nothing and the terminal depends wholly on
+   * replay fidelity again — the server would grant a fresh budget on the new
+   * socket, the client simply never spends it. Acceptable because the PTY now
+   * boots at the real geometry, so the replay ring holds correctly-sized frames
+   * and replay IS enough; note that this rests on the spawn-geometry fix, not
+   * on the nudge. Re-arming per REPLAY instead was the obvious alternative and
+   * is worse: hydration runs on every reconnect and every resume, which made a
+   * flapping socket a repaint storm.
+   *
+   * If a blank-on-reconnect report ever appears, this is the line. The seam
+   * that would fix it properly is a per-attach signal — `ptyTransport.onAttached`,
+   * which this version of the transport does not expose.
+   */
+  const repaintForcedRef = useRef(false);
   const fontsReadyRef = useRef(false);
   const readOnlyRef = useRef(!live);
   const onResizeRef = useRef(onResize);
@@ -149,6 +168,8 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   useEffect(() => {
     const container = hostRef.current;
     if (!container || termRef.current) return;
+    // The ref outlives a sessionId change; a new terminal is owed its own nudge.
+    repaintForcedRef.current = false;
 
     const term = new Terminal({
       allowProposedApi: true,
@@ -190,6 +211,15 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
           // Terminal may have been evicted after parsing the last replay byte.
         }
         term.element.style.removeProperty('visibility');
+        // Deliberately does NOT re-arm the repaint nudge. It used to, which
+        // meant a normal attach forced TWICE — once from the mount's
+        // scheduleResize and again here — and, because this runs on every
+        // reconnect and every visibility-driver resume, a flapping socket
+        // became a repaint storm. One nudge per mount is enough: the agent's
+        // repaint bytes are live output, so the server's ordering invariant
+        // sequences them AFTER the replay no matter which lands first.
+        resizeRetryCountRef.current = 0;
+        scheduleResize();
       });
     };
     const hydrateReplay = (data: string) => {
@@ -211,9 +241,32 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       const currentTerm = termRef.current;
       const currentFit = fitRef.current;
       if (!currentTerm || !currentFit || !currentTerm.element) return;
+      // THESE TWO GUARDS ARE NOT SYMMETRIC, and treating them as if they were
+      // is a regression. Both return early, but only one of them is stranded.
+      //
+      // A zero rect means an ancestor is `display:none` (panels.css hides
+      // inactive work-session surfaces that way). Going hidden and coming back
+      // CHANGES the box — 0x0 then 600x400 — so the ResizeObserver fires on
+      // both edges and re-arms the fit on its own, in ~12ms. Retrying here
+      // would be worse than useless: a display:none host is 0x0 for as long as
+      // it is hidden, so the retry can never succeed, and because
+      // scheduleResize refuses to queue while a timer is pending, the pending
+      // retry SWALLOWS the ResizeObserver's fire on reveal and turns a 12ms
+      // refit into a ~500ms one. Measured. Leave it alone.
       const rect = container.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
-      if (getComputedStyle(container).visibility === 'hidden') return;
+      // `visibility:hidden` is the stranded one (shell.css hides the non-board
+      // side panel that way). The box keeps its full size the whole time, so
+      // the ResizeObserver fires on NEITHER edge and there is no backstop at
+      // all — this is where the fit was silently dropped and the terminal
+      // stayed on xterm's 80x24 until a human dragged the window. Retry on the
+      // same backoff every other guard here uses; it self-cancels the moment
+      // the surface is shown and the fit succeeds.
+      if (getComputedStyle(container).visibility === 'hidden') {
+        resizeRetryCountRef.current += 1;
+        scheduleResize();
+        return;
+      }
       if (!fontsReadyRef.current || !isXtermRendererReady(currentTerm)) {
         resizeRetryCountRef.current += 1;
         scheduleResize();
@@ -226,10 +279,32 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         scheduleResize();
         return;
       }
-      resizeRetryCountRef.current = 0;
       const { cols, rows } = currentTerm;
-      if (cols <= 0 || rows <= 0) return;
+      // fit() can succeed without having resized anything — FitAddon's
+      // proposeDimensions bails on a degenerate box and fit() then returns
+      // silently — so a container smaller than one cell lands here.
+      //
+      // THE RETRY-COUNT RESET MUST STAY BELOW THIS GUARD. Above it, every pass
+      // through would zero the counter and then bump it to 1, `attempts < 5`
+      // would hold forever, and this would be an unbounded rAF loop at refresh
+      // rate running a full fit() measure each frame — not the bounded backoff
+      // the comment claims. The other retry branches sit before the reset and
+      // accumulate correctly; this one has to be sequenced deliberately.
+      if (cols <= 0 || rows <= 0) {
+        resizeRetryCountRef.current += 1;
+        scheduleResize();
+        return;
+      }
+      resizeRetryCountRef.current = 0;
       clientFittedSessions.add(sessionId);
+      // ONE-SHOT REPAINT NUDGE (see ptyTransport.resize). The grid is now
+      // correctly fitted and any replay has been parsed; make the AGENT redraw
+      // over it, because a full-screen TUI repaints only when something tells
+      // it to. Decided BEFORE the no-op early-return below, because the case
+      // that needs the nudge most is exactly the one that returns there: a
+      // remount into unchanged window geometry, where the fitted size already
+      // equals the PTY's and nothing would otherwise be sent at all.
+      const forceRepaint = !repaintForcedRef.current;
       // RECLAIM ON ACTIVATION (maestro 0539726): read the shared PTY's last-
       // known truth BEFORE this view overwrites it with its own just-fitted
       // size. A DIFFERENT hidden/inactive view may have shipped a resize
@@ -242,10 +317,11 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       serverPtySizes.set(sessionId, { cols, rows });
       setLastFittedSize({ cols, rows });
       const last = lastSizeRef.current;
-      if (last && last.cols === cols && last.rows === rows && !ptyDiffers) return;
+      if (last && last.cols === cols && last.rows === rows && !ptyDiffers && !forceRepaint) return;
+      if (forceRepaint) repaintForcedRef.current = true;
       lastSizeRef.current = { cols, rows };
       onResizeRef.current?.(sessionId, { cols, rows });
-      ptyTransport.resize(sessionId, cols, rows);
+      ptyTransport.resize(sessionId, cols, rows, forceRepaint);
     };
 
     const scheduleResize = () => {

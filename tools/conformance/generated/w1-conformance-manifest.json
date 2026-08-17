@@ -5202,6 +5202,39 @@
         "migration": {
           "strategy": "loop-detail"
         }
+      },
+      "graph": {
+        "kind": "graph",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "graphs"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "graph-detail"
+        }
       }
     },
     "custom": {

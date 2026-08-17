@@ -36,7 +36,14 @@ export type CoreEntityKind =
   | 'memory'
   | 'artifact'
   | 'worktree'
-  | 'loop';
+  | 'loop'
+  // Craft P1 (2026-08-16, rulings R1-R3 on task 01a00a0b): the general
+  // diagram/flow primitive. ONE ROW holds vertices AND edges — a lean,
+  // self-contained blueprint; referenced entities stay outside, the flow
+  // between them lives inside the row. Content-discriminated `graphType`
+  // ('entity' = orchestratable blueprint, 'mermaid' = durable diagram source,
+  // more later). It never writes real public.edges while being crafted.
+  | 'graph';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -223,7 +230,21 @@ export type CoreEntityState =
        * be a lie about attribution.
        */
       checkoutBranch?: string | null;
-      workdirMode?: WorkSessionWorkdirMode }
+      workdirMode?: WorkSessionWorkdirMode;
+      /**
+       * WHO IS RUNNING THIS SESSION — the persona resolved through the
+       * session's most recent `participates_in` edge, the SAME hop
+       * `loadActors` attributes messages by. Carried on the summary so a
+       * session row can name the teammate and the tool together without a
+       * second graph read.
+       *
+       * ADDITIVE AND OPTIONAL, and its two absences are different claims.
+       * A MISSING KEY is a node that predates this field. An explicit `null`
+       * is a measured absence: a run with no participating team_member — a
+       * human at a terminal, or a shell — for which a consumer renders the
+       * tool alone and invents no persona.
+       */
+      teammate?: ActorSummary | null }
   | { kind: 'collection'; collectionType: string; itemCount: number }
   | { kind: 'project'; projectId: ProjectId; materializedVersion: number }
   | { kind: 'interaction_profile'; status: InteractionProfileStatus;
@@ -258,7 +279,13 @@ export type CoreEntityState =
    */
   | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
       subjectId: EntityId | null; nextRunAt: string | null; lastRunAt: string | null;
-      lastError: string | null };
+      lastError: string | null }
+  /**
+   * Craft P1: enough for a list row — which type of graph, and how big. The
+   * vertices and edges themselves are content, not state: a summary never
+   * needs them and they can be large.
+   */
+  | { kind: 'graph'; graphType: string; nodeCount: number; edgeCount: number };
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
@@ -444,6 +471,54 @@ export interface WorkSessionInteractionProfileProjection {
   composerPolicy: ComposerInteractionPolicy;
 }
 
+/**
+ * Craft P1 — the lean blueprint vocabulary (rulings R1-R3, task 01a00a0b).
+ *
+ * DELIBERATELY A SKETCH, NOT A PROGRAM SCHEMA. A node is either a REFERENCE
+ * to an existing entity (`id`) or a SPEC for one that does not exist yet
+ * (`{kind, title, hint?}` — the orchestrating agent writes the real body when
+ * it materializes, R2). `key` is row-local so specs can be wired before they
+ * exist. Edges carry the registered edge vocabulary as INTENT — the agent
+ * treats them as instruction, never as a schema-validated DAG. Everything is
+ * optional beyond the discriminants and validation is soft: unknown members
+ * pass through so future graph types cost no contract change.
+ */
+export interface GraphNodeSpec { kind?: string; title?: string; hint?: string; [extra: string]: unknown }
+/**
+ * THE PINNED NODE SHAPE (Craft P1, settled 2026-08-16 — read this before
+ * writing a blueprint row).
+ *
+ *   id    the ROW-LOCAL key. Edges' `src`/`dst` name it. Not an entity id.
+ *   ref   the entity id, when this node points at something that REALLY EXISTS.
+ *   spec  {kind,title,hint} when the node does NOT exist yet.
+ *
+ * A node is a REFERENCE **iff it carries `ref`**; otherwise it is a SPEC.
+ * Entity-hood is never inferred from `id` — that inference is precisely the
+ * defect this pin removes: writers universally reach for `id` as the node's
+ * local identity (11 of 11 nodes on the first real blueprint row did, and none
+ * carried `key`), so a reader treating `id` as an entity id turned every spec
+ * into a broken reference reading "unavailable entity".
+ *
+ * LEGACY ALIASES, accepted forever, never written: `key` for `id` (it wins
+ * when both are present, because that is the key old edges named) and
+ * `entityId` for `ref`. One migration branch covers rows written before the
+ * pin: no `ref`, no `spec`, and an `id` in UUID form ⇒ `id` is the ref. A node
+ * carrying `spec` is never subject to it.
+ */
+export interface GraphNode {
+  /** Row-local key — the edge namespace. */
+  id?: string;
+  /** The referenced entity. Present ⇔ this node is a reference. */
+  ref?: EntityId;
+  spec?: GraphNodeSpec;
+  /** @deprecated legacy alias for `id`; still honored, and it wins over `id`. */
+  key?: string;
+  /** @deprecated legacy alias for `ref`. */
+  entityId?: EntityId;
+  [extra: string]: unknown;
+}
+export interface GraphEdgeSpec { src?: string; dst?: string; type?: string; note?: string; [extra: string]: unknown }
+
 export type CoreEntityContent =
   | { kind: 'task'; description: string; acceptanceCriteria: AcceptanceCriterion[];
       pointsEstimate?: number | null }
@@ -478,7 +553,15 @@ export type CoreEntityContent =
       statusChangedAt: string | null }
   | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
       subjectId: EntityId | null; prompt: string; config: Record<string, unknown>;
-      nextRunAt: string | null; lastRunAt: string | null; lastError: string | null };
+      nextRunAt: string | null; lastRunAt: string | null; lastError: string | null }
+  /**
+   * Craft P1: the whole graph in one row (R1). `graphType` discriminates
+   * (R3): 'entity' uses nodes/edges/layout; 'mermaid' uses `source`; future
+   * types choose their own members. All four carry on every read — an arm a
+   * type does not use is simply empty. `layout` is presentation only.
+   */
+  | { kind: 'graph'; graphType: string; nodes: GraphNode[]; edges: GraphEdgeSpec[];
+      layout: Record<string, { x: number; y: number }>; source: string | null };
 
 export interface CustomEntityContent { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
 
@@ -648,6 +731,14 @@ export interface MessageView extends EntitySummary {
   lastReplyAt?: string | null; replyParticipants?: ActorSummary[];
   /** Structured runtime output, appended durably in stream order. */
   parts?: MessagePart[];
+  /**
+   * True while this message is a chat turn's agent message and that turn has
+   * not completed (`chat_turns.state` in `queued`/`running`). The stored body
+   * is then the claim placeholder, not content — parts-aware surfaces should
+   * draw the streaming parts and suppress the body. Server-set; absent
+   * everywhere else.
+   */
+  turnInFlight?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -717,8 +808,10 @@ export interface MessageDonePart extends MessagePartBase {
   payload: { reason: 'success' | 'error' | 'interrupted' | 'closed' };
 }
 
-/** One write-once runtime binding for a human-authored message-thread root. */
-export type ChatMode = 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate';
+/** One write-once runtime binding for a human-authored message-thread root.
+ *  `craft` joined 2026-08-16 (Craft P1): the blueprint-sketching mode — edits
+ *  a graph entity's row, never the real graph; style-only like every mode. */
+export type ChatMode = 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate' | 'craft';
 
 export interface ChatThreadSummary {
   rootMessageId: EntityId;
@@ -1941,7 +2034,11 @@ export type InvitePreview =
  * the full-screen kanban over the task collection (switchable grouping,
  * priority/assignee filters). A VIEW: it renders the `task` KIND's rows, so
  * no kind ref moves; the tab is a presentation of an existing collection. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board';
+/** `craft` added 2026-08-16 (Craft P1, same R4 additive widening): the
+ * split-pane blueprint studio — a craft-mode chat anchored to a `graph`
+ * entity beside a canvas rendering that entity's row. A VIEW over the new
+ * `graph` kind's rows; the kind itself stays an ordinary collection kind. */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -2136,16 +2233,53 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // The id is `chats` on both sides. It is free: 125 RENAMED the old `chats`
   // group to `channels` (it was the channel collection's group, never this
   // surface's), so nothing else claims it and no space can hold both.
+  // 2026-08-16 LATER (unified Home, task 01a00932, migration 134): the
+  // `work` and `channels` GROUPS retire and `chats` is relabelled HOME —
+  //   chats(Home) | board | graph | files | settings
+  // Home's screen lists chat threads OR any collection kind (the root
+  // column + registry-driven icon rail), so a Work tab beside it would be a
+  // second door to every list Home already owns, and Channels' contents
+  // await the redesigned Collab surface (a later feature). Nothing was
+  // deleted: `workspace`, `git`, `messages` and every retired kind ref keep
+  // their routes, their chords and their menu-editor eligibility — the same
+  // rail-edit posture as 125/126/127.
   { serverId: 'chats', clientId: 'chats' },
-  { serverId: 'work', clientId: 'workspace' },
+  // 2026-08-16 LATER STILL (user ruling, migration 140): a WORK tab returns
+  // beside Home —
+  //   chats(Home) | work | board | craft | graph | files | settings
+  // 134 retired the group on the reasoning that Home's root column already
+  // lists every collection kind, so Work was a second door to the same
+  // lists. That was true of 134's Work group, which was a RAIL of rows
+  // (Workspace caret + the three dev kinds + git). It is not true of this
+  // one: the group holds the single childless `workspace` VIEW, so the tab
+  // is the three-panel workspace itself — left panel, center entity, right
+  // panel — which is a LAYOUT Home does not offer, not a duplicate list.
+  //
+  // The group is re-minted rather than restored, so its id is `work` on BOTH
+  // sides. The historical `work`/`workspace` divergence noted above belongs
+  // to the pre-134 group; nothing persists under the old client id, so there
+  // is no reason to carry the asymmetry into a group being created fresh.
+  //
+  // Railless BY SHAPE: one childless view item, so tm8-ui's
+  // `isRaillessGroup` answers true and the workspace renders full-bleed
+  // beside the tab row ('workspace' joined RAILLESS_VIEW_REFS in the same
+  // change). Pre-134 menus that still carry the OLD Work group are
+  // untouched by that set — their `workspace` item has eight caret
+  // children, and the rule keys on the shape, so they keep their rail.
+  { serverId: 'work', clientId: 'work' },
   // 2026-08-16 (Board tab wave, migration 130): the task kanban is its own
-  // full-bleed tab beside Work — a railless group holding the single `board`
-  // VIEW, the same posture as graph/files/chats. It PRESENTS the task
-  // collection; the `task` kind row stays in the Workspace caret, so this is
-  // a second door to tasks, not a move (the R9 two-doors posture files set).
+  // full-bleed tab — a railless group holding the single `board` VIEW, the
+  // same posture as graph/files/chats. It PRESENTS the task collection; the
+  // `task` kind stays a Home root, so this is a second door to tasks, not a
+  // move (the R9 two-doors posture files set).
   { serverId: 'board', clientId: 'board' },
+  // 2026-08-16 (Craft P1, migration 137): the blueprint studio joins beside
+  // Board — a railless group holding the single `craft` VIEW (chat + canvas
+  // over one `graph` entity's row). Placed between Board and Graph: it sits
+  // with the other full-bleed work surfaces, and tab position is a one-line
+  // edit here if the pending position ruling says otherwise.
+  { serverId: 'craft', clientId: 'craft' },
   { serverId: 'graph', clientId: 'graph' },
-  { serverId: 'channels', clientId: 'channels' },
   { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },
 ] as const;
@@ -2903,6 +3037,18 @@ export interface ExecutionSpawnInput extends CommandContext {
    * `remembers` set; nothing is written to the graph.
    */
   memoryIds?: EntityId[];
+  /**
+   * The terminal geometry the client has measured for the pane this session
+   * will be shown in, so the PTY BOOTS at the real width instead of the 80x24
+   * default. Load-bearing, not cosmetic: a full-screen agent TUI lays its
+   * entire frame out for the width it is given at startup, and the browser can
+   * only correct that afterwards via a resize round trip — which the PTY socket
+   * suppresses when the fitted size happens to match what it already has,
+   * leaving the 80-column frame frozen on screen until a human resizes the
+   * window. Omitted (a headless or non-visual caller) keeps the 80x24 default.
+   */
+  cols?: number;
+  rows?: number;
 }
 
 /**
@@ -3023,6 +3169,9 @@ export interface ExecutionTerminateInput extends CommandContext {
  */
 export interface ExecutionResumeInput extends CommandContext {
   clientMutationId: string;
+  /** Same geometry contract as `ExecutionSpawnInput` — a resume re-spawns the PTY. */
+  cols?: number;
+  rows?: number;
 }
 
 /**

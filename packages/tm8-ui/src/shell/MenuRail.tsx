@@ -8,10 +8,10 @@
  *   3. Caret row    — a VIEW item WITH children (≤8, depth exactly ≤1). The row
  *                     click opens the view; the caret alone toggles the leaves.
  *
- * Width is DISCRETE — M ∈ {48, 220}, never a continuum (02-LAYOUT §1, WLT §6).
- * Collapsed renders icons only, which is why every view and kind ref must carry
- * a glyph; a ref that cannot be presented fails the config closed rather than
- * rendering a blank 48px row.
+ * Width is DISCRETE — two values, never a continuum (02-LAYOUT §1, WLT §6).
+ * Collapsed renders the icon with its WORD underneath, which is why every view
+ * and kind ref must still carry a glyph; a ref that cannot be presented fails
+ * the config closed rather than rendering a blank row.
  *
  * Provenance: row grammar + measurements from the T1-1 "Menu rail grammar"
  * canvas (the dedicated rail frame); the unified server rows and the two
@@ -30,9 +30,9 @@ export interface RefPresentation {
   label: string;
   /**
    * The row's mark. A NODE, not a character: kinds and views are both drawn
-   * (`KindIcon` / `VectorIcon`) because the collapsed 48px rail is icon-ONLY,
-   * and that is the state where near-identical text glyphs stopped being a
-   * cosmetic problem — with the labels gone, the mark is the entire row.
+   * (`KindIcon` / `VectorIcon`) because the collapsed rail leads with the mark
+   * and gives it most of the row — near-identical text glyphs stopped being a
+   * cosmetic problem the moment the icon became the row's dominant feature.
    */
   icon: ReactNode;
   /** Optional trailing count, e.g. Tasks `18`. */
@@ -200,7 +200,9 @@ function present(node: MenuItem | MenuLeaf, presentKind: KindPresenter): RefPres
  * contents — so the moment the collapsed row carried one, every corner mark
  * inside it became invisible to assistive tech no matter what it rendered.
  * That is why the label is built from the parts rather than set to the bare
- * kind name (D31).
+ * kind name (D31). It survives the caption: the caption prints the NAME, while
+ * the counts are still drawn as `aria-hidden` corner marks, so without this
+ * composition the numbers would go back to being sighted-only.
  *
  * The asymmetry is deliberate and follows C8/L10: `live` is a STATUS, so it
  * needs the WORD — "3 live", never a naked "3". `badge` is a QUANTITY, which is
@@ -324,7 +326,10 @@ function DynamicEntityNode({
         onClick={() => onNavigate(target)}
       >
         <span className="shell-rail__icon" aria-hidden="true">{row.icon}</span>
-        {!collapsed ? <span className="shell-rail__label">{row.label}</span> : null}
+        {/* The label is drawn in BOTH states — beside the icon expanded, under
+            it collapsed. The stylesheet turns the row into a column; nothing
+            here branches on `collapsed` for the word itself. */}
+        <span className="shell-rail__label">{row.label}</span>
         {!collapsed && row.live !== undefined && row.live > 0 ? (
           <span className="shell-rail__live">
             <span className="shell-rail__live-dot" aria-hidden="true" />
@@ -413,7 +418,7 @@ export function MenuRail(props: MenuRailProps) {
                     <span className="shell-rail__icon" aria-hidden="true">
                       {presentation.icon}
                     </span>
-                    {!collapsed && <span className="shell-rail__label">{presentation.label}</span>}
+                    <span className="shell-rail__label">{presentation.label}</span>
                     {!collapsed && presentation.live !== undefined && (
                       <span className="shell-rail__live">
                         <span className="shell-rail__live-dot" aria-hidden="true" />
@@ -473,28 +478,24 @@ export function MenuRail(props: MenuRailProps) {
                   {/* Leaves: pre-filtered Entity Views, one grammar across all
                       groups (RULING E).
 
-                      THEY NOW RENDER COLLAPSED TOO, AS ICONS. The old rule was
-                      "never rendered collapsed — a 48px rail has no room to say
-                      what a leaf is", and that was survivable only while the
-                      rail opened EXPANDED: collapsing was a deliberate, momentary
-                      act by someone who knew what they were hiding. It stops
-                      being survivable the moment the rail starts collapsed,
-                      because the shipped default hangs Tasks, Sessions, Docs,
-                      Channels, Teammates, Memories, Artifacts and Loops off ONE
-                      caret row — eight of the rail's destinations, unreachable
-                      on first paint, from a rail whose whole collapsed premise
-                      is "icons for everything".
+                      THEY RENDER COLLAPSED TOO. The old rule was "never
+                      rendered collapsed — a 48px rail has no room to say what a
+                      leaf is", and that was survivable only while the rail
+                      opened EXPANDED: collapsing was then a deliberate,
+                      momentary act by someone who knew what they were hiding.
+                      It stops being survivable the moment the rail starts
+                      collapsed, because the shipped default hangs Tasks,
+                      Sessions, Docs, Teammates, Memories, Artifacts, Loops and
+                      Files off ONE caret row — eight of the rail's
+                      destinations, unreachable on first paint.
 
-                      What the 48px rail genuinely has no room for is the WORD,
-                      not the row. So the leaf keeps its icon, takes the same
-                      composed `aria-label` its parent row uses collapsed, and
-                      loses only the guide line and the label — the same trade
-                      every other collapsed row already makes. */}
+                      The leaf keeps its icon, its word and the same composed
+                      `aria-label` its parent row uses collapsed, and loses only
+                      the guide line — the indent it has no room to draw. */}
                   {/* COLLAPSED SHOWS EVERY LEAF, regardless of the caret. The
                       caret control itself renders only expanded, so a closed
-                      caret would strand its children entirely at 48px — and
-                      the collapsed premise has always been "icons for
-                      everything". `open` gates the expanded rail only. */}
+                      caret would strand its children entirely. `open` gates the
+                      expanded rail only. */}
                   {(collapsed || open) &&
                     children.map((leaf) => {
                       const leafPresentation = present(leaf, presentKind);
@@ -513,7 +514,7 @@ export function MenuRail(props: MenuRailProps) {
                         >
                           {/* The guide is the indent that says "this belongs to
                               the row above". Collapsed there is no indent to
-                              draw it against, and an icon rail reads as one
+                              draw it against, and the rail reads as one centred
                               column — so the leaf shows its own icon instead. */}
                           {collapsed ? (
                             <span className="shell-rail__icon" aria-hidden="true">
@@ -522,7 +523,7 @@ export function MenuRail(props: MenuRailProps) {
                           ) : (
                             <span className="shell-rail__guide" aria-hidden="true" />
                           )}
-                          {!collapsed && <span className="shell-rail__label">{leafPresentation.label}</span>}
+                          <span className="shell-rail__label">{leafPresentation.label}</span>
                           {!collapsed && leafPresentation.live !== undefined && (
                             <span className="shell-rail__live">
                               <span className="shell-rail__live-dot" aria-hidden="true" />

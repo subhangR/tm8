@@ -219,7 +219,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   /* Memoized on `data` so the port identity is stable — the feed hook's effects
      key on it, and a fresh object each render would re-read on every keystroke
      anywhere in the workspace. */
-  const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
+  const channelFeedPort = useMemo(
+    () => channelFeedPortFromGateData(data),
+    [data.seam, data.spaceId, data.liveIds, data.postMessage, data.spawn, data.launch.projects],
+  );
 
   /* The panel action bar's executor AND the session tile's ✕, from one hook —
      see `usePanelPrimaries` for why the wiring is not written inline here. */
@@ -540,7 +543,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const rosterRows = useMemo(() => {
     if (!TERMINAL_ROSTER_KIND) return [];
     return data.rowsFor(TERMINAL_ROSTER_KIND)(undefined).map((summary) => toSessionRow(summary));
-  }, [data]);
+  }, [data.rowsFor]);
 
   /** Session task rows come from durable `working_on` edges already projected
       by the gate graph. The map updates with edge events and is shared by both
@@ -558,6 +561,25 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const linkedTasksOf = useCallback(
     (id: string) => linkedTasksBySession.get(id) ?? [],
     [linkedTasksBySession],
+  );
+
+  /** The INVERSE projection from the same edges: sessions per `working_on`
+      target, for the tile's leading sessions chip (relational panel, user
+      ruling 2026-08-16). Same freshness rule — the current node wins over
+      the edge's embedded summary. */
+  const linkedSessionsByTarget = useMemo(() => {
+    const byTarget = new Map<string, EntitySummary[]>();
+    const currentById = new Map(data.graph.nodes.map((node) => [node.id, node]));
+    for (const edge of data.graph.edges) {
+      if (edge.type !== 'working_on') continue;
+      const session = currentById.get(edge.source.id) ?? edge.source;
+      byTarget.set(edge.target.id, [...(byTarget.get(edge.target.id) ?? []), session]);
+    }
+    return byTarget;
+  }, [data.graph.edges, data.graph.nodes]);
+  const linkedSessionsOf = useCallback(
+    (id: string) => linkedSessionsByTarget.get(id) ?? [],
+    [linkedSessionsByTarget],
   );
 
   const profileFor = launchPort.profileFor;
@@ -635,10 +657,15 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           activity={data.activity}
           messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
+          linkedSessionsOf={linkedSessionsOf}
           linkedPullRequestsOf={data.linkedPullRequestsOf}
           selectedId={engine.visible.stack[engine.visible.stack.length - 1] ?? null}
           onSelect={openEntity}
-          onTerminate={leftConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
+          /* UNCONDITIONAL since the relational panel: the Tile only ever
+             mounts the ✕ on session-tree anatomy rows, and a session tile
+             expanded inline under a task (any panel kind) deserves the same
+             close the sessions list gives it. */
+          onTerminate={handleSessionClose}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
           onSetValue={rowLifecycle.setValue}
@@ -763,10 +790,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           activity={data.activity}
           messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
+          linkedSessionsOf={linkedSessionsOf}
           linkedPullRequestsOf={data.linkedPullRequestsOf}
           selectedId={engine.visible.stack[engine.visible.stack.length - 1] ?? null}
           onSelect={openEntity}
-          onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
+          /* Same rule as the left dock — see the comment there. */
+          onTerminate={handleSessionClose}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
           onSetValue={rowLifecycle.setValue}

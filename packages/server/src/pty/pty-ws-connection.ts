@@ -106,6 +106,20 @@ export const DEFAULT_PTY_MAX_CONTROL_BYTES = 4 * 1024;
 export class PtyWsConnection {
   readonly id = randomUUID();
 
+  /**
+   * Whether this connection has already spent its one forced repaint.
+   *
+   * The `force` flag on a resize is a deliberate hole in the echo-loop equality
+   * guard, and it costs a full-screen redraw from the agent every time it is
+   * honoured. "The client sends it at most once per attach" is a client
+   * CONVENTION, and the protocol must not depend on one: a buggy or hostile
+   * peer that sends it in a loop would otherwise drive an unbounded stream of
+   * forced repaints. The budget lives on the connection because that is the
+   * scope the guarantee is stated in — a genuine reattach opens a new socket
+   * and legitimately earns a new one.
+   */
+  forcedRepaintSpent = false;
+
   private readonly socket: WsSocket;
   private readonly decoder: FrameDecoder;
   private readonly handlers: PtyWsConnectionHandlers;

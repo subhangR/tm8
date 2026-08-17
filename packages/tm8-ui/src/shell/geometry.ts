@@ -24,8 +24,21 @@ export const GRID_GAP = 8;
 /** One panel column. The unit C_min is built from. */
 export const PANEL_COL_MIN = 320;
 
-/** Menu rail: two discrete states, never a continuum (02-LAYOUT §1). */
-export const MENU_COLLAPSED = 48;
+/**
+ * Menu rail: two discrete states, never a continuum (02-LAYOUT §1).
+ *
+ * COLLAPSED WAS 48 AND IS NOW 72, because the collapsed rail stopped being
+ * icon-ONLY: it keeps each destination's WORD under its mark (owner ruling,
+ * 2026-08-16). 48px fits a 16px glyph and nothing else, and an icon rail whose
+ * rows can only be identified by hovering for a tooltip is a rail you have to
+ * learn before you can use. 72px is what the longest real caption needs —
+ * `Pull requests` wrapped to two lines — and it still costs 93px less than
+ * expanded, which is the whole point of collapsing.
+ *
+ * Discreteness is untouched: M is still exactly one of these two values, and
+ * the solver still spends the difference on the center column.
+ */
+export const MENU_COLLAPSED = 72;
 export const MENU_EXPANDED = 165;
 
 /** Server rail: hidden or 48. Phase 1 wires only the implicit local server (R10). */

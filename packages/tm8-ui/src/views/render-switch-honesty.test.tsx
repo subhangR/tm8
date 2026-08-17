@@ -98,12 +98,11 @@ async function rememberTarget(target: unknown): Promise<void> {
   /* Revision 11: a viewer with no memory lands on the merged Home. */
   await waitFor(() => first.getByTestId('home-page'));
   /* Any real navigation will do — this is what writes the record. Tasks rides
-     the Workspace caret on the WORK TAB now (revision 12), so switch tab and
-     open the caret first. */
-  fireEvent.click(within(first.getByTestId('space-tab-bar')).getByRole('tab', { name: 'Work' }));
-  const rail = within(first.getByTestId('menu-rail'));
-  fireEvent.click(rail.getByLabelText('Expand Workspace'));
-  fireEvent.click(rail.getByRole('button', { name: /^Tasks/ }));
+     the Workspace caret on the WORK TAB now (revision 12), so switch tab
+     first. The caret is an EXPANDED-rail control and the rail boots collapsed,
+     where every leaf is already drawn. */
+  fireEvent.keyDown(window, { key: 'g' });
+  fireEvent.keyDown(window, { key: 't' });
   await waitFor(() => first.getByTestId('entity-view'));
   first.unmount();
 

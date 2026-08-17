@@ -152,6 +152,9 @@ describe('WorkSessionContent', () => {
     );
 
     expect(screen.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByText('native terminal')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Terminal' }));
+    expect(screen.getByText('native terminal')).toBeTruthy();
   });
 
   it('uses explicit URL selection before saved preference and the pinned default', () => {

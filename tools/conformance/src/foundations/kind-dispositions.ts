@@ -51,6 +51,7 @@ export type MigrationStrategy =
   | 'worktree-detail'
   | 'artifact-detail'
   | 'loop-detail'
+  | 'graph-detail'
   | 'custom-registry'
   | 'none';
 
@@ -368,6 +369,15 @@ export const CORE_KIND_DISPOSITIONS = {
   loop: core('loop', 'loops', {
     collection: typedCollection, projection: universal, capabilities: generic,
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'loop-detail' },
+  }),
+  // Graphs (Craft P1, rulings R1-R3). Generic lifecycle, exactly like loop:
+  // CRUD rides entities.create/patch through create_graph_entity/
+  // update_graph_entity — zero new catalog rows for the whole Craft feature.
+  // Menu-addressable but registered-not-default: a graph is crafted on
+  // purpose in its own studio tab, not a container things get filed into.
+  graph: core('graph', 'graphs', {
+    collection: typedCollection, projection: universal, capabilities: generic,
+    menu: { strategy: 'registered-not-default' }, migration: { strategy: 'graph-detail' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

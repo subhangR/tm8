@@ -54,6 +54,11 @@ import {
   type RealControls,
 } from '../data';
 import { isRealSeamEnabled } from './realSeamFlag';
+import {
+  ROW_QUERY_CACHE_CAP,
+  createRecencyLedger,
+  evictRowKeys,
+} from './row-cache';
 import { createDomainStore, projectRows, selectConnectionsOf, type DomainStoreHandle } from '../data/project/domain-store';
 import {
   CACHED_LAUNCH_KINDS,
@@ -142,6 +147,8 @@ interface ReadFailure {
   attempts: number;
   nextAt: number;
   terminal: boolean;
+  /** Optional freshness generation for reads whose truth can advance. */
+  revision?: number;
 }
 
 /** Detail and thread budgets are separate records under one map. */
@@ -149,9 +156,19 @@ function readKey(half: 'd' | 'm', id: string): string {
   return `${half}:${id}`;
 }
 
-function readBlocked(failures: Map<string, ReadFailure>, key: string): boolean {
+function readBlocked(
+  failures: Map<string, ReadFailure>,
+  key: string,
+  revision?: number,
+): boolean {
   const failure = failures.get(key);
   if (failure === undefined) return false;
+  // A newer message counter is a different read target. A stale response for
+  // count N must not back off the first attempt to fetch N+1.
+  if (revision !== undefined && failure.revision !== revision) {
+    failures.delete(key);
+    return false;
+  }
   return failure.attempts >= READ_MAX_ATTEMPTS || Date.now() < failure.nextAt;
 }
 
@@ -159,13 +176,19 @@ function recordReadFailure(
   failures: Map<string, ReadFailure>,
   key: string,
   error: unknown,
+  revision?: number,
 ): void {
   // A terminal answer spends the whole budget at once: the node told us what it
   // knows and asking again cannot change it. Retrying a 404 from a render-time
   // caller is the unbounded loop with extra steps.
   const terminal = isTerminalReadError(error);
   const attempts = terminal ? READ_MAX_ATTEMPTS : (failures.get(key)?.attempts ?? 0) + 1;
-  failures.set(key, { attempts, terminal, nextAt: Date.now() + readRetryDelayMs(attempts, error) });
+  failures.set(key, {
+    attempts,
+    terminal,
+    nextAt: Date.now() + readRetryDelayMs(attempts, error),
+    ...(revision === undefined ? {} : { revision }),
+  });
 }
 
 /**
@@ -563,6 +586,8 @@ export interface GateOptions {
    * loopback node answers as the auto-owner (T-L7).
    */
   getAuthToken?: () => string | null;
+  /** Stable node/viewer scope for cursor persistence; contains no credential. */
+  cursorScope?: string;
   /**
    * THE SEAM INJECTION PORT.
    *
@@ -598,6 +623,7 @@ export function useGateData(options: GateOptions): GateData {
    * would put invented entities on screen wearing the real ones' chrome.
    */
   const seamRef = useRef<Seam | null>(null);
+  const ownsSeamRef = useRef(options.seam === undefined);
   if (seamRef.current === null) {
     seamRef.current = options.seam
       ? options.seam
@@ -612,6 +638,7 @@ export function useGateData(options: GateOptions): GateData {
           // The local Server stays default-relative. A named Server uses the
           // same-origin relay above, so browser CORS never becomes transport.
           ...(options.getAuthToken ? { getAuthToken: options.getAuthToken } : {}),
+          ...(options.cursorScope ? { cursorScope: options.cursorScope } : {}),
           fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
           webSocketFactory: browserWebSocketFactory(WebSocket),
           origin: location.origin,
@@ -619,12 +646,19 @@ export function useGateData(options: GateOptions): GateData {
       : createFixtureSeam();
   }
   const seam = seamRef.current;
+  const retainedEntityIdsRef = useRef<ReadonlySet<string>>(new Set());
 
   const domainRef = useRef<DomainStoreHandle | null>(null);
-  if (domainRef.current === null) domainRef.current = createDomainStore(seam);
+  if (domainRef.current === null) {
+    domainRef.current = createDomainStore(seam, {
+      retainedEntityIds: () => retainedEntityIdsRef.current,
+    });
+  }
   const domain = domainRef.current;
+  const spaceGeneration = useRef(0);
 
   const [ready, setReady] = useState(false);
+  const [bootRevision, setBootRevision] = useState(0);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const [members, setMembers] = useState<readonly ActorSummary[]>([]);
   const [taskAxes, setTaskAxes] = useState<readonly import('@tm8/contract').TaskAxis[]>([]);
@@ -684,6 +718,7 @@ export function useGateData(options: GateOptions): GateData {
     atCeiling: false,
   }));
   const [graphWindow, setGraphWindow] = useState<string>(DEFAULT_WINDOW);
+  const graphEventIds = useRef(new Set<string>());
   /**
    * ROWS ARE IDS NOW, NOT SUMMARIES — and that one change is what closed the
    * live loop.
@@ -701,6 +736,66 @@ export function useGateData(options: GateOptions): GateData {
    * entity changes the list, with no read and nothing to invalidate.
    */
   const [rows, setRows] = useState<Record<string, RowPage>>({});
+  /**
+   * Access order over `rows` keys, and the claims/in-flight sets an eviction
+   * has to release with them. See `row-cache.ts` — the short version is that an
+   * unbounded `rows` map pins `retainedEntityIds` open and makes the entity cap
+   * unreachable, and that evicting a key without dropping its CLAIM produces a
+   * list that renders empty forever.
+   */
+  const rowRecency = useRef(createRecencyLedger());
+  /** The queue of render-recorded misses awaiting the drain effect below. */
+  const pending = useRef(new Map<string, PendingRead>());
+  /**
+   * A missing read stays claimed until its cache entry exists.
+   *
+   * `pending` is only the queue waiting for the drain effect. That effect has
+   * to clear the queue before it starts the requests, otherwise a later tick
+   * would dispatch the same batch again. But clearing the queue used to make
+   * every request look UNCLAIMED while it was in flight. Each response first
+   * updates the shared entity store, which re-renders the screen; during that
+   * render the sibling reads still had no cache entry and were queued again.
+   * With several bands in flight their responses continually re-armed one
+   * another — the production shape was hundreds of successful identical
+   * `collections.query` calls until Chrome exhausted its own request budget.
+   *
+   * This set is the lifetime claim. A success or terminal empty result writes
+   * the cache, so the claim can remain until that cache entry goes away — a
+   * space switch clears both, and so does an LRU eviction (`releaseRowKey`),
+   * because a claim outliving its page is a list that never reads again.
+   *
+   * DECLARED HERE, above `absorb`, only so the write path can release it.
+   */
+  const claimedReads = useRef(new Set<string>());
+  /**
+   * Keys with a `loadMore` page in flight. Guarded on a ref, not on `rows`: a
+   * scroll sentinel fires several times inside one frame, and state written by
+   * the first call is not visible to the second. Each of them would spend the
+   * SAME cursor, fetch the same page and append nothing — the list stops
+   * growing while looking busy. Also the LRU's pin set: evicting a key
+   * mid-append would leave the appended page with no rows before it.
+   */
+  const pagesInFlight = useRef(new Set<string>());
+
+  /** An evicted key must take its claim with it, or `rowsFor` returns
+      `EMPTY_ROWS` for it forever — the claim is what suppresses the re-read. */
+  const releaseRowKey = useCallback((key: string) => {
+    claimedReads.current.delete(key);
+    pending.current.delete(key);
+  }, []);
+
+  /** Bound the row-query cache on every write. See `row-cache.ts`. */
+  const boundRows = useCallback(
+    (next: Record<string, RowPage>): Record<string, RowPage> =>
+      evictRowKeys(
+        next,
+        rowRecency.current,
+        ROW_QUERY_CACHE_CAP,
+        pagesInFlight.current,
+        releaseRowKey,
+      ) as Record<string, RowPage>,
+    [releaseRowKey],
+  );
   const activity = useTerminalActivityMap(terminalActivitySource);
   const messagePulses = useMessagePulses(seam);
 
@@ -726,6 +821,48 @@ export function useGateData(options: GateOptions): GateData {
     domain.store.subscribe,
     () => domain.store.getState().messagesByAnchor,
   );
+  /**
+   * The ids some rendered projection still references — the set
+   * `enforceCacheBounds` refuses to evict.
+   *
+   * MEMOISED, and that is a fix rather than a tidy-up. This used to be rebuilt
+   * on EVERY render of this hook: a fresh `Set` over every id in every cached
+   * page plus the graph plus the detail and thread keys, allocated per render,
+   * while an event burst renders at frame rate. It is now recomputed only when
+   * one of the four caches it reads actually changes.
+   *
+   * EVERY INPUT MUST BE BOUNDED BY SOMETHING THAT IS NOT THIS SET — `rows` by
+   * `ROW_QUERY_CACHE_CAP` (see `row-cache.ts`), `nodeIds` by
+   * `GRAPH_NODE_LIMIT`, `details` by `DETAIL_CACHE_CAP`. A retained set built
+   * from an unbounded input protects an unbounded number of entities, which is
+   * the same as having no cap at all.
+   *
+   * `messagesByAnchor` IS DELIBERATELY ABSENT, and leaving it in was a real
+   * defect found in review. Its cap skips retained keys, so including its own
+   * keys here made every anchor that survived one render permanently
+   * unevictable: `MESSAGE_ANCHOR_CACHE_CAP` died under slow accretion — each
+   * entry up to `MESSAGES_CAP` full `MessageView`s — and the resulting
+   * unbounded key population fed straight back into the ENTITY sweep's
+   * protected set, re-opening the exact defect this whole change exists to
+   * close. A cache may not be the reason it is allowed to grow.
+   *
+   * THE OPEN THREAD IS STILL PINNED, via `details`. `pull` reads an anchor's
+   * detail and its thread TOGETHER and re-arms either half whose cache entry
+   * has gone (`pull`'s first lines), so an anchor with a thread on screen has
+   * a cached detail by construction — and if that ever stops being true, the
+   * re-arm refetches rather than leaving the panel empty.
+   */
+  const retainedEntityIds = useMemo(
+    () =>
+      new Set([
+        ...Object.values(rows).flatMap((page) => page.ids),
+        ...graphLoad.nodeIds,
+        ...Object.keys(details),
+      ]),
+    [rows, graphLoad.nodeIds, details],
+  );
+  // The store reads this ref synchronously at commit time, from outside React.
+  retainedEntityIdsRef.current = retainedEntityIds;
 
   /** Every read lands in the store FIRST, then leaves its ordering here. Both
       halves matter: skipping the ingest would leave `projectRows` joining ids
@@ -736,12 +873,17 @@ export function useGateData(options: GateOptions): GateData {
       absorbing a page 2 non-appending would leave the list showing rows 51-100
       and nothing before them. */
   const absorb = useCallback(
-    (key: string, page: Page<EntitySummary>, append = false) => {
+    (key: string, page: Page<EntitySummary>, append = false, generation = spaceGeneration.current) => {
+      if (generation !== spaceGeneration.current) return;
       domain.store.getState().ingestSummaries([...page.items]);
+      // A page that just landed is the most recently USED key by definition —
+      // stamp before the bound runs, or the write could evict itself.
+      rowRecency.current.touch(key);
       setRows((current) => {
+        if (generation !== spaceGeneration.current) return current;
         const prior = append ? current[key]?.ids : undefined;
         const ids = page.items.map((item) => item.id);
-        return {
+        return boundRows({
           ...current,
           [key]: {
             // De-duplicated on append: a row that changed between two page
@@ -752,14 +894,19 @@ export function useGateData(options: GateOptions): GateData {
             loading: false,
             ...(page.total === undefined ? {} : { total: page.total }),
           },
-        };
+        });
       });
     },
-    [domain],
+    [domain, boundRows],
   );
 
   const loadGraph = useCallback(
-    async (space: SpaceId, windowId: string = DEFAULT_WINDOW) => {
+    async (
+      space: SpaceId,
+      windowId: string = DEFAULT_WINDOW,
+      generation = spaceGeneration.current,
+    ) => {
+      if (generation !== spaceGeneration.current) return;
       setGraphLoad((current) => ({ ...current, phase: 'loading', error: null }));
       // The window is sent as an ABSOLUTE instant so the node never has to
       // agree with this browser about what "now" is. `null` is all time.
@@ -772,6 +919,7 @@ export function useGateData(options: GateOptions): GateData {
           limit: GRAPH_NODE_LIMIT,
           ...(activeSince === null ? {} : { filters: { activeSince } }),
         });
+        if (generation !== spaceGeneration.current) return;
         const store = domain.store.getState();
         store.ingestSummaries(result.nodes);
         store.ingestEdges(result.edges);
@@ -779,13 +927,17 @@ export function useGateData(options: GateOptions): GateData {
           phase: 'ready',
           error: null,
           now: new Date().toISOString(),
-          nodeIds: result.nodes.map((node) => node.id),
+          nodeIds: [...new Set([
+            ...result.nodes.map((node) => node.id),
+            ...graphEventIds.current,
+          ])].slice(-GRAPH_NODE_LIMIT),
           activeSince,
           // A full page is the only evidence available that the window holds
           // more: there is no count-by-query read to ask for the true total.
           atCeiling: result.nodes.length >= GRAPH_NODE_LIMIT,
         });
       } catch (error: unknown) {
+        if (generation !== spaceGeneration.current) return;
         setGraphLoad({
           phase: 'error',
           error: String((error as { message?: string })?.message ?? error),
@@ -817,16 +969,38 @@ export function useGateData(options: GateOptions): GateData {
    */
   useEffect(() => {
     if (!spaceId) return undefined;
-    return seam.onEvent((event) => {
+    const arrivals = new Set<string>();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const flush = () => {
+      timer = undefined;
+      if (arrivals.size === 0) return;
+      const ids = [...arrivals];
+      arrivals.clear();
+      setGraphLoad((current) => {
+        const known = new Set(current.nodeIds);
+        const added = ids.filter((id) => !known.has(id));
+        return added.length === 0
+          ? current
+          : { ...current, nodeIds: [...current.nodeIds, ...added].slice(-GRAPH_NODE_LIMIT) };
+      });
+    };
+    const unsubscribe = seam.onEvent((event) => {
       if (event.type !== 'entity.upsert') return;
       const arrival = (event as { entity?: { id?: string; spaceId?: string } }).entity;
       if (!arrival?.id || arrival.spaceId !== spaceId) return;
-      setGraphLoad((current) =>
-        current.nodeIds.includes(arrival.id as string)
-          ? current
-          : { ...current, nodeIds: [...current.nodeIds, arrival.id as string] },
-      );
+      graphEventIds.current.delete(arrival.id);
+      graphEventIds.current.add(arrival.id);
+      if (graphEventIds.current.size > GRAPH_NODE_LIMIT) {
+        const oldest = graphEventIds.current.values().next().value as string | undefined;
+        if (oldest) graphEventIds.current.delete(oldest);
+      }
+      arrivals.add(arrival.id);
+      if (timer === undefined) timer = setTimeout(flush, 16);
     });
+    return () => {
+      unsubscribe();
+      if (timer !== undefined) clearTimeout(timer);
+    };
   }, [seam, spaceId]);
 
   /**
@@ -835,10 +1009,11 @@ export function useGateData(options: GateOptions): GateData {
    * honest response is to re-run the reads rather than patch around the gap.
    */
   const hydrate = useCallback(
-    async (space: SpaceId) => {
+    async (space: SpaceId, generation = spaceGeneration.current) => {
+      const isCurrent = () => generation === spaceGeneration.current;
       const [menuRaw, snapshot, projects, settings, identity, , counts] = await Promise.all([
         seam.menu(space).catch((error: unknown) => {
-          setMenu(resolveMenu(undefined, error));
+          if (isCurrent()) setMenu(resolveMenu(undefined, error));
           return undefined;
         }),
         // `refresh()` RESOLVES the snapshot; there is no accessor to read one
@@ -851,7 +1026,7 @@ export function useGateData(options: GateOptions): GateData {
         // gate. Membership still drives the people filter when identity is
         // unreadable; only the viewer-specific face stays absent.
         seam.identity().catch(() => null),
-        loadGraph(space),
+        loadGraph(space, DEFAULT_WINDOW, generation),
         // SOFT-FAILS to `undefined`, like `menu` above and unlike the reads
         // that gate boot. The rail's numbers are an enhancement: a node that
         // cannot answer this should render a rail with no counts, never a
@@ -864,6 +1039,7 @@ export function useGateData(options: GateOptions): GateData {
         // `ready === false` — the counters failing must never cost the boot.
         Promise.resolve().then(() => seam.counts(space)).catch(() => undefined),
       ]);
+      if (!isCurrent()) return;
       if (menuRaw !== undefined) setMenu(resolveMenu(menuRaw as MenuConfig | null));
       if (snapshot) {
         setLiveIds(snapshot.liveEntityIds);
@@ -889,7 +1065,7 @@ export function useGateData(options: GateOptions): GateData {
         const result = await seam.query(query);
         // Same key shape rowsFor reads: an unfiltered, unsorted read is the
         // all-defaults key.
-        absorb(rowsKey(kind, undefined, undefined), result.page);
+        absorb(rowsKey(kind, undefined, undefined), result.page, false, generation);
         return result.page.items;
       };
       // BOUNDED, not `Promise.all`: these are the collections.query calls that
@@ -923,8 +1099,9 @@ export function useGateData(options: GateOptions): GateData {
       // current node returns the name in the summary and pays zero extra reads.
       await mapLimit(unnamedProfiles, BOOT_READ_CONCURRENCY, async (profile) => {
         const detail = await seam.entity(profile.id).catch(() => undefined);
-        if (detail) domain.store.getState().ingestDetail(detail);
+        if (detail && isCurrent()) domain.store.getState().ingestDetail(detail);
       });
+      if (!isCurrent()) return;
       /* THE AUTHORITATIVE SET REPLACES THE SEED — including the rows it does
          NOT contain.
 
@@ -967,7 +1144,7 @@ export function useGateData(options: GateOptions): GateData {
           candidate.type === 'defaults_to_profile' && candidate.source.id === teammate.id);
         return [teammate.id, edge?.target.id ?? null] as const;
       });
-      setTeammateProfileDefaults(Object.fromEntries(defaults));
+      if (isCurrent()) setTeammateProfileDefaults(Object.fromEntries(defaults));
     },
     [seam, options.leftKind, options.rightKind, options.serverBaseUrl, absorb, loadGraph, domain],
   );
@@ -1084,10 +1261,20 @@ export function useGateData(options: GateOptions): GateData {
   const openedSpace = useRef<SpaceId | null>(null);
   useEffect(() => {
     if (!spaceId) return;
+    const generation = ++spaceGeneration.current;
     let cancelled = false;
     const previous = openedSpace.current;
-    if (previous && previous !== spaceId) seam.closeSpace(previous);
+    // Also close on a same-space resync/StrictMode restart. A prepareSpace
+    // begun by an obsolete generation may not have registered the space yet;
+    // the post-await generation check below closes that late open as well.
+    if (previous) seam.closeSpace(previous);
+    if (previous && previous !== spaceId) domain.discardBufferedEvents();
     openedSpace.current = spaceId;
+
+    // One selected space owns this cache. Resetting here prevents details,
+    // messages and graph indexes from accumulating across space switches.
+    domain.store.getState().reset();
+    domain.beginEventBuffering();
 
     setReady(false);
     setBootError(null);
@@ -1097,20 +1284,32 @@ export function useGateData(options: GateOptions): GateData {
     // clearing only the claim would reintroduce duplicate in-flight reads.
     claimedReads.current.clear();
     pending.current.clear();
+    inFlight.current.clear();
+    pagesInFlight.current.clear();
+    pulledDetails.current.clear();
+    pulledMessages.current.clear();
+    detailReadsInFlight.current.clear();
+    messageReadsInFlight.current.clear();
+    readFailures.current.clear();
     setRows({});
+    rowRecency.current.clear();
+    graphEventIds.current.clear();
     // A space switch or resync invalidates every grouped read with the rows.
     setBoards({});
     pendingBoards.current.clear();
     setMembers([]);
     setTaskAxes([]);
+    setTaskWorkflows([]);
     setViewerActor(null);
     setMenu(resolveMenu(null));
     setLiveIds([]);
+    setExecutionCapacity(undefined);
     // Back to "unknown", not to `{}`: the previous space's numbers must not
     // survive the switch, and a zero would be a claim about the new space we
     // have not read yet.
     setKindCounts(undefined);
     setLinkedProjects([]);
+    setSpaceDefaultProfileId(null);
     setTeammateProfileDefaults({});
 
     // SEED THE OPTION SETS BEFORE THE FIRST READ IS EVEN SENT.
@@ -1145,20 +1344,33 @@ export function useGateData(options: GateOptions): GateData {
       for (let attempt = 0; !cancelled; attempt++) {
         try {
           await seam.openSpace(spaceId);
-          await hydrate(spaceId);
-          if (!cancelled) {
+          if (cancelled || generation !== spaceGeneration.current) {
+            if (openedSpace.current !== spaceId) seam.closeSpace(spaceId);
+            return;
+          }
+          await hydrate(spaceId, generation);
+          if (cancelled || generation !== spaceGeneration.current) {
+            if (openedSpace.current !== spaceId) seam.closeSpace(spaceId);
+            return;
+          }
+          await domain.releaseBufferedEvents();
+          if (!cancelled && generation === spaceGeneration.current) {
             setBootError(null);
             setBootErrorCode(null);
             setReady(true);
           }
           return;
         } catch (error: unknown) {
-          if (cancelled) return;
+          if (cancelled || generation !== spaceGeneration.current) return;
+          seam.closeSpace(spaceId);
           setBootError(String((error as { message?: string })?.message ?? error));
           setBootErrorCode(error instanceof CollabError ? error.code : null);
           await new Promise<void>((resolve) => {
             delayHandle = setTimeout(resolve, bootRetryDelayMs(attempt, error));
           });
+          if (cancelled || generation !== spaceGeneration.current) return;
+          domain.store.getState().reset();
+          domain.beginEventBuffering();
         }
       }
     })();
@@ -1166,7 +1378,24 @@ export function useGateData(options: GateOptions): GateData {
       cancelled = true;
       if (delayHandle !== undefined) clearTimeout(delayHandle);
     };
-  }, [seam, spaceId, hydrate]);
+  }, [seam, spaceId, hydrate, domain, bootRevision]);
+
+  // React StrictMode runs an effect setup/cleanup/setup probe. Defer owned
+  // resource disposal by one task so the second setup can cancel the probe,
+  // while a real unmount still closes sockets, timers and store listeners.
+  const lifecycleEpoch = useRef(0);
+  useEffect(() => {
+    const epoch = ++lifecycleEpoch.current;
+    return () => {
+      setTimeout(() => {
+        if (lifecycleEpoch.current !== epoch) return;
+        const opened = openedSpace.current;
+        if (opened) seam.closeSpace(opened);
+        domain.dispose();
+        if (ownsSeamRef.current) seam.dispose();
+      }, 0);
+    };
+  }, [seam, domain]);
 
   const selectSpace = useCallback((next: SpaceId) => {
     if (next === spaceId || !spaces.some((space) => space.id === next)) return;
@@ -1290,24 +1519,20 @@ export function useGateData(options: GateOptions): GateData {
     };
   }, [ready, spaceId, domain, options.serverBaseUrl]);
 
-  // Catch-up integrity lost ⇒ re-run hydration. Idempotent by construction.
+  // Catch-up integrity lost ⇒ restart the full open/reset/hydrate lifecycle.
+  // Buffer immediately because React runs the restarted effect after this
+  // callback returns; events arriving in that gap still belong after snapshot.
   useEffect(
     () =>
       seam.onResync((space) => {
         if (space !== spaceId) return;
-        // Detail reads are re-armed with everything else: a resync means the
-        // catch-up gap could have swallowed anything, including whatever made
-        // a detail read fail.
-        pulledDetails.current.clear();
-        pulledMessages.current.clear();
-        // The retry budget is part of "re-run the reads": an entity whose
-        // attempts were spent against a node that was failing must get a fresh
-        // budget once catch-up integrity is re-established, or the resync would
-        // re-arm a read the backoff then refuses.
-        readFailures.current.clear();
-        void hydrate(space);
+        spaceGeneration.current += 1;
+        domain.beginEventBuffering();
+        seam.invalidateSpaceBaseline?.(space);
+        setReady(false);
+        setBootRevision((revision) => revision + 1);
       }),
-    [seam, spaceId, hydrate],
+    [seam, spaceId, domain],
   );
 
   const livenessOf = useCallback(
@@ -1346,11 +1571,23 @@ export function useGateData(options: GateOptions): GateData {
       detail cache before the panel ever reads its messages, so one shared id
       guard would make that thread permanently look empty. */
   const pulledDetails = useRef(new Set<string>());
+  /** Generation owning an active detail read; distinct from a completed claim. */
+  const detailReadsInFlight = useRef(new Map<string, number>());
   /** Last message-count generation requested per anchor. Unlike detail, a
       thread can become stale while its panel remains open. Recording the
       observed count permits one new read when the server counter advances,
       without turning a failed read into a render-time request loop. */
   const pulledMessages = useRef(new Map<string, number>());
+  /** Generation owning an active thread read; prevents render-time duplicates. */
+  const messageReadsInFlight = useRef(new Map<string, number>());
+  useEffect(() => {
+    for (const id of pulledDetails.current) {
+      if (details[id as EntityId] === undefined) pulledDetails.current.delete(id);
+    }
+    for (const id of pulledMessages.current.keys()) {
+      if (messagesByAnchor[id as EntityId] === undefined) pulledMessages.current.delete(id);
+    }
+  }, [details, messagesByAnchor]);
   /**
    * Failed reads, per id, so a read that FAILED can be retried without becoming
    * a request loop. Both halves of that sentence are load-bearing:
@@ -1386,18 +1623,21 @@ export function useGateData(options: GateOptions): GateData {
       const key = rowsKey(kind, undefined, undefined);
       if (!spaceId || rowsRef.current[key] || inFlight.current.has(kind)) return;
       inFlight.current.add(kind);
+      const generation = spaceGeneration.current;
       const query = { spaceId, kinds: [kind] } as unknown as CollectionQuery;
       void seam
         .query(query)
-        .then((result) => absorb(key, result.page))
+        .then((result) => absorb(key, result.page, false, generation))
         .catch(() => {
+          if (generation !== spaceGeneration.current) return;
           // A kind that will not load renders as an honestly empty panel
           // rather than a spinner that never resolves.
-          setRows((current) => ({ ...current, [key]: EMPTY_PAGE }));
+          rowRecency.current.touch(key);
+          setRows((current) => boundRows({ ...current, [key]: EMPTY_PAGE }));
         })
         .finally(() => inFlight.current.delete(kind));
     },
-    [seam, spaceId, absorb],
+    [seam, spaceId, absorb, boundRows],
   );
 
   useEffect(() => {
@@ -1405,6 +1645,52 @@ export function useGateData(options: GateOptions): GateData {
     ensureKind(options.leftKind);
     ensureKind(options.rightKind);
   }, [ready, options.leftKind, options.rightKind, ensureKind]);
+
+  /**
+   * RE-READ ONE ANCHOR'S DETAIL, UNCONDITIONALLY — the invalidating half that
+   * `pull` deliberately is not.
+   *
+   * WHY IT CANNOT BE `pull`. `pull` is a cache-FILL primitive: its `needsDetail`
+   * is `details[id] === undefined && !pulledDetails.has(id)`, and it early-returns
+   * when neither half is stale. AN OPEN PANEL ALWAYS HAS ITS DETAIL CACHED —
+   * that is why it renders at all — so `pull(id)` on an open panel is a no-op by
+   * construction. That early return is load-bearing (`renderPanel` calls `pull`
+   * FROM RENDER, so widening its staleness rule is a request loop against the
+   * node), which is why the invalidating path is a SECOND verb rather than a
+   * relaxed first one.
+   *
+   * WHAT MAKES IT SAFE TO BE UNCONDITIONAL: this is only ever called from an
+   * EVENT HANDLER for a write that already landed — an attachment uploaded, a
+   * link cut, a session spawned. One completed mutation, one read. It is never
+   * called from render, so there is no loop to bound and no budget to spend.
+   *
+   * NOT COALESCED, deliberately. Two uploads landing 200ms apart are two
+   * different facts, and handing the second one the first one's in-flight
+   * promise would answer it with a read that predates its own edge — the exact
+   * class of staleness this function exists to end.
+   *
+   * DETAIL ONLY. An attachment edge does not touch the thread, and re-reading
+   * messages here would spend a round-trip on data that did not change.
+   */
+  const refetchDetail = useCallback(
+    async (id: string) => {
+      const generation = spaceGeneration.current;
+      const detail = await seam.entity(id as never).catch(() => undefined);
+      if (!detail || generation !== spaceGeneration.current) return;
+      const current = domain.store.getState().entities[id as EntityId];
+      if (current && current.version > detail.version) {
+        pulledDetails.current.delete(id);
+        return;
+      }
+      // The id is now genuinely cached, so `pull` may keep early-returning for
+      // it, and a read that ANSWERED clears its own failure record — the same
+      // rule `pull` follows for the same reason.
+      pulledDetails.current.add(id);
+      readFailures.current.delete(readKey('d', id));
+      domain.store.getState().ingestDetail(detail);
+    },
+    [seam, domain],
+  );
 
   const spawn = useCallback(
     async (input: ExecutionSpawnInput) => {
@@ -1419,12 +1705,27 @@ export function useGateData(options: GateOptions): GateData {
         throw new Error('execution.spawn returned no work-session entity');
       }
 
+      /* THE ANCHOR'S DETAIL IS NOW STALE, AND ONLY A RE-READ FIXES IT.
+         Spawn writes a `working_on` edge from the new session to every id in
+         `taskIds`. That edge lives on the ANCHOR's `connections`, which is a
+         SNAPSHOT taken when its detail was read (`files/model.ts` states the
+         same rule for attachments) — no event converges it, and `pull` is a
+         cache-fill that early-returns on an already-cached detail. So the
+         panel the user launched FROM kept rendering "no runs recorded"
+         against a run that exists, until a full page reload. `patches` cannot
+         close this: it carries SUMMARIES, and a summary has no connections.
+
+         NOT AWAITED, for the reason the next comment gives: the terminal opens
+         on the command result, not one round-trip later. The RUNS region
+         re-renders when the read lands. */
+      for (const taskId of input.taskIds ?? []) void refetchDetail(taskId);
+
       // The command result opens the caller's terminal immediately. The
       // durable entity.upsert event independently converges other clients;
       // neither path needs a browser refresh or a post-command full hydrate.
       return sessionId;
     },
-    [seam, domain],
+    [seam, domain, refetchDetail],
   );
 
   const launch = useMemo<GateData['launch']>(() => {
@@ -1581,25 +1882,8 @@ export function useGateData(options: GateOptions): GateData {
    * path, it never stands in for it, or a kind nobody has asked for would
    * render as confidently empty.
    */
-  const pending = useRef(new Map<string, PendingRead>());
-  /**
-   * A missing read stays claimed until its cache entry exists.
-   *
-   * `pending` is only the queue waiting for the effect below. The effect has
-   * to clear that queue before it starts the requests, otherwise a later tick
-   * would dispatch the same batch again. But clearing the queue used to make
-   * every request look UNCLAIMED while it was in flight. Each response first
-   * updates the shared entity store, which re-renders the screen; during that
-   * render the sibling reads still had no cache entry and were queued again.
-   * With several bands in flight their responses continually re-armed one
-   * another — the production shape was hundreds of successful identical
-   * `collections.query` calls until Chrome exhausted its own request budget.
-   *
-   * This set is the lifetime claim. A success or terminal empty result writes
-   * the cache, so the claim can remain until the cache itself is reset. A
-   * space switch clears both together below.
-   */
-  const claimedReads = useRef(new Set<string>());
+  // `pending` and `claimedReads` are declared above `absorb`, because the row
+  // cache's LRU eviction has to release a claim along with the page it drops.
   const [pendingTick, setPendingTick] = useState(0);
 
   /**
@@ -1620,6 +1904,13 @@ export function useGateData(options: GateOptions): GateData {
     (kind: string) =>
       (filter?: unknown, sort?: CollectionQuery['sort']): readonly EntitySummary[] => {
         const key = rowsKey(kind, filter, sort);
+        // THE RECENCY STAMP, and the reason it is safe from render: the ledger
+        // is a plain Map behind a ref. Nothing subscribes to it, so writing it
+        // here cannot schedule a render — and it is the ONLY place that knows a
+        // list is still on screen. Stamping at write time instead would make
+        // the LRU a write-order queue and evict the list being looked at in
+        // favour of one nobody has opened since boot.
+        rowRecency.current.touch(key);
         const page = rows[key];
         if (page === undefined) {
           // Record the miss; the effect below performs the read. Requesting
@@ -1652,7 +1943,9 @@ export function useGateData(options: GateOptions): GateData {
   const pageStateOf = useCallback(
     (kind: string) =>
       (filter?: unknown, sort?: CollectionQuery['sort']): ListPageState => {
-        const page = rows[rowsKey(kind, filter, sort)];
+        const key = rowsKey(kind, filter, sort);
+        rowRecency.current.touch(key);
+        const page = rows[key];
         if (page === undefined) return { hasMore: false, loading: true };
         return {
           hasMore: page.nextCursor !== null,
@@ -1671,7 +1964,6 @@ export function useGateData(options: GateOptions): GateData {
    * the second. Each of them would spend the SAME cursor, fetch the same page
    * and append nothing — the list stops growing while looking busy.
    */
-  const pagesInFlight = useRef(new Set<string>());
   const loadMore = useCallback(
     (kind: string) =>
       (filter?: unknown, sort?: CollectionQuery['sort']): void => {
@@ -1680,6 +1972,7 @@ export function useGateData(options: GateOptions): GateData {
         const page = rowsRef.current[key];
         if (!page || page.nextCursor === null || pagesInFlight.current.has(key)) return;
         pagesInFlight.current.add(key);
+        const generation = spaceGeneration.current;
         const cursor = page.nextCursor;
         setRows((current) => {
           const live = current[key];
@@ -1687,18 +1980,19 @@ export function useGateData(options: GateOptions): GateData {
         });
         void seam
           .query(queryFor(spaceId, { kind, filter, sort }, cursor))
-          .then((result) => absorb(key, result.page, true))
+          .then((result) => absorb(key, result.page, true, generation))
           // The rows already fetched stay; only the attempt to extend them
           // failed. Clearing `nextCursor` stops an endless retry at the
           // sentinel and lets the count stop claiming there is more.
-          .catch(() =>
+          .catch(() => {
+            if (generation !== spaceGeneration.current) return;
             setRows((current) => {
               const live = current[key];
               return live
                 ? { ...current, [key]: { ...live, loading: false, nextCursor: null } }
                 : current;
-            }),
-          )
+            });
+          })
           .finally(() => pagesInFlight.current.delete(key));
       },
     [seam, spaceId, absorb],
@@ -1709,14 +2003,20 @@ export function useGateData(options: GateOptions): GateData {
   useEffect(() => {
     if (!ready || !spaceId || pending.current.size === 0) return;
     const reads = [...pending.current.entries()];
+    const generation = spaceGeneration.current;
     pending.current.clear();
     for (const [key, read] of reads) {
       void seam
         .query(queryFor(spaceId, read))
-        .then((result) => absorb(key, result.page))
-        .catch(() => setRows((current) => ({ ...current, [key]: EMPTY_PAGE })));
+        .then((result) => absorb(key, result.page, false, generation))
+        .catch(() => {
+          if (generation === spaceGeneration.current) {
+            rowRecency.current.touch(key);
+            setRows((current) => boundRows({ ...current, [key]: EMPTY_PAGE }));
+          }
+        });
     }
-  }, [ready, spaceId, seam, pendingTick, absorb]);
+  }, [ready, spaceId, seam, pendingTick, absorb, boundRows]);
 
   // -- Board reads (A2) -------------------------------------------------------
   //
@@ -1749,6 +2049,7 @@ export function useGateData(options: GateOptions): GateData {
   useEffect(() => {
     if (!ready || !spaceId || pendingBoards.current.size === 0) return;
     const keys = [...pendingBoards.current];
+    const generation = spaceGeneration.current;
     pendingBoards.current.clear();
     for (const key of keys) {
       const [kind, groupBy, filterPart] = key.split('::');
@@ -1761,6 +2062,7 @@ export function useGateData(options: GateOptions): GateData {
       void seam
         .query(query)
         .then((result) => {
+          if (generation !== spaceGeneration.current) return;
           setBoards((current) => ({
             ...current,
             [key]: {
@@ -1773,6 +2075,7 @@ export function useGateData(options: GateOptions): GateData {
           }));
         })
         .catch((error: unknown) => {
+          if (generation !== spaceGeneration.current) return;
           setBoards((current) => ({
             ...current,
             [key]: {
@@ -1848,9 +2151,21 @@ export function useGateData(options: GateOptions): GateData {
    */
   const pull = useCallback(
     async (id: string) => {
+      const generation = spaceGeneration.current;
       const state = domain.store.getState();
+      // Bounded caches may evict an entry while its old read-claim survives.
+      // Cache absence re-arms that half so reopening an evicted panel refetches.
+      if (
+        state.details[id as EntityId] === undefined
+        && !detailReadsInFlight.current.has(id)
+      ) pulledDetails.current.delete(id);
+      if (
+        state.messagesByAnchor[id as EntityId] === undefined
+        && !messageReadsInFlight.current.has(id)
+      ) pulledMessages.current.delete(id);
       const needsDetail = state.details[id as EntityId] === undefined
-        && !pulledDetails.current.has(id);
+        && !pulledDetails.current.has(id)
+        && !detailReadsInFlight.current.has(id);
       const cachedMessages = state.messagesByAnchor[id as EntityId];
       const messageCount = state.entities[id as EntityId]?.counters.messages
         ?? state.details[id as EntityId]?.counters.messages
@@ -1858,24 +2173,27 @@ export function useGateData(options: GateOptions): GateData {
         ?? -1;
       const messagesStale = cachedMessages === undefined
         || representedThreadMessageCount(cachedMessages) < messageCount;
-      const needsMessages = messagesStale && pulledMessages.current.get(id) !== messageCount;
+      const needsMessages = messagesStale
+        && pulledMessages.current.get(id) !== messageCount
+        && !messageReadsInFlight.current.has(id);
       if (!needsDetail && !needsMessages) return;
       // Each half carries its OWN budget. Detail and thread already hydrate
       // independently, and a 404 on the detail must not also silence this
       // anchor's thread for the rest of the page — they are different reads
       // about different things and they fail for different reasons.
       const readDetail = needsDetail && !readBlocked(readFailures.current, readKey('d', id));
-      const readMessages = needsMessages && !readBlocked(readFailures.current, readKey('m', id));
+      const readMessages = needsMessages
+        && !readBlocked(readFailures.current, readKey('m', id), messageCount);
       if (!readDetail && !readMessages) return;
-      if (readDetail) pulledDetails.current.add(id);
-      if (readMessages) pulledMessages.current.set(id, messageCount);
+      if (readDetail) detailReadsInFlight.current.set(id, generation);
+      if (readMessages) messageReadsInFlight.current.set(id, generation);
       // Each rejection is CAPTURED next to the read that produced it, not
       // merged: "the node is drowning" and "there is no such entity" are both
       // failures, they must not be retried the same way, and one half's answer
       // must not be attributed to the other. Downstream still reads `undefined`.
       let detailError: unknown;
       let threadError: unknown;
-      const [detail, thread] = await Promise.all([
+      let [detail, thread] = await Promise.all([
         readDetail
           ? seam.entity(id as never).catch((error: unknown) => { detailError = error; return undefined; })
           : Promise.resolve(undefined),
@@ -1887,6 +2205,35 @@ export function useGateData(options: GateOptions): GateData {
           ? seam.messages(id as never).catch((error: unknown) => { threadError = error; return undefined; })
           : Promise.resolve(undefined),
       ]);
+      if (generation !== spaceGeneration.current) {
+        if (detailReadsInFlight.current.get(id) === generation) detailReadsInFlight.current.delete(id);
+        if (messageReadsInFlight.current.get(id) === generation) messageReadsInFlight.current.delete(id);
+        return;
+      }
+      if (detailReadsInFlight.current.get(id) === generation) detailReadsInFlight.current.delete(id);
+      if (messageReadsInFlight.current.get(id) === generation) messageReadsInFlight.current.delete(id);
+      const currentVersion = domain.store.getState().entities[id as EntityId]?.version;
+      if (detail && currentVersion !== undefined && currentVersion > detail.version) {
+        detailError = new Error(`stale detail version ${detail.version}; current is ${currentVersion}`);
+        detail = undefined;
+      }
+      const latestState = domain.store.getState();
+      const latestCachedMessages = latestState.messagesByAnchor[id as EntityId];
+      const latestMessageCount = latestState.entities[id as EntityId]?.counters.messages
+        ?? latestState.details[id as EntityId]?.counters.messages
+        ?? latestCachedMessages?.length
+        ?? -1;
+      if (
+        thread
+        && thread.nextCursor == null
+        && latestMessageCount >= 0
+        && representedThreadMessageCount(thread.items) < latestMessageCount
+      ) {
+        threadError = new Error(
+          `stale thread represented ${representedThreadMessageCount(thread.items)} of ${latestMessageCount} messages`,
+        );
+        thread = undefined;
+      }
       /* WHAT FAILED, AND WHETHER IT MAY BE ASKED AGAIN.
          A claim is taken before the await so concurrent renders issue ONE
          request. If the read then rejects, the claim is RELEASED — otherwise
@@ -1896,9 +2243,18 @@ export function useGateData(options: GateOptions): GateData {
       const detailFailed = readDetail && detail === undefined;
       const threadFailed = readMessages && thread === undefined;
       if (detailFailed) recordReadFailure(readFailures.current, readKey('d', id), detailError);
-      if (threadFailed) recordReadFailure(readFailures.current, readKey('m', id), threadError);
+      if (threadFailed) {
+        recordReadFailure(
+          readFailures.current,
+          readKey('m', id),
+          threadError,
+          latestMessageCount,
+        );
+      }
       if (detailFailed) pulledDetails.current.delete(id);
       if (threadFailed) pulledMessages.current.delete(id);
+      if (readDetail && !detailFailed) pulledDetails.current.add(id);
+      if (readMessages && !threadFailed) pulledMessages.current.set(id, latestMessageCount);
       // A half that ANSWERED clears its own record — a failure an hour from now
       // gets a full budget rather than inheriting a spent one — and is also
       // evidence about the NODE, not just this id: it just served a read, so
@@ -1933,54 +2289,17 @@ export function useGateData(options: GateOptions): GateData {
     [seam, domain],
   );
 
-  /**
-   * RE-READ ONE ANCHOR'S DETAIL, UNCONDITIONALLY — the invalidating half that
-   * `pull` deliberately is not.
-   *
-   * WHY IT CANNOT BE `pull`. `pull` is a cache-FILL primitive: its `needsDetail`
-   * is `details[id] === undefined && !pulledDetails.has(id)`, and it early-returns
-   * when neither half is stale. AN OPEN PANEL ALWAYS HAS ITS DETAIL CACHED —
-   * that is why it renders at all — so `pull(id)` on an open panel is a no-op by
-   * construction. That early return is load-bearing (`renderPanel` calls `pull`
-   * FROM RENDER, so widening its staleness rule is a request loop against the
-   * node), which is why the invalidating path is a SECOND verb rather than a
-   * relaxed first one.
-   *
-   * WHAT MAKES IT SAFE TO BE UNCONDITIONAL: this is only ever called from an
-   * EVENT HANDLER for a write that already landed — an attachment uploaded, a
-   * link cut. One completed mutation, one read. It is never called from render,
-   * so there is no loop to bound and no budget to spend.
-   *
-   * NOT COALESCED, deliberately. Two uploads landing 200ms apart are two
-   * different facts, and handing the second one the first one's in-flight
-   * promise would answer it with a read that predates its own edge — the exact
-   * class of staleness this function exists to end.
-   *
-   * DETAIL ONLY. An attachment edge does not touch the thread, and re-reading
-   * messages here would spend a round-trip on data that did not change.
-   */
-  const refetchDetail = useCallback(
-    async (id: string) => {
-      const detail = await seam.entity(id as never).catch(() => undefined);
-      if (!detail) return;
-      // The id is now genuinely cached, so `pull` may keep early-returning for
-      // it, and a read that ANSWERED clears its own failure record — the same
-      // rule `pull` follows for the same reason.
-      pulledDetails.current.add(id);
-      readFailures.current.delete(readKey('d', id));
-      domain.store.getState().ingestDetail(detail);
-    },
-    [seam, domain],
-  );
-
   /** Post, then re-read THAT anchor's thread so the echo is visible truth. */
   const postAndRefresh = useCallback(
     async (input: PostMessageInput) => {
+      const generation = spaceGeneration.current;
       await postMessage(input);
       const anchor = input.anchorIds[0];
       if (!anchor) return;
       const thread = await seam.messages(anchor as never).catch(() => undefined);
-      if (thread) domain.store.getState().ingestMessages(anchor, [...thread.items]);
+      if (thread && generation === spaceGeneration.current) {
+        domain.store.getState().ingestMessages(anchor, [...thread.items]);
+      }
     },
     [postMessage, seam, domain],
   );

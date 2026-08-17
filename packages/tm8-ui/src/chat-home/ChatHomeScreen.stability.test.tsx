@@ -93,7 +93,7 @@ describe('Chat Home stability', () => {
     act(() => gated.release());
 
     await waitFor(() => expect(view.getByText('Fast answer.')).toBeTruthy());
-    expect(view.queryByText('Agent is working')).toBeNull();
+    expect(view.queryByTestId('tch-send-working')).toBeNull();
     expect(view.queryByTestId('chat-thinking')).toBeNull();
   });
 
@@ -210,7 +210,7 @@ describe('Chat Home cross-thread and multiplayer safety', () => {
       });
     });
 
-    await waitFor(() => expect(view.getByText('Agent is working')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId('tch-send-working')).toBeTruthy());
     const composer = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
     expect(composer.disabled).toBe(false);
     fireEvent.change(composer, { target: { value: 'I can still type and send.' } });
@@ -270,7 +270,7 @@ describe('Chat Home snapshot reconciliation', () => {
       for (const release of waiting) release();
     });
     await waitFor(() => expect(view.getByText('Streamed after the snapshot.')).toBeTruthy());
-    expect(view.queryByText('Agent is working')).toBeNull();
+    expect(view.queryByTestId('tch-send-working')).toBeNull();
   });
 
   it('keeps a newly typed draft when an older thread’s send resolves late', async () => {

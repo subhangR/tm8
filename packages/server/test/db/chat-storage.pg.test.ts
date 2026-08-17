@@ -245,6 +245,24 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
         `select public.append_chat_message_part($1,2,'tool_call',$2::jsonb)`,
         [agentMessageId, JSON.stringify({ id: 'call-1', name: 'repo_read_file', args: { path: 'README.md' }, state: 'completed' })],
       );
+      return { ok: true };
+    });
+
+    // Mid-turn, the read path projects the claim as `turnInFlight` (133): the
+    // placeholder body is a claim, and clients suppress it by this marker.
+    const midDeps = {
+      db: facadeDb,
+      owner: async () => ({ identityId: fixture.identityA, isNodeAdmin: true }),
+    } as never;
+    const midPage = await messagesList(midDeps)(
+      context('messages.list', { anchorId: fixture.anchorId }),
+    ) as Page<MessageView>;
+    const midAgent = midPage.items
+      .find((message) => message.id === rootMessageId)!
+      .replies?.items.find((message) => message.id === agentMessageId);
+    expect(midAgent?.turnInFlight).toBe(true);
+
+    await asIdentity(fixture.identityA, 'browser', async (client) => {
       await client.query(
         `select public.complete_chat_turn($1,'completed','answer',$2::jsonb,null,null)`,
         [claimed.turnId, JSON.stringify({ input_tokens: 7 })],
@@ -275,6 +293,8 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
     ) as Page<MessageView>;
     const root = page.items.find((message) => message.id === rootMessageId)!;
     const projectedAgent = root.replies?.items.find((message) => message.id === agentMessageId);
+    // Completed: the marker is gone and the body is the answer, not a claim.
+    expect(projectedAgent?.turnInFlight).toBeUndefined();
     expect(projectedAgent?.parts).toMatchObject([
       { seq: 0, kind: 'usage', payload: { input_tokens: 7 } },
       { seq: 1, kind: 'tool_call', payload: { id: 'call-1', name: 'repo_read_file', state: 'running' } },

@@ -11,6 +11,7 @@ import './panels.css';
 
 export {
   EntityListPanel,
+  ListViewSwitcher,
   type BoardSnapshot,
   type EntityListPanelProps,
   type LaunchSources,

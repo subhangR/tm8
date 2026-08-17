@@ -43,4 +43,5 @@ export {
 } from './useRichInput';
 export { TriggerPopover } from './TriggerPopover';
 export { AttachmentChips } from './AttachmentChips';
+export { ComposerCard } from './ComposerCard';
 export { ProseField } from './ProseField';

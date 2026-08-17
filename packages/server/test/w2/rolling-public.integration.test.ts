@@ -256,6 +256,13 @@ const MEMBER_ROLES_NET_NEW_OPERATIONS = [
   'spaces.members.updateRole',
 ] as const;
 
+/** W4/132 (2026-08-16): per-type status vocabularies, mounted with the wave. */
+const TASK_WORKFLOW_NET_NEW_OPERATIONS = [
+  'spaces.taskWorkflows.delete',
+  'spaces.taskWorkflows.list',
+  'spaces.taskWorkflows.upsert',
+] as const;
+
 /**
  * Node-local project folders.
  *
@@ -331,6 +338,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS,
   ...CHAT_NET_NEW_OPERATIONS,
   ...MEMBER_ROLES_NET_NEW_OPERATIONS,
+  ...TASK_WORKFLOW_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -466,7 +474,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 139 -> 141 (118): auth.invite.resolve + spaces.members.updateRole, MEASURED
-    expect(registry.size).toBe(143);
+    expect(registry.size).toBe(146); // +3 (W4/132)
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -477,7 +485,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + GIT_NET_NEW_OPERATIONS.length
         + COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS.length
         + CHAT_NET_NEW_OPERATIONS.length
-        + MEMBER_ROLES_NET_NEW_OPERATIONS.length,
+        + MEMBER_ROLES_NET_NEW_OPERATIONS.length
+        + TASK_WORKFLOW_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -632,7 +641,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // bodies bind (gitStatus/gitDiff are GETs and bind nothing).
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, forge write): tracking.pr.merge binds its body.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(93); // + StartChatThreadInput; +2 (118): UpdateMemberRoleInput, ResolveInviteInput
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(95); // +2 (W4/132): TaskWorkflowInputSchema binds upsert, RequiredCommandContextSchema binds delete
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -783,8 +792,9 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 141/139 -> 143/141 (2026-08-12): collections.addItem/removeItem, mounted.
     // 143/141 -> 149/147 (2026-08-12, Git UI landing): the six execution.git*
     // rows, all mounted.
-    expect(health).toMatchObject({ ok: true, operations: 162, implemented: 160 });
-    expect(harness.production.server.registry.size).toBe(160);
+    // +3 (W4/132): the three spaces.taskWorkflows routes, all mounted.
+    expect(health).toMatchObject({ ok: true, operations: 165, implemented: 163 });
+    expect(harness.production.server.registry.size).toBe(163);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -804,7 +814,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(160);
+    expect(registered.size + residual.length).toBe(163); // +3 (W4/132)
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

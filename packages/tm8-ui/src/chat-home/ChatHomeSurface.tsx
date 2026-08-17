@@ -8,6 +8,7 @@ import {
 } from '../domain/model-catalog';
 import { attachmentsPortFromSeam } from '../files/port';
 import type { TriggerOption } from '../rich-input';
+import type { ConnectionsReader } from '../session-graph/load';
 import { createChatHomePortFromSeam, type ChatHomeL2Bridge } from './real-port';
 import type { ChatEntityResolver } from './EntityChip';
 import type { ChatHomeScreenProps } from './ChatHomeScreen';
@@ -22,6 +23,8 @@ export interface ChatHomeSurfaceProps {
   spaceId: SpaceId | string;
   nodeKey: string;
   anchorId?: EntityId;
+  /** Pass-through to the screen (Craft P1): pins new threads to one mode. */
+  pinnedMode?: ChatHomeScreenProps['pinnedMode'];
   bridge?: ChatHomeL2Bridge;
   /** The shell's entity-open verb: opens the right-side detail panel. */
   onOpenEntity?: (id: EntityId) => void;
@@ -31,23 +34,29 @@ export interface ChatHomeSurfaceProps {
    * `/` types plain text.
    */
   skillOptions?: readonly TriggerOption[];
-  /** Three-tab column + region-B extras (task 01a006f8) — all pass through
-   *  to the screen verbatim. */
-  sessions?: ChatHomeScreenProps['sessions'];
-  tasks?: ChatHomeScreenProps['tasks'];
-  tab?: ChatHomeScreenProps['tab'];
-  onTab?: ChatHomeScreenProps['onTab'];
+  /** Root column + region-B extras (tasks 01a006f8/01a00932) — all pass
+   *  through to the screen verbatim. */
+  root?: ChatHomeScreenProps['root'];
+  onRoot?: ChatHomeScreenProps['onRoot'];
+  kindCell?: ChatHomeScreenProps['kindCell'];
+  rootKindOptions?: ChatHomeScreenProps['rootKindOptions'];
   selectedEntityId?: ChatHomeScreenProps['selectedEntityId'];
   onSelectEntity?: ChatHomeScreenProps['onSelectEntity'];
   onShowChat?: ChatHomeScreenProps['onShowChat'];
-  onNewTask?: ChatHomeScreenProps['onNewTask'];
-  newTaskUnavailable?: ChatHomeScreenProps['newTaskUnavailable'];
-  onRunTask?: ChatHomeScreenProps['onRunTask'];
-  renderTabList?: ChatHomeScreenProps['renderTabList'];
+  onNewEntity?: ChatHomeScreenProps['onNewEntity'];
+  newEntityUnavailable?: ChatHomeScreenProps['newEntityUnavailable'];
+  routeThreadId?: ChatHomeScreenProps['routeThreadId'];
+  onThreadSelected?: ChatHomeScreenProps['onThreadSelected'];
+  graphFull?: ChatHomeScreenProps['graphFull'];
+  onGraphFullChange?: ChatHomeScreenProps['onGraphFullChange'];
+  graphFilters?: ChatHomeScreenProps['graphFilters'];
+  onGraphFiltersChange?: ChatHomeScreenProps['onGraphFiltersChange'];
+  renderRootList?: ChatHomeScreenProps['renderRootList'];
+  renderRootAside?: ChatHomeScreenProps['renderRootAside'];
   centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];
-  onOpenWorkspace?: ChatHomeScreenProps['onOpenWorkspace'];
   viewerName?: ChatHomeScreenProps['viewerName'];
+  viewerId?: ChatHomeScreenProps['viewerId'];
 }
 
 /** Production route boundary: Chat and its markdown renderer stay out of non-Home chunks. */
@@ -72,6 +81,12 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     },
     [seam],
   );
+  /** The entity graph's induced-relations read — `entities.connections`, the
+   *  same seam op the Connections tab and the session graph use. */
+  const connections = useMemo<ConnectionsReader>(
+    () => (id, opts) => seam.connections(id, opts),
+    [seam],
+  );
   const models = modelCatalog(nodeKey).map((model) => ({
     model: model.model,
     label: model.label,
@@ -85,6 +100,7 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     port,
     models,
     resolveEntity,
+    connections,
     onOpenEntity,
     attach,
     assetHref: seam.files.downloadHref,
