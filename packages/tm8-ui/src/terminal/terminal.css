@@ -648,3 +648,245 @@
   font-size: 9.5px;
   color: var(--pn-ink-4);
 }
+
+/* ==========================================================================
+   THE PHONE TERMINAL (Lane 7)
+   ==========================================================================
+
+   Every rule below is scoped under `.cv2-root[data-shell='mobile']`, the
+   marker `GateApp` stamps on the root it mounts `MobileShell` into. Nothing
+   here can reach the desktop shell and nothing here edits a desktop width or
+   floor in place — the desktop terminal is in daily use and is not this lane.
+
+   WHY THE MARKER AND NOT `:has()`, restated because it is the whole reason
+   this file can be trusted: a `:has()` that stops matching fails SILENTLY back
+   to the broken state and looks identical to working. A marker that is wrong
+   is greppable. This follows Lane 1's mechanism exactly rather than inventing
+   a third one. */
+
+/* --- The zoom reciprocal, reconciled with Lane 1 -------------------------
+   THE DEFECT THIS FIXES, MEASURED: `getComputedStyle('.term-host').zoom` read
+   0.909091 on a 390px phone.
+
+   The rule above applies `zoom: calc(1 / 1.1)` as the RECIPROCAL of
+   `app.css`'s `.cv2-root { zoom: 1.1 }`. That reasoning is still exactly right
+   on a desktop and is deliberately left untouched. But Lane 1 scoped the 1.1
+   OFF the mobile shell (`mobile-chrome.css`: `.cv2-root[data-shell='mobile']
+   { zoom: 1 }`), so on a phone the reciprocal is now counter-scaling a scale
+   that is not there — it was shrinking the terminal to 0.909 on the smallest
+   screen in the product, which is where a lost 9% of width costs the most.
+
+   Two rules that are each individually correct, in sync via nothing but a
+   comment, is precisely the hazard the block above warns about. It has now
+   happened once. Both literals live within twenty lines of that warning, and
+   this is the mobile half of the pair.
+
+   The cell re-measure the original reciprocal needs is unconditional in
+   `LiveTerminal`'s mount effect, so a `zoom` of 1 here needs nothing extra —
+   `forceFontReflow` runs either way. */
+.cv2-root[data-shell='mobile'] .term-host {
+  zoom: 1;
+
+  /* xterm v6's touch scrolling is unreliable and `.term-host` declared no
+     `touch-action` at all, so a drag on the canvas was ambiguous: the browser
+     could claim it as a page pan and the terminal would never see it. `pan-y`
+     gives the vertical drag to the browser deterministically (scrolling
+     output is what a reader actually wants on a phone) and stops the
+     double-tap-to-zoom that otherwise fires on every fast tap into the
+     canvas. */
+  touch-action: pan-y;
+
+  /* THE 160px FLOOR IS A DESKTOP FLOOR AND IT IS WRONG HERE, in the one
+     direction that matters. With the soft keyboard up the available height is
+     roughly 844 − 330 − chrome, and a floor taller than the space available
+     does not make the terminal bigger — it makes the terminal OVERFLOW its
+     hidden-overflow ancestor, which clips it and destroys the rows rather than
+     scrolling to them. A phone floors at four rows of legible text and lets
+     the box be honest about the rest. */
+  min-height: 72px;
+}
+
+/* --- The modifier bar ---------------------------------------------------- */
+
+/*
+ * ANCHORED TO THE KEYBOARD, WHICH CSS CANNOT SEE.
+ *
+ * `--term-mod-keyboard` is set from JS by `useKeyboardInset` — there is no
+ * media query for "a keyboard is up" and `env()` has no keyboard inset, so on
+ * iOS a bottom-anchored bar sits UNDER the keyboard and is untappable at
+ * exactly the moment it is needed. `sticky` keeps it at the foot of the
+ * terminal surface; the translate lifts it clear of the occluded strip.
+ *
+ * `env(safe-area-inset-bottom)` is composed on top rather than instead: with
+ * the keyboard DOWN the bar must clear the home indicator, and with it UP the
+ * keyboard already covers that region and the inset must not double-count.
+ * `max()` picks whichever is actually in the way.
+ */
+.cv2-root[data-shell='mobile'] .term-mod {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  flex: none;
+  transform: translateY(calc(var(--term-mod-keyboard, 0px) * -1));
+  padding-bottom: max(
+    calc(env(safe-area-inset-bottom, 0px) - var(--term-mod-keyboard, 0px)),
+    0px
+  );
+  background: var(--pn-x-term-bg);
+  border-top: 1px solid var(--pn-line);
+  box-shadow: var(--pn-sh-md);
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__keys {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-1) var(--pn-space-2);
+  /* The row scrolls rather than wrapping or shrinking: a key that shrinks
+     below the thumb floor to fit is a key that fails the finger it was added
+     for. At 390px the whole set fits; at 320 the tail scrolls. */
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.cv2-root[data-shell='mobile'] .term-mod__keys::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * THE 44px FLOOR, ON THE SMALLER SIDE. A control 44 wide and 24 tall fails the
+ * same thumb the audit's tap census is counting — the floor is on the smaller
+ * dimension, which is why both are set and neither is a `min-width` alone.
+ */
+.cv2-root[data-shell='mobile'] .term-mod__key {
+  flex: 0 0 auto;
+  min-inline-size: 44px;
+  min-block-size: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--pn-space-2);
+
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-x-term-live-bg);
+  color: var(--pn-x-term-fg);
+  font-family: var(--pn-mono);
+  font-size: 13px;
+  line-height: 1;
+  /* A tap on a key must never select its label, and must never raise the grey
+     iOS tap flash over a surface that is deliberately near-black. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 90ms ease-out, border-color 90ms ease-out;
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__key:active {
+  background: var(--pn-brand-soft);
+  border-color: var(--pn-brand);
+}
+
+/*
+ * THE ARMED CTRL. Colour AND weight, never colour alone (L10): the whole value
+ * of a sticky modifier is that you can see whether it is on, and a viewer who
+ * cannot separate these two hues would have a key whose only state is invisible.
+ */
+.cv2-root[data-shell='mobile'] .term-mod__key--armed {
+  background: var(--pn-brand);
+  border-color: var(--pn-brand);
+  color: var(--pn-x-term-cursor-accent);
+  font-weight: 600;
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__key:disabled {
+  opacity: 0.45;
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__key--wide {
+  min-inline-size: 52px;
+}
+
+/* The chip keeps the geometry it has in the chrome strip so it reads as the
+   same object, but takes the 44px floor here — on a phone it is the only exit
+   from terminal focus, not a label for a chord you can type. */
+.cv2-root[data-shell='mobile'] .term-mod__exit {
+  flex: 0 0 auto;
+  min-block-size: 44px;
+  margin-inline-start: auto;
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__key--more {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- The panel: what it is, and what it is not --------------------------- */
+
+.cv2-root[data-shell='mobile'] .term-mod__panel {
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__verdict {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__cols {
+  font-family: var(--pn-mono);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-x-term-fg);
+}
+
+/* The verdict is carried by the WORD beside it (`WIDTH_NOTE`) as well as by
+   this hue — the tone is a second channel, never the only one. */
+.cv2-root[data-shell='mobile'] .term-mod__cols--cramped {
+  color: var(--pn-x-term-cursor);
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__note,
+.cv2-root[data-shell='mobile'] .term-mod__scope,
+.cv2-root[data-shell='mobile'] .term-mod__hint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--pn-ink-3);
+  margin: 0;
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__row {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__rowlabel {
+  font-size: 11.5px;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__size {
+  font-family: var(--pn-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-x-term-fg);
+  min-inline-size: 34px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root[data-shell='mobile'] .term-mod__key {
+    transition: none;
+  }
+}
