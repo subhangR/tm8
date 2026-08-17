@@ -1,0 +1,109 @@
+# The artifact-preview origin: https://artifacts.tm8.sh -> 127.0.0.1:17778.
+#
+# A SECOND public name for the SAME box, published to a DIFFERENT loopback
+# socket. That is the whole point: `tm8.sh` is the privileged origin — it holds
+# `__Host-tm8-session` — and agent-authored artifact bundles are untrusted
+# documents that must never execute there (TM8-ARTIFACTS-DESIGN §9.2). The
+# server enforces the split from its side: the preview listener refuses any
+# Host that is not `artifacts.tm8.sh`, and the app socket refuses that name
+# because it is absent from TM8_ALLOWED_HOSTNAMES. Both halves are required —
+# one name that two sockets answer to is cosmetic separation.
+#
+# `__Host-` is host-only and carries no Domain, so a subdomain never receives
+# the session cookie. That is what makes a subdomain sufficient here rather
+# than a separate registrable domain.
+#
+# THREE THINGS IN THIS FILE ARE LOAD-BEARING AND LOOK LIKE OMISSIONS:
+#
+#   1. NO ACCESS LOG PATH. The preview capability token rides in the URL PATH
+#      (an iframe cannot attach headers), so the site-wide `tm8_noargs` format
+#      — which logs `$uri` and is correct everywhere else — would write live
+#      capability tokens into /var/log/nginx and its rotations. Logging is off
+#      here rather than filtered, because the only field worth having is the
+#      one that must not be written.
+#   2. NO UPGRADE HEADERS. This socket serves GET bytes and nothing else;
+#      there is no WebSocket, no PTY, no API. The `Upgrade`/`Connection` pair
+#      is blanked EXPLICITLY rather than merely left unset, because "the proxy
+#      forgot to gate the upgrade path" is the default way a tm8 reverse proxy
+#      gets owned, and an absent header is indistinguishable from an oversight
+#      when someone edits this file a year from now.
+#   3. NO `X-Frame-Options`. Adding it would be a reflex, and it would BREAK
+#      the feature: nginx `add_header` appends alongside the application's
+#      `frame-ancestors`, browsers apply the most restrictive of the two, and
+#      the preview iframe on tm8.sh would stop painting with no error text.
+#
+# Everything else — CSP, the sandbox, CORP, ACAO, Permissions-Policy — is
+# stamped by the application on every response including its refusals. Nothing
+# here may add or override a security header; there is exactly one place that
+# policy is assembled (packages/server/src/http/artifact-preview.ts) and this
+# file is not it.
+
+server {
+  listen 80;
+  listen [::]:80;
+  server_name artifacts.tm8.sh;
+  access_log off;
+
+  # Certificate renewal. `certbot renew` re-uses the webroot it issued with,
+  # and the default :80 vhost answers 444 to unmatched names, so without this
+  # location renewal fails silently until the certificate expires.
+  location ^~ /.well-known/acme-challenge/ {
+    root /var/www/html;
+  }
+
+  # Drop query arguments at the insecure boundary, exactly as tm8.sh does.
+  location / {
+    return 308 https://artifacts.tm8.sh$uri;
+  }
+}
+
+server {
+  # Utho currently ships nginx before the standalone `http2 on` directive.
+  listen 443 ssl http2;
+  listen [::]:443 ssl http2;
+  server_name artifacts.tm8.sh;
+
+  ssl_certificate     /etc/letsencrypt/live/artifacts.tm8.sh/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/artifacts.tm8.sh/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_session_cache shared:tm8_artifacts_tls:10m;
+  ssl_session_timeout 1d;
+  ssl_session_tickets off;
+
+  server_tokens off;
+  add_header Strict-Transport-Security "max-age=31536000" always;
+
+  # See (1) above. Errors are kept — they carry no path.
+  access_log off;
+  error_log  /var/log/nginx/tm8-artifacts-error.log warn;
+
+  # Previews are reads. A body on this socket is a request that should not
+  # exist, and the application refuses anything but GET/HEAD anyway.
+  client_max_body_size 1k;
+
+  # Everything is proxied, including paths that are not previews, so the
+  # application's own refusals answer them — a bare nginx 404 would carry
+  # none of the hardened header set, and a refusal from the preview origin
+  # is still a response a hostile document can observe.
+  location / {
+    # `GET` here admits HEAD as well; nginx treats them together.
+    limit_except GET { deny all; }
+
+    proxy_pass http://127.0.0.1:17778;
+    proxy_http_version 1.1;
+
+    # See (2) above. Not an oversight — a gate.
+    proxy_set_header Upgrade "";
+    proxy_set_header Connection "";
+
+    # The name the application's inverse Host check compares against. If this
+    # ever becomes a literal, the origin split stops being enforced from the
+    # server's side and only nginx routing holds it up.
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+
+    proxy_request_buffering off;
+  }
+}

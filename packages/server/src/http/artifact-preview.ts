@@ -10,6 +10,15 @@
  * boot refusal lives in ./config.ts). One handler, one header set — a second
  * copy would drift, and drift here is a security regression.
  *
+ * On a PUBLISHED node (`TM8_PREVIEW_PUBLIC_ORIGIN`, 2026-08-17) that second
+ * listener still binds loopback and a TLS proxy publishes it under its own
+ * public hostname. Nothing in this file changes for that: `preview.origin`
+ * and `preview.host` are already "what the browser sees", and the Host check
+ * below already compares against the forwarded name rather than the bind
+ * address. It works because those two facts were kept separate from the
+ * start — and it is the only shape in which origin isolation is reachable
+ * from a browser that is not on the box.
+ *
  * The handler shares NO middleware with the catalog pipeline, by design
  * (§9.4): no `/v2/*` routes, no cookie parsing, no `Set-Cookie`, no identity
  * resolution beyond capability lookup, no static fallback. The ONLY route is
@@ -334,7 +343,14 @@ export function createArtifactPreviewServer(opts: ArtifactPreviewServerOptions):
           http.removeListener('error', rejectListen);
           const address = http.address();
           const port = typeof address === 'object' && address !== null ? address.port : preview.port;
-          resolveListen({ url: `http://${preview.host}:${port}`, port });
+          // `origin` is the browser's view and is already exact for every
+          // non-ephemeral case — including a proxied `https://…` public
+          // origin, where `host:port` would name the INTERNAL loopback port
+          // and print an operator a URL that cannot be opened. The host:port
+          // form survives only for the ephemeral bind (`port: 0`, the
+          // harnesses), where the real port is not knowable until now.
+          const url = preview.port === 0 ? `http://${preview.host}:${port}` : preview.origin;
+          resolveListen({ url, port });
         });
       });
     },

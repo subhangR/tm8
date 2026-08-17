@@ -144,6 +144,148 @@ describe('§9.2 — boot resolution: same-origin default, second-origin refusals
     expect(config.preview?.sameOrigin).toBe(true);
   });
 
+  /**
+   * PROXIED second origin (`TM8_PREVIEW_PUBLIC_ORIGIN`). The deployment the
+   * refusals above could not see: behind nginx BOTH listeners bind
+   * `127.0.0.1`, so every comparison against the bind host passes while the
+   * public names are the only ones a browser ever uses. These lock the widened
+   * comparison and the two facts staying separate — public origin for the
+   * browser, `TM8_PREVIEW_PORT` for the socket nginx is pointed at.
+   */
+  const PUBLIC_PROD = {
+    ...BASE_ENV,
+    TM8_ENV: 'prod',
+    TM8_PORT: '17777',
+    TM8_ALLOWED_HOSTNAMES: 'tm8.sh',
+    TM8_ALLOWED_ORIGINS: 'https://tm8.sh',
+  };
+
+  it('TM8_PREVIEW_PUBLIC_ORIGIN is what the BROWSER sees; TM8_PREVIEW_PORT stays the loopback bind', () => {
+    const config = loadConfig({
+      ...PUBLIC_PROD,
+      TM8_PREVIEW_PUBLIC_ORIGIN: 'https://artifacts.tm8.sh',
+      TM8_PREVIEW_PORT: '17778',
+    });
+    expect(config.preview?.sameOrigin).toBe(false);
+    // The string minted into previewUrl and into every CSP source list. If
+    // this were `http://127.0.0.1:17778` the frame would be unopenable from
+    // https://tm8.sh — unreachable AND mixed content — which is exactly what
+    // the pre-2026-08-17 code produced on this deployment.
+    expect(config.preview?.origin).toBe('https://artifacts.tm8.sh');
+    // The name the proxy forwards in `Host`, which the listener's own inverse
+    // Host check compares against. Never the bind address.
+    expect(config.preview?.host).toBe('artifacts.tm8.sh');
+    // The socket. Separate fact, neither derivable from the other.
+    expect(config.preview?.port).toBe(17778);
+  });
+
+  it('refuses a proxied preview origin that is the app PUBLIC origin, which the bind comparison cannot see', () => {
+    // `TM8_BIND` is 127.0.0.1 and the preview would bind 17778 — distinct
+    // host:port by every pre-existing check, and yet the same public origin
+    // as the app, cookie jar included.
+    const boot = () => loadConfig({ ...PUBLIC_PROD, TM8_PREVIEW_PUBLIC_ORIGIN: 'https://tm8.sh', TM8_PREVIEW_PORT: '17778' });
+    expect(boot).toThrow(ConfigError);
+    try {
+      boot();
+    } catch (err) {
+      expect((err as Error).message).toContain('https://tm8.sh');
+      expect((err as Error).message).toContain('TM8_PREVIEW_PUBLIC_ORIGIN');
+    }
+  });
+
+  it('refuses a proxied preview host that only differs from an app origin by SCHEME (cookies ignore it)', () => {
+    expect(() =>
+      loadConfig({ ...PUBLIC_PROD, TM8_ENV: 'dev', TM8_PREVIEW_PUBLIC_ORIGIN: 'http://tm8.sh' }),
+    ).toThrow(ConfigError);
+  });
+
+  it('refuses a proxied preview host the app is reached by via TM8_PUBLIC_ORIGIN alone', () => {
+    // No TM8_ALLOWED_* at all: the ONLY statement that `app.example` is this
+    // node is TM8_PUBLIC_ORIGIN, and it still has to count.
+    expect(() =>
+      loadConfig({
+        ...BASE_ENV,
+        TM8_PUBLIC_ORIGIN: 'https://app.example',
+        TM8_PREVIEW_PUBLIC_ORIGIN: 'https://app.example:8443',
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it('refuses TM8_PREVIEW_HOST and TM8_PREVIEW_PUBLIC_ORIGIN disagreeing rather than picking a winner', () => {
+    expect(() =>
+      loadConfig({ ...PUBLIC_PROD, TM8_PREVIEW_HOST: 'previews.tm8.sh', TM8_PREVIEW_PUBLIC_ORIGIN: 'https://artifacts.tm8.sh' }),
+    ).toThrow(ConfigError);
+    // Agreeing is fine — redundant, not contradictory.
+    expect(
+      loadConfig({ ...PUBLIC_PROD, TM8_PREVIEW_HOST: 'artifacts.tm8.sh', TM8_PREVIEW_PUBLIC_ORIGIN: 'https://artifacts.tm8.sh' })
+        .preview?.origin,
+    ).toBe('https://artifacts.tm8.sh');
+  });
+
+  it('holds TM8_PREVIEW_PUBLIC_ORIGIN to a bare origin, and to https in prod', () => {
+    for (const bad of ['artifacts.tm8.sh', 'https://artifacts.tm8.sh/p/', 'https://artifacts.tm8.sh?x=1', 'https://u:p@artifacts.tm8.sh']) {
+      expect(() => loadConfig({ ...PUBLIC_PROD, TM8_PREVIEW_PUBLIC_ORIGIN: bad })).toThrow(ConfigError);
+    }
+    // Plain http is a legitimate proxied origin on a dev box, and never in prod.
+    expect(() => loadConfig({ ...PUBLIC_PROD, TM8_PREVIEW_PUBLIC_ORIGIN: 'http://artifacts.tm8.sh' })).toThrow(ConfigError);
+    expect(
+      loadConfig({ ...BASE_ENV, TM8_PREVIEW_PUBLIC_ORIGIN: 'http://artifacts.localhost' }).preview?.origin,
+    ).toBe('http://artifacts.localhost');
+  });
+
+  /**
+   * The trap this closes. A PRODUCTION node that simply drops the preview
+   * variables gets the SAME-ORIGIN default, which serves agent-authored bundle
+   * HTML from the origin holding `__Host-tm8-session` — with nothing but the
+   * response CSP's `sandbox allow-scripts` between that and session takeover.
+   * The port-only version of this violation has been a boot refusal since
+   * §9.2; reaching it through a reverse proxy has to answer the same way,
+   * because the failure is silent and looks exactly like a working node.
+   *
+   * Scoped to `TM8_ENV=prod` on purpose — same-origin-behind-https is a shape
+   * this repo ships and the two frame-ancestors tests above depend on, so the
+   * refusal fires where the operator has declared the node real and is a loud
+   * boot line (main.ts) everywhere else.
+   */
+  it('refuses the SAME-ORIGIN default on a PROD node published under an https public origin', () => {
+    const boot = () => loadConfig({ ...BASE_ENV, TM8_ENV: 'prod', TM8_PUBLIC_ORIGIN: 'https://tm8.sh' });
+    expect(boot).toThrow(ConfigError);
+    try {
+      boot();
+    } catch (err) {
+      // The refusal has to name BOTH exits, or an operator in a hurry takes
+      // the one that is not there.
+      expect((err as Error).message).toContain('TM8_PREVIEW_PUBLIC_ORIGIN');
+      expect((err as Error).message).toContain('TM8_PREVIEW_ENABLED=0');
+    }
+    // ...and both exits actually work.
+    const prod = { ...BASE_ENV, TM8_ENV: 'prod', TM8_PUBLIC_ORIGIN: 'https://tm8.sh' };
+    expect(loadConfig({ ...prod, TM8_PREVIEW_ENABLED: '0' }).preview).toBeUndefined();
+    expect(loadConfig({ ...prod, TM8_PREVIEW_PUBLIC_ORIGIN: 'https://artifacts.tm8.sh' }).preview?.sameOrigin).toBe(false);
+  });
+
+  it('nothing LOCAL changes shape because that refusal exists', () => {
+    // The default-config node, the http-published node, and the non-prod
+    // https node all keep the ratified same-origin mount. This is the
+    // blast-radius assertion for the refusal above.
+    expect(loadConfig({ ...BASE_ENV }).preview?.sameOrigin).toBe(true);
+    expect(loadConfig({ ...BASE_ENV, TM8_PUBLIC_ORIGIN: 'http://127.0.0.1:7777' }).preview?.sameOrigin).toBe(true);
+    expect(loadConfig({ ...BASE_ENV, TM8_PUBLIC_ORIGIN: 'https://staging.example' }).preview?.sameOrigin).toBe(true);
+    expect(loadConfig({ ...BASE_ENV, TM8_ENV: 'prod' }).preview?.sameOrigin).toBe(true);
+  });
+
+  it('the proxied public origin is what frames and what the bundle may talk to', () => {
+    const config = loadConfig({
+      ...PUBLIC_PROD,
+      TM8_PREVIEW_PUBLIC_ORIGIN: 'https://artifacts.tm8.sh',
+      TM8_PREVIEW_PORT: '17778',
+      TM8_PREVIEW_FRAME_ANCESTORS: 'https://tm8.sh',
+    });
+    // The document that embeds the frame is the public app, never the bind
+    // origin — the defect this file already documents, in its proxied form.
+    expect(config.preview?.frameAncestors).toContain('https://tm8.sh');
+  });
+
   it('TM8_PREVIEW_ENABLED=0 disables the preview origin entirely', () => {
     const config = loadConfig({ ...BASE_ENV, TM8_PREVIEW_ENABLED: '0' });
     expect(config.preview).toBeUndefined();
