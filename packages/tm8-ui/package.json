@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "audit:mobile": "node e2e/mobile-audit.mjs"
   },
   "dependencies": {
     "@maestro/pty-protocol": "workspace:*",
