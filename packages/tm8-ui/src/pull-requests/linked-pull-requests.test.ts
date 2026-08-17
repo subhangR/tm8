@@ -202,6 +202,34 @@ describe('mechanical headRef association (fourth pass, 107)', () => {
     });
   });
 
+  it('makes no association for a SHARED checkout — the branch names a directory, not a session', () => {
+    // The reported bug, reduced. Three sessions, one shared project checkout,
+    // therefore one identical `checkoutBranch`; the PR's headRef matches it.
+    // Rendering a chip here puts one PR on every tile. Measured 2026-08-17:
+    // eleven sessions on `tm8/01a00bbd` each drew #324/#335/#340/#345, while
+    // the graph already held a 1:1 `created_in` edge naming four DIFFERENT
+    // sessions. No chip beats a wrong chip.
+    const pr = pullRequest({ headRef: 'tm8/01a00bbd' });
+    const shared = ['ws-a', 'ws-b', 'ws-c'].map((id) => summary(id, {
+      kind: 'work_session',
+      status: 'running',
+      checkoutBranch: 'tm8/01a00bbd',
+      workdirMode: 'project',
+    }));
+    const index = indexLinkedPullRequests([pr, ...shared], []);
+    for (const s of shared) expect(index.get(s.id)).toBeUndefined();
+
+    // The same branch in a lane the session OWNS still answers — this pass is
+    // narrowed, not removed.
+    const owned = summary('ws-lane', {
+      kind: 'work_session',
+      status: 'running',
+      checkoutBranch: 'tm8/01a00bbd',
+      workdirMode: 'worktree',
+    });
+    expect(indexLinkedPullRequests([pr, owned], []).get('ws-lane')?.[0]).toMatchObject({ id: 'pr-1' });
+  });
+
   it('makes no association when the branch fact is absent, null, or different', () => {
     const pr = pullRequest({ headRef: 'tm8/abc12345' });
     const noFact = summary('ws-old', { kind: 'work_session', status: 'running' });

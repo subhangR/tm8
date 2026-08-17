@@ -256,12 +256,26 @@ export function indexLinkedPullRequests(
   // FOURTH AND LOWEST-PRECEDENCE PASS — MECHANICAL headRef ASSOCIATION (107):
   // a PR whose observed `headRef` equals a session's `checkoutBranch` fact is
   // that session's PR with NO task link and NO edge — nobody had to remember
-  // `link-pr`. Worktree lanes make this near-certain (`tm8/xxxxxxxx` branch
-  // names are minted unique); a shared checkout's match is LOWER confidence
-  // (any terminal can sit on that branch) and this pass deliberately cannot
-  // outrank the passes above: `add` de-duplicates by PR id, so an association
-  // already made through tracks/working_on/badges is simply confirmed, and
-  // the server-side nudge addressee (pr_owning_session, 103) is untouched.
+  // `link-pr`. This pass deliberately cannot outrank the passes above: `add`
+  // de-duplicates by PR id, so an association already made through
+  // tracks/working_on/badges is simply confirmed, and the server-side nudge
+  // addressee (pr_owning_session, 103) is untouched.
+  //
+  // WORKTREE LANES ONLY, AND THAT GUARD IS THE WHOLE POINT. A `checkoutBranch`
+  // identifies a SESSION only when the session owns its checkout. In
+  // `workdirMode: 'project'` it names a DIRECTORY that every session spawned
+  // into that project shares, so the match fans one PR out across all of them.
+  // Measured 2026-08-17: eleven sessions on one shared checkout each rendered
+  // the same four PRs (#324/#335/#340/#345 all carry head `tm8/01a00bbd`),
+  // while the graph already held a correct 1:1 `created_in` edge naming four
+  // DIFFERENT sessions. A wrong chip outranks no chip, so the shared case is
+  // dropped rather than rendered at lower confidence.
+  //
+  // `scratch` is excluded for free: it has no checkout and never records a
+  // branch. The narrowing is on `workdirMode`, NOT on the branch name's shape
+  // — `tm8/xxxxxxxx` names are only the first 8 hex of a uuidv7, i.e. the top
+  // 32 bits of a 48-bit millisecond clock, so they repeat for ~65s and are not
+  // an identity either. Nothing here may key on the name's format.
   //
   // SEEDED FROM BOTH SOURCES, because otherwise this pass keeps the very
   // lottery the badge exists to close: a PR that never won a page seat has no
@@ -290,6 +304,8 @@ export function indexLinkedPullRequests(
     for (const node of nodes) {
       const state = node.state as unknown as Record<string, unknown>;
       if (state.kind !== 'work_session') continue;
+      // A shared checkout's branch names the directory, not the session.
+      if (state.workdirMode !== 'worktree') continue;
       const branch = typeof state.checkoutBranch === 'string' ? state.checkoutBranch : null;
       if (branch === null || branch === '') continue;
       for (const facts of byHeadRef.get(branch) ?? []) add(node.id, facts);

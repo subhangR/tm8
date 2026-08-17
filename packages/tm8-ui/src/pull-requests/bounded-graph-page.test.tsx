@@ -119,7 +119,14 @@ describe('PR chips survive a bounded graph page that dropped the PR node and its
         };
       }
       if (node.id === sessionLive.id) {
-        return { ...node, state: { ...node.state, checkoutBranch: BRANCH } as EntitySummary['state'] };
+        // `workdirMode` is load-bearing, not decoration: the pass answers only
+        // for a lane the session OWNS. See the shared-checkout case below.
+        return {
+          ...node,
+          state: {
+            ...node.state, checkoutBranch: BRANCH, workdirMode: 'worktree',
+          } as EntitySummary['state'],
+        };
       }
       return node;
     });
@@ -135,6 +142,19 @@ describe('PR chips survive a bounded graph page that dropped the PR node and its
         ? { ...node, state: { ...node.state, checkoutBranch: 'main' } as EntitySummary['state'] }
         : node);
     expect(indexLinkedPullRequests(elsewhere, edges).get(sessionLive.id)).toBeUndefined();
+
+    // THE SHARED CHECKOUT ANSWERS NOTHING. Same branch, same PR, same severed
+    // routes — only `workdirMode` differs. A `project`-mode branch names the
+    // DIRECTORY, which every session spawned into that project shares, so a
+    // match here would fan one PR across all of them. Measured 2026-08-17:
+    // eleven sessions on `tm8/01a00bbd` each drew the same four PRs.
+    for (const mode of ['project', 'scratch'] as const) {
+      const shared = nodes.map((node): EntitySummary =>
+        node.id === sessionLive.id
+          ? { ...node, state: { ...node.state, workdirMode: mode } as EntitySummary['state'] }
+          : node);
+      expect(indexLinkedPullRequests(shared, edges).get(sessionLive.id)).toBeUndefined();
+    }
   });
 
   it('renders the chip — the thing the user reported missing', async () => {
