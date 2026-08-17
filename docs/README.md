@@ -3,7 +3,12 @@
 Every document lives under one of the ten sections below. Each section has its own
 `README.md` that says what is in it and which file is the one to read first.
 
-**If you read one thing:** `architecture/01-LAWS.md`. Everything else is downstream of it.
+**New here, with tm8 running and no idea what to do?** Start at
+[`GETTING-STARTED.md`](GETTING-STARTED.md) — the first hour, end to end. Nothing
+below is a substitute for it; this map is written for people building tm8, not
+using it.
+
+**If you are building tm8, read one thing:** `architecture/01-LAWS.md`. Everything else is downstream of it.
 
 | Section | What lives here | Start with |
 |---|---|---|
@@ -24,7 +29,11 @@ Every document lives under one of the ten sections below. Each section has its o
 Both sit at the repo root because tooling and habit expect them there:
 
 - **`../README.md`** — the workspace layout, ports, and the hard rules.
-- **`../HOW-TO-TEST.md`** — the user manual for running the loop by hand.
+- **`../HOW-TO-TEST.md`** — a contributor's hand-test of the G1A loop against a
+  reset database. **Not a user manual** — for that, see
+  [`GETTING-STARTED.md`](GETTING-STARTED.md). Parts of it have gone stale
+  (it says 80 operations / 28 implemented; the node now mounts 165 and
+  implements 163), so verify its figures before quoting them.
 - **`../STATE.md`** — the Phase-1 delivery record and amendment ledger.
   **Treat it as historical.** It reads authoritative and is not; several of its
   figures were already stale at the time of the last program close. Verify any
