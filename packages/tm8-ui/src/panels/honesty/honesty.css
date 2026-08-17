@@ -126,6 +126,20 @@
   display: inline-flex;
   align-items: center;
 }
+/* THE NOTE'S TIP OPENS LEFTWARD, and this is a measured fix rather than a
+   preference. `.hon-tip`'s own geometry is `left: 0` + up to 260px, which grows
+   RIGHT from its anchor — fine for the refused icon buttons it was written for,
+   which sit inboard. Nearly every title-carrying site is the opposite: a status
+   word, a reason, a badge, parked at the TRAILING edge of its row. Driven on the
+   coarse tablet, the palette's right-aligned reason put this tip at right=824 on
+   a 768 viewport — 56px destroyed, the very defect this vocabulary was just
+   cleaned of, reintroduced by putting the same bubble on a right-hand host.
+   Anchoring to the note's right edge makes it grow back into the row, where the
+   space actually is. The phone rule below still overrides both. */
+.cv2-root .hon-note > .hon-tip {
+  left: auto;
+  right: 0;
+}
 /* The dotted underline is the whole affordance: it says "there is more here"
    without claiming the thing is a button or that it is refused. Same mark
    `.hon-hollow-inline` already uses for "ask me about this value". */
