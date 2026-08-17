@@ -72,6 +72,34 @@ describe('seam-real: menu() — the ONE soft fallback (LLD C-4)', () => {
 });
 
 describe('seam-real: openSpace', () => {
+  it('discards retained history off-React and resumes from its high-water', async () => {
+    const delivered: number[] = [];
+    const { seam, pool } = mk((url) => {
+      if (url.includes('/execution/liveness')) {
+        return ok({ liveEntityIds: [], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z' });
+      }
+      if (url.includes('/events')) {
+        return ok({
+          items: [{
+            type: 'entity.upsert', spaceId: 'sp-1', seq: 37,
+            occurredAt: '2026-07-28T12:00:00.000Z', schemaVersion: 1,
+            entity: { id: 'old' },
+          }],
+          nextCursor: '37',
+        });
+      }
+      return ok({});
+    });
+    seam.onEvent((event) => delivered.push(event.seq));
+    await seam.openSpace('sp-1');
+    expect(delivered).toEqual([]);
+    pool.last().openIt();
+    expect(pool.last().frames()).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 37 },
+    ]);
+  });
+
   it('subscribes, resumes and starts the liveness cadence', async () => {
     const { seam, pool, f } = mk((url) =>
       url.includes('/execution/liveness')
@@ -88,6 +116,28 @@ describe('seam-real: openSpace', () => {
     ]);
     expect(f.calls.map((c) => c.url)).toContain('/v2/spaces/sp-1/execution/liveness');
     expect(seam.liveness.statusOf({ id: 'ws-1', workStatus: 'running' })).toBe('live');
+  });
+
+  it('does not discard post-baseline events by rescanning history on a retry', async () => {
+    let eventPolls = 0;
+    const { seam } = mk((url) => {
+      if (url.includes('/execution/liveness')) {
+        return ok({ liveEntityIds: [], nodeBootId: 'boot-A', checkedAt: '2026-07-28T12:00:00.000Z' });
+      }
+      if (url.includes('/events')) {
+        eventPolls += 1;
+        return ok({ items: [], nextCursor: '0' });
+      }
+      return ok({});
+    });
+    await seam.openSpace('sp-1');
+    seam.closeSpace('sp-1');
+    await seam.openSpace('sp-1');
+    expect(eventPolls).toBe(1);
+
+    seam.invalidateSpaceBaseline?.('sp-1');
+    await seam.openSpace('sp-1');
+    expect(eventPolls).toBe(2);
   });
 
   it('SURVIVES a liveness read that fails — today every one of them 404s', async () => {
@@ -299,6 +349,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // Amendment 2 (2026-07-31): the artifacts preview decisions were
       // ratified, so the Run button gained its one command (seam.ts header).
       'previewArtifact',
+      // Amendment 12 (2026-08-17): the artifact viewer's other two ops gain
+      // their first UI callers — the revision switcher's read and download's
+      // raw zip bytes. Catalog READS riding the commands group deliberately;
+      // the amendment on `listArtifactRevisions` records why.
+      'listArtifactRevisions', 'exportArtifactRevision',
       'prompt', 'react',
       // `resolveAttention` shipped into the seam without this lock being
       // updated, so the guard was red in-tree before the attention inbox
@@ -344,6 +399,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // one optional-field edit away from a terminal that spawns an agent.
       'startTerminal',
       'terminate',
+      // 2026-08-16 (attention history): `updateAttentionRequest` — the
+      // PER-REQUEST write. `resolveAttention` above is the bulk verb and
+      // cannot address one row or say 'dismissed', so a quarter of the status
+      // enum had no UI path.
+      'updateAttentionRequest',
       // Amendment 4 (2026-08-01): updateProfile — identity display (067).
       // The viewer's OWN profile row; the op names no subject by design.
       'updateProfile',

@@ -14,6 +14,61 @@
   position: relative;
 }
 
+/**
+ * THE ONE CHAT BOX (`ComposerCard`) — the shell Chat Home drew first, now
+ * shared with the channel and thread composers. `overflow` stays visible
+ * because the skill picker pins above the field (`.ri-host` + `.ri-popover`),
+ * and `hidden` clips an absolutely positioned descendant.
+ */
+.ri-card {
+  overflow: visible;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-md);
+}
+
+.ri-card:focus-within { border-color: var(--pn-brand); }
+
+.ri-card textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 58px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--pn-ink);
+  font: 13px/1.45 var(--pn-ui);
+  padding: 11px 12px 4px;
+}
+
+/* THE PHONE'S COMPOSER, and 16px here is a behavioural threshold rather than a
+   type choice: iOS Safari zooms the page whenever a text field under 16px takes
+   focus. Inside a `100dvh` frame with `overflow: hidden` that zoom has no way
+   out — no scroll to pan with, no affordance to undo it — so the user taps the
+   box to write a message and the whole app is the wrong size from then on.
+   This is the field the phone actually composes into (measured at 13px on the
+   Home screen at 390x844); desktop keeps 13px. */
+.cv2-root .mobile-frame .ri-card textarea {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.ri-card textarea::placeholder { color: var(--pn-ink-4); }
+
+.ri-card__foot {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 3px 7px 6px 11px;
+}
+
+/* Chips and the paste refusal sit ABOVE the field, inside the composer card,
+   so an attachment reads as part of the message being written. */
+.ri-card .ri-attachments { padding: 9px 11px 0; }
+
 .ri-popover {
   position: absolute;
   bottom: 100%;

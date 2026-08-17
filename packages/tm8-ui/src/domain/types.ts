@@ -786,9 +786,12 @@ export type ContentBlockKind =
   | 'fields'
   | 'link-summary'
   | 'file-preview'
-  // Artifact wave: metadata-only preview for the `artifact` kind. Execution of
-  // the bundle (the iframe) is release-gated on two open security decisions and
-  // is deliberately NOT part of this block.
+  // Artifact viewer: the artifact kind's rendered bundle, in-block. The iframe
+  // SHIPS here and autoruns when the detail opens (owner ruling 2026-08-16,
+  // superseding the earlier click-gate); the sandbox posture is unchanged —
+  // exactly `allow-scripts`, nothing else — and the preview URL is an opaque
+  // server-minted capability, origin-agnostic and never parsed or built by the
+  // UI. Full posture on `ArtifactPreviewBlock` in GenericBody.
   | 'artifact-preview'
   | 'items'
   | 'lifecycle'
@@ -1042,17 +1045,20 @@ export interface KindConfig {
   /**
    * Can a session be launched ON this kind — the Run button.
    *
-   * Declared here rather than by hand-listing `'run'` in `list.rowActions` and
-   * `panel.primaries`, which is how it worked when task was the only launchable
-   * kind: the capability then lived in three separate string arrays per kind
-   * with nothing tying them together, so "which kinds can launch?" had no single
-   * answer and adding a kind meant remembering all three sites. `applyLaunch`
-   * in the registry derives those arrays from this one field.
+   * DERIVED, NOT DECLARED. A kind config does not set this; `applyLaunch` in
+   * the registry writes it from the `NOT_LAUNCHABLE` denylist, which is the one
+   * authority, and derives `list.rowActions`, `panel.primaries` and
+   * `palette.primaryAction` from the same answer so the three cannot disagree.
+   *
+   * It was declared per-row when `task` was the only launchable kind, and the
+   * cost of that showed up as absence: launching is open to every kind the
+   * server will derive a task for (migration 064 — all but `work_session`), but
+   * eleven kinds simply never set the flag and so never grew a Run button.
+   * Making the permissive case the default turns a forgotten flag from a
+   * silently missing feature into a deliberate opt-out.
    *
    * The subject need not be a task. The server derives a task to anchor the
-   * session on (migration 064) and the launched entity is what the agent is
-   * pointed at, so any kind that a person could sensibly ask an agent to work on
-   * may set this.
+   * session on and the launched entity is what the agent is pointed at.
    */
   launchable?: boolean;
 }

@@ -30,14 +30,43 @@
 
 /* --- the frame ----------------------------------------------------------- */
 
+/* The four numbers the whole screen is laid out against. They live here, as
+   custom properties, so a section lane changes its own file and still lands on
+   the same rhythm as its eleven neighbours — twelve lanes each picking their
+   own 16-or-18-or-20 is how this screen drifted apart in the first place. */
+.set-root {
+  --set-frame-pad: 16px;
+  --set-card-max: 1080px;
+  /* The reading measure. 860px is ~95 characters at the 12px body size, the
+     upper end of comfortable; past it the eye loses the line return. */
+  --set-measure: 860px;
+  /* The one horizontal gutter. `.set-section__head` is drawn at 18px by the
+     oracle (L46) and every body that lines up under it must use the same
+     number, not a number that happens to look similar. */
+  --set-gutter: 18px;
+}
+
 /* Product surfaces are FULL-BLEED (D47): the oracle's 1264px dark stage and
    its 470px card heights are review-board furniture, not product geometry.
-   What IS product is the 160px nav column (L31) and the card grammar. */
+   What IS product is the 160px nav column (L31) and the card grammar.
+
+   D47 IS NARROWED HERE, deliberately, by user report 2026-08-16 ("settings
+   page is fully fucked, not properly laid out"). Full-bleed was read as "the
+   card takes whatever width the window has", and on a 3016px display that put
+   a member's name at the far left and their role pill ~2800px away, with the
+   roles prose running as one 2800px line. Full-bleed is about not inheriting
+   the ORACLE's 1264px stage; it was never a licence to stretch a two-column
+   record to the width of a monitor. So the card still fills its host, and the
+   MEASURE below caps how wide the reading column inside it may get. */
 .set-root {
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
+  /* The card no longer touches the viewport edges. Without this the rounded
+     corners and the border render against nothing and the card reads as a
+     failed full-bleed rather than a card. */
+  padding: var(--set-frame-pad);
   background: var(--pn-paper);
   color: var(--pn-ink);
   font-family: var(--pn-ui);
@@ -54,7 +83,30 @@
   display: flex;
   overflow: hidden;
   min-height: 0;
+  /* THE HEADLINE FIX (user report 2026-08-16). `.set-root` is a flex COLUMN,
+     so a child with the initial `flex: 0 1 auto` is sized by its content —
+     the card ended immediately under the last row and the rest of the screen
+     was bare paper. Every section under it inherited that: `.set-body` is
+     `flex: 1` of a box that had already collapsed, so no section could ever
+     own the height it was written against. One line, and the scroll grammar
+     the sections were built for starts working. */
+  flex: 1;
+  min-width: 0;
+  /* Above this the card stops growing and centres. Chosen as nav (160) +
+     the measure (860) + the section's own 18px gutters, i.e. the width at
+     which the widest section still reads as one column rather than two
+     distant edges. */
+  width: 100%;
+  max-width: var(--set-card-max);
+  margin-inline: auto;
 }
+
+/* `.set-card` IS THE PAGE CARD, NOT A ROW CLASS. Since the frame pass it
+   carries `flex: 1`, `max-width: 1080px` and `margin-inline: auto`, so a
+   section that reaches for it to draw a bordered ROW inherits page geometry —
+   a centred, viewport-tall row. Flagged by the models lane, which had done
+   exactly that and moved off it. For a bordered row inside a section, write
+   `.set-<section>__row` against `--pn-line` and `--pn-r-md` directly. */
 
 /* --- T2-1a · section nav (oracle L31–L44) -------------------------------- */
 
@@ -67,6 +119,14 @@
   flex-direction: column;
   padding: 12px 0; /* L31 */
   min-height: 0;
+  /* The oracle drew eight rows; there are twelve, and `Danger zone` is pinned
+     to the foot by `.set-nav__spacer`. On a short window that spacer collapses
+     to nothing and the rows below it were clipped by the card's
+     `overflow: hidden` with no way to reach them. Scrolling the nav is the
+     only honest answer — a destination you cannot reach is the same defect as
+     a destination that does not exist. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .set-nav__eyebrow {
@@ -102,7 +162,11 @@
   background: var(--pn-active);
   padding: 6px 14px 6px 11px; /* L34 — the 3px rule eats from the left pad */
 }
-.set-nav__spacer { flex: 1; }
+/* `flex: none` because the nav now scrolls: without it a twelve-row column in
+   a short card shrinks every row toward zero height instead of overflowing,
+   which reads as a squashed nav rather than a scrollable one. */
+.set-nav__row { flex: none; white-space: nowrap; }
+.set-nav__spacer { flex: 1; min-height: 12px; }
 .set-nav__row--danger {
   color: var(--pn-block); /* L43 */
   border-top: 1px solid var(--pn-x-hairline-soft); /* L43 */
@@ -118,8 +182,26 @@
   overflow: hidden;
 }
 
+/* THE SECTION FRAME — the contract every one of the twelve sections lays
+   itself out against. Before this each section hand-rolled its own head and
+   scroller and they drifted: some padded their body 16, some 18, some not at
+   all, and two rendered no scroller so their content simply ran past the card
+   and was clipped. A section is now exactly three things — a root, a fixed
+   head, and ONE scrolling body — and `SectionFrame.tsx` is the only thing
+   that should be writing these three class names.
+
+   See SECTION-CONTRACT.md for what a section lane may and may not touch. */
+.set-section {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .set-section__head {
-  padding: 16px 18px 12px; /* L46 */
+  flex: none;
+  padding: 16px var(--set-gutter) 12px; /* L46 */
   border-bottom: 1px solid var(--pn-line);
   display: flex;
   align-items: center;
@@ -131,7 +213,42 @@
   font-weight: 500;
 }
 .set-section__grow { flex: 1; }
-.set-section__scroll { flex: 1; min-height: 0; overflow: auto; }
+.set-section__scroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* THE MEASURE. Rows that are meant to span the card — member rows, invite
+   rows, the menu preview — stay full-bleed inside the scroller and are NOT
+   wrapped in this. Everything a person READS is: prose, key/value records,
+   forms. This is the wrapper that stops a role legend from becoming one
+   2800px line, and it is why the cap lives on the content rather than on the
+   card's own border. `margin-inline` rather than `align-self` so it still
+   centres inside a scroller whose other children are full width. */
+/* NOTE THE ARITHMETIC BEFORE YOU "FIX" IT (models lane, 2026-08-16):
+   `offsetWidth` on this element reads ~896px, not the 860px `--set-measure`
+   names, because `.set-section__pad` sits on the SAME element and tm8-ui has
+   no `border-box` reset — so the two 18px gutters land OUTSIDE the max-width.
+
+   That is correct and deliberate: `--set-measure` caps the READING COLUMN,
+   i.e. the content, at 860px. 860 + 18 + 18 = 896 is the border box.
+   Adding `box-sizing: border-box` here would shrink the actual text column to
+   824px and make the token a lie in the other direction. Measure the text, not
+   the padded box. */
+.set-section__measure {
+  max-width: var(--set-measure);
+  margin-inline: auto;
+  min-width: 0;
+}
+
+/* The one padded body. A section that wants its own gutters uses this instead
+   of an inline `style={{ padding: 16 }}` — that inline was the drift: three
+   sections carried it, nine did not, and the three disagreed with the head
+   above them by 2px. */
+.set-section__pad { padding: 12px var(--set-gutter) 20px; }
 
 /* Brass chip — the oracle's secondary primary (L49, L101, L288). NOT the ink
    chip: D58.1 rules the ink treatment for `.lp__new` create chips on T0-1;
@@ -150,6 +267,31 @@
   cursor: pointer;
 }
 .set-chip:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
+
+/* A DISABLED CHIP MUST NOT LOOK LIVE. This base rule was missing entirely —
+   `settings.css` carried zero `:disabled` rules while six sections disabled a
+   chip. Four lanes each wrote a private copy of the fix in their own
+   stylesheet (axes 3 rules, members 1, menu 1, workflows 5) and two sections
+   had none at all, so in `settings-credentials` and `Your profile` a disabled
+   primary rendered PIXEL-IDENTICAL to a live one — the worst version of this
+   bug, because the control still invites the click.
+
+   Reported by the workflows lane, which measured it at 900x600. It belongs on
+   the base class: four private copies of one rule is four things to drift, and
+   the two sections that never wrote a copy are exactly the ones that show why
+   a shared default beats per-lane discipline.
+
+   `:disabled` only — NOT `[aria-disabled]`. The refusal treatment
+   (honesty.css) deliberately keeps refused controls focusable and reason-
+   bearing, and it carries its own styling; overriding it here would flatten
+   the distinction between "refused, and here is why" and "not available yet". */
+.set-chip:disabled {
+  color: var(--pn-ink-4);
+  background: color-mix(in srgb, var(--pn-idle-soft) 45%, transparent);
+  border-color: var(--pn-line-2);
+  cursor: not-allowed;
+}
+.set-chip:disabled:hover { background: color-mix(in srgb, var(--pn-idle-soft) 45%, transparent); }
 .set-chip--block { display: block; width: 100%; padding: 4px 0; text-align: center; }
 .set-chip--sm { padding: 2px 9px; font-size: 11px; }
 
@@ -275,8 +417,16 @@
 }
 .set-field--grow { flex: 1; }
 
+/* PANEL-LOCAL — do not borrow `.set-invite*` as generic row classes.
+   Reported by the axes lane 2026-08-16 after finding them used outside the
+   invite list. Their 16px gutter is correct HERE, because these rows sit
+   inside `.set-panel`, which is itself inset within the section body — they
+   line up with the panel head at L94/L99, not with the section head. Borrowed
+   into a section body directly they land 2px inside `--set-gutter` (18px) and
+   sit visibly off the head above them.
+   A section that wants a row of its own writes `.set-<section>__row`. */
 .set-invite {
-  padding: 7px 16px; /* L108 */
+  padding: 7px 16px; /* L108 — the PANEL gutter, not --set-gutter */
   border-bottom: 1px solid var(--pn-x-hairline-soft);
   display: flex;
   flex-direction: column;
@@ -582,6 +732,14 @@
    not the reason in the DOM, not the .45 — they change WIDTH and FILL, which is
    what the oracle draws differently at these two controls. Precedent and
    argument: `src/auth/HANDOVER-Auth.md` §2.1. RULED, see HANDOVER §2. */
+/* THESE ARE REFUSAL SKINS. THEY CARRY NO FILL — do not put one on a LIVE
+   control. They exist to stretch honesty.css's `.hon-disabled--inline` (which
+   carries the actual brass) to full width; on an enabled button you get raw
+   browser chrome, and the inversion reads as the REFUSED path being the
+   designed one. Three separate lanes hit this in one wave (invites #300,
+   axes #306, workflows #307) and each fixed it inside its own section, which
+   is three copies of one lesson — so it is now written where the class is.
+   A live full-width button wants `.set-chip.set-chip--block`. */
 .set-refuse--block,
 .set-refuse--ink { display: block; width: 100%; }
 .cv2-root .set-refuse--block .hon-disabled-group,
@@ -619,93 +777,36 @@
 .set-absent__head { font-size: 11.5px; color: var(--pn-ink-3); }
 .set-absent__why { font-family: var(--pn-mono); font-size: 9px; line-height: 1.5; color: var(--pn-ink-4); }
 
-.set-stack { display: flex; flex-direction: column; gap: 6px; padding: 12px 18px; }
-.set-kv { display: flex; align-items: baseline; gap: 10px; font-size: 12px; }
-.set-kv__k {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--pn-ink-4);
-  width: 96px;
-  flex: none;
-  text-transform: uppercase;
-}
-.set-kv__v { color: var(--pn-ink); min-width: 0; }
+/* --- `.set-stack` / `.set-kv*` — REMOVED 2026-08-16 ----------------------
+   These were the generic body-stack and key/value pair the pre-frame
+   sections shared. They had one real defect: `.set-stack` carries its own
+   `12px var(--set-gutter)`, so nested inside `SectionFrame`'s
+   `.set-section__pad` the body indented 36px under an 18px title. Three
+   lanes measured it independently (account, models, workflows).
 
-/* --- Your profile (identity display, 067) --------------------------------- */
-/* Same field grammar as the redeem frame: mono eyebrow label over a bordered
-   input. Kept as its own classes because these are settings-body fields, not
-   the redeem landing's centered card. */
+   It is deleted rather than fixed, because by the time the fix was written
+   it had no consumers left: every section that used to render `.set-stack`
+   had moved to its own grouped layout in its own stylesheet, and two lanes
+   went further and wrote tests asserting `.set-stack` is ABSENT inside the
+   frame pad (`danger-section.test.tsx`, `space-profile.test.tsx`). A
+   `.set-section__pad .set-stack { padding-inline: 0 }` override would have
+   shipped a rule matching nothing.
 
-.set-profile__preview {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 0 8px;
-  min-width: 0;
-}
-.set-profile__preview-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.set-profile__preview-name {
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.set-profile__preview-sub {
-  font-family: var(--pn-mono);
-  font-size: 10.5px;
-  color: var(--pn-ink-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.set-profile__field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.set-profile__label {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  color: var(--pn-ink-3);
-  text-transform: uppercase;
-}
-.set-profile__input {
-  height: 32px;
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md);
-  font-size: 12.5px;
-  color: var(--pn-ink);
-  font-family: inherit;
-}
-.set-profile__input::placeholder { color: var(--pn-ink-4); }
-.set-profile__help {
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--pn-ink-3);
-}
-.set-profile__problem {
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--pn-block);
-}
-.set-profile__saved {
-  font-size: 11.5px;
-  color: var(--pn-ink-2);
-}
+   Verified before deleting: zero `className="…set-stack…"` and zero
+   `className="…set-kv…"` across every .tsx in packages/tm8-ui/src.
+   The lesson worth keeping is in SECTION-CONTRACT.md, not in a rule: a
+   shared class that pads itself cannot be nested inside a padded frame. -- */
+
+
+/* --- Your profile (identity display, 067) — REMOVED 2026-08-16 ------------
+   The `.set-profile__*` block (11 rules) lived here. The account lane moved
+   its section to `.set-account__*` in its own stylesheet (#298), which left
+   this block with ZERO consumers — confirmed by grepping every .ts/.tsx in
+   packages/tm8-ui/src, not just this module. The lane reported it and
+   correctly did not delete it, because settings.css is shared.
+   Deleting rather than keeping: dead CSS in a shared sheet is worse than
+   dead code elsewhere, because the next lane greps for a class, finds a
+   plausible rule, and builds against something nothing renders. --------- */
 
 /* --- dev review board (never product) ------------------------------------ */
 

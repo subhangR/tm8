@@ -31,7 +31,7 @@ export function MaestroSessionTile({
   childrenExpanded,
   onToggleChildren,
   onSelect,
-  onClose,
+  actions,
   detail,
 }: {
   id: string;
@@ -80,7 +80,8 @@ export function MaestroSessionTile({
   childrenExpanded: boolean;
   onToggleChildren?: () => void;
   onSelect: () => void;
-  onClose?: () => void;
+  /** The shared row-action cluster — see `RowActionCluster`. */
+  actions?: ReactNode;
   /** D67 — the shared state/archive strip, rendered inside this tile's expand. */
   detail?: ReactNode;
 }) {
@@ -139,21 +140,15 @@ export function MaestroSessionTile({
         <span className={`pn-st__statusglyph lp__statusmark--${statusTone}`} title={statusTitle ?? status}>
           <StatusGlyph kind={archived ? 'archived' : status} />
         </span>
-        <span className="pn-st__actions">
-          {onClose ? (
-            <button
-              type="button"
-              className="pn-st__btn pn-st__btn--danger"
-              title="Close session"
-              aria-label="Close session"
-              onClick={(event) => {
-                event.stopPropagation();
-                onClose();
-              }}
-            >
-              <SessionIcon name="close" />
-            </button>
-          ) : null}
+        <span className="pn-st__actions lp__cluster">
+          {/* The shared cluster — Collections · Run · Archive — which this
+              anatomy had never rendered at all: its `rowActions` were declared
+              in the registry and dropped on the floor here, while a Close
+              button was hand-rolled beside them. Terminate now comes from the
+              registry (with its dedicated executor), so there is exactly one
+              of it. Copy stays: it is this anatomy's own affordance, not a
+              registry verb. */}
+          {actions}
           <button
             type="button"
             className="pn-st__btn"

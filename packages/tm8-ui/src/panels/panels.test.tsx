@@ -23,6 +23,7 @@ import {
 } from '../fixtures';
 import { EntityDetailPanel, EntityListPanel, SharedContextSection, ShareDropTarget } from './index';
 import { HANDLED_SOURCES } from './list/tile-badges';
+import { expandTree } from '../kit/tree-disclosure.testkit';
 import type { DetailReasons } from './EntityDetailPanel';
 
 /**
@@ -548,7 +549,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       .find((tile) => tile.textContent?.includes(attention.title))!;
     expect(within(flagged).getByText('Needs attention').getAttribute('title')).toBe('Choose the API shape');
 
-    // …and the child is still NESTED under it rather than re-rooted.
+    // …and the child is still NESTED under it rather than re-rooted. The tree
+    // ships collapsed (2026-08-17), so the nesting is asserted after opening it
+    // — an attention flag must not re-root a child, whether or not it is drawn.
+    expandTree(view.container);
     const nested = view.getByTestId('list-tile-children');
     expect(nested.textContent).toContain(child.title);
   });
@@ -628,9 +632,41 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(queryByText(taskGuideLines.title)).toBeNull();
     fireEvent.click(getByRole('button', { name: 'Expand details' }));
     expect(tile.textContent).toContain(taskGuideLines.title);
-    fireEvent.click(getByRole('button', { name: 'Close session' }));
-    expect(onTerminate).toHaveBeenCalledWith(exited.id);
+    /**
+     * TERMINATE IS REFUSED HERE, AND THAT IS THE FIX.
+     *
+     * This row is `status: 'exited'` with `livenessOf → 'not-running'`. It used
+     * to carry a hand-rolled "Close session" button that this test clicked and
+     * that fired `onTerminate` — but that button was wired to the SAME executor
+     * the registry's `terminate` uses (`handleSessionClose = primaries.terminate`),
+     * minus its liveness gate. So it dispatched `execution.terminate` at a
+     * session with no process left to kill: a live-looking control whose command
+     * could only be refused downstream.
+     *
+     * The session tile now renders the registry cluster like the other two
+     * anatomies, so `terminate` arrives with its gate attached and says why.
+     * Same verb, same executor, one spelling of it.
+     */
+    const terminate = getByRole('button', { name: 'Terminate' });
+    expect(terminate.className).toContain('hon-disabled');
+    fireEvent.click(terminate);
+    expect(onTerminate).not.toHaveBeenCalled();
     expect(getByRole('button', { name: 'Copy session ID' })).toBeTruthy();
+  });
+
+  it('a LIVE session still terminates, from the registry cluster', () => {
+    const onTerminate = vi.fn();
+    const { getByRole } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor([sessionLive])}
+        ctx={ctx}
+        livenessOf={() => 'live'}
+        onTerminate={onTerminate}
+      />,
+    );
+    fireEvent.click(getByRole('button', { name: 'Terminate' }));
+    expect(onTerminate).toHaveBeenCalledWith(sessionLive.id);
   });
 
   it('unknown liveness renders neutral and never as live', () => {
@@ -862,7 +898,18 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
     fireEvent.click(getByTestId('filter-trigger'));
     expect(getByTestId('filter-menu')).toBeTruthy();
-    fireEvent.mouseDown(document.body);
+    /* `pointerdown`, not `mousedown`: iOS often synthesises NO mouse event at all
+       for a tap on inert background, which made this popover a trap on a phone
+       whose only exit was Escape — and a phone has no Escape key. Asserting the
+       mouse spelling here would pin the defect in place. */
+    fireEvent.pointerDown(document.body);
+    expect(queryByTestId('filter-menu')).toBeNull();
+
+    /* And the mouse path still dismisses, because a real mouse press emits
+       `pointerdown` before `mousedown`. This is the desktop regression guard. */
+    fireEvent.click(getByTestId('filter-trigger'));
+    expect(getByTestId('filter-menu')).toBeTruthy();
+    fireEvent.pointerDown(document.body, { pointerType: 'mouse' });
     expect(queryByTestId('filter-menu')).toBeNull();
 
     const kindButton = container.querySelector('.lp__kind') as HTMLElement;
@@ -980,19 +1027,56 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
 
+    // COLLAPSED IS THE SHIPPED DEFAULT (user ruling 2026-08-17). The parent is
+    // the only tile drawn; its child exists in the row set and is not.
+    expect(getAllByTestId('list-tile')).toHaveLength(1);
+    expect(queryByText('Center sizing law')).toBeNull();
+    const disclosure = getByRole('button', { name: /expand workspace layout, 1 child/i });
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(disclosure);
     expect(getAllByTestId('list-tile')).toHaveLength(2);
     expect(getAllByTestId('list-tile')[1]?.getAttribute('data-depth')).toBe('1');
-    const disclosure = getByRole('button', { name: /collapse workspace layout, 1 child/i });
     expect(disclosure.getAttribute('aria-expanded')).toBe('true');
 
     fireEvent.click(disclosure);
     expect(getAllByTestId('list-tile')).toHaveLength(1);
-    expect(queryByText('Center sizing law')).toBeNull();
-    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
 
     fireEvent.click(disclosure);
     fireEvent.click(getByRole('button', { name: 'Center sizing law' }));
     expect(onSelect).toHaveBeenLastCalledWith(child.id);
+  });
+
+  it('THE SELECTION IS NEVER HIDDEN behind the collapsed default', () => {
+    // The one thing a default-shut tree must not do: leave the viewer looking
+    // at a selection that is not on screen. Arriving on a deep child — a route,
+    // a click from Home, a spawn that selects its new session — opens the path
+    // to it. The parent's caret still reads as open, because it is.
+    const parent: EntitySummary = {
+      ...taskGuideLines,
+      id: 'task-reveal-parent',
+      title: 'Workspace layout',
+      parentId: null,
+    };
+    const child: EntitySummary = {
+      ...taskUuidTitle,
+      id: 'task-reveal-child',
+      title: 'Center sizing law',
+      parentId: parent.id,
+    };
+    const { getAllByTestId, getByRole } = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={rowsFor([parent, child])}
+        ctx={ctx}
+        selectedId={child.id}
+      />,
+    );
+
+    expect(getAllByTestId('list-tile')).toHaveLength(2);
+    expect(
+      getByRole('button', { name: /collapse workspace layout, 1 child/i }).getAttribute('aria-expanded'),
+    ).toBe('true');
   });
 
   it('uses the same hierarchy and semantic status colors for coordinator/session children', () => {
@@ -1017,8 +1101,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
 
-    expect(getAllByTestId('list-tile')).toHaveLength(2);
+    expect(getAllByTestId('list-tile')).toHaveLength(1);
     expect(getAllByTestId('list-tile')[0]?.querySelector('.lp__statusmark--run')).not.toBeNull();
+    fireEvent.click(getByRole('button', { name: /expand coordinator session, 1 child/i }));
+    expect(getAllByTestId('list-tile')).toHaveLength(2);
     fireEvent.click(getByRole('button', { name: /collapse coordinator session, 1 child/i }));
     expect(getAllByTestId('list-tile')).toHaveLength(1);
   });
@@ -1917,5 +2003,117 @@ describe('file-preview renders the real image', () => {
     const block = getByTestId('block-file-preview');
     expect(within(block).queryByTestId('file-preview-image')).toBeNull();
     expect(block.textContent).toContain('no download URL');
+  });
+});
+
+/**
+ * THE ATTENTION SECTION LANDS IN EXACTLY ONE PLACE PER KIND.
+ *
+ * The mount rule has two halves and they are complements of each other: the
+ * Content body for every archetype that can host an inline section, and the
+ * Activity tab for the two that cannot — terminal (a live PTY owning its full
+ * height) and `composition: 'chat'` (a body that ends at its composer). Those
+ * are the same two exclusions the attachment strip carries, but the strip
+ * simply DROPS them; this section relocates them, because work sessions are
+ * among the most-escalated entities in a space and CLI-only history for them
+ * was not acceptable (user ruling 2026-08-16).
+ *
+ * Both halves are asserted here, in both directions, because the failure mode
+ * of a two-place rule is a kind that renders it TWICE — which no single
+ * assertion about presence can catch.
+ */
+describe('EntityDetailPanel — the attention section has exactly one home per kind', () => {
+  const SECTION = <div data-testid="attention-section-probe" />;
+
+  /** Every kind with a live fixture, split by which half of the rule it takes. */
+  function kindsBy(relocated: boolean) {
+    return allKinds()
+      .map((config) => ({
+        config,
+        detail: Object.values(fixtureDetails).find((d) => d.kind === config.kind && d.deletedAt == null),
+      }))
+      .filter((r) => r.detail != null)
+      .filter((r) => {
+        const overflow =
+          r.config.panel.archetype === 'terminal' || r.config.panel.composition === 'chat';
+        return overflow === relocated;
+      });
+  }
+
+  it('mounts in the CONTENT body for every kind that can host it inline', () => {
+    const covered = kindsBy(false);
+    // Guards against a vacuous pass if the registry or the fixture set moves.
+    expect(covered.length).toBeGreaterThan(8);
+
+    for (const { config, detail } of covered) {
+      const { getByTestId, unmount } = render(
+        <EntityDetailPanel detail={detail!} reasons={REASONS} ctx={ctx} attentionSection={SECTION} />,
+      );
+      const panel = getByTestId('entity-detail-panel');
+      expect(
+        within(panel).queryAllByTestId('attention-section-probe'),
+        `${config.kind} did not mount the attention section on its content body exactly once`,
+      ).toHaveLength(1);
+      unmount();
+    }
+  });
+
+  it('mounts on the ACTIVITY tab — and NOT in the content body — for terminal and chat', () => {
+    const relocated = kindsBy(true);
+    // work_session (terminal) and channel/voice_channel (chat) today.
+    expect(relocated.length).toBeGreaterThan(0);
+
+    for (const { config, detail } of relocated) {
+      const content = render(
+        <EntityDetailPanel detail={detail!} reasons={REASONS} ctx={ctx} attentionSection={SECTION} />,
+      );
+      expect(
+        within(content.getByTestId('entity-detail-panel')).queryByTestId('attention-section-probe'),
+        `${config.kind} put the attention section inline, under a body that owns its own height`,
+      ).toBeNull();
+      content.unmount();
+
+      const activity = render(
+        <EntityDetailPanel
+          detail={detail!}
+          reasons={REASONS}
+          ctx={ctx}
+          attentionSection={SECTION}
+          activeTab="activity"
+        />,
+      );
+      expect(
+        within(activity.getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
+        `${config.kind} lost its attention history entirely — it is in neither place`,
+      ).toHaveLength(1);
+      activity.unmount();
+    }
+  });
+
+  it('never renders TWICE: a kind that takes the inline mount does not also get the activity one', () => {
+    for (const { config, detail } of kindsBy(false)) {
+      const { getByTestId, unmount } = render(
+        <EntityDetailPanel
+          detail={detail!}
+          reasons={REASONS}
+          ctx={ctx}
+          attentionSection={SECTION}
+          activeTab="activity"
+        />,
+      );
+      expect(
+        within(getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
+        `${config.kind} renders the attention section on BOTH the content body and the activity tab`,
+      ).toHaveLength(0);
+      unmount();
+    }
+  });
+
+  it('an unwired host renders nothing at all — no empty box on every entity in the product', () => {
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel detail={kindsBy(false)[0]!.detail!} reasons={REASONS} ctx={ctx} />,
+    );
+    expect(getByTestId('entity-detail-panel')).toBeTruthy();
+    expect(queryByTestId('attention-section-probe')).toBeNull();
   });
 });

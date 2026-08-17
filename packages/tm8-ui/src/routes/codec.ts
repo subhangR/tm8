@@ -209,6 +209,7 @@ export function parse(hash: string): ParseOutcome {
   const panels: PanelState = {
     stack: parseIdList(query.get('p'), drop('stack')),
     pinned: parseIdList(query.get('pin'), drop('pins')),
+    right: parseIdList(query.get('r'), drop('right')),
     tabs: parsePairs<PanelTab>(query.get('t'), TABS, drop('tabs')),
     contentSurface: parsePairs<ContentSurface>(query.get('contentSurface'), SURFACES, drop('tabs')),
     session: null,
@@ -233,8 +234,42 @@ function parseTarget(
   const head = rest[0];
   switch (head) {
     case undefined:
-    case 'home':
       return { view: 'home' };
+    case 'home': {
+      /* The unified Home's root segments (task 01a00932):
+           /home              → the viewer's remembered root
+           /home/k/{slug}     → root = that kind's list
+           /home/chat[/{id}]  → root = chats, optionally the open thread.
+         An unknown sub-segment is not a partial route: bare Home renders,
+         same posture as the outer default case. The slug is deliberately
+         pass-through (like `k/`) — the Home screen validates it against the
+         registry and falls back to the remembered root, which keeps parse
+         pure. */
+      if (rest[1] === 'k' && rest[2]) {
+        return { view: 'home', root: { type: 'kind', slug: rest[2] } };
+      }
+      if (rest[1] === 'chat') {
+        /* `?graph=full` opens the conversation's entity graph fullscreen
+           (plan 01a0094b D2). Deliberately NOT a drop-notice param: any other
+           value is a stale or foreign link and silently renders the plain
+           conversation — lossy-tolerant, per the fullscreen ruling. */
+        const graph = query.get('graph') === 'full' ? ('full' as const) : null;
+        /* `gf` rides OPAQUELY: graph-view.ts owns the vocabulary and decodes
+           leniently, so this layer only requires a decodable non-empty string. */
+        const gfRaw = query.get('gf');
+        const graphFilters = gfRaw === null ? null : dec(gfRaw);
+        return {
+          view: 'home',
+          root: {
+            type: 'chats',
+            threadId: rest[2] ?? null,
+            ...(graph ? { graph } : {}),
+            ...(graphFilters ? { graphFilters } : {}),
+          },
+        };
+      }
+      return { view: 'home' };
+    }
     case 'feed':
       return { view: 'feed' };
     case 'inbox':
@@ -258,6 +293,13 @@ function parseTarget(
     case 'board':
       /* The task Board (2026-08-16) — same flat whole-centre posture. */
       return { view: 'board' };
+    case 'craft':
+      /* The Craft studio (2026-08-16) — same flat whole-centre posture. */
+      return { view: 'craft' };
+    case 'new-session':
+      /* Hyphenated in the URL, camel in the union: the segment is read by
+         people and the member is read by TypeScript. */
+      return { view: 'newSession' };
     case 'voice': {
       /* Shaped like `channel/{id}`, because a voice room is addressed the same
          way one channel is: an id in the path, no collection view behind it. A
@@ -314,8 +356,17 @@ function pathOf(route: Route): string {
   const base = `#/s/${enc(route.spaceId)}`;
   const t = route.target;
   switch (t.view) {
-    case 'home':
+    case 'home': {
+      const root = t.root ?? null;
+      if (root?.type === 'kind') return `${base}/home/k/${enc(root.slug)}`;
+      if (root?.type === 'chats' && root.threadId) return `${base}/home/chat/${enc(root.threadId)}`;
+      /* `chats` with no thread is the default root: `/home` IS that address,
+         so the canonical form drops the segment (normalize agrees) — UNLESS
+         the fullscreen graph param needs the `/chat` segment to survive a
+         round-trip, since bare `/home` does not read `graph`. */
+      if (root?.type === 'chats' && (root.graph || root.graphFilters)) return `${base}/home/chat`;
       return `${base}/home`;
+    }
     case 'feed':
       return `${base}/feed`;
     case 'inbox':
@@ -334,6 +385,10 @@ function pathOf(route: Route): string {
       return `${base}/messages`;
     case 'board':
       return `${base}/board`;
+    case 'craft':
+      return `${base}/craft`;
+    case 'newSession':
+      return `${base}/new-session`;
     case 'voice':
       /* Must match `registry.ts`'s voice `routeBuilder` exactly — that builder
          is the authority and has been emitting this shape all along. */
@@ -376,7 +431,12 @@ export function build(route: Route): BuildOutcome {
   const t = route.target;
 
   const viewParams: Param[] = [];
-  if (t.view === 'kind') {
+  if (t.view === 'home') {
+    if (t.root?.type === 'chats' && t.root.graph) viewParams.push(['graph', t.root.graph]);
+    if (t.root?.type === 'chats' && t.root.graphFilters) {
+      viewParams.push(['gf', enc(t.root.graphFilters)]);
+    }
+  } else if (t.view === 'kind') {
     if (t.mode) viewParams.push(['mode', t.mode]);
   } else if (t.view === 'entity') {
     if (t.origin) {
@@ -391,6 +451,10 @@ export function build(route: Route): BuildOutcome {
   const qParam: Param[] = t.view === 'kind' && t.q ? [['q', encodeQ(t.q)]] : [];
   const stackParam: Param[] = route.panels.stack.length ? [['p', idList(route.panels.stack)]] : [];
   const pinParam: Param[] = route.panels.pinned.length ? [['pin', idList(route.panels.pinned)]] : [];
+  /* Tolerant of hand-built pre-`right` shapes (stored last-places, fixtures). */
+  const rightParam: Param[] = (route.panels.right ?? []).length
+    ? [['r', idList(route.panels.right)]]
+    : [];
   const tabsParam: Param[] = [];
   if (Object.keys(route.panels.tabs).length) tabsParam.push(['t', pairs(route.panels.tabs)]);
   if (Object.keys(route.panels.contentSurface).length) {
@@ -399,9 +463,11 @@ export function build(route: Route): BuildOutcome {
 
   // Drop tiers, most-droppable first. `t` and contentSurface go TOGETHER —
   // they are one tier, because surface state without tab state is a lie about
-  // which panel the surface belongs to.
+  // which panel the surface belongs to. The right trail outranks only that
+  // pair: a side panel is a supplement to the centre it annotates.
   const tiers: { cls: DropClass; params: Param[] }[] = [
     { cls: 'tabs', params: tabsParam },
+    { cls: 'right', params: rightParam },
     { cls: 'pins', params: pinParam },
     { cls: 'stack', params: stackParam },
     { cls: 'query', params: qParam },
@@ -445,7 +511,11 @@ export function normalize(route: Route): Route {
   const pinned = dedupe(route.panels.pinned);
   const pinnedSet = new Set(pinned);
   const stack = dedupe(route.panels.stack).filter((id) => !pinnedSet.has(id));
-  const open = new Set([...pinned, ...stack]);
+  /* The right trail dedupes within itself only — it is a separate panel, not
+     a third host in the pin/stack single-host law, and the same entity open
+     in the centre AND beside it is a state the viewer can honestly make. */
+  const right = dedupe(route.panels.right ?? []);
+  const open = new Set([...pinned, ...stack, ...right]);
 
   const tabs: Record<EntityId, PanelTab> = {};
   for (const [id, tab] of Object.entries(route.panels.tabs)) {
@@ -457,10 +527,23 @@ export function normalize(route: Route): Route {
     if (open.has(id)) contentSurface[id] = surface;
   }
 
+  /* Canonical Home root: `chats` with no thread IS the bare `/home` form —
+     unless the fullscreen graph param is set, which only the `/chat` segment
+     carries (bare `/home` does not read `graph`, so collapsing would lose it). */
+  const target: NavView =
+    route.target.view === 'home' &&
+    route.target.root &&
+    route.target.root.type === 'chats' &&
+    route.target.root.threadId === null &&
+    !route.target.root.graph &&
+    !route.target.root.graphFilters
+      ? { view: 'home' }
+      : route.target;
+
   return {
     spaceId: route.spaceId,
-    target: route.target,
-    panels: { stack, pinned, tabs, contentSurface, session: route.panels.session },
+    target,
+    panels: { stack, pinned, right, tabs, contentSurface, session: route.panels.session },
   };
 }
 

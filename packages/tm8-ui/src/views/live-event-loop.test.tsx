@@ -131,6 +131,7 @@ function edge(id: string, source: EntitySummary, target: EntitySummary): EdgeVie
 interface Harness {
   seam: Seam;
   emit: (event: DurableWorkspaceEvent) => void;
+  resync: () => void;
   queryCalls: () => number;
   countsCalls: () => number;
   visibilityCalls: () => readonly boolean[];
@@ -144,6 +145,7 @@ interface Harness {
  */
 function harness(seeded: EntitySummary[]): Harness {
   const subs = new Set<(e: DurableWorkspaceEvent) => void>();
+  const resyncSubs = new Set<(spaceId: SpaceId) => void>();
   let queryCalls = 0;
   let countsCalls = 0;
   const visibilityCalls: boolean[] = [];
@@ -162,8 +164,9 @@ function harness(seeded: EntitySummary[]): Harness {
     getConnection() {
       return { phase: 'live' as const };
     },
-    onResync() {
-      return () => {};
+    onResync(cb: (spaceId: SpaceId) => void) {
+      resyncSubs.add(cb);
+      return () => void resyncSubs.delete(cb);
     },
     async identity() {
       throw new Error('not read by this test');
@@ -237,6 +240,9 @@ function harness(seeded: EntitySummary[]): Harness {
     emit: (event) => {
       for (const cb of subs) cb(event);
     },
+    resync: () => {
+      for (const cb of resyncSubs) cb(SPACE);
+    },
     queryCalls: () => queryCalls,
     countsCalls: () => countsCalls,
     visibilityCalls: () => visibilityCalls,
@@ -246,6 +252,25 @@ function harness(seeded: EntitySummary[]): Harness {
 const OPEN = { workStatus: ['open'], deleted: 'exclude' };
 
 describe('the live event loop — an event moves the screen, alone', () => {
+  it('a resync clears read claims and rehydrates the current projection', async () => {
+    const seeded = [task('ent-before', { title: 'before' })];
+    const h = harness(seeded);
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const read = () => result.current.rowsFor('task')(OPEN).map((row) => row.title);
+    await waitFor(() => expect(read()).toEqual(['before']));
+    const callsBefore = h.queryCalls();
+
+    seeded.splice(0, seeded.length, task('ent-after', { title: 'after' }));
+    act(() => h.resync());
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await waitFor(() => expect(read()).toEqual(['after']));
+    expect(h.queryCalls()).toBeGreaterThan(callsBefore);
+  });
+
   it('keeps the liveness cadence active while the data shell is mounted', async () => {
     const h = harness([task('ent-liveness-cadence')]);
     const { result, unmount } = renderHook(() =>
@@ -288,8 +313,33 @@ describe('the live event loop — an event moves the screen, alone', () => {
       } as unknown as DurableWorkspaceEvent);
     });
 
-    expect(result.current.graph.nodes.map((node) => node.id)).toContain(arrival.id);
-    expect(result.current.graph.edges.map((item) => item.id)).toContain('edge-live');
+    await waitFor(() => {
+      expect(result.current.graph.nodes.map((node) => node.id)).toContain(arrival.id);
+      expect(result.current.graph.edges.map((item) => item.id)).toContain('edge-live');
+    });
+  });
+
+  it('keeps the live graph window bounded during a long entity stream', async () => {
+    const h = harness([]);
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.graph.loading).toBe(false));
+    act(() => {
+      for (let index = 0; index < 200; index += 1) {
+        h.emit({
+          type: 'entity.upsert',
+          spaceId: SPACE,
+          seq: index + 1,
+          entity: task(`stream-${index}`, {
+            activityAt: new Date(Date.UTC(2026, 6, 29, 11, 0, index)).toISOString(),
+          }),
+        } as unknown as DurableWorkspaceEvent);
+      }
+    });
+    await waitFor(() => expect(result.current.graph.nodes).toHaveLength(150));
+    expect(result.current.graph.nodes.some((node) => node.id === 'stream-199')).toBe(true);
+    expect(result.current.graph.nodes.some((node) => node.id === 'stream-0')).toBe(false);
   });
 
   it('the created task is ON SCREEN, and it got there without a re-read', async () => {
@@ -315,9 +365,10 @@ describe('the live event loop — an event moves the screen, alone', () => {
       } as unknown as DurableWorkspaceEvent);
     });
 
-    expect(read(), 'the event-created task must be in the rendered rows').toContain(
-      'ent-task-created',
-    );
+    await waitFor(() => expect(
+      read(),
+      'the event-created task must be in the rendered rows',
+    ).toContain('ent-task-created'));
     // Newest activity first — the server's own default sort, so a new task
     // lands where the user is looking rather than below the fold.
     expect(read()[0]).toBe('ent-task-created');
@@ -349,7 +400,7 @@ describe('the live event loop — an event moves the screen, alone', () => {
       } as unknown as DurableWorkspaceEvent);
     });
 
-    expect(read(), 'a task marked done must leave the Open list').toHaveLength(0);
+    await waitFor(() => expect(read(), 'a task marked done must leave the Open list').toHaveLength(0));
   });
 
   it('an edit to a row already on screen shows the NEW title, not the read one', async () => {
@@ -371,7 +422,7 @@ describe('the live event loop — an event moves the screen, alone', () => {
       } as unknown as DurableWorkspaceEvent);
     });
 
-    expect(titles()).toEqual(['after']);
+    await waitFor(() => expect(titles()).toEqual(['after']));
   });
 
   it('an UNDECIDABLE filter never gains a guessed row', async () => {
@@ -441,8 +492,8 @@ describe('the live event loop — an event moves the screen, alone', () => {
       } as unknown as DurableWorkspaceEvent);
     });
 
-    expect(result.current.messagesOf(anchor.id)?.map((item) => item.content.body))
-      .toEqual(['arrived from another session']);
+    await waitFor(() => expect(result.current.messagesOf(anchor.id)?.map((item) => item.content.body))
+      .toEqual(['arrived from another session']));
     expect(h.queryCalls(), 'Discussion must render the event payload, not poll the database again')
       .toBe(before);
   });
@@ -480,10 +531,10 @@ describe('the live event loop — an event moves the screen, alone', () => {
       } as unknown as DurableWorkspaceEvent);
     });
 
-    expect(result.current.connectionsOf(anchor.id)?.incoming[0]).toMatchObject({
+    await waitFor(() => expect(result.current.connectionsOf(anchor.id)?.incoming[0]).toMatchObject({
       type: 'working_on',
       label: 'Working on',
-    });
+    }));
     expect(result.current.connectionsOf(anchor.id)?.incoming[0].edges.map((item) => item.id))
       .toEqual(['edge-working']);
   });

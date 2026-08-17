@@ -175,6 +175,13 @@ export function chatSystemPrompt(input: ChatLaunchConfigInput, hasProject: boole
     orchestrate: [
       'ORCHESTRATE coordinates worker sessions and task state: read graph, session and git context, dispatch, steer or stop sessions, post durable messages, and run task commands. Prefer delegating a piece of work to a worker session over doing it yourself in this thread.',
     ],
+    craft: [
+      'CRAFT sketches a blueprint: a `graph` entity whose one row holds the whole flow — nodes, and edges ({src, dst, type, note}) carrying edge-vocabulary intent. Edit the blueprint ROW with entities.create / entities.patch — never the real graph: no real edges, no real tasks, nothing on the Board while crafting.',
+      'A node is exactly `{id, ref?, spec?}`. `id` is the ROW-LOCAL key that edges’ src/dst name — a short slug you choose, like "t-schema", never an entity id. Add `ref` (an entity id) when the node points at something that ALREADY EXISTS. Add `spec` {kind, title, hint} when it does not exist yet. A node is a reference iff it carries `ref`; a node without `ref` is a spec and is drawn as one. Never put an entity id in `id`, never mirror one value across id/ref/entityId, and do not invent members like `label` — the row is lean and extras are ignored.',
+      'Keep specs lean — sketch, don’t specify. The orchestrating agent elaborates them into real entities at materialize time; a spec that reads like a finished task body is over-crafted.',
+      'One guarded patch per turn, narrated: say what changed in the blueprint, and patch under expectedVersion so a lost update is refused, never clobbered.',
+      'Materialize nothing until approval lands in this thread. On approval, orchestrate by handing the blueprint to the delegation surface (tm8_delegate) — the agent reads the row, figures out the flow, and links what it creates back to the blueprint.',
+    ],
   };
   return [...shared, ...variants[input.chatMode]].join('\n');
 }

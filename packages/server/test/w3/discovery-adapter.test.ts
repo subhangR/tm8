@@ -23,12 +23,13 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {137/135/136/134}: projects.files.list/attach.
         // -> {138/136/137/135} (2026-08-09, merge): execution.dispatch.
         // -> {166/164/165/163} (2026-08-16, W4/132): spaces.taskWorkflows.*.
-        total: 166,
-        v1: 164,
+        // -> {169/167/168/166} (141): the three account-lifecycle ops.
+        total: 169,
+        v1: 167,
         reserved: 2,
-        http: 165,
+        http: 168,
         ws: 1,
-        registerableV1Http: 163,
+        registerableV1Http: 166,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

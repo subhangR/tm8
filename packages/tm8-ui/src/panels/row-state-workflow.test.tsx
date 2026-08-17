@@ -85,7 +85,7 @@ function stateSelect(): HTMLSelectElement {
 }
 
 describe('W4 — the strip select narrows under a workflow, without changing shape', () => {
-  it('a forbidden status is a DISABLED option carrying the reason in its title — never hidden', () => {
+  it('a forbidden status is a DISABLED option carrying the reason IN ITS LABEL — never hidden', () => {
     mount(task({ workStatus: 'open', axes: { type: 'code' } }), { taskWorkflows: [CODE_RULE] });
     expandFirstRow();
 
@@ -97,9 +97,14 @@ describe('W4 — the strip select narrows under a workflow, without changing sha
     const byValue = new Map(options.map((o) => [o.value, o] as const));
     for (const barred of ['pulled', 'blocked', 'cancelled']) {
       expect(byValue.get(barred)!.disabled, `${barred} must be disabled`).toBe(true);
-      expect(byValue.get(barred)!.getAttribute('title')).toBe(
-        `type code does not allow ${barred.replace(/_/g, ' ')}`,
-      );
+      /* THE REASON IS IN THE OPTION'S TEXT, and it used to be in `title`.
+         `title` on an `<option>` is rendered by NO browser — not as a desktop
+         tooltip, not in the native picker a phone opens — so that reason was
+         unreachable on every platform by every input. Option text is the one
+         thing every select renders, so it lives there now. Asserting `title`
+         here is what kept the defect alive. */
+      expect(byValue.get(barred)!.getAttribute('title')).toBeNull();
+      expect(byValue.get(barred)!.textContent).toContain('not in type code');
     }
     for (const allowed of ['open', 'working', 'in_review', 'done']) {
       expect(byValue.get(allowed)!.disabled, `${allowed} must stay live`).toBe(false);
@@ -177,7 +182,10 @@ describe('W4 — the tile dot narrows through the SAME control', () => {
       .getAllByTestId('row-state-option')
       .find((o) => o.getAttribute('data-state') === 'pulled')!;
     expect(barred.getAttribute('aria-disabled')).toBe('true');
-    expect(barred.getAttribute('title')).toBe('type code does not allow pulled');
+    /* Visible text, not a hover tooltip: a finger produces no hover, so under
+       `title` this row was greyed out and mute on touch. */
+    expect(barred.getAttribute('title')).toBeNull();
+    expect(barred.textContent).toContain('not in type code');
     fireEvent.click(barred);
     expect(onSetState).not.toHaveBeenCalled();
 

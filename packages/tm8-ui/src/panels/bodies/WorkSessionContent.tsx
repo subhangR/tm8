@@ -68,9 +68,9 @@ export interface WorkSessionContentProps {
 /**
  * The work-session Content switch owns presentation only. The immutable pin
  * decides whether Chat exists; DEBUG always exists; the launch provider/model
- * never enters this component. Terminal (and Chat, once shown) stay mounted
- * after render so xterm and its PTY transport keep exactly the same component
- * instance while another surface is visible.
+ * never enters this component. Terminal and Chat mount lazily on first use,
+ * then stay mounted for this panel's lifetime so switching its surface retains
+ * state. Cross-panel/app-lifetime terminal residency remains a separate layer.
  */
 export function WorkSessionContent({
   sessionId,
@@ -94,11 +94,14 @@ export function WorkSessionContent({
     [chatAvailable],
   );
   const preferenceKey = `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
-  const [surface, setSurface] = useState<ContentSurface>(() =>
-    resolveInitialSurface({ requestedSurface, chatAvailable, preferenceKey }),
-  );
+  const initialSurface = useRef<ContentSurface | null>(null);
+  if (initialSurface.current === null) {
+    initialSurface.current = resolveInitialSurface({ requestedSurface, chatAvailable, preferenceKey });
+  }
+  const [surface, setSurface] = useState<ContentSurface>(initialSurface.current);
+  const [terminalMounted, setTerminalMounted] = useState(initialSurface.current === 'terminal');
   const [chatMounted, setChatMounted] = useState(() =>
-    resolveInitialSurface({ requestedSurface, chatAvailable, preferenceKey }) === 'chat',
+    initialSurface.current === 'chat',
   );
   const previousRequest = useRef(requestedSurface);
   const tabRefs = useRef<Partial<Record<ContentSurface, HTMLButtonElement | null>>>({});
@@ -111,11 +114,13 @@ export function WorkSessionContent({
     if (previousRequest.current === requestedSurface) return;
     previousRequest.current = requestedSurface;
     if (requestedSurface === 'chat' && !chatAvailable) {
+      setTerminalMounted(true);
       setSurface('terminal');
       return;
     }
     if (requestedSurface) {
       if (requestedSurface === 'chat') setChatMounted(true);
+      if (requestedSurface === 'terminal') setTerminalMounted(true);
       setSurface(requestedSurface);
     }
   }, [chatAvailable, requestedSurface]);
@@ -123,13 +128,17 @@ export function WorkSessionContent({
   // A fresh projection may revoke Chat while the panel stays mounted. Clamp
   // the rendering immediately; never leave an unavailable pane selected.
   useEffect(() => {
-    if (!chatAvailable && surface === 'chat') setSurface('terminal');
+    if (!chatAvailable && surface === 'chat') {
+      setTerminalMounted(true);
+      setSurface('terminal');
+    }
   }, [chatAvailable, surface]);
 
   const select = useCallback(
     (next: ContentSurface, focus = false) => {
       if (next === 'chat' && !chatAvailable) return;
       if (next === 'chat') setChatMounted(true);
+      if (next === 'terminal') setTerminalMounted(true);
       setSurface(next);
       writePreference(preferenceKey, next);
       onSurfaceChange?.(next);
@@ -229,7 +238,7 @@ export function WorkSessionContent({
         data-active={surface === 'terminal' ? 'true' : 'false'}
         data-testid="work-session-terminal-surface"
       >
-        {terminal}
+        {terminalMounted ? terminal : null}
       </div>
       {chatAvailable ? (
         <div

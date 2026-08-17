@@ -37,6 +37,8 @@ import type {
   EntityKind,
   EntityStaleness,
   EntityState,
+  GraphEdgeSpec,
+  GraphNode,
   EntitySummary,
   LiveWork,
   PullState,
@@ -119,6 +121,9 @@ export const ENTITY_COLUMNS = `
   lp.prompt as loop_prompt, lp.config as loop_config,
   lp.next_run_at as loop_next_run_at, lp.last_run_at as loop_last_run_at,
   lp.last_error as loop_last_error,
+  gr.title as graph_title, gr.graph_type as graph_type,
+  gr.nodes as graph_nodes, gr.edges as graph_edges,
+  gr.layout as graph_layout, gr.source as graph_source,
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
@@ -168,6 +173,7 @@ export const ENTITY_FROM = `
   left join public.memories memo         on memo.entity_id = e.id
   left join public.worktrees wt          on wt.entity_id = e.id
   left join public.loops lp              on lp.entity_id = e.id
+  left join public.graphs gr             on gr.entity_id = e.id
   left join public.pull_requests pr      on pr.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
   left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
@@ -278,6 +284,12 @@ export interface EntityRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
+  graph_title: string | null;
+  graph_type: string | null;
+  graph_nodes: unknown[] | null;
+  graph_edges: unknown[] | null;
+  graph_layout: Record<string, { x: number; y: number }> | null;
+  graph_source: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -1097,6 +1109,9 @@ export function titleOf(row: EntityRow): string {
       // twin. `entities` has no title column, so an unnamed loop must fall back
       // to something a human can read rather than to an id (L3).
       return row.loop_title ?? 'Loop';
+    case 'graph':
+      // Its own detail-row title — MIRRORS the projector twin (same reason).
+      return row.graph_title ?? 'Graph';
     case 'worktree':
       // The branch IS the human name of a worktree; paths are server-computed
       // noise and ids are forbidden as titles (L3).
@@ -1143,6 +1158,10 @@ function excerptOf(row: EntityRow): string | undefined {
       // The schedule is the one fact that makes a loop legible in a list: what
       // it does is the prompt, but WHEN is what distinguishes two of them.
       return excerpt(row.loop_schedule);
+    case 'graph':
+      // The type is what makes a graph legible in a list — an orchestratable
+      // blueprint and a mermaid sketch answer to different intents.
+      return excerpt(row.graph_type);
     default:
       return undefined;
   }
@@ -1367,6 +1386,15 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         nextRunAt: isoOrNull(row.loop_next_run_at),
         lastRunAt: isoOrNull(row.loop_last_run_at),
         lastError: row.loop_last_error,
+      };
+    case 'graph':
+      // Which type and how big — the vertices/edges are content, not state
+      // (they can be large and a list row never needs them).
+      return {
+        kind: 'graph',
+        graphType: row.graph_type ?? 'entity',
+        nodeCount: Array.isArray(row.graph_nodes) ? row.graph_nodes.length : 0,
+        edgeCount: Array.isArray(row.graph_edges) ? row.graph_edges.length : 0,
       };
     case 'worktree':
       // SEMANTIC lifecycle only. Operational disk health lives in
@@ -1595,7 +1623,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // Work-session "edit" is likewise exactly one thing: the display title, via
   // rename_work_session (085). Everything else on that row belongs to the
   // execution block, which is why it is still not deletable or hierarchical.
-  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session']);
+  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph']);
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
@@ -1612,6 +1640,63 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
     // Not gated on acceptance criteria — see the note above.
     canComplete: live && row.kind === 'task' && row.work_status !== 'done',
   };
+}
+
+/**
+ * The WHOLE capability rule: the base above, plus the per-kind narrowings.
+ *
+ * `capabilitiesOf` alone is NOT the answer any surface should render. It is
+ * the kind-and-liveness base, and several kinds refuse more than it knows —
+ * most importantly `canDelete`, which it grants to everything except `member`
+ * while `message`, `work_session`, `project` and `interaction_profile` all
+ * genuinely refuse deletion. A caller that renders the base draws an Archive
+ * control on four kinds that will bounce it.
+ *
+ * This lived privately in the w2 service, which is what serves `entities.get`,
+ * so the live detail read applied these narrowings and the OTHER detail
+ * assembler (`buildDetail`, behind command results) did not — the same entity
+ * answered differently depending on which door you came through. Hoisted here,
+ * beside the base it wraps, so summary, detail and command result cannot
+ * disagree.
+ *
+ * Takes the ROW, not the assembled summary: it only ever consulted `kind` and
+ * `deletedAt`, both of which are the row's own `kind` and `deleted_at`. Reading
+ * the row directly is what lets `toEntitySummary` call it while the summary it
+ * would otherwise need is still being built.
+ */
+export function entityCapabilities(row: EntityRow): EntityCapabilities {
+  const base = capabilitiesOf(row);
+  const live = row.deleted_at === null;
+  if (row.kind === 'project' || row.kind === 'interaction_profile') {
+    return {
+      canEdit: false,
+      canDelete: false,
+      canAddChild: false,
+      canLink: live,
+      canPull: false,
+      canReact: live,
+      canGrantPoints: false,
+      canComplete: false,
+    };
+  }
+  if (row.kind === 'message') {
+    return { ...base, canEdit: false, canDelete: false, canAddChild: false };
+  }
+  // A session is still not deletable and has no children — it is born from a
+  // spawn and it exits. But its canEdit is now left as `capabilitiesOf`
+  // computed it, which since 085 is true for a live session and means exactly
+  // one thing: the display title. Forcing it false here would leave the panel
+  // dressing the title as locked while the patch door accepts the rename.
+  if (row.kind === 'work_session') {
+    return { ...base, canDelete: false, canAddChild: false };
+  }
+  if (row.kind === 'pull_request' || row.kind === 'commit' || row.kind === 'file') {
+    return { ...base, canEdit: live };
+  }
+  if (row.kind.startsWith('c:')) {
+    return { ...base, canEdit: live, canAddChild: live, canPull: live };
+  }
+  return base;
 }
 
 export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySummary {
@@ -1646,6 +1731,21 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
     },
     state: stateOf(row, ctx),
     badges: badgesOf(row, ctx),
+    // The SAME rule the detail read applies, from the SAME helper — not a fork
+    // of it, and deliberately the FULL rule rather than the `capabilitiesOf`
+    // base (a base-only projection would promise `canDelete` on the four kinds
+    // that refuse deletion, and a tile that hides Archive on server truth would
+    // then show it exactly where it bounces).
+    //
+    // A tile gates its row actions on this. Before it rode the summary, a list
+    // row had to wait for a detail read to learn its own permissions — and a
+    // COLLAPSED row never gets one, so every capability-gated verb was refused
+    // there permanently.
+    //
+    // Free, and safe: the rule reads only the row already in hand (kind,
+    // liveness, work_status), so it adds no query, cannot become an N+1, and
+    // cannot widen a viewer's view — the row already cleared RLS to get here.
+    capabilities: entityCapabilities(row),
   };
   const ex = excerptOf(row);
   return ex === undefined ? summary : { ...summary, excerpt: ex };
@@ -1758,6 +1858,18 @@ export function contentOf(row: EntityRow): EntityContent {
         nextRunAt: isoOrNull(row.loop_next_run_at),
         lastRunAt: isoOrNull(row.loop_last_run_at),
         lastError: row.loop_last_error,
+      };
+    case 'graph':
+      // The whole row IS the graph (R1): one read hands a renderer or an
+      // orchestrating agent everything. Lean fallbacks keep a hypothetical
+      // stray envelope readable rather than failing the strict schema.
+      return {
+        kind: 'graph',
+        graphType: row.graph_type ?? 'entity',
+        nodes: (Array.isArray(row.graph_nodes) ? row.graph_nodes : []) as GraphNode[],
+        edges: (Array.isArray(row.graph_edges) ? row.graph_edges : []) as GraphEdgeSpec[],
+        layout: row.graph_layout ?? {},
+        source: row.graph_source,
       };
     case 'worktree':
       return {

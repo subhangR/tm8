@@ -54,7 +54,7 @@ import {
   resolveServerDataDir,
   type ServerConfig,
 } from './http/config.js';
-import { createArtifactPreviewServer } from './http/artifact-preview.js';
+import { createArtifactPreviewHandler, createArtifactPreviewServer } from './http/artifact-preview.js';
 import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
 import type { IdentityResolver, RequestIdentity } from './http/types.js';
 import { autoOwnerResolver } from './http/security.js';
@@ -154,9 +154,11 @@ export interface BootstrappedServer {
    */
   readonly delivery: { close(): Promise<void> } | undefined;
   /**
-   * The artifact-preview listener (design §9, second origin), when the node
-   * is configured with one AND has a database to resolve capabilities
-   * against. Narrowed to `url` + `close` for the same reason `delivery` is.
+   * The SECOND-ORIGIN artifact-preview listener (design §9), only when the
+   * node is explicitly configured with one (TM8_PREVIEW_HOST/PORT) AND has a
+   * database to resolve capabilities against. In the same-origin default the
+   * renderer is a `/p/` route on the app socket and this stays undefined.
+   * Narrowed to `url` + `close` for the same reason `delivery` is.
    */
   readonly preview: { readonly url: string; close(): Promise<void> } | undefined;
 }
@@ -580,7 +582,24 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // when background jobs are enabled below.
   let scheduler: Scheduler | undefined;
 
+  /**
+   * The DEFAULT preview deployment (amended 2026-08-16): the renderer mounted
+   * as the `/p/` route on the app socket. Same handler, same header set as
+   * the second-origin listener below — one code path by design. Only when a
+   * database exists to resolve capabilities against: a preview route that can
+   * authenticate nothing should not be mounted.
+   *
+   * Harness caveat: `config.preview.origin` is precomputed from the
+   * CONFIGURED port, so an in-process harness that substitutes `port: 0`
+   * after validation should substitute its preview config too if it needs
+   * `previewUrl` to carry the real ephemeral port.
+   */
+  const artifactPreviewRoute = config.preview?.sameOrigin && db && blobStore && owner
+    ? createArtifactPreviewHandler({ preview: config.preview, db, blobStore, owner })
+    : undefined;
+
   const server = createFacadeServer({
+    ...(artifactPreviewRoute ? { artifactPreviewRoute } : {}),
     config,
     registry,
     upgrades,
@@ -616,13 +635,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   /**
    * The SECOND listener (design §9.2/§9.3): untrusted bundle content, on its
    * own origin, sharing no middleware with the app pipeline above. Started
-   * only when the config carries a preview origin — loadConfig has already
-   * refused to produce one that collides with the app origin — and only when
-   * a database exists to resolve capabilities against: a preview listener
-   * that can authenticate nothing should not be listening.
+   * only in explicit second-origin mode (TM8_PREVIEW_HOST/TM8_PREVIEW_PORT
+   * set — the same-origin default mounted the `/p/` route above instead) —
+   * loadConfig has already refused a second origin that collides with the
+   * app origin — and only when a database exists to resolve capabilities
+   * against: a preview listener that can authenticate nothing should not be
+   * listening.
    */
   let preview: BootstrappedServer['preview'];
-  if (config.preview && db && blobStore && owner) {
+  if (config.preview && !config.preview.sameOrigin && db && blobStore && owner) {
     const previewServer = createArtifactPreviewServer({
       preview: {
         ...config.preview,
@@ -868,7 +889,13 @@ export async function main(): Promise<void> {
     const { registry, router } = server;
     console.log(`tm8-server listening on ${url}`);
     console.log(
-      `  artifact preview: ${preview ? `${preview.url} (second origin, design §9)` : 'NOT RUNNING (needs a database and TM8_PREVIEW_ENABLED not 0)'}`,
+      `  artifact preview: ${
+        preview
+          ? `${preview.url} (second origin, design §9)`
+          : server.config.preview?.sameOrigin && db
+            ? `${url}/p/... (same-origin route on the app socket)`
+            : 'NOT RUNNING (needs a database and TM8_PREVIEW_ENABLED not 0)'
+      }`,
     );
     console.log(
       `  catalog: ${router.mounted().length} HTTP operations mounted · ` +

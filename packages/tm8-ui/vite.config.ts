@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { pwaShell } from './vite-plugin-pwa-shell';
 
 /**
  * tm8-ui — the new UI, built from the approved design suite (charter R1).
@@ -14,7 +15,35 @@ import react from '@vitejs/plugin-react';
 const target = process.env.TM8_SERVER_ORIGIN ?? 'http://127.0.0.1:4610';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    /**
+     * The precache list. `critical` (the HTML, entry chunk and stylesheet) is
+     * derived from the bundle; these are the copied-from-`public/` files worth
+     * having offline on top of it.
+     *
+     * The two font faces are Hanken Grotesk 400 and 600 latin — `--pn-ui` at
+     * body weight and at the weight every heading, title and tab label uses.
+     * They are 69 kB together and they are the difference between the installed
+     * app looking like itself on a cold offline launch and falling back to
+     * system-ui. The other 19 faces (latin-ext, the serif display face, the
+     * mono) are runtime-cached: they are wanted less often and `font-display:
+     * swap` means their absence costs a repaint, not a broken screen.
+     */
+    pwaShell({
+      optional: [
+        '/manifest.webmanifest',
+        '/icons/icon-192.png',
+        '/icons/icon-512.png',
+        '/icons/icon-maskable-512.png',
+        '/icons/apple-touch-icon-180.png',
+        '/favicon.ico',
+        '/tm8-mark.png',
+        '/fonts/HankenGrotesk-400-latin.woff2',
+        '/fonts/HankenGrotesk-600-latin.woff2',
+      ],
+    }),
+  ],
   server: {
     port: 4612,
     strictPort: true,

@@ -304,9 +304,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
-    expect(SURFACE).toHaveLength(163);
-    expect(rows).toHaveLength(163);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(163);
+    expect(SURFACE).toHaveLength(166);
+    expect(rows).toHaveLength(166);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(166);
   });
 
   /**
@@ -567,18 +567,58 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // top of the 121-vs-116 merge union this comment block already records.
     // Same rule again: both sides carried a pin, neither was the answer, the
     // MERGED tree was asked. `ls db/migrations/*.sql | wc -l` = 123.
-    // 123 -> 124 (2026-08-16): 133_chat_turn_attachments joins the chain --
-    // `claim_next_chat_turn` now projects the turn message's `attachments`, so
-    // a file the human attached reaches the teammate instead of stopping at
-    // the chip. MEASURED on this tree, never arithmetic:
-    // `ls db/migrations/*.sql | wc -l` = 124.
-    // 124 -> 126 (2026-08-16): 134 makes attachment manifests canonical on
-    // session-message route rows; 135 removes the wake-budget table, counter,
-    // reset/cleanup functions and copied delivery pin after re-deriving the
-    // surviving row-level concurrency contract. This is a fresh measurement of
-    // THIS tree, not previous-plus-two: `ls db/migrations/*.sql | wc -l` = 126.
-    // Whole-chain digest measured by the command above: cbd409964ce31245.
-    expect(server.appliedMigrations.length).toBe(126);
+    // 123 -> 124 (2026-08-16): 133_chat_turns_select — the claimed-turn wire
+    // marker's select policy. MEASURED: `ls db/migrations/*.sql | wc -l` = 124.
+    // 124 -> 125 (2026-08-16, unified Home merge): 134_menu_home_tab —
+    // revision 17's server twin (task 01a00932). The lane took 134 BECAUSE it
+    // measured 133 as claimed on an unmerged branch; this merge is that
+    // branch landing, so the reservation was exactly right and the histories
+    // add. Both sides carried a pin — 124 here, 124 there — and NEITHER was
+    // the answer: a count pin is DERIVED, only the merged tree can be asked.
+    // MEASURED, never arithmetic: `ls db/migrations/*.sql | wc -l` = 125.
+    // 125 -> 128 (2026-08-16, Craft P1): THREE files in one lane — 135 mints
+    // the `graph` kind (registry + detail table + doors), 136 widens
+    // chat_mode to `craft`, 137 adds the Craft tab (menu revision 18). Three
+    // and not one because each is separately revertible: a disliked tab comes
+    // out without unminting the kind. Numbers taken ABOVE 134 after measuring
+    // ALL remote refs (their max was 134). MEASURED on this tree, never
+    // arithmetic: `ls db/migrations/*.sql | wc -l` = 128.
+    // 128 -> 129 (2026-08-16, same lane): 138 repairs 132's missing PUBLIC
+    // revoke on the task-workflow definer functions — found because the
+    // tm8_delivery_worker surface enumeration was red on every PR.
+    // MEASURED: `ls db/migrations/*.sql | wc -l` = 129.
+    // 129 -> 130 (2026-08-16): 139 restores
+    // `session_message_deliveries.pair_budget_version` on nodes that applied an
+    // orphan `083_remove_session_wake_budgets.sql` that never reached main.
+    // Nothing in THIS chain drops that column, so on a tree built from these
+    // files 139 is a no-op — it exists because plpgsql is late-bound, so 120's
+    // reserve body CREATES fine against a drifted table and only raises 42703
+    // when called, which reads as "PTY injection is dead" with a green deploy.
+    // Numbered 139 after measuring every remote ref (max was 138).
+    // 130 -> 131 (2026-08-16): 140 returns the WORK tab — the three-panel
+    // workspace as its own railless group, menu revision 18 -> 19. Payload
+    // half only: `workspace` has been a registered, implemented view ref
+    // since 029, so re-adding a retired tab widens no constraint and inserts
+    // no registry row. Numbered 140 after measuring every ref, remote and
+    // local (max was 139).
+    // MEASURED, never arithmetic: `ls db/migrations/*.sql | wc -l` = 131.
+    // 131 -> 132 (2026-08-17, multi-mode boot fix): 142_resolve_node_owner —
+    // a claim-free SECURITY DEFINER read of the single is_owner account by
+    // FLAG, so a claimed node (whose owner username claim_node renamed off
+    // `owner`) resolves its loopback owner instead of missing the read and
+    // crashing into F1 at boot. MEASURED on THIS branch, never arithmetic:
+    // `ls db/migrations/*.sql | wc -l` = 132. WARNING: PR #319 also adds a
+    // migration (141); each PR alone measures 132, but MERGED together the
+    // count becomes 133 — whoever lands second must RE-MEASURE this pin on the
+    // merged tree, not increment.
+    // RE-MEASURE ON THE MERGED TREE, not on this branch: this number is the
+    // one thing here that another lane can invalidate without touching this
+    // file, and delta arithmetic across a merge is how it goes wrong.
+    // 141: +1 migration file (141_account_lifecycle_ops.sql) -> 132.
+    // 143: +1 migration file (143_signup_requires_claimed_node.sql, the §7.1
+    // unclaimed-node guard) -> 133 on THIS branch. RE-MEASURE on merge: #318
+    // adds 142, so the six-way merged tree is 134, not 133.
+    expect(server.appliedMigrations.length).toBe(133);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

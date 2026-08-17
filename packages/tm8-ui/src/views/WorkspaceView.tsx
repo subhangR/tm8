@@ -49,6 +49,7 @@ import { openEntityAndResolve } from './open-entity';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
+import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { taskGitSectionFor } from './taskGitSection';
@@ -168,11 +169,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const controlHostBase = useMemo(
     () => ({
       livenessOf: data.livenessOf,
-      capabilitiesOf: (id: string) => data.detailOf(id)?.capabilities,
-      /* The read `capabilitiesOf` above is projecting. `pull` is the same
-         idempotent fill `renderPanel` uses; before this it was the ONLY caller,
-         so a row expanded in a LIST never learned its permissions and its
-         whole control strip — Archive included — stayed inert. */
+      capabilitiesOf: (id: string) => data.capabilitiesOf(id),
+      /* The read `capabilitiesOf` above is projecting, and it reads the
+         SUMMARY first now, so a control strip is no longer waiting on `pull`
+         to learn whether its verbs are permitted. `pull` remains the
+         idempotent fill for the REST of the detail, and the fallback for a
+         node whose summaries predate the capability projection. */
       onNeedDetail: (id: string) => data.pull?.(id),
       onSetState: rowLifecycle.setState,
       onArchive: rowLifecycle.archive,
@@ -219,7 +221,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   /* Memoized on `data` so the port identity is stable — the feed hook's effects
      key on it, and a fresh object each render would re-read on every keystroke
      anywhere in the workspace. */
-  const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
+  const channelFeedPort = useMemo(
+    () => channelFeedPortFromGateData(data),
+    [data.seam, data.spaceId, data.liveIds, data.postMessage, data.spawn, data.launch.projects],
+  );
 
   /* The panel action bar's executor AND the session tile's ✕, from one hook —
      see `usePanelPrimaries` for why the wiring is not written inline here. */
@@ -453,6 +458,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               : `${admission.cause} — ${admission.remedy}`
           }
           liveness={data.livenessOf(id)}
+          attentionSection={attentionSectionFor(data.seam, data.spaceId, id, () => data.pull?.(id))}
           debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
           gitSurface={gitSurfaceFor(data.seam, id, data.livenessOf)}
           taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}
@@ -540,7 +546,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const rosterRows = useMemo(() => {
     if (!TERMINAL_ROSTER_KIND) return [];
     return data.rowsFor(TERMINAL_ROSTER_KIND)(undefined).map((summary) => toSessionRow(summary));
-  }, [data]);
+  }, [data.rowsFor]);
 
   /** Session task rows come from durable `working_on` edges already projected
       by the gate graph. The map updates with edge events and is shared by both
@@ -597,6 +603,20 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     spaceId: data.spaceId,
     kind: rightConfig.kind,
     placeholderTitle: placeholderNameFor(rightConfig, placeholderTitleFor(rightConfig.label)),
+    commands: data.seam.commands,
+    onCreated: (id) => nav.push?.(id as EntityId),
+  });
+
+  /* The empty CENTRE's first-run action always creates a TASK, whichever kinds
+     the docks happen to show — a session launches on one, so it is the move
+     that unblocks a workspace with nothing in it. The assignable kind comes
+     from the registry (a badge that carries assignees), never a literal. */
+  const taskConfig = allKinds().find((k) => k.list.tile.badges.some((b) => b.source === 'assignees'))
+    ?? leftConfig;
+  const centreCreateFlow = useNewTask({
+    spaceId: data.spaceId,
+    kind: taskConfig.kind,
+    placeholderTitle: placeholderNameFor(taskConfig, placeholderTitleFor(taskConfig.label)),
     commands: data.seam.commands,
     onCreated: (id) => nav.push?.(id as EntityId),
   });
@@ -675,17 +695,24 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           membershipSets={rowLifecycle.membershipSets}
           connectionsOf={data.connectionsOf}
           onKindChange={props.onLeftKindChange}
-          // Capability truth comes from the DETAIL, not the summary
-          // (EntityCapabilities lives on EntityDetail). A row whose detail is
-          // not hydrated genuinely has unknown capabilities and correctly
-          // stays refused — passing a literal all-true object here would make
-          // the panel claim a permission the shell was never told it has,
-          // which is the optimistic-enable the rule exists to prevent.
+          // Capability truth now rides the SUMMARY, so a row knows what it
+          // permits the moment it renders. `data.capabilitiesOf` is the one
+          // authority (summary first, detail as fallback) — never inline a
+          // `detailOf(id)?.capabilities` here again.
           //
-          // "Not hydrated" must therefore be a state a row can LEAVE, and for
-          // a list row nothing used to leave it: the expanded strip's Archive
-          // sat in `CheckingPermission` forever. `onNeedDetail` is what asks.
-          capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          // What that replaced, because the rule it upheld still stands: this
+          // read used to be detail-only, and an unhydrated row genuinely had
+          // unknown capabilities and correctly stayed refused. That was right
+          // — an all-true literal would claim permission the shell was never
+          // granted. It was also inescapable on a COLLAPSED tile, which
+          // nothing ever hydrates, so Run/Archive/Collections were drawn and
+          // permanently dead there. Absence is still refusal; there is simply
+          // no longer a row that has to live in it.
+          //
+          // `onNeedDetail` stays: it fills the rest of the detail an expanded
+          // strip reads, and it is the fallback path for a node too old to
+          // send the summary field.
+          capabilitiesOf={data.capabilitiesOf}
           onNeedDetail={(id) => data.pull?.(id)}
           // The quick-config's escape to the full sheet. A1c's
           // LaunchTeammateOption is deliberately NOT my LaunchTeammate:
@@ -748,6 +775,17 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               rows={rosterRows}
               livenessOf={data.livenessOf}
               onFocusSession={openEntity}
+              newTask={{
+                unavailable: centreCreateFlow.unavailable,
+                create: centreCreateFlow.create,
+              }}
+              /* GATED ON THE SEAM'S OWN SIGNAL, never the raw handle. `onAction`
+                 is present exactly when a terminal can be started (`canStart`),
+                 which is exactly when `startTerminal` will NOT throw — so the
+                 button renders only when it works. Passing `startTerminal`
+                 unconditionally draws a live control that throws on click in the
+                 same empty render where `＋ New task` honestly refuses. */
+              onStartTerminal={sessionStart.onAction ? sessionStart.startTerminal : undefined}
             />
           ) : (
             <PanelStack nav={visibleNav} renderPanel={renderPanel} isKeyboardOwnedAbove={props.isModalOpen} />
@@ -805,7 +843,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           membershipSets={rowLifecycle.membershipSets}
           connectionsOf={data.connectionsOf}
           onKindChange={props.onRightKindChange}
-          capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          capabilitiesOf={data.capabilitiesOf}
           onNeedDetail={(id) => data.pull?.(id)}
           launch={launchPort}
           /* The header verbs (101). `wiredActions` is what makes the pair

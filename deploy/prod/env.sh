@@ -60,12 +60,20 @@ export TM8_LOG_LEVEL=info
 # re-hides the silent-replay path; the real fix is unique ids upstream.
 export TM8_IDEMPOTENCY_ENABLED=0
 
-# Artifact-preview listener OFF. TM8_PREVIEW_PORT is a FIXED 4613 that another
-# instance holds, so the listener dies with EADDRINUSE anyway; worse, setting
-# config.preview makes http/security.ts DELETE `localhost` from this node's own
-# host allowlist, and every browser reaching the UI as localhost:7777 is then
-# refused with `Host "localhost:7777" is not this node`.
-export TM8_PREVIEW_ENABLED=0
+# Artifact preview ON (default). Since 2026-08-16 the preview is a /p/ route
+# on the app socket — no second listener, so no fixed-4613 EADDRINUSE, and no
+# host-allowlist deletion, so the UI stays reachable at localhost. Both
+# reasons this was once TM8_PREVIEW_ENABLED=0 are gone with the second
+# listener; set TM8_PREVIEW_HOST/PORT only to opt back into a second origin.
+#
+# WHO IS ALLOWED TO FRAME A PREVIEW. The preview emits `frame-ancestors`, and
+# the node can only infer two origins by itself: its own bind origin, and
+# TM8_PUBLIC_ORIGIN when set. Here the UI is served from :7777 while the API
+# binds :7778 — a different origin — so without this the browser refuses to
+# paint the frame and the artifact panel shows an empty box with no error.
+# This is a FRAMING permission only: the sandbox is untouched and the frame
+# stays opaque-origin, so widening it grants the embedding page nothing.
+export TM8_PREVIEW_FRAME_ANCESTORS="http://127.0.0.1:${TM8_UI_PORT} http://localhost:${TM8_UI_PORT}"
 
 # Serve the same bundle 7777 serves, so :7778 is a same-origin fallback.
 export TM8_UI_DIR="$TM8_PROD_ROOT/packages/tm8-ui/dist"

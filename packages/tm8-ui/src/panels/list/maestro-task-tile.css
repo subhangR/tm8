@@ -209,9 +209,23 @@
   opacity: 0;
   transition: opacity var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast), background var(--pn-dur-fast);
 }
+/* Always visible on a row that HAS children, for the reason `.pn-st__arrow`
+   records and `.lp__disclosure` now shares: since trees ship collapsed
+   (2026-08-17) this chevron is the only thing on screen saying there is more
+   under this task, and hover-to-discover is not discovery. It overlays the
+   status dot exactly as it already does whenever the row is expanded — that
+   trade was made when the chevron was given this slot, and this only makes it
+   symmetric between the two states. */
+.cv2-root .pn-tt__arrow:not(.pn-tt__arrow--empty) { opacity: 0.55; }
 .cv2-root .pn-tt:hover .pn-tt__arrow:not(.pn-tt__arrow--empty),
 .cv2-root .pn-tt:focus-within .pn-tt__arrow:not(.pn-tt__arrow--empty),
 .cv2-root .pn-tt__arrow--expanded { opacity: 1; }
+/* The subtree arrow was a ONE-WAY DOOR on touch, exactly like `.lp__disclosure`:
+   hidden until hover, and otherwise revealed only by `--expanded`, so a finger
+   could close a subtree and never reopen it. */
+@media (pointer: coarse) {
+  .cv2-root .pn-tt__arrow:not(.pn-tt__arrow--empty) { opacity: 1; }
+}
 .cv2-root .pn-tt__arrow:hover { color: var(--pn-ink-2); background: var(--pn-active); }
 .cv2-root .pn-tt__arrow svg {
   width: 13px;
@@ -356,34 +370,17 @@
 .cv2-root .pn-tt--active .pn-tt__actions,
 .cv2-root .pn-tt[data-details='open'] .pn-tt__actions { background: var(--pn-active); }
 .cv2-root .pn-tt--active:hover .pn-tt__actions { background: var(--pn-hover); }
-.cv2-root .pn-tt__actions > *:not(:first-child):not(.pn-tt__ind) { display: none; }
-.cv2-root .pn-tt__actions .lp__rowaction,
-.cv2-root .pn-tt__actions .hon-checking,
-.cv2-root .pn-tt__actions .hon-disabled {
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
-  background: transparent;
-  color: var(--pn-ink-2);
-  transition: background 140ms, border-color 140ms, color 140ms;
-}
-/* Run is the row's one primary verb — it inverts on hover so it reads as the
-   thing you came for, not as another muted glyph. */
-.cv2-root .pn-tt__actions .lp__rowaction:hover {
-  color: var(--pn-paper);
-  background: var(--pn-ink);
-  border-color: var(--pn-ink);
-}
-.cv2-root .pn-tt__actions .lp__rowaction--on {
-  color: var(--pn-paper);
-  background: var(--pn-brand);
-  border-color: var(--pn-brand);
-}
+/* REMOVED 2026-08-17 — this hid every cluster member after the first:
+     .pn-tt__actions > *:not(:first-child):not(.pn-tt__ind) { display: none }
+   It dated from when the control-card's only verb was Run, and it silently ate
+   whatever was added next. `complete` has been in this tile's DOM and invisible
+   ever since it was declared, and the collections icon joined it there. The
+   cluster is now a fixed, deliberate set (Collections · Run · Archive), so
+   there is nothing to suppress — and a rule that hides "everything I did not
+   anticipate" cannot tell a mistake from a feature. */
+/* The button vocabulary moved to `.lp__cluster` in panels.css — it was copied
+   here and into `.pn-st__actions`, and the copies had already drifted (the
+   session tile's had no border and a different hover). One cluster, one look. */
 .cv2-root .pn-tt__ind {
   width: 22px;
   height: 22px;

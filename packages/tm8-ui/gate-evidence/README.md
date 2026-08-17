@@ -48,3 +48,23 @@ Differ-hash: distinct (asserted from comparison, not from having clicked a toggl
 | File | Taken | Shows |
 |---|---|---|
 | `T0-1-gate-dark-PREFIX-defect-evidence.jpg` | 2026-07-28 ~13:10 | The screen while every unit-test lane reported green over two real defects: session rows reading "not running" under a "1 live" bar (self-contradicting screen) and the rail footer destroyed by its own honesty string. This is the only artifact in the program that *shows* D10's argument — that jsdom-green is not layout acceptance — rather than asserting it. |
+
+## TREE COLLAPSED BY DEFAULT (2026-08-17 ruling)
+
+Captured from `/e2e/tree-collapse-harness.html` — the real `EntityListPanel`
+with the shipping stylesheets, over a synthesised three-deep task chain (the
+fixture seam has no same-kind hierarchy: its sessions are parented to TASKS, so
+in any single-kind list every parent is off-page and the tree measures flat).
+
+| File | sha256 | Shows |
+|---|---|---|
+| `tree-collapsed-by-default.png` | `f4829e0d1829cdcbb4054fb938018ffff29d8f72f188fe0f08b0e852d6385ea7` | The shipped landing state: ONE root tile, its two children shut, and the chevron **visible at 0.55** saying so |
+| `tree-expanded-after-two-clicks.png` | `0009dd945b1d6c32d92af070b96231852e2fab41cd2d2f8d1115b2ab5626e347` | Root then Mid opened by hand — guide lines, 17px indent per level, rotated chevrons, `Leaf task` at depth 2 |
+
+**What the browser caught that jsdom could not.** The first capture of this pair
+showed a row with two hidden children and NO affordance anywhere on screen:
+`.pn-tt__arrow` and `.lp__disclosure` were `opacity: 0` until hover. The vitest
+suites were green throughout — the control is in the DOM with a real 16px box
+either way, and jsdom loads no stylesheets. That is D10's argument again, and
+the fix is the `opacity: 0.55` rule `.pn-st__arrow` had already adopted for
+exactly this reason one file over.

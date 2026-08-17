@@ -14,14 +14,26 @@ Unified entity-graph rebuild of Maestro. Phase 1 (v1: the node) — one from-con
 
 Then open **http://127.0.0.1:4611**. That is the whole thing: it ends with the
 server and the UI running in your terminal, having verified `/health` says
-`db:ok`. `--no-start` installs without starting; `--env prod --systemd` installs
-as a service instead. Idempotent — re-run it any time. `./install.sh --status`
+`db:ok`. `--no-start` installs without starting; `--env prod --service` installs
+it as an always-on service instead (systemd on Linux, launchd on macOS — it comes
+back after a reboot). Idempotent — re-run it any time. `./install.sh --status`
 reports what is installed, migrated and running. Full guide: [`docs/ops/INSTALL.md`](docs/ops/INSTALL.md).
+
+**To run agents, the host needs a logged-in agent CLI.** tm8 stores no agent
+credential — a spawned session runs the machine's own `claude` or `codex` login.
+Install passes a warning if neither is present; `tm8 doctor` reports presence AND
+login. Without one, a spawn sits at `running` forever with the refusal only in
+the terminal. Install: `npm i -g @anthropic-ai/claude-code` then `claude` to log
+in (or `npm i -g @openai/codex` then `codex login`).
+
+**Now what?** [`docs/GETTING-STARTED.md`](docs/GETTING-STARTED.md) — claim the
+node, make a Space, put an agent on a task and talk to it while it works. Every
+command in it was run against a fresh install.
 
 **Nothing in this repo starts Postgres.** `packages/server/src/sidecar/` looks
 like it does and is dead code (only `import type` reaches it), so `bun install &&
 bun run dev` on its own gives you a server that logs `graph: NOT CONFIGURED` and
-answers `501` to all 141 operations. Run the installer once first.
+answers `501` to every operation. Run the installer once first.
 
 ## Workspace layout
 
@@ -31,7 +43,8 @@ answers `501` to all 141 operations. Run the installer once first.
 | `packages/server` | Graph engine, HTTP/WS facade, event mapper, identity block, derived-truth assembly, sidecar lifecycle, scheduler; serves the built web UI | **node** |
 | `packages/execution` | PTY host (server-side spawn — the only spawn path), SpawnService, manifest composition | **node** |
 | `packages/cli` | Graph CLI + compat adapter + manifest reader (worker init) | node |
-| `packages/ui` | Transplanted collab-v2 module + terminal components — **web app** (no desktop shell; arrives at M2) | bun/vite |
+| `packages/tm8-ui` | **The product web app.** Entity-component UI + terminal components; served by vite in dev, as a built bundle in prod | bun/vite |
+| `packages/ui` | Legacy collab-v2 oracle — not served, not built, not started. Reference only (see Hard rules) | — |
 | `db/migrations` | ONE clean migration sequence (no legacy history) | — |
 | `tools/conformance` | Contract conformance suite — runs against any base URL (M1 gate artifact) | bun |
 

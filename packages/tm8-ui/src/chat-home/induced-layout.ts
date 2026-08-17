@@ -29,13 +29,15 @@ import type { InducedEdge, InducedGraph, InducedNode } from './induced-graph';
 
 export const CARD_W = NODE_W;
 export const CARD_H = NODE_H;
-/** Columns are CONSTANT — deriving them from the count would move every
- *  settled card the moment the count crossed the threshold. */
+/** Columns are CONSTANT PER HOST — deriving them from the COUNT would move
+ *  every settled card the moment the count crossed the threshold. A host may
+ *  pass its own `perRow` (fullscreen derives one from viewport width); within
+ *  a mount it must hold that value steady for the same stability reason. */
 export const PER_ROW = 4;
-const GAP_X = 56;
+export const GAP_X = 56;
 /** Rows leave room for the relation labels that travel between them. */
-const GAP_Y = 84;
-const PAD = 24;
+export const GAP_Y = 84;
+export const PAD = 24;
 
 export interface PlacedCard {
   node: InducedNode;
@@ -67,21 +69,25 @@ export interface InducedPlacement {
 }
 
 /** Centre of the card at first-seen index `i` — the whole stability story. */
-function centreAt(index: number): { x: number; y: number } {
-  const col = index % PER_ROW;
-  const row = Math.floor(index / PER_ROW);
+function centreAt(index: number, perRow: number): { x: number; y: number } {
+  const col = index % perRow;
+  const row = Math.floor(index / perRow);
   return {
     x: PAD + col * (CARD_W + GAP_X) + CARD_W / 2,
     y: PAD + row * (CARD_H + GAP_Y) + CARD_H / 2,
   };
 }
 
-export function layoutInducedGraph(graph: InducedGraph): InducedPlacement {
+export function layoutInducedGraph(
+  graph: InducedGraph,
+  opts?: { perRow?: number },
+): InducedPlacement {
+  const perRow = Math.max(1, opts?.perRow ?? PER_ROW);
   const indexOf = new Map<string, number>();
   graph.nodes.forEach((node, index) => indexOf.set(node.id, index));
 
   const cards: PlacedCard[] = graph.nodes.map((node, index) => {
-    const centre = centreAt(index);
+    const centre = centreAt(index, perRow);
     return { node, x: centre.x - CARD_W / 2, y: centre.y - CARD_H / 2 };
   });
 
@@ -90,8 +96,8 @@ export function layoutInducedGraph(graph: InducedGraph): InducedPlacement {
     const ai = indexOf.get(edge.a);
     const bi = indexOf.get(edge.b);
     if (ai === undefined || bi === undefined) continue;
-    const from = centreAt(ai);
-    const to = centreAt(bi);
+    const from = centreAt(ai, perRow);
+    const to = centreAt(bi, perRow);
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const len = Math.hypot(dx, dy) || 1;
@@ -119,8 +125,8 @@ export function layoutInducedGraph(graph: InducedGraph): InducedPlacement {
   }
 
   const n = graph.nodes.length;
-  const cols = Math.min(Math.max(n, 1), PER_ROW);
-  const rows = Math.max(Math.ceil(n / PER_ROW), 1);
+  const cols = Math.min(Math.max(n, 1), perRow);
+  const rows = Math.max(Math.ceil(n / perRow), 1);
   return {
     cards,
     lines,

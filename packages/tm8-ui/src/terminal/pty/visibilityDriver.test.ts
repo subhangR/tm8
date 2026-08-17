@@ -75,6 +75,20 @@ describe('terminalVisibilityDriver', () => {
     expect(calls).toEqual([]);
   });
 
+  it('treats a terminal hidden by an ancestor surface as hidden', () => {
+    const parent = document.createElement('div');
+    const el = document.createElement('div');
+    parent.appendChild(el);
+    document.body.appendChild(parent);
+    parent.style.display = 'none';
+    terminals = [{ id: 'a', element: el }];
+    startTerminalVisibilityDriver(deps);
+    reconcileTerminalVisibility();
+    vi.advanceTimersByTime(GRACE_MS + 500);
+    reconcileTerminalVisibility();
+    expect(calls).toEqual(['flush:a', 'suspend:a']);
+  });
+
   it('resumes a suspended terminal the moment it becomes visible again', () => {
     const el = makeEl(false);
     terminals = [{ id: 'a', element: el }];

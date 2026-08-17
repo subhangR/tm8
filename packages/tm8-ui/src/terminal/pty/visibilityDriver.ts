@@ -7,10 +7,9 @@
  *
  * Ported from old maestro's terminalVisibilityDriver, including its WARM LRU.
  *
- * How it decides: it reads the SAME truth the write scheduler uses — the DOM
- * computed `visibility` of each mounted xterm element — never React state about
- * "which is active", so it transparently covers any view that reparents terminal
- * elements imperatively.
+ * How it decides: it reads the SAME truth the write scheduler uses — computed
+ * `display`/`visibility` on each mounted xterm element and its ancestors — never
+ * React state about "which is active", so it covers surfaces hidden by a parent.
  *
  * Grace + resume semantics:
  *  - RESUME is immediate when a terminal becomes visible (a shown terminal must
@@ -25,6 +24,7 @@
  * or duplicated bytes. The flush is synchronous and there is no await between it
  * and the suspend, so no arriving frame can advance the offset in between.
  */
+import { isElementPaintable } from './elementVisibility.js';
 
 export interface TerminalVisibilityDeps {
   /** All currently-mounted terminals: session id → its xterm root element. */
@@ -64,11 +64,6 @@ function touchWarm(id: string): void {
   if (warmLru.length > WARM_LRU_SIZE) warmLru.length = WARM_LRU_SIZE;
 }
 
-function isVisible(element: HTMLElement | undefined): boolean {
-  if (!element || !element.isConnected) return false;
-  return getComputedStyle(element).visibility !== 'hidden';
-}
-
 /**
  * One reconciliation pass over every mounted terminal. Cheap (a handful of
  * getComputedStyle reads); safe to call on a timer and on active-tab changes.
@@ -80,7 +75,7 @@ export function reconcileTerminalVisibility(): void {
 
   for (const { id, element } of deps.listTerminals()) {
     seen.add(id);
-    if (isVisible(element)) {
+    if (isElementPaintable(element)) {
       hiddenSince.delete(id);
       touchWarm(id);
       if (suspendedIds.has(id)) {

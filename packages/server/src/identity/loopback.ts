@@ -17,12 +17,21 @@
  * the moment that changes, this is replaced by the bearer path (S8), and those
  * are one change, not two.
  *
- * The two RPCs used here are the schema's only claim-free reads, and both are
- * claim-free for the same reason: a caller who has not authenticated yet has no
- * identity to bind.
- *   - `public.resolve_account_credential(login)` (F2) — reads the owner row.
- *   - `public.ensure_account(...)` (F1) — creates it, but ONLY while the node
- *     has zero accounts; from the second account on it demands a node admin.
+ * The two RPCs used here are claim-free, and both are claim-free for the same
+ * reason: a caller who has not authenticated yet has no identity to bind.
+ *   - `public.resolve_node_owner()` (142) — reads the single `is_owner` row by
+ *     flag, so it finds the owner whatever its username is. This matters because
+ *     `claim_node` (116) RENAMES the owner row's username from `owner` to the
+ *     claimant's chosen handle: a read keyed on the literal `owner` misses on
+ *     every CLAIMED node, falls through to `ensure_account`, and — since a
+ *     claimed node has accounts — trips F1's node-admin demand at boot, killing
+ *     the process before it listens. Reading by the flag is the fix, and it is
+ *     mode-independent: nothing here decides who a NETWORK caller is (that is
+ *     `disableAutoOwner`, which in multi mode narrows the loopback arm to
+ *     anonymous BEFORE this resolver is reached — see http/identity-resolver.ts).
+ *   - `public.ensure_account(...)` (F1) — creates the owner, but ONLY while the
+ *     node has zero accounts; from the second account on it demands a node
+ *     admin. Reached here exactly once per node, on the virgin first boot.
  */
 import { CollabError } from '@tm8/contract';
 import type { Db } from '../db/types.js';
@@ -84,15 +93,21 @@ function toOwner(row: AccountJson): LoopbackOwner {
  *   F1's 28000 is never tripped and `UNIQUE(is_owner) WHERE is_owner` is never
  *   raced. We handle the single-owner rule rather than relying on it to fire.
  *
+ * The read is keyed on the `is_owner` FLAG, not on the literal username `owner`,
+ * so a CLAIMED node — whose owner row `claim_node` renamed to the claimant's
+ * handle — resolves cleanly instead of missing the read and crashing into F1.
+ * A lookup by a boolean column is unambiguous here for one reason: 002:65's
+ * `UNIQUE(is_owner) WHERE is_owner` guarantees AT MOST ONE row has it set, so
+ * "the is_owner row" is a single row, never a set.
+ *
  * The `identity_id` is minted server-side and is permanent: rows across the
  * graph reference it by value, and 002 refuses to rewrite one.
  */
 export async function resolveLoopbackOwner(db: Db): Promise<LoopbackOwner> {
-  // Claim-free by design (F2). No identity is bound because we are in the
-  // middle of working out what the identity IS.
-  const existing = await db.rpc<AccountJson | null>({}, 'resolve_account_credential', [
-    LOOPBACK_OWNER_USERNAME,
-  ]);
+  // Claim-free by design. No identity is bound because we are in the middle of
+  // working out what the identity IS. Reads the single is_owner row by flag, so
+  // it finds the owner whatever its username has been claimed to.
+  const existing = await db.rpc<AccountJson | null>({}, 'resolve_node_owner', []);
   if (existing) return toOwner(existing);
 
   const created = await db.rpc<AccountJson | null>({}, 'ensure_account', [

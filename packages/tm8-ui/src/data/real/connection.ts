@@ -30,9 +30,10 @@
  * - **subscribe is ALWAYS followed by resume.** `subscribe` seeds live delivery
  *   at the server's high-water mark, but if that mark cannot be established the
  *   subscription is left deliberately UNSEEDED and the client CANNOT TELL which
- *   happened (LLD §6 fact 2). `resume` is the only seed this client owns, so it
- *   is unconditional — including the first-ever open, where `since: 0` is
- *   schema-legal and replays the retained log.
+ *   happened (LLD §6 fact 2). `resume` is the only seed this client owns. The
+ *   real seam calls `prepareSpace` first, scanning retained cursors without
+ *   dispatch, so a first open resumes at H rather than replaying history into
+ *   the UI. Direct/unprepared consumers retain the safe `since: 0` fallback.
  * - **one resume suffices.** The server pump is a per-connection log reader
  *   (1s tick, 200/batch) that walks forward from the seed under the caller's
  *   claims, so there is no gap between replay end and live. The accelerate loop
@@ -78,7 +79,7 @@ export interface ConnectionConfig {
    * cheaper than replaying through a long gap.
    */
   resyncGapMs: number;
-  /** Server clamps to 500; 200 matches the pump's batch size. */
+  /** Server clamps to 500. */
   pollLimit: number;
   /**
    * Inbound silence past which the half-open probe runs (see the idle
@@ -88,6 +89,22 @@ export interface ConnectionConfig {
   idleProbeAfterMs: number;
   /** How often the watchdog looks at the silence clock while the socket is open. */
   idleCheckIntervalMs: number;
+  /** Pages scanned before surfacing progress and retrying from a checkpoint. */
+  bootstrapPageBudget: number;
+  /**
+   * Floor between two LIFECYCLE-forced reconnects (foreground / `online`).
+   *
+   * The fast path deliberately discards the backoff ladder, because the
+   * failures that built it were measured against a network the device no
+   * longer has. That is safe exactly once per resume — and a phone can emit
+   * `visibilitychange` many times a second (notification shade, app switcher,
+   * a passing share sheet). Without a floor, a device flapping visibility
+   * against a node that is refusing connections would reset the ladder on
+   * every flap and become the hot loop the jitter rule exists to prevent.
+   * Inside the floor the ORDINARY backoff still runs, so a resume is never
+   * dropped, only de-duplicated.
+   */
+  resumeMinIntervalMs: number;
 }
 
 export const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
@@ -96,10 +113,57 @@ export const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
   pollIntervalMs: 1_500,
   accelerateIntervalMs: 400,
   resyncGapMs: 10 * 60 * 1_000,
-  pollLimit: 200,
+  // Use the contract's maximum page size. Bootstrap pages are discarded
+  // before they can touch state, so larger pages reduce first-open round trips
+  // without increasing React work.
+  pollLimit: 500,
   idleProbeAfterMs: 90_000,
   idleCheckIntervalMs: 45_000,
+  bootstrapPageBudget: 256,
+  resumeMinIntervalMs: 1_000,
 };
+
+/**
+ * Where "the app came back" comes from. Injectable for the same reason the
+ * timers are: the tests in this directory drive real transitions with no DOM
+ * and no waiting.
+ *
+ * Subscribes to `onResume` and returns an unsubscribe.
+ */
+export type LifecycleSource = (onResume: (reason: string) => void) => Unsubscribe;
+
+/**
+ * The browser's two "you are back" signals, and only those two.
+ *
+ * - `visibilitychange` → visible. NOT the hide edge: backgrounding is not news
+ *   this state machine can act on, and reacting to it would close a socket the
+ *   OS may well leave working.
+ * - `online`. `navigator.onLine` is famously optimistic about whether packets
+ *   actually flow, which is why this only PROMPTS an attempt — the socket's own
+ *   outcome still decides the phase, exactly as it does on every other path.
+ *
+ * Returns a no-op in a non-DOM host rather than throwing, so the manager stays
+ * usable from Node.
+ */
+export function browserLifecycle(): LifecycleSource {
+  return (onResume) => {
+    // `typeof` guards rather than truthiness: referencing an UNDECLARED global
+    // throws a ReferenceError, so these can never be read directly in Node.
+    const doc = typeof document === 'undefined' ? undefined : document;
+    const win = typeof window === 'undefined' ? undefined : window;
+    if (doc === undefined && win === undefined) return () => {};
+    const onVisible = (): void => {
+      if (doc?.visibilityState === 'visible') onResume('visible');
+    };
+    const onOnline = (): void => onResume('online');
+    doc?.addEventListener('visibilitychange', onVisible);
+    win?.addEventListener('online', onOnline);
+    return () => {
+      doc?.removeEventListener('visibilitychange', onVisible);
+      win?.removeEventListener('online', onOnline);
+    };
+  };
+}
 
 export interface ConnectionDeps {
   /** Absolute ws:// or wss:// URL. Never derived silently — see `seam-real.ts`. */
@@ -114,14 +178,27 @@ export interface ConnectionDeps {
   random?: () => number;
   config?: Partial<ConnectionConfig>;
   /**
+   * "The app came back to the foreground / the network returned." Defaults to
+   * the real browser events; pass `() => () => {}` to opt out entirely.
+   */
+  lifecycle?: LifecycleSource;
+  /**
    * Non-fatal transport noise: a malformed frame, a listener that threw, a poll
    * that failed. Reported rather than swallowed — a silent drop here looks
    * exactly like an idle server.
    */
   onError?: (error: unknown, context: string) => void;
+  /** Monotonic cursor observation, used by the debounced browser cache. */
+  onCursor?: (spaceId: SpaceId, cursor: number) => void;
 }
 
 export interface ConnectionManager {
+  /**
+   * Advance to the retained-log tail without dispatching payloads. This is the
+   * frontend-only snapshot barrier: historical rows pay network cost, but
+   * never enter Zustand or React.
+   */
+  prepareSpace(spaceId: SpaceId, since?: number): Promise<number>;
   openSpace(spaceId: SpaceId): void;
   closeSpace(spaceId: SpaceId): void;
   onEvent(cb: (e: DurableWorkspaceEvent) => void): Unsubscribe;
@@ -145,6 +222,8 @@ export interface ConnectionManager {
   refusalOf(spaceId: SpaceId): CollabError | undefined;
   /** High-water seq for a space. Exposed for assertions, not for mutation. */
   cursorOf(spaceId: SpaceId): number;
+  /** Forget a cursor after a verified node/data epoch change. */
+  clearCursor(spaceId: SpaceId): void;
   dispose(): void;
 }
 
@@ -153,14 +232,14 @@ export interface ConnectionManager {
  *
  * Explicit rather than a bare `Number()` because `Number('')`, `Number(null)`
  * and `Number([])` are all 0, and a cursor that quietly became 0 would replay
- * the entire retained log on every poll. Anything not finite is "no cursor", so
- * the caller falls back to the observed high-water instead.
+ * the entire retained log on every poll. Only non-negative safe integers are
+ * schema-legal; anything else falls back to the observed high-water instead.
  */
 export function toCursor(raw: unknown): number | null {
-  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  if (typeof raw === 'number') return Number.isSafeInteger(raw) && raw >= 0 ? raw : null;
   if (typeof raw !== 'string' || raw.trim() === '') return null;
   const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
 }
 
 interface SpaceRuntime {
@@ -180,6 +259,8 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
   const cursors = new Map<SpaceId, number>();
   const runtime = new Map<SpaceId, SpaceRuntime>();
   const refusals = new Map<SpaceId, CollabError>();
+  const prepareEpochs = new Map<SpaceId, number>();
+  const preparing = new Map<SpaceId, { epoch: number; promise: Promise<number> }>();
 
   const eventSubs = new Set<(e: DurableWorkspaceEvent) => void>();
   const chatTurnSubs = new Set<(frame: ChatTurnFrame) => void>();
@@ -242,6 +323,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     const last = cursors.get(event.spaceId) ?? 0;
     if (event.seq <= last) return;
     cursors.set(event.spaceId, event.seq);
+    deps.onCursor?.(event.spaceId, event.seq);
     fanout(eventSubs, event);
   }
 
@@ -474,6 +556,54 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     }, delay);
   }
 
+  // -- resume-on-foreground --------------------------------------------------
+  //
+  // THE PHONE CASE. The backoff ladder and the 1.5s poller are both written for
+  // a tab that stays open. A backgrounded phone gets neither: the OS freezes the
+  // poll timer, and a `setTimeout` scheduled for a 0.5-8s reconnect may not run
+  // until the app is foregrounded again — at which point the client waits out a
+  // delay computed from failures that happened on a network it has since left.
+  //
+  // So when the app comes back, ask immediately and from a clean ladder. Two
+  // things keep this from being "delete the backoff":
+  //   - `resumeMinIntervalMs` floors how often the ladder may be reset, so
+  //     visibility flapping cannot become a hot loop (see the config comment).
+  //   - Nothing here bypasses `connect()`'s own guards, and the socket's
+  //     outcome still decides the phase. A resume that fails lands in
+  //     `handleClose` and rejoins the ordinary jittered ladder.
+
+  let lastForcedResumeAtMs = Number.NEGATIVE_INFINITY;
+
+  function resumeNow(): void {
+    if (disposed) return;
+    // Already delivering — a foreground is not news.
+    if (socket !== null && socket.isOpen()) return;
+    const at = now();
+    if (at - lastForcedResumeAtMs < cfg.resumeMinIntervalMs) return;
+    lastForcedResumeAtMs = at;
+
+    // The ladder was built against a network this device may no longer be on.
+    reconnectAttempt = 0;
+    if (reconnectTimer !== null) {
+      timers.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    connect();
+
+    // The HTTP fallback was frozen with everything else, so its next tick could
+    // be a full interval away (or already overdue and about to fire late). Drop
+    // the stale timers and prime it now: if the socket wins the race, `pollTick`
+    // sees an open socket and returns without a request.
+    for (const spaceId of open) {
+      const r = rt(spaceId);
+      if (r.pollTimer !== null) {
+        timers.clearTimeout(r.pollTimer);
+        r.pollTimer = null;
+      }
+      void pollTick(spaceId);
+    }
+  }
+
   // -- poll fallback ---------------------------------------------------------
 
   function startPollers(): void {
@@ -514,8 +644,14 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     if (r.pollInFlight) return;
     r.pollInFlight = true;
     const since = cursors.get(spaceId) ?? 0;
+    const epoch = prepareEpochs.get(spaceId) ?? 0;
     try {
       const page = await deps.poll(spaceId, since, cfg.pollLimit);
+      // The request belongs to the space generation that started it. A
+      // close/clear/re-open can make the space open again before this response
+      // lands, so `open.has` alone is insufficient: the epoch keeps an old
+      // boot's cursor from being checkpointed into the new boot.
+      if (disposed || !open.has(spaceId) || (prepareEpochs.get(spaceId) ?? 0) !== epoch) return;
       let highWater = since;
       for (const raw of page?.items ?? []) {
         if (typeof raw?.seq === 'number' && raw.seq > highWater) highWater = raw.seq;
@@ -528,7 +664,9 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       // and the stream never moves again — that is the wedge this line closes.
       // `Math.max` guards monotonicity: a cursor that rewinds re-delivers.
       const next = toCursor(page?.nextCursor);
-      cursors.set(spaceId, Math.max(next ?? highWater, cursors.get(spaceId) ?? 0));
+      const cursor = Math.max(next ?? highWater, cursors.get(spaceId) ?? 0);
+      cursors.set(spaceId, cursor);
+      deps.onCursor?.(spaceId, cursor);
       noteTransport(true);
     } catch (err) {
       // A failed poll is not fatal: the next tick retries from the SAME cursor,
@@ -554,9 +692,83 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       : { phase: 'offline', disconnectedSince: sinceIso() });
   }
 
+  /**
+   * A prepare generation may be superseded while its HTTP page is in flight.
+   * Check immediately after every await, before that response can checkpoint
+   * the process-wide cursor. JavaScript runs the following calculation and
+   * write atomically, so this guard is the generation's commit barrier.
+   */
+  function assertPrepareCurrent(spaceId: SpaceId, epoch: number): void {
+    if (disposed) throw new Error('connection disposed');
+    if ((prepareEpochs.get(spaceId) ?? 0) !== epoch) {
+      throw new Error(`event bootstrap cancelled for ${spaceId}`);
+    }
+  }
+
+  // Subscribed once, for the life of the manager. `resumeNow` is a no-op while
+  // the socket is open, so this costs nothing on a desktop tab that never hides.
+  const unsubscribeLifecycle = (deps.lifecycle ?? browserLifecycle())(() => resumeNow());
+
   // -- public surface --------------------------------------------------------
 
   return {
+    prepareSpace(spaceId, since = 0) {
+      if (disposed) return Promise.reject(new Error('connection disposed'));
+      const epoch = prepareEpochs.get(spaceId) ?? 0;
+      const active = preparing.get(spaceId);
+      if (active?.epoch === epoch) return active.promise;
+      const base = (async () => {
+        let cursor = Math.max(0, since, cursors.get(spaceId) ?? 0);
+        // A known non-tail cursor must never be used to subscribe: doing so
+        // would route the unscanned remainder through Zustand/React and
+        // recreate the retained-history freeze. Each real HTTP await yields
+        // the main thread; keep walking until the cursor stops advancing.
+        for (let pageNumber = 0;; pageNumber += 1) {
+          const page = await deps.poll(spaceId, cursor, cfg.pollLimit);
+          // `closeSpace`/`clearCursor` may have advanced the epoch while the
+          // request was in flight. An obsolete response must not move the
+          // cursor (or its persisted mirror) past a newer generation's tail.
+          assertPrepareCurrent(spaceId, epoch);
+          let observed = cursor;
+          for (const event of page.items ?? []) {
+            if (typeof event?.seq === 'number' && Number.isSafeInteger(event.seq) && event.seq >= 0) {
+              observed = Math.max(observed, event.seq);
+            }
+          }
+          const next = toCursor(page.nextCursor);
+          // `prepareSpace` is normally awaited before `openSpace`, but the
+          // manager's public surface must preserve its own high-water law even
+          // if a direct consumer opens early and WS/poll dispatch advances the
+          // shared cursor while this page is in flight.
+          const advanced = Math.max(observed, next ?? cursor, cursors.get(spaceId) ?? 0);
+          if (advanced <= cursor) break;
+          cursor = advanced;
+          // A completed page is a safe progress checkpoint. Cancellation or
+          // a later network failure resumes here instead of scanning it again.
+          cursors.set(spaceId, cursor);
+          deps.onCursor?.(spaceId, cursor);
+          // Under a producer that outruns every 500-row poll, tail may never
+          // converge. Surface that honestly and retry from the checkpoint;
+          // never subscribe from the known intermediate cursor.
+          if (pageNumber + 1 >= cfg.bootstrapPageBudget) {
+            throw new Error(
+              `event bootstrap for ${spaceId} is still advancing after ${cfg.bootstrapPageBudget} pages; retrying from ${cursor}`,
+            );
+          }
+        }
+        assertPrepareCurrent(spaceId, epoch);
+        cursors.set(spaceId, cursor);
+        deps.onCursor?.(spaceId, cursor);
+        return cursor;
+      })();
+      let task: Promise<number>;
+      task = base.finally(() => {
+        if (preparing.get(spaceId)?.promise === task) preparing.delete(spaceId);
+      });
+      preparing.set(spaceId, { epoch, promise: task });
+      return task;
+    },
+
     openSpace(spaceId) {
       if (disposed) return;
       const isNew = !open.has(spaceId);
@@ -579,6 +791,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     },
 
     closeSpace(spaceId) {
+      prepareEpochs.set(spaceId, (prepareEpochs.get(spaceId) ?? 0) + 1);
       if (!open.delete(spaceId)) return;
       // A refusal is information about a past attempt; a deliberate re-open is
       // allowed to find out whether it still holds.
@@ -605,10 +818,17 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     noteTransport,
     refusalOf(spaceId) { return refusals.get(spaceId); },
     cursorOf(spaceId) { return cursors.get(spaceId) ?? 0; },
+    clearCursor(spaceId) {
+      if (open.has(spaceId)) return;
+      prepareEpochs.set(spaceId, (prepareEpochs.get(spaceId) ?? 0) + 1);
+      cursors.delete(spaceId);
+      refusals.delete(spaceId);
+    },
 
     dispose() {
       if (disposed) return;
       disposed = true;
+      unsubscribeLifecycle();
       stopPollers();
       stopIdleWatchdog();
       for (const spaceId of open) stopAccelerate(spaceId);
@@ -622,6 +842,8 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       resyncSubs.clear();
       refusedSubs.clear();
       reconnectSubs.clear();
+      preparing.clear();
+      prepareEpochs.clear();
     },
   };
 }

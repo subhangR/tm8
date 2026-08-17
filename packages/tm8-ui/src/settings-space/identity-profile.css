@@ -1,0 +1,196 @@
+/* YOUR PROFILE (settings section `account`) — this section's own layout.
+ *
+ * OWNED BY THIS LANE. `settings.css` is shared by twelve sections and is not
+ * ours to edit (SECTION-CONTRACT.md §5), so everything here is prefixed
+ * `.set-account__` and imported from `IdentityProfileSection.tsx` itself.
+ *
+ * The three things this file exists to fix, measured in Chrome 2026-08-16:
+ *
+ *  1. NO RHYTHM. Every child of the old `.set-stack` sat on one flat 6px gap:
+ *     the preview, three fields, two paragraphs of prose and the save button
+ *     were equally spaced, so nothing read as belonging to anything. Here the
+ *     spacing is a scale — 6px inside a field, 16px between fields, 26px
+ *     between groups — and the grouping is what the eye gets first.
+ *  2. INPUTS AS WIDE AS THE MEASURE. Inside the 860px measure an unconstrained
+ *     input is ~824px, which for a display name is absurd and puts the caret a
+ *     screen away from its label. Controls cap at `--set-account-control`.
+ *  3. THE CONFIRMATION MOVED THE BUTTON. `Saved …` used to mount as a new
+ *     sibling ABOVE the button, so the control you had just pressed shifted
+ *     down under the pointer. The action row now reserves its status line, so
+ *     idle / dirty / saving / saved / refused all render at one height.
+ */
+
+.set-account {
+  --set-account-control: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+/* --- identity at a glance ------------------------------------------------ */
+/* What others see, above the form that changes it. Its own rule under it so
+   the form below reads as a separate act rather than more of the same list. */
+
+.set-account__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--pn-line);
+  min-width: 0;
+}
+.set-account__identity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.set-account__identity-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.set-account__identity-sub {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- the form ------------------------------------------------------------ */
+
+.set-account__form {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  min-width: 0;
+}
+
+.set-account__group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.set-account__group-head {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.set-account__group-title {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  margin: 0;
+}
+/* Prose that explains a GROUP sits under the group's own title and above the
+   field it explains — a reader meets the explanation before the box, not after
+   they have already typed in it. Capped tighter than the 860px measure because
+   a 95-character line reads badly as a caption. */
+.set-account__group-note {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+}
+
+/* --- one field ----------------------------------------------------------- */
+
+.set-account__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-width: var(--set-account-control);
+}
+.set-account__label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+/* This module has no global border-box reset (measured: a `width:100%` input
+   inside a 480px field came back 502px wide — 480 + 20 padding + 2 border), so
+   the control declares its own. */
+.set-account__input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  font-size: 12.5px;
+  color: var(--pn-ink);
+  font-family: inherit;
+}
+.set-account__input::placeholder { color: var(--pn-ink-4); }
+.set-account__input:focus-visible {
+  outline: none;
+  border-color: rgba(var(--pn-brand-rgb), 0.55);
+  box-shadow: 0 0 0 3px var(--pn-brand-soft);
+}
+/* Help that belongs to ONE field sits under that field's control, indented by
+   nothing and coloured back — it is a footnote, not a second label. */
+.set-account__help {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-4);
+  text-wrap: pretty;
+}
+/* A refusal renders inside the field it concerns, so the eye lands on the box
+   it has to fix rather than on the foot of the form. */
+.set-account__field-problem {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--pn-block);
+  text-wrap: pretty;
+}
+
+/* --- the action row ------------------------------------------------------ */
+/* `min-height` on the status line, not on the row: the row is already as tall
+   as the button, and reserving the LINE is what keeps the four save states the
+   same height as each other. */
+
+/* STICKY, NOT A SECOND SCROLLER. Measured at 900×600: the body is 604px tall
+   in a 509px scroller, so an action row at the natural foot of the form sits
+   ~95px below the fold and the primary control of a form is reached only by
+   scrolling. `position: sticky` inside the section's ONE scroller keeps it in
+   view without introducing a second scrollport (SECTION-CONTRACT.md §3). The
+   background is `--pn-surface` because that is `.set-card`'s own fill — a
+   token, so it inverts with the theme instead of painting a light bar on a
+   dark card. */
+.set-account__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: var(--pn-surface);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--pn-line);
+  padding-block: 14px 6px;
+  min-width: 0;
+}
+.set-account__status {
+  min-height: 17px;
+  display: flex;
+  align-items: center;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--pn-ink-3);
+  min-width: 0;
+}
+.set-account__status--saved { color: var(--pn-run); }
+.set-account__status--problem { color: var(--pn-block); }

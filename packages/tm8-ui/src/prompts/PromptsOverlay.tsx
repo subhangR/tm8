@@ -37,10 +37,16 @@ export function PromptsOverlay(props: PromptsOverlayProps) {
       className="pr-scrim"
       ref={scrimRef}
       data-testid="prompts-overlay"
-      onMouseDown={(e) => {
+      /* POINTER, NOT MOUSE. A scrim is exactly the inert background iOS declines
+         to synthesise mouse events for — it is not a link, not a button, and
+         carries no click handler — so under `onMouseDown`/`onMouseUp` this
+         overlay had no dismissal at all on a phone. Pointer events fire for
+         mouse, touch and pen alike, and preserve the down-and-up-both-on-the-
+         scrim guard that stops a drag which merely ENDS here from closing it. */
+      onPointerDown={(e) => {
         downOnScrim.current = e.target === scrimRef.current;
       }}
-      onMouseUp={(e) => {
+      onPointerUp={(e) => {
         if (downOnScrim.current && e.target === scrimRef.current) onClose();
         downOnScrim.current = false;
       }}

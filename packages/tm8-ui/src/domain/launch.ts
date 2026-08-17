@@ -182,6 +182,32 @@ export const SCRATCH_OPTION = {
 
 export type LaunchTarget = { kind: 'project'; projectId: ProjectId } | { kind: 'scratch' };
 
+/**
+ * The two ways a project-backed session can be given a working directory.
+ *
+ * `worktree` is an ISOLATED CHECKOUT on its own branch; `project` is the
+ * SHARED one every other session in that project is also sitting in. That is
+ * the whole distinction, and it is the reason this is a user-facing choice
+ * rather than a default: two sessions editing one checkout collide, and a
+ * session that must produce a reviewable branch cannot do it from the shared
+ * tree.
+ */
+export type WorkdirMode = 'project' | 'worktree';
+
+/** The chip vocabulary, in the domain so no screen spells these out. */
+export const WORKDIR_MODE_OPTIONS: readonly { id: WorkdirMode; label: string; description: string }[] = [
+  {
+    id: 'worktree',
+    label: 'Worktree',
+    description: 'An isolated checkout on its own branch. Nothing else can edit it while this session runs.',
+  },
+  {
+    id: 'project',
+    label: 'Current branch',
+    description: 'The project’s shared checkout, as it stands right now — including anything uncommitted.',
+  },
+];
+
 /** Keep target construction in the launch domain so rendering code never branches on entity vocabulary. */
 export function defaultLaunchTarget(projectId: ProjectId | null | undefined): LaunchTarget {
   return projectId ? { kind: 'project', projectId } : { kind: 'scratch' };
@@ -435,6 +461,33 @@ export interface LaunchConfig {
   mode: LaunchMode;
   target: LaunchTarget;
   /**
+   * WHERE THE WORK LANDS inside a project target: the shared checkout, or an
+   * isolated worktree branched off it.
+   *
+   * OPTIONAL AND ABSENT-MEANS-PROJECT on purpose. Every launch surface that
+   * predates this field keeps its exact previous behaviour — `undefined`
+   * narrows to `{ mode: 'project' }`, byte-identical to the hardcoded value it
+   * replaced — so this widens what the UI can SAY without changing what any
+   * existing caller says.
+   *
+   * WHY IT HAD TO EXIST: the contract has carried `{ mode: 'worktree' }` in
+   * `SpawnWorkdirSchema` all along, but `LaunchTarget` offers only project and
+   * scratch, so `buildSpawnInput` could narrow only two ways. A worktree was
+   * literally unrequestable from tm8-ui — not refused, not hidden behind a
+   * flag, just absent from the vocabulary. This is the vocabulary.
+   *
+   * Ignored when the target is scratch: a scratch session has no project to
+   * branch from, so a worktree there is not a thing to refuse, it is a thing
+   * that cannot be described.
+   */
+  workdirMode?: WorkdirMode | null;
+  /**
+   * The ref a worktree is cut from. Absent lets the node choose its own base,
+   * which is the honest default — the UI does not always know the checkout's
+   * current branch, and inventing one would be a claim rather than a choice.
+   */
+  worktreeBaseRef?: string | null;
+  /**
    * D51.4 — additional project associations beyond the launch root.
    *
    * ADDITIVE on purpose: `target` remains the first pick / launch root / initial
@@ -630,6 +683,24 @@ export function buildSpawnInput(args: {
   config: LaunchConfig;
   taskIds?: readonly EntityId[];
   title?: string;
+  /**
+   * Terminal geometry, when the CALLER knows it. Optional and DOM-free, so this
+   * builder stays pure — the ops layer measures a default when this is omitted.
+   *
+   * ONE OBJECT, both fields required, precisely so a HALF-stated geometry cannot
+   * be expressed. Two independent optional numbers would let a caller supply
+   * `cols` and forget `rows`, and the only sane thing to do with that is discard
+   * it — silently reintroducing the wrong-width boot this exists to remove.
+   *
+   * State it whenever you are spawning without a terminal already on screen. A
+   * create-flow ("New Session") is the case that needs it: the ops layer's
+   * fallback, `measureSpawnTerminalSize`, returns the last globally fitted size
+   * if there is one and otherwise reads `.term-host` out of the DOM — so with no
+   * terminal mounted it yields either a STALE size from some other pane or, on a
+   * cold load, nothing at all, and the PTY boots 80x24. Neither is visible at
+   * the call site. Passing your real geometry here is the way to not care.
+   */
+  geometry?: { cols: number; rows: number };
 }): ExecutionSpawnInput {
   const { config } = args;
   if (!config.teamMemberId) {
@@ -640,7 +711,19 @@ export function buildSpawnInput(args: {
   // omitted/null projectId IS the projectless session. No invented flag.
   // Narrowed on the discriminant rather than a boolean, so the projectId and
   // the workdir mode cannot disagree: they are read from one narrowing.
-  const workdir: SpawnWorkdir = target.kind === 'scratch' ? { mode: 'scratch' } : { mode: 'project' };
+  // Scratch first, because it is the absence of a project and therefore has no
+  // worktree to speak of. Then the project-backed pair, narrowed on the
+  // explicit preference — absent means `project`, which is exactly the value
+  // this expression produced before `workdirMode` existed, so every caller
+  // that does not set it is unchanged.
+  const workdir: SpawnWorkdir = target.kind === 'scratch'
+    ? { mode: 'scratch' }
+    : config.workdirMode === 'worktree'
+      // `baseRef` omitted rather than null when unstated: the contract types it
+      // optional and `.strict()`, so an absent field and a null are different
+      // statements, and "let the node choose the base" is an absence.
+      ? { mode: 'worktree', ...(config.worktreeBaseRef ? { baseRef: config.worktreeBaseRef } : {}) }
+      : { mode: 'project' };
 
   const input: ExecutionSpawnInput = {
     clientMutationId: args.clientMutationId,
@@ -671,6 +754,14 @@ export function buildSpawnInput(args: {
   // Only carried when consent was actually given — the contract types it as
   // `true`, so an absent field and a false one are not the same statement.
   if (config.confirmUntrusted) input.confirmUntrusted = true;
+  // Only when the caller actually stated it. Omitted leaves both keys ABSENT
+  // (not `undefined`) so the ops layer's measurement wins; present, it beats
+  // the measurement there. Key-absence is the contract, which is why the test
+  // asserts `'cols' in input === false` rather than a value comparison.
+  if (args.geometry) {
+    input.cols = args.geometry.cols;
+    input.rows = args.geometry.rows;
+  }
   return input;
 }
 

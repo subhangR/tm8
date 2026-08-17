@@ -133,7 +133,9 @@ preflight treats it as a warning, not a hard failure, for exactly that reason.
 ## 4. When start fails
 
 `bun run doctor` prints the resolved config and every check without starting anything.
-Common failures and what they mean:
+For the agent CLI (`claude`/`codex`) and its login state — the one prerequisite
+`bun run doctor` does not cover — run **`tm8 doctor`** (the CLI). Common failures
+and what they mean:
 
 | Message | Cause | Fix |
 |---|---|---|

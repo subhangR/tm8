@@ -1,0 +1,498 @@
+/*
+ * MOBILE CHROME — the tab bar, the header and the honest empty states.
+ *
+ * THE DEFECT THIS FILE CLOSES. `MobileShell.tsx` has emitted `.mobile-tabs`,
+ * `.mobile-tabs__tab`, `.mobile-header` and `.mobile-empty` since the shell
+ * landed, and NOT ONE of those class names had a single rule anywhere in the
+ * package. `mobile.css` styles the frame REGIONS (`__header`, `__content`,
+ * `__tabbar`, `__notices`, `__sheet`) and stops at their edges, by design. So
+ * the five-destination tab bar rendered as a user-agent `<ul>` — discs, 40px of
+ * inherited list indent, five default `<button>`s at 56x22 — and every tap
+ * target on the phone was under the 44px floor. Measured at 390x844 on
+ * cc951ce1: 17 of 19 targets under 44px on Home, 6 of 6 on every refusal
+ * screen. It was the first thing anyone saw on a phone.
+ *
+ * WHY A SECOND STYLESHEET RATHER THAN MORE OF `mobile.css`. That file's opening
+ * line is "structure only", and the split is load-bearing: the frame is the
+ * contract every future screen composes into, and chrome is one screen's worth
+ * of styling that sits inside it. Keeping them apart is what lets a screen lane
+ * read the frame without reading the tab bar. `mobile.css` is imported by
+ * `MobileFrame`; this is imported by `MobileShell`, which is the component that
+ * actually emits every class below.
+ *
+ * ── SCOPE, WHICH IS THE WHOLE SAFETY ARGUMENT ─────────────────────────────
+ *
+ * Every selector here leads with a `mobile-` class that ONLY `MobileShell`
+ * emits, and `MobileShell` renders only under `shellFor() === 'mobile'`
+ * ((pointer: coarse) && width < 500). Nothing in this file can reach the
+ * desktop shell, and nothing here edits a desktop width or floor in place.
+ * The one rule that names `.cv2-root` is the zoom scoping, and it is gated on
+ * `[data-shell='mobile']` — see the block above it.
+ *
+ * §14 — every colour resolves through a `--pn-*` token; `hex-ban.test.ts`
+ * scans this file. Type and spacing likewise: this is the same paper-and-ink
+ * product as the desktop app, not a phone-shaped approximation of it.
+ */
+
+/* ==========================================================================
+   ROOT SCALE — `zoom: 1.1` IS SCOPED OFF THE PHONE (owner ruling)
+   ========================================================================== */
+
+/*
+ * `app.css` puts `zoom: 1.1` on `.cv2-root`. It is a user-ruled taste
+ * experiment for a DESKTOP window, and it is actively wrong on a phone: a
+ * 390px viewport rendered at 1.1 is a 355px layout, so a tenth of every screen
+ * is spent on a scale nobody asked for at that width — and `100dvh` does not
+ * shrink under CSS zoom any more than `100vh` does, so the frame itself
+ * measured 1.1x the screen and put the tab bar under the fold. The desktop
+ * shell already carries the matching correction (`shell.css`'s
+ * `height: calc(100vh / 1.1)`), which is a THIRD hand-synced literal.
+ *
+ * SCOPED OFF, NOT REMOVED. Desktop must look exactly as it does today — that
+ * is the acceptance test for this change, measured at 1440x900 before and
+ * after. So this does not touch `app.css`'s literal, the `shell.css`
+ * reciprocal, or `terminal.css`'s `calc(1 / 1.1)`; it declines the lever for
+ * one shell.
+ *
+ * WHY AN ATTRIBUTE AND NOT `:has()`. `.cv2-root:has(> [data-shell='mobile'])`
+ * would need no TSX at all, and was the first draft. It was dropped because a
+ * `:has()` that stops matching — a wrapper element added between the two, a
+ * renamed attribute — fails SILENTLY back to a zoomed phone, which is exactly
+ * the defect it exists to fix and looks identical to working. `GateApp` marks
+ * the root it mounts the mobile shell into, and a marker that is wrong is a
+ * marker that is greppable. This is also the existing idiom: `MobileFrame`
+ * already stamps `data-shell="mobile"`, and `app.css` already resets the
+ * nested-scope case with `.cv2-root .cv2-root { zoom: 1 }`.
+ */
+.cv2-root[data-shell='mobile'] {
+  zoom: 1;
+}
+
+/* ==========================================================================
+   THE HEADER
+   ========================================================================== */
+
+/*
+ * One row: the UP chevron (only when there is somewhere up to go), the screen's
+ * name, and the share control. `min-width: 0` on the title is what makes the
+ * ellipsis possible at all — a flex item's default `min-width: auto` refuses to
+ * shrink below its content, so the title would push the share control off the
+ * right edge instead of truncating. That is the single most common way a
+ * "truncating" header does not truncate.
+ */
+.mobile-header {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-height: var(--mobile-header-min);
+  padding-inline: var(--pn-space-3);
+  padding-block: var(--pn-space-1);
+}
+
+/*
+ * THE UP CHEVRON. Rendered only when the active screen has an entity open —
+ * `MobileShell` gates it on `useScreenStack(key).selected`, so a screen root
+ * shows nothing here and the tab bar is the navigation. No dead chrome.
+ *
+ * It means UP, not BACK, and the difference is not pedantry: it pops the screen
+ * stack (the desktop's Esc), and `GateApp`'s step-up sync writes the address to
+ * match. `history.back()` at the depth a pasted link arrives at would leave the
+ * app instead of showing the list. The two gestures stay distinct — chevron =
+ * up one screen, the phone's own back gesture = walk the one history — and they
+ * mean the same thing on both shells. Ruled by the routing lane.
+ */
+.mobile-header__back {
+  flex: 0 0 auto;
+  /* The 44px floor, as a SQUARE. A control 44 wide and 22 tall fails the same
+     thumb the count was measuring — the floor is on the smaller side. */
+  inline-size: var(--mobile-header-min);
+  block-size: var(--mobile-header-min);
+  /* Optically re-align to the frame edge: the icon is small inside a 44px box,
+     so an unadjusted button leaves the chevron floating a third of the way in
+     while the title below it starts at the true margin. */
+  margin-inline-start: calc(var(--pn-space-3) * -1);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+  border-radius: var(--pn-r-pill);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard),
+    color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.mobile-header__back:active {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+
+/*
+ * The title column. Two lines inside a 44px floor: the Space above, in the
+ * eyebrow treatment the rest of the app uses for provenance, and the screen
+ * below in the title face.
+ */
+.mobile-header__titles {
+  flex: 1 1 auto;
+  /* THE LINE THAT MAKES TRUNCATION WORK. See the block comment on
+     `.mobile-header`. */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.mobile-header__space {
+  font-family: var(--pn-mono);
+  font-weight: 600;
+  font-size: var(--pn-fs-micro);
+  line-height: 1.25;
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+  /* The Space name is arbitrary text from a user, so it truncates too. An
+     eyebrow that wraps to three lines is what turns a 44px header into a 96px
+     one on somebody else's data. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * TRUNCATION THAT DEGRADES HONESTLY. An ellipsis says "there is more of this
+ * name"; a hard clip says nothing and reads as the name. The full string stays
+ * reachable through the `title` attribute `MobileShell` sets, so nothing is
+ * destroyed — only folded.
+ */
+.mobile-header__title {
+  font-family: var(--pn-ui);
+  font-weight: 600;
+  font-size: var(--pn-fs-title);
+  line-height: var(--pn-lh-snug);
+  letter-spacing: var(--pn-track-tight);
+  color: var(--pn-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * THE SHARE CONTROL, AND A DEFECT FOUND BY LOOKING AT THE SCREENSHOT.
+ *
+ * `share/copy-link.css` gives `.copy-link__button` exactly three properties —
+ * `display: inline-flex`, `align-items` and `gap`. No background, no border, no
+ * padding, no type. So on the phone header it rendered as a RAW USER-AGENT
+ * BUTTON: a grey slab with the platform's own bevel and corner radius, roughly
+ * 230px of a 390px header. On the desktop it sits inside chrome that hides
+ * that; here it is the second thing on the screen.
+ *
+ * It is styled HERE, scoped to this header, and `copy-link.css` is not touched
+ * — the control belongs to another lane and its desktop appearance is not this
+ * lane's to change. What this region owns is how a control LOOKS AND MEASURES
+ * inside it.
+ *
+ * THE WORD IS KEPT, not replaced by the icon alone. Icon-only is the phone
+ * convention and it would be smaller, but the button swaps its own label to
+ * "Copied" as the entire visible confirmation that the copy worked — hiding the
+ * word to save 60px would silently delete the feedback on the one device where
+ * the clipboard most often refuses. Compact type and real chrome get the width
+ * back without costing that.
+ */
+.mobile-header .copy-link__button {
+  flex: 0 0 auto;
+  /* The floor applies to the SMALLER side; the word makes the width. */
+  min-block-size: var(--mobile-header-min);
+  gap: var(--pn-space-1);
+  padding-inline: var(--pn-space-3);
+  justify-content: center;
+
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+
+  font-family: var(--pn-ui);
+  font-weight: 500;
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-track-tight);
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.mobile-header .copy-link__button:active {
+  background: var(--pn-active);
+}
+
+/* ==========================================================================
+   THE TAB BAR
+   ========================================================================== */
+
+/*
+ * Five equal columns, because five equal destinations is what the bar promises.
+ * `grid-auto-columns: 1fr` rather than flex `1 1 0`: a grid column is exactly a
+ * fifth of the bar regardless of whether "Sessions" is wider than "Home", so
+ * the marks line up on a rhythm instead of drifting with the words.
+ *
+ * `list-style: none` + zeroed padding is the rule whose absence WAS the defect:
+ * a `<ul>` carries discs and 40px of inline-start padding from the user agent,
+ * and that is precisely what shipped.
+ */
+.mobile-tabs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  align-items: stretch;
+}
+
+.mobile-tabs > li {
+  display: flex;
+  min-width: 0;
+}
+
+/*
+ * THE TAB. Icon over word, both drawn — a mark alone is a guess, and a word
+ * alone at this size is the list the bar replaced.
+ *
+ * `min-block-size: var(--mobile-tabbar-min)` is 49px from the frame's own
+ * token, so the bar's floor and the target's floor cannot drift apart. Width is
+ * a fifth of the viewport (78px at 390), so both sides clear 44.
+ */
+.mobile-tabs__tab {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-block-size: var(--mobile-tabbar-min);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: var(--pn-space-1) 2px;
+
+  /* Every user-agent default off, explicitly. `appearance` is what removes the
+     native control look on iOS, where a `<button>` otherwise arrives with its
+     own background and corner radius no amount of `background: none` reaches. */
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  margin: 0;
+
+  font-family: var(--pn-ui);
+  font-weight: 500;
+  font-size: var(--pn-fs-micro);
+  line-height: 1.1;
+  letter-spacing: var(--pn-track-tight);
+  color: var(--pn-ink-3);
+  cursor: pointer;
+
+  /* The grey flash iOS paints over any tapped control — it fights the active
+     state below and reads as a rendering fault on a designed bar. */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.mobile-tabs__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The mark carries the state change; the word only follows it. Opacity rather
+     than a second colour keeps the whole bar on one ink. */
+  opacity: 0.75;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard),
+    transform var(--pn-dur-base) var(--pn-ease-out);
+}
+
+.mobile-tabs__label {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * ACTIVE STATE FROM `aria-current="page"`, WHICH THE COMPONENT ALREADY EMITS.
+ *
+ * No new state, no `--active` class, no JS-tracked index. The accessible
+ * property and the visual state are THE SAME FACT, so they cannot drift: a tab
+ * that looks selected and does not announce itself as the current page is not a
+ * possible rendering of this rule.
+ */
+.mobile-tabs__tab[aria-current='page'] {
+  color: var(--pn-brand);
+  font-weight: 600;
+}
+
+.mobile-tabs__tab[aria-current='page'] .mobile-tabs__icon {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+/*
+ * The brass rule above the active tab — the one accent, at hairline weight.
+ * Drawn on a pseudo-element rather than a border so it can animate its width
+ * from the centre out without moving the label by a pixel.
+ */
+.mobile-tabs__tab::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 30%;
+  block-size: 2px;
+  border-radius: 0 0 var(--pn-r-pill) var(--pn-r-pill);
+  background: var(--pn-brand);
+  transform: scaleX(0);
+  transition: transform var(--pn-dur-base) var(--pn-ease-out);
+}
+
+.mobile-tabs__tab[aria-current='page']::before {
+  transform: scaleX(1);
+}
+
+/* Press feedback. A tab bar with no touch response reads as a picture of a tab
+   bar — this is the whole of the "did it register" question, answered in 120ms. */
+.mobile-tabs__tab:active .mobile-tabs__icon {
+  transform: scale(0.92);
+}
+
+/* Keyboard focus is drawn INSIDE the bar: an outline on a control flush with the
+   frame edge is half-clipped by the frame's own `overflow: hidden`. */
+.mobile-tabs__tab:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -3px;
+  border-radius: var(--pn-r-sm);
+}
+
+/* ==========================================================================
+   THE HONEST EMPTY STATES
+   ========================================================================== */
+
+/*
+ * `.mobile-empty` carries THREE screens, and two of them are load-bearing
+ * honesty rather than placeholders: "this link doesn't name a screen this build
+ * has" and "X doesn't have a phone layout yet". The desktop switch used to fall
+ * through silently to the workspace, and NOT repeating that is the reason the
+ * mobile shell was safe to build on at all.
+ *
+ * So they are styled as a deliberate statement — centred at a reading measure,
+ * on the card surface, with the hairline the rest of the app uses — and not as
+ * a grey box that reads like something failed to load. A refusal that looks
+ * like a bug gets reported as a bug.
+ */
+.mobile-empty {
+  box-sizing: border-box;
+  min-block-size: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-8) var(--pn-space-5);
+  text-align: center;
+
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+}
+
+.mobile-empty > * {
+  margin: 0;
+  /* The reading measure, in characters rather than pixels: two sentences set
+     across a full 390px phone is a wall, and across a 430px one it is a wider
+     wall. `ch` holds the line length steady as the viewport changes. */
+  max-inline-size: 34ch;
+}
+
+/*
+ * The first line is the STATEMENT — set in the serif, at h3, because it is the
+ * screen's only content and the app's editorial voice is where "deliberate"
+ * actually comes from. The lines after it are the explanation.
+ */
+.mobile-empty > :first-child {
+  font-family: var(--pn-serif);
+  font-weight: 500;
+  font-size: var(--pn-fs-h3);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  text-wrap: balance;
+}
+
+.mobile-empty > * + * {
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+/* ==========================================================================
+   SCREEN MOTION
+   ========================================================================== */
+
+/*
+ * A screen arrives; it does not blink into place.
+ *
+ * WHAT THIS DOES AND DOES NOT COVER, stated plainly rather than implied. It is
+ * a mount animation on the content region's child, so it plays whenever React
+ * actually mounts a new screen — Home to Tasks, Tasks to Inbox, any tab to a
+ * refusal card, and every drill-in. It does NOT play between Tasks, Sessions
+ * and Channels, because those three are one `EntityView` with a changed `kind`
+ * prop and React keeps the instance.
+ *
+ * Making it play there too would mean giving that subtree a key derived from
+ * the route, which REMOUNTS it — throwing away list scroll position and
+ * anything the screen holds, to buy an animation. That is a bad trade on the
+ * device where scroll position is most expensive to rebuild, so it is declined
+ * on purpose rather than overlooked.
+ */
+@keyframes mobile-screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+.mobile-frame__content > * {
+  animation: mobile-screen-in var(--pn-dur-base) var(--pn-ease-out);
+}
+
+/*
+ * REDUCED MOTION. This codebase honours the preference in ~20 places and this
+ * matches that pattern rather than inventing one: motion off, every end state
+ * kept. The active tab still reads as active — the brass rule is present, it
+ * simply does not grow into place.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .mobile-frame__content > * {
+    animation: none;
+  }
+
+  .mobile-tabs__tab,
+  .mobile-tabs__icon,
+  .mobile-tabs__tab::before,
+  .mobile-header__back {
+    transition: none;
+  }
+
+  .mobile-tabs__tab:active .mobile-tabs__icon,
+  .mobile-tabs__tab[aria-current='page'] .mobile-tabs__icon {
+    transform: none;
+  }
+}

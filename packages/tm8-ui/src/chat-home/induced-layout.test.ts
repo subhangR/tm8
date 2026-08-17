@@ -90,4 +90,51 @@ describe('layoutInducedGraph', () => {
       }
     }
   });
+
+  describe('perRow option (fullscreen hosts pass their own column count)', () => {
+    it('defaults stay byte-identical: no option ≡ perRow 4', () => {
+      const graph = buildInducedGraph(measuredSeeds(), measuredConnections());
+      expect(JSON.stringify(layoutInducedGraph(graph))).toBe(
+        JSON.stringify(layoutInducedGraph(graph, { perRow: 4 })),
+      );
+    });
+
+    it.each([4, 8, 12])('deterministic, no overlap, contained at perRow = %i', (perRow) => {
+      const graph = buildInducedGraph(seedsOf(24), new Map());
+      const a = layoutInducedGraph(graph, { perRow });
+      const b = layoutInducedGraph(graph, { perRow });
+      expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+      for (let i = 0; i < a.cards.length; i += 1) {
+        for (let j = i + 1; j < a.cards.length; j += 1) {
+          expect(overlaps(a.cards[i]!, a.cards[j]!)).toBe(false);
+        }
+      }
+      for (const card of a.cards) {
+        expect(card.x).toBeGreaterThanOrEqual(0);
+        expect(card.y).toBeGreaterThanOrEqual(0);
+        expect(card.x + CARD_W).toBeLessThanOrEqual(a.width);
+        expect(card.y + CARD_H).toBeLessThanOrEqual(a.height);
+      }
+    });
+
+    it('a wider row uses width for height: 24 cards at 8-up sit in 3 rows, not 6', () => {
+      const graph = buildInducedGraph(seedsOf(24), new Map());
+      const narrow = layoutInducedGraph(graph, { perRow: 4 });
+      const wide = layoutInducedGraph(graph, { perRow: 8 });
+      expect(wide.width).toBeGreaterThan(narrow.width);
+      expect(wide.height).toBeLessThan(narrow.height);
+      const rowsOf = (p: typeof wide) => new Set(p.cards.map((c) => c.y)).size;
+      expect(rowsOf(narrow)).toBe(6);
+      expect(rowsOf(wide)).toBe(3);
+    });
+
+    it('R9 holds at any perRow: a settled card never moves as nodes arrive', () => {
+      const before = layoutInducedGraph(buildInducedGraph(seedsOf(9), new Map()), { perRow: 8 });
+      const after = layoutInducedGraph(buildInducedGraph(seedsOf(10), new Map()), { perRow: 8 });
+      for (let i = 0; i < 9; i += 1) {
+        expect(after.cards[i]!.x).toBe(before.cards[i]!.x);
+        expect(after.cards[i]!.y).toBe(before.cards[i]!.y);
+      }
+    });
+  });
 });

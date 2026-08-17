@@ -17,10 +17,10 @@
  * canvas (the dedicated rail frame); the unified server rows and the two
  * footers from T0-1. Colors always resolve through tokens (D5).
  */
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { MenuConfig, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
 import { REASONS } from '../domain';
-import { VectorIcon } from '../kit';
+import { VectorIcon, ancestorPath, useTreeDisclosure, type TreeDisclosure } from '../kit';
 import type { CollectionMode, GroupByKey } from '../domain';
 import { VIEW_PRESENTATION } from './menu-resolve';
 import { MENU_COLLAPSED, MENU_EXPANDED } from './geometry';
@@ -271,6 +271,19 @@ function countTitle(presentation: RefPresentation): string | undefined {
     : `${presentation.badge} ${presentation.label.toLowerCase()}`;
 }
 
+/**
+ * THE DYNAMIC ENTITY TREE DEFAULTS SHUT, like every other caret in this rail.
+ *
+ * These rows used to have no disclosure state AT ALL: `DynamicEntityNode`
+ * recursed unconditionally, so a channel with a deep parent/child hierarchy
+ * printed every descendant on first paint with no way to close any of it. That
+ * contradicted the rail's own revision-11 ruling one component up ("ships every
+ * caret CLOSED… rather than a thirty-row wall on first paint") and it is the
+ * same default the 2026-08-17 ruling names for the entity list.
+ *
+ * The state is shared across groups and remembered — one scope, because these
+ * rows are one navigation tree regardless of which group they hang under.
+ */
 function DynamicEntityRows({
   items,
   collapsed,
@@ -282,6 +295,18 @@ function DynamicEntityRows({
   activeTarget?: MenuTarget | null;
   onNavigate(target: MenuTarget): void;
 }) {
+  // The active row's ancestors open themselves: navigating to a nested channel
+  // must not leave the rail pointing at nothing the viewer can see.
+  const revealed = useMemo(
+    () =>
+      ancestorPath(
+        items.map((row) => ({ id: row.id, parentId: row.parentId ?? null })),
+        activeTarget?.type === 'entity' ? activeTarget.ref : null,
+      ),
+    [items, activeTarget],
+  );
+  const disclosure = useTreeDisclosure('rail:entities', revealed);
+
   return entityTree(items).map((node) => (
     <DynamicEntityNode
       key={node.row.id}
@@ -290,6 +315,7 @@ function DynamicEntityRows({
       collapsed={collapsed}
       activeTarget={activeTarget}
       onNavigate={onNavigate}
+      disclosure={disclosure}
     />
   ));
 }
@@ -300,17 +326,28 @@ function DynamicEntityNode({
   collapsed,
   activeTarget,
   onNavigate,
+  disclosure,
 }: {
   node: MenuEntityNode;
   depth: number;
   collapsed: boolean;
   activeTarget?: MenuTarget | null;
   onNavigate(target: MenuTarget): void;
+  disclosure: TreeDisclosure;
 }) {
   const { row } = node;
   const target: MenuTarget = { type: 'entity', ref: row.id, kind: row.kind };
   const active = sameTarget(activeTarget, target);
   const label = collapsedLabel(row);
+  const hasChildren = node.children.length > 0;
+  const open = disclosure.isExpanded(row.id);
+  /**
+   * COLLAPSED RAIL SHOWS EVERY DESCENDANT, exactly as the static leaves do and
+   * for the identical reason recorded there: the caret control renders only in
+   * the expanded rail, so honouring a closed caret at 48px would strand those
+   * rows with no affordance anywhere to reach them.
+   */
+  const showChildren = hasChildren && (collapsed || open);
 
   return (
     <>
@@ -320,6 +357,7 @@ function DynamicEntityNode({
         data-entity-id={row.id}
         data-depth={depth}
         aria-current={active ? 'page' : undefined}
+        aria-expanded={!collapsed && hasChildren ? open : undefined}
         aria-label={collapsed ? label : undefined}
         title={collapsed ? label : undefined}
         style={!collapsed && depth > 0 ? { paddingLeft: 12 + depth * 12 } : undefined}
@@ -345,17 +383,45 @@ function DynamicEntityNode({
         {collapsed && row.live !== undefined && row.live > 0 ? (
           <span className="shell-rail__live-corner" aria-hidden="true">{row.live}</span>
         ) : null}
+        {!collapsed && hasChildren ? (
+          // Same construction as the static caret rows above: its own control
+          // INSIDE the row, so expanding never navigates and navigating never
+          // expands. A `<span role="button">` rather than a nested <button>,
+          // which is invalid HTML and which the panel tree was fixed for.
+          <span
+            role="button"
+            tabIndex={0}
+            className="shell-rail__caret"
+            aria-label={`${open ? 'Collapse' : 'Expand'} ${row.label}`}
+            aria-expanded={open}
+            onClick={(event) => {
+              event.stopPropagation();
+              disclosure.toggle(row.id);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              event.stopPropagation();
+              disclosure.toggle(row.id);
+            }}
+          >
+            {open ? '▾' : '▸'}
+          </span>
+        ) : null}
       </button>
-      {node.children.map((child) => (
-        <DynamicEntityNode
-          key={child.row.id}
-          node={child}
-          depth={depth + 1}
-          collapsed={collapsed}
-          activeTarget={activeTarget}
-          onNavigate={onNavigate}
-        />
-      ))}
+      {showChildren
+        ? node.children.map((child) => (
+            <DynamicEntityNode
+              key={child.row.id}
+              node={child}
+              depth={depth + 1}
+              collapsed={collapsed}
+              activeTarget={activeTarget}
+              onNavigate={onNavigate}
+              disclosure={disclosure}
+            />
+          ))
+        : null}
     </>
   );
 }

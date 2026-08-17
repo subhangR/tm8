@@ -130,13 +130,13 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // gitStatus/gitDiff (GET reads), gitCheckpoint/gitRollback/gitCommit/
     // gitMerge (POST commands).
     // 157 -> 158 (2026-08-13, forge write): tracking.pr.merge, one POST command.
-    expect(OPERATIONS).toHaveLength(166); // +3 W4/132, MEASURED
-    expect(V1_OPERATIONS).toHaveLength(164);
+    expect(OPERATIONS).toHaveLength(169); // +3 141 account-lifecycle, MEASURED
+    expect(V1_OPERATIONS).toHaveLength(167);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(165);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(168);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
@@ -146,9 +146,11 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // minus the single v1 WS row (events.subscribe, asserted immediately above)
     // is 124 — a 123 here contradicts them rather than measuring anything.
     // execution.transcript moved it to 125; projects.branches.list moves it to 126.
+    // 141: +3 v1 non-WS (auth.password.change, auth.invite.signup,
+    // auth.claim.reissue) — 163 -> 166.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(163);
+    )).toHaveLength(166);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

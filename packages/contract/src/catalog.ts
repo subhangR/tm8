@@ -296,6 +296,18 @@ export const OPERATIONS = [
   { name: 'auth.login',                                  method: 'POST',   path: '/v2/auth/login',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
+  // `auth.password.change` — the day a human forgets their password, the only
+  // recovery was `psql` (FIRST-RUN-CLAIM-DESIGN.md §10.3). This is CHANGE, not
+  // reset: it demands the CURRENT password in the body and proves it with the
+  // same scrypt work `auth.login` spends, so a walk-up attacker holding an open
+  // session still cannot rotate the credential and lock the owner out. The write
+  // is `set_account_credential` (007) under the caller's own claims — an account
+  // sets its OWN credential without node admin — and it revokes every OTHER live
+  // session for the account while sparing the one making the change. There is no
+  // reset-without-the-old-password path here on purpose: that needs an
+  // out-of-band capability, and an unauthenticated one would hand the node to
+  // anyone who can reach it.
+  { name: 'auth.password.change',                        method: 'POST',   path: '/v2/auth/password',                                                  kind: 'command', status: 'v1' },
   // POST-WITH-`kind: 'read'`, DELIBERATELY. It writes nothing — it answers what
   // a join code lets you join, before the holder is anybody on this node — but
   // the code must travel in the BODY. A bearer capability in a URL path lands
@@ -304,6 +316,17 @@ export const OPERATIONS = [
   // the shape: `collections.query` and `graph.query`, both POST reads for the
   // same reason (a payload that does not belong in a URL).
   { name: 'auth.invite.resolve',                         method: 'POST',   path: '/v2/auth/invite/resolve',                                            kind: 'read',    status: 'v1' },
+  // `auth.invite.signup` — the second half of D5 (FIRST-RUN-CLAIM-DESIGN.md
+  // §4.4, §5.3). CLAIM-FREE like `resolve`: an invited person has no account
+  // until this call, and the INVITE CODE is the authorization. `signup_via_invite`
+  // creates the account, the membership, and consumes the invite in ONE
+  // transaction — a half-state would leave a person who can log in and see
+  // nothing. It hard-codes `is_node_admin = false` / `is_owner = false` with no
+  // input that can reach them (§7.3), so a forwarded link can never mint an
+  // admin. Same POST-body reasoning as `resolve`: the code is a bearer
+  // capability and must not land in a URL. Claiming an account SIGNS YOU IN, so
+  // the result is `auth.login`'s shape plus the space you joined.
+  { name: 'auth.invite.signup',                          method: 'POST',   path: '/v2/auth/invite/signup',                                             kind: 'command', status: 'v1' },
 
   // First-run node claim (docs/identity/FIRST-RUN-CLAIM-DESIGN.md, D1/D2).
   // Both are CLAIM-FREE, and both must stay that way: they are the only
@@ -323,6 +346,14 @@ export const OPERATIONS = [
   // (`artifacts.publish` / `artifacts.revisions.list` below).
   { name: 'auth.claim',                                  method: 'POST',   path: '/v2/auth/claim',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.claim.status',                           method: 'GET',    path: '/v2/auth/claim',                                                     kind: 'read',    status: 'v1' },
+  // `auth.claim.reissue` — recover from a lost claim token (§3.1, §4.3). A
+  // restart REPRINTS the live token rather than rotating it, so rotation stays a
+  // deliberate act; this is that act. ON-BOX BY CONSTRUCTION: the handler admits
+  // only the loopback auto-owner arm, and the fresh `tm8c_…` is written to the
+  // 0600 `<dataDir>/setup-token` — the file, not the network, is the boundary,
+  // so triggering it confers nothing on a caller who cannot read the box. It is
+  // inert on a claimed node, exactly like the token it mints.
+  { name: 'auth.claim.reissue',                          method: 'POST',   path: '/v2/auth/claim/reissue',                                             kind: 'command', status: 'v1' },
 
   // Tier B per-member credentials (sub-doc 11 §D). A member connects their OWN
   // vendor account in a login terminal tm8 opens for them, so an agent they

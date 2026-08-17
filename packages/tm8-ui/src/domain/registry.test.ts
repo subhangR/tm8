@@ -49,11 +49,12 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
     // then `memory`, `worktree` and `artifact` landed the same day → 19;
-    // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20.
+    // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20;
+    // then `graph` joined with migration 135 (Craft P1) → 21.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(20);
+    expect(CORE_KINDS.length).toBe(21);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -82,7 +83,11 @@ describe('loop management is registry-declared and fully wired', () => {
     ]);
     expect(loop.editFields?.find((field) => field.source === 'schedule')?.valueType).toBe('schedule');
     expect(loop.editFields?.find((field) => field.source === 'config')?.valueType).toBe('json-object');
-    expect(loop.panel.primaries).toEqual(['edit']);
+    // `run` LEADS since launching became a denylist (owner ruling 2026-08-17
+    // launches `loop`). It does NOT mean "fire this loop now" — that is
+    // `loop-controls`, the first panel block, and it stays the loop's own verb.
+    // Run means what it means everywhere: point an agent at this row.
+    expect(loop.panel.primaries).toEqual(['run', 'edit']);
     // RUNS is the third block on purpose: a loop's firing history IS its
     // inbound `triggered_by` edges, so a panel without it hides the only
     // record of what the loop has done. `membership` follows (2026-08-12) —
@@ -250,11 +255,31 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     }
   });
 
-  it('4b. every kind a person can ask an agent to work on is launchable', () => {
-    const launchable = allKinds().filter((r) => r.launchable).map((r) => r.kind).sort();
-    expect(launchable).toEqual([
-      'artifact', 'doc', 'memory', 'project', 'pull_request', 'task', 'team_member', 'worktree',
-    ]);
+  /**
+   * PINNED AS THE DENYLIST, because that is now the authority.
+   *
+   * This used to enumerate the eight launchable kinds, and the enumeration was
+   * the bug it should have caught: launching is open to every kind the server
+   * will derive a task for (all but `work_session`), so the eight were not a
+   * ruling but the subset somebody had remembered to flag — eleven kinds were
+   * silently missing a Run button and this test agreed with them.
+   *
+   * Asserting the REFUSALS instead means a newly minted kind cannot quietly
+   * join a list; it is launchable by default, and taking that away is an edit
+   * to `NOT_LAUNCHABLE` that lands right here.
+   */
+  it('4b. work_session is the ONLY unlaunchable kind; everything else launches', () => {
+    const notLaunchable = allKinds().filter((r) => !r.launchable).map((r) => r.kind).sort();
+    // One refusal, and it is the server's: `derive_task_for_entity` raises for
+    // `work_session` and derives a task for every other live kind. So this list
+    // is not a product preference to be re-argued per kind — it mirrors what
+    // the backend will actually do, and it should only ever change when that
+    // does. (`graph` and `loop` were briefly here on inherited rationale;
+    // owner ruling 2026-08-17 launches both.)
+    expect(notLaunchable).toEqual(['work_session']);
+    // The complement is everything else — stated as a relationship rather than
+    // a second list, so the two cannot disagree.
+    expect(allKinds().filter((r) => r.launchable).length).toBe(allKinds().length - 1);
   });
 
   it('4c. task keeps Run FIRST and its own row ordering', () => {
@@ -610,6 +635,34 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
   it('D51.3 — the immutability caption exists to be shown BEFORE commit', () => {
     expect(PROFILE_PINNED_CAPTION).toContain('Pinned at launch');
     expect(PROFILE_PINNED_CAPTION).toContain('even if the profile is edited or retired later');
+  });
+
+  it('carries caller-stated terminal geometry, and omits the fields entirely without it', () => {
+    // A create flow spawns with NO terminal on screen, so the ops layer's
+    // measurement fallback has nothing real to read — it returns a stale global
+    // or nothing at all. Such a caller must be able to STATE its geometry, and
+    // an absent statement must stay absent so the measurement still wins.
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-sonnet-5' });
+    const stated = buildSpawnInput({
+      clientMutationId: 'c', spaceId: 's', config, geometry: { cols: 173, rows: 44 },
+    });
+    expect(stated.cols).toBe(173);
+    expect(stated.rows).toBe(44);
+
+    // Key-ABSENCE, not `undefined`: the ops layer resolves geometry per field
+    // and JSON.stringify drops undefined, so an explicitly-undefined key and a
+    // missing one are the same on the wire but not in the type. Assert the
+    // stronger of the two.
+    const silent = buildSpawnInput({ clientMutationId: 'c', spaceId: 's', config });
+    expect('cols' in silent).toBe(false);
+    expect('rows' in silent).toBe(false);
+
+    // A HALF-stated geometry is unrepresentable — `geometry` is one object with
+    // both fields required, so this is a compile error rather than a value that
+    // gets silently discarded at runtime. Kept as a type-level assertion
+    // because that is where the guarantee lives.
+    // @ts-expect-error partial geometry must not type-check
+    buildSpawnInput({ clientMutationId: 'c', spaceId: 's', config, geometry: { cols: 173 } });
   });
 
   it('D51.4 — extra projects are ADDITIVE and never silently accepted', () => {

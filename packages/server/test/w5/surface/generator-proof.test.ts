@@ -189,6 +189,7 @@ describe('W5.C generator proof', () => {
     // 84 -> 87 (2026-08-12): the three Tier 2 command bodies bind.
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, forge write): tracking.pr.merge binds its body.
-    expect(ENTRIES).toHaveLength(95); // +2 (W4/132): TaskWorkflowInputSchema binds upsert, RequiredCommandContextSchema binds delete
+    // +2 (141): AuthPasswordChangeInputSchema + AuthInviteSignupInputSchema.
+    expect(ENTRIES).toHaveLength(97);
   });
 });

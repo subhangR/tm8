@@ -1,0 +1,457 @@
+/* CRAFT — the blueprint studio (Craft P1). Tokens only; no raw hex (§14). */
+
+/* `flex: 1` as well as `height: 100%`, because the studio is mounted in both
+   kinds of parent: a block content area (the gate's view slot) and a flex row
+   (the shell, and the pixel harness). Height alone leaves it at its content
+   width inside a flex parent, which parks the whole studio in the left
+   two-thirds of the window and leaves a dead band down the right. */
+.crf-root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+
+/* -- top bar: picker + new + orchestrate ---------------------------------- */
+.crf-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--pn-line);
+  flex: 0 0 auto;
+}
+
+.crf-bar__title {
+  font-weight: 600;
+  color: var(--pn-ink-1);
+}
+
+.crf-bar__orchestrate {
+  background: var(--pn-card);
+  color: var(--pn-ink-1);
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.crf-bar__orchestrate:hover:not(:disabled) {
+  border-color: var(--pn-ink-3);
+}
+
+.crf-bar__orchestrate:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.crf-bar__spacer {
+  flex: 1;
+}
+
+/* -- the split: TWO columns, the divider between them draggable ----------- */
+.crf-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The chat pane is SIZED, the canvas TAKES THE REST. Only one of the two can
+   own the width or the drag would have to move both; the canvas keeping the
+   remainder is what makes the blueprint grow when the window does. */
+.crf-chat {
+  flex: 0 0 var(--crf-chat, 520px);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The chat surface manages its own scroll; the body just contains it. */
+.crf-chat__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.crf-chat__body > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.crf-canvas {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--pn-line);
+}
+
+/* REGION C. Sized like the chat pane; the CANVAS is still the one that takes
+   the remainder, so opening the panel narrows the blueprint rather than the
+   conversation — the chat's width is a preference the viewer set, and an
+   incidental chip press must not overwrite it. */
+.crf-detail {
+  flex: 0 0 var(--crf-detail, 440px);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.crf-detail > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.crf-canvas__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+
+/* -- the pane headers: each names the pane beneath it --------------------- */
+.crf-pane-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.crf-pick {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  color: var(--pn-ink-1);
+  text-align: left;
+  cursor: pointer;
+}
+
+.crf-pick:hover,
+.crf-pick:focus-visible {
+  border-color: var(--pn-line);
+  background: var(--pn-card);
+}
+
+.crf-pick__caret {
+  color: var(--pn-ink-3);
+  font-size: 11px;
+  flex: none;
+}
+
+.crf-pick__title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.crf-pick__meta {
+  color: var(--pn-ink-3);
+  font-size: 11px;
+  flex: none;
+  white-space: nowrap;
+}
+
+/* The graph picker wears the same clothes as the chat picker — two headers
+   doing the same job must not look like two different controls. */
+.crf-pick--graph select {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--pn-ink-1);
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+}
+
+.crf-pick--graph select:focus-visible {
+  outline: 1px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.crf-pane-head__plus {
+  flex: none;
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font: inherit;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.crf-pane-head__plus:hover {
+  border-color: var(--pn-ink-3);
+  color: var(--pn-ink-1);
+}
+
+/* -- the conversation popover -------------------------------------------- */
+.crf-pop {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 8px;
+  right: 8px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 520px);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
+  overflow: hidden;
+}
+
+.crf-pop__find {
+  flex: none;
+  margin: 8px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--pn-ink-1);
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+}
+
+.crf-pop__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 4px 4px;
+}
+
+.crf-pop__hollow {
+  color: var(--pn-ink-3);
+  font-size: 12px;
+  padding: 8px 10px 12px;
+  margin: 0;
+}
+
+.crf-pop__group {
+  display: flex;
+  flex-direction: column;
+}
+
+.crf-pop__group-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  padding: 8px 8px 4px;
+}
+
+.crf-pop__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--pn-ink-1);
+  cursor: pointer;
+}
+
+.crf-pop__row:hover,
+.crf-pop__row:focus-visible {
+  background: var(--pn-surface);
+}
+
+.crf-pop__row[data-active] {
+  background: var(--pn-surface);
+  box-shadow: inset 2px 0 0 var(--pn-brand);
+}
+
+.crf-pop__row-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crf-pop__live {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-brand);
+}
+
+.crf-pop__row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.crf-pop__mode {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.crf-pop__scope {
+  flex: none;
+  background: var(--pn-surface);
+  border: none;
+  border-top: 1px solid var(--pn-line);
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.crf-pop__scope:hover {
+  color: var(--pn-ink-1);
+}
+
+/* -- the blueprint viewport ---------------------------------------------- */
+/*
+ * THE PANE IS THE VIEWPORT. It used to be a scroll box holding an
+ * `height: auto` SVG, which is what parked the drawing at the TOP of a tall
+ * column and let it shrink to whatever the aspect ratio allowed. Filling the
+ * pane instead hands the centring to `preserveAspectRatio="xMidYMid meet"`,
+ * which centres the fitted box in whichever axis has slack — so "centred" is
+ * a property of the geometry now, not a margin someone has to maintain.
+ */
+.crf-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.crf-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.crf-svg[data-panning] {
+  cursor: grabbing;
+}
+
+.crf-zoom {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crf-zoom__btn {
+  min-width: 28px;
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.crf-zoom__btn:hover:not(:disabled) {
+  border-color: var(--pn-ink-3);
+  color: var(--pn-ink-1);
+}
+
+.crf-zoom__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.crf-mermaid {
+  padding: 8px;
+}
+
+.crf-empty {
+  color: var(--pn-ink-3);
+  padding: 24px;
+  margin: 0;
+}
+
+.crf-note {
+  color: var(--pn-ink-3);
+  font-size: 12px;
+  padding: 0 24px 12px;
+  margin: 0;
+}
+
+/* SPEC cards are dashed: intent, not fact. */
+.crf-cell--spec .sg-box {
+  stroke-dasharray: 5 4;
+}
+
+.crf-cell__flag {
+  opacity: 0.75;
+}
+
+/* LIVE CONSTRUCTION: what the latest patch added glows briefly in brass,
+   then settles. Attention is CSS — the drawn set never changes for it. */
+@keyframes crf-fresh-settle {
+  0% { stroke: var(--pn-brand); stroke-width: 2.5; }
+  100% { stroke: var(--pn-line); stroke-width: 1; }
+}
+
+.crf-cell--fresh .sg-box {
+  animation: crf-fresh-settle 2.4s ease-out;
+}
+
+.crf-line--fresh .sg-link {
+  animation: crf-fresh-settle 2.4s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crf-cell--fresh .sg-box,
+  .crf-line--fresh .sg-link {
+    animation: none;
+  }
+}

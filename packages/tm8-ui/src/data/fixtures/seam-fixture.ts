@@ -38,6 +38,7 @@ import {
   FILE_MAX_SIZE_BYTES_DEFAULT,
   WORKSPACE_EVENT_SCHEMA_VERSION,
   type ActivityItem,
+  type ArtifactsPreviewStartInput,
   type ActorSummary,
   type AttentionRequest,
   type AttentionRequestPage,
@@ -219,6 +220,11 @@ const FIXTURE_PROJECTS: readonly ProjectResource[] = [
 const clone = <T>(x: T): T => structuredClone(x);
 
 const FIXTURE_BASE_MS = Date.parse(FIXTURE_NOW);
+
+/** Seeded attention history is dated off the fixture clock, never a real
+ *  one: `Date.now()` here would make every relative timestamp in the
+ *  gallery drift with the wall clock and no screenshot would reproduce. */
+const FIXTURE_HISTORY_EPOCH = FIXTURE_NOW;
 
 // -- Tier 1 file reads (Amendment 8) -----------------------------------------
 // The SAME file the contention fixture flags as overlapping, so the git
@@ -569,10 +575,279 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         prompt: '', config: {},
         nextRunAt: state.nextRunAt, lastRunAt: state.lastRunAt, lastError: state.lastError,
       };
+    case 'graph':
+      // The graph content arm is CLOSED like loop's — produce a whole one.
+      return {
+        kind: 'graph', graphType: state.graphType,
+        nodes: [], edges: [], layout: {}, source: null,
+      };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };
   }
+}
+
+/** Minimal HTML escaping for fixture titles landing inside the demo page. */
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+}
+
+/** Unicode-safe base64 for the data: URL — bare btoa throws past Latin-1. */
+function toBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+/**
+ * The fixture bundle's page — self-contained, CSS-only, deterministic. It
+ * names its own revision in the markup so switching revisions in the viewer
+ * produces a VISIBLY different page, not two identical frames the switcher
+ * only claims are different.
+ */
+function artifactDemoPage(title: string, revisionNumber: number): string {
+  const safe = escapeHtml(title);
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${safe} — fixture preview</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh; display: grid; place-items: center;
+    font: 15px/1.6 ui-sans-serif, system-ui, sans-serif; color: #e6e9f2;
+    background:
+      radial-gradient(1100px 500px at 15% -10%, #223052 0%, transparent 60%),
+      radial-gradient(900px 500px at 110% 110%, #2a1f45 0%, transparent 55%),
+      #0c0f17;
+  }
+  main {
+    width: min(560px, 92vw); padding: 40px 44px; border-radius: 18px;
+    background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.09);
+  }
+  .rev {
+    display: inline-block; font: 600 11px/1 ui-monospace, monospace;
+    letter-spacing: .12em; color: #9fd4ff; padding: 6px 12px;
+    border: 1px solid rgba(159,212,255,.35); border-radius: 999px; margin-bottom: 18px;
+  }
+  h1 { font-size: 30px; letter-spacing: -.02em; margin-bottom: 10px; }
+  p { color: #aab3c7; }
+  .meter { height: 6px; border-radius: 3px; margin-top: 26px; overflow: hidden; background: rgba(255,255,255,.08); }
+  .meter i {
+    display: block; height: 100%; width: ${40 + revisionNumber * 18}%; border-radius: 3px;
+    background: linear-gradient(90deg, #5b8cff, #a06bff); animation: fill 1.2s ease-out;
+  }
+  @keyframes fill { from { width: 0 } }
+  footer { margin-top: 26px; font: 11px/1.5 ui-monospace, monospace; color: #6b7385; }
+</style>
+</head>
+<body>
+<main>
+  <span class="rev">REVISION ${revisionNumber}</span>
+  <h1>${safe}</h1>
+  <p>This page is the artifact's own bundle executing inside the sandboxed
+     preview frame — fixture-served, so the whole render path runs with no
+     server attached.</p>
+  <div class="meter"><i></i></div>
+  <footer>tm8 fixture seam &middot; sandbox="allow-scripts" &middot; data: URL</footer>
+</main>
+</body>
+</html>`;
+}
+
+/** CRC-32 (IEEE), the zip checksum. Table built once, lazily. */
+let CRC_TABLE: Uint32Array | null = null;
+function crc32(bytes: Uint8Array): number {
+  if (CRC_TABLE === null) {
+    CRC_TABLE = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      CRC_TABLE[n] = c >>> 0;
+    }
+  }
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]!) & 0xff]! ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * A REAL zip (stored, no compression): local headers, central directory,
+ * EOCD. Real because the honest fixture answer for export is bytes a zip
+ * reader actually opens — a fake blob "downloads" successfully and then fails
+ * in the user's hands, which is the dishonest order. Deterministic: the DOS
+ * stamp is the fixture epoch, never the wall clock (same law as tick()).
+ */
+function storedZip(entries: Array<{ path: string; bytes: Uint8Array }>): Blob {
+  const enc = new TextEncoder();
+  const le = (v: number, n: number): number[] => Array.from({ length: n }, (_, i) => (v >>> (8 * i)) & 0xff);
+  const dosTime = 0;
+  const dosDate = ((2026 - 1980) << 9) | (7 << 5) | 28; // 2026-07-28, FIXTURE_NOW's day
+  const parts: Uint8Array[] = [];
+  const central: Uint8Array[] = [];
+  let offset = 0;
+  for (const { path, bytes } of entries) {
+    const name = enc.encode(path);
+    const crc = crc32(bytes);
+    // versionNeeded, flags, method(0=stored), time, date, crc, csize, usize, nameLen, extraLen
+    const common = [
+      ...le(20, 2), ...le(0, 2), ...le(0, 2), ...le(dosTime, 2), ...le(dosDate, 2),
+      ...le(crc, 4), ...le(bytes.length, 4), ...le(bytes.length, 4), ...le(name.length, 2), ...le(0, 2),
+    ];
+    const local = new Uint8Array([...le(0x04034b50, 4), ...common, ...name]);
+    central.push(new Uint8Array([
+      ...le(0x02014b50, 4), ...le(20, 2), ...common,
+      ...le(0, 2), ...le(0, 2), ...le(0, 2), ...le(0, 4), ...le(offset, 4), ...name,
+    ]));
+    parts.push(local, bytes);
+    offset += local.length + bytes.length;
+  }
+  const cdSize = central.reduce((a, c) => a + c.length, 0);
+  const eocd = new Uint8Array([
+    ...le(0x06054b50, 4), ...le(0, 2), ...le(0, 2),
+    ...le(entries.length, 2), ...le(entries.length, 2), ...le(cdSize, 4), ...le(offset, 4), ...le(0, 2),
+  ]);
+  // One contiguous copy: BlobPart demands a plain ArrayBuffer, and the chunk
+  // views above are typed over ArrayBufferLike.
+  const chunks = [...parts, ...central, eocd];
+  const out = new Uint8Array(chunks.reduce((a, c) => a + c.length, 0));
+  let pos = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, pos);
+    pos += chunk.length;
+  }
+  return new Blob([out.buffer], { type: 'application/zip' });
+}
+
+/** The artifact summary's current revision — state-carried, 1 when absent. */
+function currentRevisionOf(s: EntitySummary): number {
+  const state = s.state as { revisionNumber?: unknown };
+  return typeof state.revisionNumber === 'number' ? state.revisionNumber : 1;
+}
+
+/**
+ * How many entities carry seeded history. Small on purpose: this is a specimen,
+ * not a load test, and every seeded row is a row some other lane's assertion
+ * could trip over.
+ */
+const ATTENTION_HISTORY_ENTITIES = 3;
+
+/**
+ * Materialize the attention table once.
+ *
+ * TWO HALVES, AND THE SECOND ONE EXISTS BECAUSE THE FIRST FOUND NOTHING.
+ *
+ * The PENDING half is the old badge-synthesis, moved here verbatim, because its
+ * arithmetic is load-bearing: `attention-model.ts` regroups these rows and its
+ * result is asserted to equal `badges.attention`. Points are spread across
+ * `pendingCount` rows with the largest pinned to `maxPoints`, so count/sum/max
+ * survive the round trip.
+ *
+ * It produces ZERO ROWS TODAY. Not one summary in `fixtures/entities.ts`
+ * carries a `badges.attention`, so the fixture seam has always answered the
+ * attention queue with an empty page — the inbox, its grouping, and every
+ * attention surface downstream have never once rendered real content off a
+ * fixture. That was invisible precisely because empty is also the correct
+ * answer for an entity with nothing waiting. The half is kept anyway: it is
+ * correct, and the moment the dataset gains a badge it starts working.
+ *
+ * The HISTORY half seeds SETTLED rows directly, on a deterministic handful of
+ * entities. Settled deliberately: `resolved` and `dismissed` contribute
+ * NOTHING to the badge (`recomputeAttentionBadge` counts only open and
+ * acknowledged), so seeding them gives the history surface real content without
+ * putting an attention badge onto a fixture entity that other lanes' list,
+ * graph and home assertions currently expect to be unflagged. A specimen must
+ * not change what its neighbours measure.
+ *
+ * The pending state is still reachable from here — `updateAttentionRequest` can
+ * move a row back to `open`, which is what the tests use to exercise the badge
+ * appearing and dropping again.
+ */
+function seedAttentionRows(summaries: ReadonlyMap<EntityId, EntitySummary>): AttentionRequest[] {
+  const rows: AttentionRequest[] = [];
+
+  for (const s of summaries.values()) {
+    if (s.deletedAt !== null) continue;
+    const agg = s.badges.attention;
+    if (!agg || agg.pendingCount <= 0) continue;
+
+    const rest = Math.max(0, agg.totalPoints - agg.maxPoints);
+    const others = Math.max(0, agg.pendingCount - 1);
+    const each = others > 0 ? Math.max(1, Math.round(rest / others)) : 0;
+    for (let i = 0; i < agg.pendingCount; i += 1) {
+      const first = i === 0;
+      rows.push({
+        id: `att-${s.id}-${i}`,
+        spaceId: s.spaceId,
+        entityId: s.id,
+        reason: first ? agg.latestReason : `${agg.latestReason} (${i + 1})`,
+        points: first ? agg.maxPoints : Math.min(each, 100),
+        status: 'open',
+        version: 1,
+        requestedBy: s.createdBy,
+        acknowledgedBy: null,
+        resolvedBy: null,
+        resolutionNote: null,
+        createdAt: agg.oldestRequestedAt,
+        updatedAt: agg.oldestRequestedAt,
+        acknowledgedAt: null,
+        resolvedAt: null,
+      });
+    }
+  }
+
+  // Sorted by id so the same entities are chosen on every run — a specimen that
+  // moves between runs is one nobody can write an assertion against.
+  const subjects = [...summaries.values()]
+    .filter((s) => s.deletedAt === null)
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .slice(0, ATTENTION_HISTORY_ENTITIES);
+
+  for (const [index, s] of subjects.entries()) {
+    const day = (n: number) => new Date(Date.parse(FIXTURE_HISTORY_EPOCH) - n * 86_400_000).toISOString();
+    rows.push({
+      id: `att-${s.id}-h0`,
+      spaceId: s.spaceId,
+      entityId: s.id,
+      reason: 'Blocked on a decision only a human can make; the agent stopped rather than guess.',
+      points: 80 - index * 5,
+      status: 'resolved',
+      version: 2,
+      requestedBy: s.createdBy,
+      acknowledgedBy: null,
+      resolvedBy: s.createdBy,
+      resolutionNote: 'Answered in the thread — the agent picked up from there.',
+      createdAt: day(4),
+      updatedAt: day(3),
+      acknowledgedAt: null,
+      resolvedAt: day(3),
+    });
+    rows.push({
+      id: `att-${s.id}-h1`,
+      spaceId: s.spaceId,
+      entityId: s.id,
+      reason: 'Second agent raised the same block a few minutes later.',
+      points: 40 - index * 5,
+      status: 'dismissed',
+      version: 2,
+      requestedBy: s.createdBy,
+      acknowledgedBy: null,
+      resolvedBy: s.createdBy,
+      // No note: a declined request often has none, and the row has to render
+      // honestly without one.
+      resolutionNote: null,
+      createdAt: day(2),
+      updatedAt: day(1),
+      acknowledgedAt: null,
+      resolvedAt: day(1),
+    });
+  }
+
+  return rows;
 }
 
 export function createFixtureSeam(): FixtureSeam {
@@ -587,6 +862,24 @@ export function createFixtureSeam(): FixtureSeam {
     ]),
   );
 
+  /**
+   * ATTENTION ROWS ARE STATE HERE, not a projection of the badge.
+   *
+   * They used to be synthesized per call from `summary.badges.attention`, and
+   * that made one whole half of the feature unrepresentable: the badge counts
+   * only `open` + `acknowledged` (server `entity-read.ts:520-523`), so a
+   * fixture derived from it could never produce a `resolved` or `dismissed`
+   * row — the exact rows an attention HISTORY surface exists to show. Every
+   * test and the whole fixture gallery saw an empty history and could not tell
+   * that from a broken one.
+   *
+   * So the direction is inverted to match the server's: rows are the truth and
+   * the badge is DERIVED from them (`recomputeAttentionBadge`). The seed still
+   * reproduces each entity's stored aggregate exactly — count, sum and max all
+   * round-trip, which is what the inbox's grouping is checked against — and
+   * history rows are added on top, where they cannot disturb it.
+   */
+  const attentionRows: AttentionRequest[] = seedAttentionRows(summaries);
   const openSpaces = new Set<SpaceId>();
   const seqBySpace = new Map<SpaceId, number>();
   const readMarks = new Map<EntityId, string>();
@@ -1004,6 +1297,39 @@ export function createFixtureSeam(): FixtureSeam {
     });
   }
 
+  /**
+   * Rebuild one entity's `badges.attention` from its rows — the same aggregate
+   * the server computes in SQL (`entity-read.ts:506-535`), including the part
+   * that is easy to miss: `acknowledged` counts as PENDING. An entity with no
+   * pending rows loses the badge key entirely rather than carrying a zeroed
+   * one, because the contract schema declares those counts `.positive()`
+   * (`schemas.ts:307-312`) — the badge is absent, never zero.
+   */
+  function recomputeAttentionBadge(s: EntitySummary): void {
+    const pending = attentionRows.filter(
+      (r) => r.entityId === s.id && (r.status === 'open' || r.status === 'acknowledged'),
+    );
+    if (pending.length === 0) {
+      const { attention: _attention, ...badges } = s.badges;
+      s.badges = badges;
+      return;
+    }
+    const latest = [...pending].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))[0];
+    s.badges = {
+      ...s.badges,
+      attention: {
+        pendingCount: pending.length,
+        totalPoints: pending.reduce((sum, r) => sum + r.points, 0),
+        maxPoints: Math.max(...pending.map((r) => r.points)),
+        latestReason: latest.reason,
+        oldestRequestedAt: pending.reduce(
+          (oldest, r) => (r.createdAt < oldest ? r.createdAt : oldest),
+          pending[0].createdAt,
+        ),
+      },
+    };
+  }
+
   function touch(s: EntitySummary): void {
     s.version += 1;
     const at = tick();
@@ -1254,6 +1580,15 @@ export function createFixtureSeam(): FixtureSeam {
           subjectScope: (c.subjectScope as string) ?? '',
           doesNotEstablish: (c.doesNotEstablish as string) ?? '',
           measuredAt: (c.measuredAt as string | null) ?? null,
+        };
+      case 'graph':
+        // Craft P1: counts mirror what the create carried; the row's real
+        // body lives in content, exactly as the server projects it.
+        return {
+          kind: 'graph',
+          graphType: (c.graphType as string) ?? 'entity',
+          nodeCount: Array.isArray(c.nodes) ? c.nodes.length : 0,
+          edgeCount: Array.isArray(c.edges) ? c.edges.length : 0,
         };
       default:
         throw new CollabError('invalid_input', `kind ${kind} is not client-creatable`);
@@ -2021,50 +2356,20 @@ export function createFixtureSeam(): FixtureSeam {
       return clone(pageOf<NotificationItem>([], opts));
     },
     /**
-     * The fixture stores the AGGREGATE (`badges.attention`), never individual
-     * requests, because that is the only shape the server hands the UI on a
-     * summary. So the per-request rows here are SYNTHESIZED to reproduce their
-     * own aggregate exactly — count, sum, and max all round-trip. Individual
-     * ids and timestamps are fixture inventions and mean nothing.
+     * Served from the row store, filtered the way the server filters
+     * (`entities-commands-tracking.ts:1214-1240`). NOTE WHAT IS ABSENT: no
+     * status filter is applied unless the caller asks for one, so the default
+     * answer is the FULL history including `resolved` and `dismissed`. That is
+     * the server's behaviour too — the badge is the only place that narrows to
+     * pending — and a history surface depends on it.
      */
     async attentionRequests(input): Promise<AttentionRequestPage> {
-      const rows: AttentionRequest[] = [];
-      for (const s of summaries.values()) {
-        if (s.deletedAt !== null) continue;
-        if (s.spaceId !== input.spaceId) continue;
-        if (input.entityId && s.id !== input.entityId) continue;
-        const agg = s.badges.attention;
-        if (!agg || agg.pendingCount <= 0) continue;
-
-        // Spread totalPoints across pendingCount rows, with the largest row
-        // pinned to maxPoints so the panel's max matches the server's.
-        const rest = Math.max(0, agg.totalPoints - agg.maxPoints);
-        const others = Math.max(0, agg.pendingCount - 1);
-        const each = others > 0 ? Math.max(1, Math.round(rest / others)) : 0;
-        for (let i = 0; i < agg.pendingCount; i += 1) {
-          const first = i === 0;
-          rows.push({
-            id: `att-${s.id}-${i}`,
-            spaceId: s.spaceId,
-            entityId: s.id,
-            reason: first ? agg.latestReason : `${agg.latestReason} (${i + 1})`,
-            points: first ? agg.maxPoints : Math.min(each, 100),
-            status: 'open',
-            version: 1,
-            requestedBy: s.createdBy,
-            acknowledgedBy: null,
-            resolvedBy: null,
-            resolutionNote: null,
-            createdAt: agg.oldestRequestedAt,
-            updatedAt: agg.oldestRequestedAt,
-            acknowledgedAt: null,
-            resolvedAt: null,
-          });
-        }
-      }
-      // Only 'open' rows exist above, so any other status filter is empty —
-      // truthfully, since the fixture cannot represent an acknowledged request.
-      const filtered = rows
+      const filtered = attentionRows
+        .filter((r) => r.spaceId === input.spaceId)
+        .filter((r) => (input.entityId ? r.entityId === input.entityId : true))
+        // A row whose entity was deleted is gone: the real table cascades on
+        // `entities`, so a tombstoned entity has no history to show.
+        .filter((r) => summaries.get(r.entityId)?.deletedAt == null)
         .filter((r) => (input.status ? r.status === input.status : true))
         .filter((r) => (input.minPoints ? r.points >= input.minPoints : true))
         // The server's order, mirrored: points desc, createdAt asc, id asc.
@@ -2216,6 +2521,24 @@ export function createFixtureSeam(): FixtureSeam {
           ...(input.kind === 'memory' ? { excerpt: derivedTitle } : {}),
           state: defaultStateFor(input),
         });
+        if (input.kind === 'graph') {
+          /* The row IS the graph (Craft P1 R1): the create's content is the
+             body a detail read must hand back, so it cannot be synthesized
+             from state alone the way the light kinds are. */
+          const c = (input.content ?? {}) as Record<string, unknown>;
+          extras.set(s.id, {
+            content: {
+              kind: 'graph',
+              graphType: (c.graphType as string) ?? 'entity',
+              nodes: Array.isArray(c.nodes) ? (c.nodes as never[]) : [],
+              edges: Array.isArray(c.edges) ? (c.edges as never[]) : [],
+              layout: (c.layout as Record<string, { x: number; y: number }>) ?? {},
+              source: (c.source as string | null) ?? null,
+            },
+            connections: clone(NO_CONNECTIONS),
+            capabilities: { ...CAPS_FULL },
+          });
+        }
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
       },
@@ -2324,16 +2647,76 @@ export function createFixtureSeam(): FixtureSeam {
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
       },
+      /**
+       * The bulk verb, mirroring `resolve_entity_attention` (050:208-212):
+       * every open OR acknowledged row on the entity flips to `resolved`, and
+       * the rows are RETAINED with their reason, points and requester intact.
+       * It is a status flip, not a delete — which is the whole reason a
+       * history surface has anything to show after you open an entity.
+       */
       async resolveAttention(id, input) {
         const s = requireSummary(id);
-        const affectedCount = s.badges.attention?.pendingCount ?? 0;
+        const pending = attentionRows.filter(
+          (r) => r.entityId === id && (r.status === 'open' || r.status === 'acknowledged'),
+        );
+        const at = tick();
+        for (const row of pending) {
+          row.status = 'resolved';
+          row.resolvedBy = clone(viewerActor);
+          row.resolvedAt = at;
+          row.updatedAt = at;
+          // The RPC bumps `version` on every row it touches, which is why a
+          // client holding rows fetched before an open will fail its next
+          // update with a version conflict rather than silently overwriting.
+          row.version += 1;
+          if (input.resolutionNote !== undefined) row.resolutionNote = input.resolutionNote;
+        }
+        const affectedCount = pending.length;
         if (affectedCount > 0) {
-          const { attention: _attention, ...badges } = s.badges;
-          s.badges = badges;
+          recomputeAttentionBadge(s);
           touch(s);
           emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         }
         return { request: null, entity: clone(s), affectedCount };
+      },
+      /**
+       * The per-request verb, mirroring `update_attention_request` (050:97-179)
+       * — including the part that is easy to get wrong: moving a row BACK to
+       * open or acknowledged CLEARS the resolution stamps rather than leaving a
+       * resolved-by on a row that is not resolved (050:148-167).
+       */
+      async updateAttentionRequest(requestId, input) {
+        const row = attentionRows.find((r) => r.id === requestId);
+        if (!row) throw new CollabError('not_found', `attention request ${requestId} not found`);
+        if (row.version !== input.expectedVersion) {
+          throw new CollabError(
+            'version_conflict',
+            `expected version ${input.expectedVersion}, have ${row.version}`,
+          );
+        }
+        const s = requireSummary(row.entityId);
+        const at = tick();
+        if (input.reason !== undefined) row.reason = input.reason;
+        if (input.points !== undefined) row.points = input.points;
+        if (input.resolutionNote !== undefined) row.resolutionNote = input.resolutionNote;
+        if (input.status !== undefined) {
+          row.status = input.status;
+          const settled = input.status === 'resolved' || input.status === 'dismissed';
+          row.resolvedBy = settled ? clone(viewerActor) : null;
+          row.resolvedAt = settled ? at : null;
+          row.acknowledgedBy = input.status === 'acknowledged' ? clone(viewerActor) : row.acknowledgedBy;
+          row.acknowledgedAt = input.status === 'acknowledged' ? at : row.acknowledgedAt;
+          if (input.status === 'open') {
+            row.acknowledgedBy = null;
+            row.acknowledgedAt = null;
+          }
+        }
+        row.updatedAt = at;
+        row.version += 1;
+        recomputeAttentionBadge(s);
+        touch(s);
+        emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+        return { request: clone(row), entity: clone(s), affectedCount: 1 };
       },
       /**
        * Amendment 4 mirror: writes the VIEWER's profile — the only row this
@@ -2572,8 +2955,24 @@ export function createFixtureSeam(): FixtureSeam {
        */
       async redeemInvite(input: RedeemInviteInput): Promise<InviteRedemption> {
         const invite = invites.find((i) => i.code === input.code);
+        // THE NODE'S OWN LADDER, IN THE NODE'S OWN ORDER (migration 118),
+        // because the join screen renders a different sentence per rung and a
+        // fixture that answered `forbidden` for all of them could exercise
+        // none of it. The sqlstates map through `http/errors.ts`:
+        // P0002 -> not_found, 42501 -> forbidden, 53400 -> limit_exceeded.
         if (!invite) throw new CollabError('not_found', 'invite not found');
         if (invite.revoked) throw new CollabError('forbidden', 'invite was revoked');
+        if (invite.expiresAt !== null && Date.parse(invite.expiresAt) < Date.parse(tick())) {
+          throw new CollabError('forbidden', 'invite has expired');
+        }
+        // Exhaustion is checked ONLY for a non-member on the node — an existing
+        // member spends no use — and the fixture viewer is always already a
+        // member, so this rung is unreachable here for the same reason
+        // `joined` is always false. Written out rather than omitted so the
+        // fixture and the RPC can be read side by side.
+        if (invite.uses >= invite.maxUses) {
+          throw new CollabError('limit_exceeded', 'invite is exhausted');
+        }
         return { spaceId: FIXTURE_SPACE_ID, memberId: viewerActor.id, joined: false };
       },
 
@@ -2985,11 +3384,54 @@ export function createFixtureSeam(): FixtureSeam {
         requireSummary(anchorId);
         readMarks.set(anchorId, lastReadAt);
       },
-      async previewArtifact(id: string) {
-        requireSummary(id);
-        // The fixture has no preview listener and no bundle bytes — a fake
-        // URL here would render a broken iframe that reads as a product bug.
-        throw new CollabError('not_implemented', 'fixture data cannot execute artifact previews');
+      async previewArtifact(id: string, input: ArtifactsPreviewStartInput) {
+        const s = requireSummary(id);
+        const current = currentRevisionOf(s);
+        const revisionNumber = input.revisionNumber ?? current;
+        if (revisionNumber < 1 || revisionNumber > current) {
+          throw new CollabError('not_found', `revision ${revisionNumber} does not exist`);
+        }
+        // A data: URL is a previewUrl the viewer must treat as OPAQUE, which
+        // makes the fixture a proof of that rule: any code path that parses
+        // or re-bases the URL breaks here first, not in production.
+        const mintedAt = tick();
+        return {
+          previewSessionId: nextId('preview'),
+          token: `fx-preview-${revisionNumber}`,
+          revisionNumber,
+          // The fixture clock ~600s out — the server's own TTL, so the
+          // viewer's re-mint scheduling runs against fixture data too.
+          expiresAt: new Date(Date.parse(mintedAt) + 600_000).toISOString(),
+          previewUrl: `data:text/html;base64,${toBase64(artifactDemoPage(s.title, revisionNumber))}`,
+        };
+      },
+      async listArtifactRevisions(id: string) {
+        const s = requireSummary(id);
+        const current = currentRevisionOf(s);
+        const revisions = [];
+        for (let n = current; n >= 1; n--) {
+          revisions.push({
+            revisionNumber: n,
+            manifestSha256: n.toString(16).padStart(2, '0').repeat(32),
+            entrypoint: 'index.html',
+            fileCount: 1,
+            totalSizeBytes: 1024 + n * 512,
+            sourceProvenance: null,
+            // Newest first like the server orders it; one fixture day apart.
+            createdAt: new Date(FIXTURE_BASE_MS - (current - n) * 86_400_000).toISOString(),
+            publishedBy: s.createdBy.id,
+          });
+        }
+        return { revisions };
+      },
+      async exportArtifactRevision(id: string, revisionNumber: number) {
+        const s = requireSummary(id);
+        const current = currentRevisionOf(s);
+        if (revisionNumber < 1 || revisionNumber > current) {
+          throw new CollabError('not_found', `revision ${revisionNumber} does not exist`);
+        }
+        const html = artifactDemoPage(s.title, revisionNumber);
+        return storedZip([{ path: 'index.html', bytes: new TextEncoder().encode(html) }]);
       },
       async spawn(input: ExecutionSpawnInput) {
         const teamMember = requireSummary(input.teamMemberId);

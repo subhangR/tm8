@@ -33,7 +33,7 @@ import { claimsFor, commandEnvelope, limitOf, requireUuidParam, type CommandEnve
 import {
   actorOf,
   assembleSummaries,
-  capabilitiesOf,
+  entityCapabilities,
   contentOf,
   ENTITY_COLUMNS,
   ENTITY_FROM,
@@ -345,7 +345,7 @@ export async function buildDetail(
     content: contentOf(row),
     hierarchy,
     connections,
-    capabilities: capabilitiesOf(row),
+    capabilities: entityCapabilities(row),
   };
 }
 

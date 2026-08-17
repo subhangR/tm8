@@ -36,7 +36,14 @@ export type CoreEntityKind =
   | 'memory'
   | 'artifact'
   | 'worktree'
-  | 'loop';
+  | 'loop'
+  // Craft P1 (2026-08-16, rulings R1-R3 on task 01a00a0b): the general
+  // diagram/flow primitive. ONE ROW holds vertices AND edges — a lean,
+  // self-contained blueprint; referenced entities stay outside, the flow
+  // between them lives inside the row. Content-discriminated `graphType`
+  // ('entity' = orchestratable blueprint, 'mermaid' = durable diagram source,
+  // more later). It never writes real public.edges while being crafted.
+  | 'graph';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -113,6 +120,43 @@ export interface EntitySummary {
   counters: EntityCounters;
   state: EntityState;             // discriminator-specific Z1/Z2 fields
   badges: EntityBadges;
+  /**
+   * What the RPCs will actually permit on this row — the SAME fact
+   * `EntityDetail` carries, projected onto the summary so a TILE can reach it.
+   *
+   * ## Why the summary needs it at all
+   *
+   * Every capability-gated row action resolves through `capabilityGate`, which
+   * refuses whenever capabilities are absent ("absent ⇒ not permitted", and
+   * that rule is correct — an optimistic all-true would claim a permission
+   * nobody granted). But a list row is an `EntitySummary`, and capabilities
+   * lived only on `EntityDetail`, so the client's only source was the detail
+   * cache. A freshly-paged row is not in that cache, so on a collapsed tile
+   * EVERY such verb — Run, Archive, Collections — sat permanently refused, and
+   * the only thing that asked for a detail was the EXPANDED strip. The verb
+   * was drawn, and dead, and the honest refusal made it look deliberate.
+   *
+   * This is the `badges.workingActors` / `LinkedPullRequestBadge` ruling again,
+   * for the same reason: a fact that arrives WITH the row it describes has no
+   * hydration lottery. Any tile that renders at all can gate honestly.
+   *
+   * ## Why it costs nothing
+   *
+   * `capabilitiesOf` is a pure function of the entity row the summary is
+   * already assembled from — kind, liveness and work_status, nothing else. It
+   * adds no query and cannot introduce an N+1, and because it reads only a row
+   * that already cleared RLS it cannot widen what a viewer sees.
+   *
+   * ## OPTIONAL, deliberately
+   *
+   * Additive like `docs`/`memories`/`assignments` and under the same law: a
+   * rolling node that predates this omits the key, and ABSENCE IS NOT A
+   * VERDICT — it means "this server never told us", which the client already
+   * renders as `CheckingPermission`, i.e. exactly today's behaviour. Required
+   * here would make an older node's every list read fail `.strict()` parsing,
+   * turning a missing affordance into a blank panel.
+   */
+  capabilities?: EntityCapabilities;
 }
 
 /** Provenance for one task's current `assigned_to` edge. */
@@ -272,7 +316,13 @@ export type CoreEntityState =
    */
   | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
       subjectId: EntityId | null; nextRunAt: string | null; lastRunAt: string | null;
-      lastError: string | null };
+      lastError: string | null }
+  /**
+   * Craft P1: enough for a list row — which type of graph, and how big. The
+   * vertices and edges themselves are content, not state: a summary never
+   * needs them and they can be large.
+   */
+  | { kind: 'graph'; graphType: string; nodeCount: number; edgeCount: number };
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
@@ -458,6 +508,54 @@ export interface WorkSessionInteractionProfileProjection {
   composerPolicy: ComposerInteractionPolicy;
 }
 
+/**
+ * Craft P1 — the lean blueprint vocabulary (rulings R1-R3, task 01a00a0b).
+ *
+ * DELIBERATELY A SKETCH, NOT A PROGRAM SCHEMA. A node is either a REFERENCE
+ * to an existing entity (`id`) or a SPEC for one that does not exist yet
+ * (`{kind, title, hint?}` — the orchestrating agent writes the real body when
+ * it materializes, R2). `key` is row-local so specs can be wired before they
+ * exist. Edges carry the registered edge vocabulary as INTENT — the agent
+ * treats them as instruction, never as a schema-validated DAG. Everything is
+ * optional beyond the discriminants and validation is soft: unknown members
+ * pass through so future graph types cost no contract change.
+ */
+export interface GraphNodeSpec { kind?: string; title?: string; hint?: string; [extra: string]: unknown }
+/**
+ * THE PINNED NODE SHAPE (Craft P1, settled 2026-08-16 — read this before
+ * writing a blueprint row).
+ *
+ *   id    the ROW-LOCAL key. Edges' `src`/`dst` name it. Not an entity id.
+ *   ref   the entity id, when this node points at something that REALLY EXISTS.
+ *   spec  {kind,title,hint} when the node does NOT exist yet.
+ *
+ * A node is a REFERENCE **iff it carries `ref`**; otherwise it is a SPEC.
+ * Entity-hood is never inferred from `id` — that inference is precisely the
+ * defect this pin removes: writers universally reach for `id` as the node's
+ * local identity (11 of 11 nodes on the first real blueprint row did, and none
+ * carried `key`), so a reader treating `id` as an entity id turned every spec
+ * into a broken reference reading "unavailable entity".
+ *
+ * LEGACY ALIASES, accepted forever, never written: `key` for `id` (it wins
+ * when both are present, because that is the key old edges named) and
+ * `entityId` for `ref`. One migration branch covers rows written before the
+ * pin: no `ref`, no `spec`, and an `id` in UUID form ⇒ `id` is the ref. A node
+ * carrying `spec` is never subject to it.
+ */
+export interface GraphNode {
+  /** Row-local key — the edge namespace. */
+  id?: string;
+  /** The referenced entity. Present ⇔ this node is a reference. */
+  ref?: EntityId;
+  spec?: GraphNodeSpec;
+  /** @deprecated legacy alias for `id`; still honored, and it wins over `id`. */
+  key?: string;
+  /** @deprecated legacy alias for `ref`. */
+  entityId?: EntityId;
+  [extra: string]: unknown;
+}
+export interface GraphEdgeSpec { src?: string; dst?: string; type?: string; note?: string; [extra: string]: unknown }
+
 export type CoreEntityContent =
   | { kind: 'task'; description: string; acceptanceCriteria: AcceptanceCriterion[];
       pointsEstimate?: number | null }
@@ -492,7 +590,15 @@ export type CoreEntityContent =
       statusChangedAt: string | null }
   | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
       subjectId: EntityId | null; prompt: string; config: Record<string, unknown>;
-      nextRunAt: string | null; lastRunAt: string | null; lastError: string | null };
+      nextRunAt: string | null; lastRunAt: string | null; lastError: string | null }
+  /**
+   * Craft P1: the whole graph in one row (R1). `graphType` discriminates
+   * (R3): 'entity' uses nodes/edges/layout; 'mermaid' uses `source`; future
+   * types choose their own members. All four carry on every read — an arm a
+   * type does not use is simply empty. `layout` is presentation only.
+   */
+  | { kind: 'graph'; graphType: string; nodes: GraphNode[]; edges: GraphEdgeSpec[];
+      layout: Record<string, { x: number; y: number }>; source: string | null };
 
 export interface CustomEntityContent { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
 
@@ -662,6 +768,14 @@ export interface MessageView extends EntitySummary {
   lastReplyAt?: string | null; replyParticipants?: ActorSummary[];
   /** Structured runtime output, appended durably in stream order. */
   parts?: MessagePart[];
+  /**
+   * True while this message is a chat turn's agent message and that turn has
+   * not completed (`chat_turns.state` in `queued`/`running`). The stored body
+   * is then the claim placeholder, not content — parts-aware surfaces should
+   * draw the streaming parts and suppress the body. Server-set; absent
+   * everywhere else.
+   */
+  turnInFlight?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -731,8 +845,10 @@ export interface MessageDonePart extends MessagePartBase {
   payload: { reason: 'success' | 'error' | 'interrupted' | 'closed' };
 }
 
-/** One write-once runtime binding for a human-authored message-thread root. */
-export type ChatMode = 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate';
+/** One write-once runtime binding for a human-authored message-thread root.
+ *  `craft` joined 2026-08-16 (Craft P1): the blueprint-sketching mode — edits
+ *  a graph entity's row, never the real graph; style-only like every mode. */
+export type ChatMode = 'ask' | 'explain' | 'plan' | 'build' | 'orchestrate' | 'craft';
 
 export interface ChatThreadSummary {
   rootMessageId: EntityId;
@@ -1377,6 +1493,88 @@ export interface AuthClaimResult {
   session: AuthSessionView;
 }
 
+/**
+ * `auth.claim.reissue` — rotate the first-run claim token when the printed one
+ * is lost (design §3.1, §4.3).
+ *
+ * ON-BOX BY CONSTRUCTION. The handler admits only the loopback auto-owner arm,
+ * and the fresh secret is written to the 0600 `<dataDir>/setup-token`. The
+ * plaintext is returned here too, but only ever over that loopback-gated
+ * response — the same trust boundary that already lets a loopback caller act as
+ * owner without a password. On a CLAIMED node the operation is inert (a claimed
+ * node's token can authorize nothing), and it refuses rather than minting a
+ * token that would only ever be dead.
+ */
+export interface AuthClaimReissueResult {
+  /** The fresh `tm8c_…` plaintext. Returned only to an on-box loopback caller. */
+  token: string;
+  /** The claim URL the operator can open, fragment-carried like the boot log's. */
+  claimUrl: string;
+  /** The 0600 file the durable copy was written to, or null if the write failed. */
+  tokenPath: string | null;
+}
+
+/**
+ * `auth.password.change` — rotate your OWN credential (design §10.3).
+ *
+ * CHANGE, NOT RESET: the current password is required and proven server-side, so
+ * an open session cannot silently re-credential the account. There is
+ * deliberately no reset-without-the-old-password variant — that needs an
+ * out-of-band capability, and an unauthenticated one would hand the node to
+ * anyone who can reach it. The write is `set_account_credential` under the
+ * caller's own claims (an account may set its own credential without node
+ * admin); every OTHER live session for the account is then revoked, the one
+ * making the change spared.
+ */
+export interface AuthPasswordChangeInput {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface AuthPasswordChangeResult {
+  accountId: string;
+  /**
+   * How many OTHER live sessions were revoked. The session making the change is
+   * deliberately kept, so a caller is not logged out of the shell or browser
+   * they just used. A loopback auto-owner carries no session, so nothing is
+   * spared and the count is every live bearer session for the account.
+   */
+  revokedOtherSessions: number;
+}
+
+/**
+ * `auth.invite.signup` — join a space by redeeming an invite that also CREATES
+ * your account (design D5, §4.4, §5.3).
+ *
+ * CLAIM-FREE, and the INVITE CODE is the authorization: the invited person has
+ * no account until this call, so no claim can be bound. `signup_via_invite`
+ * validates the invite, creates the account (never an admin, never an owner —
+ * §7.3), creates the member row and consumes the invite ATOMICALLY. Signing up
+ * SIGNS YOU IN — the result is `auth.login`'s shape plus the space you joined,
+ * so the operator never sets or learns your password.
+ */
+export interface AuthInviteSignupInput {
+  /** `inv_…` — the code handed to the invited person out of band. */
+  code: string;
+  username: string;
+  password: string;
+  displayName?: string;
+  email?: string;
+  /** Defaults to `browser`. `agent` is refused — agent tokens are minted at spawn. */
+  kind?: 'browser' | 'cli';
+}
+
+export interface AuthInviteSignupResult {
+  /** `tm8s_<sessionId>.<secret>` — returned exactly once, never recoverable. */
+  token: string;
+  account: AuthAccountView;
+  session: AuthSessionView;
+  /** The space the invite joined you to. */
+  spaceId: SpaceId;
+  /** The member row created for you in that space. */
+  memberId: EntityId;
+}
+
 // ---------------------------------------------------------------------------
 // credentials.* — Tier B per-member vendor credentials (sub-doc 11 §D).
 //
@@ -1955,7 +2153,11 @@ export type InvitePreview =
  * the full-screen kanban over the task collection (switchable grouping,
  * priority/assignee filters). A VIEW: it renders the `task` KIND's rows, so
  * no kind ref moves; the tab is a presentation of an existing collection. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board';
+/** `craft` added 2026-08-16 (Craft P1, same R4 additive widening): the
+ * split-pane blueprint studio — a craft-mode chat anchored to a `graph`
+ * entity beside a canvas rendering that entity's row. A VIEW over the new
+ * `graph` kind's rows; the kind itself stays an ordinary collection kind. */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -2150,16 +2352,53 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // The id is `chats` on both sides. It is free: 125 RENAMED the old `chats`
   // group to `channels` (it was the channel collection's group, never this
   // surface's), so nothing else claims it and no space can hold both.
+  // 2026-08-16 LATER (unified Home, task 01a00932, migration 134): the
+  // `work` and `channels` GROUPS retire and `chats` is relabelled HOME —
+  //   chats(Home) | board | graph | files | settings
+  // Home's screen lists chat threads OR any collection kind (the root
+  // column + registry-driven icon rail), so a Work tab beside it would be a
+  // second door to every list Home already owns, and Channels' contents
+  // await the redesigned Collab surface (a later feature). Nothing was
+  // deleted: `workspace`, `git`, `messages` and every retired kind ref keep
+  // their routes, their chords and their menu-editor eligibility — the same
+  // rail-edit posture as 125/126/127.
   { serverId: 'chats', clientId: 'chats' },
-  { serverId: 'work', clientId: 'workspace' },
+  // 2026-08-16 LATER STILL (user ruling, migration 140): a WORK tab returns
+  // beside Home —
+  //   chats(Home) | work | board | craft | graph | files | settings
+  // 134 retired the group on the reasoning that Home's root column already
+  // lists every collection kind, so Work was a second door to the same
+  // lists. That was true of 134's Work group, which was a RAIL of rows
+  // (Workspace caret + the three dev kinds + git). It is not true of this
+  // one: the group holds the single childless `workspace` VIEW, so the tab
+  // is the three-panel workspace itself — left panel, center entity, right
+  // panel — which is a LAYOUT Home does not offer, not a duplicate list.
+  //
+  // The group is re-minted rather than restored, so its id is `work` on BOTH
+  // sides. The historical `work`/`workspace` divergence noted above belongs
+  // to the pre-134 group; nothing persists under the old client id, so there
+  // is no reason to carry the asymmetry into a group being created fresh.
+  //
+  // Railless BY SHAPE: one childless view item, so tm8-ui's
+  // `isRaillessGroup` answers true and the workspace renders full-bleed
+  // beside the tab row ('workspace' joined RAILLESS_VIEW_REFS in the same
+  // change). Pre-134 menus that still carry the OLD Work group are
+  // untouched by that set — their `workspace` item has eight caret
+  // children, and the rule keys on the shape, so they keep their rail.
+  { serverId: 'work', clientId: 'work' },
   // 2026-08-16 (Board tab wave, migration 130): the task kanban is its own
-  // full-bleed tab beside Work — a railless group holding the single `board`
-  // VIEW, the same posture as graph/files/chats. It PRESENTS the task
-  // collection; the `task` kind row stays in the Workspace caret, so this is
-  // a second door to tasks, not a move (the R9 two-doors posture files set).
+  // full-bleed tab — a railless group holding the single `board` VIEW, the
+  // same posture as graph/files/chats. It PRESENTS the task collection; the
+  // `task` kind stays a Home root, so this is a second door to tasks, not a
+  // move (the R9 two-doors posture files set).
   { serverId: 'board', clientId: 'board' },
+  // 2026-08-16 (Craft P1, migration 137): the blueprint studio joins beside
+  // Board — a railless group holding the single `craft` VIEW (chat + canvas
+  // over one `graph` entity's row). Placed between Board and Graph: it sits
+  // with the other full-bleed work surfaces, and tab position is a one-line
+  // edit here if the pending position ruling says otherwise.
+  { serverId: 'craft', clientId: 'craft' },
   { serverId: 'graph', clientId: 'graph' },
-  { serverId: 'channels', clientId: 'channels' },
   { serverId: 'files', clientId: 'files' },
   { serverId: 'settings', clientId: 'settings' },
 ] as const;
@@ -2917,6 +3156,18 @@ export interface ExecutionSpawnInput extends CommandContext {
    * `remembers` set; nothing is written to the graph.
    */
   memoryIds?: EntityId[];
+  /**
+   * The terminal geometry the client has measured for the pane this session
+   * will be shown in, so the PTY BOOTS at the real width instead of the 80x24
+   * default. Load-bearing, not cosmetic: a full-screen agent TUI lays its
+   * entire frame out for the width it is given at startup, and the browser can
+   * only correct that afterwards via a resize round trip — which the PTY socket
+   * suppresses when the fitted size happens to match what it already has,
+   * leaving the 80-column frame frozen on screen until a human resizes the
+   * window. Omitted (a headless or non-visual caller) keeps the 80x24 default.
+   */
+  cols?: number;
+  rows?: number;
 }
 
 /**
@@ -3037,6 +3288,9 @@ export interface ExecutionTerminateInput extends CommandContext {
  */
 export interface ExecutionResumeInput extends CommandContext {
   clientMutationId: string;
+  /** Same geometry contract as `ExecutionSpawnInput` — a resume re-spawns the PTY. */
+  cols?: number;
+  rows?: number;
 }
 
 /**

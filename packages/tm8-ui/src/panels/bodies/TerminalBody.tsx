@@ -1,18 +1,23 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { EntityDetail, HandoffView } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { Eyebrow } from '../../kit';
+import { useShellKind } from '../../mobile';
 import {
   ExitedFallback,
   LiveTerminal,
   NeedsYouBanner,
   ReservedToolbarSeam,
   StaleFallback,
+  TERMINAL_FONT_SIZE,
+  TERMINAL_FONT_SIZE_KEY,
   TERMINAL_PLACEHOLDER,
   TerminalChromeStrip,
   TerminalHost,
+  TerminalModifierBar,
   UnverifiedFallback,
   isLiveTerminalEnabled,
+  nearestFontSize,
   presentSession,
   presentationStyle,
   toSessionRow,
@@ -40,6 +45,25 @@ import { ShareDropTarget } from '../share/ShareDropTarget';
  * footer keep exact geometry across every verdict, so a session ending never
  * jumps the layout under the user's cursor.
  */
+
+/**
+ * The stored phone font size, clamped onto the offered ladder.
+ *
+ * Storage is user-writable and survives across builds, so a value from an
+ * older ladder — or from a hand-edited key — must resolve to something
+ * renderable rather than to an unusable terminal. Reading throws in Safari
+ * private mode and some embedded webviews, which is exactly the population
+ * this surface exists for, so a failure means "no preference" and never a
+ * crash before the terminal can mount.
+ */
+function readStoredFontSize(): number {
+  try {
+    const raw = window.localStorage.getItem(TERMINAL_FONT_SIZE_KEY);
+    return raw === null ? TERMINAL_FONT_SIZE : nearestFontSize(raw, TERMINAL_FONT_SIZE);
+  } catch {
+    return TERMINAL_FONT_SIZE;
+  }
+}
 
 export interface TerminalBodyProps {
   detail: EntityDetail;
@@ -109,6 +133,66 @@ export function TerminalBody({
   // explicit operator opt-out still use the placeholder, so the exit-focus
   // action remains safely optional.
   const liveTerminalRef = useRef<LiveTerminalHandle>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+
+  /*
+   * THE PHONE SURFACE — one fork, at the one place that can see the terminal.
+   *
+   * `useShellKind` and not a width media query: the shell decision is
+   * `(pointer: coarse) && width < 500`, it is proved in `mobile/shell-for.ts`,
+   * and a second rule here could disagree with the one that chose the shell
+   * this body is rendering inside. A tablet at 768 is coarse-pointered and
+   * still gets the desktop terminal, which is correct — it has a keyboard-sized
+   * screen and, more to the point, it is not what the owner ruled on.
+   *
+   * The bar mounts INSIDE `.pn-terminal-body` rather than in the frame's
+   * `notices` region deliberately. Notices is one 40px strip that the drop
+   * notice and Lane 4's surfaces already contend for; a second permanent
+   * occupant would fight them for it. The bar belongs to the terminal, lives
+   * and dies with it, and needs the terminal's own ref — so it lives here.
+   */
+  const { shell } = useShellKind();
+  const onPhone = shell === 'mobile';
+  const [geometry, setGeometry] = useState<{ cols: number; rows: number } | null>(null);
+  const [cellWidth, setCellWidth] = useState(0);
+  const [hostWidth, setHostWidth] = useState(0);
+  const [fontSize, setFontSize] = useState(() => readStoredFontSize());
+  /*
+   * THE ARM LIVES HERE, above both halves, because both halves change it and
+   * neither owns it. The BAR arms it (a tap on `ctrl`); the TERMINAL spends it
+   * (the next character from the system keyboard, seen only inside `onData`).
+   * Keeping it in the bar meant the terminal had no way to clear it, and the
+   * key would stay lit over a modifier that was already gone — a lie about
+   * state on the one control whose entire value is that its state is visible.
+   */
+  const [ctrlArmed, setCtrlArmed] = useState(false);
+
+  /* Persist per DEVICE, never per account — the size that is legible is a
+     property of the screen you are holding and the eyes holding it, and a
+     preference set on a phone must not follow you to a desktop. Same scope and
+     same reasoning as `SHELL_OVERRIDE_KEY`. */
+  const changeFontSize = useCallback((next: number) => {
+    const clamped = nearestFontSize(next, TERMINAL_FONT_SIZE);
+    setFontSize(clamped);
+    try {
+      window.localStorage.setItem(TERMINAL_FONT_SIZE_KEY, String(clamped));
+    } catch {
+      /* Storage refused (private mode, embedded webview). The choice still
+         applies for this session, which beats refusing the user's request. */
+    }
+  }, []);
+
+  /* The measured host width, for the "what one point smaller would buy"
+     projection. Read after each fit rather than observed continuously: the only
+     thing that moves it is a resize, and a resize is exactly what produces the
+     geometry callback below. */
+  const readTerminalMetrics = useCallback((size: { cols: number; rows: number }) => {
+    setGeometry(size);
+    const metrics = liveTerminalRef.current?.geometry();
+    if (metrics) setCellWidth(metrics.cellWidth);
+    const host = stageRef.current?.querySelector('.term-host');
+    if (host instanceof HTMLElement) setHostWidth(host.getBoundingClientRect().width);
+  }, []);
 
   /* USER RULING 2026-07-29 — "the terminal is the main thing of our app":
    * the canvas starts DIRECTLY under the tab strip and takes every pixel
@@ -152,6 +236,7 @@ export function TerminalBody({
       <div
         className="pn-terminal-stage"
         data-testid="terminal-stage"
+        ref={stageRef}
         onDragEnter={() => setDetailsDragging(true)}
         onDragOver={() => setDetailsDragging(true)}
         onDragLeave={(event) => {
@@ -172,6 +257,13 @@ export function TerminalBody({
           {...(resuming ? { resuming } : {})}
           {...(resumeDisabledReason ? { resumeDisabledReason } : {})}
           liveTerminalRef={liveTerminalRef}
+          {...(onPhone
+            ? {
+                fontSize,
+                onGeometry: readTerminalMetrics,
+                onCtrlSpent: () => setCtrlArmed(false),
+              }
+            : {})}
         />
 
         <div className="pn-terminal-overlay">
@@ -215,6 +307,28 @@ export function TerminalBody({
           )}
         </div>
       </div>
+
+      {/*
+        THE MODIFIER BAR — phone only, and OUTSIDE the stage.
+        Outside because it must not overlay the canvas: a bar floating over the
+        terminal covers the last two lines of output, which on a 390px screen is
+        most of what you came to read. It is a sibling that takes its own height,
+        so the terminal fits ABOVE it and the grid the agent is told about is the
+        grid the user can actually see.
+      */}
+      {onPhone ? (
+        <TerminalModifierBar
+          terminal={liveTerminalRef}
+          fontSize={fontSize}
+          onFontSizeChange={changeFontSize}
+          geometry={geometry}
+          hostWidth={hostWidth}
+          cellWidth={cellWidth}
+          live={style.isLive}
+          ctrlArmed={ctrlArmed}
+          onCtrlArmedChange={setCtrlArmed}
+        />
+      ) : null}
 
       {detailsOpen ? (
         <div
@@ -397,6 +511,9 @@ function SessionCanvas({
   resuming,
   resumeDisabledReason,
   liveTerminalRef,
+  fontSize,
+  onGeometry,
+  onCtrlSpent,
 }: {
   presentation: ReturnType<typeof presentSession>;
   sessionId: string;
@@ -408,6 +525,14 @@ function SessionCanvas({
   resuming?: boolean;
   resumeDisabledReason?: string;
   liveTerminalRef?: React.Ref<LiveTerminalHandle>;
+  /** Phone only — the modifier bar's font control. Absent everywhere else, so
+      the desktop terminal keeps `TERMINAL_FONT_SIZE` untouched. */
+  fontSize?: number;
+  /** Phone only — feeds the honest column readout. Named for what it reports
+      rather than for the event, because a caller wiring `onResize` would
+      reasonably expect it to be about the PANEL resizing. */
+  onGeometry?: (size: { cols: number; rows: number }) => void;
+  onCtrlSpent?: () => void;
 }) {
   switch (presentation) {
     case 'streaming':
@@ -421,6 +546,9 @@ function SessionCanvas({
           sessionId={sessionId}
           serverBaseUrl={serverBaseUrl}
           live
+          {...(fontSize ? { fontSize } : {})}
+          {...(onGeometry ? { onResize: (_id, size) => onGeometry(size) } : {})}
+          {...(onCtrlSpent ? { onCtrlSpent } : {})}
         />
       ) : (
         <TerminalHost placeholder={TERMINAL_PLACEHOLDER} />

@@ -1,0 +1,110 @@
+{
+  "label": "back-walks",
+  "ref": {
+    "head": "67d311b5",
+    "branch": "tm8/01a00ba8-fixes",
+    "behindMain": 2
+  },
+  "space": "sp-atelier",
+  "parts": {
+    "backWalks": [
+      {
+        "viewport": "phone-390",
+        "walk": "C: k/tasks → drill A → back → forward",
+        "steps": [
+          {
+            "at": "cold k/tasks",
+            "hash": "#/s/sp-atelier/k/tasks"
+          },
+          {
+            "at": "drilled A (row click)",
+            "hash": "#/s/sp-atelier/e/task-4f8c2a9e?origin=tasks"
+          },
+          {
+            "at": "back",
+            "hash": "#/s/sp-atelier/k/tasks"
+          },
+          {
+            "at": "back +1.2s (trap check)",
+            "hash": "#/s/sp-atelier/k/tasks"
+          },
+          {
+            "at": "forward",
+            "hash": "#/s/sp-atelier/e/task-4f8c2a9e?origin=tasks"
+          }
+        ],
+        "verdict": "PASS",
+        "forcedClick": true
+      },
+      {
+        "viewport": "phone-390",
+        "walk": "A/Q4: cold e/A — nothing behind",
+        "steps": [
+          {
+            "at": "cold e/A",
+            "hash": "#/s/sp-atelier/e/task-4f8c2a9e?origin=tasks"
+          },
+          {
+            "at": "marker visible",
+            "ok": true
+          },
+          {
+            "at": "goBack()",
+            "navigated": false,
+            "hash": ""
+          }
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "viewport": "desktop-1440",
+        "walk": "C: k/tasks → drill A → back → forward",
+        "steps": [
+          {
+            "at": "cold k/tasks",
+            "hash": "#/s/sp-atelier/k/tasks"
+          },
+          {
+            "at": "drilled A (row click)",
+            "hash": "#/s/sp-atelier/e/task-4f8c2a9e?origin=tasks"
+          },
+          {
+            "at": "back",
+            "hash": "#/s/sp-atelier/k/tasks"
+          },
+          {
+            "at": "back +1.2s (trap check)",
+            "hash": "#/s/sp-atelier/k/tasks"
+          },
+          {
+            "at": "forward",
+            "hash": "#/s/sp-atelier/e/task-4f8c2a9e?origin=tasks"
+          }
+        ],
+        "verdict": "PASS",
+        "forcedClick": false
+      },
+      {
+        "viewport": "desktop-1440",
+        "walk": "A/Q4: cold e/A — nothing behind",
+        "steps": [
+          {
+            "at": "cold e/A",
+            "hash": "#/s/sp-atelier/e/task-4f8c2a9e?origin=tasks"
+          },
+          {
+            "at": "marker visible",
+            "ok": true
+          },
+          {
+            "at": "goBack()",
+            "navigated": false,
+            "hash": ""
+          }
+        ],
+        "verdict": "PASS"
+      }
+    ]
+  },
+  "problems": []
+}

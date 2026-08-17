@@ -116,3 +116,92 @@ it('reset-all appears only once there is something to reset, and clears everythi
   expect(screen.queryByTestId('models-reset-all')).toBeNull();
   expect(modelCatalog('local')).toHaveLength(modelCatalog('local', true).length);
 });
+
+/* ---------------------------------------------------------------------------
+   LAYOUT — SECTION-CONTRACT.md, 2026-08-16.
+
+   These hold the three things the frame pass could not fix from outside the
+   section: that it stopped hand-rolling the frame, that it stopped drawing its
+   list rows with the class the settings CARD is drawn with, and that a reader
+   can tell WHICH node's catalog they are editing. jsdom loads no stylesheet, so
+   nothing here asserts a pixel — the geometry was measured in real Chrome (§8);
+   these assert the STRUCTURE those measurements depend on, which is the part a
+   future edit can silently undo.
+   ------------------------------------------------------------------------ */
+
+it('is built on SectionFrame and owns exactly ONE scroller', () => {
+  const { container } = renderSection();
+
+  // The frame's three parts, rendered by SectionFrame rather than transcribed.
+  expect(container.querySelectorAll('.set-section')).toHaveLength(1);
+  expect(container.querySelectorAll('.set-section__head')).toHaveLength(1);
+
+  // §3: two nested scrollers means the inner one gets no overflow to
+  // distribute and its content is clipped instead of scrolling.
+  expect(container.querySelectorAll('.set-section__scroll')).toHaveLength(1);
+
+  // And the body is at the reading measure with the standard gutters, not an
+  // inline `style={{ padding: 16 }}` disagreeing with the head above it.
+  const measure = container.querySelector('.set-section__measure');
+  expect(measure).toBeTruthy();
+  expect(measure?.classList.contains('set-section__pad')).toBe(true);
+  expect(container.querySelector('.set-section__scroll')?.getAttribute('style')).toBeNull();
+});
+
+it('draws list rows with its OWN class, never `.set-card`', () => {
+  const { container } = renderSection();
+
+  /* `.set-card` is the class the whole settings card is drawn with. The frame
+     pass gave it `flex: 1`, `max-width: 1080px` and `margin-inline: auto`; a
+     list row carrying page-card geometry is a collision waiting for the next
+     frame change. It is also `display: flex` with the initial
+     `align-items: stretch`, which is what stretched an 11px `custom` pill to
+     72px beside a model id that wrapped to five lines. */
+  expect(container.querySelectorAll('.set-card')).toHaveLength(0);
+  expect(container.querySelectorAll('.set-models__row').length).toBeGreaterThan(0);
+
+  const row = screen.getByTestId('model-row-claude-opus-5');
+  expect(row.classList.contains('set-models__row')).toBe(true);
+  // The id is the machine string and gets the mono slot; the human label does
+  // not — it was in `.set-kv__k`, a 96px uppercase FIELD-NAME slot.
+  expect(row.querySelector('.set-models__id')?.textContent).toBe('claude-opus-5');
+  expect(row.querySelector('.set-models__label')?.textContent).toBe('Claude Opus 5');
+  expect(row.querySelector('.set-kv__k')).toBeNull();
+});
+
+it('SAYS which node the catalog belongs to, and flags a named server', () => {
+  // The key was passed in and rendered nowhere: two nodes' catalogs looked
+  // identical on screen.
+  renderSection();
+  expect(screen.getByTestId('models-node').textContent).toMatch(/\blocal\b/);
+  expect(screen.getByTestId('models-node').textContent).not.toMatch(/named server/);
+  cleanup();
+
+  render(<ModelsSection nodeKey="https://tm8.example.dev:7778" heading="Models" />);
+  const node = screen.getByTestId('models-node').textContent ?? '';
+  expect(node).toMatch(/https:\/\/tm8\.example\.dev:7778/);
+  expect(node).toMatch(/named server/);
+});
+
+it('names an UNRECOGNISED agent tool instead of heaping it under "other"', () => {
+  renderSection();
+  fireEvent.change(screen.getByLabelText('Model id'), { target: { value: 'gemini-3-pro' } });
+  fireEvent.change(screen.getByLabelText('Display label'), { target: { value: 'Gemini 3 Pro' } });
+  fireEvent.click(screen.getByTestId('models-add-submit'));
+  // The add form only offers KNOWN tools, so reach the unknown path the way a
+  // stale localStorage delta does: written directly.
+  cleanup();
+  const key = [...Array(localStorage.length).keys()].map((i) => localStorage.key(i)!)[0];
+  const delta = JSON.parse(localStorage.getItem(key)!);
+  delta.custom[0].agentTool = 'gemini-cli';
+  localStorage.setItem(key, JSON.stringify(delta));
+
+  renderSection();
+  const group = screen.getByTestId('models-group-gemini-cli');
+  expect(within(group).getByText('gemini-cli')).toBeTruthy();
+  // And it says plainly that this UI cannot build its command line.
+  expect(group.textContent).toMatch(/does not know how to build a launch command/i);
+  // The row is still offerable and still listed — omitting it would make this
+  // screen and the launch picker disagree about the same catalog.
+  expect(within(group).getByTestId('model-row-gemini-3-pro')).toBeTruthy();
+});

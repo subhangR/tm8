@@ -23,6 +23,8 @@ export interface ChatHomeSurfaceProps {
   spaceId: SpaceId | string;
   nodeKey: string;
   anchorId?: EntityId;
+  /** Pass-through to the screen (Craft P1): pins new threads to one mode. */
+  pinnedMode?: ChatHomeScreenProps['pinnedMode'];
   bridge?: ChatHomeL2Bridge;
   /** The shell's entity-open verb: opens the right-side detail panel. */
   onOpenEntity?: (id: EntityId) => void;
@@ -32,22 +34,33 @@ export interface ChatHomeSurfaceProps {
    * `/` types plain text.
    */
   skillOptions?: readonly TriggerOption[];
-  /** Three-tab column + region-B extras (task 01a006f8) — all pass through
-   *  to the screen verbatim. */
-  sessions?: ChatHomeScreenProps['sessions'];
-  tasks?: ChatHomeScreenProps['tasks'];
-  tab?: ChatHomeScreenProps['tab'];
-  onTab?: ChatHomeScreenProps['onTab'];
+  /** Root column + region-B extras (tasks 01a006f8/01a00932) — all pass
+   *  through to the screen verbatim. */
+  root?: ChatHomeScreenProps['root'];
+  onRoot?: ChatHomeScreenProps['onRoot'];
+  kindCell?: ChatHomeScreenProps['kindCell'];
+  rootKindOptions?: ChatHomeScreenProps['rootKindOptions'];
   selectedEntityId?: ChatHomeScreenProps['selectedEntityId'];
   onSelectEntity?: ChatHomeScreenProps['onSelectEntity'];
   onShowChat?: ChatHomeScreenProps['onShowChat'];
-  onNewTask?: ChatHomeScreenProps['onNewTask'];
-  newTaskUnavailable?: ChatHomeScreenProps['newTaskUnavailable'];
-  onRunTask?: ChatHomeScreenProps['onRunTask'];
-  renderTabList?: ChatHomeScreenProps['renderTabList'];
+  onNewEntity?: ChatHomeScreenProps['onNewEntity'];
+  newEntityUnavailable?: ChatHomeScreenProps['newEntityUnavailable'];
+  routeThreadId?: ChatHomeScreenProps['routeThreadId'];
+  onThreadSelected?: ChatHomeScreenProps['onThreadSelected'];
+  /** Craft's solo conversation + the two publishes a hosted picker needs. */
+  soloConversation?: ChatHomeScreenProps['soloConversation'];
+  onThreadsChange?: ChatHomeScreenProps['onThreadsChange'];
+  onSelectionChange?: ChatHomeScreenProps['onSelectionChange'];
+  graphFull?: ChatHomeScreenProps['graphFull'];
+  onGraphFullChange?: ChatHomeScreenProps['onGraphFullChange'];
+  graphFilters?: ChatHomeScreenProps['graphFilters'];
+  onGraphFiltersChange?: ChatHomeScreenProps['onGraphFiltersChange'];
+  renderRootList?: ChatHomeScreenProps['renderRootList'];
+  renderRootAside?: ChatHomeScreenProps['renderRootAside'];
   centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];
   viewerName?: ChatHomeScreenProps['viewerName'];
+  viewerId?: ChatHomeScreenProps['viewerId'];
 }
 
 /** Production route boundary: Chat and its markdown renderer stay out of non-Home chunks. */

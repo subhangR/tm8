@@ -381,3 +381,103 @@ describe('the router sync loop', () => {
     expect(reparsed.panels.contentSurface[B]).toBe('chat');
   });
 });
+
+describe('the Home trails — openCenter/push and the right panel (task 01a00932)', () => {
+  it('openCenter RESTARTS the centre trail; push GROWS it — R6a vs R6b', () => {
+    const s = navStore.getState();
+    s.openCenter('task-1');
+    s.push('doc-child');
+    expect(navStore.getState().stack).toEqual(['task-1', 'doc-child']);
+    // A list click plants a new root: the old trail does not survive it.
+    s.openCenter('task-2');
+    expect(navStore.getState().stack).toEqual(['task-2']);
+  });
+
+  it('stackTo truncates the centre trail to the crumb — and to nothing else', () => {
+    const s = navStore.getState();
+    s.openCenter('a');
+    s.push('b');
+    s.push('c');
+    s.stackTo('a');
+    expect(navStore.getState().stack).toEqual(['a']);
+    // A crumb that is already the top, or absent, moves nothing.
+    s.stackTo('a');
+    s.stackTo('zz');
+    expect(navStore.getState().stack).toEqual(['a']);
+  });
+
+  it('clearStack returns the centre to rest (Home: the conversation)', () => {
+    const s = navStore.getState();
+    s.openCenter('a');
+    s.push('b');
+    s.clearStack();
+    expect(navStore.getState().stack).toEqual([]);
+  });
+
+  it('openRight pushes and RAISES — the single-host law inside one trail', () => {
+    const s = navStore.getState();
+    s.openRight('x');
+    s.openRight('y');
+    s.openRight('x');
+    expect(navStore.getState().right).toEqual(['y', 'x']);
+  });
+
+  it('rightTo truncates, popRight steps, closeRight clears', () => {
+    const s = navStore.getState();
+    s.openRight('x');
+    s.openRight('y');
+    s.openRight('z');
+    s.rightTo('x');
+    expect(navStore.getState().right).toEqual(['x']);
+    s.openRight('y');
+    s.popRight();
+    expect(navStore.getState().right).toEqual(['x']);
+    s.closeRight();
+    expect(navStore.getState().right).toEqual([]);
+    // Empty-trail pops and closes are no-ops, not errors.
+    s.popRight();
+    s.closeRight();
+    expect(navStore.getState().right).toEqual([]);
+  });
+
+  it('a right-panel id is an OPEN id: its tab state survives centre changes', () => {
+    const s = navStore.getState();
+    s.openRight('x');
+    s.setTab('x', 'activity');
+    s.openCenter('a');
+    s.pop();
+    expect(navStore.getState().tabs['x']).toBe('activity');
+    // …and is pruned the moment the right trail lets go of it.
+    s.openRight('x');
+    navStore.getState().closeRight();
+    expect(navStore.getState().tabs['x']).toBeUndefined();
+  });
+
+  it('the right trail rides the URL as r=, and hydrates back', () => {
+    const s = navStore.getState();
+    s.openCenter('a');
+    s.openRight('x');
+    s.openRight('y');
+    const route = routeOf(navStore.getState());
+    expect(route.panels.right).toEqual(['x', 'y']);
+    resetNav(SPACE, { view: 'home' });
+    navStore.getState().hydrate(route);
+    expect(navStore.getState().right).toEqual(['x', 'y']);
+    expect(navStore.getState().stack).toEqual(['a']);
+  });
+
+  it('every trail verb is USER navigation: history says push', () => {
+    const s = navStore.getState();
+    for (const go of [
+      () => s.openCenter('a'),
+      () => s.push('b'),
+      () => s.stackTo('a'),
+      () => s.openRight('x'),
+      () => s.popRight(),
+      () => s.clearStack(),
+    ]) {
+      go();
+      expect(navStore.getState().history).toBe('push');
+    }
+  });
+});

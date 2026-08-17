@@ -32,6 +32,7 @@ import type { MembershipSurface } from './membershipSurface';
 import type { PanelPrimaries } from './usePanelPrimaries';
 import type { RowLifecycle } from './useRowLifecycle';
 import { mergePrPortFor } from './mergePrPort';
+import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
 import { gitSurfaceFor } from './gitSurface';
 import { taskGitSectionFor } from './taskGitSection';
@@ -87,6 +88,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       pinned={false}
       pinRefusal="Pinning lives in the Workspace"
       liveness={data.livenessOf(entityId)}
+      attentionSection={attentionSectionFor(data.seam, data.spaceId, entityId, () => data.pull?.(entityId))}
       debugSurface={debugSurfaceFor(data.seam, entityId, data.livenessOf)}
       gitSurface={gitSurfaceFor(data.seam, entityId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, detail, (id) => onOpenEntity(id as EntityId))}

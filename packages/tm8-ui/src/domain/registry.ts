@@ -489,7 +489,6 @@ const ROWS: readonly KindConfig[] = [
   // -- task -----------------------------------------------------------------
   {
     kind: 'task',
-    launchable: true,
     label: 'Task',
     labelPlural: 'Tasks',
     icon: '◻',
@@ -775,7 +774,6 @@ const ROWS: readonly KindConfig[] = [
   // -- doc ------------------------------------------------------------------
   {
     kind: 'doc',
-    launchable: true,
     label: 'Doc',
     labelPlural: 'Docs',
     icon: '▤',
@@ -1013,7 +1011,6 @@ const ROWS: readonly KindConfig[] = [
   // -- team_member ----------------------------------------------------------
   {
     kind: 'team_member',
-    launchable: true,
     label: 'Teammate',
     labelPlural: 'Teammates',
     icon: '◆',
@@ -1084,7 +1081,6 @@ const ROWS: readonly KindConfig[] = [
   // -- pull_request ---------------------------------------------------------
   {
     kind: 'pull_request',
-    launchable: true,
     label: 'Pull request',
     labelPlural: 'Pull requests',
     icon: '⑂',
@@ -1281,7 +1277,6 @@ const ROWS: readonly KindConfig[] = [
   // -- project (restricted: generic create/patch/delete/move refused) -------
   {
     kind: 'project',
-    launchable: true,
     label: 'Project',
     labelPlural: 'Projects',
     icon: '⬢',
@@ -1369,7 +1364,6 @@ const ROWS: readonly KindConfig[] = [
   // -- memory (scope-carrying claims; staleness derived server-side) --------
   {
     kind: 'memory',
-    launchable: true,
     label: 'Memory',
     labelPlural: 'Memories',
     icon: '◈',
@@ -1452,13 +1446,44 @@ const ROWS: readonly KindConfig[] = [
     palette: { createLabel: 'New memory' },
   },
 
+  // -- graph (Craft P1: ONE ROW holds vertices AND edges — the blueprint) --
+  {
+    kind: 'graph',
+    label: 'Graph',
+    labelPlural: 'Graphs',
+    icon: '⬡',
+    iconArt: KIND_ART.graph,
+    slug: 'graphs',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⬡', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      // The generic placeholder flow CAN mint a graph: title + the 'entity'
+      // default type is a valid empty blueprint the craft chat then grows.
+      quickCreate: true,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    /*
+     * GENERIC: the CANVAS is the graph's real body and it lives on the Craft
+     * screen, not in the side panel. The panel's job here is the envelope —
+     * type, size, containers — plus the door to the studio.
+     */
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'GRAPH' }, COLLECTIONS_BLOCK],
+      /* §15.1: declared fields must be reachable — edit is the door. */
+      primaries: ['edit'],
+    },
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Launch flow' },
+    ],
+  },
+
   // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --
   {
     kind: 'loop',
-    // NOT launchable: "Run" on a loop would mean "run the loop entity", but a
-    // loop's whole job is to run something ELSE on a period. Its primary
-    // actions are enable/disable and fire-now, which are patches, not launches.
-    launchable: false,
     label: 'Loop',
     labelPlural: 'Loops',
     icon: '↻',
@@ -1546,7 +1571,6 @@ const ROWS: readonly KindConfig[] = [
   // -- artifact (versioned bundle; bytes served via preview/export, not here) --
   {
     kind: 'artifact',
-    launchable: true,
     label: 'Artifact',
     labelPlural: 'Artifacts',
     icon: '❖',
@@ -1578,7 +1602,6 @@ const ROWS: readonly KindConfig[] = [
   // -- worktree (server-provisioned Git checkout; lifecycle rides patch) ----
   {
     kind: 'worktree',
-    launchable: true,
     label: 'Worktree',
     labelPlural: 'Worktrees',
     icon: '⎇',
@@ -1640,21 +1663,56 @@ const ROWS: readonly KindConfig[] = [
 ];
 
 /**
- * `launchable: true` → the `run` action, in every place that renders one.
+ * The ONE authority for "which kinds cannot launch" — a DENYLIST, because the
+ * answer is now "all of them but one".
+ *
+ * `derive_task_for_entity` (064) raises for `work_session` and auto-derives a
+ * "Work on: <title>" task for every other live kind, so the backend's answer to
+ * "can I point an agent at this?" is yes-except-one. Expressing that as ~20
+ * hand-written `launchable: true` rows made the common case the one you had to
+ * remember, and the flag was in fact missing from eleven kinds that the server
+ * would have happily launched — Run simply did not appear on them.
+ *
+ * Inverted, `launchable` stops being an input a row can forget and becomes
+ * DERIVED OUTPUT of this set (see below), so a new kind is launchable by
+ * default and opting out is a deliberate, visible edit in one place.
+ */
+const NOT_LAUNCHABLE: ReadonlySet<string> = new Set([
+  // The only refusal, and it is the BACKEND's: `derive_task_for_entity` raises
+  // for `work_session`. A session is a run — it is not something you run.
+  'work_session',
+  //
+  // `graph` and `loop` were here briefly, carried over from the `launchable:
+  // false` rows this set replaced. Owner ruling 2026-08-17: both launch. Their
+  // old rationale argued that Run MEANS something else on those kinds (a graph
+  // is orchestrated from the Craft tab; a loop's job is to run something else
+  // on a period) — but that is an argument about which verb should be PRIMARY,
+  // not about whether an agent can be pointed at the row, and the server will
+  // derive a task for either. Whatever else a kind offers, "work on this" is
+  // still a coherent thing to ask for.
+]);
+
+/**
+ * `run` — the launch action, in every place that renders one.
  *
  * The Run button is drawn from three independent arrays — `list.rowActions` (the
  * tile), `panel.primaries` (the detail header) and `palette.primaryAction` — and
  * before this every one of them was hand-written under `kind: 'task'`. That made
  * "which kinds can launch?" a question with three possible answers and no
  * authority, and adding a kind meant remembering all three. Deriving them here
- * means a kind opts in ONCE and cannot end up half-wired.
+ * means a kind cannot end up half-wired.
  *
  * Additive and idempotent: a row that already names `run` keeps its own ordering
- * (task lists `['run','complete']`, which is deliberate — Run leads), and a row
- * without the flag is returned untouched rather than rebuilt.
+ * (task lists `['run','complete']`, which is deliberate — Run leads), and a
+ * denied row is returned untouched rather than rebuilt.
+ *
+ * `launchable` is written here rather than read here: it is the derived answer
+ * to `NOT_LAUNCHABLE`, kept on the config so a consumer can still ask a kind
+ * whether it launches without importing the set.
  */
 function applyLaunch(row: KindConfig): KindConfig {
-  if (!row.launchable) return row;
+  if (NOT_LAUNCHABLE.has(row.kind)) return { ...row, launchable: false };
+  row = { ...row, launchable: true };
   const withRun = (actions: readonly ActionRef[] | undefined): ActionRef[] =>
     actions?.includes('run') ? [...actions] : ['run', ...(actions ?? [])];
   return {

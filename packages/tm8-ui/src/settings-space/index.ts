@@ -28,7 +28,17 @@ export {
   type SpecimenInvite,
 } from './types';
 
+/* ── THE SECTION FRAME ─────────────────────────────────────────────────────
+   Exported because two of the twelve sections are built in OTHER modules
+   (`settings-governance/`, `settings-credentials/`) and injected through
+   `sections`. Before this they had no way to lay themselves out like their
+   neighbours except by re-typing the shell's private divs, which is exactly
+   how the screen drifted apart. See SECTION-CONTRACT.md. */
+export { SectionFrame, SectionAbsent, type SectionFrameProps } from './SectionFrame';
+
 /* ── individual frames, mountable on their own ────────────────────────────── */
+export { ProfileSection } from './ProfileSection';
+export { DangerSection } from './DangerSection';
 export {
   MembersSection,
   ROLES_LEGEND,

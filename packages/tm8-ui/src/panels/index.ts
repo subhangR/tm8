@@ -11,6 +11,7 @@ import './panels.css';
 
 export {
   EntityListPanel,
+  ListViewSwitcher,
   type BoardSnapshot,
   type EntityListPanelProps,
   type LaunchSources,
@@ -53,3 +54,4 @@ export {
   type UnavailableReason,
 } from './honesty/DisabledWithReason';
 export { HollowInline, HollowStat } from './honesty/HollowValue';
+export { ReasonNote } from './honesty/ReasonNote';

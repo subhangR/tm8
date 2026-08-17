@@ -111,6 +111,8 @@ export const VIEW_REF_ROUTE = {
   messages: 'messages',
   /* The task Board tab (2026-08-16) — same flat-segment posture. */
   board: 'board',
+  /* The Craft studio (2026-08-16) — same flat-segment posture. */
+  craft: 'craft',
   /* Alias, not a view — see CHANNEL_KIND. Present so the record stays total
      over MenuViewRef; `routeViewOf` never emits it. */
   channels: 'channels',
@@ -177,8 +179,19 @@ export function navViewOfName(name: string): NavView | null {
  * is what made `MenuTarget` unable to express a shared entity link.
  */
 export interface Landing {
-  /** The screen to show. */
-  target: MenuTarget;
+  /**
+   * The screen to show, or `null` for a REACHABLE screen that has no
+   * `MenuTarget` representation.
+   *
+   * THE TWO NULLS ARE DIFFERENT AND THE DISTINCTION IS THE POINT.
+   * `landingOfRoute` returning `null` means the ROUTE IS UNRESOLVABLE — a slug
+   * naming no kind, a bare `e/{id}` with no origin — which the shell surfaces
+   * as a refusal. `target: null` means the route resolved perfectly well to a
+   * real screen that simply is not a rail destination, so there is nothing for
+   * the rail to highlight. Collapsing the two would either turn a working
+   * screen into an error card or make a broken link look like a screen.
+   */
+  target: MenuTarget | null;
   /** Entity to seed onto that screen's stack, or `null` for a bare screen. */
   openEntity: EntityId | null;
 }
@@ -211,7 +224,21 @@ export function landingOfRoute(view: NavView): Landing | null {
     case 'git':
     case 'messages':
     case 'board':
+    case 'craft':
       return { target: { type: 'view', ref: refOfRouteView(view.view) }, openEntity: null };
+
+    case 'newSession':
+      /*
+       * A REAL SCREEN WITH NO RAIL SEAT. New Session is reached from a quick
+       * action and from the sessions empty state, not from the menu, so it is
+       * deliberately not a `MenuViewRef` — that would cost a menu revision and
+       * a migration to buy a rail entry nobody asked for.
+       *
+       * `target: null` rather than `null`: the route resolved, the screen
+       * exists, and it simply hosts no stack and lights up no rail item. See
+       * `Landing.target`.
+       */
+      return { target: null, openEntity: null };
 
     case 'channels':
       /* The alias resolving to the real screen. */
@@ -301,6 +328,7 @@ export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = nu
         case 'git':
         case 'messages':
         case 'board':
+        case 'craft':
           return { view };
         case 'settings':
           return { view: 'settings', section: null };

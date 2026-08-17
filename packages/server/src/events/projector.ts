@@ -264,6 +264,10 @@ interface SummaryRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
+  graph_title: string | null;
+  graph_type: string | null;
+  graph_node_count: number | null;
+  graph_edge_count: number | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -376,6 +380,10 @@ select
   lp.next_run_at     as loop_next_run_at,
   lp.last_run_at     as loop_last_run_at,
   lp.last_error      as loop_last_error,
+  gr.title           as graph_title,
+  gr.graph_type      as graph_type,
+  coalesce(jsonb_array_length(gr.nodes), 0) as graph_node_count,
+  coalesce(jsonb_array_length(gr.edges), 0) as graph_edge_count,
   wt.project_id      as wt_project_id,
   wt.branch          as wt_branch,
   wt.base_ref        as wt_base_ref,
@@ -410,6 +418,7 @@ left join public.interaction_profile_versions profile_version
 left join public.memories memo       on memo.entity_id = e.id
 left join public.worktrees wt        on wt.entity_id = e.id
 left join public.loops lp            on lp.entity_id = e.id
+left join public.graphs gr           on gr.entity_id = e.id
 left join public.artifacts art       on art.entity_id = e.id
 left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
 left join public.custom_entities cev on cev.entity_id = e.id
@@ -856,6 +865,9 @@ export class PgEntityProjector implements EntityProjector {
         // Its own detail-row title — MIRRORS entity-read.ts titleOf, same
         // fallback. `entities` has no title column for it to fall back to.
         return r.loop_title ?? 'Loop';
+      case 'graph':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf.
+        return r.graph_title ?? 'Graph';
       case 'worktree':
         // The branch is the human name — MIRRORS entity-read.ts titleOf.
         return r.wt_branch ?? 'Worktree';
@@ -898,6 +910,7 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'memory' ? r.memory_statement
       : r.kind === 'artifact' ? r.artifact_description
       : r.kind === 'loop' ? r.loop_schedule
+      : r.kind === 'graph' ? r.graph_type
       : null;
     if (source === null || source === '') return null;
     // Empty becomes "no excerpt", not an empty one — `entity-read.ts` maps the
@@ -1135,6 +1148,15 @@ export class PgEntityProjector implements EntityProjector {
           nextRunAt: iso(r.loop_next_run_at),
           lastRunAt: iso(r.loop_last_run_at),
           lastError: r.loop_last_error,
+        };
+      case 'graph':
+        // MIRRORS entity-read.ts stateOf: which type of graph and how big —
+        // the vertices/edges themselves are content, never summary state.
+        return {
+          kind: 'graph',
+          graphType: r.graph_type ?? 'entity',
+          nodeCount: r.graph_node_count ?? 0,
+          edgeCount: r.graph_edge_count ?? 0,
         };
       case 'worktree':
         // Semantic lifecycle only — allocation (disk) state is deliberately
