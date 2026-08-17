@@ -60,12 +60,11 @@ export TM8_LOG_LEVEL=info
 # re-hides the silent-replay path; the real fix is unique ids upstream.
 export TM8_IDEMPOTENCY_ENABLED=0
 
-# Artifact-preview listener OFF. TM8_PREVIEW_PORT is a FIXED 4613 that another
-# instance holds, so the listener dies with EADDRINUSE anyway; worse, setting
-# config.preview makes http/security.ts DELETE `localhost` from this node's own
-# host allowlist, and every browser reaching the UI as localhost:7777 is then
-# refused with `Host "localhost:7777" is not this node`.
-export TM8_PREVIEW_ENABLED=0
+# Artifact preview ON (default). Since 2026-08-16 the preview is a /p/ route
+# on the app socket — no second listener, so no fixed-4613 EADDRINUSE, and no
+# host-allowlist deletion, so the UI stays reachable at localhost. Both
+# reasons this was once TM8_PREVIEW_ENABLED=0 are gone with the second
+# listener; set TM8_PREVIEW_HOST/PORT only to opt back into a second origin.
 
 # Serve the same bundle 7777 serves, so :7778 is a same-origin fallback.
 export TM8_UI_DIR="$TM8_PROD_ROOT/packages/tm8-ui/dist"

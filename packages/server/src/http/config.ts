@@ -157,27 +157,38 @@ export interface ServerConfig {
    */
   readonly allowedOrigins?: readonly string[];
   /**
-   * The artifact-preview origin — the SECOND listener, whose only job is
-   * serving untrusted bundle content (TM8-ARTIFACTS-DESIGN §9; user-ratified
-   * 2026-07-31: the loopback pair, app `127.0.0.1:<port>`, preview
-   * `localhost:<previewPort>`). Absent when `TM8_PREVIEW_ENABLED=0`, or in
-   * tests that construct a frame-only config — no listener starts then, and
-   * `artifacts.preview.start` mints capabilities with no URL to spend them at.
+   * The artifact-preview origin. DEFAULT: the app origin itself — previews
+   * are served as a `/p/` route on the app socket, so a default-config node
+   * renders artifacts with no extra listener and no extra hostname. An
+   * explicit `TM8_PREVIEW_HOST`/`TM8_PREVIEW_PORT` opts back into the SECOND
+   * listener on its own origin (TM8-ARTIFACTS-DESIGN §9, true origin
+   * isolation). Absent when `TM8_PREVIEW_ENABLED=0`, or in tests that
+   * construct a frame-only config — `artifacts.preview.start` then mints
+   * capabilities with no URL to spend them at.
    */
   readonly preview?: PreviewConfig;
 }
 
-/** The artifact-preview listener's resolved identity (design §9.2/§9.3). */
+/** The artifact-preview route's resolved identity (design §9.2/§9.3). */
 export interface PreviewConfig {
   /**
-   * The hostname the preview is REACHED BY — the origin's identity, enforced
-   * per-request by the preview listener's own Host check. Distinct from the
-   * bind address: both listeners bind the same loopback interface.
+   * The hostname the preview is REACHED BY. In the same-origin default this
+   * is the app host; in second-origin mode it is the origin's identity,
+   * enforced per-request by the preview listener's own Host check. Distinct
+   * from the bind address: both listeners bind the same loopback interface.
    */
   readonly host: string;
   readonly port: number;
   /** `http://<host>:<port>`, precomputed once — the string minted into previewUrl and CSP. */
   readonly origin: string;
+  /**
+   * True in the default deployment: previews are a `/p/` route on the app
+   * socket, no second listener starts, and the app's host allowlist is left
+   * alone. False only when an operator sets an explicit TM8_PREVIEW_HOST /
+   * TM8_PREVIEW_PORT — the second-origin mode, which keeps every boot
+   * refusal and the allowlist partition.
+   */
+  readonly sameOrigin: boolean;
   /**
    * Origins allowed to FRAME a preview (`frame-ancestors`). Always contains
    * the app origin; `TM8_PREVIEW_FRAME_ANCESTORS` (space-separated) adds more
@@ -424,8 +435,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 }
 
 /**
- * The artifact-preview origin, resolved WITH the origin-isolation boot check
- * (TM8-ARTIFACTS-DESIGN §9.2, user-ratified 2026-07-31).
+ * The artifact-preview origin.
+ *
+ * DEFAULT — same-origin: no `TM8_PREVIEW_*` set means previews are served as
+ * a `/p/` route on the app socket, so the preview origin IS the app origin.
+ * No second listener, no second hostname, no allowlist partition. What
+ * contains the bundle then is not origin separation but the renderer's
+ * server-enforced CSP sandbox (`sandbox allow-scripts` inside the response
+ * header) plus the app's own refusal of `Origin: null` callers — see
+ * ./artifact-preview.ts and ./security.ts.
+ *
+ * SECOND-ORIGIN — an explicit `TM8_PREVIEW_HOST` or `TM8_PREVIEW_PORT` opts
+ * into the separate listener (TM8-ARTIFACTS-DESIGN §9.2, user-ratified
+ * 2026-07-31), and then every boot refusal below still stands:
  *
  * Two refusals, and the second is the one that matters: port-only separation
  * satisfies the browser's origin comparison but NOT cookies, which ignore
@@ -449,20 +471,36 @@ function resolvePreview(
 ): PreviewConfig | undefined {
   if (envBoolean(env.TM8_PREVIEW_ENABLED, 'TM8_PREVIEW_ENABLED', true) === false) return undefined;
 
-  // The DEFAULT complements the bind host so the host rule holds for every
-  // legal TM8_BIND without extra config: app `127.0.0.1` (the ratified pair)
-  // or `::1` get preview `localhost`; a node bound to `localhost` gets the
-  // mirrored pair. An EXPLICIT TM8_PREVIEW_HOST is never adjusted — a
-  // collision there is refused below, not repaired.
+  const explicitHost = env.TM8_PREVIEW_HOST?.trim() || undefined;
+  const explicitPort = env.TM8_PREVIEW_PORT?.trim() || undefined;
+  if (explicitHost === undefined && explicitPort === undefined) {
+    const host = appHost.toLowerCase();
+    const origin = `http://${host}:${appPort}`;
+    const frameAncestors = [
+      origin,
+      ...(env.TM8_PREVIEW_FRAME_ANCESTORS ?? '')
+        .split(/\s+/)
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    ];
+    return { host, port: appPort, origin, sameOrigin: true, frameAncestors };
+  }
+
+  // Second-origin mode. The host DEFAULT complements the bind host so the
+  // host rule holds for every legal TM8_BIND without extra config: app
+  // `127.0.0.1` (the ratified pair) or `::1` get preview `localhost`; a node
+  // bound to `localhost` gets the mirrored pair. An EXPLICIT
+  // TM8_PREVIEW_HOST is never adjusted — a collision there is refused below,
+  // not repaired.
   const defaultHost = appHost.toLowerCase() === 'localhost' ? '127.0.0.1' : 'localhost';
-  const host = (env.TM8_PREVIEW_HOST?.trim() || defaultHost).toLowerCase();
+  const host = (explicitHost || defaultHost).toLowerCase();
   // An EXPLICIT `TM8_PREVIEW_PORT=0` is legal and means ephemeral — the
   // escape hatch for harnesses that boot this server as a CHILD PROCESS and
   // so cannot substitute config after validation (packages/cli integration).
   // Without it, every such boot raced the long-lived local node for the fixed
   // 4613 default and failed EADDRINUSE (ten files at once, 2026-07-31). The
   // in-process harnesses use the `config.port === 0` follow-suit in main.ts.
-  const port = Number.parseInt(env.TM8_PREVIEW_PORT?.trim() || '4613', 10);
+  const port = Number.parseInt(explicitPort || '4613', 10);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new ConfigError(`TM8_PREVIEW_PORT must be a valid port number, got ${JSON.stringify(env.TM8_PREVIEW_PORT)}`);
   }
@@ -501,7 +539,7 @@ function resolvePreview(
       .filter((value) => value.length > 0),
   ];
 
-  return { host, port, origin, frameAncestors };
+  return { host, port, origin, sameOrigin: false, frameAncestors };
 }
 
 /**

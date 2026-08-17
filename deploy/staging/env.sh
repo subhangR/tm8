@@ -39,11 +39,11 @@ export TM8_LOG_LEVEL=debug
 # Same two switches the stable build documents, for the same reasons:
 #   TM8_IDEMPOTENCY_ENABLED=0 — the ledger gate refuses saves from the authoring
 #     lane's resetting `au-<n>` clientMutationIds.
-#   TM8_PREVIEW_ENABLED=0 — TM8_PREVIEW_PORT is a FIXED 4613 already held
-#     elsewhere, AND setting config.preview deletes `localhost` from this node's
-#     own host allowlist, which breaks reaching the UI as localhost:8888.
+#   (Artifact preview is back ON by default since 2026-08-16: it is a /p/
+#     route on the app socket now, so neither old reason to disable it — the
+#     fixed-4613 EADDRINUSE and the localhost host-allowlist deletion —
+#     exists anymore.)
 export TM8_IDEMPOTENCY_ENABLED=0
-export TM8_PREVIEW_ENABLED=0
 
 # The vite dev proxy target (packages/tm8-ui/vite.config.ts reads this).
 export TM8_SERVER_ORIGIN="http://127.0.0.1:8887"

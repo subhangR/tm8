@@ -7,7 +7,9 @@
  *   2. transport checks (./security.ts — S1 aside, deferred no-ops today)
  *   3. `/health` — the liveness probe, deliberately OUTSIDE the catalog and
  *      outside the envelope: it is infrastructure, not an operation
- *   4. narrowly matched support transports (raw FileUploadGrant PUT)
+ *   4. narrowly matched support transports (the `/p/` artifact-preview
+ *      route — capability-token auth, never cookie identity — and the raw
+ *      FileUploadGrant PUT)
  *   5. read + JSON-parse the body → `payload_too_large` / `invalid_input`
  *   6. route against the catalog → `not_found`
  *   7. resolve identity (S5 auto-owner today)
@@ -92,6 +94,16 @@ export interface FacadeServerOptions {
   readonly voiceWebhookRoute?: VoiceWebhookRoute;
   /** Same-origin relay for node-local named Server connections. */
   readonly remoteServerProxy?: RemoteServerProxy;
+  /**
+   * The artifact-preview renderer mounted same-origin (the default preview
+   * deployment): every `/p/...` request is handed to it wholesale. It
+   * authenticates by the capability token IN THE PATH and must never go
+   * through `resolveIdentity` — a preview is viewer-bound by its token, not
+   * by whoever's cookie happens to ride the request. `checkTransport` has
+   * already run by the time it is dispatched; it owns everything after that,
+   * refusals included, with its own hardened header set.
+   */
+  readonly artifactPreviewRoute?: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
   /**
    * Answers "can this node actually serve a read right now?" — in practice, a
    * `select 1` through the SAME pool every space-scoped read uses. `/health`
@@ -254,6 +266,16 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // on a fixed 500ms tick regardless of output, so a fast agent arrived in
       // visible bursts. Do not reintroduce it as a fallback; a live PTY has one
       // delivery path and a second one desynchronizes the offset accounting.
+
+      // Artifact previews, mounted same-origin (default deployment). BEFORE
+      // the static handler — a SPA fallback must never shadow `/p/` with an
+      // index.html — and before identity resolution: the route authenticates
+      // by the capability token in the path, never by cookie. The handler
+      // answers everything under `/p/` itself, refusals included.
+      if (opts.artifactPreviewRoute && (pathname === '/p' || pathname.startsWith('/p/'))) {
+        await opts.artifactPreviewRoute(req, res);
+        return;
+      }
 
       const isApiPath = pathname === BASE_PATH || pathname.startsWith(`${BASE_PATH}/`);
 
