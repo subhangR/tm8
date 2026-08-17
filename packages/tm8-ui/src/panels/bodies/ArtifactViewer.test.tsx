@@ -110,7 +110,7 @@ describe('artifact viewer — auto-render and the sandbox', () => {
 });
 
 describe('artifact viewer — TTL re-mint', () => {
-  it('re-mints before expiresAt and swaps the frame src in place', async () => {
+  it('re-mints before expiresAt, swaps the src, and PINS the minted revision', async () => {
     vi.useFakeTimers();
     let mints = 0;
     const previewArtifact = vi.fn(async () => {
@@ -125,12 +125,19 @@ describe('artifact viewer — TTL re-mint', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(container.querySelector('iframe')!.getAttribute('src')).toBe('https://node.example/preview/cap-1');
+    // The FIRST latest-revision mint names no revision — the server resolves
+    // "current" exactly once.
+    expect(previewArtifact.mock.calls[0]![1]).not.toHaveProperty('revisionNumber');
     // 120s TTL − 60s margin ⇒ the re-mint fires at 60s; step past it.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(61_000);
     });
     expect(previewArtifact).toHaveBeenCalledTimes(2);
     expect(container.querySelector('iframe')!.getAttribute('src')).toBe('https://node.example/preview/cap-2');
+    // THE PIN (review F1): the re-mint names the revision the first answer
+    // carried, so a concurrent publish can never silently swap the page
+    // under the viewer — tracking latest stays an explicit act.
+    expect(previewArtifact.mock.calls[1]![1]).toMatchObject({ revisionNumber: 3 });
   });
 });
 
@@ -189,6 +196,27 @@ describe('artifact viewer — revisions, download, chrome, fullscreen', () => {
     }
   });
 
+  it('download fetches the SHOWN (mint-time) revision, not the detail-time one', async () => {
+    // The node answers revision 4 while the stale detail state still says 3 —
+    // the review F1 scenario. Download must follow the frame, not the record.
+    const zip = new Blob(['PK'], { type: 'application/zip' });
+    const exportArtifactRevision = vi.fn(async () => zip);
+    const previewArtifact = vi.fn(async () => session({ revisionNumber: 4 }));
+    const createObjectURL = vi.fn(() => 'blob:tm8/zip-2');
+    const revokeObjectURL = vi.fn();
+    (URL as unknown as Record<string, unknown>).createObjectURL = createObjectURL;
+    (URL as unknown as Record<string, unknown>).revokeObjectURL = revokeObjectURL;
+    try {
+      const { container, findByText } = renderViewer({ previewArtifact, exportArtifactRevision });
+      await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull());
+      fireEvent.click(await findByText('Download ⇩'));
+      await waitFor(() => expect(exportArtifactRevision).toHaveBeenCalledWith(DETAIL.id, 4));
+    } finally {
+      delete (URL as unknown as Record<string, unknown>).createObjectURL;
+      delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
+    }
+  });
+
   it('names the publisher and disowns the frame content, alongside the frame', async () => {
     const previewArtifact = vi.fn(async () => session());
     const { container } = renderViewer({ previewArtifact });
@@ -199,6 +227,42 @@ describe('artifact viewer — revisions, download, chrome, fullscreen', () => {
     expect(text).toContain('(agent)');
     expect(text).toContain('revision 3');
     expect(text).toContain('not tm8 UI');
+  });
+
+  it('the security chrome renders on EVERY phase, not only around a live frame', async () => {
+    // The publisher line + third-party wording are the phishing
+    // countermeasure (§12.1 residual) — a phase that drops them is a security
+    // regression, so each phase asserts them (review F7).
+    const chromePresent = (container: HTMLElement) => {
+      const text = container.textContent ?? '';
+      expect(text).toContain('published by');
+      expect(text).toContain('not tm8 UI');
+    };
+    // not-wired: no command executor at all.
+    chromePresent(renderViewer(undefined).container);
+    cleanup();
+    // starting: the mint never settles inside this test.
+    chromePresent(renderViewer({ previewArtifact: vi.fn(() => new Promise(() => {})) }).container);
+    cleanup();
+    // refusal: a session with no previewUrl.
+    {
+      const { container, findByText } = renderViewer({
+        previewArtifact: vi.fn(async () => session({ previewUrl: undefined })),
+      });
+      await findByText(/did not mint a preview URL/);
+      chromePresent(container);
+      cleanup();
+    }
+    // error: the mint rejects.
+    {
+      const { container, findByText } = renderViewer({
+        previewArtifact: vi.fn(async () => {
+          throw new Error('node fell over');
+        }),
+      });
+      await findByText(/node fell over/);
+      chromePresent(container);
+    }
   });
 
   it('fullscreen is a class state on the same element; Escape exits', async () => {

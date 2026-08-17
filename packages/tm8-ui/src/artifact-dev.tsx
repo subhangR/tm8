@@ -5,26 +5,25 @@ import './styles/canvas-extra.css';
 import './styles/app.css';
 import './kit/kit.css';
 import './panels/panels.css';
-import { REASONS } from './domain';
-import { FIXTURE_SPACE_ID, artifactPulseBoard, fixtureDetails, presenceHollowReason } from './fixtures';
+import { getKind } from './domain';
+import { artifactPulseBoard, fixtureDetails } from './fixtures';
 import { createFixtureSeam } from './data/fixtures/seam-fixture';
-import { EntityDetailPanel } from './panels';
-import type { DetailReasons } from './panels/EntityDetailPanel';
-
-const DETAIL_REASONS: DetailReasons = {
-  presenceHollow: presenceHollowReason,
-  versionHistory: REASONS.versionHistoryDeferred,
-  provenanceHollow: 'Session provenance is not recorded yet.',
-  shareUnavailable: 'Sharing is not wired in this harness.',
-  withdrawUnavailable: 'Withdrawing is not wired in this harness.',
-};
+import { GenericBody } from './panels/bodies/GenericBody';
 
 /**
  * ARTIFACT VIEWER SCRATCH HARNESS — same spirit as terminal-dev.tsx: a
- * gate-free mount for pixel-verifying ONE surface, here the artifact detail
- * panel rendering the fixture seam's data:-URL bundle. Not product code and
+ * gate-free mount for pixel-verifying ONE surface, here the artifact viewer
+ * block rendering the fixture seam's data:-URL bundle. Not product code and
  * never imported by anything else; the fixture seam means no node, no
  * credentials, no network.
+ *
+ * It mounts `GenericBody` with the registry's own artifact blocks — NOT
+ * `EntityDetailPanel` — for the same reason terminal-dev mounts LiveTerminal
+ * bare: the harness's subject is the viewer, and a full panel mount would
+ * (rightly) owe the mount-conformance sweeps every host surface
+ * (`panel-host-wiring.test.ts` / `panel-primaries-wired.test.tsx`). Those
+ * locks exist to keep REAL hosts complete; a dev harness neither needs the
+ * surfaces nor deserves an exemption.
  *
  * Usage: /artifact-dev.html
  */
@@ -34,10 +33,9 @@ function Harness() {
   return (
     <div className="cv2-root" style={{ minHeight: '100vh', background: 'var(--pn-paper)' }}>
       <div style={{ maxWidth: 720, margin: '0 auto', padding: 24 }}>
-        <EntityDetailPanel
+        <GenericBody
           detail={fixtureDetails[artifactPulseBoard.id]!}
-          reasons={DETAIL_REASONS}
-          ctx={{ spaceId: FIXTURE_SPACE_ID }}
+          blocks={getKind(artifactPulseBoard.kind).panel?.blocks ?? []}
           commands={seam.commands}
         />
       </div>

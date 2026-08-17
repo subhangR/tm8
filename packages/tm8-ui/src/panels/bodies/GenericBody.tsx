@@ -444,12 +444,20 @@ function ArtifactPreviewBlock({
     if (!previewArtifact) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const mint = async (isFirst: boolean) => {
+    // `revisionToRequest` is undefined ONLY on the very first mint of a
+    // latest-revision view — the server resolves "current" once, and every
+    // TTL re-mint then PINS the revision that answer named. Without the pin,
+    // a concurrent publish would make a background re-mint silently swap the
+    // page under the viewer; tracking latest stays an explicit act (the
+    // switcher, or Restart). Under React StrictMode's dev double-mount the
+    // first mint runs twice — the orphaned session is never rendered and the
+    // server reaps it at TTL, so no cleanup path is owed here.
+    const mint = async (revisionToRequest: number | undefined, isFirst: boolean) => {
       if (isFirst) setRun({ phase: 'starting' });
       try {
         const session = await previewArtifact(detail.id, {
           clientMutationId: crypto.randomUUID(),
-          ...(selectedRevision != null ? { revisionNumber: selectedRevision } : {}),
+          ...(revisionToRequest != null ? { revisionNumber: revisionToRequest } : {}),
         });
         if (cancelled) return;
         if (!session.previewUrl) {
@@ -462,12 +470,15 @@ function ArtifactPreviewBlock({
         // looks rendered. A malformed expiresAt falls to the floor cadence
         // rather than to setTimeout(NaN)'s run-now loop.
         const untilMargin = Date.parse(session.expiresAt) - Date.now() - REMINT_MARGIN_MS;
-        timer = setTimeout(() => void mint(false), Number.isFinite(untilMargin) ? Math.max(untilMargin, REMINT_FLOOR_MS) : REMINT_FLOOR_MS);
+        timer = setTimeout(
+          () => void mint(session.revisionNumber, false),
+          Number.isFinite(untilMargin) ? Math.max(untilMargin, REMINT_FLOOR_MS) : REMINT_FLOOR_MS,
+        );
       } catch (err) {
         if (!cancelled) setRun({ phase: 'error', message: err instanceof Error ? err.message : 'preview could not be started' });
       }
     };
-    void mint(true);
+    void mint(selectedRevision ?? undefined, true);
     return () => {
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
@@ -488,6 +499,9 @@ function ArtifactPreviewBlock({
 
   useEffect(() => {
     if (!fullscreen) return;
+    // Keydown reaches this document only while focus sits OUTSIDE the frame —
+    // a cross-origin sandboxed iframe swallows its own keys and cannot be
+    // listened into. The Exit-fullscreen button stays visible for that case.
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setFullscreen(false);
     };
@@ -495,11 +509,18 @@ function ArtifactPreviewBlock({
     return () => window.removeEventListener('keydown', onKey);
   }, [fullscreen]);
 
+  /**
+   * The one revision number the whole chrome speaks with — and the one
+   * Download fetches. When a frame is live this is the MINT-TIME revision
+   * (`run.revisionNumber`), never the detail-fetch-time state: the two can
+   * diverge across a concurrent publish, and a download that disagrees with
+   * the page on screen is the review finding this line closes (F1).
+   */
   const shownRevision = run.phase === 'running' ? run.revisionNumber : selectedRevision ?? currentRevision;
 
   const onDownload = async () => {
     if (!exportArtifactRevision) return;
-    const revisionNumber = selectedRevision ?? currentRevision;
+    const revisionNumber = shownRevision;
     if (revisionNumber == null) return;
     setExporting(true);
     setExportError(null);
@@ -577,7 +598,7 @@ function ArtifactPreviewBlock({
           <button
             type="button"
             className="pn-btn"
-            disabled={exportArtifactRevision === undefined || exporting || (selectedRevision ?? currentRevision) == null}
+            disabled={exportArtifactRevision === undefined || exporting || shownRevision == null}
             title={exportArtifactRevision === undefined ? 'Export is not wired here.' : 'Download this revision as a zip.'}
             onClick={() => void onDownload()}
           >
