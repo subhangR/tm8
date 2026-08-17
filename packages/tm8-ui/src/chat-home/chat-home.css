@@ -555,6 +555,124 @@ button.tch-entity-chip:hover {
   animation: tch-dot-pulse 1.1s ease-in-out infinite;
 }
 
+/* Turn tool graph — live map of one turn's tool calls and the entities they
+   touched. Built purely from the streamed parts; auto-open while the turn is
+   running, a one-line summary once it settles. */
+.tch-graph {
+  overflow: hidden;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+}
+
+.tch-graph__head {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  width: 100%;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 0;
+  background: none;
+  color: var(--pn-ink-3);
+  font: 10px var(--pn-mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tch-graph__head:hover { color: var(--pn-ink-2); }
+.tch-graph__mark { color: var(--pn-brand-2); }
+.tch-graph__summary { color: var(--pn-ink-4); }
+.tch-graph__chevron { margin-left: auto; transition: transform 120ms ease; }
+.tch-graph[data-open='true'] .tch-graph__chevron { transform: rotate(90deg); }
+
+.tch-graph__canvas {
+  overflow-x: auto;
+  border-top: 1px solid var(--pn-line);
+}
+
+.tch-graph__stage { position: relative; }
+
+.tch-graph__edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tch-graph__edges path {
+  fill: none;
+  stroke: var(--pn-line-2);
+  stroke-width: 1.2;
+}
+
+.tch-graph__edges path[data-kind='seq'] { stroke-dasharray: 2 3; }
+
+.tch-graph__edges path[data-state='running'] {
+  stroke: var(--pn-wait);
+  stroke-dasharray: 4 3;
+  animation: tch-graph-flow 0.9s linear infinite;
+}
+
+.tch-graph__edges path[data-state='error'] { stroke: var(--pn-block); }
+
+@keyframes tch-graph-flow {
+  to { stroke-dashoffset: -14; }
+}
+
+.tch-graph__tool {
+  position: absolute;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  cursor: pointer;
+  transition: top 200ms ease;
+}
+
+.tch-graph__tool code {
+  overflow: hidden;
+  color: var(--pn-ink-2);
+  font: 10px var(--pn-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tch-graph__tool:hover { border-color: var(--pn-brand-2); background: var(--pn-brand-soft); }
+
+.tch-graph__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-run);
+}
+
+.tch-graph__tool[data-state='running'] .tch-graph__dot {
+  background: var(--pn-wait);
+  animation: tch-dot-pulse 1.1s ease-in-out infinite;
+}
+
+.tch-graph__tool[data-state='error'] .tch-graph__dot { background: var(--pn-block); }
+
+.tch-graph__entity {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  transition: top 200ms ease;
+}
+
+.tch-graph__entity .tch-entity-chip { max-width: 100%; }
+
+.tch-graph__note {
+  margin: 0;
+  padding: 4px 9px 6px;
+  color: var(--pn-ink-4);
+  font: 9px var(--pn-mono);
+}
+
 @media (max-width: 760px) {
   .tch-root { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .tch-sidebar { border-right: 0; border-bottom: 1px solid var(--pn-line); }

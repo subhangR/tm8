@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { Markdown } from '../kit';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { extractEntityRefs } from './entity-refs';
 import { projectTurnParts } from './turn-model';
+import { TurnToolGraph } from './TurnToolGraph';
 import type { ChatTurnPart, ChatUsage } from './types';
 
 export interface TurnPartsProps {
@@ -19,9 +20,27 @@ export interface TurnPartsProps {
 }
 
 export function TurnParts({ parts, onOpenEntity, resolveEntity, suppressEntityIds }: TurnPartsProps) {
+  const projected = useMemo(() => projectTurnParts(parts), [parts]);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // A graph tool node clicks through to its transcript card: expand the
+  // input details and bring the card into view. Matched by attribute walk,
+  // not selector interpolation — toolCallIds come off the wire.
+  const focusTool = useCallback((toolCallId: string) => {
+    const cards = rootRef.current?.querySelectorAll<HTMLElement>('[data-tool-call]') ?? [];
+    for (const card of cards) {
+      if (card.getAttribute('data-tool-call') !== toolCallId) continue;
+      card.querySelector('details')?.setAttribute('open', '');
+      if (typeof card.scrollIntoView === 'function') {
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+      return;
+    }
+  }, []);
+
   return (
-    <div className="tch-parts">
-      {projectTurnParts(parts).map((part) => {
+    <div className="tch-parts" ref={rootRef}>
+      {projected.map((part) => {
         if (part.kind === 'thinking') {
           return (
             <details className="tch-thinking" key={part.seq}>
@@ -61,6 +80,13 @@ export function TurnParts({ parts, onOpenEntity, resolveEntity, suppressEntityId
           </div>
         );
       })}
+      <TurnToolGraph
+        parts={projected}
+        onOpenEntity={onOpenEntity}
+        resolveEntity={resolveEntity}
+        suppressEntityIds={suppressEntityIds}
+        onFocusTool={focusTool}
+      />
     </div>
   );
 }
@@ -86,7 +112,12 @@ function ToolCard({
     [part.args, part.result, suppressEntityIds],
   );
   return (
-    <article className="tch-tool" data-state={part.state} data-testid="chat-tool-card">
+    <article
+      className="tch-tool"
+      data-state={part.state}
+      data-tool-call={part.toolCallId}
+      data-testid="chat-tool-card"
+    >
       <header className="tch-tool__head">
         <span aria-hidden className="tch-tool__mark">⌁</span>
         <code>{part.name}</code>
