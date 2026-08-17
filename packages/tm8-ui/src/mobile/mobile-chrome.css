@@ -185,21 +185,56 @@
 }
 
 /*
- * The share control is `share/CopyLinkControl` — another lane's component, and
- * its own styling is not touched. What IS this region's business is that
- * anything sitting in it clears the thumb floor, so the floor is applied HERE,
- * scoped to this header, rather than by editing a shared control's size.
+ * THE SHARE CONTROL, AND A DEFECT FOUND BY LOOKING AT THE SCREENSHOT.
+ *
+ * `share/copy-link.css` gives `.copy-link__button` exactly three properties —
+ * `display: inline-flex`, `align-items` and `gap`. No background, no border, no
+ * padding, no type. So on the phone header it rendered as a RAW USER-AGENT
+ * BUTTON: a grey slab with the platform's own bevel and corner radius, roughly
+ * 230px of a 390px header. On the desktop it sits inside chrome that hides
+ * that; here it is the second thing on the screen.
+ *
+ * It is styled HERE, scoped to this header, and `copy-link.css` is not touched
+ * — the control belongs to another lane and its desktop appearance is not this
+ * lane's to change. What this region owns is how a control LOOKS AND MEASURES
+ * inside it.
+ *
+ * THE WORD IS KEPT, not replaced by the icon alone. Icon-only is the phone
+ * convention and it would be smaller, but the button swaps its own label to
+ * "Copied" as the entire visible confirmation that the copy worked — hiding the
+ * word to save 60px would silently delete the feedback on the one device where
+ * the clipboard most often refuses. Compact type and real chrome get the width
+ * back without costing that.
  */
 .mobile-header .copy-link__button {
   flex: 0 0 auto;
-  min-inline-size: var(--mobile-header-min);
+  /* The floor applies to the SMALLER side; the word makes the width. */
   min-block-size: var(--mobile-header-min);
-  display: inline-flex;
-  align-items: center;
+  gap: var(--pn-space-1);
+  padding-inline: var(--pn-space-3);
   justify-content: center;
-  margin-inline-end: calc(var(--pn-space-3) * -1);
+
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+
+  font-family: var(--pn-ui);
+  font-weight: 500;
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-track-tight);
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.mobile-header .copy-link__button:active {
+  background: var(--pn-active);
 }
 
 /* ==========================================================================

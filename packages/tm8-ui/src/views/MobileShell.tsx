@@ -38,7 +38,7 @@ import { CopyLinkControl } from '../share';
 import { VectorIcon } from '../kit';
 import { KIND_ART, VIEW_ART, type KindArt } from '../domain';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
-import type { MenuTarget } from '../shell';
+import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import type { DetailReasons } from '../panels';
 import type { Notice } from '../shell';
@@ -100,14 +100,29 @@ function sameTarget(a: MenuTarget | null, b: MenuTarget): boolean {
  *
  * Derived from the SAME `activeTarget` the tab bar highlights, so the header
  * and the selected tab cannot disagree — there is one fact and two renderings
- * of it. A destination with no tab (a refusal screen reached by a shared link)
- * falls back to its own ref, which is the honest answer: the header says where
- * the address pointed even when the phone has nothing to draw for it.
+ * of it.
+ *
+ * A destination with NO tab is the interesting case: a refusal screen reached
+ * by a shared link. `VIEW_PRESENTATION` is the registry the desktop rail names
+ * its rows from, so `settings` reads "Settings" and `files` reads "File
+ * browser" — the same word the viewer saw on the desktop they copied the link
+ * off. Falling through to the bare ref (which is what the header did first, and
+ * what the screenshot caught: a lowercase `settings` under the Space name) puts
+ * an internal slug in the one place the screen states where you are.
+ *
+ * The raw ref REMAINS on the refusal card itself, quoted, and that is correct:
+ * the card explains which arrangement has no phone layout, and naming the thing
+ * exactly is what makes that honest rather than vague.
  */
 function titleOf(activeTarget: MenuTarget | null): string {
   if (!activeTarget) return 'Not found';
   const tab = TABS.find((t) => sameTarget(activeTarget, t.target));
-  return tab ? tab.label : activeTarget.ref;
+  if (tab) return tab.label;
+  if (activeTarget.type === 'view') {
+    const view = VIEW_PRESENTATION[activeTarget.ref];
+    if (view) return view.label;
+  }
+  return activeTarget.ref;
 }
 
 export function MobileShell(props: MobileShellProps) {
