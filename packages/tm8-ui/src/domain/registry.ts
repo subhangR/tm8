@@ -1678,20 +1678,18 @@ const ROWS: readonly KindConfig[] = [
  * default and opting out is a deliberate, visible edit in one place.
  */
 const NOT_LAUNCHABLE: ReadonlySet<string> = new Set([
-  // The only BACKEND refusal: a session is a run, not something you run.
+  // The only refusal, and it is the BACKEND's: `derive_task_for_entity` raises
+  // for `work_session`. A session is a run — it is not something you run.
   'work_session',
-  // The two PRODUCT refusals, carried forward verbatim from the `launchable:
-  // false` rows this set replaced. The backend would launch both; the reasons
-  // they do not are about meaning, not capability, which is exactly why they
-  // have to be written down somewhere rather than left to a missing flag:
-  //   graph — orchestration is an APPROVAL posted into the craft thread (the
-  //     agent then delegates), not a session spawned on the row. The Craft tab
-  //     is where a graph is worked.
-  //   loop  — "Run" on a loop would mean "run the loop entity", but a loop's
-  //     whole job is to run something ELSE on a period. Its primaries are
-  //     enable/disable and fire-now, which are patches, not launches.
-  'graph',
-  'loop',
+  //
+  // `graph` and `loop` were here briefly, carried over from the `launchable:
+  // false` rows this set replaced. Owner ruling 2026-08-17: both launch. Their
+  // old rationale argued that Run MEANS something else on those kinds (a graph
+  // is orchestrated from the Craft tab; a loop's job is to run something else
+  // on a period) — but that is an argument about which verb should be PRIMARY,
+  // not about whether an agent can be pointed at the row, and the server will
+  // derive a task for either. Whatever else a kind offers, "work on this" is
+  // still a coherent thing to ask for.
 ]);
 
 /**

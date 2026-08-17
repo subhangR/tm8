@@ -83,7 +83,11 @@ describe('loop management is registry-declared and fully wired', () => {
     ]);
     expect(loop.editFields?.find((field) => field.source === 'schedule')?.valueType).toBe('schedule');
     expect(loop.editFields?.find((field) => field.source === 'config')?.valueType).toBe('json-object');
-    expect(loop.panel.primaries).toEqual(['edit']);
+    // `run` LEADS since launching became a denylist (owner ruling 2026-08-17
+    // launches `loop`). It does NOT mean "fire this loop now" — that is
+    // `loop-controls`, the first panel block, and it stays the loop's own verb.
+    // Run means what it means everywhere: point an agent at this row.
+    expect(loop.panel.primaries).toEqual(['run', 'edit']);
     // RUNS is the third block on purpose: a loop's firing history IS its
     // inbound `triggered_by` edges, so a panel without it hides the only
     // record of what the loop has done. `membership` follows (2026-08-12) —
@@ -264,18 +268,18 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
    * join a list; it is launchable by default, and taking that away is an edit
    * to `NOT_LAUNCHABLE` that lands right here.
    */
-  it('4b. only the three declared refusals are unlaunchable; everything else launches', () => {
+  it('4b. work_session is the ONLY unlaunchable kind; everything else launches', () => {
     const notLaunchable = allKinds().filter((r) => !r.launchable).map((r) => r.kind).sort();
-    expect(notLaunchable).toEqual([
-      // Product refusals — orchestration is an approval, and a loop runs
-      // something else on a period.
-      'graph', 'loop',
-      // The one backend refusal: `derive_task_for_entity` raises for it.
-      'work_session',
-    ]);
-    // The complement is everything else, and it is the majority — stated as a
-    // relationship rather than a second list, so the two cannot disagree.
-    expect(allKinds().filter((r) => r.launchable).length).toBe(allKinds().length - 3);
+    // One refusal, and it is the server's: `derive_task_for_entity` raises for
+    // `work_session` and derives a task for every other live kind. So this list
+    // is not a product preference to be re-argued per kind — it mirrors what
+    // the backend will actually do, and it should only ever change when that
+    // does. (`graph` and `loop` were briefly here on inherited rationale;
+    // owner ruling 2026-08-17 launches both.)
+    expect(notLaunchable).toEqual(['work_session']);
+    // The complement is everything else — stated as a relationship rather than
+    // a second list, so the two cannot disagree.
+    expect(allKinds().filter((r) => r.launchable).length).toBe(allKinds().length - 1);
   });
 
   it('4c. task keeps Run FIRST and its own row ordering', () => {
