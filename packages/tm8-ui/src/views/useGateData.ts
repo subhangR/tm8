@@ -706,7 +706,6 @@ export function useGateData(options: GateOptions): GateData {
   const [executionCapacity, setExecutionCapacity] = useState<LivenessSnapshot['capacity']>();
   const [linkedProjects, setLinkedProjects] = useState<readonly ProjectResource[]>([]);
   const [spaceDefaultProfileId, setSpaceDefaultProfileId] = useState<EntityId | null>(null);
-  const [teammateProfileDefaults, setTeammateProfileDefaults] = useState<Readonly<Record<string, EntityId | null>>>({});
   /**
    * THE GRAPH READ'S ANSWER, KEPT — which it previously was not.
    *
@@ -1159,15 +1158,23 @@ export function useGateData(options: GateOptions): GateData {
       const teammateRows = loaded
         .filter((entry) => entry.kind === 'team_member')
         .flatMap((entry) => entry.items);
-      // Bounded for the same reason as the kind loads: this is one request PER
-      // TEAMMATE, the only boot read whose count scales with the space.
-      const defaults = await mapLimit(teammateRows, BOOT_READ_CONCURRENCY, async (teammate) => {
-        const page = await seam.connections(teammate.id, { limit: 200 }).catch(() => undefined);
-        const edge = page?.items.find((candidate) =>
-          candidate.type === 'defaults_to_profile' && candidate.source.id === teammate.id);
-        return [teammate.id, edge?.target.id ?? null] as const;
-      });
-      if (isCurrent()) setTeammateProfileDefaults(Object.fromEntries(defaults));
+      /* THE PER-TEAMMATE READ IS GONE, NOT MOVED.
+
+         This used to be one `entities.connections` request PER TEAMMATE, to
+         find the single `defaults_to_profile` edge each may have, and it was
+         AWAITED before `hydrate` returned — so the workspace sat behind a read
+         whose count was linear in the size of the space. Measured on the real
+         app: 136 round trips over 129 teammates, 866ms to 3831ms of a 3.9s
+         boot, while every read a workspace actually needs was done at 866ms.
+
+         The node now projects the answer onto the row itself as
+         `state.defaultProfileId` (server `entity-read.ts`, via the batch edge
+         query `loadRelations` already runs — zero extra queries), so the launch
+         memo below reads it straight off the summary it already had. N requests
+         became none, rather than N requests moved off the critical path.
+
+         `teammateRows` is still bound above because the launch cache is written
+         from it; it simply costs no follow-up read now. */
     },
     [seam, options.leftKind, options.rightKind, options.serverBaseUrl, absorb, loadGraph, domain],
   );
@@ -1333,7 +1340,9 @@ export function useGateData(options: GateOptions): GateData {
     setKindCounts(undefined);
     setLinkedProjects([]);
     setSpaceDefaultProfileId(null);
-    setTeammateProfileDefaults({});
+    /* No teammate-defaults map to clear any more: the per-teammate default now
+       rides `state.defaultProfileId` on the summary itself, so it is reset by
+       the same store reset that clears every other row on a space switch. */
 
     // SEED THE OPTION SETS BEFORE THE FIRST READ IS EVEN SENT.
     //
@@ -1766,8 +1775,13 @@ export function useGateData(options: GateOptions): GateData {
         agentTool: row.state.agentTool ?? '',
         owner: row.state.owner.displayName,
         liveSessions: null,
-        ...(teammateProfileDefaults[row.id]
-          ? { defaultProfileId: teammateProfileDefaults[row.id] ?? undefined }
+        /* ABSENT MEANS "NO DEFAULT OF ITS OWN", NOT "NOT LOADED YET" — that is
+           the field's stated contract, and it is strictly better than the map
+           this replaced, which could not tell those two apart while its
+           requests were still in flight. `spaceDefaultProfileId` remains the
+           fallback for a teammate that declares none. */
+        ...(row.state.defaultProfileId
+          ? { defaultProfileId: row.state.defaultProfileId }
           : {}),
       }];
     });
@@ -1847,7 +1861,7 @@ export function useGateData(options: GateOptions): GateData {
       ...(memories ? { memories } : {}),
       ...(capacity ? { capacity } : {}),
     };
-  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, teammateProfileDefaults, rows]);
+  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, rows]);
 
   /* Surface Audit 2026-07-29: the composer rendered ENABLED and wired to
      nothing — inviting an action it could not perform, the worst honesty

@@ -214,6 +214,7 @@ interface SummaryRow {
   tm_owner_member_id: string | null;
   tm_model: string | null;
   tm_agent_tool: string | null;
+  tm_default_profile_id: string | null;
   tm_avatar: string | null;
   ws_title: string | null;
   ws_status: string | null;
@@ -325,6 +326,7 @@ select
   tm.owner_member_id as tm_owner_member_id,
   tm.model           as tm_model,
   tm.agent_tool      as tm_agent_tool,
+  dtp.dst_id         as tm_default_profile_id,
   tm.avatar          as tm_avatar,
   ws.title           as ws_title,
   ws.status          as ws_status,
@@ -403,6 +405,16 @@ left join public.messages msg        on msg.entity_id = e.id
 left join public.members mem         on mem.entity_id = e.id
 left join public.user_profiles up    on up.identity_id = mem.identity_id
 left join public.team_members tm     on tm.entity_id  = e.id
+-- AT MOST ONE ROW, guaranteed by edges_defaults_to_profile_source_idx (015:297),
+-- which is UNIQUE on src_id for this type -- so this cannot fan the result out,
+-- and the same partial index serves the lookup. The projector is a SECOND
+-- hand-maintained copy of the entity-read.ts state switch; omitting this join
+-- would ship an entity.upsert whose team_member summary silently lacks
+-- defaultProfileId, and the client merge-on-ingest would then blank a field the
+-- boot read had correctly filled.
+-- (No backticks in here: this whole query is a JS template literal.)
+left join public.edges dtp           on dtp.src_id    = e.id
+                                    and dtp.type      = 'defaults_to_profile'
 left join public.work_sessions ws    on ws.entity_id  = e.id
 left join public.files f             on f.entity_id   = e.id
 left join public.pull_requests pr    on pr.entity_id  = e.id
@@ -1025,6 +1037,9 @@ export class PgEntityProjector implements EntityProjector {
           model: r.tm_model,
           agentTool: r.tm_agent_tool,
           liveWork: null,
+          // `null`, never omitted — same contract as the facade assembler:
+          // absence MEANS "no default of its own", so it must be stated.
+          defaultProfileId: r.tm_default_profile_id,
         };
       case 'work_session':
         return {
