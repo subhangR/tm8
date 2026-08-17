@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
-import { Avatar, Timestamp } from '../kit';
+import { Avatar, RibbonMark, Timestamp } from '../kit';
 import { useDismissable } from '../panels/useDismissable';
 import { ChooseFilesControl } from '../files/ChooseFilesControl';
 import type { FileUploadTask } from '../files/upload';
@@ -1209,8 +1209,8 @@ export function ChatHomeScreen({
             // Never render one thread's transcript under another thread's
             // selection; a matching transcript stays up through a same-thread
             // reload so fast reads cannot flicker.
-            <div className="tch-loading" role="status" data-testid="chat-detail-loading">
-              <span className="tch-dots" aria-hidden><i /><i /><i /></span>
+            <div className="tch-wait tch-wait--solo" role="status" data-testid="chat-detail-loading">
+              <WaitMark />
               Reading this conversation…
             </div>
           ) : detail ? (
@@ -1242,8 +1242,8 @@ export function ChatHomeScreen({
                 />
               ))}
               {thinking ? (
-                <div className="tch-thinking" role="status" data-testid="chat-thinking">
-                  <span className="tch-dots" aria-hidden><i /><i /><i /></span>
+                <div className="tch-wait" role="status" data-testid="chat-thinking">
+                  <WaitMark />
                   {phase === 'streaming' ? 'Agent is thinking…' : 'Sending your message…'}
                 </div>
               ) : null}
@@ -1385,7 +1385,7 @@ export function ChatHomeScreen({
                     title="Agent is working — click to stop this turn"
                     onClick={() => void interrupt()}
                   >
-                    <span className="tch-spin" aria-hidden /> Stop
+                    <SendMark /> Stop
                   </button>
                 ) : (
                   <button
@@ -1396,7 +1396,7 @@ export function ChatHomeScreen({
                     aria-label="Agent is working"
                     title="Agent is working — no chat interrupt operation is exposed on this node; the turn ends on its own"
                   >
-                    <span className="tch-spin" aria-hidden /> Working
+                    <SendMark /> Working
                   </button>
                 )
               ) : (
@@ -1444,6 +1444,57 @@ const MODE_OPTIONS: readonly { id: ChatMode; label: string; hint: string }[] = [
   { id: 'orchestrate', label: 'orchestrate', hint: 'dispatches and steers worker sessions' },
   { id: 'craft', label: 'craft', hint: 'sketches a blueprint row; materializes only on approval' },
 ];
+
+/* -- the two waiting marks -------------------------------------------------
+
+   Both are the tm8 figure-8 from `kit/RibbonMark`, and both are DECORATIVE:
+   every site that mounts them already carries the words — `role="status"` on
+   the transcript rows, `aria-label` on the send button — so the mark adds
+   nothing a reader needs and the `aria-hidden` wrapper keeps it from adding
+   noise it does not need either. Same reason `BootLoader` wraps it.
+
+   NOT `BootLoader`. That component's own header scopes it to boot and says so;
+   it is a centred column with a label under a 120px mark, which is neither of
+   these shapes. What is shared is the mark, so the mark is what is reused.
+
+   WHY THESE ARE THE TWO SURFACES THAT GET IT, and the neighbours do not:
+
+     - `.tch-thread__live` in the sidebar stays a pulsing dot. It marks a row
+       as live; it is a STATUS, not a wait, and there is one per streaming
+       thread — the one place in this file where marks would multiply.
+     - `Reading conversations…` in the sidebar stays plain text. The list it
+       is waiting on has known geometry, which is skeleton territory, not
+       this (`panels/detail/PanelStates.tsx`).
+
+   The two below are the honest cases: a turn that is pending, and a
+   transcript being read. Neither has a shape to be true to until it arrives —
+   the same argument `BootLoader` makes for boot. */
+
+/** SEGMENT BUDGETS, measured rather than guessed — see `gate-evidence/`. */
+const WAIT_SEGMENTS = 60;
+const SEND_SEGMENTS = 44;
+
+/** The transcript's wait row: pending turn, or a conversation being read. */
+function WaitMark() {
+  return (
+    <span className="tch-wait__mark" aria-hidden>
+      <RibbonMark className="tch-wait__ribbon" segments={WAIT_SEGMENTS} />
+    </span>
+  );
+}
+
+/**
+ * The send button's working state. Smaller, and on a brand-filled ground, so
+ * it takes its ink from `--pn-ribbon-ink` — set on the button in chat-home.css
+ * because a brand mark on a brand button is an invisible one.
+ */
+function SendMark() {
+  return (
+    <span className="tch-send__mark" aria-hidden>
+      <RibbonMark className="tch-send__ribbon" segments={SEND_SEGMENTS} />
+    </span>
+  );
+}
 
 function greetingLine(viewerName?: string): string {
   const hour = new Date().getHours();

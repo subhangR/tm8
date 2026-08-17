@@ -252,6 +252,10 @@
   margin-left: 26px;
 }
 
+/* The agent's own thinking text, as a collapsed <details> inside a turn
+   (TurnParts.tsx). NOT a wait state — that is `.tch-wait`, which used to share
+   this class and imposed a `display: flex` on it; opening this disclosure put
+   the summary and the body side by side. Sole owner of the name now. */
 .tch-thinking {
   color: var(--pn-ink-3);
   font-size: 11px;
@@ -647,9 +651,9 @@ button.tch-entity-chip:hover {
 .tch-send[aria-disabled='true'] { opacity: 0.42; cursor: default; }
 .tch-stop { color: var(--pn-block); }
 
-/* The send button carrying the agent-running state: same footprint, plus a
-   spinner. Disabled here means "no interrupt on this node", not "inert UI",
-   so it keeps more presence than a refused send. */
+/* The send button carrying the agent-running state: same footprint, plus the
+   turning mark. Disabled here means "no interrupt on this node", not "inert
+   UI", so it keeps more presence than a refused send. */
 .tch-send--working {
   display: inline-flex;
   align-items: center;
@@ -657,45 +661,117 @@ button.tch-entity-chip:hover {
 }
 .tch-send--working[aria-disabled='true'] { opacity: 0.72; cursor: default; }
 
-.tch-spin {
+/* THE MARK IS NOT BRAND HERE. This button is FILLED with brand, so the mark's
+   default ink would be the mark's own background. `--pn-ribbon-ink` hands it a
+   paper ink instead, so it reads as the same object as the word beside it.
+   Both themes are covered because it is a token, not a literal.
+
+   PAPER, NOT CARD — and the 11 points between them are the whole reason.
+   `shade()` posterizes AROUND the base ink: down toward black for the unlit
+   half of the band, up toward white for the lit half. `--pn-card` is #FFFFFF
+   in the LIGHT theme, which has nowhere left to go upward, so that entire half
+   flattens into one wall of white. Paper is visually the same ink to a reader
+   and keeps the headroom: roughly TWICE the distinct fills of card, at every
+   phase of the loop.
+
+   NO DIGITS HERE ON PURPOSE. The count depends on where in the 2s loop you
+   sample — the shading rides the flow and rotation terms, so one frame is a
+   draw from a distribution and not a property of the ink. Re-measure across
+   the loop, never at a single frame, or you will get a number that disagrees
+   with whatever was written down and distrust the warning instead of the
+   method. Ranges, both themes, and the sweep that produced them are in
+   gate-evidence/chat-ribbon.md.
+
+   THE MECHANISM, so this is not just a number to trust: `shade` walks 0.78 of
+   the way toward black for the unlit half and 0.58 toward white for the lit
+   half, so where the base sits decides whether BOTH halves still vary.
+
+   For white the lit half is one colour BY CONSTRUCTION, not by measurement:
+   the lit branch is c + (255 - c) * f, and at c = 255 that is 255 for every f,
+   in every channel. Re-measuring cannot disagree with arithmetic.
+
+   It is NOT about total range: white has the widest luminance span of any
+   candidate and is still the worst, because the whole span lives in one half.
+   Nor is the rule "avoid railed channels" (pure red rails all three and scores
+   HIGHER than brass) or "pick a mid-tone" (mid grey is one, and scores lower —
+   its channels move in lockstep, so the count collapses to one channel's
+   travel). Both halves staying live is the whole statement; see the evidence
+   doc for the table that refutes the two tidier versions of it.
+
+   THE DIFFERENCE IS LIGHT-THEME-ONLY. In dark, card (#221E15) and paper
+   (#1D1912) are both near-black with the whole upward range free, so the 11
+   points between them buys nothing and they measure the same. In light both sit
+   against the ceiling and those 11 points are nearly the whole difference. Not
+   a reason to use card: one token serves both grounds, and in the ground where
+   they differ, card is the broken one.
+
+   Do not "simplify" this back to --pn-card. It is the button's text colour,
+   which is exactly what makes it the tempting wrong answer. */
+.tch-send__mark {
+  --pn-ribbon-ink: var(--pn-paper);
+  display: inline-flex;
+  align-items: center;
+  /* The old spinner was a 10px circle. The mark is 4:5, so the same optical
+     weight is a hair narrower and taller — and the box is held to 10px so the
+     button keeps the footprint its own comment promises. The ribbon overflows
+     that box on purpose (`overflow: visible` in the component); it is what
+     gives a 10px slot a 13px mark without moving the composer when a turn
+     starts. Verified in a browser: button height is identical to the spinner's. */
   width: 10px;
   height: 10px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--pn-card) 40%, transparent);
-  border-top-color: var(--pn-card);
-  animation: tch-spin 0.8s linear infinite;
 }
 
-@keyframes tch-spin {
-  to { transform: rotate(360deg); }
+.cv2-root .tch-send__ribbon {
+  width: 11px;
+  height: 13.75px;
+  margin: -1.875px 0;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .tch-spin { animation-duration: 2.4s; }
-}
-
-.tch-loading,
-.tch-thinking {
+/* THE TRANSCRIPT'S WAIT ROW — a pending turn, or a conversation being read.
+   `.tch-thinking` is deliberately NOT part of this any more: that class is
+   also the collapsible Thinking disclosure in TurnParts.tsx, and the two
+   sharing a `display: flex` rule laid that disclosure's summary and body out
+   side by side whenever a reader opened it. */
+.tch-wait {
   display: flex;
   align-items: center;
   gap: var(--pn-space-2);
+  padding: var(--pn-space-2) 0;
   color: var(--pn-ink-3);
   font: 11px var(--pn-mono);
 }
-.tch-loading { padding: var(--pn-space-4); }
-.tch-thinking { padding: var(--pn-space-2) 0; }
 
-.tch-dots { display: inline-flex; gap: 3px; }
-.tch-dots i {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--pn-wait);
-  animation: tch-dot-pulse 1.1s ease-in-out infinite;
+/* The read of a whole conversation is ALONE in the transcript — nothing above
+   it, nothing below — so it keeps the roomier padding the old `.tch-loading`
+   had. The pending-turn row sits under the turns and keeps the tight one. */
+.tch-wait--solo { padding: var(--pn-space-4); }
+
+.tch-wait__mark {
+  display: inline-flex;
+  align-items: center;
+  width: 18px;
+  height: 18px;
 }
-.tch-dots i:nth-child(2) { animation-delay: 0.18s; }
-.tch-dots i:nth-child(3) { animation-delay: 0.36s; }
 
+.cv2-root .tch-wait__ribbon {
+  width: 16px;
+  height: 20px;
+  margin: -1px 0;
+}
+
+/* Reduced motion: `RibbonMark` never subscribes to the frame clock, so both
+   marks hold their rest pose in JS rather than freezing mid-turn. The slow
+   fade is what is left as the activity signal — the same treatment boot uses,
+   and the same one the dots this replaced used to carry. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .tch-wait__ribbon,
+  .cv2-root .tch-send__ribbon {
+    animation: pnPulse 2.4s var(--pn-ease-standard) infinite;
+  }
+}
+
+/* Still the sidebar row's live pip — a STATUS on a list row, not a wait, and
+   one per streaming thread. It keeps the dot. */
 @keyframes tch-dot-pulse {
   0%, 100% { opacity: 0.25; transform: translateY(0); }
   40% { opacity: 1; transform: translateY(-2px); }
