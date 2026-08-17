@@ -1289,11 +1289,19 @@ export function RowStateControl({
                       aria-checked={on}
                       /* W4 — disabled-with-reason, never hidden: aria-disabled
                          (not `disabled`) so a keyboard user can still reach
-                         the row and hear WHY, exactly as the honesty kit's
-                         refusals do. The menu stays open on the dead click so
-                         the tooltip can be read. */
+                         the row, exactly as the honesty kit's refusals do. The
+                         menu stays open on the dead click so the reason can be
+                         read.
+
+                         THE REASON IS VISIBLE NOW, not a `title`. It used to
+                         rely on a hover tooltip, which a finger cannot produce
+                         — so on touch this row was greyed out and mute. It is
+                         written into the row itself rather than disclosed,
+                         because it is one short uniform sentence and this row
+                         lives inside a popover: a disclosure nested in a menu
+                         is a second layer to dismiss for a fact that fits on
+                         the line. Matches the `<select>` spelling below. */
                       aria-disabled={off ? 'true' : undefined}
-                      title={off ? workflowRefusalText(typeValue!, o.id) : undefined}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (off) return;
@@ -1310,7 +1318,9 @@ export function RowStateControl({
                           both from a row, and there is no row to derive them
                           from until the value is chosen. The mark stays where
                           it is a fact: on the trigger. */}
-                      <span className="lp__assignopt-name">{wordFor(o.id)}</span>
+                      <span className="lp__assignopt-name">
+                        {off ? `${wordFor(o.id)} — not in type ${typeValue}` : wordFor(o.id)}
+                      </span>
                       <span className="lp__assignopt-mark" aria-hidden>
                         {on ? '✓' : ''}
                       </span>
@@ -1352,18 +1362,27 @@ export function RowStateControl({
       {!control.options.some((o) => o.id === current) && current !== '' ? (
         <option value={current}>{wordFor(current)}</option>
       ) : null}
-      {/* W4 — an option outside the row's type vocabulary is DISABLED with
-          the reason in its title, never hidden: "the control does not change
-          shape" (the registry's own ruling), and the database trigger is the
-          real gate behind this usability narrowing. */}
+      {/* W4 — an option outside the row's type vocabulary is DISABLED with its
+          reason attached, never hidden: "the control does not change shape"
+          (the registry's own ruling), and the database trigger is the real gate
+          behind this usability narrowing.
+
+          THE REASON IS IN THE OPTION'S OWN LABEL, and it used to be in `title`.
+          `title` on an `<option>` is rendered by NO browser — not as a tooltip
+          on desktop, and certainly not in the native picker a phone opens. So
+          this was not a touch defect that happened to also be ugly: the reason
+          was unreachable on every platform, by every input, since it was
+          written. A greyed-out row the user cannot interrogate is exactly the
+          silent refusal L6 exists to forbid.
+
+          Option TEXT is the one thing every select renders, native picker
+          included, so the reason travels there. It is short and uniform by
+          construction — `workflowRefusalText` is "type X does not allow Y" and Y
+          is already this option's label — so the suffix says only the part the
+          label does not: which type is refusing. */}
       {control.options.map((o) => (
-        <option
-          key={o.id}
-          value={o.id}
-          disabled={barred(o.id)}
-          title={barred(o.id) ? workflowRefusalText(typeValue!, o.id) : undefined}
-        >
-          {wordFor(o.id)}
+        <option key={o.id} value={o.id} disabled={barred(o.id)}>
+          {barred(o.id) ? `${wordFor(o.id)} — not in type ${typeValue}` : wordFor(o.id)}
         </option>
       ))}
     </select>

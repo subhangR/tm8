@@ -108,6 +108,38 @@
   opacity: 1;
   visibility: visible;
 }
+
+/* ── THE NOTE HOST (`ReasonNote`) ─────────────────────────────────────────
+   A `title=` renders as a tooltip on hover and in NO other circumstance, so on
+   a touch device the text does not become awkward to reach, it does not exist.
+   Around forty of this codebase's attributes carried their information nowhere
+   else, and every one of them is an explanation — why an entity wants
+   attention, why a command is unavailable, why an option is barred.
+
+   This is a HOST, not a second vocabulary: it renders the same `.hon-tip`
+   bubble, in the same cause/remedy voice, opened by the same disclosure and
+   clamped by the same phone rule below. It exists only because the hosts that
+   already had one are all refused CONTROLS, and most of these sites are
+   ordinary text that must not start looking disabled. */
+.cv2-root .hon-note {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+/* The dotted underline is the whole affordance: it says "there is more here"
+   without claiming the thing is a button or that it is refused. Same mark
+   `.hon-hollow-inline` already uses for "ask me about this value". */
+.cv2-root .hon-note__trigger {
+  cursor: help;
+  border-bottom: 1px dotted var(--pn-line-2);
+}
+.cv2-root .hon-note:hover > .hon-tip,
+.cv2-root .hon-note__trigger:focus-visible ~ .hon-tip,
+.cv2-root .hon-note[data-reason-open='true'] > .hon-tip {
+  opacity: 1;
+  visibility: visible;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cv2-root .hon-tip {
     transition: none;
@@ -190,6 +222,12 @@
 .cv2-root .mobile-frame .hon-disabled:not([data-reason-open='true']):focus-visible > .hon-tip,
 .cv2-root .mobile-frame .auth-inline-refusal:not([data-reason-open='true']):hover > .auth-tip,
 .cv2-root .mobile-frame .auth-inline-refusal:not([data-reason-open='true']):focus-within > .auth-tip,
+.cv2-root .mobile-frame .hon-note:not([data-reason-open='true']):hover > .hon-tip,
+.cv2-root
+  .mobile-frame
+  .hon-note:not([data-reason-open='true'])
+  .hon-note__trigger:focus-visible
+  ~ .hon-tip,
 .cv2-root
   .mobile-frame
   .lp__rowdetail--chips

@@ -58,6 +58,7 @@ import {
   toReason,
   type UnavailableReason,
 } from './honesty/DisabledWithReason';
+import { ReasonNote } from './honesty/ReasonNote';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
 import {
@@ -3283,9 +3284,25 @@ export function Tile({
               never grows, so hovering cannot reflow the list under the cursor. */}
           <span className="lp__badges">
             {attention ? (
-              <span className="lp__attention-label" title={row.badges.attention?.latestReason}>
-                Needs attention
-              </span>
+              /* WHY it needs attention was `title`-only, and `title` renders on
+                 hover and nowhere else — so on a phone this row said "Needs
+                 attention" and refused to say why, with the reason present in
+                 the data and reachable by nobody. Attention is a core concept
+                 here; a request with an unreadable reason is a demand.
+                 The mouse loses nothing: `.hon-tip` still opens on hover, and
+                 now on focus and on tap as well. */
+              row.badges.attention?.latestReason ? (
+                <ReasonNote
+                  className="lp__attention-label"
+                  reason={row.badges.attention.latestReason}
+                  label="Needs attention — why"
+                  testid="attention-reason"
+                >
+                  Needs attention
+                </ReasonNote>
+              ) : (
+                <span className="lp__attention-label">Needs attention</span>
+              )
             ) : null}
             {statusWord ? (
               <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
