@@ -17,6 +17,12 @@ export {
   type LaunchSources,
 } from './EntityListPanel';
 export {
+  ListRootHeader,
+  type ListRootChatsCell,
+  type ListRootHeaderProps,
+  type ListRootOption,
+} from './ListRootHeader';
+export {
   EntityControlStrip,
   type ControlHost,
   type ControlSubject,

@@ -16,7 +16,13 @@ import type {
   ExecutionSpawnInput,
   WorkSessionInteractionProfileProjection,
 } from '@tm8/contract';
-import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
+import {
+  EntityDetailPanel,
+  EntityListPanel,
+  ListRootHeader,
+  ListViewSwitcher,
+  type DetailReasons,
+} from '../panels';
 import { useRowLifecycle } from './useRowLifecycle';
 import { EntityVerbs } from './EntityVerbs';
 import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
@@ -33,7 +39,8 @@ import {
 import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
-import { EntityCreateControl, placeholderTitleFor, useNewTask } from '../authoring';
+import { placeholderTitleFor, useNewTask } from '../authoring';
+import { homeRootKinds } from '../domain/home-rail';
 import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
@@ -589,23 +596,100 @@ export function WorkspaceView(props: WorkspaceViewProps) {
 
   /* Each dock owns a create-flow hook so a quick-create panel keeps the
      behavior when it crosses the center. Both run unconditionally (rules of
-     hooks); the control only renders when registry data says quickCreate. */
+     hooks).
+
+     THESE NOW DRIVE THE ROOT HEADER'S ＋ (task 01a0102f, owner ruling R4),
+     not an `EntityCreateControl` in the panel's header slot. Same flow, same
+     hook, one button earlier: create an Untitled entity immediately and open
+     it in the centre — Home's D3 behaviour, adopted verbatim so the two
+     surfaces differ by layout and nothing else.
+
+     `refusal` is what makes a non-creatable kind (work_session: quickCreate
+     false) report `unavailable` instead of silently making an entity nobody
+     asked for. The header draws the ＋ disabled-with-reason from it rather
+     than hiding it — a refused verb is told, never hidden. */
   const leftConfig = getKind(leftKind);
   const rightConfig = getKind(rightKind);
+  const refusalFor = (config: ReturnType<typeof getKind>) =>
+    config.list.quickCreate
+      ? null
+      : {
+          cause: `${config.labelPlural} aren’t created from here`,
+          remedy: 'they are made by their own flow',
+        };
   const leftCreateFlow = useNewTask({
     spaceId: data.spaceId,
     kind: leftConfig.kind,
     placeholderTitle: placeholderNameFor(leftConfig, placeholderTitleFor(leftConfig.label)),
     commands: data.seam.commands,
-    onCreated: (id) => nav.push?.(id as EntityId),
+    /* The reconcile is NOT decoration and NOT inherited from Home: the
+       retired `createSlot` did it, and dropping it would have created the
+       entity, opened it, and left the list it came from without a row. */
+    onCreated: (id, result) => {
+      data.reconcileCommand(result);
+      nav.push?.(id as EntityId);
+    },
+    refusal: refusalFor(leftConfig),
   });
   const rightCreateFlow = useNewTask({
     spaceId: data.spaceId,
     kind: rightConfig.kind,
     placeholderTitle: placeholderNameFor(rightConfig, placeholderTitleFor(rightConfig.label)),
     commands: data.seam.commands,
-    onCreated: (id) => nav.push?.(id as EntityId),
+    onCreated: (id, result) => {
+      data.reconcileCommand(result);
+      nav.push?.(id as EntityId);
+    },
+    refusal: refusalFor(rightConfig),
   });
+
+  /* THE ROOT HEADER, one per column (task 01a0102f). The same component Home
+     draws — `panels/ListRootHeader` — minus the `chats` cell, which is not
+     portable: Chats hosts no list, it swaps the surface's CENTRE to the
+     conversation composer, and this surface's centre is the ink stage.
+
+     The kind menu offers `homeRootKinds()`, which is `collectionKinds()` in
+     the rail's order. Home already used it, and the population was always
+     identical — taking the same function is what makes the ORDER identical
+     too, so the two surfaces' menus cannot drift apart later.
+
+     Kind switching moved here off the panel's own `onKindChange`. That prop
+     is now unreachable (the panel takes `selectorSlot="host"`, which retires
+     its KindSelector) and passing it would have left a dead menu: the panel
+     calls `onKindChange?.()` optionally, with no disabled-with-reason guard,
+     so a miswire there fails SILENTLY rather than visibly. */
+  const columnHeader = (side: WorkspacePanelSide) => {
+    const isLeft = side === 'left';
+    const config = isLeft ? leftConfig : rightConfig;
+    const flow = isLeft ? leftCreateFlow : rightCreateFlow;
+    const onKindChange = isLeft ? props.onLeftKindChange : props.onRightKindChange;
+    return (
+      <ListRootHeader
+        rootsLabel={`${isLeft ? 'Left' : 'Right'} panel list`}
+        cell={{ kind: config.kind, label: config.labelPlural, single: config.label }}
+        /* No Chats cell here, so this column's one root is always the
+           selected one — there is nothing else it could be showing. */
+        cellActive
+        onSelectCell={() => undefined}
+        {...(flow.unavailable === null ? { onCreate: () => void flow.create() } : {})}
+        createUnavailable={flow.unavailable}
+        options={homeRootKinds().map((k) => ({
+          kind: k.kind,
+          label: k.labelPlural,
+          single: k.label,
+        }))}
+        currentKind={config.kind}
+        onPickKind={(kind) => onKindChange?.(kind)}
+        aside={
+          <ListViewSwitcher
+            config={config}
+            mode={isLeft ? leftLayout : rightLayout}
+            onMode={isLeft ? setLeftMode : setRightMode}
+          />
+        }
+      />
+    );
+  };
 
   /* The empty CENTRE's first-run action always creates a TASK, whichever kinds
      the docks happen to show — a session launches on one, so it is the move
@@ -634,99 +718,96 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       onResizePanel={props.onResizeSidePanel}
       onResetPanelWidth={props.onResetSidePanelWidth}
       left={
-        <EntityListPanel
-          kind={leftKind}
-          createSlot={
-            leftConfig.list.quickCreate
-            && (leftConfig.createForm || leftConfig.list.tile.anatomy === 'control-card') ? (
-              <EntityCreateControl
-                config={leftConfig}
-                immediate={leftCreateFlow}
-                spaceId={data.spaceId}
-                commands={data.seam.commands}
-                files={data.seam.files}
-                onCreated={(id, result) => {
-                  data.reconcileCommand(result);
-                  nav.push?.(id);
-                }}
-              />
-            ) : undefined
-          }
-          /* NO `as never` on the row seam. The cast was load-bearing
-             camouflage: it made the panel's row seam unable to reject a
-             mismatched shape, which is the same blindness that let `rowsFor`
-             ignore its filter for so long. The signatures line up on their
-             own now. */
-          rowsFor={data.rowsFor(leftKind)}
-          pageStateOf={data.pageStateOf(leftKind)}
-          loadMore={data.loadMore(leftKind)}
-          boardFor={data.boardFor(leftKind) as never}
-          mode={leftLayout}
-          onMode={setLeftMode}
-          members={data.members}
-          ctx={ctx}
-          /* A boarded panel owns the whole grid, so it is not compact any
-             more — keeping the dense chrome would shrink the filters and
-             search of a full-width surface for no reason. */
-          compact={boardSide === 'left' ? false : leftCompact}
-          liveIds={data.liveIds}
-          livenessOf={data.livenessOf}
-          activity={data.activity}
-          messagePulses={data.messagePulses}
-          linkedTasksOf={linkedTasksOf}
-          linkedSessionsOf={linkedSessionsOf}
-          linkedPullRequestsOf={data.linkedPullRequestsOf}
-          selectedId={engine.visible.stack[engine.visible.stack.length - 1] ?? null}
-          onSelect={openEntity}
-          /* UNCONDITIONAL since the relational panel: the Tile only ever
-             mounts the ✕ on session-tree anatomy rows, and a session tile
-             expanded inline under a task (any panel kind) deserves the same
-             close the sessions list gives it. */
-          onTerminate={handleSessionClose}
-          onSetState={rowLifecycle.setState}
-          onArchive={rowLifecycle.archive}
-          onSetValue={rowLifecycle.setValue}
-          onSetAxis={rowLifecycle.setAxis}
-          taskAxes={data.taskAxes}
-          taskWorkflows={data.taskWorkflows}
-          onAssign={rowLifecycle.assign}
-          assignableActors={rowLifecycle.assignable}
-          onMembership={rowLifecycle.membership}
-          membershipSets={rowLifecycle.membershipSets}
-          connectionsOf={data.connectionsOf}
-          onKindChange={props.onLeftKindChange}
-          // Capability truth now rides the SUMMARY, so a row knows what it
-          // permits the moment it renders. `data.capabilitiesOf` is the one
-          // authority (summary first, detail as fallback) — never inline a
-          // `detailOf(id)?.capabilities` here again.
-          //
-          // What that replaced, because the rule it upheld still stands: this
-          // read used to be detail-only, and an unhydrated row genuinely had
-          // unknown capabilities and correctly stayed refused. That was right
-          // — an all-true literal would claim permission the shell was never
-          // granted. It was also inescapable on a COLLAPSED tile, which
-          // nothing ever hydrates, so Run/Archive/Collections were drawn and
-          // permanently dead there. Absence is still refusal; there is simply
-          // no longer a row that has to live in it.
-          //
-          // `onNeedDetail` stays: it fills the rest of the detail an expanded
-          // strip reads, and it is the fallback path for a node too old to
-          // send the summary field.
-          capabilitiesOf={data.capabilitiesOf}
-          onNeedDetail={(id) => data.pull?.(id)}
-          // The quick-config's escape to the full sheet. A1c's
-          // LaunchTeammateOption is deliberately NOT my LaunchTeammate:
-          // panels/ importing views/ would point the dependency backwards,
-          // since views compose panels. One map at the seam, no cast on
-          // either side.
-          launch={launchPort}
-          /* The header verbs (101). `wiredActions` is what makes the pair
-             honest: `▮ Terminal` commits, `Launch session ▸` renders its
-             not-wired refusal beside it rather than being drawn as a live
-             button this dispatcher would drop. */
-          onAction={sessionStart.onAction}
-          wiredActions={sessionStart.wiredActions}
-        />
+        /* A FRAGMENT, not a wrapper div, and that is load-bearing:
+           `.shell-ws__side-content > .lp` gives the panel `flex: 1` as a
+           DIRECT child (shell.css:786). A wrapper would break that selector
+           and the list would size to its content — the exact half-drawn
+           column that rule was written to fix. The header is `flex: none`
+           from `.tch-rootbar`, so the two share the column correctly. */
+        <>
+          {columnHeader('left')}
+          <EntityListPanel
+            kind={leftKind}
+            /* R2: the panel's own KindSelector stands down — the root header
+               above owns the kind, and with it go the total and live counts
+               that row carried. Labels only, no counts (D16), same as Home. */
+            selectorSlot="host"
+            /* NO `as never` on the row seam. The cast was load-bearing
+               camouflage: it made the panel's row seam unable to reject a
+               mismatched shape, which is the same blindness that let `rowsFor`
+               ignore its filter for so long. The signatures line up on their
+               own now. */
+            rowsFor={data.rowsFor(leftKind)}
+            pageStateOf={data.pageStateOf(leftKind)}
+            loadMore={data.loadMore(leftKind)}
+            boardFor={data.boardFor(leftKind) as never}
+            mode={leftLayout}
+            onMode={setLeftMode}
+            members={data.members}
+            ctx={ctx}
+            /* A boarded panel owns the whole grid, so it is not compact any
+               more — keeping the dense chrome would shrink the filters and
+               search of a full-width surface for no reason. */
+            compact={boardSide === 'left' ? false : leftCompact}
+            liveIds={data.liveIds}
+            livenessOf={data.livenessOf}
+            activity={data.activity}
+            messagePulses={data.messagePulses}
+            linkedTasksOf={linkedTasksOf}
+            linkedSessionsOf={linkedSessionsOf}
+            linkedPullRequestsOf={data.linkedPullRequestsOf}
+            selectedId={engine.visible.stack[engine.visible.stack.length - 1] ?? null}
+            onSelect={openEntity}
+            /* UNCONDITIONAL since the relational panel: the Tile only ever
+               mounts the ✕ on session-tree anatomy rows, and a session tile
+               expanded inline under a task (any panel kind) deserves the same
+               close the sessions list gives it. */
+            onTerminate={handleSessionClose}
+            onSetState={rowLifecycle.setState}
+            onArchive={rowLifecycle.archive}
+            onSetValue={rowLifecycle.setValue}
+            onSetAxis={rowLifecycle.setAxis}
+            taskAxes={data.taskAxes}
+            taskWorkflows={data.taskWorkflows}
+            onAssign={rowLifecycle.assign}
+            assignableActors={rowLifecycle.assignable}
+            onMembership={rowLifecycle.membership}
+            membershipSets={rowLifecycle.membershipSets}
+            connectionsOf={data.connectionsOf}
+            // Capability truth now rides the SUMMARY, so a row knows what it
+            // permits the moment it renders. `data.capabilitiesOf` is the one
+            // authority (summary first, detail as fallback) — never inline a
+            // `detailOf(id)?.capabilities` here again.
+            //
+            // What that replaced, because the rule it upheld still stands: this
+            // read used to be detail-only, and an unhydrated row genuinely had
+            // unknown capabilities and correctly stayed refused. That was right
+            // — an all-true literal would claim permission the shell was never
+            // granted. It was also inescapable on a COLLAPSED tile, which
+            // nothing ever hydrates, so Run/Archive/Collections were drawn and
+            // permanently dead there. Absence is still refusal; there is simply
+            // no longer a row that has to live in it.
+            //
+            // `onNeedDetail` stays: it fills the rest of the detail an expanded
+            // strip reads, and it is the fallback path for a node too old to
+            // send the summary field.
+            capabilitiesOf={data.capabilitiesOf}
+            onNeedDetail={(id) => data.pull?.(id)}
+            // The quick-config's escape to the full sheet. A1c's
+            // LaunchTeammateOption is deliberately NOT my LaunchTeammate:
+            // panels/ importing views/ would point the dependency backwards,
+            // since views compose panels. One map at the seam, no cast on
+            // either side.
+            launch={launchPort}
+            /* The header verbs (101). `wiredActions` keeps the row honest,
+               and since the 2026-08-17 ruling it also decides what the row
+               CONTAINS: `▮ Terminal` commits and is drawn; `launch-session`
+               is absent from the list, so it is not drawn at all rather than
+               drawn as a live button this dispatcher would silently drop. */
+            onAction={sessionStart.onAction}
+            wiredActions={sessionStart.wiredActions}
+          />
+        </>
       }
       center={
         <>
@@ -793,66 +874,55 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         </>
       }
       right={
-        <EntityListPanel
-          kind={rightKind}
-          createSlot={
-            rightConfig.list.quickCreate
-            && (rightConfig.createForm || rightConfig.list.tile.anatomy === 'control-card') ? (
-              <EntityCreateControl
-                config={rightConfig}
-                immediate={rightCreateFlow}
-                spaceId={data.spaceId}
-                commands={data.seam.commands}
-                files={data.seam.files}
-                onCreated={(id, result) => {
-                  data.reconcileCommand(result);
-                  nav.push?.(id);
-                }}
-              />
-            ) : undefined
-          }
-          rowsFor={data.rowsFor(rightKind)}
-          pageStateOf={data.pageStateOf(rightKind)}
-          loadMore={data.loadMore(rightKind)}
-          boardFor={data.boardFor(rightKind) as never}
-          mode={rightLayout}
-          onMode={setRightMode}
-          members={data.members}
-          ctx={ctx}
-          compact={boardSide === 'right' ? false : rightCompact}
-          liveIds={data.liveIds}
-          livenessOf={data.livenessOf}
-          activity={data.activity}
-          messagePulses={data.messagePulses}
-          linkedTasksOf={linkedTasksOf}
-          linkedSessionsOf={linkedSessionsOf}
-          linkedPullRequestsOf={data.linkedPullRequestsOf}
-          selectedId={engine.visible.stack[engine.visible.stack.length - 1] ?? null}
-          onSelect={openEntity}
-          /* Same rule as the left dock — see the comment there. */
-          onTerminate={handleSessionClose}
-          onSetState={rowLifecycle.setState}
-          onArchive={rowLifecycle.archive}
-          onSetValue={rowLifecycle.setValue}
-          onSetAxis={rowLifecycle.setAxis}
-          taskAxes={data.taskAxes}
-          taskWorkflows={data.taskWorkflows}
-          onAssign={rowLifecycle.assign}
-          assignableActors={rowLifecycle.assignable}
-          onMembership={rowLifecycle.membership}
-          membershipSets={rowLifecycle.membershipSets}
-          connectionsOf={data.connectionsOf}
-          onKindChange={props.onRightKindChange}
-          capabilitiesOf={data.capabilitiesOf}
-          onNeedDetail={(id) => data.pull?.(id)}
-          launch={launchPort}
-          /* The header verbs (101). `wiredActions` is what makes the pair
-             honest: `▮ Terminal` commits, `Launch session ▸` renders its
-             not-wired refusal beside it rather than being drawn as a live
-             button this dispatcher would drop. */
-          onAction={sessionStart.onAction}
-          wiredActions={sessionStart.wiredActions}
-        />
+        /* Same fragment rule as the left column — see the comment there. */
+        <>
+          {columnHeader('right')}
+          <EntityListPanel
+            kind={rightKind}
+              selectorSlot="host"
+            rowsFor={data.rowsFor(rightKind)}
+            pageStateOf={data.pageStateOf(rightKind)}
+            loadMore={data.loadMore(rightKind)}
+            boardFor={data.boardFor(rightKind) as never}
+            mode={rightLayout}
+            onMode={setRightMode}
+            members={data.members}
+            ctx={ctx}
+            compact={boardSide === 'right' ? false : rightCompact}
+            liveIds={data.liveIds}
+            livenessOf={data.livenessOf}
+            activity={data.activity}
+            messagePulses={data.messagePulses}
+            linkedTasksOf={linkedTasksOf}
+            linkedSessionsOf={linkedSessionsOf}
+            linkedPullRequestsOf={data.linkedPullRequestsOf}
+            selectedId={engine.visible.stack[engine.visible.stack.length - 1] ?? null}
+            onSelect={openEntity}
+            /* Same rule as the left dock — see the comment there. */
+            onTerminate={handleSessionClose}
+            onSetState={rowLifecycle.setState}
+            onArchive={rowLifecycle.archive}
+            onSetValue={rowLifecycle.setValue}
+            onSetAxis={rowLifecycle.setAxis}
+            taskAxes={data.taskAxes}
+            taskWorkflows={data.taskWorkflows}
+            onAssign={rowLifecycle.assign}
+            assignableActors={rowLifecycle.assignable}
+            onMembership={rowLifecycle.membership}
+            membershipSets={rowLifecycle.membershipSets}
+            connectionsOf={data.connectionsOf}
+            capabilitiesOf={data.capabilitiesOf}
+            onNeedDetail={(id) => data.pull?.(id)}
+            launch={launchPort}
+            /* The header verbs (101). `wiredActions` keeps the row honest,
+               and since the 2026-08-17 ruling it also decides what the row
+               CONTAINS: `▮ Terminal` commits and is drawn; `launch-session`
+               is absent from the list, so it is not drawn at all rather than
+               drawn as a live button this dispatcher would silently drop. */
+            onAction={sessionStart.onAction}
+            wiredActions={sessionStart.wiredActions}
+          />
+        </>
       }
     />
   );
