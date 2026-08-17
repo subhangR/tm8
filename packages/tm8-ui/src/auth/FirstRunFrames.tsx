@@ -195,8 +195,8 @@ export function FrameClaim(props: FrameProps) {
                 onChange={setToken}
                 hint={
                   token
-                    ? 'from this node\u2019s boot log \u2014 single-use, burned when you claim'
-                    : 'paste the tm8c_\u2026 token printed at first boot, or read it from <dataDir>/setup-token on the server'
+                    ? 'filled in from the setup link \u2014 it works once, and is used up when you claim'
+                    : 'tm8 printed a setup link in the terminal when it started \u2014 open that link and this fills itself in. Lost it? Start tm8 again and it prints the same link.'
                 }
               />
             ) : null}

@@ -58,8 +58,12 @@ export const CREATE_OWNER: UnavailableReason = {
  * at the server with a 28000.
  */
 export const CLAIM_TOKEN_REQUIRED: UnavailableReason = {
-  cause: 'A setup token is required to claim this node',
-  remedy: 'the tm8c_… token is printed in the server’s boot log at first start and written to <dataDir>/setup-token — paste it above, or open the claim link the server printed',
+  cause: 'This server needs its one-time setup code before it can be claimed',
+  // `<dataDir>` is a documentation placeholder and was being rendered to a
+  // human verbatim. The actionable answer needs no path: the link is in the
+  // terminal they started tm8 in, and an ordinary restart REPRINTS the same
+  // live token rather than rotating it (see identity/node-claim-boot.ts).
+  remedy: 'tm8 printed a setup link in the terminal when it started — open that link and the code fills itself in. Lost it? Start tm8 again and it prints the same link.',
 };
 
 /** 1b — name the server / pick its tile. */
