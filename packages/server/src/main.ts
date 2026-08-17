@@ -160,7 +160,7 @@ export interface BootstrappedServer {
    * renderer is a `/p/` route on the app socket and this stays undefined.
    * Narrowed to `url` + `close` for the same reason `delivery` is.
    */
-  readonly preview: { readonly url: string; close(): Promise<void> } | undefined;
+  readonly preview: { readonly url: string; readonly port: number; close(): Promise<void> } | undefined;
 }
 
 export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrappedServer> {
@@ -659,7 +659,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       owner,
     });
     const listening = await previewServer.listen();
-    preview = { url: listening.url, close: () => previewServer.close() };
+    preview = { url: listening.url, port: listening.port, close: () => previewServer.close() };
     // Ride the composed server's close: every existing caller — harnesses
     // included — tears down with `server.close()` and must not leak the
     // second listener for not knowing it exists.
@@ -891,12 +891,29 @@ export async function main(): Promise<void> {
     console.log(
       `  artifact preview: ${
         preview
-          ? `${preview.url} (second origin, design §9)`
+          // Both facts, because behind a TLS proxy they differ and each one
+          // answers a different question: the first is the URL a browser gets
+          // minted, the second is the socket nginx must be pointed at.
+          ? `${preview.url} (second origin, design §9; bound ${server.config.host}:${preview.port})`
           : server.config.preview?.sameOrigin && db
             ? `${url}/p/... (same-origin route on the app socket)`
             : 'NOT RUNNING (needs a database and TM8_PREVIEW_ENABLED not 0)'
       }`,
     );
+    // The prod version of this is a boot refusal (config.ts). Off prod it is
+    // this line, because the failure is otherwise INVISIBLE: the node boots,
+    // previews render, and the only thing standing between an agent-authored
+    // bundle and the session cookie is one CSP directive.
+    if (
+      server.config.preview?.sameOrigin
+      && server.config.publicOrigin?.startsWith('https:')
+    ) {
+      console.warn(
+        `  WARNING: previews are served SAME-ORIGIN from ${server.config.publicOrigin} — untrusted ` +
+          `bundle HTML on the origin that holds the session cookie, contained by the response CSP's ` +
+          `sandbox alone. Set TM8_PREVIEW_PUBLIC_ORIGIN to a separate hostname (design §9.2).`,
+      );
+    }
     console.log(
       `  catalog: ${router.mounted().length} HTTP operations mounted · ` +
         `${registry.size} implemented · the rest answer 501 not_implemented (DEV-13)`,

@@ -160,9 +160,10 @@ export interface ServerConfig {
    * The artifact-preview origin. DEFAULT: the app origin itself — previews
    * are served as a `/p/` route on the app socket, so a default-config node
    * renders artifacts with no extra listener and no extra hostname. An
-   * explicit `TM8_PREVIEW_HOST`/`TM8_PREVIEW_PORT` opts back into the SECOND
-   * listener on its own origin (TM8-ARTIFACTS-DESIGN §9, true origin
-   * isolation). Absent when `TM8_PREVIEW_ENABLED=0`, or in tests that
+   * explicit `TM8_PREVIEW_HOST`/`TM8_PREVIEW_PORT`/`TM8_PREVIEW_PUBLIC_ORIGIN`
+   * opts back into the SECOND listener on its own origin
+   * (TM8-ARTIFACTS-DESIGN §9, true origin isolation). Absent when
+   * `TM8_PREVIEW_ENABLED=0`, or in tests that
    * construct a frame-only config — `artifacts.preview.start` then mints
    * capabilities with no URL to spend them at.
    */
@@ -175,11 +176,19 @@ export interface PreviewConfig {
    * The hostname the preview is REACHED BY. In the same-origin default this
    * is the app host; in second-origin mode it is the origin's identity,
    * enforced per-request by the preview listener's own Host check. Distinct
-   * from the bind address: both listeners bind the same loopback interface.
+   * from the bind address: both listeners bind the same loopback interface,
+   * and behind a TLS proxy (`TM8_PREVIEW_PUBLIC_ORIGIN`) this is the PUBLIC
+   * name the proxy forwards in `Host`, which the bind address never is.
    */
   readonly host: string;
+  /** The loopback port the second listener BINDS. Not part of `origin` when proxied. */
   readonly port: number;
-  /** `http://<host>:<port>`, precomputed once — the string minted into previewUrl and CSP. */
+  /**
+   * The origin a BROWSER reaches previews at — the string minted into
+   * previewUrl and into every CSP source list. `http://<host>:<port>` unless
+   * `TM8_PREVIEW_PUBLIC_ORIGIN` names the proxied public origin, in which
+   * case it is that, verbatim.
+   */
   readonly origin: string;
   /**
    * True in the default deployment: previews are a `/p/` route on the app
@@ -282,6 +291,49 @@ function envNonNegativeInt(raw: string | undefined, name: string, fallback: numb
   return value;
 }
 
+/**
+ * One bare-origin parser for every env var that names a browser origin.
+ *
+ * "Bare" is the whole point: no path, no query, no credentials, and the
+ * round-trip `normalized === parsed.origin` rejects the forms that LOOK like
+ * an origin and compare unequal against one (`https://tm8.sh:443`,
+ * `https://tm8.sh/`). These values are compared for EXACT equality by the S3
+ * check and are pasted verbatim into CSP source lists, so a value that merely
+ * parses is not good enough.
+ *
+ * `name` names the variable for the parse failure; `subject` is the noun
+ * phrase for the shape failures, so a list variable can say "entries".
+ */
+function parseBareOrigin(
+  value: string,
+  name: string,
+  env: NodeJS.ProcessEnv,
+  subject: string = `${name} entries`,
+): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new ConfigError(`${name} contains an invalid URL: ${JSON.stringify(value)}`);
+  }
+  const normalized = value.endsWith('/') ? value.slice(0, -1) : value;
+  if (
+    (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+    || parsed.username !== ''
+    || parsed.password !== ''
+    || parsed.pathname !== '/'
+    || parsed.search !== ''
+    || parsed.hash !== ''
+    || normalized !== parsed.origin
+  ) {
+    throw new ConfigError(`${subject} must be bare http(s) origins, got ${JSON.stringify(value)}`);
+  }
+  if ((env.TM8_ENV ?? '').trim() === 'prod' && parsed.protocol !== 'https:') {
+    throw new ConfigError(`production ${subject} must use https, got ${JSON.stringify(value)}`);
+  }
+  return parsed;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const host = env.TM8_BIND?.trim() || '127.0.0.1';
   const port = Number.parseInt(env.TM8_PORT?.trim() || '4610', 10);
@@ -361,34 +413,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     .split(',')
     .map((value) => value.trim())
     .filter((value) => value.length > 0)
-    .map((value) => {
-      let parsed: URL;
-      try {
-        parsed = new URL(value);
-      } catch {
-        throw new ConfigError(`TM8_ALLOWED_ORIGINS contains an invalid URL: ${JSON.stringify(value)}`);
-      }
-      const normalized = value.endsWith('/') ? value.slice(0, -1) : value;
-      if (
-        (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
-        || parsed.username !== ''
-        || parsed.password !== ''
-        || parsed.pathname !== '/'
-        || parsed.search !== ''
-        || parsed.hash !== ''
-        || normalized !== parsed.origin
-      ) {
-        throw new ConfigError(
-          `TM8_ALLOWED_ORIGINS entries must be bare http(s) origins, got ${JSON.stringify(value)}`,
-        );
-      }
-      if ((env.TM8_ENV ?? '').trim() === 'prod' && parsed.protocol !== 'https:') {
-        throw new ConfigError(`production TM8_ALLOWED_ORIGINS entries must use https, got ${JSON.stringify(value)}`);
-      }
-      return parsed.origin;
-    });
+    .map((value) => parseBareOrigin(value, 'TM8_ALLOWED_ORIGINS', env).origin);
 
-  const preview = resolvePreview(env, host, port, extraAllowedHostnames, publicOrigin);
+  const preview = resolvePreview(env, host, port, extraAllowedHostnames, publicOrigin, allowedOrigins);
 
   const dataDir = resolveServerDataDir(env);
   const clipboardDir = resolveClipboardDir(env, dataDir);
@@ -445,9 +472,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
  * header) plus the app's own refusal of `Origin: null` callers — see
  * ./artifact-preview.ts and ./security.ts.
  *
- * SECOND-ORIGIN — an explicit `TM8_PREVIEW_HOST` or `TM8_PREVIEW_PORT` opts
- * into the separate listener (TM8-ARTIFACTS-DESIGN §9.2, user-ratified
- * 2026-07-31), and then every boot refusal below still stands:
+ * SECOND-ORIGIN — an explicit `TM8_PREVIEW_HOST`, `TM8_PREVIEW_PORT` or
+ * `TM8_PREVIEW_PUBLIC_ORIGIN` opts into the separate listener
+ * (TM8-ARTIFACTS-DESIGN §9.2, user-ratified 2026-07-31), and then every boot
+ * refusal below still stands:
  *
  * Two refusals, and the second is the one that matters: port-only separation
  * satisfies the browser's origin comparison but NOT cookies, which ignore
@@ -462,6 +490,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
  * name — two names for one socket, cosmetic separation. Refused loudly
  * rather than silently partitioned: an explicit config contradiction is the
  * operator's to resolve.
+ *
+ * PROXIED (`TM8_PREVIEW_PUBLIC_ORIGIN`, 2026-08-17) — the deployment shape
+ * this whole file was NOT written for. Every refusal above compares against
+ * the BIND host, and behind a TLS reverse proxy the bind host is `127.0.0.1`
+ * for BOTH sockets, which is exactly the case they can no longer see: two
+ * listeners on one loopback address, published by nginx under two public
+ * names. So the comparisons below widen from "the bind host" to "every name
+ * this node is reached by" — `TM8_PUBLIC_ORIGIN` and `TM8_ALLOWED_ORIGINS`
+ * included. Without that widening `TM8_PREVIEW_HOST=tm8.sh` on a node bound
+ * to `127.0.0.1` passes every check while serving untrusted bundles from the
+ * privileged origin — the same shape as the S1 loopback trap, where the
+ * check passes because it is measuring the wrong thing.
+ *
+ * The public origin is the browser's view; `TM8_PREVIEW_PORT` remains the
+ * loopback port the listener BINDS. They are different facts and neither can
+ * be derived from the other, which is why this could not be inferred.
  */
 function resolvePreview(
   env: NodeJS.ProcessEnv,
@@ -469,6 +513,7 @@ function resolvePreview(
   appPort: number,
   extraAllowedHostnames: readonly string[],
   publicOrigin: string | undefined,
+  allowedOrigins: readonly string[],
 ): PreviewConfig | undefined {
   if (envBoolean(env.TM8_PREVIEW_ENABLED, 'TM8_PREVIEW_ENABLED', true) === false) return undefined;
 
@@ -503,7 +548,37 @@ function resolvePreview(
 
   const explicitHost = env.TM8_PREVIEW_HOST?.trim() || undefined;
   const explicitPort = env.TM8_PREVIEW_PORT?.trim() || undefined;
-  if (explicitHost === undefined && explicitPort === undefined) {
+  const explicitPublicRaw = env.TM8_PREVIEW_PUBLIC_ORIGIN?.trim() || undefined;
+  if (explicitHost === undefined && explicitPort === undefined && explicitPublicRaw === undefined) {
+    // The same-origin default is safe on a node nobody else can route to, and
+    // that is the node it was ratified for (2026-08-16). `TM8_PUBLIC_ORIGIN`
+    // naming an https origin says the opposite out loud: this node is
+    // published under a public TLS name, so "same origin" means
+    // agent-authored bundle HTML executing on the origin that holds
+    // `__Host-tm8-session`, with the response CSP's `sandbox allow-scripts`
+    // as the SINGLE control between that and session takeover.
+    //
+    // Refused in PROD only, and that scoping is deliberate rather than timid.
+    // Same-origin-behind-https is a shape this repo ships and tests (the
+    // frame-ancestors fix exists precisely for "the nginx boxes"), so
+    // outlawing it everywhere would overrule a ratified default on every
+    // staging box at once. `TM8_ENV=prod` is the operator's own declaration
+    // that this node is the real one — the same trigger the https rule on
+    // TM8_ALLOWED_ORIGINS above already uses. Off prod this is a loud boot
+    // line instead (main.ts), never silence.
+    if (
+      publicOrigin !== undefined
+      && publicOrigin.startsWith('https:')
+      && (env.TM8_ENV ?? '').trim() === 'prod'
+    ) {
+      throw new ConfigError(
+        `refusing to start: this is a production node published at ${publicOrigin} ` +
+          `(TM8_ENV=prod, TM8_PUBLIC_ORIGIN) and artifact previews would be served SAME-ORIGIN from ` +
+          `it. Untrusted bundle content must never share the origin that holds the session cookie ` +
+          `(TM8-ARTIFACTS-DESIGN §9.2). Set TM8_PREVIEW_PUBLIC_ORIGIN to a separate hostname you ` +
+          `publish to this node's preview listener, or TM8_PREVIEW_ENABLED=0 to keep previews dark.`,
+      );
+    }
     const host = appHost.toLowerCase();
     const origin = `http://${host}:${appPort}`;
     const frameAncestors = framingOrigins(origin);
@@ -517,7 +592,20 @@ function resolvePreview(
   // TM8_PREVIEW_HOST is never adjusted — a collision there is refused below,
   // not repaired.
   const defaultHost = appHost.toLowerCase() === 'localhost' ? '127.0.0.1' : 'localhost';
-  const host = (explicitHost || defaultHost).toLowerCase();
+  const publicPreview = explicitPublicRaw === undefined
+    ? undefined
+    : parseBareOrigin(explicitPublicRaw, 'TM8_PREVIEW_PUBLIC_ORIGIN', env, 'TM8_PREVIEW_PUBLIC_ORIGIN');
+  // Both set and disagreeing is a contradiction, not a precedence question:
+  // one of them would silently lose, and whichever lost would be the value an
+  // operator was reading when they convinced themselves the split was real.
+  if (publicPreview && explicitHost && explicitHost.toLowerCase() !== publicPreview.hostname) {
+    throw new ConfigError(
+      `refusing to start: TM8_PREVIEW_HOST is ${JSON.stringify(explicitHost)} but ` +
+        `TM8_PREVIEW_PUBLIC_ORIGIN names host ${JSON.stringify(publicPreview.hostname)}. They are the ` +
+        `same fact — the name previews are reached by — so set one of them, not both.`,
+    );
+  }
+  const host = (publicPreview?.hostname ?? explicitHost ?? defaultHost).toLowerCase();
   // An EXPLICIT `TM8_PREVIEW_PORT=0` is legal and means ephemeral — the
   // escape hatch for harnesses that boot this server as a CHILD PROCESS and
   // so cannot substitute config after validation (packages/cli integration).
@@ -530,28 +618,46 @@ function resolvePreview(
   }
 
   const appOrigin = `http://${appHost.toLowerCase()}:${appPort}`;
-  const origin = `http://${host}:${port}`;
+  const origin = publicPreview ? publicPreview.origin : `http://${host}:${port}`;
 
-  if (origin === appOrigin) {
+  // Every origin this node is reachable at as the APP: what it binds, what it
+  // is published as, and every exact origin its transport checks admit. The
+  // bind origin alone was the whole comparison before proxying existed, and
+  // behind nginx it is the one origin no browser ever uses.
+  const appOrigins = new Set([appOrigin, ...(publicOrigin ? [publicOrigin] : []), ...allowedOrigins]);
+  if (appOrigins.has(origin)) {
     throw new ConfigError(
-      `refusing to start: the artifact-preview origin ${origin} (TM8_PREVIEW_HOST/TM8_PREVIEW_PORT) ` +
-        `is the app origin ${appOrigin} (TM8_BIND/TM8_PORT). Untrusted bundle content must never be ` +
-        `served from the privileged origin (TM8-ARTIFACTS-DESIGN §9.2).`,
+      `refusing to start: the artifact-preview origin ${origin} (TM8_PREVIEW_HOST/TM8_PREVIEW_PORT/` +
+        `TM8_PREVIEW_PUBLIC_ORIGIN) is an app origin — this node is the app at ` +
+        `${[...appOrigins].join(', ')} (TM8_BIND/TM8_PORT, TM8_PUBLIC_ORIGIN, TM8_ALLOWED_ORIGINS). ` +
+        `Untrusted bundle content must never be served from the privileged origin ` +
+        `(TM8-ARTIFACTS-DESIGN §9.2).`,
     );
   }
-  if (host === appHost.toLowerCase()) {
+  // The HOST rule, and the one that matters: cookies ignore ports AND schemes,
+  // so `https://tm8.sh` and a preview at `http://tm8.sh:9000` are one cookie
+  // jar. Compared against every name the app is REACHED BY, for the same
+  // reason as above — behind a proxy the bind name is not one of them.
+  const appHostnames = new Set([
+    appHost.toLowerCase(),
+    ...[...(publicOrigin ? [publicOrigin] : []), ...allowedOrigins].map((value) => new URL(value).hostname.toLowerCase()),
+  ]);
+  if (appHostnames.has(host)) {
     throw new ConfigError(
-      `refusing to start: the artifact-preview host of ${origin} (TM8_PREVIEW_HOST/TM8_PREVIEW_PORT) ` +
-        `equals the app host of ${appOrigin} (TM8_BIND/TM8_PORT). Port-only separation is not ` +
-        `separation — cookies ignore ports (TM8-ARTIFACTS-DESIGN §9.2). Pick a distinct hostname, ` +
-        `e.g. TM8_PREVIEW_HOST=localhost with TM8_BIND=127.0.0.1.`,
+      `refusing to start: the artifact-preview host of ${origin} (TM8_PREVIEW_HOST/` +
+        `TM8_PREVIEW_PUBLIC_ORIGIN) is a hostname this node is already reached by as the app ` +
+        `(${appOrigin} — TM8_BIND/TM8_PORT, TM8_PUBLIC_ORIGIN or TM8_ALLOWED_ORIGINS). Port- or ` +
+        `scheme-only separation is not separation — cookies ignore both (TM8-ARTIFACTS-DESIGN ` +
+        `§9.2). Pick a distinct hostname, e.g. TM8_PREVIEW_HOST=localhost with TM8_BIND=127.0.0.1, ` +
+        `or TM8_PREVIEW_PUBLIC_ORIGIN=https://artifacts.example with TM8_PUBLIC_ORIGIN=https://example.`,
     );
   }
   if (extraAllowedHostnames.includes(host)) {
     throw new ConfigError(
       `refusing to start: TM8_ALLOWED_HOSTNAMES lists ${JSON.stringify(host)}, the artifact-preview ` +
-        `hostname (TM8_PREVIEW_HOST). The app socket answering to the preview name makes the origin ` +
-        `split cosmetic (TM8-ARTIFACTS-DESIGN §9.3) — remove it from one of the two.`,
+        `hostname (TM8_PREVIEW_HOST/TM8_PREVIEW_PUBLIC_ORIGIN). The app socket answering to the ` +
+        `preview name makes the origin split cosmetic (TM8-ARTIFACTS-DESIGN §9.3) — remove it from ` +
+        `one of the two.`,
     );
   }
 
