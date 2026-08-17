@@ -119,10 +119,24 @@ export const SIGN_OUT: UnavailableReason = {
   remedy: 'this surface renders outside the auth gate and has no session to revoke — inside the gate the account menu’s sign-out performs auth.logout',
 };
 
-/** 1h — redeem the invite (account + membership in one step). */
+/**
+ * 1h — redeem the invite (account + membership in one step).
+ *
+ * THE REMEDY CHANGED ON 2026-08-17 AND THE OLD ONE WOULD NOW MISLEAD. It said
+ * "this gate does not call `spaces.invites.redeem` yet — the documented path
+ * is the CLI", and the browser path now exists: a `/join/{code}` link is read
+ * by `src/join/`, previewed with `auth.invite.resolve` and redeemed with
+ * `spaces.invites.redeem`. Nobody should be sent to a terminal any more.
+ *
+ * This FRAME still cannot join, and that is now a property of the frame rather
+ * than of the app: 1h draws the oracle's specimen values — a fixed inviter,
+ * space and member count — and takes no code, no preview and no executor
+ * (`FrameProps` has no slot for any of them). A button here would join on the
+ * strength of facts nobody read. The live landing reads them first.
+ */
 export const REDEEM_INVITE: UnavailableReason = {
-  cause: 'Redeeming this invite isn’t connected',
-  remedy: 'spaces.invites.redeem is a v1 contract op this gate does not call yet — the documented path is the CLI (tm8 space invite redeem), see docs/identity/PROVISION-SECOND-ACCOUNT.md',
+  cause: 'This preview card can’t join',
+  remedy: 'its inviter, space and counts are the oracle’s specimen values and it takes no code — the live path is the /join/<code> landing, which reads auth.invite.resolve and performs spaces.invites.redeem',
 };
 
 /** 1k — resolve an endpoint. Phase 2, and D13 already refuses the affordance. */

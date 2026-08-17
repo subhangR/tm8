@@ -57,6 +57,7 @@ import {
   presenceHollowReason,
 } from '../fixtures';
 import type { Seam } from '../data/seam';
+import { JoinScreen, clearPendingJoin, newJoinMutationId } from '../join';
 import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
@@ -251,6 +252,21 @@ export interface GateAppProps {
    * is an app whose links work only sometimes.
    */
   routerTarget?: RouterTarget;
+  /**
+   * A join code this boot arrived with, already parked by `App`.
+   *
+   * It lands HERE, below the auth gate, because redeeming needs both an
+   * identity (which the gate has now ensured) and a seam (which `useGateData`
+   * constructs and App.tsx deliberately keeps at this level so a second one
+   * cannot open a duplicate connection). This is the only layer where both are
+   * true.
+   *
+   * It is also where the need is sharpest: an account that just accepted its
+   * first invite has NO spaces, and boot's honest answer for that is "this
+   * node has no spaces" — a dead end for the one person holding the thing that
+   * fixes it.
+   */
+  pendingJoin?: string | null;
 }
 
 /**
@@ -273,6 +289,10 @@ export function GateApp(props: GateAppProps = {}) {
   // would silently disable persistence altogether — the storage key would never
   // match the one the next session reads.
   const activeServer = props.activeServer ?? LOCAL_SERVER;
+
+  /** The join code this boot arrived with, dismissable. See `GateAppProps`. */
+  const [joinCode, setJoinCode] = useState<string | null>(props.pendingJoin ?? null);
+
   const data = useGateData({
     leftKind: DEFAULT_LEFT_KIND,
     rightKind: DEFAULT_RIGHT_KIND,
@@ -1460,6 +1480,52 @@ export function GateApp(props: GateAppProps = {}) {
             ? { spaceLabel: data.spaces.find((sp) => sp.id === data.spaceId)?.name }
             : {})}
           notices={<NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />}
+        />
+      </div>
+    );
+  }
+
+  /**
+   * A HELD JOIN CODE TAKES THE WHOLE SCREEN, ahead of the workspace and ahead
+   * of every boot state — including "this node has no spaces", which is
+   * precisely the state a first-time invitee is in and the one place a spinner
+   * or an error card would strand them.
+   *
+   * After every hook above, so hook order is identical on both branches;
+   * `JoinScreen` owns its own state and does its own reads.
+   */
+  if (joinCode !== null) {
+    return (
+      <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
+        <JoinScreen
+          code={joinCode}
+          onPreview={(code) => data.seam.previewInvite(code)}
+          // Offered only when somebody is actually signed in — `redeem_invite`
+          // requires an identity, so with no account there is nothing to click
+          // and the screen names the missing step instead.
+          {...(authAccount
+            ? {
+                onRedeem: (code: string) =>
+                  data.seam.commands.redeemInvite({
+                    code,
+                    clientMutationId: newJoinMutationId(),
+                  }),
+              }
+            : {})}
+          onJoined={(spaceId) => {
+            clearPendingJoin();
+            // A FULL RELOAD, not a state flip. Membership is an INPUT to boot:
+            // the spaces list, the menu, the counts and the socket
+            // subscription were all resolved for an account that was not in
+            // this space, and there is no partial-refresh path that re-derives
+            // them. Landing on the space's own address is the honest arrival,
+            // and this happens once per invite, never on a hot path.
+            location.assign(`/#/s/${spaceId}`);
+          }}
+          onDismiss={() => {
+            clearPendingJoin();
+            setJoinCode(null);
+          }}
         />
       </div>
     );

@@ -2812,8 +2812,24 @@ export function createFixtureSeam(): FixtureSeam {
        */
       async redeemInvite(input: RedeemInviteInput): Promise<InviteRedemption> {
         const invite = invites.find((i) => i.code === input.code);
+        // THE NODE'S OWN LADDER, IN THE NODE'S OWN ORDER (migration 118),
+        // because the join screen renders a different sentence per rung and a
+        // fixture that answered `forbidden` for all of them could exercise
+        // none of it. The sqlstates map through `http/errors.ts`:
+        // P0002 -> not_found, 42501 -> forbidden, 53400 -> limit_exceeded.
         if (!invite) throw new CollabError('not_found', 'invite not found');
         if (invite.revoked) throw new CollabError('forbidden', 'invite was revoked');
+        if (invite.expiresAt !== null && Date.parse(invite.expiresAt) < Date.parse(tick())) {
+          throw new CollabError('forbidden', 'invite has expired');
+        }
+        // Exhaustion is checked ONLY for a non-member on the node — an existing
+        // member spends no use — and the fixture viewer is always already a
+        // member, so this rung is unreachable here for the same reason
+        // `joined` is always false. Written out rather than omitted so the
+        // fixture and the RPC can be read side by side.
+        if (invite.uses >= invite.maxUses) {
+          throw new CollabError('limit_exceeded', 'invite is exhausted');
+        }
         return { spaceId: FIXTURE_SPACE_ID, memberId: viewerActor.id, joined: false };
       },
 
