@@ -720,6 +720,23 @@ export interface Tm8Manifest {
      * nothing in the graph, the manifest or the session row said so.
      */
     sandboxDegraded?: string | null;
+    /**
+     * Set when the agent CLI is installed but could NOT be confirmed logged in
+     * at spawn time (no login file, or one that proves nothing) — so the session
+     * was launched anyway but is at risk of stalling at a login prompt or
+     * refusing inside its own transcript. Holds a one-sentence, tool-named
+     * warning with the fix; null when the CLI's login was confirmed, an API key
+     * or a member credential was present, or the tool has no login model tm8
+     * knows how to read.
+     *
+     * It is a WARNING and not a refusal on purpose: the check is file-based and
+     * cannot see every way to be authenticated (macOS stores Claude's OAuth
+     * login in the Keychain; enterprise credential helpers exist), so a false
+     * negative must cost a line of recorded text, never a spawn the user cannot
+     * run. Read alongside a session that sits at `running` without progressing,
+     * this is the field that says why.
+     */
+    agentLoginWarning?: string | null;
     /** The exact shell command line the PTY runs. Reproducibility, not decoration. */
     command: string;
   };

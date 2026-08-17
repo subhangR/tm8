@@ -1193,6 +1193,8 @@ export interface ComposeManifestInput {
   baseUrl: string;
   /** Why the launch runs unconfined, when it does. See `Tm8Manifest.launch.sandboxDegraded`. */
   sandboxDegraded?: string | null;
+  /** Set when the agent CLI could not be confirmed logged in. See `Tm8Manifest.launch.agentLoginWarning`. */
+  agentLoginWarning?: string | null;
   now?: Date;
 }
 
@@ -1253,6 +1255,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       credentialSources: launch.credentialSources,
       commandNetwork: input.commandNetwork ?? resolveCommandNetworkPolicy(launch, {}),
       sandboxDegraded: input.sandboxDegraded ?? null,
+      agentLoginWarning: input.agentLoginWarning ?? null,
       command,
     },
     session: {

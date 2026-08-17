@@ -12,6 +12,10 @@
     "./worktree": {
       "types": "./dist/worktree/index.d.ts",
       "default": "./dist/worktree/index.js"
+    },
+    "./agent-login": {
+      "types": "./dist/spawn/agent-login-probe.d.ts",
+      "default": "./dist/spawn/agent-login-probe.js"
     }
   },
   "scripts": {

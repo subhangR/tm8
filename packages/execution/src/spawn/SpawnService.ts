@@ -15,6 +15,7 @@ import type { Logger, PtyActivity, PtyExitInfo, PtySessionStatus } from '../pty/
 import { composePrompt } from '@tm8/prompt';
 
 import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
+import { probeAgentLogin, realAgentLoginProbeIo } from './agent-login-probe.js';
 import {
   preflightCodexNetworkPolicy,
   type CodexNetworkPreflight,
@@ -338,6 +339,69 @@ export class SpawnService {
     ) {
       await this.codexNetworkPreflight(resolved, env);
     }
+  }
+
+  /**
+   * The LOGIN half of `assertAgentRuntime`, which only ever checked presence.
+   *
+   * `assertAgentRuntime` refuses a MISSING binary by name; this catches a binary
+   * that is present but NOT LOGGED IN — the gap that let a fresh laptop spawn a
+   * session, report it `running` the moment the PTY came up, and then either
+   * exit with the refusal buried in its transcript or sit at a login prompt at
+   * `running` forever. Returns a one-sentence warning naming the tool and the
+   * fix, or null when there is nothing to warn about.
+   *
+   * It WARNS rather than refuses — see `Tm8Manifest.launch.agentLoginWarning`.
+   * The check is file-based (never shelling the binary, whose auth path can open
+   * a browser — the same tradeoff `doctor` made) and therefore cannot see every
+   * way to be authenticated, so a false negative must cost a recorded line, not
+   * a spawn the user cannot run.
+   *
+   * Silent (null) wherever the child is authenticated by a mechanism the file
+   * probe cannot see but tm8 CAN, so no legitimate spawn is ever flagged:
+   *   - an operator `TM8_AGENT_CMD` wrapper — its login model is not claude's or
+   *     codex's, and `doctor`'s `checkAgentClis` refuses to guess one either
+   *   - a tool with no vendor credential provider (echo-agent) — nothing to check
+   *   - a MEMBER CREDENTIAL injected for this session — the member connected it,
+   *     so the host's login file is the wrong question; this is the trap, and an
+   *     injected-credential spawn must never be flagged because ~ is logged out
+   *   - the provider's API key in the server env — `composeEnv` forwards it to
+   *     the child (and suppresses it ONLY when a member credential is injected,
+   *     handled above), so a present key here IS the child's credential
+   *
+   * The file it reads is the one the CHILD reads: `composeEnv` forwards `HOME`
+   * but NOT the server's `CLAUDE_CONFIG_DIR`/`CODEX_HOME`, so the probe asks
+   * about `HOME`, which is what an un-injected child actually sees.
+   */
+  private probeAgentLoginWarning(
+    launch: ResolvedLaunchConfig,
+    credentialInjected: boolean,
+  ): string | null {
+    if (this.env.TM8_AGENT_CMD?.trim()) return null;
+
+    const provider = agentCredentialProviderFor(launch.agentTool);
+    if (!provider) return null;
+    if (credentialInjected) return null;
+
+    const apiKeyVar = provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY';
+    if (this.env[apiKeyVar]?.trim()) return null;
+
+    const probe = probeAgentLogin(
+      launch.agentTool,
+      realAgentLoginProbeIo({ HOME: this.env.HOME ?? homedir() }),
+    );
+    if (probe.status === 'authenticated') return null;
+
+    const fix =
+      provider === 'anthropic'
+        ? 'Run `claude` on this node to log in, or connect your Anthropic account under Settings → Connections'
+        : 'Run `codex login` on this node, or connect your OpenAI account under Settings → Connections';
+    const cli = provider === 'anthropic' ? 'Claude Code CLI (claude)' : 'Codex CLI (codex)';
+    return (
+      `the ${cli} is not confirmed logged in on this node (${probe.detail}) — this session ` +
+      `will start, but may stall at a login prompt or refuse inside its transcript without ever ` +
+      `completing. ${fix}.`
+    );
   }
 
   /**
@@ -858,6 +922,33 @@ export class SpawnService {
         claudeSessionId: nativeSessionId,
         sandboxUnavailable: sandbox.unavailable,
       });
+
+      // Resolve credentials BEFORE the manifest, not with `composeEnv` below,
+      // because the login probe needs to know whether a member credential is
+      // injected — an injected-credential spawn must never be flagged as
+      // "not logged in" just because the HOST's ~ is logged out — and the
+      // manifest is where the login warning is recorded (§ agentLoginWarning).
+      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
+      const agentCredentialSource = agentCredentialProvider
+        ? launch.credentialSources[agentCredentialProvider]
+        : null;
+      const [credentialHome, gitHubCredential] = await Promise.all([
+        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
+        this.resolveGitHubCredential(auth, launch.credentialSources.github),
+      ]);
+
+      // The login half of the runtime gate (assertAgentRuntime checks presence).
+      // Recorded on the manifest and logged loudly, but NOT a refusal — a
+      // file-based probe cannot prove a negative, so the spawn proceeds and the
+      // truth reaches the user through the session instead of the transcript.
+      const agentLoginWarning = this.probeAgentLoginWarning(launch, credentialHome !== null);
+      if (agentLoginWarning) {
+        this.logger?.warn?.(`SpawnService: ${agentLoginWarning}`, {
+          sessionId,
+          agentTool: launch.agentTool,
+        });
+      }
+
       const manifestPath = this.manifestPathFor(sessionId);
       const manifest = composeManifest({
         sessionId,
@@ -869,6 +960,7 @@ export class SpawnService {
         workdir: { mode: workdir.mode, path: cwd },
         command: baseCommand,
         sandboxDegraded: sandbox.degradedReason,
+        agentLoginWarning,
         baseUrl: this.baseUrl,
       });
 
@@ -905,14 +997,6 @@ export class SpawnService {
         this.env,
       );
 
-      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
-      const agentCredentialSource = agentCredentialProvider
-        ? launch.credentialSources[agentCredentialProvider]
-        : null;
-      const [credentialHome, gitHubCredential] = await Promise.all([
-        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
-        this.resolveGitHubCredential(auth, launch.credentialSources.github),
-      ]);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -996,8 +1080,13 @@ export class SpawnService {
       const earlyExit = await bootSettlement;
       if (earlyExit) {
         bootExit = earlyExit;
+        // A not-logged-in agent is one common reason a child dies this fast: it
+        // hits its auth check and exits before the boot window closes. When the
+        // login probe already flagged that, name it here so the RECORDED failure
+        // explains the cause, not just the symptom.
         throw new SpawnError(
-          `agent process exited during the ${String(this.bootSettlementMs)}ms boot settlement window`,
+          `agent process exited during the ${String(this.bootSettlementMs)}ms boot settlement window` +
+            (agentLoginWarning ? ` — ${agentLoginWarning}` : ''),
           'internal',
           { sessionId, exitCode: earlyExit.exitCode, signal: earlyExit.signal },
         );
@@ -1478,6 +1567,20 @@ export class SpawnService {
         this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
         this.resolveGitHubCredential(auth, launch.credentialSources.github),
       ]);
+
+      // Resume gets the SAME login check as a fresh spawn: it boots a real child
+      // on THIS node, which a member may have connected a credential to (or
+      // never logged into) since the session first ran. The resume manifest row
+      // is not re-recorded (see above), so this is surfaced through the log and,
+      // if the child dies fast, the recorded boot-settlement failure below.
+      const agentLoginWarning = this.probeAgentLoginWarning(launch, credentialHome !== null);
+      if (agentLoginWarning) {
+        this.logger?.warn?.(`SpawnService: resume — ${agentLoginWarning}`, {
+          sessionId,
+          agentTool: launch.agentTool,
+        });
+      }
+
       const env = composeEnv(
         manifest,
         manifestPath,
