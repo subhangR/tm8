@@ -129,7 +129,36 @@
 }
 
 /* --------------------------------------------------------------------------
-   4. NO DRAG HANDLES
+   4. A ROW THAT CLIPS ITS OWN CONTENT THROUGH THE MIDDLE OF THE GLYPHS
+
+   `.lp__actions` is `height: 34px` with `overflow: hidden` — correct on a
+   desktop, where "Launch session ▸", its refusal banner and the Terminal
+   button sit on one line with room to spare. At 390px they wrap to two lines
+   inside a container that is still exactly 34px tall, so the second line is
+   sliced horizontally through the letterforms: the top 60% of "the verb
+   exists and its" is drawn and the rest is destroyed.
+
+   This is the defect no metric in this program can see. The text does not
+   cross the right edge, so `overflowCount` scores it 0. It is inside the card,
+   so the card ratio scores it fine. Its controls are the right size, so the
+   tap census passes it. It is only visible by LOOKING at the screen — which is
+   why the audit README says to open the screenshots, and why this rule exists.
+
+   `min-height` rather than `height`, and `wrap` rather than a smaller font:
+   the row's job is to hold whatever the host put in it, and a fixed height is
+   a promise about content this container does not get to make.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .lp__actions {
+  height: auto;
+  min-height: 34px;
+  flex-wrap: wrap;
+  overflow: visible;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+/* --------------------------------------------------------------------------
+   5. NO DRAG HANDLES
 
    `EntityView` stops RENDERING the resizers on one surface, so this is a belt
    for any other host that composes a `.kit-resizer` into the phone shell. An
