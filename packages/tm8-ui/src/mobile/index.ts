@@ -52,3 +52,29 @@ export type { ShellSelection } from './useShellKind';
 
 export { MobileFrame } from './MobileFrame';
 export type { MobileFrameProps } from './MobileFrame';
+
+/*
+ * THE TWO PRIMITIVES PHASE 3 / LANE 3 REUSE, and the reason they are exported
+ * from here rather than reached for by path: a screen that wants a phone
+ * arrangement should have exactly one place to import from, so that "does this
+ * screen have a phone layout" is answerable by grepping one module specifier.
+ *
+ *   useMobileSurface() → { oneSurface, sheetHost }
+ *       Ask whether you are one surface or three. Returns the DESKTOP answer
+ *       (`false`, `null`) wherever there is no phone shell, so a shared screen
+ *       may branch on it without a second copy of itself and without touching
+ *       its desktop arrangement.
+ *
+ *   <MobileSheet title onDismiss>  → the third column, as a cover
+ *       Renders nothing off the phone. A screen may mount it unconditionally.
+ *
+ * PUSH AND POP ARE NOT HERE, and that absence is the point. Drilling in is
+ * `useScreenStack(screenKeyOf.kind(k)).open(id)` and up is `.pop()` — the
+ * store both shells already share. A `mobile/` push would be a second history
+ * model, which `no-router-fork.test.ts` fails the build over and is right to.
+ */
+export { MobileSurfaceProvider, useMobileSurface } from './surface';
+export type { MobileSurface, MobileSurfaceProviderProps } from './surface';
+
+export { MobileSheet } from './MobileSheet';
+export type { MobileSheetProps } from './MobileSheet';

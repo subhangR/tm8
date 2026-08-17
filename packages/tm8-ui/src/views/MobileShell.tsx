@@ -30,10 +30,11 @@
  * phone screen SAYS SO rather than silently drawing something else — the same
  * honesty rule the desktop switch was repaired to follow.
  */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
-import { MobileFrame } from '../mobile';
+import { MobileFrame, MobileSurfaceProvider } from '../mobile';
 import '../mobile/mobile-chrome.css';
+import '../mobile/mobile-screens.css';
 import { CopyLinkControl } from '../share';
 import { VectorIcon } from '../kit';
 import { KIND_ART, VIEW_ART, getKind, type KindArt } from '../domain';
@@ -160,6 +161,24 @@ export function MobileShell(props: MobileShellProps) {
   const screenStack = useScreenStack(stackKey);
   const title = titleOf(activeTarget);
 
+  /*
+   * THE SHEET HOST — always mounted, so a screen has somewhere to portal to.
+   *
+   * A ref would not do: the host element has to be in STATE, because a screen
+   * deciding whether to render its sheet reads this on the render AFTER the
+   * host mounts, and a ref mutation notifies nobody. With a ref the first
+   * sheet a viewer opened would portal into `null` and simply not appear —
+   * once, per mount, which is the hardest possible version of this bug to
+   * catch. `useState` as a callback ref re-renders when the node arrives.
+   *
+   * Kept mounted rather than rendered on demand for the same reason a portal
+   * was chosen at all: `createPortal` needs its container to EXIST before the
+   * content that targets it renders, and an on-demand host inverts that order.
+   * `mobile-screens.css` makes the empty host `pointer-events: none`, so an
+   * always-present full-frame overlay costs nothing.
+   */
+  const [sheetHost, setSheetHost] = useState<HTMLDivElement | null>(null);
+
   /* The link affordance is in the header for the same reason it is in the
      desktop tab bar: the thing being shared is THE PAGE. On a phone it matters
      more, not less — a phone is where links are received and forwarded. */
@@ -218,8 +237,19 @@ export function MobileShell(props: MobileShellProps) {
   );
 
   return (
-    <MobileFrame header={header} tabBar={tabBar} notices={props.notices}>
-      <CatchBoundary label="mobile-view">{screenFor(props)}</CatchBoundary>
+    <MobileFrame
+      header={header}
+      tabBar={tabBar}
+      notices={props.notices}
+      sheet={<div className="msheet-host" ref={setSheetHost} />}
+    >
+      {/* INSIDE THE BOUNDARY, so a screen that throws while a sheet is open
+          still loses only the screen. The host itself is a frame region and
+          sits outside — a boundary that took the sheet host down with the
+          screen would leave the next screen unable to open one at all. */}
+      <CatchBoundary label="mobile-view">
+        <MobileSurfaceProvider sheetHost={sheetHost}>{screenFor(props)}</MobileSurfaceProvider>
+      </CatchBoundary>
     </MobileFrame>
   );
 }
