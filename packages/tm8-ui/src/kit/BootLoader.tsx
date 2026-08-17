@@ -30,7 +30,7 @@ import { RibbonMark, type RibbonMotion } from './RibbonMark';
 export function BootLoader({
   label = 'loading workspace',
   detail,
-  motion = 'spin-rewind',
+  motion,
 }: {
   /** The line under the mark. Lowercase; the CSS does the uppercasing. */
   label?: string;
@@ -40,6 +40,11 @@ export function BootLoader({
    * Which authored scene list the mark turns on. Both variants shipped in the
    * design and the choice between them is still open, so it stays a prop
    * rather than being baked in here.
+   *
+   * Deliberately NOT defaulted: `RibbonMark` holds the one default, so when
+   * the pick is made it is made in one place. A default here would be a second
+   * copy of an answer nobody has given yet, and the chat marks would keep
+   * turning the other way the day boot changed.
    */
   motion?: RibbonMotion;
 }) {

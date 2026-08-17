@@ -10,18 +10,26 @@ import { useEffect, useState } from 'react';
  * the thing being reviewed, so a "tidier" reimplementation would be reviewing
  * something else. Deliberate deviations from the source are only these:
  *
- *  - the `up: false` curve and the wordmark layout are dropped. The shipped
- *    configuration is `up = true`, mark only, so the other branch was dead
- *    code that could only drift.
+ *  - the `up: false` curve is dropped. The shipped configuration is
+ *    `up = true`, so the other branch was dead code that could only drift.
+ *    (The wordmark layout was dropped with it and has since been brought
+ *    back — see `LAYOUT`.)
  *  - the authored-clock engine (`animations-v3.jsx`, ~54KB of scene editor) is
  *    not a runtime dependency. Its two easings and its `animate()` are inlined
  *    below verbatim, and one shared rAF replaces the composition stage.
  *
- * COST, STATED PLAINLY. Every frame rebuilds 150 z-sorted <polygon> elements
- * through React. That is what the source does and it is what was asked for
- * while this is proven out; it is not what it should stay. The follow-up lanes
- * (chat-home, attachment tiles, MobileShell) mount this at glyph size and
- * sometimes many times over, so they are gated behind measuring this first.
+ * COST, MEASURED. Every frame rebuilds the whole z-sorted <polygon> band
+ * through React, so the bill is per mounted, turning mark. That sounded
+ * expensive enough to gate the follow-up lanes on measuring it. It is not, at
+ * the scale anything here mounts: two marks turning together in Chat Home cost
+ * nothing detectable — 120.5fps median with them and 120.5 without, p95 9.2ms
+ * either way (packages/tm8-ui/gate-evidence/chat-ribbon.md).
+ *
+ * What DOES matter at glyph size is that the quads stop being visible long
+ * before they stop being computed, which is what `segments` is for, and that
+ * marks must not multiply per row — a list that mounts one per item is still
+ * the way this gets expensive. `animated={false}` is the other half of that:
+ * a mark that lives on screen for the whole session should not turn at all.
  */
 
 const TAU = Math.PI * 2;
@@ -40,6 +48,16 @@ const vnorm = (a: V3): V3 => {
   return [a[0] / l, a[1] / l, a[2] / l];
 };
 
+/**
+ * Segments at full size. The design authored 150 and boot ships all of them.
+ *
+ * It is a BUDGET, not a constant, because the number that is right at 150px is
+ * absurd at 14px: a glyph-size mark spends 150 quads to cover ~11px of arc
+ * each, which is a third of a pixel — under the device's own sampling grid, so
+ * the extra quads cannot be seen, only paid for. `segments` lets a small mount
+ * buy what it can actually show. Measured, not guessed: see `chat-home.css` for
+ * the numbers behind the two sizes that ship.
+ */
 const N_SEG = 150;
 
 /** The centreline: a lemniscate stood upright, with a little depth in z. */
@@ -56,14 +74,15 @@ function curveP(t: number): V3 {
  * surface rather than two edges. Shape-only, so it is computed once for the
  * life of the module and shared by every mounted mark.
  */
-let stationCache: { A: V3; B: V3 }[] | null = null;
-function stations() {
-  if (stationCache) return stationCache;
+const stationCache = new Map<number, { A: V3; B: V3 }[]>();
+function stations(n: number) {
+  const hit = stationCache.get(n);
+  if (hit) return hit;
   const w = 0.155;
   const dt = 0.001;
   const out: { A: V3; B: V3 }[] = [];
-  for (let i = 0; i <= N_SEG; i++) {
-    const t = (i / N_SEG) * TAU;
+  for (let i = 0; i <= n; i++) {
+    const t = (i / n) * TAU;
     const P = curveP(t);
     const Tg = vnorm(vsub(curveP(t + dt), curveP(t - dt)));
     const N1 = vnorm(vcross(Tg, [0, 0, 1]));
@@ -79,7 +98,7 @@ function stations() {
       B: [P[0] - D[0] * w, P[1] - D[1] * w, P[2] - D[2] * w],
     });
   }
-  stationCache = out;
+  stationCache.set(n, out);
   return out;
 }
 
@@ -211,11 +230,27 @@ function prefersReducedMotion() {
 }
 
 /**
- * Resolves the base ink from `--pn-brand` on the mark's own element, so it
- * picks up whichever theme it was mounted under. Read once after mount rather
- * than per frame: `getComputedStyle` forces a style flush, and this component
- * renders 60+ times a second.
+ * Resolves the base ink from the mark's own element, so it picks up whichever
+ * theme it was mounted under. Read once after mount rather than per frame:
+ * `getComputedStyle` forces a style flush, and this component renders 60+
+ * times a second.
+ *
+ * `--pn-ribbon-ink` FIRST, then `--pn-brand`. The override exists because
+ * brand is not always the right ink: the chat composer mounts the mark inside
+ * a button that is ITSELF filled with brand, where a brand mark is invisible.
+ * A host that needs a different ink sets the variable in its own stylesheet
+ * and stays inside the token system — which `ink` cannot do, since it takes a
+ * parsed colour and `var(--pn-card)` is not one.
+ *
+ * PICK A MID-TONE. `shade` walks DOWN toward black and UP toward white from
+ * whatever it is given, so an ink at either extreme spends half its ramp
+ * against a ceiling and the band goes flat over that half. Brass is a good
+ * base because it sits in the middle. Pure white is the worst case and it is
+ * also the obvious-looking choice on a filled button — see the note over
+ * `.tch-send__mark` in chat-home.css for what that cost, measured.
  */
+const INK_TOKENS = ['--pn-ribbon-ink', '--pn-brand'];
+
 function useInk(explicit: string | undefined, el: SVGSVGElement | null): V3 {
   const [resolved, setResolved] = useState<V3 | null>(null);
   useEffect(() => {
@@ -224,9 +259,14 @@ function useInk(explicit: string | undefined, el: SVGSVGElement | null): V3 {
       return;
     }
     if (!el || typeof getComputedStyle !== 'function') return;
-    const token = getComputedStyle(el).getPropertyValue('--pn-brand');
-    const parsed = token ? parseColor(token) : null;
-    if (parsed) setResolved(parsed);
+    const style = getComputedStyle(el);
+    for (const name of INK_TOKENS) {
+      const parsed = parseColor(style.getPropertyValue(name) ?? '');
+      if (parsed) {
+        setResolved(parsed);
+        return;
+      }
+    }
   }, [explicit, el]);
   return resolved ?? FALLBACK_INK;
 }
@@ -264,6 +304,7 @@ export function RibbonMark({
   layout = 'mark',
   animated = true,
   ink,
+  segments = N_SEG,
   className,
 }: {
   /** Which authored scene list drives the rotation. */
@@ -278,8 +319,18 @@ export function RibbonMark({
    * resolves. Still marks hold t=0, the pose the loop starts and ends on.
    */
   animated?: boolean;
-  /** Override the base ink. Defaults to `--pn-brand` for the mounted theme. */
+  /**
+   * Override the base ink. Defaults to `--pn-ribbon-ink`, then `--pn-brand`,
+   * for the mounted theme. Takes a parsed colour, so a host wanting a token
+   * should set `--pn-ribbon-ink` in CSS rather than pass `var(...)` here.
+   */
   ink?: string;
+  /**
+   * How many quads the band is built from. 150 is what the design authored and
+   * what any mark large enough to show them should keep. Small mounts pass
+   * fewer — see `N_SEG` for why that is a budget rather than a downgrade.
+   */
+  segments?: number;
   className?: string;
 }) {
   const [el, setEl] = useState<SVGSVGElement | null>(null);
@@ -287,13 +338,16 @@ export function RibbonMark({
   const T = useLoopTime(animated);
   const { mid, total, ease } = MOTION[motion];
   const { S, W, H, tilt: tiltBase } = LAYOUT[layout];
+  // A non-integer or <3 count would produce a degenerate band (and NaN out of
+  // the tangent at a zero-length step), so it is clamped rather than trusted.
+  const nSeg = Math.max(3, Math.round(segments));
 
   const angle = animate(0, 360, 0, mid, ease)(T) + animate(0, -360, mid, total, ease)(T);
   const flowPhase = ((T / total) * 2) % 1;
   const breathe = 1 + 0.012 * Math.sin((TAU * T) / total);
   const tilt = tiltBase + 2.5 * Math.sin((TAU * T) / total);
 
-  const st = stations();
+  const st = stations(nSeg);
   const cA = Math.cos((angle * Math.PI) / 180);
   const sA = Math.sin((angle * Math.PI) / 180);
   const cB = Math.cos((tilt * Math.PI) / 180);
@@ -319,10 +373,10 @@ export function RibbonMark({
   const quads: { z: number; i: number; fill: string; pts: string }[] = [];
   let pA = tx(st[0].A);
   let pB = tx(st[0].B);
-  for (let i = 0; i < N_SEG; i++) {
+  for (let i = 0; i < nSeg; i++) {
     const A2 = tx(st[i + 1].A);
     const B2 = tx(st[i + 1].B);
-    const u = (i + 0.5) / N_SEG;
+    const u = (i + 0.5) / nSeg;
     const n = vnorm(vcross(vsub(A2, pA), vsub(pB, pA)));
     let k = 0.24 + 0.76 * Math.abs(vdot(n, L));
     k += 0.13 * Math.sin(TAU * (u * 2 - flowPhase));
