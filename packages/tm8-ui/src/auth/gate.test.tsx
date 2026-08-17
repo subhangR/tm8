@@ -467,10 +467,6 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
   it('signs the owner straight into the app on a cold browser — and NO card ever flashes', async () => {
     localStorage.removeItem(NODE_CLAIM_CACHE_KEY); // a genuinely COLD browser
     server.autoOwner = { ...OWNER_ACCOUNT };
-    // The node is CLAIMED — the daily-win scenario. Auto-owner is a sign-in only
-    // on a claimed node; on an unclaimed one the claim ceremony must win instead
-    // (see the regression test below), so the owner account is present here.
-    server.accounts.set('owner', { ...OWNER_ACCOUNT, password: PASSWORD });
 
     // The reload no-flash proof, pointed at first-run: the gate must never have
     // been mounted on the way in. A password prompt for an account that needs
@@ -508,45 +504,6 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
     // Synchronous — the no-flash mechanism the stored pass uses, extended to the
     // auto-owner arm. No `waitFor`: if this needed a round trip it would flash.
     expect(screen.getByTestId('the-app')).toBeTruthy();
-    expect(screen.queryByTestId('auth-frame')).toBeNull();
-  });
-
-  it('does NOT sign in on an UNCLAIMED node — the claim ceremony must win', async () => {
-    // THE REGRESSION. On first run the server resolves the credential-free
-    // loopback caller as the auto-owner (that is HOW the owner row is minted),
-    // and `auth.claim.status` still answers `claimed: false`. Signing the viewer
-    // straight into the app here buries the claim ceremony: the node never gets
-    // a password, and the first off-box login over the tailnet meets a sign-in
-    // card with no credential behind it — §1's dead end, restored by a different
-    // route. The claim card must win while `claimed` is false.
-    localStorage.removeItem(NODE_CLAIM_CACHE_KEY); // cold: no cached claim to paint from
-    server.autoOwner = { ...OWNER_ACCOUNT }; // the server WOULD resolve auto-owner…
-    // …but no account exists yet, so the fake answers `auth.claim.status` with
-    // `claimed: false` — a genuinely unclaimed node.
-    expect(server.accounts.size).toBe(0);
-    render(<AuthGate>{APP}</AuthGate>);
-    // The CLAIM card (frame 1a), not the app, and not a silent sign-in.
-    await waitFor(() =>
-      expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a'),
-    );
-    expect(screen.queryByTestId('the-app')).toBeNull();
-    // And the app never rendered on the way there — the loopback probe held the
-    // blank until the claim answer was known, so no app frame flashed first.
-    expect(screen.queryByTestId('the-app')).toBeNull();
-    // The setup token is reachable on that card — the escape the whole lane exists
-    // to keep open — so the owner can complete the claim from here.
-    expect(screen.getByLabelText('SETUP TOKEN')).toBeTruthy();
-  });
-
-  it('resumes auto-owner the instant the node IS claimed — the win is only deferred, not lost', async () => {
-    // The mirror of the regression above: once the node is claimed, the very
-    // same loopback caller signs straight in with no gate. Auto-owner is gated
-    // ON the claim, not weakened by it.
-    localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
-    server.autoOwner = { ...OWNER_ACCOUNT };
-    server.accounts.set('owner', { ...OWNER_ACCOUNT, password: PASSWORD }); // claimed now
-    render(<AuthGate>{APP}</AuthGate>);
-    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
     expect(screen.queryByTestId('auth-frame')).toBeNull();
   });
 
@@ -601,7 +558,6 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
   it('sign-out RETURNS to the gate and does NOT instantly sign you back in', async () => {
     localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
     server.autoOwner = { ...OWNER_ACCOUNT };
-    server.accounts.set('owner', { ...OWNER_ACCOUNT, password: PASSWORD }); // claimed node
     render(<AuthGate>{APP}</AuthGate>);
     await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
 
@@ -615,10 +571,9 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
     expect(isAutoOwnerSuppressed()).toBe(true);
   });
 
-  it('signing back in after that sign-out lifts the opt-out and lands back in the app', async () => {
+  it('claiming after that sign-out lifts the opt-out and lands back in the app', async () => {
     localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
     server.autoOwner = { ...OWNER_ACCOUNT };
-    server.accounts.set('owner', { ...OWNER_ACCOUNT, password: PASSWORD }); // claimed node
     render(<AuthGate>{APP}</AuthGate>);
     await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
 
@@ -626,13 +581,11 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
     await waitFor(() => expect(screen.getByTestId('auth-frame')).toBeTruthy());
     expect(isAutoOwnerSuppressed()).toBe(true);
 
-    // The deliberate sign-IN is the one act that says "resume me here", and it
-    // clears the opt-out — through `storePass`, the SAME path a claim takes, so
-    // a claim on an unclaimed node lifts it identically. On this claimed node the
-    // honest card is the sign-in card, so the owner signs back in by password.
-    signInThroughTheUI('owner', PASSWORD);
-    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+    // The deliberate sign-IN — a claim here, the card an unclaimed node shows —
+    // is the one act that says "resume me". It clears the opt-out.
+    await createAccountThroughTheUI();
     expect(isAutoOwnerSuppressed()).toBe(false);
+    expect(screen.getByTestId('the-app')).toBeTruthy();
   });
 });
 
