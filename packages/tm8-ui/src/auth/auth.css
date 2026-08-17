@@ -534,10 +534,32 @@
   opacity: 1;
   visibility: visible;
 }
+/* TAP — the third trigger. Neither rule above can fire on a touch device, and
+   this refusal is on the SIGN-IN screen: a user who cannot read the reason
+   cannot get into the product. Set by useReasonDisclosure; same treatment as
+   `.hon-tip`, which is the same vocabulary. */
+.cv2-root .auth-inline-refusal[data-reason-open='true'] > .auth-tip {
+  opacity: 1;
+  visibility: visible;
+}
 @media (prefers-reduced-motion: reduce) {
   .cv2-root .auth-tip {
     transition: none;
   }
+}
+/* Phone: clamped to the frame rather than anchored to the control — the same
+   `left: 0` + 260px overflow `.hon-tip` had, and the same fix. */
+.cv2-root .mobile-frame .auth-tip {
+  position: fixed;
+  left: calc(var(--mobile-safe-left, 0px) + var(--pn-space-3, 12px));
+  right: calc(var(--mobile-safe-right, 0px) + var(--pn-space-3, 12px));
+  bottom: calc(
+    var(--mobile-tabbar-min, 49px) + var(--mobile-safe-bottom, 0px) + var(--pn-space-3, 12px)
+  );
+  top: auto;
+  width: auto;
+  max-width: none;
+  padding: 10px 12px;
 }
 .cv2-root .auth-tip__cause {
   font-size: 11px;

@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from 'react';
+import { useReasonDisclosure } from './useReasonDisclosure';
 
 /**
  * DISABLED-WITH-REASON — the L6 primitive.
@@ -20,6 +21,13 @@ import { useId, type ReactNode } from 'react';
  * `aria-describedby`, so the reason is announced on focus. The reason text is
  * always in the DOM (the tooltip is hidden with opacity/visibility, never
  * `display:none`, which would drop it from the accessibility tree too).
+ *
+ * AND ON TOUCH, the reason opens on TAP. It used to be revealed by `:hover` and
+ * `:focus-visible` only — neither of which a thumb can produce — so on a phone
+ * the entire refusal vocabulary was silent and the user got a dead control with
+ * no explanation. `useReasonDisclosure` adds the tap as a third trigger next to
+ * the other two; see that file for why `:focus-visible` specifically cannot
+ * stand in for it.
  */
 
 export interface UnavailableReason {
@@ -53,6 +61,7 @@ export function DisabledIconControl({
   children?: ReactNode;
 }) {
   const tipId = useId();
+  const tip = useReasonDisclosure();
   return (
     <span
       className="hon-disabled hon-disabled--tooltip"
@@ -62,6 +71,8 @@ export function DisabledIconControl({
       aria-describedby={tipId}
       tabIndex={0}
       data-testid="disabled-with-reason"
+      {...tip.hostProps}
+      {...tip.triggerProps}
     >
       {glyph ? <span aria-hidden>{glyph}</span> : null}
       {children}
@@ -86,8 +97,13 @@ export function DisabledAction({
   label?: string;
 }) {
   const captionId = useId();
+  /* The caption is normally visible prose and needs no disclosure — but in the
+     chip row (`.lp__rowdetail--chips`, panels.css) it takes the tooltip
+     presentation so a refusal cannot cost the row its second line, and there it
+     is hover-gated exactly like `.hon-tip` was. Same tap trigger, same reason. */
+  const tip = useReasonDisclosure();
   return (
-    <span className="hon-disabled-group">
+    <span className="hon-disabled-group" {...tip.hostProps}>
       <span
         className="hon-disabled hon-disabled--inline"
         role="button"
@@ -96,6 +112,7 @@ export function DisabledAction({
         aria-describedby={captionId}
         tabIndex={0}
         data-testid="disabled-with-reason"
+        {...tip.triggerProps}
       >
         {children}
       </span>

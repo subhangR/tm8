@@ -12,6 +12,15 @@ import { useEffect, type RefObject } from 'react';
  *
  * Escape is CONSUMED here (C6 layer 2: the topmost surface takes it), so
  * dismissing a picker never also pops the panel stack underneath it.
+ *
+ * THE OUTSIDE EVENT IS `pointerdown`, NOT `mousedown`. iOS Safari only
+ * synthesises the mouse-event sequence on elements it considers clickable, so a
+ * tap on inert background — an empty strip of a list, the page margin, a bare
+ * heading — often fires NO `mousedown` at all. Under `mousedown` that made every
+ * popover here a trap on a phone: the only remaining exit was Escape, and a
+ * phone has no Escape key. `pointerdown` fires for mouse, touch and pen alike
+ * and lands BEFORE `mousedown` in the mouse sequence, so the desktop ordering
+ * relative to `click` is unchanged.
  */
 export function useDismissable(
   open: boolean,
@@ -34,7 +43,7 @@ export function useDismissable(
       e.stopPropagation();
       onDismiss();
     };
-    const onPointerDown = (e: MouseEvent) => {
+    const onPointerDown = (e: PointerEvent) => {
       if (!(e.target instanceof Node)) return;
       const mounted = refs.filter((r) => r.current != null);
       if (mounted.length === 0) return;
@@ -43,10 +52,10 @@ export function useDismissable(
     };
 
     document.addEventListener('keydown', onKey, true);
-    document.addEventListener('mousedown', onPointerDown, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
     return () => {
       document.removeEventListener('keydown', onKey, true);
-      document.removeEventListener('mousedown', onPointerDown, true);
+      document.removeEventListener('pointerdown', onPointerDown, true);
     };
   }, [open, ref, onDismiss]);
 }

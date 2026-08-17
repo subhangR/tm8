@@ -2958,6 +2958,29 @@
   opacity: 1;
   visibility: visible;
 }
+/* TAP. Once this caption takes the tooltip presentation it inherits the tooltip
+   PROBLEM: hover and `:focus-visible` are the only two ways to read it and a
+   thumb can produce neither, so in the chip row the refusal went silent on a
+   phone. Set by useReasonDisclosure on the group. */
+.cv2-root .lp__rowdetail--chips .hon-disabled-group[data-reason-open='true'] > .hon-caption {
+  opacity: 1;
+  visibility: visible;
+}
+/* Phone: clamped to the frame, like `.hon-tip`. `left: 0` + `max-width: 260px`
+   on a control near the right edge lands off-screen, and the row is clipped. */
+.cv2-root .mobile-frame .lp__rowdetail--chips .hon-caption {
+  position: fixed;
+  left: calc(var(--mobile-safe-left, 0px) + var(--pn-space-3, 12px));
+  right: calc(var(--mobile-safe-right, 0px) + var(--pn-space-3, 12px));
+  bottom: calc(
+    var(--mobile-tabbar-min, 49px) + var(--mobile-safe-bottom, 0px) + var(--pn-space-3, 12px)
+  );
+  top: auto;
+  width: auto;
+  max-width: none;
+  padding: 10px 12px;
+  font-size: 12px;
+}
 
 /* ONE HEIGHT BAND FOR THE FOUR CHIPS. They arrive from three vocabularies that
    each sized themselves: the assignee face is a `pn-badge`, which the metarow

@@ -96,10 +96,62 @@
   opacity: 1;
   visibility: visible;
 }
+
+/* THE THIRD TRIGGER: TAP.
+   Hover does not exist on a touch device, and `:focus-visible` deliberately
+   does NOT match a pointer interaction — that is the whole difference between
+   it and `:focus`. So the two rules above, which were the only way to read a
+   refusal, both resolve to "never" on a phone: every explanation of why a
+   control will not work was silent, and the user got a dead affordance with no
+   reason. `useReasonDisclosure` sets this attribute on tap. */
+.cv2-root .hon-disabled[data-reason-open='true'] > .hon-tip {
+  opacity: 1;
+  visibility: visible;
+}
 @media (prefers-reduced-motion: reduce) {
   .cv2-root .hon-tip {
     transition: none;
   }
+}
+
+/* ── THE PHONE PRESENTATION ───────────────────────────────────────────────
+   On the mobile shell the reason stops being a tooltip anchored to its control
+   and becomes a strip anchored to the FRAME. Two reasons, both measured:
+
+   1. IT WAS THE WORST OVERFLOW IN THE PROGRAM. `position: absolute; left: 0`
+      with `width: max-content` up to 260px has no idea a viewport exists. On
+      the audit at 390x844 (ref 3bc882f4) this element was the single worst
+      right edge on THREE screens — tasks 449, sessions 504, channels 471 —
+      and `.shell-root`/`.mobile-frame` are `overflow: hidden`, so the reason
+      was not scrolled off, it was destroyed. `position: fixed` with both
+      `left` and `right` set is clamped by construction, at every anchor
+      position, in both the open and the closed state.
+
+   2. A TOOLTIP UNDER A THUMB IS UNDER THE THUMB. Anchored below its control it
+      lands exactly where the finger that opened it is resting, and a reason the
+      user is covering is not a reason. Docked above the tab bar it never
+      occludes the control it explains.
+
+   Same ink, same paper, same radius and shadow as the desktop tooltip — this is
+   one vocabulary rendered for a different hand, not a second one. */
+.cv2-root .mobile-frame .hon-tip {
+  position: fixed;
+  left: calc(var(--mobile-safe-left, 0px) + var(--pn-space-3, 10px));
+  right: calc(var(--mobile-safe-right, 0px) + var(--pn-space-3, 10px));
+  bottom: calc(
+    var(--mobile-tabbar-min, 49px) + var(--mobile-safe-bottom, 0px) + var(--pn-space-3, 10px)
+  );
+  top: auto;
+  width: auto;
+  max-width: none;
+  padding: 10px 12px;
+  gap: 3px;
+}
+.cv2-root .mobile-frame .hon-tip__cause {
+  font-size: 13px;
+}
+.cv2-root .mobile-frame .hon-tip__remedy {
+  font-size: 11px;
 }
 
 /* Line 1 = bold cause. Line 2 = mono remedy — the "voice" split is what
