@@ -136,13 +136,12 @@ export function useHomeData(data: HomeScreenData): HomeData {
   }, [seam]);
 
   // -- the activity stream --------------------------------------------------
-  const glyphOf = useCallback((kind: string) => getKind(kind).chip.glyph, []);
   useEffect(() => {
     return seam.onEvent((event) => {
-      const row = activityRowOf(event, glyphOf);
+      const row = activityRowOf(event);
       if (row) setActivityRows((current) => appendActivity(current, row));
     });
-  }, [seam, glyphOf]);
+  }, [seam]);
 
   // -- rows through the port's own cached queries ---------------------------
   //

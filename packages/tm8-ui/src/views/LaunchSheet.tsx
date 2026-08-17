@@ -64,6 +64,10 @@ export interface LaunchSelection extends LaunchConfig {
 /** The resolution order T5-5's annotation states. Only the winner is drawn. */
 const RESOLUTION_ORDER = ['teammate default', 'space default', 'node default'] as const;
 
+/** Rosters longer than this get the filter input. Below it, a search box over
+ * a list that fits on screen whole is only friction. */
+const TEAMMATE_SEARCH_FROM = 5;
+
 export function LaunchSheet(props: LaunchSheetProps) {
   const { teammates, projects, profiles } = props;
 
@@ -110,9 +114,29 @@ export function LaunchSheet(props: LaunchSheetProps) {
   const [accessMode, setAccessMode] = useState<NonNullable<LaunchConfig['accessMode']>>('auto');
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileId, setProfileId] = useState('');
+  const [rosterQuery, setRosterQuery] = useState('');
 
   const teammate = teammates.find((t) => t.id === teammateId);
   const models = modelsFor(agentToolId);
+
+  /**
+   * The roster the picker draws: filtered by the query, with the SELECTED
+   * teammate always kept visible even when the filter would drop it — the
+   * persona a launch will run as must never be off-screen at commit time.
+   */
+  const matchingTeammates = useMemo(() => {
+    const q = rosterQuery.trim().toLowerCase();
+    if (!q) return teammates;
+    return teammates.filter(
+      (t) => t.name.toLowerCase().includes(q) || t.model.toLowerCase().includes(q),
+    );
+  }, [teammates, rosterQuery]);
+  const visibleTeammates = useMemo(() => {
+    if (!teammate || matchingTeammates.some((t) => t.id === teammate.id)) {
+      return matchingTeammates;
+    }
+    return [teammate, ...matchingTeammates];
+  }, [matchingTeammates, teammate]);
 
   /**
    * The resolved profile and WHERE IT CAME FROM. D51 requires the chain to be
@@ -169,36 +193,68 @@ export function LaunchSheet(props: LaunchSheetProps) {
           is what the canvas draws, and it keeps the commit control reachable
           however long the project list grows. */}
       <div className="ls__body">
+        {/* IMPORTANT CONFIGURATION FIRST (user ruling): teammate, then model /
+            reasoning effort / permission mode. These used to sit BENEATH the
+            whole roster, so on any space with real teammates the settings that
+            matter most were below the fold. The roster is now a bounded,
+            searchable picker so it can never push them down. */}
         <section className="ls__section">
           <div className="ls__eyebrow">TEAMMATE</div>
-          {teammates.map((t) => {
-            const on = t.id === teammateId;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                className={`ls__row ${on ? 'ls__row--on' : ''}`}
-                onClick={() => {
-                  setTeammateId(t.id);
-                  setAgentToolId(t.agentTool);
-                  setModel(t.model);
-                }}
-              >
-                <span className="ls__avatar" aria-hidden="true">{t.initial}</span>
-                <span className="ls__rowtext">
-                  <span className="ls__rowname">{t.name}</span>
-                  {/* Model is the row's SUBTITLE, not a fourth section — D51's
-                      five items are concerns, not sections (ruled). */}
-                  <span className="ls__rowsub">
-                    {t.model} · {t.agentTool} · owned by {t.owner}
+          {/* The teammate count is unbounded, so the picker is a SEARCH plus a
+              scroll-capped roster rather than an ever-growing radio stack. The
+              filter appears only once it earns its row. */}
+          {teammates.length > TEAMMATE_SEARCH_FROM && (
+            <input
+              type="search"
+              className="ls__search"
+              value={rosterQuery}
+              placeholder={`filter ${teammates.length} teammates…`}
+              aria-label="Filter teammates"
+              data-testid="launch-teammate-search"
+              onChange={(event) => setRosterQuery(event.target.value)}
+            />
+          )}
+          <div className="ls__roster" role="radiogroup" aria-label="Teammates">
+            {visibleTeammates.map((t) => {
+              const on = t.id === teammateId;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  className={`ls__row ${on ? 'ls__row--on' : ''}`}
+                  onClick={() => {
+                    setTeammateId(t.id);
+                    setAgentToolId(t.agentTool);
+                    setModel(t.model);
+                  }}
+                >
+                  <span className="ls__avatar" aria-hidden="true">{t.initial}</span>
+                  <span className="ls__rowtext">
+                    <span className="ls__rowname">{t.name}</span>
+                    {/* Model is the row's SUBTITLE, not a fourth section — D51's
+                        five items are concerns, not sections (ruled). */}
+                    <span className="ls__rowsub">
+                      {t.model} · {t.agentTool} · owned by {t.owner}
+                    </span>
                   </span>
-                </span>
-                {on && <span className="ls__check ls__check--radio" aria-hidden="true">✓</span>}
-              </button>
-            );
-          })}
+                  {on && <span className="ls__check ls__check--radio" aria-hidden="true">✓</span>}
+                </button>
+              );
+            })}
+            {matchingTeammates.length === 0 && rosterQuery.trim() !== '' && (
+              // The selection is KEPT under a non-matching filter — stated, so
+              // an empty roster never reads as "nothing is selected".
+              <p className="ls__roster-empty" role="status">
+                no teammate matches “{rosterQuery.trim()}” — the current selection is kept
+              </p>
+            )}
+          </div>
+        </section>
+
+        <section className="ls__section">
+          <div className="ls__eyebrow">CONFIGURATION</div>
           <label className="ls__row ls__row--inert">
             <span className="ls__rowtext">
               <span className="ls__rowname">Model</span>
@@ -231,7 +287,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
           </label>
           <label className="ls__row ls__row--inert">
             <span className="ls__rowtext">
-              <span className="ls__rowname">Access</span>
+              <span className="ls__rowname">Permission mode</span>
               <span className="ls__rowsub">approval and sandbox posture</span>
               {/* The same one-click cycle the quick config carries, so the two
                   surfaces change posture the same way. The select stays: it is
@@ -263,20 +319,6 @@ export function LaunchSheet(props: LaunchSheetProps) {
                 <option value="auto">Auto · run what is safe, escalate the rest</option>
                 <option value="plan">Plan · read only</option>
                 <option value="fullAccess">Full access · bypass safeguards</option>
-              </select>
-            </span>
-          </label>
-          <label className="ls__row ls__row--inert">
-            <span className="ls__rowtext">
-              <span className="ls__rowname">Session mode</span>
-              <select
-                value={mode}
-                data-testid="launch-mode"
-                onChange={(event) => setMode(event.target.value as LaunchMode)}
-              >
-                {LAUNCH_MODES.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
               </select>
             </span>
           </label>
@@ -329,6 +371,29 @@ export function LaunchSheet(props: LaunchSheetProps) {
               </button>
             );
           })}
+        </section>
+
+        {/* Down here with the other rarely-touched settings (user ruling): the
+            mode is a topology choice most launches never change. */}
+        <section className="ls__section">
+          <div className="ls__eyebrow">SESSION MODE</div>
+          <label className="ls__row ls__row--inert">
+            <span className="ls__rowtext">
+              <span className="ls__rowname">Session mode</span>
+              <span className="ls__rowsub">
+                {LAUNCH_MODES.find((option) => option.id === mode)?.description ?? ''}
+              </span>
+              <select
+                value={mode}
+                data-testid="launch-mode"
+                onChange={(event) => setMode(event.target.value as LaunchMode)}
+              >
+                {LAUNCH_MODES.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </span>
+          </label>
         </section>
 
         <section className="ls__section">

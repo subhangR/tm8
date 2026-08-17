@@ -22,6 +22,7 @@ import type {
 } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type { PillTone } from '../kit';
+import type { KindArt } from './kind-art';
 
 // ---------------------------------------------------------------------------
 // Contract-derived vocabulary (cite the member, never an invented type)
@@ -44,9 +45,14 @@ export type GroupByKey = NonNullable<CollectionQuery['groupBy']>;
 export type Hash = string;
 
 /**
- * A glyph reference. The canvases draw icons as text glyphs (the menu rail's
- * collapsed 48px state, the Z1 kind chip) and the kit renders them
- * `aria-hidden` beside a real label — so the reference IS the glyph.
+ * A glyph reference — a literal text character.
+ *
+ * This WAS how kinds were marked everywhere. It is now the fallback half of a
+ * pair: `KindConfig.iconArt` carries the drawn mark the UI renders, and this
+ * carries the character a string-only surface can still print. Actions
+ * (`ActionDef.icon`) remain text-only — a verb's mark sits inside a 22px
+ * control next to its own word, which is a different problem from telling
+ * twenty KINDS apart at a glance.
  */
 export type IconRef = string;
 
@@ -445,6 +451,73 @@ export interface ListConfig {
    * fabrication L6 forbids.
    */
   stateControl?: StateControl;
+  /**
+   * OTHER settable enum fields the expanded row offers — priority, today.
+   *
+   * SEPARATE FROM `stateControl` because the two are written differently and
+   * the difference is not cosmetic: a state goes through a COMMAND VERB
+   * (`entities.commands.work` / `complete`, unversioned, with side effects on
+   * the actor's `working_on` edge), while these go through the kind's ordinary
+   * content PATCH and are therefore version-guarded. Folding them into one
+   * control would force one dispatch rule onto two operations with different
+   * guarantees, and the 409 path would have nowhere to live.
+   *
+   * A plural list rather than a `priorityControl` field, because nothing here
+   * is about priority: it is "an enum member of `EntityState` this kind lets a
+   * user set", and the second one must not need a new prop.
+   */
+  valueControls?: readonly ValueControl[];
+  /**
+   * The expanded row's ASSIGNEE picker. Absent ⇒ this kind is not assignable.
+   *
+   * Assignment is neither a state nor a content field: `state.assignees` is a
+   * PROJECTION of `assigned_to` edges (server `entity-read.ts:551`), so it is
+   * written by creating and deleting edges, not by patching the entity. Its
+   * own declaration, for the same reason `valueControls` is not `stateControl`.
+   */
+  assignControl?: AssignControl;
+}
+
+/** One value in a `ValueControl`'s vocabulary. */
+export interface ValueOption {
+  id: string;
+  label: string;
+  tone: PillTone;
+}
+
+export interface ValueControl {
+  /**
+   * Which `EntityState` member carries the current value — read structurally,
+   * and written back under the SAME name in the kind's content patch. One
+   * name, so the control cannot read one field and write another.
+   */
+  source: string;
+  label: string;
+  /** Shown when the field is unset. Not an option: null is not a value. */
+  emptyLabel: string;
+  /**
+   * The settable vocabulary in reading order. Unlike `StateControl` these
+   * carry their own label and tone, because no `statusPill` spec exists for
+   * them — there is no second source here to disagree with.
+   */
+  options: readonly ValueOption[];
+}
+
+export interface AssignControl {
+  /** The `EntityState` member carrying the current `ActorSummary[]`. */
+  source: string;
+  label: string;
+  /** Shown when nobody is assigned. */
+  emptyLabel: string;
+  /** The edge type an assignment IS. The panel never spells this itself. */
+  edgeType: string;
+  /**
+   * Which kinds may appear in the menu. DATA, because the HOST has to hydrate
+   * them and the host is not allowed a kind literal either: the roster is the
+   * union of this list across every kind that declares an assign control, so a
+   * kind that becomes assignable arrives by registry entry alone.
+   */
+  actorKinds: readonly string[];
 }
 
 /**
@@ -582,6 +655,13 @@ export interface PanelConfig {
   capabilityReasons?: Partial<Record<keyof EntityCapabilities, string>>;
   /** work_session only. */
   contentSurfaces?: ContentSurfaces;
+  /**
+   * 'chat': the content body is a conversation that ENDS at its composer —
+   * the panel mounts no AttachmentStrip (the composer's + owns attach) and no
+   * PanelFooter below it. Terminal panels already skip both via the archetype
+   * arm; this flag states the same reason structurally for chat surfaces.
+   */
+  composition?: 'chat';
   z4?: { immersive?: boolean };
 }
 
@@ -600,8 +680,24 @@ export interface KindConfig {
   kind: CoreEntityKind | CustomKindFallback;
   label: string;
   labelPlural: string;
-  /** Required by the collapsed 48px menu rail state (02-LAYOUT §1). */
+  /**
+   * The TEXT fallback mark. Still required — it is what a plain-string surface
+   * (a `title=` tooltip, a palette row, a console dump) can show — but it is
+   * no longer what the UI DRAWS. `iconArt` is.
+   */
   icon: IconRef;
+  /**
+   * The DRAWN mark: SVG path data on a 16×16 grid (`domain/kind-art.ts`),
+   * rendered by `KindIcon`.
+   *
+   * This is a data field for the reason the module header gives — per-kind
+   * divergence lives in registry DATA (L2), and an icon is the purest case of
+   * it. It is REQUIRED rather than optional so that adding a kind cannot
+   * silently ship the ◇ fallback: totality is asserted in `registry.test.ts`,
+   * along with uniqueness, which is the actual defect this field was added to
+   * end — thirteen of the twenty text glyphs were the same small lozenge.
+   */
+  iconArt: KindArt;
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

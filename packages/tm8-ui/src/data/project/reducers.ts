@@ -21,6 +21,7 @@
 import type {
   ActivityItem,
   DurableWorkspaceEvent,
+  EdgeGroup,
   EdgeView,
   EntityCounters,
   EntityDetail,
@@ -122,6 +123,124 @@ export function mergeSummary(
   return out;
 }
 
+/**
+ * Reactions are edges, and `entities.get` deliberately keeps them OUT of
+ * `connections` (server `handlers/entities.ts:95,145`). They still arrive as
+ * `edge.upsert`, so folding them into a cached detail would make a live star
+ * appear as a LINKED row that no fresh read ever shows. Mirrored here, once.
+ */
+const REACTION_EDGE_TYPES: ReadonlySet<string> = new Set(['likes', 'dislikes', 'stars']);
+
+/**
+ * The label the Server would have sent for a group this client is creating.
+ *
+ * The Server curates display names for some types (`Relates to`, `Working on`)
+ * and falls through to the raw type for the rest, suffixed `(incoming)` on the
+ * inbound side (`handlers/entities.ts:115`). That map is Server-local and the
+ * `edge.upsert` payload carries no label, so a group born from a live event
+ * reuses the label the Server already sent for the SAME TYPE on this entity,
+ * and otherwise reproduces the fall-through.
+ *
+ * ⚠ Residual, stated rather than hidden: the first-ever edge of a CURATED type
+ * on an entity renders as its raw type name until the next full detail read.
+ * Closing that needs the label map in the contract, which is a wider change
+ * than this defect justifies.
+ */
+function edgeGroupLabel(existing: readonly EdgeGroup[], type: string, direction: 'outgoing' | 'incoming'): string {
+  const seen = existing.find((g) => g.type === type);
+  if (seen) return seen.label;
+  return direction === 'outgoing' ? type : `${type} (incoming)`;
+}
+
+/**
+ * Fold one edge into a cached detail's `connections`.
+ *
+ * WHY THIS EXISTS. `ConnectionsTab` renders `detail.connections`, which only a
+ * detail READ ever writes. `edge.upsert` used to land in `edges` /
+ * `edgeIdsByEntity` and nowhere else, so an edge created while a panel was open
+ * was invisible until a reload — measured on a work session whose three
+ * `created_in` docs were on the wire and absent from the tab. Keeping the
+ * cached detail coherent with newer events is what `mergeSummary` already does
+ * for the envelope; this is the same rule for the connection sections.
+ */
+function mergeEdgeIntoDetail(detail: EntityDetail, edge: EdgeView): EntityDetail {
+  if (REACTION_EDGE_TYPES.has(edge.type)) return detail;
+  // The Server's own split: an edge is outgoing when this entity is its
+  // source, and incoming only when it is the target and NOT also the source
+  // (`handlers/entities.ts:204-205`), so a self-edge is never counted twice.
+  const direction: 'outgoing' | 'incoming' = edge.source.id === detail.id ? 'outgoing' : 'incoming';
+  const groups = direction === 'outgoing' ? detail.connections.outgoing : detail.connections.incoming;
+  const target = groups.find((g) => g.type === edge.type);
+  const next = target
+    ? groups.map((g) =>
+        g === target
+          ? { ...g, edges: [edge, ...g.edges.filter((e) => e.id !== edge.id)] }
+          : g)
+    : [
+        ...groups,
+        {
+          type: edge.type,
+          direction,
+          label: edgeGroupLabel([...detail.connections.outgoing, ...detail.connections.incoming], edge.type, direction),
+          edges: [edge],
+        },
+      ];
+  return withConnections(detail, direction, next);
+}
+
+/** `edge.deleted`: drop the edge from a cached detail, and the group with it if it empties. */
+function removeEdgeFromDetail(detail: EntityDetail, edgeId: string): EntityDetail {
+  let changed = detail;
+  for (const direction of ['outgoing', 'incoming'] as const) {
+    const groups = direction === 'outgoing' ? changed.connections.outgoing : changed.connections.incoming;
+    if (!groups.some((g) => g.edges.some((e) => e.id === edgeId))) continue;
+    const next = groups
+      .map((g) => ({ ...g, edges: g.edges.filter((e) => e.id !== edgeId) }))
+      .filter((g) => g.edges.length > 0);
+    changed = withConnections(changed, direction, next);
+  }
+  return changed;
+}
+
+/**
+ * Replace one direction's groups and re-derive the blocked count from them, so
+ * the badge cannot drift from the rows it summarizes. Same rule as the Server
+ * (`handlers/entities.ts:207-213`): OUTGOING `depends_on`, hard unless props
+ * say otherwise, counted only while unresolved.
+ */
+function withConnections(
+  detail: EntityDetail,
+  direction: 'outgoing' | 'incoming',
+  groups: EdgeGroup[],
+): EntityDetail {
+  const connections = {
+    ...detail.connections,
+    ...(direction === 'outgoing' ? { outgoing: groups } : { incoming: groups }),
+  };
+  connections.unresolvedHardDependencyCount = connections.outgoing
+    .filter((g) => g.type === 'depends_on')
+    .flatMap((g) => g.edges)
+    .filter((e) => e.hard !== false && e.resolved === false).length;
+  return { ...detail, connections };
+}
+
+/** Apply one detail-level connection change to whichever endpoints are cached. */
+function mapCachedDetails(
+  details: Record<EntityId, EntityDetail>,
+  endpointIds: readonly string[],
+  change: (detail: EntityDetail) => EntityDetail,
+): Record<EntityId, EntityDetail> | undefined {
+  let next: Record<EntityId, EntityDetail> | undefined;
+  for (const id of new Set(endpointIds)) {
+    const detail = details[id as EntityId];
+    if (!detail) continue;
+    const updated = change(detail);
+    if (updated === detail) continue;
+    next = { ...(next ?? details), [id as EntityId]: updated };
+  }
+  return next;
+}
+
 function upsertMessageList(list: MessageView[], message: MessageView): MessageView[] {
   const byId = new Map(list.map((m) => [m.id, m]));
   byId.set(message.id, message); // deleted → tombstone view stays in the list
@@ -165,7 +284,14 @@ export function reduceEdgeUpsert(state: DomainState, edge: EdgeView): Partial<Do
   let index = state.edgeIdsByEntity;
   index = { ...index, [edge.source.id]: indexEdge(index, edge.source.id, edge.id) };
   index = { ...index, [edge.target.id]: indexEdge(index, edge.target.id, edge.id) };
-  return { edges: { ...state.edges, [edge.id]: edge }, edgeIdsByEntity: index };
+  const details = mapCachedDetails(state.details, [edge.source.id, edge.target.id], (detail) =>
+    mergeEdgeIntoDetail(detail, edge),
+  );
+  return {
+    edges: { ...state.edges, [edge.id]: edge },
+    edgeIdsByEntity: index,
+    ...(details ? { details } : {}),
+  };
 }
 
 /** `edge.deleted`: drop the edge and unindex it from both endpoints. */
@@ -176,7 +302,10 @@ export function reduceEdgeDeleted(state: DomainState, edge: EdgeView): Partial<D
   for (const endpoint of [edge.source.id, edge.target.id]) {
     if (index[endpoint]) index[endpoint] = index[endpoint].filter((id) => id !== edge.id);
   }
-  return { edges, edgeIdsByEntity: index };
+  const details = mapCachedDetails(state.details, [edge.source.id, edge.target.id], (detail) =>
+    removeEdgeFromDetail(detail, edge.id),
+  );
+  return { edges, edgeIdsByEntity: index, ...(details ? { details } : {}) };
 }
 
 /** `message.created|updated|deleted`: upsert by anchor, createdAt-sorted, capped; tombstones stay. */

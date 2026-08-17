@@ -6,8 +6,8 @@ import type {
   EntitySummary,
 } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
-import { getKind } from '../../domain';
-import { Chip, Eyebrow } from '../../kit';
+import { KindIcon, getKind } from '../../domain';
+import { Chip, Eyebrow, Markdown } from '../../kit';
 import { EmptyBody } from '../detail/PanelStates';
 
 /**
@@ -52,7 +52,7 @@ export function GenericBody({
     return (
       <div className="pn-body">
         <EmptyBody
-          glyph={getKind(detail.kind).chip.glyph}
+          glyph={<KindIcon kind={detail.kind} />}
           sentence="This kind renders universal fields only — title, kind and scalar content. Nothing is invented."
         />
       </div>
@@ -136,7 +136,10 @@ function FieldsBlock({ detail }: { detail: EntityDetail }) {
   if (rows.length === 0 && !prose) return null;
   return (
     <>
-      {prose ? <p className="pn-prose">{prose}</p> : null}
+      {/* A task's body is markdown — checklists, fenced commands, links. Drawn
+          as a plain paragraph it came out as literal `##` and `-`, which is
+          how the whole panel read for anything an agent wrote. */}
+      {prose ? <Markdown source={prose} className="pn-prose" testId="pn-prose" /> : null}
       {rows.length > 0 ? (
         <dl className="pn-fields">
           {rows.map(([key, value]) => (
@@ -342,7 +345,7 @@ function ItemsBlock({
   return (
     <div className="pn-chiprow">
       {items.map((item) => (
-        <Chip key={item.id} glyph={getKind(item.kind).chip.glyph} onClick={() => onOpenEntity?.(item.id)}>
+        <Chip key={item.id} glyph={<KindIcon kind={item.kind} />} onClick={() => onOpenEntity?.(item.id)}>
           {item.title}
         </Chip>
       ))}

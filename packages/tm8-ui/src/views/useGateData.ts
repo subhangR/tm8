@@ -52,6 +52,7 @@ import {
   readLaunchCache,
   writeLaunchCache,
 } from '../data/launch-cache';
+import { readLastSpace, writeLastSpace } from './last-place';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
 import { terminalActivitySource, useTerminalActivityMap } from '../terminal/activity';
@@ -656,7 +657,18 @@ export function useGateData(options: GateOptions): GateData {
             return;
           }
           setBootError(null);
-          setSpaceId(first.id);
+          // THE SPACE THIS BROWSER LAST HAD OPEN ON THIS NODE WINS.
+          //
+          // `first.id` alone meant every remount landed on the node's first
+          // space — and a server switch REMOUNTS this hook (App.tsx keys
+          // GateApp by server id), so a round trip out to a Server and back
+          // silently threw your place away. The remembered id is a preference,
+          // never an assertion: it is only honoured when the node's own list
+          // still contains it, so a deleted or no-longer-visible space falls
+          // back to the first exactly as before.
+          const remembered = readLastSpace(nodeKeyOf(options.serverBaseUrl));
+          const chosen = list.find((space) => space.id === remembered) ?? first;
+          setSpaceId(chosen.id);
           return;
         } catch (error: unknown) {
           // AN UNREACHABLE NODE IS A NORMAL STATE, not a crash.
@@ -758,6 +770,13 @@ export function useGateData(options: GateOptions): GateData {
     if (next === spaceId || !spaces.some((space) => space.id === next)) return;
     setSpaceId(next);
   }, [spaceId, spaces]);
+
+  // The one place the choice is recorded, so boot's pick and the tab bar's pick
+  // are remembered by the same rule and neither can drift from the other.
+  useEffect(() => {
+    if (!spaceId) return;
+    writeLastSpace(nodeKeyOf(options.serverBaseUrl), spaceId);
+  }, [spaceId, options.serverBaseUrl]);
 
   // Connection honesty, rendered once in the shell and selected everywhere
   // (§10.2.4). `polling` is a degraded-but-advancing state, not an outage.

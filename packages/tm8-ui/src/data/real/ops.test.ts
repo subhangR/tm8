@@ -217,6 +217,28 @@ describe('ops: command bodies the server actually requires', () => {
     await ops.deleteEntity('e-1');
     expect(f.last().body).toEqual({});
   });
+
+  /**
+   * The relationship writes. `edges.create` is one POST to a collection and
+   * carries its endpoints in the BODY; `edges.delete` addresses the edge by
+   * its own id in the PATH. Pinned because they are the pair behind the task
+   * tile's Assigned control, and a URL that reads plausibly but is wrong fails
+   * as a 404 the UI would report as "could not assign".
+   */
+  it('createEdge POSTs the endpoints; deleteEdge addresses the edge by id', async () => {
+    const { ops, f } = harness({ patches: [] });
+    await ops.createEdge({ srcId: 'task-1', dstId: 'member-1', type: 'assigned_to' });
+    expect(f.last().method).toBe('POST');
+    expect(f.last().url).toBe('/v2/edges');
+    expect(f.last().body).toEqual({ srcId: 'task-1', dstId: 'member-1', type: 'assigned_to' });
+
+    await ops.deleteEdge('edge-1', { clientMutationId: 'cmid-e' });
+    expect(f.last().method).toBe('DELETE');
+    // `:edgeId`, not `:id` — the catalog names this one differently from the
+    // entity routes and an unbound placeholder would travel as a literal.
+    expect(f.last().url).toBe('/v2/edges/edge-1');
+    expect(f.last().body).toEqual({ clientMutationId: 'cmid-e' });
+  });
 });
 
 describe('ops: events.poll cursor vocabulary', () => {

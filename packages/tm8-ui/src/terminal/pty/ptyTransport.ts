@@ -42,8 +42,14 @@ export interface ReplayInfo {
   kind: 'delta' | 'snapshot';
 }
 
+export interface AttachedInfo {
+  /** True when the next binary frame will hydrate terminal history. */
+  hasReplay: boolean;
+}
+
 type OutputHandler = (id: string, data: string) => void;
 type ReplayHandler = (id: string, data: string, info: ReplayInfo) => void;
+type AttachedHandler = (id: string, info: AttachedInfo) => void;
 type ExitHandler = (id: string, exitCode?: number | null) => void;
 type SizeHandler = (id: string, size: { cols: number; rows: number; live?: boolean }) => void;
 type ReattachHandler = (id: string) => void;
@@ -56,6 +62,7 @@ const _pendingSends = new Map<string, { frames: Array<string | Uint8Array>; byte
 const _overflowLatched = new Set<string>();
 const _outputHandlers: OutputHandler[] = [];
 const _replayHandlers: ReplayHandler[] = [];
+const _attachedHandlers: AttachedHandler[] = [];
 const _exitHandlers: ExitHandler[] = [];
 const _sizeHandlers: SizeHandler[] = [];
 const _reattachHandlers: ReattachHandler[] = [];
@@ -155,6 +162,7 @@ function _handleAttached(id: string, frame: AttachedFrame): void {
   // connect's first LIVE frame to be skip-counted.
   if (frame.hasReplay) _pendingReplay.set(id, frame.replayKind ?? 'delta');
   else _pendingReplay.delete(id);
+  for (const h of _attachedHandlers) h(id, { hasReplay: frame.hasReplay });
 }
 
 function _clearReconnectTimer(id: string): void {
@@ -499,9 +507,17 @@ export const ptyTransport = {
     _sendFrame(id, new TextEncoder().encode(data));
   },
 
-  /** Tell the server the grid size (a JSON text control frame). */
-  resize(id: string, cols: number, rows: number): void {
-    _sendFrame(id, JSON.stringify({ type: 'resize', cols, rows }));
+  /**
+   * Tell the server the grid size (a JSON text control frame).
+   *
+   * `force` asks the server to drive a SIGWINCH even when the geometry it
+   * already has matches — the one signal that makes a full-screen agent TUI
+   * repaint over a freshly rendered replay. Send it at most ONCE per attach:
+   * the server's equality check exists to terminate echo loops, and `force` is
+   * a deliberate hole in it.
+   */
+  resize(id: string, cols: number, rows: number, force = false): void {
+    _sendFrame(id, JSON.stringify({ type: 'resize', cols, rows, ...(force ? { force: true } : {}) }));
   },
 
   /**
@@ -556,6 +572,16 @@ export const ptyTransport = {
     return () => {
       const i = _replayHandlers.indexOf(handler);
       if (i >= 0) _replayHandlers.splice(i, 1);
+    };
+  },
+
+  /** Observe the authoritative attach ack so the UI can hold its loading cover
+   * until replay hydration is complete (or reveal an honestly empty screen). */
+  onAttached(handler: AttachedHandler): () => void {
+    _attachedHandlers.push(handler);
+    return () => {
+      const i = _attachedHandlers.indexOf(handler);
+      if (i >= 0) _attachedHandlers.splice(i, 1);
     };
   },
 

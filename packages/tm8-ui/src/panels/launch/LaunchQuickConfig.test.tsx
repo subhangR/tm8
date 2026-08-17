@@ -66,6 +66,32 @@ describe('the Run verb opens a flow instead of dispatching', () => {
     expect(resolveAction('run').flow).toBe('launch');
   });
 
+  it('goes STRAIGHT to the full sheet when the host mounted one (user ruling 2026-08-09)', () => {
+    // Where the five-section sheet exists, Run is ONE click to the full
+    // configuration — the tile no longer expands an inline config in between.
+    // The inline expand below remains the fallback for hosts without a sheet.
+    const onFullOptions = vi.fn();
+    const onAction = vi.fn();
+    const rows = taskRows();
+    const { getAllByTestId, queryByTestId } = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={() => rows}
+        ctx={ctx}
+        onAction={onAction}
+        capabilitiesOf={() => PERMITTED}
+        launch={sources({ onFullOptions })}
+      />,
+    );
+    const run = getAllByTestId('list-tile')[0].querySelector('[aria-label="Run"]') as Element;
+    fireEvent.click(run);
+    // Called with a REAL row id — the panel may order tiles its own way.
+    expect(onFullOptions).toHaveBeenCalledTimes(1);
+    expect(rows.map((r) => r.id)).toContain(onFullOptions.mock.calls[0]?.[0]);
+    expect(queryByTestId('launch-quick-config')).toBeNull();
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it('expands the config and does NOT call onAction', () => {
     const onAction = vi.fn();
     const rows = taskRows();

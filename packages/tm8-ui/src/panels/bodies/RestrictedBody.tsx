@@ -1,5 +1,5 @@
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
-import { getKind } from '../../domain';
+import { KindIcon, getKind } from '../../domain';
 import { Chip, Eyebrow } from '../../kit';
 import { EmptyBody } from '../detail/PanelStates';
 import { DisabledIconControl, NOT_WIRED_REASON } from '../honesty/DisabledWithReason';
@@ -113,7 +113,7 @@ export function RestrictedBody({ detail, blocks, onOpenEntity }: RestrictedBodyP
         aria-labelledby="tab-content"
       >
         <EmptyBody
-          glyph={getKind(detail.kind).chip.glyph}
+          glyph={<KindIcon kind={detail.kind} />}
           sentence="This entity renders universal fields only — its registry row declares no blocks. Nothing is invented."
         />
       </div>
@@ -371,7 +371,7 @@ function ItemsBlock({
             onOpenEntity ? (
               <Chip
                 key={item.id}
-                glyph={getKind(item.kind).chip.glyph}
+                glyph={<KindIcon kind={item.kind} />}
                 onClick={() => onOpenEntity(item.id)}
               >
                 {item.title}
@@ -380,7 +380,7 @@ function ItemsBlock({
               <DisabledIconControl
                 key={item.id}
                 label={item.title}
-                glyph={getKind(item.kind).chip.glyph}
+                glyph={<KindIcon kind={item.kind} />}
                 reason={NOT_WIRED_REASON}
               >
                 {item.title}

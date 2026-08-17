@@ -1,7 +1,7 @@
 import type { EntityDetail, EntityState } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
-import { resolveAction } from '../../domain';
+import { KindIcon, resolveAction } from '../../domain';
 import { InlineTitleEditor } from '../../authoring';
 import { Avatar, IconBtn, Pill, type PillTone } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
@@ -90,7 +90,7 @@ export function PanelHeader({
       {breadcrumb ? <div className="pn-crumb">{breadcrumb}</div> : null}
       <div className="pn-head__row">
         <span className="pn-head__glyph" aria-hidden>
-          {config.chip.glyph}
+          <KindIcon kind={config.kind} size={16} />
         </span>
         {editable && onCommitTitle ? (
           /* `au-title` is a byte-equivalent of `pn-head__title` — same flex,

@@ -55,11 +55,29 @@ describe('SHIPPED_DEFAULT_MENU', () => {
       // features, not deferred ones.
       'memory',
       'artifact',
+      // Revision 7 (2026-08-09): the Library group makes these three shipped
+      // collection views reachable without overflowing the Workspace caret.
+      'file',
+      'spell',
+      'collection',
       'project',
       'pull_request',
       'worktree',
       'member',
     ]);
+  });
+
+  it('ships Files, Spells and Collections as first-class Library rows', () => {
+    const library = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'library');
+    expect(library).toEqual({
+      id: 'library',
+      label: 'Library',
+      items: [
+        { type: 'kind', ref: 'file' },
+        { type: 'kind', ref: 'spell' },
+        { type: 'kind', ref: 'collection' },
+      ],
+    });
   });
 
   it('always contains settings (the fail-closed floor)', () => {

@@ -910,10 +910,16 @@ export interface PatchTaskInput extends CommandContext {
  * tm8: `work_session` is not client-creatable either — it is born only from
  * `execution.spawn` (03 §1.1); custom `c:*` kinds create through here.
  */
+/** The kinds `entities.create` accepts — named so a caller can narrow to it. */
+export type CreatableEntityKind = Exclude<
+  EntityKind,
+  'message' | 'member' | 'work_session' | 'project' | 'interaction_profile' | 'artifact' | 'worktree'
+>;
+
 export interface CreateEntityInput extends CommandContext {
   clientMutationId: string;
   spaceId: SpaceId;
-  kind: Exclude<EntityKind, 'message' | 'member' | 'work_session' | 'project' | 'interaction_profile' | 'artifact' | 'worktree'>;
+  kind: CreatableEntityKind;
   title: string;
   parentId?: EntityId | null;
   position?: number;
@@ -1155,6 +1161,11 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // removes rail rows, not features.
   { serverId: 'home', clientId: 'home' },
   { serverId: 'work', clientId: 'workspace' },
+  // 2026-08-09: Files, Spells and Collections graduated from palette-only
+  // reachability into the shipped rail. They get their own group because the
+  // Workspace caret is contract-capped at eight children and already carries
+  // seven collection destinations.
+  { serverId: 'library', clientId: 'library' },
   { serverId: 'tracking', clientId: 'tracking' },
   { serverId: 'collab', clientId: 'collab' },
   // items-empty on both sides BY NECESSITY: MenuViewRef is a closed enum with
@@ -1487,6 +1498,18 @@ export interface ExecutionSpawnInput extends CommandContext {
   title?: string;
   /** Extra prompt context appended to the composed manifest. */
   promptExtra?: string | null;
+  /**
+   * The terminal geometry the client has measured for the pane this session
+   * will be shown in, so the PTY BOOTS at the real width instead of the 80x24
+   * default. Load-bearing, not cosmetic: a full-screen agent TUI lays its
+   * entire frame out for the width it is given at startup, and the browser can
+   * only correct that afterwards via a resize round trip — which the server
+   * suppresses when the fitted size happens to match, leaving the 80-column
+   * frame frozen on screen until a human resizes the window. Omitted (a
+   * headless or non-visual caller) keeps the 80x24 default.
+   */
+  cols?: number;
+  rows?: number;
 }
 
 /**
@@ -1521,6 +1544,9 @@ export interface ExecutionTerminateInput extends CommandContext {
  */
 export interface ExecutionResumeInput extends CommandContext {
   clientMutationId: string;
+  /** Same geometry contract as `ExecutionSpawnInput` — a resume re-spawns the PTY. */
+  cols?: number;
+  rows?: number;
 }
 
 /**
@@ -1743,6 +1769,120 @@ export interface SessionLaunchRecord {
   };
   /** When the manifest row was written — i.e. when the session was launched. */
   recordedAt: string | null;
+}
+
+/**
+ * ONE turn of an agent's conversation, read back out of the agent CLI's OWN
+ * transcript and normalised across tools.
+ *
+ * WHY THIS IS NOT THE PTY. The terminal ring (`OutputBuffer`) holds ANSI frames
+ * — repaints, cursor moves, spinners — capped at 1 MiB and discarded when the
+ * process exits or the node restarts. It answers "what does the screen look
+ * like". This answers "what did the agent SAY", survives exit, and is written
+ * by the agent itself at no cost to us. A coordinator needs the second one.
+ *
+ * `source` is deliberately only user/assistant. Tool CALLS are counted (see
+ * `SessionTranscriptStats.toolCalls`) but their arguments and output are NOT
+ * carried: they are the bulk of a transcript by volume, they are the most
+ * likely place for a secret to sit, and a coordinator reads this to decide
+ * whether a worker is on track — a job the prose answers and the tool spam
+ * does not.
+ */
+export interface SessionTranscriptEntry {
+  /** ISO 8601. Null when the underlying record carried no timestamp. */
+  at: string | null;
+  source: 'user' | 'assistant';
+  text: string;
+  /** True when `text` was cut to the caller's `maxChars` budget. */
+  truncated: boolean;
+}
+
+/**
+ * Aggregates over the WINDOW THAT WAS READ, never over the whole conversation.
+ *
+ * The reader deliberately tails a bounded slice of a file that can reach tens
+ * of megabytes, so these are honest counts of what was parsed and NOT the
+ * session's lifetime totals. `partial` says which of the two you are holding.
+ * Presenting a tail's token count as a session's spend is the exact dishonesty
+ * this field exists to prevent.
+ */
+export interface SessionTranscriptStats {
+  /** False only when the whole file fit inside the read budget. */
+  partial: boolean;
+  userMessages: number;
+  assistantMessages: number;
+  toolCalls: number;
+  /**
+   * Provider-reported usage summed over the parsed window, when the transcript
+   * carries it. Claude records it per assistant turn; Codex reports it as a
+   * running total, so these can be null for a tool that does not say.
+   */
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  /** Descending by count. Names as the agent wrote them. */
+  tools: { name: string; count: number }[];
+  /** Distinct model ids seen, in first-seen order. */
+  models: string[];
+}
+
+/**
+ * The "is this worker stuck" signal, ported from maestro's LogDigestService
+ * because it is the single thing that made an unattended fleet supervisable.
+ *
+ * A working agent alternates prose and tool calls. An agent that has made many
+ * tool calls and said NOTHING for a long time is usually looping — retrying a
+ * failing command, or grinding a search that will not converge. Neither the PTY
+ * (still emitting bytes) nor the process table (still alive) can see it.
+ *
+ * This is a HEURISTIC and is reported as evidence, not as a verdict: the two
+ * raw numbers travel with it so a reader can disagree.
+ */
+export interface SessionTranscriptStuck {
+  /** Since the last assistant prose, not since the last byte of any kind. */
+  silentMs: number;
+  toolCallsSinceText: number;
+}
+
+/**
+ * A bounded window over one session's agent transcript.
+ *
+ * Same honesty contract as `SessionJournalPage`: a session with no readable
+ * transcript is a REAL and common state (it predates this feature, it ran a
+ * tool with no transcript format, or it died before its first turn) and must
+ * render as an explained empty rather than as a zero.
+ */
+export interface SessionTranscriptPage {
+  sessionId: EntityId;
+  available: boolean;
+  /**
+   * Present only when `available` is false.
+   * - `no_native_session_id` — the session predates native-id capture, so its
+   *   transcript cannot be identified. Unrecoverable, not an error.
+   * - `unsupported_agent_tool` — the tool has no transcript format tm8 reads
+   *   (an operator `TM8_AGENT_CMD` wrapper, echo-agent).
+   * - `no_transcript_file` — the id is known but no file exists: the agent
+   *   never wrote a turn, or its transcript has been cleaned up.
+   * - `unreadable` — the file exists and could not be read (permissions, I/O).
+   */
+  unavailableReason:
+    | 'no_native_session_id'
+    | 'unsupported_agent_tool'
+    | 'no_transcript_file'
+    | 'unreadable'
+    | null;
+  /** Which transcript dialect was parsed. Null when unavailable. */
+  agentTool: 'claude-code' | 'codex' | null;
+  /** Oldest-first. The NEWEST `last` entries, so a tail reads in order. */
+  entries: SessionTranscriptEntry[];
+  stats: SessionTranscriptStats | null;
+  /** Null when the heuristic does not fire — never a zeroed object. */
+  stuck: SessionTranscriptStuck | null;
+  /** Newest turn of any kind, including ones not carried in `entries`. */
+  lastActivityAt: string | null;
+  /** Lines the reader could not parse — surfaced, never silently dropped. */
+  malformed: number;
 }
 
 // --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------

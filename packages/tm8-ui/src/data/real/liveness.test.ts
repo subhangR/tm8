@@ -80,6 +80,33 @@ describe('liveness: the R-UI-5 predicate', () => {
     expect(h.mgr.statusOf(running('ws-1'))).toBe('live');
   });
 
+  // An agent that has merely gone quiet is ALIVE. Treating 'idle' as terminal
+  // sent it down the not-running arm, where presentSession has no 'idle' arm
+  // and falls through to 'exited' — a live agent rendered as dead, offering a
+  // resume the server then refused with 409. Both halves were one comparison.
+  it("idle + in the live set = live — 'idle' is a live status, not a terminal one", async () => {
+    const h = mk();
+    h.reply('sp-1', { liveEntityIds: ['ws-1'] });
+    await h.mgr.refresh('sp-1');
+    expect(h.mgr.statusOf({ id: 'ws-1', workStatus: 'idle' })).toBe('live');
+  });
+
+  it('idle + NOT in the live set = stale, never exited', async () => {
+    const h = mk();
+    h.reply('sp-1', { liveEntityIds: ['ws-other'] });
+    await h.mgr.refresh('sp-1');
+    expect(h.mgr.statusOf({ id: 'ws-1', workStatus: 'idle' })).toBe('stale');
+  });
+
+  // 'spawning' stays on the not-running side deliberately: its PTY may not
+  // exist yet, so absence from the live set means "still starting", not "gone".
+  it("spawning is NOT promoted to live — absence there means starting, not stale", async () => {
+    const h = mk();
+    h.reply('sp-1', { liveEntityIds: [] });
+    await h.mgr.refresh('sp-1');
+    expect(h.mgr.statusOf({ id: 'ws-1', workStatus: 'spawning' })).toBe('not-running');
+  });
+
   it('running + NOT in the live set = stale (the whole point of Delta 2)', async () => {
     const h = mk();
     h.reply('sp-1', { liveEntityIds: ['ws-other'] });

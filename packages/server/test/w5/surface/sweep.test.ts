@@ -286,7 +286,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 123 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 124 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
@@ -294,9 +294,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // execution.journal, identity.profile.update. The first three landed
     // without this pin moving; the fourth reconciled it.
     // 122 -> 123 on 2026-08-02: execution.launch.
-    expect(SURFACE).toHaveLength(123);
-    expect(rows).toHaveLength(123);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(123);
+    // 123 -> 124 on 2026-08-07: execution.transcript.
+    expect(SURFACE).toHaveLength(124);
+    expect(rows).toHaveLength(124);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(124);
   });
 
   /**

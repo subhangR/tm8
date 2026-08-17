@@ -1,14 +1,17 @@
-import { useState, type ReactNode } from 'react';
-import type { EntityId, FeedItem, MessageView } from '@tm8/contract';
-import { Avatar, Pill } from '../kit';
+import { useState } from 'react';
+import type { EntityId, FeedItem, Mention, MessageView } from '@tm8/contract';
+import { Avatar, Markdown, Pill, type MarkdownComponents } from '../kit';
 import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
 import {
   accessibleDateTime,
   activityPresentation,
   canSendAgain,
+  chatMarkdownSource,
   clockTime,
   deliveryPresentation,
   deliverySummaryLine,
+  mentionIdInHref,
+  mentionKey,
   safeDeliveryReason,
   type FeedGroup,
 } from './feed-model';
@@ -241,14 +244,21 @@ function MessageContent({
 }
 
 /**
- * The body, with the message's canonical mentions rendered IN PLACE.
+ * The body — MARKDOWN, with the message's canonical mentions rendered IN PLACE.
+ *
+ * The body was always markdown; until this rendered it, a heading came out as
+ * a literal `##`, a table as a row of pipes, and a code fence as one run-on
+ * line. It goes through `kit/Markdown` now, which is the same renderer the doc
+ * surfaces use — so it inherits that file's two safety rulings for free: no
+ * raw HTML (a message body is untrusted text other members read) and no remote
+ * image fetched on open.
  *
  * A mention whose `@display` token appears in the text becomes an inline
- * control right where it was typed; only mentions the text does NOT carry
- * fall through to trailing chips. Rendering both — the token in the text and
- * a chip repeating it below — was the duplication the screenshot complained
- * about. Matching is exact-token against the message's OWN mention list;
- * nothing in the body is guessed at.
+ * control right where it was typed; only mentions the text does NOT carry fall
+ * through to trailing chips. Rendering both — the token in the text and a chip
+ * repeating it below — was the duplication the screenshot complained about.
+ * `chatMarkdownSource` performs the split and the `a` override below turns its
+ * links back into controls.
  */
 function MessageBody({
   message,
@@ -257,56 +267,18 @@ function MessageBody({
   message: MessageView;
   onOpenEntity?: (id: EntityId) => void;
 }) {
-  const { body } = message.content;
-  const mentions = message.content.mentions;
-  const attachments = message.content.attachments;
-
-  type Match = { start: number; end: number; mention: (typeof mentions)[number] };
-  const candidates: Match[] = [];
-  for (const mention of mentions) {
-    const token = `@${mention.display}`;
-    for (let at = body.indexOf(token); at !== -1; at = body.indexOf(token, at + token.length)) {
-      candidates.push({ start: at, end: at + token.length, mention });
-    }
-  }
-  // Earliest first; on a tie the longer token wins so "@Haiku 4.5" beats "@Haiku".
-  candidates.sort((a, b) => a.start - b.start || b.end - a.end);
-  const matches: Match[] = [];
-  let cursor = 0;
-  for (const match of candidates) {
-    if (match.start < cursor) continue;
-    matches.push(match);
-    cursor = match.end;
-  }
-
-  const inlined = new Set(matches.map((m) => `${m.mention.kind}:${m.mention.entityId}`));
-  const trailing = mentions.filter((m) => !inlined.has(`${m.kind}:${m.entityId}`));
-
-  const parts: ReactNode[] = [];
-  let from = 0;
-  for (const [index, match] of matches.entries()) {
-    if (match.start > from) parts.push(body.slice(from, match.start));
-    const label = `@${match.mention.display}`;
-    parts.push(onOpenEntity ? (
-      <button
-        key={`m-${index}`}
-        type="button"
-        className="chs-mention-inline"
-        aria-label={`Open mention ${match.mention.display}`}
-        onClick={() => onOpenEntity(match.mention.entityId)}
-      >
-        {label}
-      </button>
-    ) : (
-      <span key={`m-${index}`} className="chs-mention-inline">{label}</span>
-    ));
-    from = match.end;
-  }
-  if (from < body.length) parts.push(body.slice(from));
+  const { body, mentions, attachments } = message.content;
+  const { source, inlined } = chatMarkdownSource(body, mentions);
+  const trailing = mentions.filter((m) => !inlined.has(mentionKey(m)));
 
   return (
     <>
-      <p className="chs-text">{parts}</p>
+      <Markdown
+        source={source}
+        className="chs-text"
+        testId="chs-text"
+        components={mentionComponents(mentions, onOpenEntity)}
+      />
       {trailing.length > 0 || attachments.length > 0 ? (
         <div className="chs-references">
           {trailing.length > 0 ? (
@@ -357,6 +329,48 @@ function MessageBody({
       ) : null}
     </>
   );
+}
+
+/**
+ * The one tag the chat feed takes back from the kit.
+ *
+ * `chatMarkdownSource` encoded each canonical mention as a link, so the link
+ * is where the control has to be rebuilt. Any OTHER href — including a
+ * hand-written one that merely looks like a mention, which is why the id is
+ * checked against this message's own list — falls through to the same outbound
+ * anchor the kit draws everywhere else.
+ */
+function mentionComponents(
+  mentions: readonly Mention[],
+  onOpenEntity?: (id: EntityId) => void,
+): MarkdownComponents {
+  const known = new Map(mentions.map((m) => [m.entityId, m]));
+  return {
+    a({ href, children, ...rest }) {
+      const id = mentionIdInHref(href);
+      const mention = id ? known.get(id) : undefined;
+      if (!mention) {
+        return (
+          <a href={href} target="_blank" rel="noreferrer noopener" className="md-link" {...rest}>
+            {children}
+          </a>
+        );
+      }
+      const label = `@${mention.display}`;
+      return onOpenEntity ? (
+        <button
+          type="button"
+          className="chs-mention-inline"
+          aria-label={`Open mention ${mention.display}`}
+          onClick={() => onOpenEntity(mention.entityId)}
+        >
+          {label}
+        </button>
+      ) : (
+        <span className="chs-mention-inline">{label}</span>
+      );
+    },
+  };
 }
 
 /**

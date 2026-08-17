@@ -26,11 +26,11 @@ import { navStore, useNavStore } from '../stores/navStore';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { PromptsOverlay } from '../prompts';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
-import { allKinds } from '../domain';
+import { allKinds, KindIcon, VIEW_ART } from '../domain';
 import { getKind } from '../domain';
 import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
 import type { DetailReasons } from '../panels';
-import { BootLoader } from '../kit';
+import { BootLoader, VectorIcon } from '../kit';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import {
   authoredFromHollowReason,
@@ -50,6 +50,7 @@ import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } fro
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
 import { nodeKeyOf } from '../data/launch-cache';
+import { readLastTarget, writeLastTarget } from './last-place';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -77,6 +78,9 @@ const DEFAULT_RIGHT_KIND = 'work_session';
  * for. Named for what it is instead.
  */
 const LIVE_COUNT_KIND = 'work_session';
+
+/** The screen a viewer with no remembered place lands on. */
+const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
 
 export interface GateAppProps {
   activeServer?: UiServer;
@@ -124,10 +128,31 @@ export function GateApp(props: GateAppProps = {}) {
   const [menuCollapsed, setMenuCollapsed] = useState(false);
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
-  const [activeTarget, setActiveTarget] = useState<MenuTarget | null>({
-    type: 'view',
-    ref: 'workspace',
-  });
+  const [activeTarget, setActiveTarget] = useState<MenuTarget | null>(WORKSPACE_TARGET);
+
+  /**
+   * WHICH VIEW, remembered per (node, space) — the other half of the place a
+   * server round trip used to destroy. `setActiveTarget` still exists for the
+   * two switch handlers, which set an interim workspace target the restore
+   * below replaces; every USER navigation goes through this so there is no
+   * second write path that can forget.
+   */
+  const nodeKey = nodeKeyOf(activeServer.routeBaseUrl);
+  const navigateTo = useCallback((target: MenuTarget) => {
+    setActiveTarget(target);
+    if (data.spaceId) writeLastTarget(nodeKey, data.spaceId, target);
+  }, [nodeKey, data.spaceId]);
+
+  // Restore once per space. Deliberately NOT paired with a persisting effect:
+  // an effect watching `activeTarget` would run in the same pass as this one,
+  // still holding the outgoing space's target, and overwrite the very record
+  // this just read.
+  const restoredSpace = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data.spaceId || restoredSpace.current === data.spaceId) return;
+    restoredSpace.current = data.spaceId;
+    setActiveTarget(readLastTarget(nodeKey, data.spaceId) ?? WORKSPACE_TARGET);
+  }, [nodeKey, data.spaceId]);
 
   const stack = useNavStore((s) => s.stack);
   const pinned = useNavStore((s) => s.pinned);
@@ -259,7 +284,7 @@ export function GateApp(props: GateAppProps = {}) {
     const counts = data.countsFor(ref);
     return {
       label: row.labelPlural,
-      icon: row.icon as unknown as string,
+      icon: <KindIcon kind={ref} />,
       live,
       ...(counts ? { badge: counts.total, unseen: counts.unseen } : {}),
     };
@@ -290,13 +315,13 @@ export function GateApp(props: GateAppProps = {}) {
         kind: entity.kind,
         parentId: entity.parentId,
         label: entity.title,
-        icon: voiceKind.icon as unknown as string,
+        icon: <KindIcon kind={entity.kind} />,
         // `live` renders the green ● n treatment. An EMPTY room gets no badge:
         // "● 0" would present nobody-is-here as a presence signal.
         ...(state.participantCount ? { live: state.participantCount } : {}),
       };
     }),
-  }), [voiceEntities, voiceKind.icon]);
+  }), [voiceEntities]);
 
   // The settings screen's one seam adapter (settings-space/port.ts). Memoized
   // on the same (seam, space) pair the shell booted with; null until a space
@@ -341,25 +366,25 @@ export function GateApp(props: GateAppProps = {}) {
 
   const paletteViews = useMemo<PaletteView[]>(
     () => [
-      { id: 'view:workspace', label: 'Workspace', glyph: '#' },
-      { id: 'view:graph', label: 'Graph', glyph: '◉' },
-      { id: 'view:channels', label: 'Channels', glyph: '#' },
+      { id: 'view:workspace', label: 'Workspace', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
+      { id: 'view:graph', label: 'Graph', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
+      { id: 'view:channels', label: 'Channels', glyph: <VectorIcon paths={VIEW_ART.channels} /> },
       ...allKinds()
         .filter((row) => !row.kind.startsWith('c:'))
-        .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: row.chip.glyph })),
+        .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: <KindIcon kind={row.kind} /> })),
     ],
     [],
   );
   const openPaletteView = useCallback((id: string) => {
     const [scope, ref] = id.split(':', 2) as [string, string];
     if (scope === 'view' && ref === 'channels' && channelEntities[0]) {
-      setActiveTarget({ type: 'entity', ref: channelEntities[0].id, kind: channelEntities[0].kind });
+      navigateTo({ type: 'entity', ref: channelEntities[0].id, kind: channelEntities[0].kind });
     } else if (scope === 'view') {
-      setActiveTarget({ type: 'view', ref: ref as never });
+      navigateTo({ type: 'view', ref: ref as never });
     }
-    if (scope === 'kind') setActiveTarget({ type: 'kind', ref });
+    if (scope === 'kind') navigateTo({ type: 'kind', ref });
     setPaletteOpen(false);
-  }, [channelEntities]);
+  }, [channelEntities, navigateTo]);
 
   return (
     <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
@@ -402,7 +427,7 @@ export function GateApp(props: GateAppProps = {}) {
             collapsed={menuCollapsed}
             onToggle={() => setMenuCollapsed((c) => !c)}
             activeTarget={activeTarget}
-            onNavigate={setActiveTarget}
+            onNavigate={navigateTo}
             presentKind={presentKind}
             dynamicGroups={{ voice: voiceGroup }}
             servers={props.servers}
@@ -449,6 +474,7 @@ export function GateApp(props: GateAppProps = {}) {
               channelId={activeTarget.ref as EntityId}
               serverBaseUrl={activeServer.routeBaseUrl}
               reasons={reasons}
+              onNotice={notices.push}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'graph' ? (
             /* ◉ Graph follows the D65 pattern exactly:
@@ -466,6 +492,7 @@ export function GateApp(props: GateAppProps = {}) {
               loading={data.graph.loading}
               error={data.graph.error}
               onRetry={data.graph.refresh}
+              onNotice={notices.push}
             />
           ) : data.ready && activeTarget?.type === 'kind' ? (
             /* D65: a rail KIND row opens its EntityView — wide list, Z3 aside
@@ -480,14 +507,14 @@ export function GateApp(props: GateAppProps = {}) {
               kind={activeTarget.ref}
               reasons={reasons}
               onNotice={notices.push}
-              onKindChange={(next) => setActiveTarget({ type: 'kind', ref: next })}
+              onKindChange={(next) => navigateTo({ type: 'kind', ref: next })}
               /* The same verb the workspace's tiles commit. Passing it is what
                  makes the tile's `Launch ▸` a live control here instead of a
                  disabled-with-reason one; the sources behind it come from
                  `useLaunchPort` inside the view. */
               onSpawn={async (input) => {
                 const sessionId = await data.spawn(input);
-                setActiveTarget({ type: 'view', ref: 'workspace' });
+                navigateTo(WORKSPACE_TARGET);
                 nav.push(sessionId);
               }}
             />
@@ -564,7 +591,7 @@ export function GateApp(props: GateAppProps = {}) {
                   )
                   .then((sessionId) => {
                     launch.close();
-                    setActiveTarget({ type: 'view', ref: 'workspace' });
+                    navigateTo(WORKSPACE_TARGET);
                     nav.push(sessionId);
                     notices.push({
                       id: 'launch-done',
@@ -587,7 +614,7 @@ export function GateApp(props: GateAppProps = {}) {
               }}
               onSpawn={async (input) => {
                 const sessionId = await data.spawn(input);
-                setActiveTarget({ type: 'view', ref: 'workspace' });
+                navigateTo(WORKSPACE_TARGET);
                 nav.push(sessionId);
               }}
               menuCollapsed={menuCollapsed}

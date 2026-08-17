@@ -26,9 +26,10 @@
  * user can see and never use — the same argument that makes the refusal
  * treatment focusable.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { MenuGroup, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
-import { getKind } from '../domain';
+import { CUSTOM_KIND_FALLBACK, KindIcon, getKind } from '../domain';
+import { VectorIcon } from '../kit';
 import { VIEW_PRESENTATION, type ResolvedMenu } from '../shell/menu-resolve';
 import { DisabledAction, DisabledIconControl } from '../panels';
 import {
@@ -662,9 +663,17 @@ function Picker({
  * domain registry — the same two sources the rail itself uses, so a row cannot
  * preview one way and render another.
  */
-export function glyphOf(leaf: MenuItem | MenuLeaf): string {
-  if (leaf.type === 'view') return VIEW_PRESENTATION[leaf.ref]?.icon ?? '◇';
-  return getKind(leaf.ref).icon;
+export function glyphOf(leaf: MenuItem | MenuLeaf): ReactNode {
+  /* The editor previews the rail, so it must draw what the rail draws — the
+     registry's artwork for kinds and the view table's for views. A text glyph
+     here beside a drawn one there is the same row previewing one way and
+     rendering another, which is the failure this function's docblock was
+     already written to prevent. */
+  if (leaf.type === 'view') {
+    const view = VIEW_PRESENTATION[leaf.ref];
+    return view ? <VectorIcon paths={view.art} /> : <KindIcon kind={CUSTOM_KIND_FALLBACK} />;
+  }
+  return <KindIcon kind={leaf.ref} />;
 }
 
 export function labelOf(leaf: MenuItem | MenuLeaf): string {

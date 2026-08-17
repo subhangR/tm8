@@ -651,10 +651,12 @@ describe.sequential('W2.I02 real production public surface', () => {
     // a red pin) and `identity.profile.update` (which reconciled it).
     // 120/118 -> 124/122 (2026-08-02): the four auth.* rows, all implemented.
     // 124/122 -> 125/123 (2026-08-02): `execution.launch`, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 125, implemented: 123 });
+    // 125/123 -> 126/124 (2026-08-07): `execution.transcript`, mounted.
+    expect(health).toMatchObject({ ok: true, operations: 126, implemented: 124 });
     // 118 -> 122 (2026-08-02): the four auth.* operations (Stage 1).
     // 122 -> 123 (2026-08-02): `execution.launch`.
-    expect(harness.production.server.registry.size).toBe(123);
+    // 123 -> 124 (2026-08-07): `execution.transcript`.
+    expect(harness.production.server.registry.size).toBe(124);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -669,7 +671,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 114 -> 116: `execution.resume` + `spaces.counts`.
     // 116 -> 118: `execution.journal` + `identity.profile.update`.
     // 122 -> 123 (2026-08-02): `execution.launch`.
-    expect(registered.size + residual.length).toBe(123);
+    // 123 -> 124 (2026-08-07): `execution.transcript`.
+    expect(registered.size + residual.length).toBe(124);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

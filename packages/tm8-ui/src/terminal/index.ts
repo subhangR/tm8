@@ -3,8 +3,9 @@
  *
  * R9's Phase-1 rule was that nothing here reads a byte; that phase is done.
  * `pty/` now carries the transplanted ptyTransport/writeScheduler/
- * visibilityDriver/pty-protocol UNEDITED from packages/ui — the offset-resume
- * and epoch laws are load-bearing and were not touched — and `LiveTerminal`
+ * visibilityDriver/pty-protocol port from packages/ui. The offset-resume and
+ * epoch laws remain load-bearing; tm8-ui additionally tracks hidden ancestors
+ * and attach readiness so retained terminals activate reliably. `LiveTerminal`
  * mounts real xterm into the T0-2 host box. The mount is opt-in behind
  * `isLiveTerminalEnabled()` (`liveTerminalFlag.ts`) until the Frontend lane's
  * sessionId plumbing and the real seam land, so the fixture-driven chrome

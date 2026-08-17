@@ -375,7 +375,21 @@ export class W2MessagesHandoffsService {
       if (messages.length !== result.messageIds.length) {
         throw new CollabError('upstream_unavailable', 'stored message batch could not be reloaded');
       }
-      return { result, messages, routes };
+      // D1b — the parent-message excerpt. Routes carry the thread parent as an
+      // ID only; load the bodies here, in the same tx, under the SAME viewer
+      // claims (RLS-safe: an unreadable parent is simply absent from the map,
+      // so its delivery renders without an excerpt — never an error).
+      const parentIds = [
+        ...new Set(
+          routes
+            .map((route) => route.threadParentMessageId)
+            .filter((id): id is string => id != null),
+        ),
+      ];
+      const parentViews =
+        parentIds.length > 0 ? await loadMessageViewsByIds(q, parentIds, viewerIdentityId) : [];
+      const parentsById = new Map(parentViews.map((view) => [view.id, view]));
+      return { result, messages, routes, parentsById };
     }));
 
     // The transaction above has committed. Dispatch may block on a PTY write,
@@ -393,6 +407,9 @@ export class W2MessagesHandoffsService {
     if (this.options.messageDelivery) {
       for (const route of stored.routes) {
         if (!route.sessionInputAllowed || route.targetWorkSessionId === sourceWorkSessionId) continue;
+        const parent = route.threadParentMessageId
+          ? stored.parentsById.get(route.threadParentMessageId)
+          : undefined;
         const render = (deliveryAttemptId: string) => incomingMessageInjection({
           kind: route.addressingKind,
           messageId: route.targetMessageId,
@@ -411,6 +428,12 @@ export class W2MessagesHandoffsService {
           threadParentMessageId: route.threadParentMessageId,
           threadRootMessageId: route.threadRootMessageId,
           body: route.body,
+          ...(parent
+            ? {
+                parentBody: parent.content.body,
+                parentAuthorDisplay: parent.state.author.displayName,
+              }
+            : {}),
         });
         try {
           const preview = render('00000000-0000-4000-8000-000000000000');

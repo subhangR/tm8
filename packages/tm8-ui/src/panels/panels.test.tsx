@@ -10,6 +10,7 @@ import {
   fixtureHandoffs,
   fixtureSummaries,
   presenceHollowReason,
+  channelDesign,
   sessionLive,
   sessionStale,
   docLayoutSpec,
@@ -20,6 +21,7 @@ import {
 import { EntityDetailPanel, EntityListPanel, SharedContextSection, ShareDropTarget } from './index';
 import { HANDLED_SOURCES } from './list/tile-badges';
 import type { DetailReasons } from './EntityDetailPanel';
+import type { RowControlsPort } from './EntityListPanel';
 
 /**
  * The registry walk renders a full panel per kind. Measured 283ms warm and
@@ -123,8 +125,14 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
    * terminal panels do without it. Both halves are asserted together because
    * the risk is symmetric: dropping it everywhere would silently delete honest
    * chrome (D7.2's hollow "— viewing") from every document panel.
+   *
+   * D2 (session-UI design v1, 2026-08-06) EXTENDS the exclusion — deliberately
+   * overturning this test's earlier "and only for it" half: a
+   * `composition: 'chat'` body (channel's hub) ends at its composer for the
+   * same structural reason the terminal ends at its canvas. Document panels
+   * still keep the footer.
    */
-  it('drops the footer for the terminal archetype, and only for it', () => {
+  it('drops the footer for the terminal archetype and chat compositions, and only those', () => {
     const session = render(
       <EntityDetailPanel
         detail={fixtureDetails[sessionStale.id]!}
@@ -134,6 +142,11 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
       />,
     );
     expect(session.queryByTestId('panel-footer')).toBeNull();
+
+    const channel = render(
+      <EntityDetailPanel detail={fixtureDetails[channelDesign.id]!} reasons={REASONS} ctx={ctx} />,
+    );
+    expect(channel.queryByTestId('panel-footer')).toBeNull();
 
     const task = render(
       <EntityDetailPanel detail={fixtureDetails[taskUuidTitle.id]!} reasons={REASONS} ctx={ctx} />,
@@ -176,10 +189,10 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(bar!.contains(surfaceSwitch)).toBe(true);
     expect(surfaceSwitch.className).toContain('pn-surface-switch--bar');
     // Still switchable in the bar — relocating a control may not quietly cost
-    // it its behaviour. Debug is the always-present third chip (it does not
-    // depend on the chat pin), so a chat-enabled session shows all three.
+    // it its behaviour. Debug and Graph are the always-present chips (neither
+    // depends on the chat pin), so a chat-enabled session shows all four.
     const tabs = [...surfaceSwitch.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
-    expect(tabs).toEqual(['Terminal', 'Chat', 'Debug']);
+    expect(tabs).toEqual(['Terminal', 'Chat', 'Debug', 'Graph']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {
@@ -255,6 +268,116 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
   });
 });
 
+/**
+ * USER RULING 2026-08-05 — "below the tabs (task, discussion, connections,
+ * activity) a row with these drop downs", refined to "in the section its
+ * better, where it already shows the assignee and all".
+ *
+ * Both halves are law, so both are asserted: the strip mounts under the tabs,
+ * AND the meta grid beneath stops rendering the facts the strip now edits.
+ * Only the first half was asked for out loud; shipping it alone would have
+ * left priority and assignees drawn twice, which is the drift the panel
+ * already refuses for status.
+ */
+describe('EntityDetailPanel — the row controls strip', () => {
+  const CAPS_FULL = {
+    canEdit: true, canDelete: true, canAddChild: true, canLink: true,
+    canPull: true, canReact: true, canGrantPoints: true, canComplete: true,
+  } as const;
+
+  const controls = {
+    kind: 'task',
+    ctx,
+    capabilitiesOf: () => CAPS_FULL,
+    onSetState: vi.fn(),
+    onArchive: vi.fn(),
+    onSetValue: vi.fn(),
+    onAssign: vi.fn(),
+    // A non-empty roster: an empty one is honestly refused ("the members read
+    // never answered"), which would test the refusal instead of the control.
+    assignableActors: [
+      { id: taskUuidTitle.createdBy.id, kind: 'member', displayName: 'Ada', isAgent: false },
+    ],
+  } satisfies RowControlsPort;
+
+  const taskDetail = () => fixtureDetails[taskUuidTitle.id]!;
+
+  it('mounts BETWEEN the tabs and the body — not above the tabs, not inside the body', () => {
+    const { getByTestId } = render(
+      <EntityDetailPanel detail={taskDetail()} reasons={REASONS} ctx={ctx} controls={controls} />,
+    );
+    const tabs = getByTestId('panel-tabs');
+    const strip = getByTestId('panel-controls');
+    const body = strip.parentElement!.querySelector('.pn-body');
+    expect(body).not.toBeNull();
+    // DOCUMENT_POSITION_FOLLOWING === 4. Containment would set 16/8 as well,
+    // so this fails if the strip is nested inside either neighbour.
+    expect(tabs.compareDocumentPosition(strip)).toBe(4);
+    expect(strip.compareDocumentPosition(body!)).toBe(4);
+  });
+
+  it('carries state, value and assign in ONE row — the ruling was "a single row"', () => {
+    const { getByTestId } = render(
+      <EntityDetailPanel detail={taskDetail()} reasons={REASONS} ctx={ctx} controls={controls} />,
+    );
+    const strip = getByTestId('panel-controls');
+    expect(within(strip).getByTestId('row-state-select')).toBeTruthy();
+    expect(within(strip).getByTestId('row-value-select')).toBeTruthy();
+    expect(within(strip).getByTestId('row-assign-trigger')).toBeTruthy();
+    // The chips variant is what makes it a row rather than the list strip's
+    // stacked column — the exact defect the task reported.
+    expect(strip.querySelector('.lp__rowdetail--chips')).not.toBeNull();
+  });
+
+  it('writes through the same executor the list row uses', () => {
+    const { getByTestId } = render(
+      <EntityDetailPanel detail={taskDetail()} reasons={REASONS} ctx={ctx} controls={controls} />,
+    );
+    const select = within(getByTestId('panel-controls')).getByTestId('row-state-select');
+    fireEvent.change(select, { target: { value: 'done' } });
+    expect(controls.onSetState).toHaveBeenCalledWith(taskUuidTitle.id, 'done', expect.anything());
+  });
+
+  it('is ABSENT when the host wires no controls — no enabled-inert chrome', () => {
+    const { queryByTestId } = render(
+      <EntityDetailPanel detail={taskDetail()} reasons={REASONS} ctx={ctx} />,
+    );
+    expect(queryByTestId('panel-controls')).toBeNull();
+  });
+
+  it('does not follow you onto Discussion, Connections or Activity', () => {
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel detail={taskDetail()} reasons={REASONS} ctx={ctx} controls={controls} />,
+    );
+    const tabs = within(getByTestId('panel-tabs')).getAllByRole('tab');
+    for (const tab of tabs.slice(1)) {
+      fireEvent.click(tab);
+      expect(queryByTestId('panel-controls')).toBeNull();
+    }
+  });
+
+  it('stays off the terminal archetype, which owns its height below the tabs', () => {
+    const { queryByTestId } = render(
+      <EntityDetailPanel
+        detail={fixtureDetails[sessionStale.id]!}
+        reasons={REASONS}
+        ctx={ctx}
+        liveness="stale"
+        controls={{ ...controls, kind: 'work_session' }}
+      />,
+    );
+    expect(queryByTestId('panel-controls')).toBeNull();
+  });
+
+  it('stays off a tombstone — a corpse has no state left to set', () => {
+    const detail: EntityDetail = { ...taskDetail(), ...taskTombstone };
+    const { queryByTestId } = render(
+      <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} controls={controls} />,
+    );
+    expect(queryByTestId('panel-controls')).toBeNull();
+  });
+});
+
 describe('EntityListPanel — behaviour is registry DATA', () => {
   const rowsFor =
     (rows: readonly EntitySummary[]) =>
@@ -326,7 +449,57 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     for (const id of ['open', 'done', 'archived']) expect(footer).toContain(id);
   });
 
-  it('sorts a generic attention request above ordinary rows and renders its yellow label', () => {
+  it('a SECTION narrows the active tier instead of being overwritten by it', () => {
+    /*
+     * The reported defect: every CURRENT task also listed under COMPLETED.
+     * The two axes were merged by spreading, so the Open tier's `workStatus`
+     * REPLACED the completed section's — and the completed band re-ran the
+     * open band's own query. Shared array members must intersect.
+     *
+     * `rowsFor` here HONOURS the filter. The suite's shared helper returns the
+     * same rows whatever it is asked, which is exactly why a filter defect
+     * could not be seen from this file.
+     */
+    const doneTask = {
+      ...taskGuideLines,
+      id: 'task-done',
+      title: 'Shipped last week',
+      state: { ...taskGuideLines.state, workStatus: 'done' },
+    } as EntitySummary;
+    const pool = [taskUuidTitle, taskGuideLines, doneTask];
+    const honest = (filter: QueryFilter): readonly EntitySummary[] => {
+      const wanted = filter.workStatus;
+      return pool.filter(
+        (row) =>
+          !wanted || wanted.includes((row.state as { workStatus?: never }).workStatus!),
+      );
+    };
+
+    const { container, getAllByRole } = render(
+      <EntityListPanel kind="task" rowsFor={honest} ctx={ctx} />,
+    );
+    const collapsed = () => container.querySelector('.lp__collapsed')?.textContent;
+    const band = (label: string) =>
+      [...container.querySelectorAll('.lp__eyebrow')].find((e) =>
+        e.textContent?.startsWith(label),
+      )?.textContent;
+
+    // Open tab: the two open tasks are CURRENT and nothing is completed.
+    expect(band('CURRENT')).toBe('CURRENT · 2');
+    expect(collapsed()).toBe('▸ COMPLETED · 0');
+
+    // Done tab: the same partition, the other way round.
+    fireEvent.click(getAllByRole('tab')[1]!);
+    expect(band('CURRENT')).toBe('CURRENT · 0');
+    expect(collapsed()).toBe('▸ COMPLETED · 1');
+  });
+
+  it('marks a generic attention request IN PLACE — the flagged parent keeps its children', () => {
+    // The regression this pins: attention used to hoist the row into its own
+    // flat band, which took it out of the set the tree is built from — so a
+    // flagged PARENT re-rooted every child it had and the hierarchy the user
+    // was reading fell apart. Being flagged is a fact about the row, not a
+    // reason to move it.
     const attention = {
       ...taskGuideLines,
       badges: {
@@ -340,13 +513,22 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         },
       },
     } satisfies EntitySummary;
+    const child = { ...taskUuidTitle, parentId: attention.id } satisfies EntitySummary;
     const view = render(
-      <EntityListPanel kind="task" rowsFor={rowsFor([taskUuidTitle, attention])} ctx={ctx} />,
+      <EntityListPanel kind="task" rowsFor={rowsFor([attention, child])} ctx={ctx} />,
     );
-    expect(view.getByText('NEEDS ATTENTION · 1')).toBeTruthy();
-    const first = view.getAllByTestId('list-tile')[0]!;
-    expect(first.textContent).toContain(attention.title);
-    expect(within(first).getByText('Needs attention').getAttribute('title')).toBe('Choose the API shape');
+
+    // No band: nothing was lifted out of the tree.
+    expect(view.queryByText('NEEDS ATTENTION · 1')).toBeNull();
+
+    const flagged = view
+      .getAllByTestId('list-tile')
+      .find((tile) => tile.textContent?.includes(attention.title))!;
+    expect(within(flagged).getByText('Needs attention').getAttribute('title')).toBe('Choose the API shape');
+
+    // …and the child is still NESTED under it rather than re-rooted.
+    const nested = view.getByTestId('list-tile-children');
+    expect(nested.textContent).toContain(child.title);
   });
 
   it('THE GATE: activity on a NON-LIVE row never streams and never pulses', () => {
@@ -642,9 +824,14 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
     fireEvent.click(within(tile).getByRole('button', { name: /expand details/i }));
     const expanded = tile.querySelector('.pn-tt__meta')?.textContent ?? '';
+    /* The expanded priority is now a CONTROL, not a badge (2026-08-04) — it
+       is addressed by the registry field it writes rather than by a badge
+       class, so this holds whether it renders as the picker or as the honest
+       refusal, which is what it does here with no `onSetValue` wired. The
+       word is still the badge's word: same fact, one spelling. */
     expect(
-      tile.querySelector('.pn-tt__meta .pn-badge--priority')?.textContent,
-      'expanded priority chip',
+      tile.querySelector('.pn-tt__meta [data-source="priority"]')?.textContent,
+      'expanded priority control',
     ).toBe('URGENT');
     expect(expanded, 'expanded facts').toContain('4/6 criteria');
     expect(expanded).toContain('Ada +1');
@@ -1076,7 +1263,14 @@ describe('share drop target — refusing honestly', () => {
  * nobody asserted the mount.
  */
 describe('EntityDetailPanel — attachments ride in the content body (D3 intact)', () => {
-  const anyDetail = Object.values(fixtureDetails).find((d) => d.deletedAt == null)!;
+  // Any kind that MOUNTS the strip — not terminal, not a chat composition
+  // (D2: those bodies end at their composer, whose + owns attach).
+  const anyDetail = Object.values(fixtureDetails).find(
+    (d) =>
+      d.deletedAt == null &&
+      getKind(d.kind).panel.archetype !== 'terminal' &&
+      getKind(d.kind).panel.composition !== 'chat',
+  )!;
 
   /** A file peer on an `attached_to` edge — the shape `edges.list` answers. */
   function withAttachment(detail: EntityDetail, over?: Partial<{ name: string; mime: string }>): EntityDetail {
@@ -1141,16 +1335,26 @@ describe('EntityDetailPanel — attachments ride in the content body (D3 intact)
     expect(queryByTestId('attachment-strip')).toBeNull();
   });
 
-  it('is kind-agnostic: EVERY non-terminal kind with a fixture mounts the strip', () => {
+  it('is kind-agnostic: EVERY non-terminal, non-chat kind with a fixture mounts the strip', () => {
     // The claim the brief made ("wire it into the shared/generic body path so
     // it appears for task, doc, work_session etc.") measured rather than
     // asserted once on a task and generalised.
+    //
+    // D2 (session-UI design v1, 2026-08-06) narrows "every non-terminal kind"
+    // — deliberately overturning the earlier universal half of this test:
+    // a `composition: 'chat'` body (channel's hub) ends at its composer, whose
+    // + button already owns attach, so the strip there was duplication.
     const covered = allKinds()
       .map((config) => ({
         config,
         detail: Object.values(fixtureDetails).find((d) => d.kind === config.kind && d.deletedAt == null),
       }))
-      .filter((r) => r.detail != null && r.config.panel.archetype !== 'terminal');
+      .filter(
+        (r) =>
+          r.detail != null &&
+          r.config.panel.archetype !== 'terminal' &&
+          r.config.panel.composition !== 'chat',
+      );
     expect(covered.length).toBeGreaterThan(8);
 
     for (const { config, detail } of covered) {
@@ -1163,5 +1367,129 @@ describe('EntityDetailPanel — attachments ride in the content body (D3 intact)
       ).not.toBeNull();
       unmount();
     }
+  });
+
+  it('a chat composition (channel) mounts NO strip — the composer + owns attach', () => {
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel
+        detail={withAttachment(fixtureDetails[channelDesign.id]!)}
+        reasons={REASONS}
+        ctx={ctx}
+      />,
+    );
+    expect(getByTestId('entity-detail-panel')).toBeTruthy();
+    expect(queryByTestId('attachment-strip')).toBeNull();
+  });
+});
+
+/**
+ * THE ATTENTION SECTION LANDS IN EXACTLY ONE PLACE PER KIND.
+ *
+ * The mount rule has two halves and they are complements of each other: the
+ * Content body for every archetype that can host an inline section, and the
+ * Activity tab for the two that cannot — terminal (a live PTY owning its full
+ * height) and `composition: 'chat'` (a body that ends at its composer). Those
+ * are the same two exclusions the attachment strip carries, but the strip
+ * simply DROPS them; this section relocates them, because work sessions are
+ * among the most-escalated entities in a space and CLI-only history for them
+ * was not acceptable (user ruling 2026-08-16).
+ *
+ * Both halves are asserted here, in both directions, because the failure mode
+ * of a two-place rule is a kind that renders it TWICE — which no single
+ * assertion about presence can catch.
+ */
+describe('EntityDetailPanel — the attention section has exactly one home per kind', () => {
+  const SECTION = <div data-testid="attention-section-probe" />;
+
+  /** Every kind with a live fixture, split by which half of the rule it takes. */
+  function kindsBy(relocated: boolean) {
+    return allKinds()
+      .map((config) => ({
+        config,
+        detail: Object.values(fixtureDetails).find((d) => d.kind === config.kind && d.deletedAt == null),
+      }))
+      .filter((r) => r.detail != null)
+      .filter((r) => {
+        const overflow =
+          r.config.panel.archetype === 'terminal' || r.config.panel.composition === 'chat';
+        return overflow === relocated;
+      });
+  }
+
+  it('mounts in the CONTENT body for every kind that can host it inline', () => {
+    const covered = kindsBy(false);
+    // Guards against a vacuous pass if the registry or the fixture set moves.
+    expect(covered.length).toBeGreaterThan(8);
+
+    for (const { config, detail } of covered) {
+      const { getByTestId, unmount } = render(
+        <EntityDetailPanel detail={detail!} reasons={REASONS} ctx={ctx} attentionSection={SECTION} />,
+      );
+      const panel = getByTestId('entity-detail-panel');
+      expect(
+        within(panel).queryAllByTestId('attention-section-probe'),
+        `${config.kind} did not mount the attention section on its content body exactly once`,
+      ).toHaveLength(1);
+      unmount();
+    }
+  });
+
+  it('mounts on the ACTIVITY tab — and NOT in the content body — for terminal and chat', () => {
+    const relocated = kindsBy(true);
+    // work_session (terminal) and channel/voice_channel (chat) today.
+    expect(relocated.length).toBeGreaterThan(0);
+
+    for (const { config, detail } of relocated) {
+      const content = render(
+        <EntityDetailPanel detail={detail!} reasons={REASONS} ctx={ctx} attentionSection={SECTION} />,
+      );
+      expect(
+        within(content.getByTestId('entity-detail-panel')).queryByTestId('attention-section-probe'),
+        `${config.kind} put the attention section inline, under a body that owns its own height`,
+      ).toBeNull();
+      content.unmount();
+
+      const activity = render(
+        <EntityDetailPanel
+          detail={detail!}
+          reasons={REASONS}
+          ctx={ctx}
+          attentionSection={SECTION}
+          activeTab="activity"
+        />,
+      );
+      expect(
+        within(activity.getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
+        `${config.kind} lost its attention history entirely — it is in neither place`,
+      ).toHaveLength(1);
+      activity.unmount();
+    }
+  });
+
+  it('never renders TWICE: a kind that takes the inline mount does not also get the activity one', () => {
+    for (const { config, detail } of kindsBy(false)) {
+      const { getByTestId, unmount } = render(
+        <EntityDetailPanel
+          detail={detail!}
+          reasons={REASONS}
+          ctx={ctx}
+          attentionSection={SECTION}
+          activeTab="activity"
+        />,
+      );
+      expect(
+        within(getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
+        `${config.kind} renders the attention section on BOTH the content body and the activity tab`,
+      ).toHaveLength(0);
+      unmount();
+    }
+  });
+
+  it('an unwired host renders nothing at all — no empty box on every entity in the product', () => {
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel detail={kindsBy(false)[0]!.detail!} reasons={REASONS} ctx={ctx} />,
+    );
+    expect(getByTestId('entity-detail-panel')).toBeTruthy();
+    expect(queryByTestId('attention-section-probe')).toBeNull();
   });
 });

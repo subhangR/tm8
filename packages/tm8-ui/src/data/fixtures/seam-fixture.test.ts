@@ -18,8 +18,10 @@ import {
   sessionExited,
   sessionLive,
   sessionStale,
+  memberAda,
   taskGuideLines,
   taskUuidTitle,
+  teamMemberForge,
 } from '../../fixtures';
 import type { ConnectionState, LivenessSnapshot } from '../seam';
 import { createFixtureSeam } from './seam-fixture';
@@ -411,5 +413,71 @@ describe('dataset isolation', () => {
     d1.title = 'vandalized';
     const d2 = await seam.entity(taskUuidTitle.id);
     expect(d2.title).toBe(taskUuidTitle.title);
+  });
+});
+
+/**
+ * The write side of the relationship graph, added 2026-08-04.
+ *
+ * WHY IT MATTERS THAT THE PROJECTION MOVES, and not just that the edge lands:
+ * `EntitySummary.state.assignees` is a PROJECTION of `assigned_to` (the real
+ * node builds it in `entity-read.ts`). A fixture that stored the edge and left
+ * `assignees` alone would be a seam that passes its own tests while the UI it
+ * exists to exercise renders an assignment that never appears. Reads and
+ * writes have to agree in the double, or the double is not one.
+ */
+describe('fixture seam — assignment edges reproject state.assignees', () => {
+  const assigneesOf = (r: CommandResult) => {
+    const state = r.patches[0]!.state as { assignees?: { id: string }[] };
+    return (state.assignees ?? []).map((a) => a.id);
+  };
+
+  it('createEdge adds the actor to the projection, and is idempotent on (src, dst, type)', async () => {
+    const seam = await openSeam();
+    const first = await seam.commands.createEdge({
+      srcId: taskGuideLines.id, dstId: memberAda.id, type: 'assigned_to',
+      clientMutationId: 'cmid-edge-1',
+    });
+    expect(assigneesOf(first)).toContain(memberAda.id);
+
+    // UPSERT, matching `write_edge` on the node: a double-click must not
+    // assign the same person twice.
+    const again = await seam.commands.createEdge({
+      srcId: taskGuideLines.id, dstId: memberAda.id, type: 'assigned_to',
+      clientMutationId: 'cmid-edge-2',
+    });
+    expect(assigneesOf(again).filter((id) => id === memberAda.id)).toHaveLength(1);
+  });
+
+  it('assigns an AGENT the same way it assigns a person', async () => {
+    const seam = await openSeam();
+    const result = await seam.commands.createEdge({
+      srcId: taskGuideLines.id, dstId: teamMemberForge.id, type: 'assigned_to',
+    });
+    const state = result.patches[0]!.state as { assignees?: { id: string; isAgent: boolean }[] };
+    expect(state.assignees?.find((a) => a.id === teamMemberForge.id)?.isAgent).toBe(true);
+  });
+
+  it('deleteEdge removes it again, addressed by the EDGE id the reads hand out', async () => {
+    const seam = await openSeam();
+    await seam.commands.createEdge({
+      srcId: taskGuideLines.id, dstId: memberAda.id, type: 'assigned_to',
+    });
+    // The remove path is a read THEN a write: the projection carries the
+    // actor, never the edge, so only `connections()` knows what to delete.
+    const page = await seam.connections(taskGuideLines.id);
+    const edge = page.items.find(
+      (e) => e.type === 'assigned_to' && e.target.id === memberAda.id,
+    )!;
+    expect(edge).toBeDefined();
+
+    const removed = await seam.commands.deleteEdge(edge.id);
+    expect(assigneesOf(removed)).not.toContain(memberAda.id);
+  });
+
+  it('rejects an edge id it does not hold, rather than silently succeeding', async () => {
+    const seam = await openSeam();
+    await expect(seam.commands.deleteEdge('edge-that-never-was'))
+      .rejects.toSatisfy(isCollabError);
   });
 });

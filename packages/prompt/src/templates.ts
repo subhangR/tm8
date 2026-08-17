@@ -176,7 +176,20 @@ export interface IncomingMessageFacts {
   body: string;
   truncated?: boolean;
   fetchRef?: string | null;
+  /**
+   * The PARENT message's body, when this delivery answers a thread parent the
+   * sender could read. Rendered as a SECOND untrusted block — an excerpt is
+   * DATA, never instructions. Absent when there is no parent or the parent is
+   * not readable.
+   */
+  parentBody?: string;
+  parentAuthorDisplay?: string;
 }
+
+/** Excerpt ceiling for the parent-message block — keeps the worst case well
+ * inside the 16,384-byte incomingMessageInjection budget. Do not raise the
+ * budget instead. */
+const PARENT_EXCERPT_MAX_CHARS = 1500;
 
 export function incomingMessageInjection(f: IncomingMessageFacts): string {
   const context = f.contextAnchors?.length
@@ -204,7 +217,20 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
     ...(f.truncated === undefined ? {} : { truncated: f.truncated }),
     ...(f.fetchRef === undefined ? {} : { fetchRef: f.fetchRef }),
   });
-  return assertWithinBudget('incomingMessageInjection', `${control}\n${data}`);
+  let parent = '';
+  if (f.parentBody !== undefined && f.parentBody !== '') {
+    const cut = f.parentBody.length > PARENT_EXCERPT_MAX_CHARS;
+    parent = `\n${untrustedData({
+      type: 'parent-message-body',
+      body: cut ? f.parentBody.slice(0, PARENT_EXCERPT_MAX_CHARS) : f.parentBody,
+      truncated: cut,
+      extraAttrs: {
+        author: f.parentAuthorDisplay ?? NONE,
+        message_id: f.threadParentMessageId ?? NONE,
+      },
+    })}`;
+  }
+  return assertWithinBudget('incomingMessageInjection', `${control}\n${data}${parent}`);
 }
 
 // -- §14.6 entity handoff -----------------------------------------------------

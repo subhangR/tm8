@@ -13,6 +13,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type {
+  CommandResult,
   EdgeView,
   EntityDetail,
   EntityId,
@@ -24,7 +25,11 @@ import { EntityDetailPanel, type DetailReasons } from '../panels';
 import type { ActionContext } from '../domain/types';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { GraphView, type GraphTimelineStep } from './GraphView';
+import { attentionSectionFor } from '../views/attentionSurface';
 import { debugSurfaceFor } from '../views/debugSurface';
+import { graphSurfaceFor } from '../views/graphSurface';
+import { useSessionResume } from '../views/useSessionResume';
+import type { Notice } from '../shell/notices';
 
 export interface GraphScreenData {
   spaceId: string;
@@ -33,8 +38,11 @@ export interface GraphScreenData {
   postMessage(input: PostMessageInput): Promise<void>;
   livenessOf(id: string): SessionLiveness;
   /** Optional: without it the Debug surface renders its explained absence
-   *  rather than a broken table. */
+   *  rather than a broken table, and resume renders disabled with the same
+   *  honesty rather than the generic "not wired on this surface" copy. */
   seam?: Seam;
+  /** Folds a command's authoritative detail back into the store. */
+  reconcileCommand?(result: CommandResult): void;
   activity: Readonly<Record<string, boolean>>;
   pull?(id: string): void;
 }
@@ -50,6 +58,8 @@ export interface GraphScreenProps {
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+  /** A resume refusal is a server sentence the user can act on. */
+  onNotice(notice: Notice): void;
 }
 
 type DetailMode = 'aside' | 'full';
@@ -83,6 +93,14 @@ export function GraphScreen(props: GraphScreenProps) {
     !detail || messages === undefined || messages.length < detail.counters.messages
   )) data.pull?.(selectedId);
 
+  /* A selected node is often a work session, and the aside renders the same
+     terminal body as every other host — so it gets the same resume executor. */
+  const sessionResume = useSessionResume({
+    seam: data.seam,
+    reconcile: data.reconcileCommand,
+    onNotice: props.onNotice,
+  });
+
   const detailPanel = selectedId ? (
     <EntityDetailPanel
       detail={detail ?? null}
@@ -96,7 +114,18 @@ export function GraphScreen(props: GraphScreenProps) {
       // so the pin verb is refused with the true reason, never hidden (L6).
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the graph already"
       liveness={data.livenessOf(selectedId)}
+      attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId))}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
+        setSelectedId(id as EntityId),
+      )}
+      {...(sessionResume.resume
+        ? { onResumeSession: () => sessionResume.resume?.(selectedId) }
+        : {})}
+      resumingSession={sessionResume.resumingId === selectedId}
+      {...(sessionResume.unavailableReason
+        ? { resumeSessionDisabledReason: sessionResume.unavailableReason }
+        : {})}
       messages={messages}
       onPostMessage={(body) => data.postMessage({
         clientMutationId: `graph-post:${selectedId}:${Date.now()}`,

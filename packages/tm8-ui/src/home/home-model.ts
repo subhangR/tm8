@@ -104,8 +104,13 @@ export type HomeDot = 'solid' | 'pulse' | 'ring' | null;
 
 export interface HomeRow {
   id: string;
-  /** Kind glyph from the registry chip spec. */
-  glyph: string;
+  /**
+   * The row's KIND — the screen draws its registry mark. Null only where the
+   * row stands for something with no entity behind it (a notification whose
+   * target the seam did not carry), and then the screen draws nothing rather
+   * than inventing a mark for a thing it cannot name.
+   */
+  kind: string | null;
   title: string;
   /** Status WORD. Status is always colour + word, never colour alone (C8/L10). */
   word: string | null;
@@ -133,7 +138,7 @@ export interface HomeRowOpts {
  */
 export function homeRowOf(summary: EntitySummary, opts: HomeRowOpts = {}): HomeRow {
   const config = getKind(summary.kind);
-  const glyph = config.chip.glyph;
+  const kind = summary.kind;
 
   // PRECEDENCE (D39): where a liveTreatment exists it OWNS the presentation.
   // The record's claim is not discarded — the registry's authored label states
@@ -152,7 +157,7 @@ export function homeRowOf(summary: EntitySummary, opts: HomeRowOpts = {}): HomeR
         : treatment.label;
     return {
       id: summary.id,
-      glyph,
+      kind,
       title: summary.title,
       word: word ?? treatment.label,
       tone: treatment.tone,
@@ -165,11 +170,11 @@ export function homeRowOf(summary: EntitySummary, opts: HomeRowOpts = {}): HomeR
   const source: StatusSource = spec?.source ?? 'none';
   const value = statusValueOf(source, summary.state);
   if (!spec || value === null) {
-    return { id: summary.id, glyph, title: summary.title, word: null, tone: 'idle', dot: null };
+    return { id: summary.id, kind, title: summary.title, word: null, tone: 'idle', dot: null };
   }
   return {
     id: summary.id,
-    glyph,
+    kind,
     title: summary.title,
     word: spec.labels?.[value] ?? value.replace(/_/g, ' '),
     tone: spec.tones[value] ?? 'idle',
@@ -371,12 +376,12 @@ export function notificationRows(items: readonly NotificationItem[] | null): Hom
     .filter((n) => n.readAt === null)
     .map((n) => {
       const target = n.target ?? null;
-      const glyph = target ? getKind(target.kind).chip.glyph : '◹';
+      const kind = target?.kind ?? null;
       const actor = n.actor?.displayName ?? 'someone';
       const verb = n.kind.replace(/_/g, ' ');
       return {
         id: n.id,
-        glyph,
+        kind,
         title: n.message ?? `${actor} — ${verb}${target ? ` · ${target.title}` : ''}`,
         word: verb,
         tone: (n.kind === 'review_request' ? 'wait' : 'info') as PillTone,

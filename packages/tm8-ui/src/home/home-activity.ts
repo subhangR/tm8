@@ -32,21 +32,22 @@ export interface ActivityRow {
   actor: string | null;
   isAgent: boolean;
   verb: string;
-  /** Kind glyph + title of the thing the verb acted on, when the event carries it. */
-  objectGlyph: string | null;
+  /**
+   * KIND + title of the thing the verb acted on, when the event carries it.
+   *
+   * The kind itself, not a mark for it: the row's icon is drawn from registry
+   * artwork at render time (`KindIcon`), so this module stays a pure
+   * projection and the screen owns the picture. It used to carry a text glyph
+   * through an injected `glyphOf`, which is one indirection for a lookup the
+   * view can do itself with the kind in hand.
+   */
+  objectKind: string | null;
   objectTitle: string | null;
   /** C1 target — null when the event names no entity, and then the row is inert. */
   objectId: string | null;
   at: string;
   tone: 'run' | 'wait' | 'block' | 'info' | 'idle' | 'brand';
 }
-
-/**
- * Glyph lookup is injected rather than imported so this module stays free of
- * both the registry import cycle and any kind literal — the caller passes
- * `getKind(kind).chip.glyph`.
- */
-export type GlyphOf = (kind: string) => string;
 
 /**
  * Project one durable event into a row, or `null` when the event has no
@@ -57,7 +58,7 @@ export type GlyphOf = (kind: string) => string;
  * same event on one screen — the "1 live above a row saying not running"
  * failure shape, in a quieter register.
  */
-export function activityRowOf(event: DurableWorkspaceEvent, glyphOf: GlyphOf): ActivityRow | null {
+export function activityRowOf(event: DurableWorkspaceEvent): ActivityRow | null {
   const seq = event.seq;
   const at = event.occurredAt;
   const base = { seq, at, id: `${event.spaceId}#${seq}` };
@@ -70,7 +71,7 @@ export function activityRowOf(event: DurableWorkspaceEvent, glyphOf: GlyphOf): A
         actor: item.actor?.displayName ?? null,
         isAgent: item.actor?.isAgent === true,
         verb: item.verb.replace(/_/g, ' '),
-        objectGlyph: null,
+        objectKind: null,
         objectTitle: titleFromSummary(item.summary),
         objectId: item.entityId ?? null,
         at: item.createdAt || at,
@@ -87,7 +88,7 @@ export function activityRowOf(event: DurableWorkspaceEvent, glyphOf: GlyphOf): A
         actor: isCreate ? entity.createdBy.displayName : null,
         isAgent: isCreate ? entity.createdBy.isAgent : false,
         verb: isCreate ? 'created' : 'updated',
-        objectGlyph: glyphOf(entity.kind),
+        objectKind: entity.kind,
         objectTitle: entity.title,
         objectId: entity.id,
         tone: isCreate ? 'run' : 'info',
@@ -100,7 +101,7 @@ export function activityRowOf(event: DurableWorkspaceEvent, glyphOf: GlyphOf): A
         actor: null,
         isAgent: false,
         verb: 'deleted',
-        objectGlyph: glyphOf(entity.kind),
+        objectKind: entity.kind,
         objectTitle: entity.title,
         objectId: null,
         tone: 'block',
@@ -113,7 +114,7 @@ export function activityRowOf(event: DurableWorkspaceEvent, glyphOf: GlyphOf): A
         actor: author.displayName,
         isAgent: author.isAgent,
         verb: 'posted',
-        objectGlyph: null,
+        objectKind: null,
         objectTitle: excerptOf(event.message.title),
         objectId: event.anchorId,
         tone: 'brand',

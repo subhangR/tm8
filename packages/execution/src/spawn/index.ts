@@ -32,6 +32,8 @@ export {
 export {
   extractCodexRolloutIdentity,
   resolveCodexNativeSessionId,
+  resolveCodexRollout,
+  type CodexRollout,
   type CodexRolloutIdentity,
 } from './native-session.js';
 export { SpawnError } from './types.js';

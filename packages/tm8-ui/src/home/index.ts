@@ -32,5 +32,4 @@ export {
   dayBucketOf,
   recencyOf,
   type ActivityRow,
-  type GlyphOf,
 } from './home-activity';

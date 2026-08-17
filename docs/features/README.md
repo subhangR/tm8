@@ -12,7 +12,8 @@ verification specific to it.
 | Derived edges | [`graph/`](graph/) | [`README.md`](graph/README.md) |
 | Voice channels | [`voice/`](voice/) | [`VOICE-CHANNELS-PLAN.md`](voice/VOICE-CHANNELS-PLAN.md) |
 | Session resume | [`resume/`](resume/) | [`SESSION-RESUME-PLAN.md`](resume/SESSION-RESUME-PLAN.md) |
-| Shared workspace | [`shared-workspace/`](shared-workspace/) | [`SHARED-WORKSPACE-DESIGN.md`](shared-workspace/SHARED-WORKSPACE-DESIGN.md) |
+| Hosted workspaces | [`shared-workspace/`](shared-workspace/) | [`README.md`](shared-workspace/README.md) |
+| Settings & Node | [`settings-and-node/`](settings-and-node/) | [`SETTINGS-AND-NODE-DESIGN.md`](settings-and-node/SETTINGS-AND-NODE-DESIGN.md) |
 
 Most feature directories also carry the lane brief they were built from:
 [`worktrees/BRIEF-WORKTREES.md`](worktrees/BRIEF-WORKTREES.md),

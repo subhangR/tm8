@@ -118,7 +118,7 @@ describe('the panel mounts the real save path', () => {
           detail={detail}
           reasons={REASONS}
           ctx={ctx}
-          commands={{ createTask: vi.fn(ok), patchTask }}
+          commands={{ createEntity: vi.fn(ok), patchTask }}
           onSaved={(commandResult) => {
             onSaved(commandResult);
             if (commandResult.entity) setDetail(commandResult.entity);
@@ -157,7 +157,7 @@ describe('the panel mounts the real save path', () => {
           detail={TASK}
           reasons={REASONS}
           ctx={ctx}
-          commands={{ createTask: vi.fn(ok), patchTask }}
+          commands={{ createEntity: vi.fn(ok), patchTask }}
         />
       </div>,
     );
@@ -181,7 +181,7 @@ describe('the panel mounts the real save path', () => {
           detail={TASK}
           reasons={REASONS}
           ctx={ctx}
-          commands={{ createTask: vi.fn(ok), patchTask }}
+          commands={{ createEntity: vi.fn(ok), patchTask }}
         />
       </div>,
     );
@@ -212,7 +212,7 @@ describe('the panel mounts the real save path', () => {
     // that directory is not this seat's to edit, so this is reported, not
     // papered over.
     const patchTask = patchSpy();
-    const commands = { createTask: vi.fn(ok), patchTask };
+    const commands = { createEntity: vi.fn(ok), patchTask };
     const { getByTestId, getByRole, rerender } = render(
       <div className="cv2-root">
         <EntityDetailPanel detail={TASK} reasons={REASONS} ctx={ctx} commands={commands} />
@@ -246,7 +246,7 @@ describe('the panel mounts the real save path', () => {
           detail={TASK}
           reasons={REASONS}
           ctx={ctx}
-          commands={{ createTask: vi.fn(ok), patchTask: patchTask as never }}
+          commands={{ createEntity: vi.fn(ok), patchTask: patchTask as never }}
         />
       </div>,
     );
@@ -298,7 +298,7 @@ describe('the panel mounts the real save path', () => {
           detail={TASK}
           reasons={REASONS}
           ctx={ctx}
-          commands={{ createTask: vi.fn(ok), patchTask: vi.fn(() => Promise.reject(serverShaped)) as never }}
+          commands={{ createEntity: vi.fn(ok), patchTask: vi.fn(() => Promise.reject(serverShaped)) as never }}
         />
       </div>,
     );
@@ -361,7 +361,7 @@ describe('which kinds get an edit surface is REGISTRY DATA', () => {
           detail={tracked}
           reasons={REASONS}
           ctx={ctx}
-          commands={{ createTask: vi.fn(ok), patchTask: vi.fn(ok) }}
+          commands={{ createEntity: vi.fn(ok), patchTask: vi.fn(ok) }}
         />
       </div>,
     );
@@ -379,7 +379,7 @@ describe('which kinds get an edit surface is REGISTRY DATA', () => {
             detail={null}
             reasons={REASONS}
             ctx={ctx}
-            commands={{ createTask: vi.fn(ok), patchTask: vi.fn(ok) }}
+            commands={{ createEntity: vi.fn(ok), patchTask: vi.fn(ok) }}
           />
         </div>,
       );

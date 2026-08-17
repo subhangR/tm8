@@ -18,7 +18,6 @@
  *     an ordering the caller could vary is an ordering that will vary.
  */
 import type { EntitySummary, NotificationItem } from '@tm8/contract';
-import { getKind } from '../domain';
 
 // ---------------------------------------------------------------------------
 // Groups
@@ -93,7 +92,7 @@ export interface InboxRow {
   /** The actor, for the avatar. `null` when the item carries none. */
   actor: { label: string; isAgent: boolean } | null;
   /** "▤ Menu spec" — the entity the notification points at. */
-  target: { id: string; glyph: string; title: string } | null;
+  target: { id: string; kind: string; title: string } | null;
   /** "12m" — relative, computed against an injected `now`. */
   recency: string;
   /** The quoted line under the headline. `null` when the item carries none. */
@@ -135,9 +134,10 @@ export function headlineOf(item: NotificationItem): string {
 
 function targetOf(target: EntitySummary | null | undefined): InboxRow['target'] {
   if (!target) return null;
-  // Registry-driven: the glyph comes from the kind's chip spec (§15.2 — this
-  // screen never names a kind).
-  return { id: target.id, glyph: getKind(target.kind).chip.glyph, title: target.title };
+  // The KIND travels, not a mark for it: the screen draws the registry's
+  // artwork (§15.2 — this module still never names a kind, and now it does not
+  // have to know how one is pictured either).
+  return { id: target.id, kind: target.kind, title: target.title };
 }
 
 const MINUTE = 60_000;

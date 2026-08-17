@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
@@ -8,7 +8,9 @@ import { dataTransferHasFiles } from './clipboardImages.js';
 import { dispatchClipboardData } from './clipboardPaste.js';
 import { copyToClipboardOrWarn } from './domUtils.js';
 import { notifyUser } from './notifications.js';
+import { isElementPaintable } from './pty/elementVisibility.js';
 import { ptyTransport } from './pty/ptyTransport.js';
+import { writeTerminalReplay } from './pty/replayHydration.js';
 import { registerTerminal } from './pty/runtime.js';
 import {
   clientFittedSessions,
@@ -16,6 +18,7 @@ import {
   serverPtySizes,
   setLastFittedSize,
 } from './pty/terminalSize.js';
+import { reconcileTerminalVisibility } from './pty/visibilityDriver.js';
 import {
   TERMINAL_CURSOR_INACTIVE_STYLE,
   TERMINAL_CURSOR_STYLE,
@@ -101,6 +104,8 @@ export interface LiveTerminalProps {
   serverBaseUrl?: string;
   /** False renders the terminal read-only (stdin disabled). */
   live: boolean;
+  /** True while this retained xterm is the selected, paintable surface. */
+  active?: boolean;
   onResize?: (sessionId: string, size: { cols: number; rows: number }) => void;
   onExit?: (sessionId: string, exitCode?: number | null) => void;
 }
@@ -108,16 +113,16 @@ export interface LiveTerminalProps {
 /**
  * THE LIVE TERMINAL — xterm mounted into the reserved TerminalHost box.
  *
- * Ported from packages/ui's SessionTerminal at the transport/render seam
- * only. Byte handling (ptyTransport, the write scheduler, the visibility
- * driver, the persistent per-session decoder, offset-resume law) is UNEDITED
- * — see `pty/`. What is adapted here is layout: this reuses tm8-ui's
+ * Ported from packages/ui's SessionTerminal. Byte handling and the persistent
+ * per-session offset/decoder laws remain aligned with that source; tm8-ui adds
+ * explicit surface activation and attach/replay readiness around them. Layout
+ * reuses tm8-ui's
  * TerminalHost (the T0-2 black box, with its 160px floor and a11y wiring)
  * instead of rendering its own div, and `cursorBlink` is hard-`false`
  * (maestro main ef0dcbe) rather than a user setting.
  */
 export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(function LiveTerminal(
-  { sessionId, serverBaseUrl = '', live, onResize, onExit },
+  { sessionId, serverBaseUrl = '', live, active = true, onResize, onExit },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -125,13 +130,26 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   const fitRef = useRef<FitAddon | null>(null);
   const resizeRafRef = useRef<number | null>(null);
   const resizeTimeoutRef = useRef<number | null>(null);
+  const scheduleResizeRef = useRef<() => void>(() => undefined);
   const resizeRetryCountRef = useRef(0);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const fontsReadyRef = useRef(false);
+  const activeRef = useRef(active);
+  const attachedRef = useRef(false);
+  const fittedRef = useRef(false);
+  const awaitingReplayRef = useRef(false);
+  /** One-shot per attach: has this view already asked the agent to repaint? */
+  const repaintForcedRef = useRef(false);
+  const hydratingRef = useRef(false);
+  const hydrationGenerationRef = useRef(0);
+  const hydrationTimerRef = useRef<number | null>(null);
+  const hydrationRafRef = useRef<number | null>(null);
   const readOnlyRef = useRef(!live);
   const onResizeRef = useRef(onResize);
   const onExitRef = useRef(onExit);
+  const [renderReady, setRenderReady] = useState(false);
 
+  activeRef.current = active;
   readOnlyRef.current = !live;
   onResizeRef.current = onResize;
   onExitRef.current = onExit;
@@ -143,6 +161,11 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   useEffect(() => {
     const container = hostRef.current;
     if (!container || termRef.current) return;
+    attachedRef.current = false;
+    fittedRef.current = false;
+    awaitingReplayRef.current = false;
+    repaintForcedRef.current = false;
+    setRenderReady(false);
 
     const term = new Terminal({
       allowProposedApi: true,
@@ -167,8 +190,16 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     termRef.current = term;
     fitRef.current = fit;
 
-    const finishReplayHydration = () => {
-      requestAnimationFrame(() => {
+    const finishReplayHydration = (generation: number) => {
+      if (generation !== hydrationGenerationRef.current || !hydratingRef.current) return;
+      if (hydrationTimerRef.current !== null) {
+        window.clearTimeout(hydrationTimerRef.current);
+        hydrationTimerRef.current = null;
+      }
+      hydratingRef.current = false;
+      hydrationRafRef.current = requestAnimationFrame(() => {
+        hydrationRafRef.current = null;
+        if (generation !== hydrationGenerationRef.current) return;
         if (!term.element) return;
         try {
           term.scrollToBottom();
@@ -177,6 +208,10 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
           // Terminal may have been evicted after parsing the last replay byte.
         }
         term.element.style.removeProperty('visibility');
+        setRenderReady(fittedRef.current);
+        resizeRetryCountRef.current = 0;
+        scheduleResizeRef.current();
+        reconcileTerminalVisibility();
       });
     };
     const hydrateReplay = (data: string) => {
@@ -184,11 +219,26 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       // Hide imperative xterm DOM until its async parser reaches the final
       // replay byte; otherwise a retained full-screen TUI visibly redraws
       // top-to-bottom.
+      const generation = ++hydrationGenerationRef.current;
+      awaitingReplayRef.current = false;
+      hydratingRef.current = true;
+      setRenderReady(false);
       term.element.style.visibility = 'hidden';
+      // xterm's WriteBuffer uses a truthy `while (chunk = shift())` loop, so an
+      // empty replay never invokes its callback. Complete it ourselves or the
+      // terminal remains visibility:hidden forever.
       try {
-        term.write(data, finishReplayHydration);
+        if (data.length > 0) {
+          // A renderer/parser fault must degrade to a visible partial terminal,
+          // never a permanent black box. The callback normally wins quickly.
+          hydrationTimerRef.current = window.setTimeout(
+            () => finishReplayHydration(generation),
+            5000,
+          );
+        }
+        writeTerminalReplay(term, data, () => finishReplayHydration(generation));
       } catch {
-        term.element.style.removeProperty('visibility');
+        finishReplayHydration(generation);
       }
     };
 
@@ -198,9 +248,29 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       const currentTerm = termRef.current;
       const currentFit = fitRef.current;
       if (!currentTerm || !currentFit || !currentTerm.element) return;
+      // INACTIVE is a settled state, and the activation effect below re-arms
+      // the fit when `active` flips. Returning without rescheduling is right.
+      if (!activeRef.current) return;
+      // UNPAINTABLE WHILE ACTIVE is a transient layout state — a surface switch
+      // whose display:none is still committed on an ancestor, an in-flight
+      // transition — and NOTHING else re-arms it. The container's own size does
+      // not change when an ancestor's visibility does, so the ResizeObserver
+      // never fires, and `active` is already true so the activation effect will
+      // not run again either. This used to share the bare `return` above, which
+      // stranded fittedRef and renderReady at false and left the loading cover
+      // up permanently: the blank terminal that only a manual window resize
+      // could heal. Retry on the same backoff every other guard here uses.
+      if (!isElementPaintable(container)) {
+        resizeRetryCountRef.current += 1;
+        scheduleResize();
+        return;
+      }
       const rect = container.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-      if (getComputedStyle(container).visibility === 'hidden') return;
+      if (rect.width === 0 || rect.height === 0) {
+        resizeRetryCountRef.current += 1;
+        scheduleResize();
+        return;
+      }
       if (!fontsReadyRef.current || !isXtermRendererReady(currentTerm)) {
         resizeRetryCountRef.current += 1;
         scheduleResize();
@@ -216,7 +286,34 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       resizeRetryCountRef.current = 0;
       const { cols, rows } = currentTerm;
       if (cols <= 0 || rows <= 0) return;
+      fittedRef.current = true;
+      container.dataset.cols = String(cols);
+      container.dataset.rows = String(rows);
+      try {
+        currentTerm.refresh(0, rows - 1);
+      } catch {
+        // A later activation/ResizeObserver pass will repaint.
+      }
+      if (
+        attachedRef.current
+        && !awaitingReplayRef.current
+        && !hydratingRef.current
+      ) {
+        setRenderReady(true);
+      }
       clientFittedSessions.add(sessionId);
+      // ONE-SHOT REPAINT NUDGE (see ptyTransport.resize). The replay is on
+      // screen and the grid is correctly fitted; now make the AGENT redraw over
+      // it, because a full-screen TUI repaints only when something tells it to.
+      // Decided BEFORE the no-op early-return below, because the case that
+      // needs the nudge most is exactly the one that returns there: a remount
+      // into unchanged window geometry, where the fitted size already equals
+      // the PTY's and nothing would otherwise be sent at all.
+      const forceRepaint =
+        attachedRef.current
+        && !awaitingReplayRef.current
+        && !hydratingRef.current
+        && !repaintForcedRef.current;
       // RECLAIM ON ACTIVATION (maestro 0539726): read the shared PTY's last-
       // known truth BEFORE this view overwrites it with its own just-fitted
       // size. A DIFFERENT hidden/inactive view may have shipped a resize
@@ -229,13 +326,15 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       serverPtySizes.set(sessionId, { cols, rows });
       setLastFittedSize({ cols, rows });
       const last = lastSizeRef.current;
-      if (last && last.cols === cols && last.rows === rows && !ptyDiffers) return;
+      if (last && last.cols === cols && last.rows === rows && !ptyDiffers && !forceRepaint) return;
+      if (forceRepaint) repaintForcedRef.current = true;
       lastSizeRef.current = { cols, rows };
       onResizeRef.current?.(sessionId, { cols, rows });
-      ptyTransport.resize(sessionId, cols, rows);
+      ptyTransport.resize(sessionId, cols, rows, forceRepaint);
     };
 
     const scheduleResize = () => {
+      if (!activeRef.current) return;
       if (resizeRafRef.current !== null || resizeTimeoutRef.current !== null) return;
       const attempts = resizeRetryCountRef.current;
       if (attempts < 5) {
@@ -251,6 +350,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         sendResize();
       }, delay);
     };
+    scheduleResizeRef.current = scheduleResize;
 
     const forceFontReflow = () => {
       if (!term.element) return;
@@ -379,9 +479,40 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       if (size.cols <= 0 || size.rows <= 0) return;
       try {
         term.resize(size.cols, size.rows);
+        container.dataset.cols = String(size.cols);
+        container.dataset.rows = String(size.rows);
       } catch {
         // renderer not ready; initial sizing/fitting will retry
       }
+    });
+    const offAttached = ptyTransport.onAttached((id, info) => {
+      if (id !== sessionId) return;
+      attachedRef.current = true;
+      awaitingReplayRef.current = info.hasReplay;
+      // A new attach means a newly rendered replay to redraw over, so the
+      // one-shot nudge is owed again — including across a reconnect.
+      repaintForcedRef.current = false;
+      hydrationGenerationRef.current += 1;
+      hydratingRef.current = false;
+      if (hydrationTimerRef.current !== null) {
+        window.clearTimeout(hydrationTimerRef.current);
+        hydrationTimerRef.current = null;
+      }
+      if (hydrationRafRef.current !== null) {
+        cancelAnimationFrame(hydrationRafRef.current);
+        hydrationRafRef.current = null;
+      }
+      if (info.hasReplay) {
+        // Keep the loading cover up until hydrateReplay's parser callback.
+        setRenderReady(false);
+        return;
+      }
+      // The authoritative attach says there is no history frame coming. An
+      // empty but correctly fitted terminal is now the complete state.
+      term.element?.style.removeProperty('visibility');
+      setRenderReady(fittedRef.current);
+      resizeRetryCountRef.current = 0;
+      scheduleResizeRef.current();
     });
     const offExit = ptyTransport.onExit((id, exitCode) => {
       if (id !== sessionId) return;
@@ -403,7 +534,17 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       container.removeEventListener('drop', handleDrop);
       if (resizeRafRef.current !== null) cancelAnimationFrame(resizeRafRef.current);
       if (resizeTimeoutRef.current !== null) window.clearTimeout(resizeTimeoutRef.current);
+      if (hydrationTimerRef.current !== null) window.clearTimeout(hydrationTimerRef.current);
+      if (hydrationRafRef.current !== null) cancelAnimationFrame(hydrationRafRef.current);
+      hydrationGenerationRef.current += 1;
+      attachedRef.current = false;
+      fittedRef.current = false;
+      awaitingReplayRef.current = false;
+      repaintForcedRef.current = false;
+      hydratingRef.current = false;
+      scheduleResizeRef.current = () => undefined;
       offSize();
+      offAttached();
       offExit();
       onData.dispose();
       unregister();
@@ -420,14 +561,49 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       fitRef.current = null;
       resizeRafRef.current = null;
       resizeTimeoutRef.current = null;
+      hydrationTimerRef.current = null;
+      hydrationRafRef.current = null;
       resizeRetryCountRef.current = 0;
     };
   }, [sessionId, serverBaseUrl]);
+
+  useEffect(() => {
+    // Surface switches commit `display:none`/`display:flex` before effects run.
+    // Reconcile the stream immediately, then wait two frames for nested flex
+    // layout before doing the authoritative fit + refresh. ResizeObserver is a
+    // safety net, not the activation signal: browsers may coalesce a
+    // hidden-to-visible observation with an earlier zero-sized delivery.
+    reconcileTerminalVisibility();
+    if (!active) return;
+
+    let firstFrame: number | null = null;
+    let secondFrame: number | null = null;
+    firstFrame = requestAnimationFrame(() => {
+      firstFrame = null;
+      secondFrame = requestAnimationFrame(() => {
+        secondFrame = null;
+        resizeRetryCountRef.current = 0;
+        scheduleResizeRef.current();
+        reconcileTerminalVisibility();
+      });
+    });
+    return () => {
+      if (firstFrame !== null) cancelAnimationFrame(firstFrame);
+      if (secondFrame !== null) cancelAnimationFrame(secondFrame);
+    };
+  }, [active, sessionId]);
 
   useEffect(() => {
     const term = termRef.current;
     if (term) term.options.disableStdin = !live;
   }, [live]);
 
-  return <TerminalHost hostRef={hostRef} ariaLabel="Live terminal" />;
+  return (
+    <TerminalHost
+      hostRef={hostRef}
+      ariaLabel="Live terminal"
+      busy={!renderReady}
+      placeholder={renderReady ? undefined : '▉ loading terminal\nrestoring session output…'}
+    />
+  );
 });

@@ -847,6 +847,24 @@ describe('paging and the honest absences', () => {
     expect(screen.getByTestId('chs-provenance').textContent).toContain('session_chat_v1');
   });
 
+  it('renders the provenance line ABOVE the feed, at the paging boundary it describes', () => {
+    // D2: the chat surface ends at the composer. S09's honesty line is kept —
+    // relocated to the top of the feed beside "load earlier ↑", because it
+    // states the paging boundary, and the boundary is where earlier pages load.
+    render(
+      <ChannelScreen
+        {...base}
+        page={page([messageItem()], { nextCursor: 'cur-1' as never })}
+        onLoadEarlier={vi.fn()}
+      />,
+    );
+    const provenance = screen.getByTestId('chs-provenance');
+    const list = screen.getByRole('list', { name: 'Messages and activity' });
+    expect(provenance.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const earlier = screen.getByRole('button', { name: /load earlier/i });
+    expect(provenance.compareDocumentPosition(earlier) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('replaces the surface without leaking a thing when Chat permission is lost (S12)', () => {
     render(
       <ChannelScreen

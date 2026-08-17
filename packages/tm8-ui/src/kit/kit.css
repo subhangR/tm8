@@ -95,6 +95,32 @@
 }
 .cv2-root .kit-chip__glyph {
   color: var(--pn-ink-3);
+  /* The glyph slot holds a 14px drawn mark now, not a text character: without
+     a line box of its own it inherits the chip's 11.5px one and the svg sits
+     1–2px low. `display: flex` gives it its own box and centres the mark on
+     the chip's cross axis, which is where the label already is. */
+  display: flex;
+  align-items: center;
+}
+
+/* --- VectorIcon — the drawn mark, wherever it lands ---------------------- */
+/*
+ * ONE rule, and it exists so the swap from text glyphs to drawn ones did not
+ * have to touch ~30 call sites' layout. Two behaviours:
+ *
+ *   `vertical-align` places the mark on the text baseline when it is dropped
+ *   inline among words (the activity stream, the inbox meta line). -0.15em is
+ *   the optical centre for a 13–14px mark in this UI's 11–13px faces, and it
+ *   is what a text glyph's own baseline used to do by accident.
+ *
+ *   `flex: none` stops it being squashed when the parent IS a flex row, which
+ *   is the other half of the sites. In that case `vertical-align` is inert
+ *   and `align-items` on the parent does the centring, correctly.
+ */
+.cv2-root .kit-vicon {
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex: none;
 }
 
 /* --- IconBtn — square glyph button, always aria-labeled (T0-4) ------------ */
@@ -288,4 +314,18 @@
     stroke-dasharray: 62 70;
     animation: pnPulse 2.4s var(--pn-ease-standard) infinite;
   }
+}
+
+/* --- BrandMark — the tm8 product mark ------------------------------------
+   Sized in `em` so one rule serves every brand line at whatever font-size it
+   is set at (11.5px tab bar, 13px auth and invite stages). Unscoped by
+   `.cv2-root` on purpose: the invite landing and the auth stage render outside
+   it, and a mark that vanishes on the sign-in screen is the whole point of the
+   mark missed. `aspect-ratio` reserves the box before the image decodes, so the
+   brand line does not reflow on load. */
+.kit-brandmark {
+  height: 1.15em;
+  width: auto;
+  aspect-ratio: 77 / 128;
+  vertical-align: -0.22em;
 }

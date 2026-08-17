@@ -11,6 +11,7 @@
  */
 import type { ReactNode } from 'react';
 import type { SpaceId, SpaceSummary } from '@tm8/contract';
+import { BrandMark } from '../kit';
 
 export interface SpaceTabBarProps {
   /** The Server whose spaces and menu currently own the workspace. */
@@ -55,7 +56,7 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
   return (
     <header className="shell-tabbar" data-testid="space-tab-bar">
       <div className="shell-tabbar__mark" aria-label="tm8">
-        <span aria-hidden="true">◈</span> tm8
+        <BrandMark /> tm8
       </div>
       {props.activeServer ? (
         <div

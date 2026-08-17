@@ -314,6 +314,10 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
 
   it('7. quick launch → list.quickLaunch', () => {
     expect(getKind('work_session').list.quickLaunch).toBe('launch-session');
+    // Launch is the ONLY birth affordance: the inherited quickCreate:true
+    // mounted a Create control that refuses (same defect class as the refused
+    // Save control ruled on the rowActions note), so the row opts out.
+    expect(getKind('work_session').list.quickCreate).toBe(false);
   });
 
   it('8. per-kind filters → list.filters (and a sort with exactly one default)', () => {
@@ -340,6 +344,12 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       'inlineEdit',
       'rowActions',
       'stateControl',
+      /* Opened 2026-08-04 with the expanded-row controls. A state is written
+         by a command verb, a value by a version-guarded content patch and an
+         assignment by an edge — three different writes, so they are three
+         fields rather than one overloaded `controls`. */
+      'valueControls',
+      'assignControl',
     ];
     for (const row of allKinds()) {
       for (const key of Object.keys(row.list)) {
@@ -618,14 +628,22 @@ describe('liveness presentation is presentation only (R-UI-5, D6)', () => {
     });
   });
 
-  it('takes the NEEDS-YOU verdict as a parameter and never derives it', () => {
+  // Was: `needs(idleRow, 'live') === true`. That assertion only ever passed
+  // in the abstract — `statusOf` could not return 'live' for an idle session,
+  // so the pairing never occurred on real data. Once it could, this predicate
+  // banded EVERY quiet session as NEEDS ATTENTION and flattened the session
+  // tree, because the attention band does not nest. 'idle' is quiet, not
+  // blocked, and nothing on the row separates the two.
+  it('NEVER derives attention from liveness — idle is quiet, not blocked', () => {
     const needs = getKind('work_session').list.needsAttentionGroup!;
     const row = { id: 's1', kind: 'work_session' as const, activityAt: '', status: 'idle', blockedCount: 0 };
-    expect(needs(row, 'live')).toBe(true);
-    // A record that merely CLAIMS to be idle, with no live verdict, never fires.
+    // The pairing that used to fire. It must not, or the tree collapses again.
+    expect(needs(row, 'live')).toBe(false);
     expect(needs(row, 'unknown')).toBe(false);
     expect(needs(row, 'stale')).toBe(false);
     expect(needs({ ...row, status: 'running' }, 'live')).toBe(false);
+    // Attention is raised by an explicit server fact (`badges.attention`),
+    // which the list panel ORs in at the call site — never by this predicate.
   });
 });
 
@@ -670,6 +688,16 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
     }
   });
 
+  it("D2: chat surfaces end at the composer — composition:'chat' on channel and work_session only", () => {
+    // The flag is what the panel's strip/footer exclusion reads; work_session
+    // is already excluded via the terminal arm, so there it states the reason
+    // structurally rather than changing behaviour.
+    for (const row of allKinds()) {
+      const expected = row.kind === 'channel' || row.kind === 'work_session' ? 'chat' : undefined;
+      expect(row.panel.composition, String(row.kind)).toBe(expected);
+    }
+  });
+
   it('gives restricted kinds honest capability wording (L6)', () => {
     for (const kind of ['project', 'interaction_profile']) {
       const reasons = getKind(kind).panel.capabilityReasons;
@@ -682,6 +710,48 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
 describe('Z1 / Z2 specs', () => {
   it('gives every kind an icon (the collapsed 48px menu rail needs one)', () => {
     for (const row of allKinds()) expect(row.icon.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * THE ARTWORK GUARDS — the defect that produced them, stated so nobody
+   * relaxes them later: thirteen of the twenty text glyphs (◻ ▣ ▦ ◈ ❖ ◇ ◉ ◍
+   * ◆ ⬢ ✧ ✦ ⌬) were the same small lozenge at the size they ship at, so the
+   * Connections tab showed a reader WHAT was linked without showing WHICH KIND
+   * it was. Totality alone would not have caught that — every one of those
+   * kinds HAD an icon. Uniqueness is the assertion that matters.
+   */
+  it('gives every kind DRAWN artwork, not just a character', () => {
+    for (const row of allKinds()) {
+      expect(row.iconArt.length, `${row.kind} has no artwork`).toBeGreaterThan(0);
+      for (const d of row.iconArt) {
+        // Path data, on the 16×16 grid every mark is authored to.
+        expect(d, `${row.kind} draws something that is not a path`).toMatch(/^M[\s\d.-]/);
+      }
+    }
+  });
+
+  it('NO TWO KINDS SHARE A MARK — the whole point of the set', () => {
+    const seen = new Map<string, string>();
+    for (const row of allKinds()) {
+      const signature = row.iconArt.join('|');
+      const owner = seen.get(signature);
+      expect(owner, `${row.kind} draws exactly what ${owner} draws`).toBeUndefined();
+      seen.set(signature, row.kind);
+    }
+  });
+
+  it('every mark stays inside the 16×16 grid it is drawn on', () => {
+    // A path that overflows the viewBox is clipped, and a clipped icon is a
+    // DIFFERENT icon — silently, and only at some sizes. Absolute coordinates
+    // only: relative arc/curve segments are offsets and mean nothing here.
+    for (const row of allKinds()) {
+      for (const d of row.iconArt) {
+        for (const n of d.match(/(?<![a-zA-Z\d.])-?\d+(\.\d+)?/g) ?? []) {
+          const v = Math.abs(Number(n));
+          expect(v, `${row.kind} draws at ${n}, outside 0–16`).toBeLessThanOrEqual(16);
+        }
+      }
+    }
   });
 
   it('summarises with 2–4 card fields', () => {

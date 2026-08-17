@@ -3,7 +3,7 @@
  * predicate, which is the ONLY place in the whole UI where liveness truth is
  * computed.
  *
- *     statusOf(s):  workStatus !== 'running'      → 'not-running'
+ *     statusOf(s):  workStatus ∉ {running, idle}  → 'not-running'
  *                   no snapshot / snapshot > 90s  → 'unknown'   (neutral, NEVER live)
  *                   s.id ∈ live set               → 'live'
  *                   otherwise                     → 'stale'
@@ -169,7 +169,22 @@ export function createLivenessManager(deps: LivenessDeps): LivenessManager {
      * space that owns it.
      */
     statusOf(session): SessionLiveness {
-      if ((session.workStatus as string | null) !== 'running') return 'not-running';
+      // 'idle' is a LIVE status, not a terminal one. The DB admits
+      // spawning|running|idle|exited|failed, the node treats spawning|running|idle
+      // as active (`listNodeActiveSessions`), and `resume` refuses an idle session
+      // precisely BECAUSE its PTY is still attached. Testing only for 'running'
+      // here sent every idle session down the 'not-running' arm, where
+      // `presentSession` has no arm for 'idle' and falls through to 'exited' — so
+      // a live agent that had merely gone quiet rendered as dead, and the resume
+      // it then offered came back 409. Both halves of that contradiction were
+      // this one line.
+      //
+      // 'spawning' stays OUT: its PTY may not exist yet, so an absent id means
+      // "still starting", not "stale". `presentSession` reports it from the
+      // record instead, which is the honest answer for a session with no
+      // measurement yet.
+      const recorded = session.workStatus as string | null;
+      if (recorded !== 'running' && recorded !== 'idle') return 'not-running';
       let sawFresh = false;
       for (const snap of snapshots.values()) {
         if (!isFresh(snap)) continue;

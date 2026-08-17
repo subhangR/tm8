@@ -21,11 +21,12 @@
  * registration (T2-2)". Task is not among them.
  */
 import { useCallback, useState } from 'react';
-import type { CommandResult, EntityId, SpaceId } from '@tm8/contract';
+import type { CommandResult, EntityId, EntityKind, SpaceId } from '@tm8/contract';
 import {
   classifyFailure,
   createdIdOf,
-  newTaskInput,
+  creatableKind,
+  newEntityInput,
   type AuthoringCommands,
   type RefusedFailure,
 } from './commands';
@@ -49,6 +50,12 @@ export interface NewTaskHandle {
 
 export interface NewTaskOptions {
   spaceId: SpaceId;
+  /**
+   * The kind this surface lists, from its registry config. WITHOUT IT the flow
+   * created a task on every surface, so "＋ New channel" made something the
+   * channel list could not show.
+   */
+  kind: EntityKind;
   /** From the kind registry's `label` via `placeholderTitleFor` — never a literal. */
   placeholderTitle: string;
   /** Null ⇒ no executor is wired, and the control says so. */
@@ -64,14 +71,27 @@ const NO_EXECUTOR = {
   remedy: 'this surface was mounted without a command executor',
 } as const;
 
+/**
+ * A kind the generic create cannot make (see `creatableKind`). Disabled WITH
+ * THE REASON rather than hidden, and rather than the old behavior of making a
+ * task instead — which is the same lie, just quieter.
+ */
+const NOT_CREATABLE = {
+  cause: 'These are not created here',
+  remedy: 'this kind is made another way — a session by launching, a member by invitation',
+} as const;
+
 export function useNewTask(options: NewTaskOptions): NewTaskHandle {
-  const { spaceId, placeholderTitle, commands, onCreated, refusal } = options;
+  const { spaceId, kind, placeholderTitle, commands, onCreated, refusal } = options;
   const [state, setState] = useState<NewTaskPhase>({ phase: 'idle' });
 
-  const unavailable = commands === null ? NO_EXECUTOR : (refusal ?? null);
+  const creatable = creatableKind(kind);
+  const unavailable = commands === null
+    ? NO_EXECUTOR
+    : creatable === null ? NOT_CREATABLE : (refusal ?? null);
 
   const create = useCallback(async () => {
-    if (commands === null) return;
+    if (commands === null || creatable === null) return;
     /**
      * THE DOUBLE-PRESS GUARD, and it is not a nicety. The oracle's promise is
      * that the row exists the instant you press; a second press during the
@@ -84,7 +104,9 @@ export function useNewTask(options: NewTaskOptions): NewTaskHandle {
     if (state.phase === 'creating') return;
     setState({ phase: 'creating' });
     try {
-      const result = await commands.createTask(newTaskInput(spaceId, placeholderTitle));
+      const result = await commands.createEntity(
+        newEntityInput(spaceId, creatable, placeholderTitle),
+      );
       const id = createdIdOf(result);
       if (id === null) {
         /**
@@ -112,7 +134,7 @@ export function useNewTask(options: NewTaskOptions): NewTaskHandle {
     } catch (error) {
       setState({ phase: 'refused', failure: asRefused(error) });
     }
-  }, [commands, onCreated, placeholderTitle, spaceId, state.phase]);
+  }, [commands, creatable, onCreated, placeholderTitle, spaceId, state.phase]);
 
   const dismiss = useCallback(() => setState({ phase: 'idle' }), []);
 

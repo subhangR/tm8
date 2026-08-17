@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { CollabError, WorkStatusSchema } from '@tm8/contract';
-import type { CommandResult, EntityDetail, PatchTaskInput } from '@tm8/contract';
+import type { CommandResult, EntityDetail, EntityKind, PatchTaskInput } from '@tm8/contract';
 import { fixtureDetails, taskUuidTitle } from '../fixtures';
 import {
   AuthoringHost,
@@ -50,7 +50,7 @@ function taskAt(version: number, over: Partial<EntityDetail> = {}): EntityDetail
 /** A scripted executor that records ARGUMENTS, so the assertions can be about
  *  what was sent rather than about the fact that something was called. */
 function scriptCommands(script: {
-  createTask?: (n: number) => Promise<CommandResult>;
+  createEntity?: (n: number) => Promise<CommandResult>;
   patchTask?: (n: number, input: PatchTaskInput) => Promise<CommandResult>;
 }) {
   const calls: { create: Record<string, unknown>[]; patch: { id: string; input: PatchTaskInput }[] } = {
@@ -58,10 +58,10 @@ function scriptCommands(script: {
     patch: [],
   };
   const commands: AuthoringCommands = {
-    async createTask(input) {
+    async createEntity(input) {
       calls.create.push(input as unknown as Record<string, unknown>);
-      return script.createTask
-        ? script.createTask(calls.create.length)
+      return script.createEntity
+        ? script.createEntity(calls.create.length)
         : ({ entity: taskAt(1), patches: [taskAt(1)] } as CommandResult);
     },
     async patchTask(id, input) {
@@ -143,13 +143,18 @@ describe('the authoring port', () => {
 function NewTaskHarness({
   commands,
   onCreated,
+  kind = 'task',
+  label = 'Task',
 }: {
   commands: AuthoringCommands | null;
   onCreated?: (id: string) => void;
+  kind?: EntityKind;
+  label?: string;
 }) {
   const flow = useNewTask({
     spaceId: TASK.spaceId,
-    placeholderTitle: placeholderTitleFor('Task'),
+    kind,
+    placeholderTitle: placeholderTitleFor(label),
     commands,
     onCreated: (id) => onCreated?.(String(id)),
   });
@@ -178,10 +183,41 @@ describe('the new-task flow', () => {
     expect(created).toHaveBeenCalledWith(TASK.id);
   });
 
+  /**
+   * THE DEFECT THIS FILE MISSED. Every surface got its create from this hook,
+   * and the hook called `createTask` — which the ops layer sends as
+   * `kind: 'task'`. So "＋ New channel" on the channels list created a task,
+   * the channel list never showed it, and the user saw NOTHING HAPPEN.
+   *
+   * The old assertions could not catch it: this harness only ever stood on a
+   * task, so the kind it sent was accidentally right and the wrongness was
+   * invisible. The parameter is the fix and the second case is the proof.
+   */
+  it('creates the KIND OF THE LIST IT IS IN, not always a task', async () => {
+    const { commands, calls } = scriptCommands({});
+    render(<NewTaskHarness commands={commands} kind="channel" label="Channel" />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /new/i }));
+    });
+    expect(calls.create).toHaveLength(1);
+    expect(calls.create[0].kind).toBe('channel');
+    expect(calls.create[0].title).toBe('Untitled channel');
+  });
+
+  it('DISABLES WITH REASON on a kind the generic create cannot make', () => {
+    // `work_session` is born from a spawn, never from `entities.create` — the
+    // contract's own schema says so. Before, this control silently made a task.
+    const { commands, calls } = scriptCommands({});
+    render(<NewTaskHarness commands={commands} kind="work_session" label="Session" />);
+    expect(document.querySelector('button')).toBeNull();
+    expect(screen.getByTestId('disabled-with-reason').getAttribute('aria-disabled')).toBe('true');
+    expect(calls.create).toHaveLength(0);
+  });
+
   it('shows the promise while it is in flight and refuses a second press', async () => {
     let release!: (r: CommandResult) => void;
     const { commands, calls } = scriptCommands({
-      createTask: () => new Promise<CommandResult>((resolve) => { release = resolve; }),
+      createEntity: () => new Promise<CommandResult>((resolve) => { release = resolve; }),
     });
     render(<NewTaskHarness commands={commands} />);
     const button = screen.getByRole('button', { name: /new/i });
@@ -200,7 +236,7 @@ describe('the new-task flow', () => {
 
   it('renders a refusal in the designed card and creates nothing', async () => {
     const { commands } = scriptCommands({
-      createTask: () => Promise.reject(new CollabError('forbidden', 'read-only space')),
+      createEntity: () => Promise.reject(new CollabError('forbidden', 'read-only space')),
     });
     const created = vi.fn();
     render(<NewTaskHarness commands={commands} onCreated={created} />);
@@ -214,7 +250,7 @@ describe('the new-task flow', () => {
 
   it('states honestly when a create returned no id rather than inventing one', async () => {
     const { commands } = scriptCommands({
-      createTask: async () => ({ patches: [] }) as CommandResult,
+      createEntity: async () => ({ patches: [] }) as CommandResult,
     });
     const created = vi.fn();
     render(<NewTaskHarness commands={commands} onCreated={created} />);

@@ -184,6 +184,16 @@ describe('terminal host', () => {
     const hint = document.getElementById(describedBy!);
     expect(hint?.textContent).toMatch(/Control and backtick/);
   });
+
+  it('announces replay hydration instead of presenting an unexplained blank canvas', () => {
+    const { getByTestId } = render(<TerminalHost placeholder="restoring output" busy />);
+    const host = getByTestId('terminal-host');
+    const status = getByTestId('terminal-host-placeholder');
+
+    expect(host.getAttribute('aria-busy')).toBe('true');
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.textContent).toContain('restoring output');
+  });
 });
 
 describe('fallbacks — each verdict states what is actually known', () => {

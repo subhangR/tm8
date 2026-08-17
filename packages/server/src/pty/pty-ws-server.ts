@@ -20,7 +20,7 @@
  *   client -> server
  *     `?offset=` the last raw byte offset it received (0/absent = fresh attach)
  *     BINARY  keystroke bytes
- *     TEXT    {type:'resize', cols, rows}
+ *     TEXT    {type:'resize', cols, rows, force?}
  *
  * ALL OFFSETS ARE RAW byte positions. `next` is authoritative: the client snaps
  * its receive counter to it and must NOT compute `base + replay.length`, because
@@ -167,16 +167,36 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
       return;
     }
     if (typeof msg !== 'object' || msg === null) return;
-    const frame = msg as { type?: unknown; cols?: unknown; rows?: unknown };
+    const frame = msg as { type?: unknown; cols?: unknown; rows?: unknown; force?: unknown };
     if (frame.type !== 'resize') return;
     const cols = Number(frame.cols);
     const rows = Number(frame.rows);
     if (Number.isFinite(cols) && Number.isFinite(rows)) {
       const previous = pty.getSize(sessionId);
+      const unchanged = Boolean(previous && previous.cols === cols && previous.rows === rows);
       // This equality check terminates client echo loops. A peer that merely
       // reasserts the current geometry produces no PTY signal and no broadcast.
-      if (previous && previous.cols === cols && previous.rows === rows) return;
+      //
+      // `force` is the ONE exception, and the client sends it at most once per
+      // attach. A freshly attached browser has rendered the replay and now needs
+      // the agent to redraw over it, but a full-screen TUI only redraws when it
+      // is told to — and on a remount into unchanged window geometry the fitted
+      // size matches exactly, so the guard above swallowed the only signal that
+      // would have asked. That is the "blank until I resize the window" bug:
+      // resizing worked solely because it made the geometry differ.
+      if (unchanged && frame.force !== true) return;
+      if (unchanged) {
+        // TIOCSWINSZ raises SIGWINCH only when the winsize actually CHANGES, so
+        // re-asserting the same dimensions is silent. Bounce one row and come
+        // straight back: the agent gets its SIGWINCH, re-reads the winsize, and
+        // repaints at the real geometry. Away from the 1000-row clamp in both
+        // directions, and the client's own grid is never touched.
+        pty.resize(sessionId, cols, rows > 1 ? rows - 1 : rows + 1);
+      }
       pty.resize(sessionId, cols, rows);
+      // A forced no-op carries no NEW geometry, so peers have nothing to learn
+      // from it — broadcasting would only invite the echo loop back.
+      if (unchanged) return;
       const peers = connectionsBySession.get(sessionId);
       if (!peers) return;
       const liveFrame = JSON.stringify({ type: 'size', cols, rows, live: true });

@@ -31,7 +31,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, ExecutionSpawnInput, WorkSessionInteractionProfileProjection } from '@tm8/contract';
-import { EntityDetailPanel, EntityListPanel, EmptyBody, type DetailReasons, type PanelTab } from '../panels';
+import {
+  EntityDetailPanel,
+  EntityListPanel,
+  EmptyBody,
+  type DetailReasons,
+  type PanelTab,
+  type RowControlsPort,
+} from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
 import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
 import type { ActionContext } from '../domain/types';
@@ -44,12 +51,15 @@ import { attachmentsPortFromSeam } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
 import { useRowLifecycle } from './useRowLifecycle';
+import { useSessionResume } from './useSessionResume';
 import type { ContentSurface } from '../routes';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
+import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
+import { graphSurfaceFor } from './graphSurface';
 import { representedThreadMessageCount } from './message-thread';
 
 export interface EntityViewProps {
@@ -166,11 +176,21 @@ export function EntityView(props: EntityViewProps) {
     onNotice: props.onNotice,
   });
 
+  /* The same resume executor the workspace mounts. This screen is where the
+     sessions collection is actually browsed, and it was the surface reporting
+     "Resume is not wired on this surface yet." */
+  const sessionResume = useSessionResume({
+    seam: data.seam,
+    reconcile: data.reconcileCommand,
+    onNotice: props.onNotice,
+  });
+
   /* Authoring mount 7a, EntityView host: +New in the list head creates for
      real and opens the new entity in the centre. quickCreate gates by
      registry data. */
   const createFlow = useNewTask({
     spaceId: data.spaceId,
+    kind: config.kind,
     placeholderTitle: placeholderTitleFor(config.label),
     commands: data.seam.commands,
     onCreated: (id) => setSelectedId(id as EntityId),
@@ -272,8 +292,36 @@ export function EntityView(props: EntityViewProps) {
   const auxDetail = auxId ? data.detailOf(auxId) : null;
   if (auxId && !auxDetail) props.data.pull?.(auxId);
 
+  /**
+   * The detail panel's control strip runs on the SAME executor as the list's
+   * expanded row — one set of writes, two places to reach them, so a priority
+   * changed in the panel and one changed in the row cannot diverge.
+   *
+   * `kind` is the OPENED ENTITY's, not the list's: the strip resolves its
+   * vocabulary from it, and the aux column routinely holds a doc while the
+   * list is showing tasks.
+   */
+  const controlsFor = useCallback(
+    (entityKind: string | undefined): RowControlsPort | null =>
+      entityKind
+        ? {
+            kind: entityKind,
+            ctx,
+            capabilitiesOf: (id) => data.detailOf(id)?.capabilities,
+            livenessOf: data.livenessOf,
+            onSetState: rowLifecycle.setState,
+            onArchive: rowLifecycle.archive,
+            onSetValue: rowLifecycle.setValue,
+            onAssign: rowLifecycle.assign,
+            assignableActors: rowLifecycle.assignable,
+          }
+        : null,
+    [ctx, data, rowLifecycle],
+  );
+
   const detailPanel = selectedId ? (
     <EntityDetailPanel
+      controls={controlsFor(detail?.kind)}
       detail={detail ?? null}
       serverBaseUrl={props.serverBaseUrl}
       loading={!detail}
@@ -287,6 +335,13 @@ export function EntityView(props: EntityViewProps) {
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the list already"
       liveness={data.livenessOf(selectedId)}
       livenessOf={data.livenessOf}
+      {...(sessionResume.resume
+        ? { onResumeSession: () => sessionResume.resume?.(selectedId) }
+        : {})}
+      resumingSession={sessionResume.resumingId === selectedId}
+      {...(sessionResume.unavailableReason
+        ? { resumeSessionDisabledReason: sessionResume.unavailableReason }
+        : {})}
       attachments={attachments}
       onAttachmentUploaded={() => props.data.pull?.(selectedId)}
       viewerMemberId={props.viewerMemberId}
@@ -323,7 +378,9 @@ export function EntityView(props: EntityViewProps) {
           }}
         />
       ) : undefined}
+      attentionSection={detail ? attentionSectionFor(data.seam, data.spaceId, selectedId, () => props.data.pull?.(selectedId)) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
+      graphSurface={detail ? graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) => setAux({ sort: 'entity', id: id as EntityId })) : undefined}
       messages={messages}
       onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], body })}
       /* GAP-2 (data-wiring handover): the save path — inline title + Save +
@@ -380,6 +437,9 @@ export function EntityView(props: EntityViewProps) {
           onKindChange={props.onKindChange}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onSetValue={rowLifecycle.setValue}
+          onAssign={rowLifecycle.assign}
+          assignableActors={rowLifecycle.assignable}
           /* The SAME sources the workspace passes. `onFullOptions` is
              deliberately absent: the five-section sheet is mounted by the
              workspace centre and does not exist on this screen, so the escape
@@ -423,6 +483,7 @@ export function EntityView(props: EntityViewProps) {
           <div className="ev-aux__body">
             {aux.sort === 'entity' ? (
               <EntityDetailPanel
+                controls={controlsFor(auxDetail?.kind)}
                 detail={auxDetail ?? null}
                 serverBaseUrl={props.serverBaseUrl}
                 loading={!auxDetail}
@@ -432,8 +493,17 @@ export function EntityView(props: EntityViewProps) {
                 pinned={false}
                 pinRefusal="Pinning lives in the Workspace"
                 liveness={data.livenessOf(aux.id)}
+                attentionSection={attentionSectionFor(data.seam, data.spaceId, aux.id, () => props.data.pull?.(aux.id))}
                 debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
+                graphSurface={graphSurfaceFor(data.seam, aux.id, data.livenessOf, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
                 livenessOf={data.livenessOf}
+                {...(sessionResume.resume
+                  ? { onResumeSession: () => sessionResume.resume?.(aux.id) }
+                  : {})}
+                resumingSession={sessionResume.resumingId === aux.id}
+                {...(sessionResume.unavailableReason
+                  ? { resumeSessionDisabledReason: sessionResume.unavailableReason }
+                  : {})}
                 attachments={attachments}
                 onAttachmentUploaded={() => props.data.pull?.(aux.id)}
                 viewerMemberId={props.viewerMemberId}

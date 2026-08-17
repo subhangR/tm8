@@ -75,6 +75,23 @@ describe('terminalVisibilityDriver', () => {
     expect(calls).toEqual([]);
   });
 
+  it('treats a terminal below display:none as hidden even when xterm itself says visible', () => {
+    const surface = document.createElement('div');
+    surface.style.display = 'none';
+    const el = document.createElement('div');
+    el.style.visibility = 'visible';
+    surface.appendChild(el);
+    document.body.appendChild(surface);
+    terminals = [{ id: 'a', element: el }];
+
+    startTerminalVisibilityDriver(deps);
+    reconcileTerminalVisibility();
+    vi.advanceTimersByTime(GRACE_MS + 500);
+    reconcileTerminalVisibility();
+
+    expect(calls).toEqual(['flush:a', 'suspend:a']);
+  });
+
   it('resumes a suspended terminal the moment it becomes visible again', () => {
     const el = makeEl(false);
     terminals = [{ id: 'a', element: el }];

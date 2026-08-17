@@ -1,6 +1,6 @@
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
-import { getKind } from '../../domain';
+import { KindIcon, getKind } from '../../domain';
 import { EmptyBody } from '../detail/PanelStates';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { Markdown, headingsIn } from '../../kit';
@@ -104,7 +104,7 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
     return (
       <div className="pn-body" id="tabpanel-content" role="tabpanel" aria-labelledby="tab-content">
         <EmptyBody
-          glyph={getKind(detail.kind).chip.glyph}
+          glyph={<KindIcon kind={detail.kind} />}
           sentence="This document has no content yet. Nothing is invented to fill it."
         />
       </div>

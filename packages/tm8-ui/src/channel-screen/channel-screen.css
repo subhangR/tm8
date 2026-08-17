@@ -123,8 +123,11 @@
 
 .chs-actions {
   position: absolute;
-  top: -12px;
-  right: 8px;
+  /* Below the row, slightly overlapping it, aligned to the BODY column
+     (row padding 6px + gutter 38px + gap 10px = 54px) — a top-anchored
+     overlay covered the previous message's last line. */
+  top: calc(100% - 6px);
+  left: 54px;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -180,16 +183,51 @@
 
 .chs-byline__gap { flex: 1; }
 
-.chs-text {
+/* The message body is a MARKDOWN root (kit/Markdown), not a paragraph.
+   `.md-root` is `.cv2-root .md-root` in markdown.css, so every rule here
+   qualifies with both classes to outrank it regardless of import order — the
+   doc surfaces read in a serif column at doc size, and a chat line must not.
+   No `white-space: pre-wrap`: line breaks are hard breaks in the source now,
+   and pre-wrap would double the spacing of every list and table. */
+.cv2-root .md-root.chs-text {
   margin: 0;
+  font-family: var(--pn-ui);
   font-size: 13px;
   line-height: 1.5;
   color: var(--pn-ink-2);
   text-wrap: pretty;
   user-select: text;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* A message is a chat line, so its blocks sit tight and its last one adds no
+   trailing gap above the delivery row. */
+.cv2-root .md-root.chs-text p,
+.cv2-root .md-root.chs-text ul,
+.cv2-root .md-root.chs-text ol,
+.cv2-root .md-root.chs-text blockquote,
+.cv2-root .md-root.chs-text .md-fence,
+.cv2-root .md-root.chs-text .md-tablewrap,
+.cv2-root .md-root.chs-text .md-mermaid { margin-bottom: 0.5em; }
+.cv2-root .md-root.chs-text > :last-child { margin-bottom: 0; }
+
+/* Headings inside a message are EMPHASIS, not chapters: the doc treatment
+   (serif h1 with a rule under it) would tower over the row it lives in. */
+.cv2-root .md-root.chs-text h1,
+.cv2-root .md-root.chs-text h2,
+.cv2-root .md-root.chs-text h3,
+.cv2-root .md-root.chs-text h4,
+.cv2-root .md-root.chs-text h5,
+.cv2-root .md-root.chs-text h6 {
+  font-family: var(--pn-ui);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.7em 0 0.3em;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.cv2-root .md-root.chs-text h1 { font-family: var(--pn-ui); font-size: 14px; }
 
 /* A canonical mention, in place in the sentence it was typed in. */
 .chs-mention-inline {
@@ -600,10 +638,12 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding: 2px 0 8px;
 }
 
+/* At the TOP of the feed (D2), above "load earlier ↑": the rule sits under
+   the line, marking the paging boundary it describes. */
 .chs-provenance {
-  margin: 12px 0 0;
-  padding-top: 6px;
-  border-top: 1px solid var(--pn-line);
+  margin: 0 0 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--pn-line);
   font-family: var(--pn-mono);
   font-size: 9px;
   color: var(--pn-ink-4);
@@ -1019,8 +1059,10 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-message-meta { flex-wrap: wrap; }
   .chs-parent__jump { flex-wrap: wrap; }
   .chs-targets__row { flex-wrap: wrap; }
-  /* No hover on touch: actions stay reachable as a permanent overlay. */
-  .chs-actions { opacity: 1; pointer-events: auto; top: -8px; right: 2px; }
+  /* No hover on touch: actions stay reachable as a permanent overlay —
+     bottom-anchored like the pointer state; 30px gutter shifts the body
+     column to 6 + 30 + 10 = 46px. */
+  .chs-actions { opacity: 1; pointer-events: auto; top: calc(100% - 6px); left: 46px; right: auto; }
   .chs-artifact { grid-template-columns: auto minmax(0, 1fr); }
   .chs-artifact .chs-linkbtn { grid-column: 1 / -1; justify-self: start; }
   .chs-composer { padding-inline: 8px; }
@@ -1055,4 +1097,53 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-new-items,
   .chs-composer__send { border: 1px solid ButtonText; }
   :where(button, textarea, input):focus-visible { outline: 3px solid Highlight; }
+}
+
+/* --- live tool graph — the collapsible strip above a session feed ---------- */
+
+.chs-livegraph {
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-card);
+}
+
+.chs-livegraph__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  padding: var(--pn-space-1) var(--pn-space-4);
+  cursor: pointer;
+  text-align: left;
+}
+
+.chs-livegraph__toggle:hover { background: var(--pn-hover); }
+
+.chs-livegraph__count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.chs-livegraph__canvas {
+  height: 260px;
+  overflow: hidden;
+  background: var(--pn-paper);
+  border-top: 1px solid var(--pn-line);
+}
+
+/* The most recently touched node breathes once so live growth is visible. */
+.chs-livegraph__cell--fresh .sg-box {
+  stroke: var(--pn-brand);
+  animation: chs-livegraph-fresh var(--pn-dur-slow) var(--pn-ease-standard) 1;
+}
+
+@keyframes chs-livegraph-fresh {
+  from { stroke-width: 2.5; }
+  to { stroke-width: 1; }
 }

@@ -87,6 +87,20 @@ export interface ConnectionConfig {
   idleProbeAfterMs: number;
   /** How often the watchdog looks at the silence clock while the socket is open. */
   idleCheckIntervalMs: number;
+  /**
+   * Floor between two LIFECYCLE-forced reconnects (foreground / `online`).
+   *
+   * The fast path deliberately discards the backoff ladder, because the
+   * failures that built it were measured against a network the device no
+   * longer has. That is safe exactly once per resume — and a phone can emit
+   * `visibilitychange` many times a second (notification shade, app switcher,
+   * a passing share sheet). Without a floor, a device flapping visibility
+   * against a node that is refusing connections would reset the ladder on
+   * every flap and become the hot loop the jitter rule exists to prevent.
+   * Inside the floor the ORDINARY backoff still runs, so a resume is never
+   * dropped, only de-duplicated.
+   */
+  resumeMinIntervalMs: number;
 }
 
 export const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
@@ -98,7 +112,50 @@ export const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
   pollLimit: 200,
   idleProbeAfterMs: 90_000,
   idleCheckIntervalMs: 45_000,
+  resumeMinIntervalMs: 1_000,
 };
+
+/**
+ * Where "the app came back" comes from. Injectable for the same reason the
+ * timers are: the tests in this directory drive real transitions with no DOM
+ * and no waiting.
+ *
+ * Subscribes to `onResume` and returns an unsubscribe.
+ */
+export type LifecycleSource = (onResume: (reason: string) => void) => Unsubscribe;
+
+/**
+ * The browser's two "you are back" signals, and only those two.
+ *
+ * - `visibilitychange` → visible. NOT the hide edge: backgrounding is not news
+ *   this state machine can act on, and reacting to it would close a socket the
+ *   OS may well leave working.
+ * - `online`. `navigator.onLine` is famously optimistic about whether packets
+ *   actually flow, which is why this only PROMPTS an attempt — the socket's own
+ *   outcome still decides the phase, exactly as it does on every other path.
+ *
+ * Returns a no-op in a non-DOM host rather than throwing, so the manager stays
+ * usable from Node.
+ */
+export function browserLifecycle(): LifecycleSource {
+  return (onResume) => {
+    // `typeof` guards rather than truthiness: referencing an UNDECLARED global
+    // throws a ReferenceError, so these can never be read directly in Node.
+    const doc = typeof document === 'undefined' ? undefined : document;
+    const win = typeof window === 'undefined' ? undefined : window;
+    if (doc === undefined && win === undefined) return () => {};
+    const onVisible = (): void => {
+      if (doc?.visibilityState === 'visible') onResume('visible');
+    };
+    const onOnline = (): void => onResume('online');
+    doc?.addEventListener('visibilitychange', onVisible);
+    win?.addEventListener('online', onOnline);
+    return () => {
+      doc?.removeEventListener('visibilitychange', onVisible);
+      win?.removeEventListener('online', onOnline);
+    };
+  };
+}
 
 export interface ConnectionDeps {
   /** Absolute ws:// or wss:// URL. Never derived silently — see `seam-real.ts`. */
@@ -112,6 +169,11 @@ export interface ConnectionDeps {
   /** Jitter source in [0,1). */
   random?: () => number;
   config?: Partial<ConnectionConfig>;
+  /**
+   * "The app came back to the foreground / the network returned." Defaults to
+   * the real browser events; pass `() => () => {}` to opt out entirely.
+   */
+  lifecycle?: LifecycleSource;
   /**
    * Non-fatal transport noise: a malformed frame, a listener that threw, a poll
    * that failed. Reported rather than swallowed — a silent drop here looks
@@ -464,6 +526,54 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     }, delay);
   }
 
+  // -- resume-on-foreground --------------------------------------------------
+  //
+  // THE PHONE CASE. The backoff ladder and the 1.5s poller are both written for
+  // a tab that stays open. A backgrounded phone gets neither: the OS freezes the
+  // poll timer, and a `setTimeout` scheduled for a 0.5-8s reconnect may not run
+  // until the app is foregrounded again — at which point the client waits out a
+  // delay computed from failures that happened on a network it has since left.
+  //
+  // So when the app comes back, ask immediately and from a clean ladder. Two
+  // things keep this from being "delete the backoff":
+  //   - `resumeMinIntervalMs` floors how often the ladder may be reset, so
+  //     visibility flapping cannot become a hot loop (see the config comment).
+  //   - Nothing here bypasses `connect()`'s own guards, and the socket's
+  //     outcome still decides the phase. A resume that fails lands in
+  //     `handleClose` and rejoins the ordinary jittered ladder.
+
+  let lastForcedResumeAtMs = Number.NEGATIVE_INFINITY;
+
+  function resumeNow(): void {
+    if (disposed) return;
+    // Already delivering — a foreground is not news.
+    if (socket !== null && socket.isOpen()) return;
+    const at = now();
+    if (at - lastForcedResumeAtMs < cfg.resumeMinIntervalMs) return;
+    lastForcedResumeAtMs = at;
+
+    // The ladder was built against a network this device may no longer be on.
+    reconnectAttempt = 0;
+    if (reconnectTimer !== null) {
+      timers.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    connect();
+
+    // The HTTP fallback was frozen with everything else, so its next tick could
+    // be a full interval away (or already overdue and about to fire late). Drop
+    // the stale timers and prime it now: if the socket wins the race, `pollTick`
+    // sees an open socket and returns without a request.
+    for (const spaceId of open) {
+      const r = rt(spaceId);
+      if (r.pollTimer !== null) {
+        timers.clearTimeout(r.pollTimer);
+        r.pollTimer = null;
+      }
+      void pollTick(spaceId);
+    }
+  }
+
   // -- poll fallback ---------------------------------------------------------
 
   function startPollers(): void {
@@ -544,6 +654,10 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       : { phase: 'offline', disconnectedSince: sinceIso() });
   }
 
+  // Subscribed once, for the life of the manager. `resumeNow` is a no-op while
+  // the socket is open, so this costs nothing on a desktop tab that never hides.
+  const unsubscribeLifecycle = (deps.lifecycle ?? browserLifecycle())(() => resumeNow());
+
   // -- public surface --------------------------------------------------------
 
   return {
@@ -598,6 +712,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     dispose() {
       if (disposed) return;
       disposed = true;
+      unsubscribeLifecycle();
       stopPollers();
       stopIdleWatchdog();
       for (const spaceId of open) stopAccelerate(spaceId);

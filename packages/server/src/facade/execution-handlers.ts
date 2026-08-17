@@ -24,6 +24,7 @@ import {
   SpawnService,
   PtyHostService,
   PromptSettlementWaiter,
+  readSessionTranscript,
   type CreateWorkSessionInput,
   type CreateWorkSessionResult,
   type GraphAuth,
@@ -48,6 +49,7 @@ import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
 import type {
   ExecutionLiveness,
   ExecutionPromptInput,
+  ExecutionResumeInput,
   ExecutionSpawnInput,
   ExecutionStreamsAttachInput,
   ExecutionTerminateInput,
@@ -57,6 +59,7 @@ import type {
 } from '@tm8/contract';
 import { createReadStream } from 'node:fs';
 import { realpath } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import type { Db, DbClaims } from '../db/types.js';
@@ -924,6 +927,14 @@ async function resolveAssignmentAnchors(
 const JOURNAL_LIMIT_DEFAULT = 100;
 const JOURNAL_LIMIT_MAX = 500;
 
+// --- execution.transcript (read) ---------------------------------------------
+// Far smaller than the journal's window because a transcript TURN is prose, not
+// a fixed-size record: 500 of them is a wall of text no debug surface renders
+// and no coordinator reads. The reader's own tail window bounds the bytes; this
+// bounds the turns.
+const TRANSCRIPT_LAST_DEFAULT = 20;
+const TRANSCRIPT_LAST_MAX = 200;
+
 /**
  * `relative()`-based containment: true iff `candidate` is at or beneath `root`.
  * Copied from `files/w2-blob-store.ts` so the journal path can never escape the
@@ -1243,6 +1254,73 @@ function registerHandlers(
     };
     return json(result);
   });
+  /**
+   * execution.transcript — what the agent SAID, completing told/did/said beside
+   * `execution.launch` and `execution.journal`.
+   *
+   * Authorized exactly like `execution.journal`, and for the same reason: the
+   * payload comes from the FILESYSTEM, where RLS cannot reach, so the
+   * work_session entity read under the caller's claims IS the gate. Every
+   * component of the path is then derived from that row's own columns — the
+   * request contributes nothing but a uuid.
+   *
+   * A scratch session's `workdir_path` is the pre-mint scratch ROOT, not its
+   * final directory (SpawnService re-resolves once the session id exists), so
+   * `workdir_mode` decides which of the two is the real cwd. Reading the stale
+   * column for a projectless session would point claude's project-directory
+   * encoder at a directory that has never existed.
+   */
+  registry.register('execution.transcript', async (ctx) => {
+    const owner = await resolveOwner();
+    const claims = claimsFor(owner, ctx);
+    const sessionId = requireUuidParam(ctx, 'workSessionId');
+
+    const rows = await db.query<{
+      native_session_id: string | null;
+      workdir_path: string | null;
+      workdir_mode: string | null;
+      agent_tool: string | null;
+    }>(
+      claims,
+      `select ws.native_session_id, ws.workdir_path, ws.workdir_mode, ws.agent_tool
+         from public.entities e
+         join public.work_sessions ws on ws.entity_id = e.id
+        where e.id = $1 and e.kind = 'work_session' and e.deleted_at is null`,
+      [sessionId],
+    );
+    const session = rows[0];
+    if (!session) {
+      throw new CollabError('not_found', `no such work session: ${sessionId}`);
+    }
+
+    const rawLast = ctx.query.get('last');
+    let last = TRANSCRIPT_LAST_DEFAULT;
+    if (rawLast !== null && rawLast !== '') {
+      const parsed = Number.parseInt(rawLast, 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new CollabError('invalid_input', `last must be a positive integer, got ${rawLast}`);
+      }
+      last = Math.min(parsed, TRANSCRIPT_LAST_MAX);
+    }
+
+    const cwd =
+      session.workdir_mode === 'scratch'
+        ? dataDir === undefined
+          ? null
+          : resolvePath(dataDir, 'scratch', sessionId)
+        : session.workdir_path;
+
+    return json(
+      await readSessionTranscript({
+        sessionId,
+        agentTool: session.agent_tool,
+        nativeSessionId: session.native_session_id,
+        cwd,
+        home: process.env.HOME ?? homedir(),
+        last,
+      }),
+    );
+  });
   registry.register('execution.spawn', async (ctx) => {
     const input = ctx.body as ExecutionSpawnInput;
 
@@ -1275,6 +1353,13 @@ function registerHandlers(
       title: input.title ?? null,
       promptExtra: input.promptExtra ?? null,
       clientMutationId: envelope.clientMutationId ?? null,
+      // Spread rather than `?? undefined` so an absent geometry stays ABSENT:
+      // PtyHostService's clampDim falls back to 80x24 on any falsy value, and
+      // an explicit `cols: undefined` would read as "the client measured
+      // nothing" in exactly the same way — but only the omitted form survives
+      // the exactOptionalPropertyTypes contract SpawnRequest is written under.
+      ...(input.cols === undefined ? {} : { cols: input.cols }),
+      ...(input.rows === undefined ? {} : { rows: input.rows }),
     };
 
     const result = await rethrowing(() => spawnService.spawn(claims, request));
@@ -1319,10 +1404,15 @@ function registerHandlers(
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
+    const resumeInput = ctx.body as ExecutionResumeInput;
     const result = await rethrowing(() =>
       spawnService.resume(claims, {
         sessionId: requireUuidParam(ctx, 'id'),
         clientMutationId: envelope.clientMutationId ?? null,
+        // A resume re-spawns the PTY, so it needs the browser's geometry for
+        // the same reason spawn does — see ExecutionSpawnInput.cols.
+        ...(resumeInput?.cols === undefined ? {} : { cols: resumeInput.cols }),
+        ...(resumeInput?.rows === undefined ? {} : { rows: resumeInput.rows }),
       }),
     );
     return json(await assembleCommandResult(db, claims, result.commandResult, owner.identityId));

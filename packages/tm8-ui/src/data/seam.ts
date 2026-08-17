@@ -63,6 +63,7 @@ import type {
   CommandContext,
   CommandResult,
   CompleteTaskInput,
+  CreateEdgeInput,
   CreateEntityInput,
   CreateTaskInput,
   Cursor,
@@ -103,10 +104,12 @@ import type {
   ResolveEntityAttentionInput,
   SessionJournalPage,
   SessionLaunchRecord,
+  SessionTranscriptPage,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
   SpaceSummary,
+  UpdateAttentionRequestInput,
   WorkInput,
   WorkSessionStatus,
   WorkStatus,
@@ -190,6 +193,16 @@ export interface JournalOpts {
   limit?: number;
   /** Return records with `seq` below this — the cursor for paging older records. */
   before?: number;
+}
+
+/**
+ * The DEBUG transcript read's window. There is NO cursor: the server reads a
+ * tail, so "older" is not a page you can walk — asking for more turns widens
+ * the same window rather than stepping back through history.
+ */
+export interface TranscriptOpts {
+  /** Newest turns to return; server default is 20, max 200. */
+  last?: number;
 }
 
 export interface Seam {
@@ -282,6 +295,20 @@ export interface Seam {
    */
   launch(workSessionId: EntityId): Promise<SessionLaunchRecord>;
   /**
+   * What the session's agent SAID — the third face of the DEBUG surface, after
+   * TOLD (`launch`) and DID (`journal`).
+   *
+   * Read from the agent's OWN transcript file, so it carries model prose the
+   * journal structurally cannot hold. Polled like the journal, because unlike
+   * the launch record it grows.
+   *
+   * `stats` describes the RETURNED WINDOW, not the session's lifetime — the
+   * server reads a tail — and `stats.partial` says which. `stuck` is a
+   * HEURISTIC over tool calls without prose and must never be rendered as a
+   * liveness claim; `execution.liveness` is the authority on that.
+   */
+  transcript(workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage>;
+  /**
    * The space-wide attention queue — the ONLY way to discover *which* entities
    * are waiting on a human. `collections.query` has neither an attention filter
    * nor an attention sort (contract.ts CollectionQuery), so the alternative
@@ -341,10 +368,53 @@ export interface Seam {
     restoreEntity(id: EntityId, ctx?: CommandContext): Promise<CommandResult>;
     complete(id: EntityId, input: CompleteTaskInput): Promise<CommandResult>;
     work(id: EntityId, input: WorkInput): Promise<CommandResult>;
+    /**
+     * The write side of the relationship graph (`edges.create` / `edges.delete`).
+     *
+     * THE READS ALWAYS HAD A WRITE PATH ON THE NODE AND THIS SEAM DID NOT
+     * EXPOSE IT. `EntitySummary.state.assignees` is projected from `assigned_to`
+     * edges (server `entity-read.ts:551`) and `connections()` has rendered
+     * edges since the beginning, so every surface could SHOW an assignment and
+     * none could make one. That is why the task tile's "Assigned" chip was
+     * static: not a forgotten onClick, a missing seam operation.
+     *
+     * GENERIC ON PURPOSE — this is `edges.create`, not `assign`. The catalog
+     * row is generic, the database validates the endpoint kinds per edge type
+     * (`internal.validate_edge`), and naming one edge type here would put a
+     * kind-specific verb in the layer whose whole job is to be kind-blind.
+     * `useRowLifecycle` is where "assign" means `assigned_to`.
+     *
+     * `write_edge` UPSERTS on (src, dst, type), so create is idempotent on the
+     * edge identity; delete is addressed by the edge's own id, which callers
+     * read from `connections()`.
+     */
+    createEdge(input: CreateEdgeInput): Promise<CommandResult>;
+    deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult>;
     postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;
+    /**
+     * Write ONE attention request, addressed by its own id.
+     *
+     * The sibling above is the BULK verb: `resolveEntity` flips every open row
+     * on an entity at once, has no per-request granularity and no way to say
+     * `dismissed`. That was the only write this seam carried, which is why
+     * `dismissed` — a full quarter of the status enum (migration 050:16-17) —
+     * had no UI path at all: nothing could reach it, and a queue item could
+     * only ever be *satisfied*, never *declined*.
+     *
+     * OPTIMISTICALLY LOCKED, and the version is the caller's problem: the RPC
+     * raises 40001 when `expectedVersion` is stale (050:128-132), and a stale
+     * version is the EXPECTED case here rather than a rare race — the bulk
+     * resolve that fires when you open an entity bumps `version` on every row
+     * it touches. A caller holding rows fetched before that must refetch, not
+     * retry.
+     */
+    updateAttentionRequest(
+      requestId: string,
+      input: UpdateAttentionRequestInput,
+    ): Promise<AttentionRequestMutationResult>;
     /**
      * Amendment 4: write the VIEWER'S OWN profile row — the DTO names no
      * subject by design (`identity.profile.update`, contract.ts). All fields

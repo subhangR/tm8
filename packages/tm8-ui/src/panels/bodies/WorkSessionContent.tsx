@@ -9,6 +9,7 @@ const SURFACE_LABEL: Readonly<Record<ContentSurface, string>> = {
   terminal: 'Terminal',
   chat: 'Chat',
   debug: 'Debug',
+  graph: 'Graph',
 };
 
 export interface WorkSessionContentProps {
@@ -17,7 +18,8 @@ export interface WorkSessionContentProps {
   profile?: WorkSessionInteractionProfileProjection | null;
   /** Explicit route selection. It outranks the viewer-local preference. */
   requestedSurface?: ContentSurface | null;
-  terminal: ReactNode;
+  /** A render function receives whether the retained terminal is paintable. */
+  terminal: ReactNode | ((active: boolean) => ReactNode);
   chat: ReactNode;
   /**
    * The DEBUG surface (the session's CLI journal). Always offered — it does not
@@ -27,6 +29,12 @@ export interface WorkSessionContentProps {
    * honesty rule); the terminal, by contrast, stays mounted throughout.
    */
   debug?: ReactNode;
+  /**
+   * The GRAPH surface (what this session is connected to). Offered on the same
+   * terms as Debug — it depends on no pin — and mounted only while selected,
+   * for the same reason: unmounting is what stops its poll.
+   */
+  graph?: ReactNode;
   onSurfaceChange?: (surface: ContentSurface) => void;
   /**
    * USER RULING 2026-07-31 — "the terminal, chat tab should be at the top row
@@ -65,14 +73,16 @@ export function WorkSessionContent({
   terminal,
   chat,
   debug,
+  graph,
   onSurfaceChange,
   switchSlot = null,
 }: WorkSessionContentProps) {
   const chatAvailable = profile?.chatEnabled === true;
   // The offered surfaces, in fixed order. Terminal is always first (and the
-  // default); Chat is gated by the immutable pin; Debug is always last.
+  // default); Chat is gated by the immutable pin; Debug and Graph are always
+  // offered, in that order.
   const surfaces = useMemo<ContentSurface[]>(
-    () => ['terminal', ...(chatAvailable ? (['chat'] as const) : []), 'debug'],
+    () => ['terminal', ...(chatAvailable ? (['chat'] as const) : []), 'debug', 'graph'],
     [chatAvailable],
   );
   const preferenceKey = `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
@@ -211,7 +221,7 @@ export function WorkSessionContent({
         data-active={surface === 'terminal' ? 'true' : 'false'}
         data-testid="work-session-terminal-surface"
       >
-        {terminal}
+        {typeof terminal === 'function' ? terminal(surface === 'terminal') : terminal}
       </div>
       {chatAvailable ? (
         <div
@@ -239,6 +249,19 @@ export function WorkSessionContent({
             stops the instant the viewer switches away. */}
         {surface === 'debug' ? debug : null}
       </div>
+      <div
+        id={panelId('graph')}
+        role="tabpanel"
+        aria-labelledby={tabId('graph')}
+        aria-hidden={surface !== 'graph'}
+        className="pn-work-session-content__surface"
+        data-active={surface === 'graph' ? 'true' : 'false'}
+        data-testid="work-session-graph-surface"
+      >
+        {/* Mounted only while selected — same reason as Debug: unmounting is
+            what stops the connection poll. */}
+        {surface === 'graph' ? graph : null}
+      </div>
     </div>
   );
 }
@@ -254,10 +277,12 @@ function resolveInitialSurface({
 }): ContentSurface {
   // The route wins first, but a `chat` request on a session without Chat falls
   // through to the terminal default.
-  if (requestedSurface === 'terminal' || requestedSurface === 'debug') return requestedSurface;
+  if (requestedSurface === 'terminal' || requestedSurface === 'debug' || requestedSurface === 'graph') {
+    return requestedSurface;
+  }
   if (requestedSurface === 'chat' && chatAvailable) return 'chat';
   const saved = readPreference(preferenceKey);
-  if (saved === 'debug') return 'debug';
+  if (saved === 'debug' || saved === 'graph') return saved;
   if (saved === 'chat' && chatAvailable) return 'chat';
   if (saved === 'terminal') return 'terminal';
   // USER RULING 2026-08-01 — "I want all the default to be only terminal. I
@@ -276,7 +301,9 @@ function readPreference(key: string): ContentSurface | null {
   if (typeof window === 'undefined') return null;
   try {
     const saved = window.localStorage.getItem(key);
-    return saved === 'terminal' || saved === 'chat' || saved === 'debug' ? saved : null;
+    return saved === 'terminal' || saved === 'chat' || saved === 'debug' || saved === 'graph'
+      ? saved
+      : null;
   } catch {
     return null;
   }

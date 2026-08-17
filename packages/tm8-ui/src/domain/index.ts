@@ -15,6 +15,7 @@ export type {
   ActionDispatch,
   ActionIntent,
   ActionRef,
+  AssignControl,
   BodyArchetype,
   CardFieldRef,
   CardSpec,
@@ -47,6 +48,8 @@ export type {
   StatusSource,
   TileBadgeSource,
   TileBadgeSpec,
+  ValueControl,
+  ValueOption,
 } from './types';
 
 export { CUSTOM_KIND_FALLBACK, customKindSlug } from './types';
@@ -62,6 +65,9 @@ export {
   kindOfSlug,
   slugOfKind,
 } from './registry';
+
+export { KIND_ART, VIEW_ART, type KindArt } from './kind-art';
+export { KindIcon } from './KindIcon';
 
 export { REASONS, allActions, deferredActions, resolveAction } from './actions';
 

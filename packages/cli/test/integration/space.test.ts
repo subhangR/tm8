@@ -142,7 +142,11 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(125); // 124 -> 125 (2026-08-02): execution.launch, the one route that serves what a session was TOLD at spawn.
+    // 124 -> 125 (2026-08-02): execution.launch, the route that serves what a
+    // session was TOLD at spawn.
+    // 125 -> 126 (2026-08-07): execution.transcript, its counterpart — what the
+    // session's agent SAID.
+    expect(health.operations).toBe(126);
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

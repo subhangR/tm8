@@ -18,25 +18,32 @@
  *     `authoring-seam.test.tsx` is the compile-time half of that crossing
  *     assertion; the dataset assertions in the same file are the runtime half.
  *
- * The shapes below are the CONTRACT'S OWN, imported rather than restated. A
- * remembered shape is the other way this goes wrong — `CreateTaskInput`'s
- * `clientMutationId` is OPTIONAL (it rides in via `CommandContext`), unlike
- * `CreateEntityInput`'s, which is required. That asymmetry is real and is why
- * `newTaskInput()` below stamps one unconditionally rather than trusting a
- * caller to remember.
+ * The shapes below are the CONTRACT'S OWN, imported rather than restated.
+ * `CreateEntityInput.clientMutationId` is REQUIRED, which is why
+ * `newEntityInput()` stamps one rather than trusting a caller to remember.
+ *
+ * THE CREATE GOES THROUGH `entities.create`, NOT `createTask`. It used to be
+ * `createTask`, which hard-codes `kind: 'task'` in the ops layer — so "＋ New
+ * channel" on the channels list created a TASK, which then did not appear in
+ * the list the user was looking at. From the outside that reads as "I pressed
+ * create and nothing happened". The kind now travels with the input, from the
+ * registry config of the list that hosts the control.
  */
 import {
+  CreatableEntityKindSchema,
   isCollabError,
   type CommandResult,
-  type CreateTaskInput,
+  type CreatableEntityKind,
+  type CreateEntityInput,
   type EntityDetail,
   type EntityId,
+  type EntityKind,
   type PatchTaskInput,
   type SpaceId,
 } from '@tm8/contract';
 
 export interface AuthoringCommands {
-  createTask(input: CreateTaskInput): Promise<CommandResult>;
+  createEntity(input: CreateEntityInput): Promise<CommandResult>;
   patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult>;
 }
 
@@ -75,8 +82,26 @@ export function nextMutationId(): string {
 // Input builders — ONE builder per command, both surfaces call it
 // ---------------------------------------------------------------------------
 
-export function newTaskInput(spaceId: SpaceId, title: string): CreateTaskInput {
-  return { spaceId, title, clientMutationId: nextMutationId() };
+export function newEntityInput(
+  spaceId: SpaceId,
+  kind: CreatableEntityKind,
+  title: string,
+): CreateEntityInput {
+  return { spaceId, kind, title, clientMutationId: nextMutationId() };
+}
+
+/**
+ * The kind narrowed to what `entities.create` will accept, or null.
+ *
+ * NULL IS THE HONEST ANSWER, not an edge case: several listed kinds are born
+ * some other way — a work session from a spawn, a member from an invite — and
+ * a generic create cannot make them. The set is the CONTRACT'S OWN schema
+ * rather than a list restated here, which is both the single source of truth
+ * and the reason this lane still contains no kind literal (§15.2).
+ */
+export function creatableKind(kind: EntityKind): CreatableEntityKind | null {
+  const parsed = CreatableEntityKindSchema.safeParse(kind);
+  return parsed.success ? parsed.data : null;
 }
 
 export function taskPatchInput(edits: TaskEdits, expectedVersion: number): PatchTaskInput {

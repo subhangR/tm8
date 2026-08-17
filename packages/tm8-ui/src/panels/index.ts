@@ -9,7 +9,12 @@ import '../styles/canvas-extra.css';
 import './honesty/honesty.css';
 import './panels.css';
 
-export { EntityListPanel, type EntityListPanelProps, type LaunchSources } from './EntityListPanel';
+export {
+  EntityListPanel,
+  type EntityListPanelProps,
+  type LaunchSources,
+  type RowControlsPort,
+} from './EntityListPanel';
 export {
   EntityDetailPanel,
   type DetailReasons,

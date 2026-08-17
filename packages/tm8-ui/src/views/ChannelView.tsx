@@ -9,12 +9,16 @@ import type {
 import { LazyChannelScreen } from '../channel-screen/LazyChannelScreen';
 import { useChannelFeed } from '../channel-screen/useChannelFeed';
 import { channelFeedPortFromGateData } from './channel-feed-port';
-import { getKind } from '../domain';
+import { KindIcon, getKind } from '../domain';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
 import type { GateData } from './useGateData';
+import type { Notice } from '../shell/notices';
+import { useSessionResume } from './useSessionResume';
 import './channel-view.css';
+import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
+import { graphSurfaceFor } from './graphSurface';
 import { representedThreadMessageCount } from './message-thread';
 
 const FEED_KEY = 'feed';
@@ -24,6 +28,9 @@ export interface ChannelViewProps {
   channelId: EntityId;
   serverBaseUrl?: string;
   reasons: DetailReasons;
+  /** A resume refusal is a server sentence the user can act on, so this screen
+      needs the queue too — the panel it hosts can write. */
+  onNotice(notice: Notice): void;
 }
 
 type DetailMode = 'aside' | 'full';
@@ -32,7 +39,7 @@ type DetailMode = 'aside' | 'full';
  * The Collab v2 channel destination in the new UI: channel header, pinned
  * shelf, projected tabs, the real entities.feed surface, and its composer.
  */
-export function ChannelView({ data, channelId, serverBaseUrl, reasons }: ChannelViewProps) {
+export function ChannelView({ data, channelId, serverBaseUrl, reasons, onNotice }: ChannelViewProps) {
   const [activeTab, setActiveTab] = useState(FEED_KEY);
   /* ONE feed implementation, shared with the panel-hosted ChannelChatSurface
      (channel-screen/useChannelFeed). This view used to own it inline; the
@@ -97,6 +104,14 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
     || representedThreadMessageCount(selectedMessages) < selectedDetail.counters.messages
   )) data.pull?.(selectedId);
 
+  /* An entity opened beside the feed is routinely a work session, so this host
+     gets the same resume executor as the workspace and the kind screens. */
+  const sessionResume = useSessionResume({
+    seam: data.seam,
+    reconcile: data.reconcileCommand,
+    onNotice,
+  });
+
   const entityPanel = selectedId ? (
     <EntityDetailPanel
       detail={selectedDetail ?? null}
@@ -108,8 +123,17 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
       pinned={false}
       pinRefusal="Pinning lives in the Workspace — this channel keeps the entity beside its feed already"
       liveness={data.livenessOf(selectedId)}
+      attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId))}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) => setSelectedId(id as EntityId))}
       livenessOf={data.livenessOf}
+      {...(sessionResume.resume
+        ? { onResumeSession: () => sessionResume.resume?.(selectedId) }
+        : {})}
+      resumingSession={sessionResume.resumingId === selectedId}
+      {...(sessionResume.unavailableReason
+        ? { resumeSessionDisabledReason: sessionResume.unavailableReason }
+        : {})}
       messages={selectedMessages}
       onPostMessage={(body) => data.postMessage({
         clientMutationId: `entity-post:${selectedId}:${Date.now()}`,
@@ -156,7 +180,7 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
               <div className="chv-shelf__items">
                 {content.pinned.map((item) => (
                   <button key={item.id} type="button" className="chv-chip" onClick={() => setSelectedId(item.id)}>
-                    <span aria-hidden>{getKind(item.kind).chip.glyph}</span>
+                    <span aria-hidden><KindIcon kind={item.kind} /></span>
                     {item.title}
                   </button>
                 ))}
@@ -283,7 +307,7 @@ function ChannelCollectionPane({
       {result.page.items.map((item) => (
         <li key={item.id}>
           <button type="button" onClick={() => onOpen(item.id)}>
-            <span className="chv-collection__glyph" aria-hidden>{getKind(item.kind).chip.glyph}</span>
+            <span className="chv-collection__glyph" aria-hidden><KindIcon kind={item.kind} /></span>
             <span className="chv-collection__title">{item.title}</span>
             <span className="chv-collection__kind">{getKind(item.kind).label}</span>
           </button>

@@ -30,6 +30,7 @@ import {
   SessionProjectsCard,
   UntrustedConsentCard,
 } from './index';
+import { CUSTOM_KIND_FALLBACK, getKind } from '../domain';
 import { known, unknown, type SessionProjects } from './governance-model';
 import { GOVERNANCE_REASONS } from './reasons';
 
@@ -433,7 +434,7 @@ describe('T2-5 — custom-kind authoring', () => {
     expect(payload.textContent).toContain(GOVERNANCE_REASONS.createKind.cause);
   });
 
-  it('tells the truth about the glyph: the registry paints ◇ until a consumer reads the icon', () => {
+  it('tells the truth about the mark: the registry paints the FALLBACK ARTWORK, not the glyph you picked', () => {
     const { container, getByLabelText } = mount(
       <CustomKindsScreen spaceLabel="s" kinds={{ phase: 'ready', value: [] }} />,
     );
@@ -442,7 +443,18 @@ describe('T2-5 — custom-kind authoring', () => {
     const verdict = container.querySelector('[data-testid="registry-verdict"]') as HTMLElement;
     // The finding this screen surfaces, asserted so it cannot be quietly lost:
     // the authored glyph is stored and unread; the fallback row is what paints.
-    expect(verdict.textContent).toContain('◇');
+    //
+    // It is asserted on the DRAWN mark now. The old assertion looked for the
+    // character `◇` in the verdict's text, and that stopped being what the app
+    // paints the moment kinds got artwork — a text-content check would have
+    // gone on passing against a `◇` that no surface renders any more, which is
+    // the exact species of lie this screen exists to prevent.
+    const drawn = verdict.querySelector('svg.kit-vicon');
+    expect(drawn).not.toBeNull();
+    const paths = [...drawn!.querySelectorAll('path')].map((p) => p.getAttribute('d'));
+    expect(paths).toEqual([...getKind(CUSTOM_KIND_FALLBACK).iconArt]);
+    // The authored glyph is still NAMED — as the thing that does not paint.
+    expect(verdict.textContent).toContain('NOT the ◮ you picked');
     expect(verdict.textContent).toContain('no consumer reads it yet');
     expect(verdict.textContent).toContain('k/c-incident');
   });

@@ -84,6 +84,79 @@ describe('edge family', () => {
     expect(s.edgeIdsByEntity.a).toEqual(['e2']);
     expect(s.edgeIdsByEntity.b).toEqual([]);
   });
+
+  it('edge.upsert folds a brand-new group into a cached detail on both endpoints', () => {
+    let s = initialDomainState();
+    s = { ...s, ...ingestDetail(s, detail('doc')) };
+    s = { ...s, ...ingestDetail(s, detail('sess')) };
+    s = apply(s, event('edge.upsert', { edge: edge('e1', 'doc', 'sess', { type: 'created_in' }) }));
+
+    expect(s.details.doc.connections.outgoing).toEqual([
+      { type: 'created_in', direction: 'outgoing', label: 'created_in', edges: [expect.objectContaining({ id: 'e1' })] },
+    ]);
+    expect(s.details.doc.connections.incoming).toEqual([]);
+    expect(s.details.sess.connections.incoming).toEqual([
+      { type: 'created_in', direction: 'incoming', label: 'created_in (incoming)', edges: [expect.objectContaining({ id: 'e1' })] },
+    ]);
+  });
+
+  it('edge.upsert replaces an edge already in a group instead of duplicating it', () => {
+    let s = initialDomainState();
+    s = { ...s, ...ingestDetail(s, detail('doc')) };
+    s = apply(s, event('edge.upsert', { edge: edge('e1', 'doc', 'sess', { type: 'created_in' }) }));
+    s = apply(s, event('edge.upsert', { edge: edge('e1', 'doc', 'sess', { type: 'created_in', props: { origin: 'client_claim' } }) }));
+
+    const group = s.details.doc.connections.outgoing[0];
+    expect(group.edges).toHaveLength(1);
+    expect(group.edges[0].props).toEqual({ origin: 'client_claim' });
+  });
+
+  it('edge.upsert reuses the label the server already sent for that type', () => {
+    let s = initialDomainState();
+    s = { ...s, ...ingestDetail(s, detail('doc', {
+      connections: {
+        outgoing: [{ type: 'depends_on', direction: 'outgoing', label: 'Depends on', edges: [] }],
+        incoming: [],
+        unresolvedHardDependencyCount: 0,
+      },
+    })) };
+    s = apply(s, event('edge.upsert', { edge: edge('e1', 'doc', 'x', { type: 'depends_on' }) }));
+    expect(s.details.doc.connections.outgoing[0].label).toBe('Depends on');
+  });
+
+  it('edge.upsert recomputes the unresolved hard dependency count', () => {
+    let s = initialDomainState();
+    s = { ...s, ...ingestDetail(s, detail('doc')) };
+    s = apply(s, event('edge.upsert', { edge: edge('e1', 'doc', 'x', { type: 'depends_on', resolved: false }) }));
+    expect(s.details.doc.connections.unresolvedHardDependencyCount).toBe(1);
+
+    s = apply(s, event('edge.upsert', { edge: edge('e1', 'doc', 'x', { type: 'depends_on', resolved: true }) }));
+    expect(s.details.doc.connections.unresolvedHardDependencyCount).toBe(0);
+  });
+
+  it('edge.upsert ignores reaction edges, which the detail never carries', () => {
+    let s = initialDomainState();
+    s = { ...s, ...ingestDetail(s, detail('doc')) };
+    s = apply(s, event('edge.upsert', { edge: edge('e1', 'doc', 'me', { type: 'likes' }) }));
+    expect(s.details.doc.connections.outgoing).toEqual([]);
+    expect(s.edges.e1).toBeDefined();
+  });
+
+  it('edge.deleted drops the edge from a cached detail and prunes the emptied group', () => {
+    let s = initialDomainState();
+    s = { ...s, ...ingestDetail(s, detail('doc')) };
+    s = { ...s, ...ingestDetail(s, detail('sess')) };
+    s = apply(s, event('edge.upsert', { edge: edge('e1', 'doc', 'sess', { type: 'created_in' }) }));
+    s = apply(s, event('edge.deleted', { edge: edge('e1', 'doc', 'sess', { type: 'created_in' }) }));
+    expect(s.details.doc.connections.outgoing).toEqual([]);
+    expect(s.details.sess.connections.incoming).toEqual([]);
+  });
+
+  it('edge events for an uncached detail leave details untouched', () => {
+    let s = initialDomainState();
+    s = apply(s, event('edge.upsert', { edge: edge('e1', 'ghost', 'other') }));
+    expect(s.details).toEqual({});
+  });
 });
 
 describe('message family', () => {

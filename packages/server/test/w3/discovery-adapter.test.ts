@@ -16,12 +16,13 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // execution.journal, identity.profile.update).
         // -> {125/123/124/122} (2026-08-02: the four auth.* rows, Stage 1).
         // -> {126/124/125/123} (2026-08-02: execution.launch).
-        total: 126,
-        v1: 124,
+        // -> {127/125/126/124} (2026-08-07: execution.transcript).
+        total: 127,
+        v1: 125,
         reserved: 2,
-        http: 125,
+        http: 126,
         ws: 1,
-        registerableV1Http: 123,
+        registerableV1Http: 124,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

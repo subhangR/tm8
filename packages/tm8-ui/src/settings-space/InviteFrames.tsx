@@ -17,6 +17,7 @@
  * copy, revoke and join all render disabled-with-reason. A user learns the
  * feature exists and learns why it cannot run.
  */
+import { BrandMark } from '../kit';
 import { DisabledAction, DisabledIconControl } from '../panels';
 import { defaultInviteRole } from './port';
 import type { RedeemState, SpecimenInvite } from './types';
@@ -179,7 +180,9 @@ export function RedeemLanding({
   if (state !== 'valid') {
     return (
       <div className="set-redeem" data-testid={`redeem-${state}`}>
-        <span className="set-redeem__mark">◈ tm8</span>
+        <span className="set-redeem__mark">
+          <BrandMark /> tm8
+        </span>
         <span className="set-redeem__title">{REDEEM_DEAD_WORD[state]}</span>
         <span className="set-redeem__sub">ask {invitedBy} for a new link</span>
         {/* Deliberately no member count, no node, no space description: a
@@ -199,7 +202,9 @@ export function RedeemLanding({
 
   return (
     <div className="set-redeem" data-testid="redeem-valid">
-      <span className="set-redeem__mark">◈ tm8</span>
+      <span className="set-redeem__mark">
+        <BrandMark /> tm8
+      </span>
       <span className="set-redeem__title">
         You’re invited to
         <br />

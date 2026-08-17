@@ -36,6 +36,7 @@ import {
   type CommandContext,
   type CommandResult,
   type CompleteTaskInput,
+  type CreateEdgeInput,
   type CreateEntityInput,
   type CreateTaskInput,
   type CustomEntityState,
@@ -78,6 +79,7 @@ import {
   type SessionJournalPage,
   type SessionLaunchRecord,
   type SessionJournalRecord,
+  type SessionTranscriptPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -124,6 +126,11 @@ const FIXTURE_PROJECTS: readonly ProjectResource[] = [
 const clone = <T>(x: T): T => structuredClone(x);
 
 const FIXTURE_BASE_MS = Date.parse(FIXTURE_NOW);
+
+/** Seeded attention history is dated off the fixture clock, never a real
+ *  one: `Date.now()` here would make every relative timestamp in the
+ *  gallery drift with the wall clock and no screenshot would reproduce. */
+const FIXTURE_HISTORY_EPOCH = FIXTURE_NOW;
 
 const CAPS_FULL: EntityDetail['capabilities'] = {
   canEdit: true, canDelete: true, canAddChild: true, canLink: true,
@@ -399,6 +406,127 @@ function synthesizeContent(s: EntitySummary): EntityContent {
   }
 }
 
+/**
+ * How many entities carry seeded history. Small on purpose: this is a specimen,
+ * not a load test, and every seeded row is a row some other lane's assertion
+ * could trip over.
+ */
+const ATTENTION_HISTORY_ENTITIES = 3;
+
+/**
+ * Materialize the attention table once.
+ *
+ * TWO HALVES, AND THE SECOND ONE EXISTS BECAUSE THE FIRST FOUND NOTHING.
+ *
+ * The PENDING half is the old badge-synthesis, moved here verbatim, because its
+ * arithmetic is load-bearing: `attention-model.ts` regroups these rows and its
+ * result is asserted to equal `badges.attention`. Points are spread across
+ * `pendingCount` rows with the largest pinned to `maxPoints`, so count/sum/max
+ * survive the round trip.
+ *
+ * It produces ZERO ROWS TODAY. Not one summary in `fixtures/entities.ts`
+ * carries a `badges.attention`, so the fixture seam has always answered the
+ * attention queue with an empty page — the inbox, its grouping, and every
+ * attention surface downstream have never once rendered real content off a
+ * fixture. That was invisible precisely because empty is also the correct
+ * answer for an entity with nothing waiting. The half is kept anyway: it is
+ * correct, and the moment the dataset gains a badge it starts working.
+ *
+ * The HISTORY half seeds SETTLED rows directly, on a deterministic handful of
+ * entities. Settled deliberately: `resolved` and `dismissed` contribute
+ * NOTHING to the badge (`recomputeAttentionBadge` counts only open and
+ * acknowledged), so seeding them gives the history surface real content without
+ * putting an attention badge onto a fixture entity that other lanes' list,
+ * graph and home assertions currently expect to be unflagged. A specimen must
+ * not change what its neighbours measure.
+ *
+ * The pending state is still reachable from here — `updateAttentionRequest` can
+ * move a row back to `open`, which is what the tests use to exercise the badge
+ * appearing and dropping again.
+ */
+function seedAttentionRows(summaries: ReadonlyMap<EntityId, EntitySummary>): AttentionRequest[] {
+  const rows: AttentionRequest[] = [];
+
+  for (const s of summaries.values()) {
+    if (s.deletedAt !== null) continue;
+    const agg = s.badges.attention;
+    if (!agg || agg.pendingCount <= 0) continue;
+
+    const rest = Math.max(0, agg.totalPoints - agg.maxPoints);
+    const others = Math.max(0, agg.pendingCount - 1);
+    const each = others > 0 ? Math.max(1, Math.round(rest / others)) : 0;
+    for (let i = 0; i < agg.pendingCount; i += 1) {
+      const first = i === 0;
+      rows.push({
+        id: `att-${s.id}-${i}`,
+        spaceId: s.spaceId,
+        entityId: s.id,
+        reason: first ? agg.latestReason : `${agg.latestReason} (${i + 1})`,
+        points: first ? agg.maxPoints : Math.min(each, 100),
+        status: 'open',
+        version: 1,
+        requestedBy: s.createdBy,
+        acknowledgedBy: null,
+        resolvedBy: null,
+        resolutionNote: null,
+        createdAt: agg.oldestRequestedAt,
+        updatedAt: agg.oldestRequestedAt,
+        acknowledgedAt: null,
+        resolvedAt: null,
+      });
+    }
+  }
+
+  // Sorted by id so the same entities are chosen on every run — a specimen that
+  // moves between runs is one nobody can write an assertion against.
+  const subjects = [...summaries.values()]
+    .filter((s) => s.deletedAt === null)
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .slice(0, ATTENTION_HISTORY_ENTITIES);
+
+  for (const [index, s] of subjects.entries()) {
+    const day = (n: number) => new Date(Date.parse(FIXTURE_HISTORY_EPOCH) - n * 86_400_000).toISOString();
+    rows.push({
+      id: `att-${s.id}-h0`,
+      spaceId: s.spaceId,
+      entityId: s.id,
+      reason: 'Blocked on a decision only a human can make; the agent stopped rather than guess.',
+      points: 80 - index * 5,
+      status: 'resolved',
+      version: 2,
+      requestedBy: s.createdBy,
+      acknowledgedBy: null,
+      resolvedBy: s.createdBy,
+      resolutionNote: 'Answered in the thread — the agent picked up from there.',
+      createdAt: day(4),
+      updatedAt: day(3),
+      acknowledgedAt: null,
+      resolvedAt: day(3),
+    });
+    rows.push({
+      id: `att-${s.id}-h1`,
+      spaceId: s.spaceId,
+      entityId: s.id,
+      reason: 'Second agent raised the same block a few minutes later.',
+      points: 40 - index * 5,
+      status: 'dismissed',
+      version: 2,
+      requestedBy: s.createdBy,
+      acknowledgedBy: null,
+      resolvedBy: s.createdBy,
+      // No note: a declined request often has none, and the row has to render
+      // honestly without one.
+      resolutionNote: null,
+      createdAt: day(2),
+      updatedAt: day(1),
+      acknowledgedAt: null,
+      resolvedAt: day(1),
+    });
+  }
+
+  return rows;
+}
+
 export function createFixtureSeam(): FixtureSeam {
   // -- in-memory state (isolated clone of the FE dataset) --------------------
   const summaries = new Map<EntityId, EntitySummary>(
@@ -411,6 +539,24 @@ export function createFixtureSeam(): FixtureSeam {
     ]),
   );
 
+  /**
+   * ATTENTION ROWS ARE STATE HERE, not a projection of the badge.
+   *
+   * They used to be synthesized per call from `summary.badges.attention`, and
+   * that made one whole half of the feature unrepresentable: the badge counts
+   * only `open` + `acknowledged` (server `entity-read.ts:520-523`), so a
+   * fixture derived from it could never produce a `resolved` or `dismissed`
+   * row — the exact rows an attention HISTORY surface exists to show. Every
+   * test and the whole fixture gallery saw an empty history and could not tell
+   * that from a broken one.
+   *
+   * So the direction is inverted to match the server's: rows are the truth and
+   * the badge is DERIVED from them (`recomputeAttentionBadge`). The seed still
+   * reproduces each entity's stored aggregate exactly — count, sum and max all
+   * round-trip, which is what the inbox's grouping is checked against — and
+   * history rows are added on top, where they cannot disturb it.
+   */
+  const attentionRows: AttentionRequest[] = seedAttentionRows(summaries);
   const openSpaces = new Set<SpaceId>();
   const seqBySpace = new Map<SpaceId, number>();
   const readMarks = new Map<EntityId, string>();
@@ -564,6 +710,39 @@ export function createFixtureSeam(): FixtureSeam {
     });
   }
 
+  /**
+   * Rebuild one entity's `badges.attention` from its rows — the same aggregate
+   * the server computes in SQL (`entity-read.ts:506-535`), including the part
+   * that is easy to miss: `acknowledged` counts as PENDING. An entity with no
+   * pending rows loses the badge key entirely rather than carrying a zeroed
+   * one, because the contract schema declares those counts `.positive()`
+   * (`schemas.ts:307-312`) — the badge is absent, never zero.
+   */
+  function recomputeAttentionBadge(s: EntitySummary): void {
+    const pending = attentionRows.filter(
+      (r) => r.entityId === s.id && (r.status === 'open' || r.status === 'acknowledged'),
+    );
+    if (pending.length === 0) {
+      const { attention: _attention, ...badges } = s.badges;
+      s.badges = badges;
+      return;
+    }
+    const latest = [...pending].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))[0];
+    s.badges = {
+      ...s.badges,
+      attention: {
+        pendingCount: pending.length,
+        totalPoints: pending.reduce((sum, r) => sum + r.points, 0),
+        maxPoints: Math.max(...pending.map((r) => r.points)),
+        latestReason: latest.reason,
+        oldestRequestedAt: pending.reduce(
+          (oldest, r) => (r.createdAt < oldest ? r.createdAt : oldest),
+          pending[0].createdAt,
+        ),
+      },
+    };
+  }
+
   function touch(s: EntitySummary): void {
     s.version += 1;
     const at = tick();
@@ -596,6 +775,29 @@ export function createFixtureSeam(): FixtureSeam {
 
   function commandResult(s: EntitySummary, over: Partial<CommandResult> = {}): CommandResult {
     return clone({ entity: detailOf(s.id), patches: [s], ...over });
+  }
+
+  /**
+   * `state.assignees` is a PROJECTION of the `assigned_to` edges, not a field
+   * a client writes (server `entity-read.ts:551`). The fixture recomputes it
+   * from the same source so an assignment made here is visible through exactly
+   * the read the UI already uses, rather than through a second parallel store
+   * that could disagree with the edges.
+   */
+  function projectAssignees(s: EntitySummary): void {
+    if (s.state.kind !== 'task') return;
+    const group = extrasOf(s.id).connections.outgoing.find((g) => g.type === 'assigned_to');
+    s.state.assignees = (group?.edges ?? []).flatMap((edge) => {
+      const target = summaries.get(edge.target.id);
+      if (!target || (target.kind !== 'member' && target.kind !== 'team_member')) return [];
+      return [{
+        id: target.id,
+        kind: target.kind,
+        displayName: target.title,
+        avatar: null,
+        isAgent: target.kind === 'team_member',
+      } satisfies ActorSummary];
+    });
   }
 
   function defaultStateFor(input: CreateEntityInput): EntityState {
@@ -988,55 +1190,100 @@ export function createFixtureSeam(): FixtureSeam {
       }
       return clone(fixtureLaunchRecord(workSessionId));
     },
+    async transcript(workSessionId, opts): Promise<SessionTranscriptPage> {
+      requireSummary(workSessionId);
+      // Third face of the DEBUG surface, and the same honesty contract as the
+      // two above: only the live PTY (C-5) has an agent that has written a
+      // native transcript, so every other session renders the explained empty.
+      // `stats: null` rather than a zeroed object — there are no statistics
+      // about a file that was never found, and zeros read as "did nothing".
+      if (workSessionId !== sessionLive.id) {
+        return clone({
+          sessionId: workSessionId,
+          available: false,
+          unavailableReason: 'no_transcript_file',
+          agentTool: null,
+          entries: [],
+          stats: null,
+          stuck: null,
+          lastActivityAt: null,
+          malformed: 0,
+        });
+      }
+      // Oldest-first, as the contract requires of a tail, and short enough that
+      // the default window (20) never trims it — a fixture that silently paged
+      // would hide the renderer's ordering bug rather than expose it.
+      const entries = [
+        {
+          at: '2026-01-04T09:15:02.000Z',
+          source: 'user' as const,
+          text: 'Take the failing spawn test and find why the PTY never emits.',
+          truncated: false,
+        },
+        {
+          at: '2026-01-04T09:15:44.000Z',
+          source: 'assistant' as const,
+          text: 'Reading the spawn service and its test harness to see which side owns the timeout.',
+          truncated: false,
+        },
+        {
+          at: '2026-01-04T09:18:10.000Z',
+          source: 'assistant' as const,
+          text: 'The harness asserts on a ring that is only filled after the first flush, so the read races the write.',
+          truncated: false,
+        },
+      ];
+      const last = opts?.last ?? 20;
+      return clone({
+        sessionId: workSessionId,
+        available: true,
+        unavailableReason: null,
+        agentTool: 'claude-code',
+        entries: entries.slice(-last),
+        stats: {
+          // True on purpose: the reader tails a bounded slice, so the honest
+          // default state of this surface is "you are looking at a window".
+          partial: true,
+          userMessages: 1,
+          assistantMessages: 2,
+          toolCalls: 6,
+          inputTokens: 4820,
+          outputTokens: 640,
+          cacheReadTokens: 18200,
+          cacheCreationTokens: 1100,
+          tools: [
+            { name: 'Read', count: 3 },
+            { name: 'Grep', count: 2 },
+            { name: 'Bash', count: 1 },
+          ],
+          models: ['claude-opus-4-6'],
+        },
+        // Null, not a zeroed object: the heuristic does not fire on this
+        // session, and a `{ silentMs: 0 }` would render as a stuck badge.
+        stuck: null,
+        lastActivityAt: '2026-01-04T09:18:10.000Z',
+        malformed: 0,
+      });
+    },
     async inbox(opts): Promise<Page<NotificationItem>> {
       // The dataset carries no notification rows: the inbox is honestly empty.
       return clone(pageOf<NotificationItem>([], opts));
     },
     /**
-     * The fixture stores the AGGREGATE (`badges.attention`), never individual
-     * requests, because that is the only shape the server hands the UI on a
-     * summary. So the per-request rows here are SYNTHESIZED to reproduce their
-     * own aggregate exactly — count, sum, and max all round-trip. Individual
-     * ids and timestamps are fixture inventions and mean nothing.
+     * Served from the row store, filtered the way the server filters
+     * (`entities-commands-tracking.ts:1214-1240`). NOTE WHAT IS ABSENT: no
+     * status filter is applied unless the caller asks for one, so the default
+     * answer is the FULL history including `resolved` and `dismissed`. That is
+     * the server's behaviour too — the badge is the only place that narrows to
+     * pending — and a history surface depends on it.
      */
     async attentionRequests(input): Promise<AttentionRequestPage> {
-      const rows: AttentionRequest[] = [];
-      for (const s of summaries.values()) {
-        if (s.deletedAt !== null) continue;
-        if (s.spaceId !== input.spaceId) continue;
-        if (input.entityId && s.id !== input.entityId) continue;
-        const agg = s.badges.attention;
-        if (!agg || agg.pendingCount <= 0) continue;
-
-        // Spread totalPoints across pendingCount rows, with the largest row
-        // pinned to maxPoints so the panel's max matches the server's.
-        const rest = Math.max(0, agg.totalPoints - agg.maxPoints);
-        const others = Math.max(0, agg.pendingCount - 1);
-        const each = others > 0 ? Math.max(1, Math.round(rest / others)) : 0;
-        for (let i = 0; i < agg.pendingCount; i += 1) {
-          const first = i === 0;
-          rows.push({
-            id: `att-${s.id}-${i}`,
-            spaceId: s.spaceId,
-            entityId: s.id,
-            reason: first ? agg.latestReason : `${agg.latestReason} (${i + 1})`,
-            points: first ? agg.maxPoints : Math.min(each, 100),
-            status: 'open',
-            version: 1,
-            requestedBy: s.createdBy,
-            acknowledgedBy: null,
-            resolvedBy: null,
-            resolutionNote: null,
-            createdAt: agg.oldestRequestedAt,
-            updatedAt: agg.oldestRequestedAt,
-            acknowledgedAt: null,
-            resolvedAt: null,
-          });
-        }
-      }
-      // Only 'open' rows exist above, so any other status filter is empty —
-      // truthfully, since the fixture cannot represent an acknowledged request.
-      const filtered = rows
+      const filtered = attentionRows
+        .filter((r) => r.spaceId === input.spaceId)
+        .filter((r) => (input.entityId ? r.entityId === input.entityId : true))
+        // A row whose entity was deleted is gone: the real table cascades on
+        // `entities`, so a tombstoned entity has no history to show.
+        .filter((r) => summaries.get(r.entityId)?.deletedAt == null)
         .filter((r) => (input.status ? r.status === input.status : true))
         .filter((r) => (input.minPoints ? r.points >= input.minPoints : true))
         // The server's order, mirrored: points desc, createdAt asc, id asc.
@@ -1210,16 +1457,76 @@ export function createFixtureSeam(): FixtureSeam {
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
       },
+      /**
+       * The bulk verb, mirroring `resolve_entity_attention` (050:208-212):
+       * every open OR acknowledged row on the entity flips to `resolved`, and
+       * the rows are RETAINED with their reason, points and requester intact.
+       * It is a status flip, not a delete — which is the whole reason a
+       * history surface has anything to show after you open an entity.
+       */
       async resolveAttention(id, input) {
         const s = requireSummary(id);
-        const affectedCount = s.badges.attention?.pendingCount ?? 0;
+        const pending = attentionRows.filter(
+          (r) => r.entityId === id && (r.status === 'open' || r.status === 'acknowledged'),
+        );
+        const at = tick();
+        for (const row of pending) {
+          row.status = 'resolved';
+          row.resolvedBy = clone(viewerActor);
+          row.resolvedAt = at;
+          row.updatedAt = at;
+          // The RPC bumps `version` on every row it touches, which is why a
+          // client holding rows fetched before an open will fail its next
+          // update with a version conflict rather than silently overwriting.
+          row.version += 1;
+          if (input.resolutionNote !== undefined) row.resolutionNote = input.resolutionNote;
+        }
+        const affectedCount = pending.length;
         if (affectedCount > 0) {
-          const { attention: _attention, ...badges } = s.badges;
-          s.badges = badges;
+          recomputeAttentionBadge(s);
           touch(s);
           emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         }
         return { request: null, entity: clone(s), affectedCount };
+      },
+      /**
+       * The per-request verb, mirroring `update_attention_request` (050:97-179)
+       * — including the part that is easy to get wrong: moving a row BACK to
+       * open or acknowledged CLEARS the resolution stamps rather than leaving a
+       * resolved-by on a row that is not resolved (050:148-167).
+       */
+      async updateAttentionRequest(requestId, input) {
+        const row = attentionRows.find((r) => r.id === requestId);
+        if (!row) throw new CollabError('not_found', `attention request ${requestId} not found`);
+        if (row.version !== input.expectedVersion) {
+          throw new CollabError(
+            'version_conflict',
+            `expected version ${input.expectedVersion}, have ${row.version}`,
+          );
+        }
+        const s = requireSummary(row.entityId);
+        const at = tick();
+        if (input.reason !== undefined) row.reason = input.reason;
+        if (input.points !== undefined) row.points = input.points;
+        if (input.resolutionNote !== undefined) row.resolutionNote = input.resolutionNote;
+        if (input.status !== undefined) {
+          row.status = input.status;
+          const settled = input.status === 'resolved' || input.status === 'dismissed';
+          row.resolvedBy = settled ? clone(viewerActor) : null;
+          row.resolvedAt = settled ? at : null;
+          row.acknowledgedBy = input.status === 'acknowledged' ? clone(viewerActor) : row.acknowledgedBy;
+          row.acknowledgedAt = input.status === 'acknowledged' ? at : row.acknowledgedAt;
+          if (input.status === 'open') {
+            row.acknowledgedBy = null;
+            row.acknowledgedAt = null;
+          }
+        }
+        row.updatedAt = at;
+        row.version += 1;
+        recomputeAttentionBadge(s);
+        touch(s);
+        emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+        return { request: clone(row), entity: clone(s), affectedCount: 1 };
       },
       /**
        * Amendment 4 mirror: writes the VIEWER's profile — the only row this
@@ -1314,6 +1621,52 @@ export function createFixtureSeam(): FixtureSeam {
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
+      },
+      /**
+       * Mirrors `write_edge`: an UPSERT on (src, dst, type), and it re-projects
+       * `state.assignees` the way the node's read path does — the fixture would
+       * otherwise create an edge that no surface could see, which is precisely
+       * the half-built seam this operation exists to close.
+       */
+      async createEdge(input: CreateEdgeInput) {
+        const src = requireSummary(input.srcId);
+        const dst = requireSummary(input.dstId);
+        const c = extrasOf(src.id).connections;
+        let group = c.outgoing.find((g) => g.type === input.type);
+        if (!group) {
+          group = { type: input.type, direction: 'outgoing', label: input.type, edges: [] };
+          c.outgoing.push(group);
+        }
+        const existing = group.edges.find((e) => e.target.id === dst.id);
+        if (existing) {
+          existing.props = input.props ?? {};
+          existing.updatedAt = tick();
+        } else {
+          const at = tick();
+          group.edges.push({
+            id: nextId('edge'), type: input.type, source: clone(src), target: clone(dst),
+            props: input.props ?? {}, createdBy: viewerActor, createdAt: at, updatedAt: at,
+          });
+        }
+        projectAssignees(src);
+        touch(src);
+        emit(src.spaceId, { type: 'entity.upsert', entity: clone(src) }, input);
+        return commandResult(src);
+      },
+      async deleteEdge(edgeId, ctx) {
+        for (const [ownerId, e] of extras) {
+          for (const group of e.connections.outgoing) {
+            const at = group.edges.findIndex((edge) => edge.id === edgeId);
+            if (at < 0) continue;
+            group.edges.splice(at, 1);
+            const src = requireSummary(ownerId);
+            projectAssignees(src);
+            touch(src);
+            emit(src.spaceId, { type: 'entity.upsert', entity: clone(src) }, ctx);
+            return commandResult(src);
+          }
+        }
+        throw new CollabError('not_found', `edge ${edgeId} not found`);
       },
       async postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult> {
         if (input.anchorIds.length === 0) throw new CollabError('invalid_input', 'anchorIds must not be empty');
@@ -1502,16 +1855,19 @@ export function createFixtureSeam(): FixtureSeam {
       },
       /**
        * THE R-UI-5 predicate — the only place liveness truth is computed:
-       *   workStatus !== 'running'  → 'not-running'
+       *   workStatus ∉ {running, idle} → 'not-running'
        *   no snapshot for the space → 'unknown' (rendered neutral, NEVER live)
        *   id ∈ liveEntityIds        → 'live'
        *   otherwise                 → 'stale'
+       * 'idle' belongs on the live side — see the twin in data/real/liveness.ts
+       * for why. This predicate is written in TWO files; they must agree.
        * NOTE (flagged to bridge, not fixed here — seam.ts is locked): the seam
        * types `workStatus` with the task `WorkStatus` vocabulary, which cannot
        * express the work_session `'running'` literal; the comparison widens.
        */
       statusOf(session): SessionLiveness {
-        if ((session.workStatus as string | null) !== 'running') return 'not-running';
+        const recorded = session.workStatus as string | null;
+        if (recorded !== 'running' && recorded !== 'idle') return 'not-running';
         const s = summaries.get(session.id);
         const snap = s ? livenessBySpace.get(s.spaceId) : undefined;
         if (!snap) return 'unknown';

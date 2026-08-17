@@ -35,6 +35,7 @@ import {
   StalePinBanner,
   TombstoneBody,
 } from './detail/PanelStates';
+import { RowDetail, type RowControlsPort } from './EntityListPanel';
 import { ActivityTab, ConnectionsTab, DiscussionTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
@@ -133,6 +134,13 @@ export interface EntityDetailPanelProps {
   onResumeSession?: () => void;
   /** True while that resume is in flight. */
   resumingSession?: boolean;
+  /**
+   * Why resume is unavailable for THIS session or THIS host, when it is.
+   * `TerminalBody` and `ExitedFallback` have always consumed this; the prop was
+   * missing HERE, so no caller could ever supply it and a genuine refusal was
+   * indistinguishable from an unwired surface — both drew the same grey button.
+   */
+  resumeSessionDisabledReason?: string;
   streaming?: boolean;
   needsAttention?: boolean;
   attentionDetail?: string;
@@ -142,6 +150,30 @@ export interface EntityDetailPanelProps {
   chatSurface?: ReactNode;
   /** The DEBUG surface (session CLI journal). Self-fetching; host wires the seam. */
   debugSurface?: ReactNode;
+  /** The GRAPH surface (what the session is connected to). Same contract as Debug. */
+  graphSurface?: ReactNode;
+  /**
+   * ATTENTION HISTORY — every request ever escalated on this entity, settled or
+   * not. Self-fetching; the host wires the seam (`views/attentionSurface.tsx`).
+   *
+   * ONE PROP FOR EVERY KIND, like `attachments` above and for the same reason:
+   * `attention_requests.entity_id` references `entities`, so the server will
+   * flag any kind at all and a per-kind prop would be a restriction the backend
+   * does not have.
+   *
+   * IT MOUNTS IN TWO PLACES, which is the one thing here that is not uniform.
+   * Most archetypes take it inline in the Content body. The terminal archetype
+   * and `composition:'chat'` cannot — a live PTY owns its full height and a
+   * chat body ends at its composer, the same two structural exclusions the
+   * attachment strip carries — so for those it rides the ACTIVITY tab instead
+   * (user ruling 2026-08-16). Excluding them outright was the alternative and
+   * was rejected: work sessions are among the most-escalated entities in a
+   * space, and their history would have been CLI-only.
+   *
+   * Absent ⇒ nothing renders. The section is invisible on any entity with no
+   * history anyway, so an unwired host leaves no dangling affordance to explain.
+   */
+  attentionSection?: ReactNode;
   /**
    * ATTACHMENTS — bytes and an uploader for the strip in the Content body.
    *
@@ -155,6 +187,29 @@ export interface EntityDetailPanelProps {
    * a host writes `attachmentsPortFromSeam(seam, spaceId)` and nothing else.
    */
   attachments?: AttachmentsPort | null;
+
+  /**
+   * THE ROW CONTROLS — state · value · assignee · archive — as one row under
+   * the tab strip.
+   *
+   * USER RULING 2026-08-05. These four writes existed only inside an expanded
+   * list row, so the panel that IS the entity could show its priority and its
+   * assignees and offer no way to change either; the grid printed them as
+   * static text beside an ID and a due date. They belong with the facts they
+   * write, which is here.
+   *
+   * ONE PROP, EVERY KIND, and no archetype branch: which controls appear comes
+   * from the SAME registry data the list reads (`list.stateControl`,
+   * `list.valueControls`, `list.assignControl`), so a kind with no state axis
+   * gets a strip that says so and a kind that gains a value control gets a
+   * picker here for free. `RowControlsPort` is the narrow shape the controls
+   * genuinely consume, so a host assigns its row-lifecycle handlers directly.
+   *
+   * Absent ⇒ NO STRIP. Rendering it unwired would put four disabled-with-
+   * reason controls at the top of every panel in a host that never intended to
+   * offer them — honest, and still four rows of apology above the content.
+   */
+  controls?: RowControlsPort | null;
   /** An upload landed; the host refetches so the new edge appears. */
   onAttachmentUploaded?: () => void;
   onContentSurfaceChange?: (surface: ContentSurface) => void;
@@ -398,6 +453,23 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         onSelect={selectTab}
       />
 
+      {/* The control strip sits between the tabs and the body, on the Content
+          tab only: it writes the entity's own axes, and the other three tabs
+          are about messages, edges and history. A tombstone gets none of it —
+          the only verb left on a deleted entity is restore, which the
+          tombstone body already carries.
+
+          The terminal archetype is excluded for the same structural reason
+          the attachment strip is: it owns its full height below the tabs, and
+          the strip would have nothing live to offer a session anyway — its
+          status is OBSERVED, not chosen, so the state control can only render
+          a refusal of a fact the header pill already states. */}
+      {props.controls && tab === 'content' && !isTombstone && !isTerminal ? (
+        <div className="pn-controls" data-testid="panel-controls">
+          <RowDetail row={detail} props={props.controls} config={config} variant="chips" />
+        </div>
+      ) : null}
+
       {/* The error boundary wraps the BODY only: header, tabs and footer stay
           live so close, expand and Esc keep working through a failed render.
           TWO layers, honestly distinct: the `error` PROP is the caller
@@ -427,12 +499,30 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               work_session and every custom kind, and no future archetype can
               forget to include it.
 
-              TWO EXCLUSIONS, both structural, neither a kind check. The
+              THREE EXCLUSIONS, all structural, none a kind check. The
               terminal archetype owns its full height (a live PTY canvas with a
-              strip stapled under it is not a design, it is a leak), and a
-              tombstone shows only its tombstone.
+              strip stapled under it is not a design, it is a leak), a
+              tombstone shows only its tombstone, and a composition:'chat'
+              body ends at its composer — the composer's + button already owns
+              attach, so a strip below it is duplication.
             */}
-            {tab === 'content' && !isTombstone && config.panel.archetype !== 'terminal' ? (
+            {/*
+              ATTENTION HISTORY rides on the SAME three exclusions as the strip
+              below — and unlike the strip, the two archetypes it excludes do
+              not LOSE the section: `PanelBody`'s activity arm mounts it for
+              them instead. Ordered above the attachment strip because an
+              escalation someone may still be waiting on outranks a file list.
+            */}
+            {tab === 'content' &&
+            !isTombstone &&
+            config.panel.archetype !== 'terminal' &&
+            config.panel.composition !== 'chat'
+              ? props.attentionSection
+              : null}
+            {tab === 'content' &&
+            !isTombstone &&
+            config.panel.archetype !== 'terminal' &&
+            config.panel.composition !== 'chat' ? (
               <AttachmentStrip
                 anchorId={detail.id}
                 files={attachedFiles(detail)}
@@ -450,8 +540,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           panel edge, so terminal panels do without it. It stays for every
           other archetype: the reading it carries (presence · author · version)
           is honest chrome for a document, and only the terminal has a primary
-          surface whose whole value is the pixels this row was taking. */}
-      {isTerminal ? null : (
+          surface whose whole value is the pixels this row was taking.
+          composition:'chat' joins the exclusion for the same structural
+          reason: a conversation ends at its composer, not at a chrome strip
+          below it. */}
+      {isTerminal || config.panel.composition === 'chat' ? null : (
         <PanelFooter
           detail={detail}
           presenceHollowReason={reasons.presenceHollow}
@@ -490,7 +583,30 @@ function PanelBody(
     return <ConnectionsTab detail={detail} connections={props.connections} onOpenEntity={onOpenEntity} />;
   }
   if (tab === 'activity') {
-    return <ActivityTab items={props.activity ?? []} />;
+    /**
+     * THE OVERFLOW HOME FOR THE TWO ARCHETYPES THAT CANNOT TAKE THE SECTION
+     * INLINE — terminal (a live PTY owning its full height) and chat (a body
+     * that ends at its composer). Those two are excluded from the content-body
+     * mount for the same structural reasons the attachment strip excludes them,
+     * and a work session is one of the most-escalated things in a space, so
+     * dropping the section for them would have made session attention history
+     * reachable only from the CLI (user ruling 2026-08-16).
+     *
+     * The CONDITION IS THE EXACT COMPLEMENT of the content-body one, so the
+     * section renders in exactly one place per kind and can never appear twice
+     * — `panels.test.tsx` asserts both halves of that.
+     *
+     * Deliberately ABOVE the feed: it is the shorter, more actionable half, and
+     * an activity feed has no natural end to append below.
+     */
+    const overflow =
+      config.panel.archetype === 'terminal' || config.panel.composition === 'chat';
+    return (
+      <>
+        {overflow ? props.attentionSection : null}
+        <ActivityTab items={props.activity ?? []} />
+      </>
+    );
   }
 
   // Content. A deleted entity keeps its chrome and its place; only the body
@@ -522,9 +638,10 @@ function PanelBody(
         requestedSurface={props.contentSurface}
         onSurfaceChange={props.onContentSurfaceChange}
         switchSlot={props.surfaceSlot}
-        terminal={
+        terminal={(active) => (
           <TerminalBody
             detail={detail}
+            active={active}
             serverBaseUrl={props.serverBaseUrl}
             liveness={props.liveness ?? 'unknown'}
             streaming={props.streaming}
@@ -538,8 +655,11 @@ function PanelBody(
             onOpenEntity={onOpenEntity}
             {...(props.onResumeSession ? { onResume: props.onResumeSession } : {})}
             {...(props.resumingSession ? { resuming: props.resumingSession } : {})}
+            {...(props.resumeSessionDisabledReason
+              ? { resumeDisabledReason: props.resumeSessionDisabledReason }
+              : {})}
           />
-        }
+        )}
         chat={props.chatSurface ?? (
           <p className="pn-surface-host-missing" role="alert">
             Chat is enabled for this session, but its feed host is unavailable.
@@ -548,6 +668,11 @@ function PanelBody(
         debug={props.debugSurface ?? (
           <p className="pn-surface-host-missing" role="alert">
             The debug journal host is unavailable in this view.
+          </p>
+        )}
+        graph={props.graphSurface ?? (
+          <p className="pn-surface-host-missing" role="alert">
+            The session graph host is unavailable in this view.
           </p>
         )}
       />
@@ -569,6 +694,17 @@ function PanelBody(
           save.unavailable ? undefined : (description) => save.edit({ description })
         }
         descriptionUnavailableReason={
+          save.unavailable
+            ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
+            : undefined
+        }
+        criteriaDraft={save.edits.acceptanceCriteria}
+        onCriteriaChange={
+          save.unavailable
+            ? undefined
+            : (acceptanceCriteria) => save.edit({ acceptanceCriteria })
+        }
+        criteriaUnavailableReason={
           save.unavailable
             ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
             : undefined

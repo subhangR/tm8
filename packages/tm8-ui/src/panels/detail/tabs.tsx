@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ActivityItem, Connections, EdgeGroup, EntityDetail, MessageView } from '@tm8/contract';
 import { Avatar, Chip, Eyebrow } from '../../kit';
-import { getKind } from '../../domain';
+import { KindIcon, getKind } from '../../domain';
 import { EmptyBody } from './PanelStates';
 
 /**
@@ -280,6 +280,20 @@ function groupByPeer(groups: readonly EdgeGroup[], selfId: string): PeerGroup[] 
 }
 
 /**
+ * "Task · Fix the login bug" — the kind NAMED, on the hover of every chip in
+ * this tab.
+ *
+ * The drawn mark (`KindIcon`) is the first-glance answer to "which are what",
+ * and the reason this tab was rebuilt: the old marks were near-identical
+ * lozenges. The word is the second half of that answer, for the reader who has
+ * not yet learned the mark. Both come from the registry, so neither can drift
+ * from the other or from the kind.
+ */
+function peerTitle(kind: string, title: string): string {
+  return `${getKind(kind).label} · ${title}`;
+}
+
+/**
  * "two axes: vertical = where it lives · horizontal = what it connects to."
  * Parent/children come from the hierarchy; LINKED rows are one per connected
  * entity, each showing the edge types it holds with this one.
@@ -316,7 +330,11 @@ export function ConnectionsTab({
         <section className="pn-section">
           <Eyebrow faint>PARENT</Eyebrow>
           <div className="pn-chiprow">
-            <Chip glyph={getKind(parent.kind).chip.glyph} onClick={() => onOpenEntity?.(parent.id)}>
+            <Chip
+              glyph={<KindIcon kind={parent.kind} />}
+              onClick={() => onOpenEntity?.(parent.id)}
+              title={peerTitle(parent.kind, parent.title)}
+            >
               {parent.title}
             </Chip>
           </div>
@@ -330,11 +348,15 @@ export function ConnectionsTab({
             {peers.map((entry) => (
               <li className="pn-peers__row" key={entry.peer.id}>
                 <Chip
-                  glyph={getKind(entry.peer.kind).chip.glyph}
+                  glyph={<KindIcon kind={entry.peer.kind} />}
                   onClick={() => onOpenEntity?.(entry.peer.id)}
                   /* An unresolved HARD dependency is why something is blocked —
                      the chip says so rather than looking like any other link. */
-                  title={entry.unresolvedHard ? 'unresolved hard dependency' : entry.peer.title}
+                  title={
+                    entry.unresolvedHard
+                      ? 'unresolved hard dependency'
+                      : peerTitle(entry.peer.kind, entry.peer.title)
+                  }
                 >
                   {entry.peer.title}
                 </Chip>
@@ -370,7 +392,12 @@ export function ConnectionsTab({
           <Eyebrow faint>{`CHILDREN · ${children.length}`}</Eyebrow>
           <div className="pn-chiprow">
             {children.map((c) => (
-              <Chip key={c.id} glyph={getKind(c.kind).chip.glyph} onClick={() => onOpenEntity?.(c.id)}>
+              <Chip
+                key={c.id}
+                glyph={<KindIcon kind={c.kind} />}
+                onClick={() => onOpenEntity?.(c.id)}
+                title={peerTitle(c.kind, c.title)}
+              >
                 {c.title}
               </Chip>
             ))}

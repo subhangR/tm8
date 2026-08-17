@@ -7,6 +7,7 @@ import { Composer, type ComposerProps } from './Composer';
 import type { ComposerMentionOption } from './Composer';
 import type { ChatAttachmentUploadTask } from './chat-attachments';
 import { FeedRowGroup } from './FeedRow';
+import { LiveToolGraph } from './LiveToolGraph';
 import { groupByOperation, type ChannelPostInput, type ChannelRefusal } from './feed-model';
 import './channel-screen.css';
 
@@ -83,6 +84,12 @@ export interface ChannelScreenProps {
   onLoadEarlier?: (cursor: Cursor) => Promise<void> | void;
   onOpenEntity?: (id: EntityId) => void;
   /**
+   * Mounts the collapsible live tool graph above the feed — a pure-UI star of
+   * the entities this feed's activity items touched. Opt-in by the host,
+   * because only a session anchor's activity reads as "tool calls".
+   */
+  showLiveGraph?: boolean;
+  /**
    * The surface switch the S07 empty state offers. OPTIONAL AND MEANINGFULLY
    * SO: "the agent's native output lives in Terminal" is true of a session
    * anchor and false of a channel, so the sentence and its button appear only
@@ -113,6 +120,7 @@ export function ChannelScreen({
   onPost,
   onLoadEarlier,
   onOpenEntity,
+  showLiveGraph = false,
   onSwitchToTerminal,
 }: ChannelScreenProps) {
   const feedElement = useRef<HTMLDivElement>(null);
@@ -237,6 +245,14 @@ export function ChannelScreen({
 
   return (
     <section className="chs-root" data-testid="chs-root">
+      {showLiveGraph && page ? (
+        <LiveToolGraph
+          items={page.items}
+          anchorId={anchorId}
+          anchorNoun={anchorNoun}
+          onOpenEntity={onOpenEntity}
+        />
+      ) : null}
       <div
         ref={feedElement}
         className="chs-feed"
@@ -266,6 +282,11 @@ export function ChannelScreen({
           </p>
         ) : null}
 
+        {/* S09's honesty line describes the PAGING BOUNDARY, so it lives at
+            the boundary — the top of the feed, beside "load earlier ↑" —
+            not below the newest message, where the chat surface must end at
+            the composer. */}
+        <Provenance page={page} />
         <LoadEarlier
           cursor={page?.nextCursor ?? null}
           busy={loadingEarlier}
@@ -322,8 +343,6 @@ export function ChannelScreen({
             ))}
           </ul>
         )}
-
-        <Provenance page={page} />
       </div>
 
       <Composer
@@ -547,7 +566,8 @@ function EmptyFeed({ onSwitchToTerminal }: { onSwitchToTerminal?: () => void }) 
 }
 
 /**
- * The oracle's footer line, and the one number it is allowed to state.
+ * The oracle's provenance line (rendered at the TOP of the feed, at the
+ * paging boundary it describes), and the one number it is allowed to state.
  *
  * S09 is explicit: "1 item returned · continue via nextCursor — no total shown,
  * ever." A total would require counting rows the viewer may not be authorized

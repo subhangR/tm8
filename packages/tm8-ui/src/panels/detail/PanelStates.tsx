@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { IconBtn } from '../../kit';
 
 /**
@@ -171,7 +172,8 @@ export function EmptyBody({
   actionLabel,
   onAction,
 }: {
-  glyph?: string;
+  /** A character or a drawn mark — the empty state of a KIND draws its icon. */
+  glyph?: ReactNode;
   sentence: string;
   actionLabel?: string;
   onAction?: () => void;

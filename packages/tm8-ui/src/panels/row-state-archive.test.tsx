@@ -88,12 +88,22 @@ describe('D67 — every list style reaches the state control', () => {
       if (rows.length === 0) return; // no fixture for this kind; covered by the registry walk below
       mount(kind);
       const strip = expandFirstRow();
-      // The state line is present for every kind — as a picker, or as the
-      // honest statement that this kind has no state to set. Scoped to the
-      // ROW LABELS: "Archive" is also the archive button's own word, and an
-      // unscoped text match would pass on the button while the label was gone.
-      const labels = [...strip.querySelectorAll('.lp__rowdetail-label')].map((el) => el.textContent);
-      expect(labels).toEqual(['State', 'Archive']);
+      /**
+       * REACHABILITY, BY ACCESSIBLE NAME — not by the visible row label.
+       *
+       * The strip has two layouts (2026-08-04): `lines`, which prints a
+       * "STATE" caption beside each control, and `chips`, where the control
+       * IS the chip and the word lives only in its accessible name. Asserting
+       * on `.lp__rowdetail-label` measured the LAYOUT and called it the
+       * ruling; the ruling is that the control is reachable in every style.
+       * These names are carried identically by the live control and by every
+       * refusal, so a kind that draws the honest "no state to set" still
+       * passes and a kind that draws nothing still fails.
+       */
+      expect(within(strip).getAllByLabelText(/^Change state/).length).toBeGreaterThan(0);
+      // `Restore` because an already-archived fixture row draws the inverse
+      // verb — the tombstone control, not one specific direction of it.
+      expect(within(strip).getAllByLabelText(/^(Archive|Restore)$/).length).toBeGreaterThan(0);
     },
   );
 
@@ -299,5 +309,164 @@ describe('D67 — the picker and the badge cannot disagree', () => {
       const expected = labels[option.value] ?? option.value.replace(/_/g, ' ');
       expect(option.textContent).toBe(expected);
     }
+  });
+});
+
+/**
+ * ===========================================================================
+ * 2026-08-04 — the other two chips.
+ *
+ * THE BUG THESE HOLD. The control-card's expand drew status, priority and
+ * assignee as three static `<span>`s and then mounted the real State+Archive
+ * strip underneath them. Three things that looked like controls did nothing;
+ * a fourth, further down, worked. The report was "none of those buttons work",
+ * and it was accurate — they were never buttons.
+ *
+ * So the assertions below are about REACHING A WRITE, not about markup: each
+ * chip dispatches the host callback its own write requires, and there is
+ * exactly ONE of each control in an expand.
+ * ===========================================================================
+ */
+describe('the expanded task tile carries ONE of each control', () => {
+  it('has a single state control, not the old duplicate pair', () => {
+    mount('task', { onSetState: vi.fn(), onSetValue: vi.fn(), onArchive: vi.fn() });
+    const strip = expandFirstRow();
+    // The regression exactly: two strips in one expand meant two state
+    // controls, and the one the user reached first was the inert one.
+    expect(document.querySelectorAll('.lp__rowdetail')).toHaveLength(1);
+    expect(within(strip).getAllByTestId('row-state-select')).toHaveLength(1);
+    expect(within(strip).getAllByTestId('row-value-select')).toHaveLength(1);
+  });
+});
+
+describe('the priority chip writes priority', () => {
+  it('dispatches onSetValue with the registry’s own field name', () => {
+    const onSetValue = vi.fn();
+    const live = rowsOfKind('task').find((r) => r.deletedAt == null)!;
+    mount('task', { onSetValue }, [live]);
+    expandFirstRow();
+
+    const select = screen.getAllByTestId('row-value-select')[0] as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'high' } });
+
+    expect(onSetValue).toHaveBeenCalledTimes(1);
+    // The SOURCE travels with the write. The host patches `content[source]`,
+    // so a control that read `priority` and reported something else would
+    // silently write the wrong field.
+    expect(onSetValue.mock.calls[0]!.slice(1)).toEqual(['priority', 'high']);
+  });
+
+  it('offers exactly the registry vocabulary, in registry order', () => {
+    mount('task', { onSetValue: vi.fn() });
+    expandFirstRow();
+    const select = screen.getAllByTestId('row-value-select')[0] as HTMLSelectElement;
+    const declared = getKind('task').list.valueControls![0]!.options;
+    const settable = [...select.options].filter((o) => !o.disabled);
+    expect(settable.map((o) => o.value)).toEqual(declared.map((o) => o.id));
+    expect(settable.map((o) => o.textContent)).toEqual(declared.map((o) => o.label));
+  });
+
+  /**
+   * Unset is a REAL state and it is not "low". The first build of this select
+   * would have snapped an unset field to its first option and claimed a
+   * priority the record does not carry — a read defect wearing a write's
+   * clothes, since the user then commits the lie by touching anything else.
+   */
+  it('shows an unset field as unset, and refuses to select back to it', () => {
+    const live = rowsOfKind('task').find((r) => r.deletedAt == null)!;
+    const noPriority = { ...live, state: { ...live.state, priority: undefined } } as EntitySummary;
+    mount('task', { onSetValue: vi.fn() }, [noPriority]);
+    expandFirstRow();
+    const select = screen.getAllByTestId('row-value-select')[0] as HTMLSelectElement;
+    const empty = [...select.options].find((o) => o.disabled);
+    expect(empty?.textContent).toBe(getKind('task').list.valueControls![0]!.emptyLabel);
+    expect(select.value).toBe('');
+  });
+
+  it('refuses with the edit reason when the viewer may not edit', () => {
+    mount('task', { onSetValue: vi.fn(), capabilitiesOf: () => CAPS_NONE });
+    const strip = expandFirstRow();
+    expect(within(strip).queryByTestId('row-value-select')).toBeNull();
+    // Still SHOWS the value — a refusal hides the control, never the fact.
+    expect(strip.querySelector('[data-source="priority"]')).not.toBeNull();
+  });
+
+  it('refuses as not-wired when no host is listening, rather than dropping the change', () => {
+    mount('task', {});
+    const strip = expandFirstRow();
+    expect(within(strip).queryByTestId('row-value-select')).toBeNull();
+    expect(within(strip).getAllByTestId('disabled-with-reason').length).toBeGreaterThan(0);
+  });
+});
+
+describe('the assigned chip writes an EDGE, one actor at a time', () => {
+  const ADA = { id: 'member-ada', kind: 'member', displayName: 'Ada', avatar: null, isAgent: false } as const;
+  const BEE = { id: 'tm-bee', kind: 'team_member', displayName: 'Bee', avatar: null, isAgent: true } as const;
+
+  const withRoster = (over = {}) =>
+    mount('task', { onAssign: vi.fn(), assignableActors: [ADA, BEE], ...over });
+
+  it('adds an assignment as the registry’s edge type', () => {
+    const onAssign = vi.fn();
+    const live = rowsOfKind('task').find((r) => r.deletedAt == null)!;
+    const unassigned = { ...live, state: { ...live.state, assignees: [] } } as EntitySummary;
+    mount('task', { onAssign, assignableActors: [ADA, BEE] }, [unassigned]);
+    expandFirstRow();
+
+    fireEvent.click(screen.getAllByTestId('row-assign-trigger')[0]!);
+    const options = screen.getAllByTestId('row-assign-option');
+    fireEvent.click(options.find((o) => o.getAttribute('data-actor') === ADA.id)!);
+
+    // `assigned_to` is spelled ONCE, in the registry. The panel forwards it.
+    expect(onAssign.mock.calls[0]!.slice(1)).toEqual([ADA.id, 'assigned_to', true]);
+  });
+
+  /**
+   * The remove half, and the reason this is a menu of toggles rather than a
+   * `<select multiple>`: a multi-select commits the whole collection, and a
+   * whole-collection write silently drops an assignment another client made
+   * between the read and the write.
+   */
+  it('removes an assignment the row already has', () => {
+    const onAssign = vi.fn();
+    const live = rowsOfKind('task').find((r) => r.deletedAt == null)!;
+    const assigned = { ...live, state: { ...live.state, assignees: [ADA] } } as EntitySummary;
+    mount('task', { onAssign, assignableActors: [ADA, BEE] }, [assigned]);
+    expandFirstRow();
+
+    fireEvent.click(screen.getAllByTestId('row-assign-trigger')[0]!);
+    const on = screen.getAllByTestId('row-assign-option').find(
+      (o) => o.getAttribute('data-actor') === ADA.id,
+    )!;
+    expect(on.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(on);
+    expect(onAssign.mock.calls[0]!.slice(1)).toEqual([ADA.id, 'assigned_to', false]);
+  });
+
+  /**
+   * AN EMPTY ROSTER IS NOT AN EMPTY SPACE. The host injects this list, so
+   * "nothing was injected" means "nothing has loaded" — and a menu drawn over
+   * it would tell a user with a full team that there is nobody to assign.
+   */
+  it('refuses honestly when the roster has not loaded, instead of opening an empty menu', () => {
+    mount('task', { onAssign: vi.fn(), assignableActors: [] });
+    const strip = expandFirstRow();
+    expect(within(strip).queryByTestId('row-assign-trigger')).toBeNull();
+    expect(strip.textContent).toMatch(/has not loaded/i);
+  });
+
+  it('refuses with the LINK reason, not the edit one — an edge is not a content edit', () => {
+    withRoster({ capabilitiesOf: () => CAPS_NONE });
+    const strip = expandFirstRow();
+    expect(within(strip).queryByTestId('row-assign-trigger')).toBeNull();
+    expect(strip.textContent).toMatch(/link/i);
+  });
+
+  it('shows who is assigned even while refusing to change it', () => {
+    const live = rowsOfKind('task').find((r) => r.deletedAt == null)!;
+    const assigned = { ...live, state: { ...live.state, assignees: [ADA] } } as EntitySummary;
+    mount('task', { capabilitiesOf: () => CAPS_NONE, assignableActors: [ADA] }, [assigned]);
+    const strip = expandFirstRow();
+    expect(strip.textContent).toContain('Ada');
   });
 });

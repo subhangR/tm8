@@ -116,6 +116,28 @@ describe('WorkSessionContent', () => {
     expect(onMount).toHaveBeenCalledTimes(1);
   });
 
+  it('tells a retained terminal when its surface becomes hidden and visible again', () => {
+    const activity: boolean[] = [];
+    render(
+      <WorkSessionContent
+        sessionId="01900000-0000-7000-8000-000000000019"
+        profile={null}
+        terminal={(active) => {
+          activity.push(active);
+          return <div>render-aware terminal</div>;
+        }}
+        chat={<div>explicit chat</div>}
+        debug={<div>debug journal</div>}
+      />,
+    );
+
+    expect(activity.at(-1)).toBe(true);
+    fireEvent.click(screen.getByRole('tab', { name: 'Debug' }));
+    expect(activity.at(-1)).toBe(false);
+    fireEvent.click(screen.getByRole('tab', { name: 'Terminal' }));
+    expect(activity.at(-1)).toBe(true);
+  });
+
   // USER RULING 2026-08-01 — the default is always Terminal, for every session.
   it('opens on Terminal even when the pin projects Chat as its initial surface', () => {
     render(
@@ -228,9 +250,14 @@ describe('WorkSessionContent', () => {
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Terminal' }), { key: 'ArrowRight' });
     expect(screen.getByText('chat-preserved')).toBeTruthy();
     expect(chatScroll.scrollTop).toBe(123);
-    // End now jumps to the LAST surface — Debug, the always-present third chip.
+    // End now jumps to the LAST surface — Graph, which like Debug is offered on
+    // every session because it depends on no pin.
     // The chat pane stays mounted (its scroll survives), the terminal too.
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Chat' }), { key: 'End' });
+    expect(onSurfaceChange).toHaveBeenLastCalledWith('graph');
+    expect(screen.getByRole('tab', { name: 'Graph' }).getAttribute('aria-selected')).toBe('true');
+    // ArrowLeft off the last chip lands on Debug — the walk covers all four.
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Graph' }), { key: 'ArrowLeft' });
     expect(onSurfaceChange).toHaveBeenLastCalledWith('debug');
     expect(screen.getByRole('tab', { name: 'Debug' }).getAttribute('aria-selected')).toBe('true');
     expect(chatScroll.scrollTop).toBe(123);

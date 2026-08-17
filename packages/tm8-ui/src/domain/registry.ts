@@ -15,13 +15,17 @@
  * of `hiddenModes` for any kind: R7 requires it visible-and-disabled in the
  * switcher, which is a different state from hidden-by-config.
  *
- * Chip glyphs are text placeholders in the canvases' own idiom; replacing them
- * with the canvas-extracted set at reference capture is a DATA edit here and
- * touches no component.
+ * Chip glyphs were text placeholders in the canvases' own idiom, and this
+ * header always said replacing them would be a DATA edit here that touched no
+ * component. That edit landed: every row now carries `iconArt` — a drawn mark
+ * on a 16×16 grid (`kind-art.ts`), rendered by `KindIcon`. The text `icon`
+ * stays as the fallback a string-only surface can print. No component changed
+ * shape to receive it, exactly as promised.
  */
 import type { CoreEntityKind, EntityKind } from '@tm8/contract';
 import type {
   ActionRef,
+  AssignControl,
   CollectionMode,
   FilterSpec,
   KindConfig,
@@ -32,8 +36,10 @@ import type {
   QueryFilter,
   SortSpec,
   StateControl,
+  ValueControl,
 } from './types';
 import { CUSTOM_KIND_FALLBACK } from './types';
+import { KIND_ART } from './kind-art';
 import type { SessionLiveness } from '../data/seam';
 
 /** WLT §2.1 reserved words — never a kind slug. */
@@ -91,6 +97,55 @@ const statusFilter: FilterSpec = {
  * first. `cancelled` does NOT — the work verb writes it directly, and it also
  * DELETES the actor's `working_on` edge, exactly as `open` does.
  */
+/**
+ * The task priority picker.
+ *
+ * TONES MATCH `tile-badges.ts:PRIORITY_TONE` VALUE FOR VALUE. The collapsed
+ * row's tag and this picker paint the same fact, and D67's "the picker and the
+ * badge cannot disagree" rule applies here for the same reason it applies to
+ * state — it is just enforced by matching data rather than by sharing a
+ * `statusPill` spec, because priority has no pill spec to share.
+ *
+ * The vocabulary is `PatchTaskInput['priority']` exactly. It is written through
+ * the ordinary content patch, so it is VERSION-GUARDED: a stale row earns a
+ * 409 the user is told about, rather than a last-write-wins overwrite.
+ */
+const TASK_PRIORITY_CONTROL: ValueControl = {
+  source: 'priority',
+  label: 'Priority',
+  emptyLabel: 'no priority',
+  /* Ascending, and UPPER-CASE to the letter of `tile-badges.ts`, which renders
+     the same fact as `v.toUpperCase()`. The tones already match value for
+     value; matching the WORD too is the other half of "the picker and the
+     badge cannot disagree" — a control reading `urgent` beside a badge reading
+     `URGENT` is two spellings of one fact, and the tile draws both. */
+  options: [
+    { id: 'low', label: 'LOW', tone: 'idle' },
+    { id: 'medium', label: 'MEDIUM', tone: 'idle' },
+    { id: 'high', label: 'HIGH', tone: 'block' },
+    { id: 'urgent', label: 'URGENT', tone: 'block' },
+  ],
+};
+
+/**
+ * Assignment is an EDGE, and this is the only place that says which one.
+ *
+ * `assigned_to` is registered in the database with its legal endpoint kinds,
+ * and `internal.validate_edge` enforces them — so declaring the type here and
+ * letting the node refuse an illegal pairing is one rule in one place, rather
+ * than a client-side copy free to drift from the registry that decides.
+ */
+const TASK_ASSIGN_CONTROL: AssignControl = {
+  source: 'assignees',
+  label: 'Assigned',
+  emptyLabel: 'Unassigned',
+  edgeType: 'assigned_to',
+  /* Both, because a task is assignable to a person OR to an agent, and the
+     tile has always drawn the two in one row of avatars. The node validates
+     the pairing regardless; this decides only who the menu offers. */
+  actorKinds: ['member', 'team_member'],
+};
+
 const TASK_STATE_CONTROL: StateControl = {
   source: 'workStatus',
   label: 'State',
@@ -277,13 +332,27 @@ const sessionLiveTreatment = (live: SessionLiveness): LiveTreatment => {
 };
 
 /**
- * 'NEEDS YOU' grouping — designed-but-dormant per R8. The predicate is real
- * and the group renders whenever it fires; no server detection exists in this
- * program, so on real data it stays quiet. It consumes the seam verdict and
- * the row's own recorded status — it derives neither.
+ * 'NEEDS YOU' grouping — designed-but-dormant per R8.
+ *
+ * This was written as `live === 'live' && row.status === 'idle'`, and it stayed
+ * quiet for the wrong reason: `statusOf` used to answer 'not-running' for every
+ * idle session, so the conjunction was UNREACHABLE. Dormancy was an accident of
+ * a defect, not a property of the predicate. The moment idle was correctly
+ * admitted to the live side, this fired on every quiet session at once — the
+ * whole list banded as NEEDS ATTENTION, and because the attention band renders
+ * flat, the session hierarchy disappeared with it.
+ *
+ * 'idle' means the PTY produced no output recently. That is QUIET, not BLOCKED.
+ * An autonomous worker between turns is idle and wants nothing; an agent
+ * genuinely waiting on a human is idle too, and nothing on this row tells the
+ * two apart. A badge that fires on both is not a signal.
+ *
+ * So the grouping stays dormant DELIBERATELY now, and the only thing that can
+ * raise it is an explicit server-side fact — `summary.badges.attention`, which
+ * the call site already ORs in. When a real detector ships, give it a field on
+ * ListRowFacts and test THAT here; do not re-derive attention from liveness.
  */
-const sessionNeedsAttention = (row: ListRowFacts, live: SessionLiveness): boolean =>
-  live === 'live' && row.status === 'idle';
+const sessionNeedsAttention = (_row: ListRowFacts, _live: SessionLiveness): boolean => false;
 
 // ---------------------------------------------------------------------------
 // The rows
@@ -297,6 +366,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Task',
     labelPlural: 'Tasks',
     icon: '◻',
+    iconArt: KIND_ART.task,
     slug: 'tasks',
     strategy: 'collection',
     defaultMode: 'list',
@@ -348,6 +418,8 @@ const ROWS: readonly KindConfig[] = [
       sort: [BY_ACTIVITY, BY_PRIORITY, BY_DUE, BY_POSITION, BY_CREATED],
       inlineEdit: { status: true, title: true },
       stateControl: TASK_STATE_CONTROL,
+      valueControls: [TASK_PRIORITY_CONTROL],
+      assignControl: TASK_ASSIGN_CONTROL,
       // D44: every task ROW gets Run, not just the panel primary. It resolves
       // to the same ActionRef the panel and palette use, and its `flow:'launch'`
       // marker means the row opens the launch config rather than bare-spawning.
@@ -382,6 +454,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Session',
     labelPlural: 'Sessions',
     icon: '▸',
+    iconArt: KIND_ART.work_session,
     slug: 'sessions',
     strategy: 'collection',
     defaultMode: 'list',
@@ -407,6 +480,13 @@ const ROWS: readonly KindConfig[] = [
         pulse: { signal: 'terminal-activity', gate: 'live' },
       },
       liveCount: { filter: NOT_DELETED, label: (n) => `● ${n} live` },
+      // Sessions are LAUNCHED, not created: `quickLaunch` below is the real
+      // affordance, so the inherited quickCreate:true only mounted a Create
+      // control that refuses. Same defect class as the rowActions note below —
+      // "Keeping this true mounted a refused Save control whose full reason
+      // squeezed Discussion/Connections/Activity out of the compact panel
+      // row" — ruled once already; a refused control is not a control.
+      quickCreate: false,
       quickLaunch: 'launch-session',
       filters: [deletedFilter],
       sort: [BY_ACTIVITY, BY_CREATED],
@@ -432,6 +512,9 @@ const ROWS: readonly KindConfig[] = [
       // Availability is still pin-projected at the panel mount: the registry
       // declares the complete work-session surface vocabulary, not permission.
       contentSurfaces: ['terminal', 'chat'],
+      // Already excluded from strip/footer via the terminal archetype arm;
+      // the flag states the reason structurally: this body ends at a composer.
+      composition: 'chat',
       z4: { immersive: true },
     },
     palette: { createLabel: 'Launch session', primaryAction: 'launch-session' },
@@ -444,6 +527,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Doc',
     labelPlural: 'Docs',
     icon: '▤',
+    iconArt: KIND_ART.doc,
     slug: 'docs',
     strategy: 'collection',
     defaultMode: 'list',
@@ -482,6 +566,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Channel',
     labelPlural: 'Channels',
     icon: '#',
+    iconArt: KIND_ART.channel,
     slug: 'channels',
     strategy: 'collection',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/channel/${id}`,
@@ -494,7 +579,10 @@ const ROWS: readonly KindConfig[] = [
       tile: { badges: [{ source: 'unread' }, { source: 'workingAgents' }, { source: 'messages' }] },
       inlineEdit: { title: true },
     }),
-    panel: { archetype: 'hub', primaries: ['add-child'] },
+    // composition:'chat' — the hub body is a conversation ending at its
+    // composer: no AttachmentStrip (the composer's + owns attach) and no
+    // PanelFooter below it.
+    panel: { archetype: 'hub', composition: 'chat', primaries: ['add-child'] },
     palette: { createLabel: 'New channel' },
   },
 
@@ -518,6 +606,7 @@ const ROWS: readonly KindConfig[] = [
     // header): a speaker glyph from the pictograph block tofus in the system
     // font, so the audio note stands in until the canvas-extracted set lands.
     icon: '♪',
+    iconArt: KIND_ART.voice_channel,
     slug: null,
     strategy: 'special',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/voice/${id}`,
@@ -542,6 +631,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Message',
     labelPlural: 'Messages',
     icon: '✉',
+    iconArt: KIND_ART.message,
     slug: null,
     strategy: 'anchored',
     // Canonical route = the containing channel + ?msg=. Parent missing ⇒
@@ -564,6 +654,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Member',
     labelPlural: 'Members',
     icon: '◍',
+    iconArt: KIND_ART.member,
     slug: 'members',
     strategy: 'collection',
     defaultMode: 'list',
@@ -606,6 +697,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Teammate',
     labelPlural: 'Teammates',
     icon: '◆',
+    iconArt: KIND_ART.team_member,
     slug: 'teammates',
     strategy: 'collection',
     defaultMode: 'list',
@@ -656,6 +748,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Pull request',
     labelPlural: 'Pull requests',
     icon: '⑂',
+    iconArt: KIND_ART.pull_request,
     slug: 'pulls',
     strategy: 'collection',
     defaultMode: 'list',
@@ -689,6 +782,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Commit',
     labelPlural: 'Commits',
     icon: '◉',
+    iconArt: KIND_ART.commit,
     slug: 'commits',
     strategy: 'collection',
     defaultMode: 'feed',
@@ -715,6 +809,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'File',
     labelPlural: 'Files',
     icon: '▣',
+    iconArt: KIND_ART.file,
     slug: 'files',
     strategy: 'collection',
     defaultMode: 'gallery',
@@ -742,6 +837,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Spell',
     labelPlural: 'Spells',
     icon: '✧',
+    iconArt: KIND_ART.spell,
     slug: 'spells',
     strategy: 'collection',
     defaultMode: 'list',
@@ -768,6 +864,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Skill',
     labelPlural: 'Skills',
     icon: '✦',
+    iconArt: KIND_ART.skill,
     slug: 'skills',
     strategy: 'collection',
     defaultMode: 'list',
@@ -794,6 +891,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Collection',
     labelPlural: 'Collections',
     icon: '▦',
+    iconArt: KIND_ART.collection,
     slug: 'collections',
     strategy: 'collection',
     defaultMode: 'list',
@@ -821,6 +919,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Project',
     labelPlural: 'Projects',
     icon: '⬢',
+    iconArt: KIND_ART.project,
     slug: 'projects',
     strategy: 'collection',
     defaultMode: 'list',
@@ -859,6 +958,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Interaction profile',
     labelPlural: 'Interaction profiles',
     icon: '⌬',
+    iconArt: KIND_ART.interaction_profile,
     slug: 'interaction-profiles',
     strategy: 'collection',
     defaultMode: 'list',
@@ -907,6 +1007,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Memory',
     labelPlural: 'Memories',
     icon: '◈',
+    iconArt: KIND_ART.memory,
     slug: 'memories',
     strategy: 'collection',
     defaultMode: 'list',
@@ -933,6 +1034,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Artifact',
     labelPlural: 'Artifacts',
     icon: '❖',
+    iconArt: KIND_ART.artifact,
     slug: 'artifacts',
     strategy: 'collection',
     defaultMode: 'list',
@@ -963,6 +1065,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Worktree',
     labelPlural: 'Worktrees',
     icon: '⎇',
+    iconArt: KIND_ART.worktree,
     slug: 'worktrees',
     strategy: 'collection',
     defaultMode: 'list',
@@ -996,6 +1099,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Item',
     labelPlural: 'Items',
     icon: '◇',
+    iconArt: KIND_ART.custom,
     // Slug is computed per custom kind (`c:{name}` → `c-{name}`); the fallback
     // row itself has none.
     slug: null,

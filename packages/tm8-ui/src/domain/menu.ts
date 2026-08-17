@@ -27,7 +27,7 @@ import { CUSTOM_KIND_FALLBACK } from './types';
  * `SHIPPED_DEFAULT_MENU` never round-trips through `spaces.menu.update`
  * (that command is a §10.7 deferred seam amendment).
  */
-export const SHIPPED_DEFAULT_MENU_REVISION = 6;
+export const SHIPPED_DEFAULT_MENU_REVISION = 7;
 
 /**
  * WLT §2, encoded literally:
@@ -36,6 +36,7 @@ export const SHIPPED_DEFAULT_MENU_REVISION = 6;
  *   Workspace ▾ → (row click = the composed view; caret expands — RULING E)
  *                 Tasks · Sessions · Docs · Channels · Teammates · Memories ·
  *                 Artifacts
+ *   Library     → Files · Spells · Collections
  *   Tracking    → Projects · Pull requests · Worktrees
  *   Collab      → Members
  *   Voice       → live per-space voice_channel rows injected beneath this label
@@ -102,6 +103,15 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
         // Revision 2 (2026-07-29): the ◉ Graph view — no longer deferred, the
         // prototype ships on fixtures (GRAPH-VIEW-PLAN §2).
         { type: 'view', ref: 'graph' },
+      ],
+    },
+    {
+      id: 'library',
+      label: 'Library',
+      items: [
+        { type: 'kind', ref: 'file' },
+        { type: 'kind', ref: 'spell' },
+        { type: 'kind', ref: 'collection' },
       ],
     },
     {

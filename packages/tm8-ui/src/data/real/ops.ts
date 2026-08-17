@@ -40,6 +40,7 @@ import {
   type CommandContext,
   type CommandResult,
   type CompleteTaskInput,
+  type CreateEdgeInput,
   type CreateEntityInput,
   type CreateTaskInput,
   type DurableWorkspaceEvent,
@@ -78,14 +79,17 @@ import {
   type ResolveEntityAttentionInput,
   type SessionJournalPage,
   type SessionLaunchRecord,
+  type SessionTranscriptPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
+  type UpdateAttentionRequestInput,
   type WorkInput,
 } from '@tm8/contract';
+import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 import type { HttpClient, QueryParams } from './http';
-import type { FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts } from '../seam';
+import type { FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts, TranscriptOpts } from '../seam';
 
 /**
  * `GET /v2/spaces/:spaceId/events` response (server `DurableEventPage`,
@@ -239,6 +243,14 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       // No query at all: the launch record is a whole document, not a window.
       return http.call<SessionLaunchRecord>('execution.launch', { params: { workSessionId } });
     },
+    transcript(workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> {
+      // One optional key; http.ts drops `undefined`, so the default read sends
+      // a bare path and lets the server own the window size.
+      return http.call<SessionTranscriptPage>('execution.transcript', {
+        params: { workSessionId },
+        query: { last: opts?.last },
+      });
+    },
 
     inbox(opts?: PageOpts): Promise<Page<NotificationItem>> {
       return http.call<Page<NotificationItem>>('inbox.list', { query: pageQuery(opts) });
@@ -342,6 +354,18 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    /** PATCH /v2/attention-requests/:requestId — the request id is NOT an
+     *  entity id, so it rides `params.requestId` exactly as the catalog row
+     *  spells it (catalog.ts `attentionRequests.update`). */
+    updateAttentionRequest(
+      requestId: string,
+      input: UpdateAttentionRequestInput,
+    ): Promise<AttentionRequestMutationResult> {
+      return http.call<AttentionRequestMutationResult>('attentionRequests.update', {
+        params: { requestId }, body: input,
+      });
+    },
+
     /** Note 1 again: `update_task_content` reads every task field off `content`. */
     patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult> {
       const body: PatchEntityInput = {
@@ -386,6 +410,21 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     work(id: EntityId, input: WorkInput): Promise<CommandResult> {
       return http.call<CommandResult>('entities.commands.work', { params: { id }, body: input });
+    },
+
+    createEdge(input: CreateEdgeInput): Promise<CommandResult> {
+      return http.call<CommandResult>('edges.create', { body: input });
+    },
+
+    /**
+     * Same DELETE-carries-a-body rule as `deleteEntity`: the server binds
+     * `RequiredCommandContextSchema` to `edges.delete` (input-schemas.ts:165)
+     * and refuses without a `clientMutationId`. An omitted context reaches the
+     * node as `{}` and earns an honest `invalid_input` rather than a
+     * synthesized id the caller could never reconcile.
+     */
+    deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult> {
+      return http.call<CommandResult>('edges.delete', { params: { edgeId }, body: ctx ?? {} });
     },
 
     fileUploadInit(input: FileUploadInitInput): Promise<FileUploadGrant> {
@@ -453,8 +492,26 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    /**
+     * Attach the browser's measured terminal geometry so the server-hosted PTY
+     * BOOTS at the real pane width instead of 80x24.
+     *
+     * This lives here, at the single choke point every spawn passes through,
+     * rather than in `buildSpawnInput` — the domain builder is pure and must
+     * stay callable without a DOM. A caller that already knows its geometry
+     * wins: the spread order leaves an explicit `input.cols` untouched.
+     *
+     * Why it matters: a full-screen agent TUI lays out its entire frame for
+     * the width it is handed at startup. Boot it at 80 columns and the browser
+     * can only correct it afterwards via a resize round trip — which the PTY
+     * socket suppresses when the fitted size happens to match what it already
+     * has, leaving the 80-column frame frozen on screen until a human resizes
+     * the window. Measuring here makes that whole failure mode unreachable.
+     */
     spawn(input: ExecutionSpawnInput): Promise<CommandResult> {
-      return http.call<CommandResult>('execution.spawn', { body: input });
+      return http.call<CommandResult>('execution.spawn', {
+        body: { ...measureSpawnTerminalSize(), ...input },
+      });
     },
 
     /**
@@ -470,8 +527,12 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('execution.terminate', { params: { id }, body: input });
     },
 
+    /** A resume re-spawns the PTY, so it carries the same geometry as `spawn`. */
     resume(id: EntityId, input: ExecutionResumeInput): Promise<CommandResult> {
-      return http.call<CommandResult>('execution.resume', { params: { id }, body: input });
+      return http.call<CommandResult>('execution.resume', {
+        params: { id },
+        body: { ...measureSpawnTerminalSize(), ...input },
+      });
     },
   };
 }

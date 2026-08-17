@@ -16,8 +16,14 @@ import type {
   ExecutionSpawnInput,
   WorkSessionInteractionProfileProjection,
 } from '@tm8/contract';
-import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
+import {
+  EntityDetailPanel,
+  EntityListPanel,
+  type DetailReasons,
+  type RowControlsPort,
+} from '../panels';
 import { useRowLifecycle } from './useRowLifecycle';
+import { useSessionResume } from './useSessionResume';
 import type { ActionContext } from '../domain/types';
 import {
   LEFT_PANEL_DEFAULT,
@@ -43,7 +49,9 @@ import { openEntityAndResolve } from './open-entity';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
+import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
+import { graphSurfaceFor } from './graphSurface';
 import { representedThreadMessageCount } from './message-thread';
 
 /** The session collection is selected by capability, never by panel position
@@ -129,6 +137,26 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   );
 
   const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
+
+  /* The same strip the expanded list row carries, mounted under the detail
+     panel's tabs. Which controls appear is registry data, not a decision here. */
+  const controlsFor = useCallback(
+    (entityKind: string | undefined): RowControlsPort | null =>
+      entityKind
+        ? {
+            kind: entityKind,
+            ctx,
+            capabilitiesOf: (id) => data.detailOf(id as EntityId)?.capabilities,
+            livenessOf: data.livenessOf,
+            onSetState: rowLifecycle.setState,
+            onArchive: rowLifecycle.archive,
+            onSetValue: rowLifecycle.setValue,
+            onAssign: rowLifecycle.assign,
+            assignableActors: rowLifecycle.assignable,
+          }
+        : null,
+    [ctx, data, rowLifecycle],
+  );
   /* Memoized on `data` so the port identity is stable — the feed hook's effects
      key on it, and a fresh object each render would re-read on every keystroke
      anywhere in the workspace. */
@@ -148,31 +176,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     });
   }, [data.seam.commands, data.reconcileCommand, props.onNotice]);
 
-  /**
-   * Resume — the inverse of close, and the reason the exited card has a button.
-   *
-   * `resumingId` is not cosmetic: resume boots a real agent process, and a
-   * double-fire races two spawns onto one session id. The server refuses the
-   * second with `conflict`, but the honest UI is to not send it.
-   */
-  const [resumingId, setResumingId] = useState<string | null>(null);
-  const handleSessionResume = useCallback((entityId: string) => {
-    setResumingId(entityId);
-    void data.seam.commands.resume(entityId as EntityId, {
-      clientMutationId: `resume:${entityId}:${Date.now()}`,
-    }).then(data.reconcileCommand).catch((error: unknown) => {
-      props.onNotice({
-        id: 'session-resume-failed',
-        tone: 'error',
-        title: 'Session could not be resumed',
-        // The server's refusal, verbatim. Resume fails for REASONS a user can
-        // act on — no native id recorded, the concurrency cap, an ambiguous
-        // Codex rollout — and paraphrasing them would discard the remedy.
-        body: String((error as { message?: string })?.message ?? error),
-        ttlMs: 8_000,
-      });
-    }).finally(() => setResumingId(null));
-  }, [data.seam.commands, data.reconcileCommand, props.onNotice]);
+  /* Resume — the inverse of close, and the reason the exited card has a button.
+     The executor moved to `useSessionResume` so the other four hosts of
+     `EntityDetailPanel` stop rendering an unwired card for the same session. */
+  const sessionResume = useSessionResume({
+    seam: data.seam,
+    reconcile: data.reconcileCommand,
+    onNotice: props.onNotice,
+  });
 
   /** Opening is never blocked on the mutation. Resolve only when the rendered
       summary says attention is pending, and coalesce rapid repeated clicks. */
@@ -226,6 +237,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       const recordedStatus = (detail?.state as unknown as { status?: string } | undefined)?.status;
       return (
         <EntityDetailPanel
+          controls={controlsFor(detail?.kind)}
           detail={detail ?? null}
           serverBaseUrl={props.serverBaseUrl}
           loading={!detail}
@@ -241,7 +253,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               : `${admission.cause} — ${admission.remedy}`
           }
           liveness={data.livenessOf(id)}
+          attentionSection={attentionSectionFor(data.seam, data.spaceId, id, () => props.data.pull?.(id))}
           debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
+          graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
           livenessOf={data.livenessOf}
           viewerMemberId={props.viewerMemberId}
           contentSurface={nav.surfaceOf?.(id) ?? null}
@@ -277,8 +291,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           ) : undefined}
           messages={messages}
           onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${id}:${Date.now()}`, anchorIds: [id], body })}
-          onResumeSession={() => handleSessionResume(id)}
-          resumingSession={resumingId === id}
+          {...(sessionResume.resume ? { onResumeSession: () => sessionResume.resume?.(id) } : {})}
+          resumingSession={sessionResume.resumingId === id}
+          {...(sessionResume.unavailableReason
+            ? { resumeSessionDisabledReason: sessionResume.unavailableReason }
+            : {})}
           /* GAP-2 (data-wiring handover): hand the seam commands down so the
              save path is live in the workspace panels too. */
           commands={data.seam.commands}
@@ -298,7 +315,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         />
       );
     },
-    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort],
+    // `sessionResume` was missing here while resume was inline, so the in-flight
+    // "Resuming…" label rendered from a stale closure.
+    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, controlsFor, sessionResume],
   );
 
   /** Keep the server's recent-activity order; EmptyCenter applies the bounded
@@ -344,12 +363,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const rightConfig = getKind(rightKind);
   const leftCreateFlow = useNewTask({
     spaceId: data.spaceId,
+    kind: leftConfig.kind,
     placeholderTitle: placeholderTitleFor(leftConfig.label),
     commands: data.seam.commands,
     onCreated: (id) => nav.push?.(id as EntityId),
   });
   const rightCreateFlow = useNewTask({
     spaceId: data.spaceId,
+    kind: rightConfig.kind,
     placeholderTitle: placeholderTitleFor(rightConfig.label),
     commands: data.seam.commands,
     onCreated: (id) => nav.push?.(id as EntityId),
@@ -390,6 +411,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onTerminate={leftConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onSetValue={rowLifecycle.setValue}
+          onAssign={rowLifecycle.assign}
+          assignableActors={rowLifecycle.assignable}
           onKindChange={props.onLeftKindChange}
           // Capability truth comes from the DETAIL, not the summary
           // (EntityCapabilities lives on EntityDetail). A row whose detail is
@@ -475,6 +499,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onSetValue={rowLifecycle.setValue}
+          onAssign={rowLifecycle.assign}
+          assignableActors={rowLifecycle.assignable}
           onKindChange={props.onRightKindChange}
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
           launch={launchPort}
