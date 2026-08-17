@@ -79,9 +79,14 @@ import { execFileSync, spawn } from 'node:child_process';
  * rewritten. `branch` and `behindMain` in every output file are how that gets
  * caught by reading the file instead of by someone noticing.
  */
-function gitRef() {
+function gitRef(outDir) {
   const git = (...a) => { try { return execFileSync('git', a, { encoding: 'utf8' }).trim(); } catch { return null; } };
-  const status = git('status', '--porcelain');
+  /* THE INSTRUMENT MUST NOT COUNT ITS OWN OUTPUT. This run rewrites
+     `<outDir>/<label>.json` inside the repo, so a bare `status --porcelain`
+     reports a dirty tree on every single run — a permanent false positive, and
+     a check that always fires is a check nobody reads. Excluded by pathspec so
+     the flag keeps meaning "somebody has uncommitted SOURCE edits". */
+  const status = git('status', '--porcelain', '--', ':(exclude)' + outDir);
   return {
     head: git('rev-parse', 'HEAD'),
     headShort: git('rev-parse', '--short', 'HEAD'),
@@ -333,7 +338,7 @@ async function startVite() {
   return { base, stop: () => proc.kill('SIGTERM') };
 }
 
-const ref = gitRef();
+const ref = gitRef(outDir);
 console.log(`ref: ${ref.headShort} on ${ref.branch}  (${ref.behindMain} behind origin/main)${ref.dirty ? '  ** DIRTY TREE **' : ''}\n`);
 
 const { base, stop } = await startVite();
