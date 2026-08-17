@@ -251,11 +251,31 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     }
   });
 
-  it('4b. every kind a person can ask an agent to work on is launchable', () => {
-    const launchable = allKinds().filter((r) => r.launchable).map((r) => r.kind).sort();
-    expect(launchable).toEqual([
-      'artifact', 'doc', 'memory', 'project', 'pull_request', 'task', 'team_member', 'worktree',
+  /**
+   * PINNED AS THE DENYLIST, because that is now the authority.
+   *
+   * This used to enumerate the eight launchable kinds, and the enumeration was
+   * the bug it should have caught: launching is open to every kind the server
+   * will derive a task for (all but `work_session`), so the eight were not a
+   * ruling but the subset somebody had remembered to flag — eleven kinds were
+   * silently missing a Run button and this test agreed with them.
+   *
+   * Asserting the REFUSALS instead means a newly minted kind cannot quietly
+   * join a list; it is launchable by default, and taking that away is an edit
+   * to `NOT_LAUNCHABLE` that lands right here.
+   */
+  it('4b. only the three declared refusals are unlaunchable; everything else launches', () => {
+    const notLaunchable = allKinds().filter((r) => !r.launchable).map((r) => r.kind).sort();
+    expect(notLaunchable).toEqual([
+      // Product refusals — orchestration is an approval, and a loop runs
+      // something else on a period.
+      'graph', 'loop',
+      // The one backend refusal: `derive_task_for_entity` raises for it.
+      'work_session',
     ]);
+    // The complement is everything else, and it is the majority — stated as a
+    // relationship rather than a second list, so the two cannot disagree.
+    expect(allKinds().filter((r) => r.launchable).length).toBe(allKinds().length - 3);
   });
 
   it('4c. task keeps Run FIRST and its own row ordering', () => {

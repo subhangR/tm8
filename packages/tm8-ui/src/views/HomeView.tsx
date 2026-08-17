@@ -354,7 +354,7 @@ export function HomeView(props: HomeViewProps) {
       kind: focusDetail?.kind ?? '',
       ctx,
       livenessOf: data.livenessOf,
-      capabilitiesOf: (id) => data.detailOf(id)?.capabilities,
+      capabilitiesOf: (id) => data.capabilitiesOf(id),
       onNeedDetail: (id: string) => data.pull?.(id),
       /* Row verbs (Run, Complete) dispatch through the SAME primaries the
          panels use — one executor per screen. `forEntity` answers undefined
@@ -588,7 +588,7 @@ export function HomeView(props: HomeViewProps) {
           activity={data.activity}
           messagePulses={data.messagePulses}
           linkedPullRequestsOf={data.linkedPullRequestsOf}
-          capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          capabilitiesOf={data.capabilitiesOf}
           onNeedDetail={(id) => data.pull?.(id)}
           selectedId={centerId}
           /* R6a: a LIST click ROOTS the centre — the trail restarts here. */

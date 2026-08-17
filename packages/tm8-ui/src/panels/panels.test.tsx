@@ -628,9 +628,41 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(queryByText(taskGuideLines.title)).toBeNull();
     fireEvent.click(getByRole('button', { name: 'Expand details' }));
     expect(tile.textContent).toContain(taskGuideLines.title);
-    fireEvent.click(getByRole('button', { name: 'Close session' }));
-    expect(onTerminate).toHaveBeenCalledWith(exited.id);
+    /**
+     * TERMINATE IS REFUSED HERE, AND THAT IS THE FIX.
+     *
+     * This row is `status: 'exited'` with `livenessOf → 'not-running'`. It used
+     * to carry a hand-rolled "Close session" button that this test clicked and
+     * that fired `onTerminate` — but that button was wired to the SAME executor
+     * the registry's `terminate` uses (`handleSessionClose = primaries.terminate`),
+     * minus its liveness gate. So it dispatched `execution.terminate` at a
+     * session with no process left to kill: a live-looking control whose command
+     * could only be refused downstream.
+     *
+     * The session tile now renders the registry cluster like the other two
+     * anatomies, so `terminate` arrives with its gate attached and says why.
+     * Same verb, same executor, one spelling of it.
+     */
+    const terminate = getByRole('button', { name: 'Terminate' });
+    expect(terminate.className).toContain('hon-disabled');
+    fireEvent.click(terminate);
+    expect(onTerminate).not.toHaveBeenCalled();
     expect(getByRole('button', { name: 'Copy session ID' })).toBeTruthy();
+  });
+
+  it('a LIVE session still terminates, from the registry cluster', () => {
+    const onTerminate = vi.fn();
+    const { getByRole } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor([sessionLive])}
+        ctx={ctx}
+        livenessOf={() => 'live'}
+        onTerminate={onTerminate}
+      />,
+    );
+    fireEvent.click(getByRole('button', { name: 'Terminate' }));
+    expect(onTerminate).toHaveBeenCalledWith(sessionLive.id);
   });
 
   it('unknown liveness renders neutral and never as live', () => {

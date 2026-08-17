@@ -396,7 +396,7 @@ export function EntityView(props: EntityViewProps) {
       kind: config.kind,
       ctx,
       livenessOf: data.livenessOf,
-      capabilitiesOf: (id) => data.detailOf(id)?.capabilities,
+      capabilitiesOf: (id) => data.capabilitiesOf(id),
       /* See WorkspaceView's copy: without this the expanded row's controls
          never learn their permissions and Archive never fires. */
       onNeedDetail: (id: string) => data.pull?.(id),
@@ -905,11 +905,11 @@ export function EntityView(props: EntityViewProps) {
           activity={data.activity}
           messagePulses={data.messagePulses}
           linkedPullRequestsOf={data.linkedPullRequestsOf}
-          // Capability truth comes from the DETAIL, never the summary: a row
-          // whose detail is not hydrated genuinely has unknown capabilities
-          // and correctly stays refused (WorkspaceView states the same rule).
-          // `onNeedDetail` is how an expanded row leaves that state.
-          capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          // Capability truth rides the SUMMARY (WorkspaceView states the rule
+          // in full). `data.capabilitiesOf` is the one authority — summary
+          // first, detail as fallback. Absence still means refused; it is just
+          // no longer the permanent state of every collapsed row.
+          capabilitiesOf={data.capabilitiesOf}
           onNeedDetail={(id) => data.pull?.(id)}
           selectedId={selectedId}
           onSelect={selectFromList}

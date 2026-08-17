@@ -202,7 +202,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
 
         {attention ? <span className="pn-tt__attention" title={attentionReason}>Needs attention</span> : null}
 
-        <div className="pn-tt__actions">
+        <div className="pn-tt__actions lp__cluster">
           {actions}
           <button
             type="button"

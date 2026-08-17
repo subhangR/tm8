@@ -27,6 +27,7 @@ import type {
   Cursor,
   EdgeView,
   ExecutionSpawnInput,
+  EntityCapabilities,
   EntityDetail,
   EntityId,
   MessageView,
@@ -508,6 +509,28 @@ export interface GateData {
   /** Re-read the counters now — after a local action that changed what is seen. */
   refreshCounts: () => void;
   detailOf: (id: string) => EntityDetail | undefined;
+  /**
+   * Server capability truth for one entity — SUMMARY FIRST, detail as fallback.
+   *
+   * THE ONE AUTHORITY, so a surface cannot accidentally consult a weaker
+   * source. Every host used to inline `detailOf(id)?.capabilities`, which is
+   * detail-only: a row straight off a list page is not in the detail cache, so
+   * this answered `undefined` — "unknown" — and `capabilityGate` correctly
+   * refused every gated verb on it. Run, Archive and Collections were drawn
+   * and dead on every collapsed tile, and only an EXPANDED row ever asked for
+   * the detail that would have freed them.
+   *
+   * The server now projects capabilities onto `EntitySummary` (same helper as
+   * the detail projection, no extra query), so the row arrives already knowing
+   * what it permits. Detail stays the fallback for two live cases: a node too
+   * old to send the summary field, and an entity held in the detail cache
+   * without a list row behind it.
+   *
+   * Still returns `undefined` when NEITHER source has an answer, and that
+   * distinction is load-bearing — it is what `CheckingPermission` renders.
+   * Absent is not "denied", and it is certainly not "allowed".
+   */
+  capabilitiesOf: (id: string) => EntityCapabilities | undefined;
   /**
    * Re-read one entity's detail NOW, whether or not it is already cached — for
    * a local write whose effect lives on the detail rather than in a counter.
@@ -2117,6 +2140,14 @@ export function useGateData(options: GateOptions): GateData {
   }, [seam, spaceId]);
 
   const detailOf = useCallback((id: string) => details[id as EntityId], [details]);
+  // Summary first — see the docblock on `GateData.capabilitiesOf`. Both reads
+  // are subscribed snapshots, so this re-creates (and re-gates every consumer)
+  // exactly when either source changes.
+  const capabilitiesOf = useCallback(
+    (id: string): EntityCapabilities | undefined =>
+      entities[id as EntityId]?.capabilities ?? details[id as EntityId]?.capabilities,
+    [entities, details],
+  );
   const connectionsOf = useCallback(
     (id: string) => selectConnectionsOf(id as EntityId)(domain.store.getState()),
     // edgeProjection/details are subscribed snapshots: their identity changes
@@ -2466,6 +2497,7 @@ export function useGateData(options: GateOptions): GateData {
       countsFor,
       refreshCounts,
       detailOf,
+      capabilitiesOf,
       refetchDetail: (id: string) => void refetchDetail(id),
       connectionsOf,
       activity,

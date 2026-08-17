@@ -2062,6 +2062,44 @@
   border-color: var(--pn-ink);
 }
 
+/* --- .lp__cluster — THE hover action cluster, all three anatomies ---------- */
+/* Collections · Run · Archive · disclosure. The class rides alongside each
+   anatomy's own container (`lp__rowactions`, `pn-tt__actions`, `pn-st__actions`)
+   so each keeps its own POSITIONING — which genuinely differs, the session row
+   being a different height — while everything about how the cluster READS lives
+   here, once. It was previously copied into all three, and the copies had
+   already drifted apart.
+
+   NOTE: there is no `border-box` reset in this package, so every box below is
+   sized with `padding: 0` and an explicit width/height rather than padding. */
+
+/* A refusal and a not-yet-known must occupy EXACTLY the button's box, or the
+   strip changes width as rows resolve and the icons slide under the pointer. */
+.cv2-root .lp__cluster .hon-checking,
+.cv2-root .lp__cluster .hon-disabled {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-4);
+}
+
+/* The destructive verbs refuse the generic invert-to-ink hover and take the
+   block colour instead. Keyed on the ACTION, not on a per-anatomy class, which
+   is why `RowAction` stamps `data-action` — the session tile used to get this
+   by hand-rolling a `pn-st__btn--danger` button, and that hand-rolled copy is
+   what let its Close drift away from every other destructive control. */
+.cv2-root .lp__cluster [data-action='archive']:hover,
+.cv2-root .lp__cluster [data-action='terminate']:hover {
+  color: var(--pn-paper);
+  background: var(--pn-block);
+  border-color: var(--pn-block);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cv2-root .lp__children { animation: none; }
   /* The TRAVELLING sweep is the vestibular part, so it goes. The endpoint glow

@@ -63,6 +63,7 @@ import { useDismissable } from './useDismissable';
 import {
   EntityControlStrip,
   RowAction,
+  RowActionCluster,
   RowMembershipControl,
   RowStateControl,
   type ControlHost,
@@ -3035,7 +3036,9 @@ export function Tile({
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
         onSelect={() => props.onSelect?.(row.id)}
-        onClose={props.onTerminate ? () => props.onTerminate?.(row.id) : undefined}
+        actions={
+          <RowActionCluster row={row} props={props} config={config} openFlow={flowRef} onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions} />
+        }
         detail={<EntityControlStrip row={row} props={props} config={config} />}
       />
       {relatedBlock}
@@ -3093,32 +3096,18 @@ export function Tile({
         assignees={controlFacts.assignees}
         creator={controlFacts.creator}
         badges={tileBadges}
-        actions={[
-          ...(list.rowActions ?? []).map((ref) => (
-            <RowAction
-              key={ref}
-              ref_={ref}
-              row={row}
-              props={props}
-              openFlow={flowRef}
-              onFlow={setFlowRef}
-              onOpenLaunch={props.launch?.onFullOptions}
-            />
-          )),
-          /* The collapsed control-card gets the same icon-anatomy membership
-             control as the standard tile — one component, not a second copy. */
-          ...(list.membership
-            ? [
-                <RowMembershipControl
-                  key="membership"
-                  row={row}
-                  props={props}
-                  control={list.membership}
-                  variant="icon"
-                />,
-              ]
-            : []),
-        ]}
+        /* The same cluster the standard tile draws, in the same order — one
+           component, not a second copy. The control-card's own chevron lives
+           inside `MaestroTaskTile` after this slot, so no `trailing` here. */
+        actions={
+          <RowActionCluster
+            row={row}
+            props={props}
+            config={config}
+            openFlow={flowRef}
+            onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions}
+          />
+        }
         detailsExpanded={controlExpanded}
         flowOpen={flowRef !== null}
         onToggleDetails={() => {
@@ -3293,46 +3282,40 @@ export function Tile({
             ) : null}
           </span>
 
-          <span className="lp__rowactions">
-            {(list.rowActions ?? []).map((ref) => (
-              <RowAction
-                key={ref}
-                ref_={ref}
-                row={row}
-                props={props}
-                openFlow={flowRef}
-                onFlow={setFlowRef}
-                onOpenLaunch={props.launch?.onFullOptions}
-              />
-            ))}
-            {/* Add-to-collection on the COLLAPSED tile (user ruling
-                2026-08-13) — the expanded strip already carries the labelled
-                form; a curation verb two clicks deep is one the user reported
-                as absent. Same component, icon anatomy, same gates. */}
-            {list.membership ? (
-              <RowMembershipControl row={row} props={props} control={list.membership} variant="icon" />
-            ) : null}
-            {/* D67 — the details disclosure, on EVERY standard tile.
-                DELIBERATELY NOT the leading `lp__disclosure`: that chevron
-                means "show this row's CHILDREN" on tree kinds, and giving one
-                control two meanings would make a doc's expand ambiguous. This
-                one trails the row, matching the control-card's `pn-tt__ind`. */}
-            <button
-              type="button"
-              className={
-                detailsExpanded ? 'lp__rowaction lp__rowaction--on' : 'lp__rowaction'
+          <span className="lp__rowactions lp__cluster">
+            {/* Collections · Run · Archive — the shared frame. See
+                `RowActionCluster` for why the order lives there and not in
+                three separate JSX literals. */}
+            <RowActionCluster
+              row={row}
+              props={props}
+              config={config}
+              openFlow={flowRef}
+              onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions}
+              trailing={
+                /* D67 — the details disclosure, on EVERY standard tile.
+                   DELIBERATELY NOT the leading `lp__disclosure`: that chevron
+                   means "show this row's CHILDREN" on tree kinds, and giving one
+                   control two meanings would make a doc's expand ambiguous. This
+                   one trails the row, matching the control-card's `pn-tt__ind`. */
+                <button
+                  type="button"
+                  className={
+                    detailsExpanded ? 'lp__rowaction lp__rowaction--on' : 'lp__rowaction'
+                  }
+                  title="Details"
+                  aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} details for ${row.title}`}
+                  aria-expanded={detailsExpanded}
+                  data-testid="row-details-toggle"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDetailsExpanded((open) => !open);
+                  }}
+                >
+                  <span aria-hidden><TileChevron /></span>
+                </button>
               }
-              title="Details"
-              aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} details for ${row.title}`}
-              aria-expanded={detailsExpanded}
-              data-testid="row-details-toggle"
-              onClick={(event) => {
-                event.stopPropagation();
-                setDetailsExpanded((open) => !open);
-              }}
-            >
-              <span aria-hidden><TileChevron /></span>
-            </button>
+            />
           </span>
 
         </div>
