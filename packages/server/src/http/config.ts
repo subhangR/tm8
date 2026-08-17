@@ -388,7 +388,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       return parsed.origin;
     });
 
-  const preview = resolvePreview(env, host, port, extraAllowedHostnames);
+  const preview = resolvePreview(env, host, port, extraAllowedHostnames, publicOrigin);
 
   const dataDir = resolveServerDataDir(env);
   const clipboardDir = resolveClipboardDir(env, dataDir);
@@ -468,21 +468,45 @@ function resolvePreview(
   appHost: string,
   appPort: number,
   extraAllowedHostnames: readonly string[],
+  publicOrigin: string | undefined,
 ): PreviewConfig | undefined {
   if (envBoolean(env.TM8_PREVIEW_ENABLED, 'TM8_PREVIEW_ENABLED', true) === false) return undefined;
+
+  /**
+   * The UI is served from a DIFFERENT origin than the API socket in every
+   * topology this repo ships — vite dev (`:4612` vs `:4610`), local prod
+   * (`:7777` vs `:7778`), local staging (`:8888` vs `:8887`), and the nginx
+   * boxes, where the browser reaches an `https://…` name while the node binds
+   * loopback. `frame-ancestors` derived from the BIND address therefore names
+   * an origin that never does the framing, and the preview renders nothing:
+   * the browser refuses to paint the frame and the block shows an empty box,
+   * because its error state only covers a missing previewUrl.
+   *
+   * So the framing origin is the origin the node is REACHED BY. Widening
+   * `frame-ancestors` to it costs nothing — that is precisely the document
+   * meant to embed the preview — and the sandbox is untouched, so the frame
+   * stays opaque-origin either way. `TM8_PREVIEW_FRAME_ANCESTORS` remains the
+   * escape hatch for topologies this cannot infer (a dev vite port, a second
+   * reverse proxy). Duplicates are collapsed: the header is noisy enough.
+   */
+  const framingOrigins = (extra: string) =>
+    Array.from(
+      new Set([
+        ...(publicOrigin ? [publicOrigin] : []),
+        ...(env.TM8_PREVIEW_FRAME_ANCESTORS ?? '')
+          .split(/\s+/)
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0),
+        extra,
+      ]),
+    );
 
   const explicitHost = env.TM8_PREVIEW_HOST?.trim() || undefined;
   const explicitPort = env.TM8_PREVIEW_PORT?.trim() || undefined;
   if (explicitHost === undefined && explicitPort === undefined) {
     const host = appHost.toLowerCase();
     const origin = `http://${host}:${appPort}`;
-    const frameAncestors = [
-      origin,
-      ...(env.TM8_PREVIEW_FRAME_ANCESTORS ?? '')
-        .split(/\s+/)
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0),
-    ];
+    const frameAncestors = framingOrigins(origin);
     return { host, port: appPort, origin, sameOrigin: true, frameAncestors };
   }
 
@@ -531,13 +555,9 @@ function resolvePreview(
     );
   }
 
-  const frameAncestors = [
-    appOrigin,
-    ...(env.TM8_PREVIEW_FRAME_ANCESTORS ?? '')
-      .split(/\s+/)
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0),
-  ];
+  // Second-origin mode has the same reached-by problem: the app socket's BIND
+  // origin is not necessarily the origin the browser frames from.
+  const frameAncestors = framingOrigins(appOrigin);
 
   return { host, port, origin, sameOrigin: false, frameAncestors };
 }

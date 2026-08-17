@@ -52,6 +52,40 @@ describe('§9.2 — boot resolution: same-origin default, second-origin refusals
     expect(config.preview?.frameAncestors).toContain('http://127.0.0.1:4610');
   });
 
+  /**
+   * The UI is served from a DIFFERENT origin than the API socket in every
+   * topology this repo ships (vite dev :4612, local prod :7777, local staging
+   * :8888, and the nginx boxes where the browser reaches an https name while
+   * the node binds loopback). `frame-ancestors` built from the BIND address
+   * alone therefore names an origin that never does the framing, and the
+   * browser refuses to paint the frame — an empty box, no error text, because
+   * the viewer's error state only covers a MISSING previewUrl.
+   *
+   * These lock the two ways the framing origin gets in. They are deliberately
+   * about the CONFIG rather than the header string: the header assertions
+   * above passed the whole time the frame was dead in a browser, which is
+   * exactly why the defect survived to review.
+   */
+  it('TM8_PUBLIC_ORIGIN — the origin the node is REACHED BY — may frame the preview', () => {
+    const config = loadConfig({ ...BASE_ENV, TM8_PUBLIC_ORIGIN: 'https://tm8.example.com:7777' });
+    expect(config.preview?.frameAncestors).toContain('https://tm8.example.com:7777');
+    // The bind origin stays, so a node that serves its own UI keeps working.
+    expect(config.preview?.frameAncestors).toContain('http://127.0.0.1:4610');
+  });
+
+  it('TM8_PREVIEW_FRAME_ANCESTORS covers the origins the node cannot infer, and never duplicates', () => {
+    const config = loadConfig({
+      ...BASE_ENV,
+      TM8_PUBLIC_ORIGIN: 'https://tm8.example.com:7777',
+      // The bind origin, repeated on purpose, plus a vite dev origin.
+      TM8_PREVIEW_FRAME_ANCESTORS: 'http://127.0.0.1:4610 http://127.0.0.1:4612',
+    });
+    const ancestors = config.preview?.frameAncestors ?? [];
+    expect(ancestors).toContain('http://127.0.0.1:4612');
+    expect(ancestors).toContain('https://tm8.example.com:7777');
+    expect(ancestors.filter((a) => a === 'http://127.0.0.1:4610')).toHaveLength(1);
+  });
+
   it('an explicit TM8_PREVIEW_HOST opts into the second origin (the ratified loopback pair)', () => {
     const config = loadConfig({ ...BASE_ENV, TM8_PREVIEW_HOST: 'localhost' });
     expect(config.preview?.sameOrigin).toBe(false);
