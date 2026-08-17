@@ -43,7 +43,10 @@
  * contains an untrusted bundle in the default deployment is the renderer's
  * server-enforced CSP sandbox (`sandbox allow-scripts` inside the response
  * header, ./artifact-preview.ts) plus this file's refusal of `Origin: null`
- * callers, which keeps the resulting opaque-origin frame off the API.
+ * callers on every API path, which keeps the resulting opaque-origin frame
+ * off the API. (`/p/` itself is dispatched ahead of S3 in server.ts — the
+ * frame's fetch of its OWN files arrives as `Origin: null` too, and that
+ * route carries no ambient credentials for S3 to protect.)
  *
  * SECOND-ORIGIN MODE (an explicit TM8_PREVIEW_HOST/TM8_PREVIEW_PORT) keeps
  * the original partition: the preview hostname is REMOVED from the app

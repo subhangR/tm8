@@ -131,8 +131,12 @@ const PERMISSIONS_POLICY = [
  * What still contains the bundle: `sandbox allow-scripts` (server-enforced,
  * so a top-level load of a leaked URL is still an opaque origin — NEVER add
  * a token to make something work), `frame-ancestors`, the all-'none' object/
- * frame/base/form directives, and `connect-src https:` excluding the http
- * loopback app origin so the frame cannot even attempt the tm8 API by fetch.
+ * frame/base/form directives, and a `connect-src` that excludes the http
+ * loopback app origin EXCEPT its own `/p/` subtree — so a bundle can
+ * fetch() its own files on an http dev node, but cannot even attempt the
+ * tm8 API by fetch. The `/p/` path scope is the load-bearing part of that
+ * source: widening it to the bare app origin would open an (unreadable,
+ * S3-refused, but still sendable) request channel to every API path.
  */
 function contentSecurityPolicy(preview: PreviewConfig): string {
   return [
@@ -142,7 +146,7 @@ function contentSecurityPolicy(preview: PreviewConfig): string {
     `img-src ${preview.origin} https: data: blob:`,
     `font-src ${preview.origin} https: data:`,
     `media-src ${preview.origin} https: data: blob:`,
-    `connect-src https:`,
+    `connect-src ${preview.origin}/p/ https:`,
     `worker-src 'none'`,
     `object-src 'none'`,
     `frame-src 'none'`,
@@ -178,6 +182,15 @@ export function createArtifactPreviewHandler(opts: ArtifactPreviewHandlerOptions
     // 2026-08-17). These responses are token-gated capabilities meant for
     // exactly that sandboxed document; the token is the access control.
     'cross-origin-resource-policy': 'cross-origin',
+    // Same reasoning, one layer up: a cors-mode fetch() from that
+    // opaque-origin document can only READ a response that carries an ACAO
+    // header, so without this a bundle's fetch of its own `data/*.json`
+    // fails on EVERY deployment, http or https (found live, 2026-08-17).
+    // `*` is correct for a capability URL — the token in the path is the
+    // access control, and `*` never permits credentialed requests. The tm8
+    // API stays unreachable from the frame regardless: connect-src scopes
+    // the app origin to `/p/` and API responses carry no ACAO.
+    'access-control-allow-origin': '*',
     'permissions-policy': PERMISSIONS_POLICY,
   };
 

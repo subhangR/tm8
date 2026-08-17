@@ -44,6 +44,7 @@ import { Router } from './router.js';
 import {
   autoOwnerResolver,
   BASE_SECURITY_HEADERS,
+  checkHost,
   checkTransport,
   checkUpgradeTransport,
 } from './security.js';
@@ -99,9 +100,11 @@ export interface FacadeServerOptions {
    * deployment): every `/p/...` request is handed to it wholesale. It
    * authenticates by the capability token IN THE PATH and must never go
    * through `resolveIdentity` — a preview is viewer-bound by its token, not
-   * by whoever's cookie happens to ride the request. `checkTransport` has
-   * already run by the time it is dispatched; it owns everything after that,
-   * refusals included, with its own hardened header set.
+   * by whoever's cookie happens to ride the request. It is dispatched after
+   * S2 (host allowlist) but BEFORE the rest of checkTransport — the sandboxed
+   * document's own fetches arrive as `Origin: null`, which S3 rightly refuses
+   * everywhere credentials live (see the dispatch site). The handler owns
+   * everything under `/p/`, refusals included, with its own hardened headers.
    */
   readonly artifactPreviewRoute?: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
   /**
@@ -197,6 +200,25 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
     const pathname = url.pathname;
 
     try {
+      // Artifact previews dispatch BEFORE checkTransport, deliberately — but
+      // AFTER S2: the host allowlist still applies (DNS-rebinding names are
+      // refused). What `/p/` skips is S3/S4/CSRF, the browser-origin gates
+      // that exist to protect COOKIE-backed endpoints: this route carries no
+      // ambient credentials at all (capability token in the path, GET/HEAD
+      // only, enforced by the handler). It MUST skip S3, because the
+      // sandboxed preview document is an opaque origin and its cors-mode
+      // fetch() of its OWN `/p/` files arrives as `Origin: null` — S3's
+      // refusal of exactly that value is what protects the cookie'd API, and
+      // it would otherwise refuse the bundle's own data fetches (found live,
+      // 2026-08-17). Every API path below still passes the full transport
+      // gate, so `Origin: null` remains refused where credentials live.
+      if (opts.artifactPreviewRoute && (pathname === '/p' || pathname.startsWith('/p/'))) {
+        const host = checkHost(req.headers, config);
+        if (host.refusal) throw fail(host.refusal.code, host.refusal.message);
+        await opts.artifactPreviewRoute(req, res);
+        return;
+      }
+
       const decision = checkTransport(method, req.headers, config);
       if (decision.refusal) throw fail(decision.refusal.code, decision.refusal.message);
 
@@ -267,15 +289,8 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // visible bursts. Do not reintroduce it as a fallback; a live PTY has one
       // delivery path and a second one desynchronizes the offset accounting.
 
-      // Artifact previews, mounted same-origin (default deployment). BEFORE
-      // the static handler — a SPA fallback must never shadow `/p/` with an
-      // index.html — and before identity resolution: the route authenticates
-      // by the capability token in the path, never by cookie. The handler
-      // answers everything under `/p/` itself, refusals included.
-      if (opts.artifactPreviewRoute && (pathname === '/p' || pathname.startsWith('/p/'))) {
-        await opts.artifactPreviewRoute(req, res);
-        return;
-      }
+      // NOTE: the `/p/` artifact-preview dispatch lives at the TOP of this
+      // try block, ahead of checkTransport — see the comment there for why.
 
       const isApiPath = pathname === BASE_PATH || pathname.startsWith(`${BASE_PATH}/`);
 

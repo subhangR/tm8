@@ -292,10 +292,12 @@ describe('the preview listener', () => {
     // of a leaked preview URL is STILL sandboxed into an opaque origin.
     expect(csp).toContain('sandbox allow-scripts');
     expect(csp).toContain(`default-src 'none'`);
-    // Open network access (owner-ruled): CDN scripts, fonts, live https fetch
-    // — but never a fetch to the http loopback app origin.
+    // Open network access (owner-ruled): CDN scripts, fonts, live https fetch,
+    // plus the preview origin's own /p/ subtree so a bundle can fetch() its
+    // own files on an http dev node — but never the tm8 API paths.
     expect(csp).toContain('script-src http://localhost:4613 https: data: blob:');
-    expect(csp).toContain('connect-src https:');
+    expect(csp).toContain('connect-src http://localhost:4613/p/ https:');
+    expect(res.headers['access-control-allow-origin']).toBe('*');
     expect(csp).not.toContain(`connect-src 'none'`);
     expect(csp).toContain('frame-ancestors http://127.0.0.1:4610');
     expect(res.headers['x-content-type-options']).toBe('nosniff');
@@ -426,7 +428,7 @@ describe('the same-origin /p/ route on the app socket', () => {
       }),
     });
     const { port } = await facade.listen();
-    const request = (path: string, init?: { method?: string; host?: string; cookie?: string }) =>
+    const request = (path: string, init?: { method?: string; host?: string; cookie?: string; origin?: string }) =>
       new Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }>(
         (resolve, reject) => {
           const req = httpRequest(
@@ -438,6 +440,7 @@ describe('the same-origin /p/ route on the app socket', () => {
               headers: {
                 host: init?.host ?? `127.0.0.1:${port}`,
                 ...(init?.cookie ? { cookie: init.cookie } : {}),
+                ...(init?.origin ? { origin: init.origin } : {}),
               },
             },
             (res) => {
@@ -470,7 +473,12 @@ describe('the same-origin /p/ route on the app socket', () => {
     expect(res.body).toContain('<h1>hi</h1>');
     const csp = String(res.headers['content-security-policy'] ?? '');
     expect(csp).toContain('sandbox allow-scripts');
-    expect(csp).toContain('connect-src https:');
+    // Path-scoped self source: the bundle can fetch() its own /p/ files even
+    // on an http node, and still cannot reach the tm8 API by fetch.
+    expect(csp).toContain('connect-src http://127.0.0.1:4610/p/ https:');
+    // ACAO * so the opaque-origin document's cors-mode fetch of its own
+    // files is READABLE; the token in the path is the access control.
+    expect(res.headers['access-control-allow-origin']).toBe('*');
     expect(csp).toContain('frame-ancestors http://127.0.0.1:4610');
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['referrer-policy']).toBe('no-referrer');
@@ -538,5 +546,35 @@ describe('the same-origin /p/ route on the app socket', () => {
   it('mutations under /p/ are refused by the handler, not routed to the catalog', async () => {
     const { request } = await startMounted({ session: [liveSession()] });
     expect((await request(GOOD_PATH, { method: 'POST' })).status).toBe(405);
+  });
+
+  it('a GET /p/ with Origin: null (the sandboxed frame fetching its OWN files) is served', async () => {
+    // The preview document is opaque-origin BY DESIGN, so its cors-mode
+    // fetch() of its own /p/ assets carries `Origin: null`. The /p/ dispatch
+    // sits ahead of S3 for exactly this reason — S3 protects cookie-backed
+    // paths, and this route has none (found live, 2026-08-17).
+    const { request } = await startMounted({
+      session: [liveSession()],
+      visibility: [{ id: 'x' }],
+      entry: [{ media_type: 'text/html; charset=utf-8', storage_path: 'spaces/s/blob' }],
+    });
+    const res = await request(GOOD_PATH, { origin: 'null' });
+    expect(res.status).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBe('*');
+  });
+
+  it('Origin: null on an API path is STILL refused — the S3 exemption is /p/-only', async () => {
+    const { request } = await startMounted({ session: [liveSession()] });
+    expect((await request('/v2/spaces', { origin: 'null' })).status).toBe(403);
+  });
+
+  it('a POST /p/ with Origin: null dies at the handler as 405, never reaching the catalog', async () => {
+    const { request } = await startMounted({ session: [liveSession()] });
+    expect((await request(GOOD_PATH, { method: 'POST', origin: 'null' })).status).toBe(405);
+  });
+
+  it('the /p/ dispatch still enforces the S2 host allowlist', async () => {
+    const { request } = await startMounted({ session: [liveSession()] });
+    expect((await request(GOOD_PATH, { host: 'evil.example:4610' })).status).toBe(403);
   });
 });
