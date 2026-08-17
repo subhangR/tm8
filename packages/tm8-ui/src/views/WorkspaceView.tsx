@@ -769,7 +769,13 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                 unavailable: centreCreateFlow.unavailable,
                 create: centreCreateFlow.create,
               }}
-              onStartTerminal={sessionStart.startTerminal}
+              /* GATED ON THE SEAM'S OWN SIGNAL, never the raw handle. `onAction`
+                 is present exactly when a terminal can be started (`canStart`),
+                 which is exactly when `startTerminal` will NOT throw — so the
+                 button renders only when it works. Passing `startTerminal`
+                 unconditionally draws a live control that throws on click in the
+                 same empty render where `＋ New task` honestly refuses. */
+              onStartTerminal={sessionStart.onAction ? sessionStart.startTerminal : undefined}
             />
           ) : (
             <PanelStack nav={visibleNav} renderPanel={renderPanel} isKeyboardOwnedAbove={props.isModalOpen} />
