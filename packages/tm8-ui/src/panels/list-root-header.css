@@ -1,0 +1,117 @@
+/* THE ROOT HEADER (task 01a00932 R5): [Chats ＋][Kind ＋ ▾]. Two segmented
+   cells sharing one strip — the label half switches the root, the ＋ half
+   creates, the caret opens the kind menu. Labels only — no counts (D16). */
+/* Lifted verbatim out of `chat-home.css` when the Work tab adopted this same
+   header (task 01a0102f). The `tch-` prefix is now a misnomer — it names the
+   chat-home surface that FIRST drew the bar, not the only one that draws it.
+   The names stayed anyway: renaming them would have rewritten Home's DOM, and
+   the one constraint on that task was that Home not change. A prefix that
+   lies about its origin is cheaper than a Home regression nobody asked for. */
+/* THE ROOT HEADER LINE — the segmented tablist, plus the hosted list's layout
+   switcher pinned to the right. The margin moved OFF `.tch-roots` and onto
+   this bar so both halves share one line box; the tablist keeps its own
+   border and background, which is what makes the switcher read as beside the
+   segmented control rather than inside it. */
+.tch-rootbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  min-width: 0;
+  margin: var(--pn-space-2) var(--pn-space-3) 0;
+}
+/* The tablist takes the slack and the switcher takes its natural width: the
+   kind label already ellipsizes (`.tch-rootcell__label`), so a long plural
+   like "Work sessions" shortens itself rather than pushing the switcher out
+   of the 280px column. */
+.tch-rootbar > .tch-roots { flex: 1; min-width: 0; }
+.tch-rootbar > .lp__views { flex: none; }
+
+.tch-roots {
+  display: flex;
+  gap: 4px;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+}
+.tch-rootcell {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+}
+.tch-rootcell--kind { flex: 1; min-width: 0; }
+.tch-rootcell__label,
+.tch-rootcell__plus,
+.tch-rootcell__caret {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tch-rootcell__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tch-rootcell--kind .tch-rootcell__label { flex: 1; }
+.tch-rootcell__plus,
+.tch-rootcell__caret {
+  flex: none;
+  padding: 4px 5px;
+}
+.tch-rootcell__plus[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.tch-rootcell__label:hover,
+.tch-rootcell__plus:hover,
+.tch-rootcell__caret:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.tch-rootcell--active { background: var(--pn-active); }
+.tch-rootcell--active .tch-rootcell__label { color: var(--pn-ink); }
+.tch-rootcell__glyph { display: inline-flex; flex: none; }
+
+/* The kind menu — a portal-free popover is safe here: the sidebar clips
+   nothing (`.tch-sidebar` declares no overflow), unlike the panel tiles.
+   The Work tab's column repeats that promise: `.ws-listcol` sets no overflow
+   either, which is the precondition this rule quietly depends on. */
+.tch-rootmenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 168px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-shadow-2, 0 8px 24px rgba(16, 18, 24, 0.16));
+}
+.tch-rootopt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: calc(var(--pn-r-sm) - 2px);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.tch-rootopt:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.tch-rootopt--current { background: var(--pn-active); color: var(--pn-ink); }

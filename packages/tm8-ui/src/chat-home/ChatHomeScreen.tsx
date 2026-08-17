@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { ChatMode, EntityId, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
 import { Avatar, RibbonMark, Timestamp } from '../kit';
-import { useDismissable } from '../panels/useDismissable';
+import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
 import { ChooseFilesControl } from '../files/ChooseFilesControl';
 import type { FileUploadTask } from '../files/upload';
 import { DisabledIconControl } from '../panels/honesty/DisabledWithReason';
@@ -228,12 +228,14 @@ export interface ChatHomeScreenProps {
   viewerId?: string | undefined;
 }
 
-/** One switcher/cell entry: a kind, its plural label, and its singular. */
-export interface HomeRootOption {
-  kind: string;
-  label: string;
-  single: string;
-}
+/**
+ * One switcher/cell entry: a kind, its plural label, and its singular.
+ *
+ * The shape moved to `panels/ListRootHeader` when the Work tab adopted the
+ * same header (task 01a0102f) — it is no longer Home's alone. The alias stays
+ * so every existing importer (HomeView, GateApp) keeps its name.
+ */
+export type HomeRootOption = ListRootOption;
 
 type ComposerPhase =
   | 'idle'
@@ -717,11 +719,6 @@ export function ChatHomeScreen({
    *  search — so this screen's find box stands down for that root. */
   const hostedList = onChatsRoot ? null : (renderRootList?.(root) ?? null);
 
-  /* R5's kind-menu open state, dismissed like every other popover. */
-  const [rootMenuOpen, setRootMenuOpen] = useState(false);
-  const rootMenuRef = useRef<HTMLDivElement>(null);
-  useDismissable(rootMenuOpen, rootMenuRef, useCallback(() => setRootMenuOpen(false), []));
-
   const send = useCallback(async () => {
     const body = draft.trim();
     if (body === '' || busy || refusal || teammateId === '' || !selectedModel) return;
@@ -933,133 +930,43 @@ export function ChatHomeScreen({
 
             THE HOSTED LIST'S LAYOUT SWITCHER RIDES THIS LINE (`renderRootAside`),
             which is what retires the panel's own header row: that row restated
-            this one's kind and spent 34.9px doing it. The switcher sits OUTSIDE
-            the tablist, never in it — the tablist is the root SELECTION, every
-            child of it must be a tab, and a layout switcher is not a root.
-            Nesting it would make `role="tablist"` a lie to the a11y tree. */}
-        <div className="tch-rootbar">
-        <div className="tch-roots" role="tablist" aria-label="Home roots">
-          <div className={`tch-rootcell${onChatsRoot ? ' tch-rootcell--active' : ''}`}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={onChatsRoot}
-              className="tch-rootcell__label"
-              onClick={() => setRoot(CHATS_ROOT)}
-            >
-              Chats
-            </button>
-            <button
-              type="button"
-              className="tch-rootcell__plus"
-              aria-label="New chat"
-              title="Start a new conversation"
-              onClick={() => {
-                setSelectedRootId(null);
-                setDetail(null);
-                stoppedRootRef.current = null;
-                setPhase('idle');
-                setSubmitError(null);
-                /* D10: takes region B (back to the chat's new-conversation
-                   composer) AND switches the column to its own root. */
-                onShowChat?.();
-                setRoot(CHATS_ROOT);
-                onThreadSelected?.(null);
-              }}
-            >
-              <span aria-hidden>＋</span>
-            </button>
-          </div>
-          {kindCell ? (
-            <div
-              className={`tch-rootcell tch-rootcell--kind${onChatsRoot ? '' : ' tch-rootcell--active'}`}
-              ref={rootMenuRef}
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={!onChatsRoot}
-                className="tch-rootcell__label"
-                title={`List ${kindCell.label.toLowerCase()}`}
-                onClick={() => setRoot(kindCell.kind)}
-              >
-                <span className="tch-rootcell__glyph" aria-hidden>
-                  <KindIcon kind={kindCell.kind} />
-                </span>
-                {kindCell.label}
-              </button>
-              <button
-                type="button"
-                className="tch-rootcell__plus"
-                aria-label={`New ${kindCell.single.toLowerCase()}`}
-                aria-disabled={onNewEntity ? undefined : 'true'}
-                title={
-                  onNewEntity
-                    ? `Create an Untitled ${kindCell.single.toLowerCase()} and open it — type its name there`
-                    : newEntityUnavailable
-                      ? `${newEntityUnavailable.cause} — ${newEntityUnavailable.remedy}`
-                      : `Creating ${kindCell.label.toLowerCase()} isn’t wired on this surface`
-                }
-                onClick={
-                  onNewEntity
-                    ? () => {
-                        /* D3 generalized: create immediately — the host's
-                           useNewTask flow makes the entity, selects it into B
-                           (title focused) and, per D10, we land on its root. */
-                        onNewEntity();
-                        setRoot(kindCell.kind);
-                      }
-                    : (event) => event.preventDefault()
-                }
-              >
-                <span aria-hidden>＋</span>
-              </button>
-              {rootKindOptions && rootKindOptions.length > 0 ? (
-                <button
-                  type="button"
-                  className="tch-rootcell__caret"
-                  aria-label="Choose which list to show"
-                  aria-expanded={rootMenuOpen}
-                  onClick={() => setRootMenuOpen((open) => !open)}
-                >
-                  <span aria-hidden>▾</span>
-                </button>
-              ) : null}
-              {rootMenuOpen && rootKindOptions ? (
-                <ul className="tch-rootmenu" role="menu" aria-label="Entity lists">
-                  {rootKindOptions.map((option) => (
-                    <li key={option.kind}>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className={
-                          option.kind === root
-                            ? 'tch-rootopt tch-rootopt--current'
-                            : 'tch-rootopt'
-                        }
-                        onClick={() => {
-                          setRootMenuOpen(false);
-                          /* R5: picking a kind SWITCHES the root. Never creates. */
-                          setRoot(option.kind);
-                        }}
-                      >
-                        <KindIcon kind={option.kind} />
-                        {option.label}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-        {/* Chats has no hosted list, so it has no layouts to switch between
-            and this slot is simply empty there — the header narrows to the
-            tablist, which is the honest shape for a root that offers one
-            view. Nothing is drawn disabled: the switcher belongs to the LIST,
-            and on Chats there is no list to own it. */}
-        {onChatsRoot ? null : renderRootAside?.(root)}
-        </div>
+            this one's kind and spent 34.9px doing it.
+
+            THE BAR ITSELF NOW LIVES IN `panels/ListRootHeader` (task 01a0102f):
+            the Work tab's two columns draw this same header, so it stopped
+            being Home's and became a panel-level control. Home keeps the
+            `chats` cell; Work omits it, because Chats hosts no list — it swaps
+            the surface's CENTRE to the composer, and Work's centre is the ink
+            stage. Everything else about the bar is shared, which is the point:
+            the two surfaces differ by LAYOUT, not by header. */}
+        <ListRootHeader
+          rootsLabel="Home roots"
+          chats={{
+            active: onChatsRoot,
+            onSelect: () => setRoot(CHATS_ROOT),
+            onCreate: () => {
+              setSelectedRootId(null);
+              setDetail(null);
+              stoppedRootRef.current = null;
+              setPhase('idle');
+              setSubmitError(null);
+              /* D10: takes region B (back to the chat's new-conversation
+                 composer) AND switches the column to its own root. */
+              onShowChat?.();
+              setRoot(CHATS_ROOT);
+              onThreadSelected?.(null);
+            },
+          }}
+          cell={kindCell}
+          cellActive={!onChatsRoot}
+          onSelectCell={setRoot}
+          onCreate={onNewEntity}
+          createUnavailable={newEntityUnavailable}
+          options={rootKindOptions}
+          currentKind={root}
+          onPickKind={setRoot}
+          aside={onChatsRoot ? null : renderRootAside?.(root)}
+        />
         {onChatsRoot ? (
           <input
             type="search"
