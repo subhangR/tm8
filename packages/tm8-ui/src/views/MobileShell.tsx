@@ -36,7 +36,7 @@ import { MobileFrame } from '../mobile';
 import '../mobile/mobile-chrome.css';
 import { CopyLinkControl } from '../share';
 import { VectorIcon } from '../kit';
-import { KIND_ART, VIEW_ART, type KindArt } from '../domain';
+import { KIND_ART, VIEW_ART, getKind, type KindArt } from '../domain';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
@@ -121,6 +121,16 @@ function titleOf(activeTarget: MenuTarget | null): string {
   if (activeTarget.type === 'view') {
     const view = VIEW_PRESENTATION[activeTarget.ref];
     if (view) return view.label;
+  }
+  if (activeTarget.type === 'kind') {
+    /* THE SAME LOOKUP THE RAIL USES, INCLUDING ITS MISS CHECK. `getKind` falls
+       back to the `c:*` custom row rather than throwing, so a ref naming no
+       registered kind comes back with a row whose `kind` is NOT the ref — and
+       taking its label would print a generic word for an address the build does
+       not understand. The identity test is what keeps an unknown ref honest,
+       and it is copied from `GateApp`'s `presentKind` rather than reinvented. */
+    const row = getKind(activeTarget.ref);
+    if (row.kind === activeTarget.ref) return row.labelPlural;
   }
   return activeTarget.ref;
 }
