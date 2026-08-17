@@ -75,6 +75,19 @@ export interface AuthGateProps {
    * is the host's call; the gate only carries the preference.
    */
   initialSignedInFrame?: AuthFrameId;
+  /**
+   * Context to render ABOVE the signed-out flow, when the host knows why this
+   * viewer is being asked for credentials.
+   *
+   * Added for the join journey: somebody following an invite link hits this
+   * gate because redeeming needs an identity, and without a word here they
+   * meet a bare credential wall that has nothing to do with what they clicked.
+   *
+   * A SLOT, not an invite prop — the gate has no business knowing what an
+   * invite is. It renders only in the signed-out branch, because once you are
+   * in, the reason you were asked has stopped being news.
+   */
+  signedOutBanner?: ReactNode;
 }
 
 export function AuthGate({
@@ -82,6 +95,7 @@ export function AuthGate({
   resolveIdentity,
   onSignedIn,
   initialFrame,
+  signedOutBanner,
 }: AuthGateProps) {
   const session = useAuthSession({ resolveIdentity });
 
@@ -212,6 +226,7 @@ export function AuthGate({
 
   return (
     <AuthActionsContext.Provider value={actions}>
+      {signedOutBanner}
       <AuthFlow
         // KEYED ON THE DECISION. `initialFrame` seeds AuthFlow's internal
         // frame state and is read once at mount, so a claim answer that lands

@@ -10,6 +10,7 @@ import './terminal/terminal.css';
 import './shell/palette.css';
 import './graph/graph.css';
 import './servers/server.css';
+import './join/join.css';
 import { App } from './App';
 import { registerServiceWorker } from './pwa/register';
 
