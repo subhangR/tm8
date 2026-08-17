@@ -2077,6 +2077,13 @@
    strip changes width as rows resolve and the icons slide under the pointer. */
 .cv2-root .lp__cluster .hon-checking,
 .cv2-root .lp__cluster .hon-disabled {
+  /* BORDER-BOX EXPLICITLY. This package has no border-box reset, and these are
+     `<span>`s while the live control is a `<button>` — which the UA stylesheet
+     already sizes as border-box. Without this the 1px border below lands
+     OUTSIDE the 22px and the placeholder measures 24, so a strip holding one
+     refused verb sat 2px taller than its neighbours and shifted as rows
+     resolved. Measured in Chrome, because no jsdom test can see it. */
+  box-sizing: border-box;
   width: 22px;
   height: 22px;
   min-width: 22px;
