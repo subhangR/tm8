@@ -286,8 +286,11 @@ describe('the strip is ONE ROW, and it sits UNDER THE TABS', () => {
    */
   it('takes the chip layout, not the stacked one', () => {
     const { getByTestId } = panel(TASK, host());
-    const strip = getByTestId('panel-controls').firstElementChild;
-    expect(strip?.className).toContain('lp__rowdetail--chips');
+    // The band's first child is the reading-measure wrapper (2026-08-16:
+    // full-bleed band, centered contents); the strip rides inside it.
+    const measure = getByTestId('panel-controls').firstElementChild;
+    expect(measure?.className).toContain('pn-controls__measure');
+    expect(measure?.firstElementChild?.className).toContain('lp__rowdetail--chips');
   });
 
   it('is mounted AFTER the tab strip in document order', () => {

@@ -304,9 +304,12 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
   /**
    * VANILLA TERMINALS (101), and the ruling behind the placement: the start
-   * controls belong at the TOP of the sessions list, beside Launch session.
+   * control belongs at the TOP of the sessions list — and, since 2026-08-16,
+   * ALONE there. `Launch session ▸` left the header with its registry row:
+   * that verb opens the sheet against a launch SUBJECT and a list header has
+   * none, so it could only ever draw disabled-with-reason.
    */
-  it('draws ▮ Terminal in the sessions header, beside Launch session', () => {
+  it('draws ▮ Terminal in the sessions header, and no dead Launch beside it', () => {
     const onAction = vi.fn();
     const { container, getByTestId } = render(
       <EntityListPanel
@@ -320,9 +323,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
     const actions = container.querySelector('.lp__actions');
     expect(actions).toBeTruthy();
-    // BESIDE, not instead of: both verbs are in the one header slot.
     expect(actions?.textContent).toContain('Terminal');
-    expect(actions?.textContent).toContain('Launch session');
+    expect(actions?.textContent).not.toContain('Launch session');
 
     fireEvent.click(getByTestId('list-quick-start'));
     expect(onAction).toHaveBeenCalledWith('start-terminal', '');
@@ -367,11 +369,16 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(container.querySelector('[data-agent-kind]')?.getAttribute('data-agent-kind')).toBe('agent');
   });
 
-  it('R5 #9: the unwired half of the pair refuses with a reason, it is not drawn live', () => {
-    // `Terminal` commits and `Launch session ▸` does not, because the sheet
-    // needs a launch SUBJECT the header has no way to name. That asymmetry has
-    // to be VISIBLE — a live button whose click the host's switch drops is the
-    // enabled-inert failure this panel refuses everywhere else.
+  it('the sessions header carries no refusal at all — the dead verb LEFT, it was not disabled', () => {
+    // This asserted the opposite until 2026-08-16: `Launch session ▸` was
+    // drawn disabled-with-reason beside a live `▮ Terminal`, on the R5 #9
+    // rule that a verb this build cannot dispatch must refuse VISIBLY rather
+    // than vanish. The user read that permanent refusal as the screen being
+    // broken, and they were right to: R5 #9 is about a verb that COULD become
+    // wired on this surface. `launch-session` cannot — it needs a subject a
+    // list header has no way to name — so the honest fix is the registry row,
+    // not a reason. The rule still governs every verb that stayed; see
+    // 'wiredActions narrows the dispatcher' below.
     const { container, getByTestId } = render(
       <EntityListPanel
         kind="work_session"
@@ -383,8 +390,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
 
     const actions = container.querySelector('.lp__actions');
-    expect(within(actions as HTMLElement).getAllByTestId('disabled-with-reason')).toHaveLength(1);
-    // …and the live one is a real button, not a second refusal.
+    expect(within(actions as HTMLElement).queryAllByTestId('disabled-with-reason')).toHaveLength(0);
     expect(getByTestId('list-quick-start').tagName).toBe('BUTTON');
   });
 

@@ -93,6 +93,10 @@
   --pn-space-12: 48px;
   --pn-space-16: 64px;
 
+  /* The reading measure: panel body content is capped at this width and
+     centered, so a wide panel reads as a column instead of a wall. */
+  --pn-read-measure: 720px;
+
   /* --- 6 · radii ------------------------------------------------------------ */
   --pn-r-xs: 5px;
   --pn-r-sm: 7px;

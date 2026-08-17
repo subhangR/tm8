@@ -2024,10 +2024,67 @@ export const DEFAULT_MENU_CHANNELS_SPINE = [
  * plain Work row too (D1). The constant keeps its name because the pre-125
  * defaults in persisted Space menus still carry it as the Code caret and the
  * upgrade migrations characterize against that shape.
+ *
+ * HISTORICAL AS OF 2026-08-16 (migration 133): the default's dev rows are now
+ * a PREFIX of `DEFAULT_MENU_WORK_KIND_SPINE`, which interleaves `commit`
+ * between `pull_request` and `worktree`. This list is deliberately NOT edited
+ * to match — it is what the Code caret held, and the 122-124 upgrade guards
+ * still characterize that shape. Read it as a frozen point in history, never
+ * as "the current dev rows".
  */
 export const DEFAULT_MENU_CODE_KIND_SPINE = [
   'project',
   'pull_request',
+  'worktree',
+] as const satisfies readonly MenuKindRef[];
+
+/**
+ * EVERY ordinary kind row of the default Work group, in rail order.
+ *
+ * 2026-08-16 (user ruling — "all the fucking entities that are there should be
+ * in the icon rail"): the shipped default named 12 of the 18 menu-eligible
+ * kinds, and the other SIX — `member` `commit` `spell` `skill` `collection`
+ * `interaction_profile` — had list views, slugs and routes but no door in the
+ * rail. Reachable only by typing a URL or by hand-editing the menu is not
+ * reachable. They join here as ordinary Work rows.
+ *
+ * WHY ROWS AND NOT CARET CHILDREN: the Workspace caret is at its cap of 8 and
+ * `file` holds the eighth slot by owner ruling R9 (the two file doors). The
+ * Work group had 5 items of a possible 12, so the six fit as plain rows with
+ * one slot still spare — no cap moves, no ruling is reverted, and depth stays
+ * exactly ≤1.
+ *
+ * THE ORDER IS THREE CLUSTERS, coarse-to-specific, and it is the reason this
+ * is one constant rather than three:
+ *
+ *   who   — `member` `interaction_profile`. Members are the humans; the caret
+ *           closes on `team_member` (the agents), and the two are drawn as a
+ *           deliberate silhouette PAIR in `kind-art.ts` (round head +
+ *           shoulders vs. square head + antenna). Putting them adjacent across
+ *           the caret boundary is where that contrast earns its keep. An
+ *           interaction profile is the dials a member's session is launched
+ *           with, so it reads with the people, not with the library.
+ *   what  — `collection` `skill` `spell`. Gathered sets, standing knowledge,
+ *           cast acts: the library the single-home ruling dissolved in 2026-08
+ *           and never gave a home back to.
+ *   code  — `project` `pull_request` `commit` `worktree`, in the order a
+ *           change actually travels. `commit` slots between PRs and worktrees
+ *           rather than at the end, because "pull request then commit" is the
+ *           pair a reader scans together; the `git` view closes the group as
+ *           the row Code, exactly where D1 left it.
+ *
+ * No existing row moved relative to another: `project` → `pull_request` →
+ * `worktree` → `git` is still that sequence, with `commit` inserted.
+ */
+export const DEFAULT_MENU_WORK_KIND_SPINE = [
+  'member',
+  'interaction_profile',
+  'collection',
+  'skill',
+  'spell',
+  'project',
+  'pull_request',
+  'commit',
   'worktree',
 ] as const satisfies readonly MenuKindRef[];
 

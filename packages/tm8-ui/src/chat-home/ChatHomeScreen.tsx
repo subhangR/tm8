@@ -124,8 +124,6 @@ export interface ChatHomeScreenProps {
    * means nobody measured, not that the node has no slots).
    */
   slots?: { used: number; total: number } | undefined;
-  /** The escape hatch at the column foot. */
-  onOpenWorkspace?: (() => void) | undefined;
   /** The signed-in display name, for the empty-state greeting. */
   viewerName?: string | undefined;
 }
@@ -162,7 +160,6 @@ export function ChatHomeScreen({
   renderTabList,
   centerOverride,
   slots,
-  onOpenWorkspace,
   viewerName,
 }: ChatHomeScreenProps) {
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
@@ -1027,11 +1024,6 @@ export function ChatHomeScreen({
                 <span className="tch-slots__nums">{slots.used}/{slots.total}</span>
               </div>
             )
-          ) : null}
-          {onOpenWorkspace ? (
-            <button type="button" className="tch-open-workspace" onClick={onOpenWorkspace}>
-              Open full workspace <span aria-hidden>→</span>
-            </button>
           ) : null}
         </footer>
       </aside>

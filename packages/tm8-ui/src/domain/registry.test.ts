@@ -354,11 +354,17 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(liveCount?.label(3)).toBe('● 3 live');
   });
 
-  it('7. quick launch → list.quickLaunch', () => {
-    expect(getKind('work_session').list.quickLaunch).toBe('launch-session');
-    // Launch is the ONLY birth affordance: the inherited quickCreate:true
-    // mounted a Create control that refuses (same defect class as the refused
-    // Save control ruled on the rowActions note), so the row opts out.
+  it('7. the sessions header birth affordance → list.quickStart, NOT quickLaunch', () => {
+    // Inverted by the user ruling of 2026-08-16. `launch-session` needs a
+    // launch SUBJECT and a list header has none, so the chip could only draw
+    // disabled-with-reason forever — and it read as the screen being broken.
+    // The header keeps the verb it can actually perform.
+    expect(getKind('work_session').list.quickLaunch).toBeUndefined();
+    expect(getKind('work_session').list.quickStart).toBe('start-terminal');
+    // Create stays out for the same reason it always was: a session is started,
+    // not authored, so the inherited quickCreate:true only mounted a Create
+    // control that refuses (same defect class as the refused Save control
+    // ruled on the rowActions note).
     expect(getKind('work_session').list.quickCreate).toBe(false);
   });
 

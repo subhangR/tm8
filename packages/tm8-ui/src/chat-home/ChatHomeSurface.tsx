@@ -46,7 +46,6 @@ export interface ChatHomeSurfaceProps {
   renderTabList?: ChatHomeScreenProps['renderTabList'];
   centerOverride?: ChatHomeScreenProps['centerOverride'];
   slots?: ChatHomeScreenProps['slots'];
-  onOpenWorkspace?: ChatHomeScreenProps['onOpenWorkspace'];
   viewerName?: ChatHomeScreenProps['viewerName'];
 }
 

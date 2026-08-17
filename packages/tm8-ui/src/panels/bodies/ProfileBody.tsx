@@ -1,13 +1,12 @@
-import type { EdgeView, EntityDetail, EntitySummary } from '@tm8/contract';
+import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { KindIcon, getKind } from '../../domain';
 import {
   MEMORY_MARK_COPY,
-  memoryEpistemics,
-  memoryScopeOf,
   VERIFIED_NOT_READABLE,
   type MemoryMarkKind,
 } from '../../domain/memory';
+import { CollapsibleSection, EmptySectionsToggle } from './CollapsibleSection';
 import { MemorySetBlock, edgesOf, type MemoryAuthoring } from './MemorySetBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { Avatar, Chip, Eyebrow, Markdown, Timestamp } from '../../kit';
@@ -177,9 +176,10 @@ export function ProfileBody({
     );
   }
   const nowIso = now ?? new Date().toISOString();
+  const foldIds = foldIdsOf(blocks);
   return (
     <div
-      className="pn-body pn-profile"
+      className="pn-body pn-body--measured pn-profile"
       data-testid="profile-body"
       id="tabpanel-content"
       role="tabpanel"
@@ -190,6 +190,7 @@ export function ProfileBody({
           key={`${block.block}:${i}`}
           detail={detail}
           block={block}
+          foldId={foldIds[i] ?? block.block}
           livenessOf={livenessOf}
           now={nowIso}
           onOpenEntity={onOpenEntity}
@@ -197,6 +198,10 @@ export function ProfileBody({
           onMarkMemory={onMarkMemory}
         />
       ))}
+      {/* ONE reveal line for every fold that measured empty, at the very end —
+          the primitive owns the registry, so a body renders it and never
+          counts for itself. */}
+      <EmptySectionsToggle />
     </div>
   );
 }
@@ -204,6 +209,7 @@ export function ProfileBody({
 function ProfileBlock({
   detail,
   block,
+  foldId,
   livenessOf,
   now,
   onOpenEntity,
@@ -212,6 +218,7 @@ function ProfileBlock({
 }: {
   detail: EntityDetail;
   block: ProfileBlockRef;
+  foldId: string;
   livenessOf?: (id: string) => SessionLiveness;
   now: string;
   onOpenEntity?: (id: string) => void;
@@ -263,33 +270,146 @@ function ProfileBlock({
     }
   })();
   if (!body) return null;
+  const testId = `block-${block.block}`;
 
-  /**
-   * The eyebrow carries a COUNT when the block asks for one — T0-4 line 481
-   * draws `EQUIPPED · 2`, and the count is of the same list the block renders,
-   * so the two can never disagree.
-   *
-   * NO DIVIDER between profile blocks: the oracle draws these as plain
-   * gap-separated regions (lines 418–445), and the hairline rule agrees —
-   * `--pn-line` bounds a COMPONENT, and these are regions inside one body, not
-   * components. `.pn-section`'s bottom rule would be a hairline the canvas
-   * does not draw.
+  /*
+   * THE SPINE stays open, with no fold row and no chrome — identity, the fact
+   * grid, the prose that says what this thing IS, and the status strip. It is
+   * chosen by BLOCK NAME, which is this archetype's own vocabulary and not a
+   * kind (§15.2): a `memory` reaches the same spine as a teammate because its
+   * registry row declares `bio` + `field-grid` + `epistemics`, and it grows a
+   * person-shaped header the day its row declares `identity`.
    */
-  /* An edge-backed block counts its EDGES, a content-backed one counts its
-     list. Same rule either way — the count is of the very thing the block
-     draws below it, so the two can never disagree. */
-  const count =
-    params.count === true
-      ? (typeof params.edgeType === 'string' ? edgesOf(detail, params) : summariesOf(detail, params)).length
-      : null;
-  const label = block.label != null && count != null ? `${block.label} · ${count}` : block.label;
+  if (SPINE_BLOCKS.has(block.block)) {
+    return (
+      <section className="pn-profile__block" data-testid={testId}>
+        {block.label ? <Eyebrow faint>{block.label}</Eyebrow> : null}
+        {body}
+      </section>
+    );
+  }
 
+  /*
+   * EVERYTHING ELSE IS A LIST OF OTHER THINGS, so it folds to a hairline row
+   * carrying its own count. The count is measured off the very data the block
+   * draws below it (see `measureFold`), so the two can never disagree — the
+   * `EQUIPPED · 2` eyebrow this replaces made the same promise.
+   *
+   * EMPTINESS IS MEASURED, NEVER ASKED OF THE KIND. This is how one archetype
+   * serves a person and a memory without a branch: a memory declares no
+   * `stat-tiles` and no `session-rows`, and a teammate with no reports has an
+   * org tree that measures empty — either way the section folds out of the
+   * way on its own and the reveal line brings it back.
+   */
+  const { count, empty } = measureFold(detail, block, memoryAuthoring);
   return (
-    <section className="pn-profile__block" data-testid={`block-${block.block}`}>
-      {label ? <Eyebrow faint>{label}</Eyebrow> : null}
+    <CollapsibleSection
+      id={foldId}
+      label={block.label ?? labelOf(block.block)}
+      count={count}
+      empty={empty}
+      testId={testId}
+    >
       {body}
-    </section>
+    </CollapsibleSection>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Spine / fold — and how a fold measures itself
+// ---------------------------------------------------------------------------
+
+/**
+ * The blocks that stay open. Everything absent from this set folds.
+ *
+ * `epistemics` is here for a reason worth stating: it is a memory's status
+ * strip, the same seat `live-work` holds on a teammate, AND it carries the
+ * marking refusal ("marking is not wired on this surface"). A section whose
+ * content includes a refusal must never be hidden — hiding a refusal hides its
+ * reason — so it is spine on both counts.
+ */
+const SPINE_BLOCKS: ReadonlySet<string> = new Set([
+  'identity',
+  'bio',
+  'field-grid',
+  'stat-tiles',
+  'live-work',
+  'epistemics',
+]);
+
+/**
+ * Fold persistence keys, derived from the registry LABEL rather than the block
+ * name. Fold state is global per id (the primitive's rule), and a teammate's
+ * two `items` blocks would otherwise share one key with a member's two — so
+ * `EQUIPPED` and `CURRENT WORK` collapse together and the state means nothing.
+ * The label is what the reader sees, so it is what the memory of "I closed
+ * that one" should be keyed on. Duplicates fall back to a positional suffix.
+ */
+function foldIdsOf(blocks: readonly ProfileBlockRef[]): string[] {
+  const taken = new Set<string>();
+  return blocks.map((block, i) => {
+    const base = slug(block.label) || slug(block.block) || `block-${i}`;
+    let id = base;
+    for (let n = 2; taken.has(id); n += 1) id = `${base}-${n}`;
+    taken.add(id);
+    return id;
+  });
+}
+
+function slug(raw: string | undefined): string {
+  return (raw ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+/** A fold with no registry label still needs a word on its row. */
+function labelOf(blockName: string): string {
+  return blockName.replace(/-/g, ' ').toUpperCase();
+}
+
+/**
+ * COUNT AND EMPTINESS, per fold, read from the same data the block renders.
+ *
+ * The default is `empty: false` — an unmeasurable section is shown, never
+ * hidden. Hiding something we could not measure is the one failure mode worth
+ * designing against here: a reader who cannot see a section cannot know it
+ * exists, whereas an open section with a designed empty line costs one row.
+ */
+function measureFold(
+  detail: EntityDetail,
+  block: ProfileBlockRef,
+  memoryAuthoring?: MemoryAuthoring | null,
+): { count: number; empty: boolean } {
+  const params = block.params ?? {};
+  switch (block.block) {
+    case 'items': {
+      const n = summariesOf(detail, params).length;
+      return { count: n, empty: n === 0 };
+    }
+    case 'memory-set': {
+      const n = edgesOf(detail, params).length;
+      /* SubtreeBody's rule, and the same reason: a refused `+ remember
+         something` is a refusal, and a fold that hid one would hide its
+         reason. Only a LIVE authoring lane can leave this genuinely empty. */
+      return { count: n, empty: n === 0 && (memoryAuthoring == null || !memoryAuthoring.refusal) };
+    }
+    case 'peer-rows': {
+      const n = edgesOf(detail, params).length;
+      return { count: n, empty: n === 0 };
+    }
+    case 'session-rows': {
+      const n = sessionPeersOf(detail, params).length;
+      return { count: n, empty: n === 0 };
+    }
+    case 'org-tree': {
+      const { parent, children } = detail.hierarchy;
+      /* The count is of the OTHER people in the tree — the row for this
+         entity itself is not a relation, and counting it would make a
+         teammate with nobody around it read as `TEAM · 1`. */
+      const n = (parent ? 1 : 0) + children.items.length;
+      return { count: n, empty: n === 0 };
+    }
+    default:
+      return { count: 0, empty: false };
+  }
 }
 
 type Params = Readonly<Record<string, string | number | boolean>>;
@@ -704,13 +824,7 @@ function SessionRowsBlock({
   now: string;
   onOpenEntity?: (id: string) => void;
 }) {
-  const type = typeof params.edgeType === 'string' ? params.edgeType : null;
-  const direction = params.direction === 'outgoing' ? 'outgoing' : 'incoming';
-  const groups = direction === 'outgoing' ? detail.connections.outgoing : detail.connections.incoming;
-  const peers = groups
-    .filter((group) => type == null || group.type === type)
-    .flatMap((group) => group.edges)
-    .map((edge) => (edge.source.id === detail.id ? edge.target : edge.source));
+  const peers = sessionPeersOf(detail, params);
 
   if (peers.length === 0) {
     const empty = typeof params.empty === 'string' ? params.empty : 'No sessions recorded yet.';
@@ -926,6 +1040,25 @@ function summariesOf(detail: EntityDetail, params: Params): readonly EntitySumma
   const key = typeof params.source === 'string' ? params.source : 'items';
   const raw = record(detail.content)[key];
   return Array.isArray(raw) ? raw.filter(isSummary) : [];
+}
+
+/**
+ * The session peers of the edge group the registry names.
+ *
+ * SHARED by the block and by its fold's count on purpose. `edgesOf` defaults
+ * the direction to `outgoing` and this block has always defaulted it to
+ * `incoming` (D46 made the link session → teammate), so re-using `edgesOf`
+ * here would let a count and its list disagree the moment a row omits
+ * `direction` — which is precisely the drift the count exists to rule out.
+ */
+function sessionPeersOf(detail: EntityDetail, params: Params): readonly EntitySummary[] {
+  const type = typeof params.edgeType === 'string' ? params.edgeType : null;
+  const groups =
+    params.direction === 'outgoing' ? detail.connections.outgoing : detail.connections.incoming;
+  return groups
+    .filter((group) => type == null || group.type === type)
+    .flatMap((group) => group.edges)
+    .map((edge) => (edge.source.id === detail.id ? edge.target : edge.source));
 }
 
 

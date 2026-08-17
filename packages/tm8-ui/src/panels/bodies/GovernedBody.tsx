@@ -3,7 +3,8 @@ import type { EntityDetail, EntitySummary, ProjectResource } from '@tm8/contract
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionDef } from '../../domain';
 import { KindIcon, allActions, getKind } from '../../domain';
-import { Eyebrow, Pill } from '../../kit';
+import { Pill } from '../../kit';
+import { CollapsibleSection, EmptySectionsToggle } from './CollapsibleSection';
 /*
  * MODULE-DEEP, not through `terminal/index.ts` — the ProfileBody precedent,
  * and for its reason: the barrel also exports `LiveTerminal`, which drags

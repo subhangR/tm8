@@ -491,32 +491,41 @@ export function EntityListPanel(props: EntityListPanelProps) {
         onKindChange={props.onKindChange}
         mode={mode}
         onMode={setMode}
-      />
-
-      <HeaderActions
-        config={config}
-        ctx={props.ctx}
         onCreate={props.onCreate}
         createSlot={props.createSlot}
-        onAction={props.onAction}
-        {...(props.wiredActions ? { wiredActions: props.wiredActions } : {})}
-      />
-
-      <SearchRow
-        config={config}
-        query={query}
-        onQuery={setQuery}
-        inputRef={props.searchInputRef}
-      />
-
-      <TierTabs
-        tiers={list.lifecycle}
-        activeTierId={tierId}
-        onTier={setTierId}
-        tierLabel={(tier: LifecycleTier) =>
-          tierCounts.find((c) => c.tier.id === tier.id)?.label ?? '0'
+        actions={
+          <HeaderActions
+            config={config}
+            ctx={props.ctx}
+            onAction={props.onAction}
+            {...(props.wiredActions ? { wiredActions: props.wiredActions } : {})}
+          />
         }
       />
+
+      {/* ONE BAND, NOT TWO ROWS (user ruling 2026-08-16). Search had a full
+          row to itself above the lifecycle tabs and spent all of it on empty
+          field; the field is the only elastic thing here, so it gives up its
+          width to Open / Done / Archived instead of the list giving up a
+          row. The tabs keep their intrinsic width — a count you cannot read
+          is worse than a placeholder you cannot finish reading. */}
+      <div className="lp__findrow">
+        <SearchRow
+          config={config}
+          query={query}
+          onQuery={setQuery}
+          inputRef={props.searchInputRef}
+        />
+
+        <TierTabs
+          tiers={list.lifecycle}
+          activeTierId={tierId}
+          onTier={setTierId}
+          tierLabel={(tier: LifecycleTier) =>
+            tierCounts.find((c) => c.tier.id === tier.id)?.label ?? '0'
+          }
+        />
+      </div>
 
       <FilterRow
         config={config}
@@ -891,6 +900,9 @@ function KindSelector({
   onKindChange,
   mode,
   onMode,
+  onCreate,
+  createSlot,
+  actions,
 }: {
   config: KindConfig;
   /**
@@ -906,10 +918,22 @@ function KindSelector({
   onKindChange?: (kind: string) => void;
   mode: CollectionMode;
   onMode: (mode: CollectionMode) => void;
+  /** The create door rides in the TOP row, beside the kind and the switcher. */
+  onCreate?: () => void;
+  createSlot?: React.ReactNode;
+  /**
+   * The header verbs — `▮ Terminal`, `Launch session ▸` — in that same top
+   * row (user ruling 2026-08-16). They had a band of their own under this one;
+   * a header that spends two rows saying what you can do, above a list of what
+   * there is, is the wrong trade on a 280px panel. {@link HeaderActions} still
+   * renders `.lp__actions`, so it is one cluster that MOVED, not one dissolved.
+   */
+  actions?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useDismissable(open, ref, useCallback(() => setOpen(false), []));
+  const showCreate = Boolean(config.list.quickCreate && (createSlot || onCreate));
   return (
     <div className="lp__selector" ref={ref}>
       <button type="button" className="lp__kind" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
@@ -933,6 +957,18 @@ function KindSelector({
         </span>
       ) : null}
       <ViewSwitcher config={config} mode={mode} onMode={onMode} />
+      {actions}
+      {/* Authoring mount 7a, moved up a row: when the host supplies a REAL
+          create flow it replaces the bare button — which was INERT when
+          onCreate was absent. No slot and no onCreate ⇒ nothing renders
+          enabled-dead. */}
+      {showCreate && createSlot ? (
+        createSlot
+      ) : showCreate && onCreate ? (
+        <button type="button" className="lp__new" onClick={onCreate}>
+          ＋ New
+        </button>
+      ) : null}
       {open ? (
         <ul className="lp__kindmenu" role="menu">
           {/* Only `strategy: 'collection'` kinds can BE a list: channel is a
@@ -1041,25 +1077,20 @@ function ViewSwitcher({
 function HeaderActions({
   config,
   ctx,
-  onCreate,
-  createSlot,
   onAction,
   wiredActions,
 }: {
   config: KindConfig;
   ctx: ActionContext;
-  onCreate?: () => void;
-  createSlot?: React.ReactNode;
   onAction?: (ref: ActionRef, entityId: string) => void;
   wiredActions?: readonly ActionRef[];
 }) {
-  const { quickCreate, quickLaunch, quickStart } = config.list;
+  const { quickLaunch, quickStart } = config.list;
   // Per-verb, not per-header. `chrome.tsx`'s exact expression: an unwired verb
   // is handed `undefined` and renders refused, rather than the header deciding
   // for all of its verbs at once.
   const dispatcherFor = (ref: ActionRef): typeof onAction =>
     wiredActions && !wiredActions.includes(ref) ? undefined : onAction;
-  const showCreate = Boolean(quickCreate && (createSlot || onCreate));
   // `onAction`, NOT `dispatcherFor(...)`: a host with no dispatcher at all
   // still has nothing to draw, but a host that has one draws every declared
   // verb — refused where it cannot perform it. Hiding an unwired verb is the
@@ -1067,21 +1098,10 @@ function HeaderActions({
   // see cannot be reported as missing.
   const showLaunch = Boolean(quickLaunch && onAction);
   const showStart = Boolean(quickStart && onAction);
-  if (!showCreate && !showLaunch && !showStart) return null;
+  if (!showLaunch && !showStart) return null;
 
   return (
     <div className="lp__actions">
-      {/* Authoring mount 7a: when the host supplies a REAL create flow it
-          replaces the bare button — which was INERT when onCreate was absent
-          (the audit's '+New inert' row). No slot and no onCreate ⇒ nothing
-          renders enabled-dead. */}
-      {showCreate && createSlot ? (
-        createSlot
-      ) : showCreate && onCreate ? (
-        <button type="button" className="lp__new" onClick={onCreate}>
-          ＋ New
-        </button>
-      ) : null}
       {showLaunch && quickLaunch ? (
         <QuickLaunch ref_={quickLaunch} ctx={ctx} onAction={dispatcherFor(quickLaunch)} />
       ) : null}
@@ -1233,10 +1253,10 @@ function SearchRow({
 
 /**
  * THE LIFECYCLE TIER TABS — Open / Done / Archived, universal across
- * collection kinds (D41, user-ratified). Their own row: a tier is the
- * lifecycle band you are looking at, and the filter chips below narrow WITHIN
- * it. T0-1 draws both, and the count on each tab comes from that tier's own
- * query — the same source as the footer line and the kind-selector total.
+ * collection kinds (D41, user-ratified). They share the search band: a tier is
+ * the lifecycle band you are looking at, and the filter chips below narrow
+ * WITHIN it. T0-1 draws both, and the count on each tab comes from that tier's
+ * own query — the same source as the footer line and the kind-selector total.
  */
 function TierTabs({
   tiers,

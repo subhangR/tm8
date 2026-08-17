@@ -28,17 +28,24 @@
 .cv2-root .sb-section {
   display: flex;
   flex-direction: column;
-  /* L67 eyebrow `padding-bottom:5px` — carried as the section gap so the
-     eyebrow keeps its own box clean. */
-  gap: 5px;
+  /* Was the oracle's 5px; opened to the spacing scale in the 2026-08-16
+     measured-column pass — the redesign's whole point is air. */
+  gap: var(--pn-space-2);
 }
 
 /* --- the composed metadata grid (L60 / L163) ------------------------------ */
 .cv2-root .sb-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px 12px;
+  /* 6px 12px in the oracle; opened with the measured column. */
+  gap: 10px 24px;
   font-size: 12px;
+}
+/* One column when the panel floor approaches — labels + values need the room. */
+@media (max-width: 560px) {
+  .cv2-root .sb-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .cv2-root .sb-grid__cell {
   min-width: 0;
@@ -102,7 +109,7 @@
 .cv2-root .sb-description {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--pn-space-2);
 }
 /* The label keeps its own line; the stance verb sits at its far end, which is
    where T0-4 puts a section's action. */
@@ -329,128 +336,90 @@
 .cv2-root .sb-addchild:hover {
   color: var(--pn-brand-2);
 }
-.cv2-root .sb-section > .hon-disabled {
-  align-self: flex-start;
-  padding: 7px 0;
-  font-size: 12.5px;
-}
 
-/* --- RUNS card (L75 / Z4 L972) ------------------------------------------- */
-/* `display:flex;align-items:center;gap:8px;padding:7px 9px;background:#FFFFFF;
-   border:1px solid #E7E3D9;border-radius:8px;cursor:pointer`, hover
-   `border-color:#D8D3C6`. */
-.cv2-root .sb-run {
-  appearance: none;
-  width: 100%;
+/* --- RUNS as a dot-chip cluster (2026-08-16 redesign) ----------------------
+   One always-visible strip; live chips lead, tinted `--pn-run-soft`; overflow
+   folds into a `+N more` chip that expands in place. The old full-width run
+   rows and the promoted LIVE SESSION card retired into this. */
+.cv2-root .sb-runs__chips {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 9px;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+/* The measured-live cluster is a testid seam, not a box. */
+.cv2-root .sb-runs__live {
+  display: contents;
+}
+.cv2-root .sb-runchip {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 5px 10px;
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
-  border-radius: 8px;
+  border-radius: var(--pn-r-md);
   font-family: inherit;
   text-align: left;
   cursor: pointer;
 }
-.cv2-root .sb-run + .sb-run {
-  margin-top: 5px;
-}
-.cv2-root .sb-run:hover {
+.cv2-root .sb-runchip:hover {
   border-color: var(--pn-line-2);
 }
-/* L75 `width:8px;height:8px;border-radius:50%;background:#3E8E5A`. SOLID, not
-   pulsing: pulse is the activity signal's, not the verdict's (F1/D6). */
-.cv2-root .sb-run__dot {
+.cv2-root .sb-runchip:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+.cv2-root .sb-runchip--live {
+  background: var(--pn-run-soft);
+}
+.cv2-root .sb-runchip__top {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.cv2-root .sb-runchip__title {
+  color: var(--pn-ink);
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Solid when live, hollow ring otherwise — pulse belongs to the activity
+   signal (F1/D6), which this body is not handed. */
+.cv2-root .sb-runchip__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex: none;
   box-sizing: border-box;
 }
-.cv2-root .sb-run__dot--none {
-  border: 1px solid var(--pn-line-2);
+.cv2-root .sb-runchip__dot--ring {
+  border: 1.5px solid var(--pn-line-2);
 }
 .cv2-root .sb-run__dot--run { background: var(--pn-run); }
-.cv2-root .sb-run__dot--wait { background: var(--pn-wait); }
-.cv2-root .sb-run__dot--block { background: var(--pn-block); }
-.cv2-root .sb-run__dot--info { background: var(--pn-info); }
-.cv2-root .sb-run__dot--idle { background: var(--pn-idle); }
-.cv2-root .sb-run__dot--brand { background: var(--pn-brand); }
-/* L75 `font-size:12px;font-weight:600`. */
-.cv2-root .sb-run__name {
-  min-width: 0;
-  color: var(--pn-ink);
-  font-size: 12px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.cv2-root .sb-runchip__word {
+  padding-left: 14px;
+  font-size: 9.5px;
 }
-/* L75 `font-size:11px;color:#8E897B`. */
-.cv2-root .sb-run__meta {
-  flex: none;
+.cv2-root .sb-runchip--more {
+  justify-content: center;
+  align-self: stretch;
+  color: var(--pn-ink-3);
   font-size: 11px;
-  color: var(--pn-ink-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: var(--pn-idle-soft);
+  border-color: transparent;
 }
-.cv2-root .sb-run__spacer {
-  flex: 1;
-}
-
-/* --- LIVE SESSION card (Phase 3, refs/03-workspace.png) --------------------
-   The run row's grammar at card weight: two text lines, a green verdict dot,
-   the LIVE word on the right. Same token vocabulary as .sb-run, one size up,
-   because it is the promoted rendering of the same fact. */
-.cv2-root .sb-livecard {
-  appearance: none;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: 10px;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.cv2-root .sb-livecard + .sb-livecard {
-  margin-top: 6px;
-}
-.cv2-root .sb-livecard:hover {
-  border-color: var(--pn-line-2);
-}
-.cv2-root .sb-livecard__main {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.cv2-root .sb-livecard__title {
-  color: var(--pn-ink);
-  font-size: 12.5px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cv2-root .sb-livecard__meta {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--pn-mono);
-  font-size: 10.5px;
-  color: var(--pn-ink-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cv2-root .sb-livecard__spacer {
-  flex: 1;
+.cv2-root .sb-runchip--more:hover {
+  color: var(--pn-brand-2);
 }
 
 .cv2-root .sb-notices {

@@ -716,19 +716,29 @@ const ROWS: readonly KindConfig[] = [
         pulse: { signal: 'terminal-activity', gate: 'live' },
       },
       liveCount: { filter: NOT_DELETED, label: (n) => `● ${n} live` },
-      // Sessions are LAUNCHED, not created: `quickLaunch` below is the real
+      // Sessions are LAUNCHED, not created: `quickStart` below is the real
       // affordance, so the inherited quickCreate:true only mounted a Create
       // control that refuses. Same defect class as the rowActions note below —
       // "Keeping this true mounted a refused Save control whose full reason
       // squeezed Discussion/Connections/Activity out of the compact panel
       // row" — ruled once already; a refused control is not a control.
       quickCreate: false,
-      quickLaunch: 'launch-session',
-      // Beside it, not beneath it (user ruling 2026-08-12). A vanilla terminal
-      // is the OTHER way to get a session, so it belongs in the same header
-      // slot as the way you get an agent one — not buried in a row action,
-      // where you would have to already have a session to find out how to
-      // start one.
+      // NO `quickLaunch` (user ruling 2026-08-16). `launch-session` opens the
+      // five-section sheet against a launch SUBJECT, and a list header has no
+      // subject to open it against — `useSessionStart` says so itself and
+      // deliberately leaves the verb out of `SESSION_START_ACTIONS`. So the
+      // chip could only ever draw disabled-with-reason, and the user read that
+      // reason as the screen being broken. The same rule that says "a refused
+      // control is not a control" four lines up applies here: the reason to
+      // DRAW an unwired verb is that it could become wired on this surface,
+      // and this one cannot. Launching still lives where a subject exists:
+      // `palette.primaryAction` below is `launch-session`, and a task row's
+      // own ◔ Run ▸ opens the same sheet pre-associated with that task.
+      //
+      // A vanilla terminal is the OTHER way to get a session and it needs no
+      // subject, so it keeps the header slot (user ruling 2026-08-12) rather
+      // than being buried in a row action, where you would have to already
+      // have a session to find out how to start one.
       quickStart: 'start-terminal',
       filters: [assigneeFilter, attentionFilter],
       sort: DEFAULT_SORT,

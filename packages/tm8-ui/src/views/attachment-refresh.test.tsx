@@ -43,7 +43,7 @@
  * 4. THE EFFECT, other direction: a landed detach takes the row away.
  */
 import { describe, expect, it } from 'vitest';
-import { act, render, renderHook, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, waitFor, within } from '@testing-library/react';
 import type {
   CollectionQuery,
   DurableWorkspaceEvent,
@@ -320,10 +320,13 @@ describe('the strip changes on screen, without reopening the panel', () => {
     }
 
     const { container } = render(<Screen />);
+    // The tiles live inside the description block (2026-08-16 addendum) and
+    // are always present while an upload path is wired — the ＋ tile is the
+    // empty state, so the input is reachable with nothing to reveal.
     await waitFor(() => expect(container.querySelector('[data-testid="attachment-strip"]')).toBeTruthy());
     expect(rowCount(container), 'nothing is attached yet').toBe(0);
 
-    // Pick a file. The strip starts the upload and shows its pending row.
+    // Pick a file. The strip starts the upload and shows its pending tile.
     const input = container.querySelector('[data-testid="attachment-file-input"]') as HTMLInputElement;
     const file = new File(['bytes'], 'spec.pdf', { type: 'application/pdf' });
     Object.defineProperty(input, 'files', { value: [file], configurable: true });
@@ -363,6 +366,9 @@ describe('the strip changes on screen, without reopening the panel', () => {
     const { container } = render(<Screen />);
     await waitFor(() => expect(rowCount(container)).toBe(1));
 
+    // Remove lives in the lightbox now — open the tile first (open before
+    // asserting, never delete an assertion).
+    fireEvent.click(container.querySelector('[data-testid="attachment-item"]')!);
     const button = container.querySelector('[data-testid="attachment-detach"]') as HTMLButtonElement;
     expect(button, 'a row read through an edge must offer a detach control').toBeTruthy();
     await act(async () => { button.click(); });
