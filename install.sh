@@ -476,6 +476,22 @@ LAUNCHD_PG_PLIST="$LA_DIR/$LAUNCHD_PG_LABEL.plist"
 LAUNCHD_SERVER_PLIST="$LA_DIR/$LAUNCHD_SERVER_LABEL.plist"
 LAUNCHD_DOMAIN="gui/$(id -u)"
 
+# XML-escape a value before it is interpolated into a plist <string>. A plist is
+# XML, so an unescaped & < or > in a path, username, URL or slot name makes the
+# file malformed — and launchd does NOT reject that at write time, it fails at
+# LOAD time, i.e. the next login: the exact reboot this file exists to survive.
+# "Your node does not come back because your home dir has an ampersand in it" is
+# the class of bug this whole path is fixing, so every interpolated <string> goes
+# through here. Ampersand FIRST — escaping it after < / > would double-escape the
+# entities they produce.
+xml_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  printf '%s' "$s"
+}
+
 # The cluster's data dir on macOS — the same default phase 2 uses when it
 # initdbs one. Overridable with TM8_PGDATA for a cluster that lives elsewhere.
 macos_pgdata() { printf '%s' "${TM8_PGDATA:-$HOME/.tm8/pg-$SLOT}"; }
@@ -520,7 +536,7 @@ plist_env_dict() {
       *) continue ;;
     esac
     key="${line%%=*}"; val="${line#*=}"
-    printf '    <key>%s</key><string>%s</string>\n' "$key" "$val"
+    printf '    <key>%s</key><string>%s</string>\n' "$(xml_escape "$key")" "$(xml_escape "$val")"
   done
 }
 
@@ -533,20 +549,22 @@ plist_env_dict() {
 # fine by hand fails to come back after a reboot — the precise "it worked when I
 # ran it" vs "it survives a reboot" gap this file exists to close.
 render_launchd_postgres_plist() {
-  local pgdata pgbin
-  pgdata="$(macos_pgdata)"
-  pgbin="$(macos_postgres_bin || echo postgres)"
+  local pgdata pgbin label port
+  pgdata="$(xml_escape "$(macos_pgdata)")"
+  pgbin="$(xml_escape "$(macos_postgres_bin || echo postgres)")"
+  label="$(xml_escape "$LAUNCHD_PG_LABEL")"
+  port="$(xml_escape "$TM8_ENV_PG_PORT")"
   cat <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>${LAUNCHD_PG_LABEL}</string>
+  <key>Label</key><string>${label}</string>
   <key>ProgramArguments</key>
   <array>
     <string>${pgbin}</string>
     <string>-D</string><string>${pgdata}</string>
-    <string>-p</string><string>${TM8_ENV_PG_PORT}</string>
+    <string>-p</string><string>${port}</string>
     <string>-c</string><string>listen_addresses=127.0.0.1</string>
   </array>
   <key>EnvironmentVariables</key>
@@ -576,35 +594,39 @@ PLIST
 # is /usr/bin:/bin only, and a server that spawns agent PTYs needs `node`, `bun`
 # and `tm8` to be findable by what it spawns.
 render_launchd_server_plist() {
-  local nodedir strip w
-  nodedir="$(dirname "$NODE_BIN")"
+  local nodedir strip w label node checkout logbase
+  nodedir="$(xml_escape "$(dirname "$NODE_BIN")")"
+  label="$(xml_escape "$LAUNCHD_SERVER_LABEL")"
+  node="$(xml_escape "$NODE_BIN")"
+  checkout="$(xml_escape "$TM8_ENV_CHECKOUT")"
+  logbase="$(xml_escape "$HOME/Library/Logs/tm8-${SLOT}-server")"
   strip=""
-  for w in "${TM8_SESSION_VARS[@]}"; do strip+="    <string>-u</string><string>$w</string>
+  for w in "${TM8_SESSION_VARS[@]}"; do strip+="    <string>-u</string><string>$(xml_escape "$w")</string>
 "; done
   cat <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>${LAUNCHD_SERVER_LABEL}</string>
+  <key>Label</key><string>${label}</string>
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/env</string>
-${strip}    <string>${NODE_BIN}</string>
+${strip}    <string>${node}</string>
     <string>--enable-source-maps</string>
-    <string>${TM8_ENV_CHECKOUT}/packages/server/dist/index.js</string>
+    <string>${checkout}/packages/server/dist/index.js</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>${nodedir}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
 $(plist_env_dict)
   </dict>
-  <key>WorkingDirectory</key><string>${TM8_ENV_CHECKOUT}</string>
+  <key>WorkingDirectory</key><string>${checkout}</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>3</integer>
-  <key>StandardOutPath</key><string>$HOME/Library/Logs/tm8-${SLOT}-server.out.log</string>
-  <key>StandardErrorPath</key><string>$HOME/Library/Logs/tm8-${SLOT}-server.err.log</string>
+  <key>StandardOutPath</key><string>${logbase}.out.log</string>
+  <key>StandardErrorPath</key><string>${logbase}.err.log</string>
 </dict>
 </plist>
 PLIST
@@ -1420,6 +1442,12 @@ elif (( USE_SERVICE )) && [[ "$SERVICE_KIND" == systemd ]]; then
     printf '\n'; warn "no db:ok on $TM8_ENV_SERVER_PORT within 60s"
     info "last 30 log lines:"
     journalctl -u "$UNIT_NAME" -n 30 --no-pager 2>&1 | sed 's/^/        /' || true
+    # The unit is enabled with Restart=on-failure/RestartSec=3, so a server that
+    # cannot boot is now respawning every ~3s. Say so, and how to stop it — a
+    # bare `die` would leave a crash-loop running with no way out named.
+    warn "the unit is enabled and will respawn the server every ~3s until you stop it:"
+    info "stop it now:      sudo systemctl stop $UNIT_NAME"
+    info "remove it (keeps your data):  $0 --env $SLOT --uninstall"
     die "$UNIT_NAME started but did not become healthy"
   }
   active="$(systemctl is-active "$UNIT_NAME" 2>/dev/null || echo inactive)"
@@ -1430,6 +1458,13 @@ elif (( USE_SERVICE )) && [[ "$SERVICE_KIND" == launchd ]]; then
     printf '\n'; warn "no db:ok on $TM8_ENV_SERVER_PORT within 60s"
     info "last 30 log lines ($HOME/Library/Logs/tm8-${SLOT}-server.err.log):"
     tail -n 30 "$HOME/Library/Logs/tm8-${SLOT}-server.err.log" 2>/dev/null | sed 's/^/        /' || true
+    # The LaunchAgent is loaded with KeepAlive=true, so a server that cannot boot
+    # is now respawning every ~3s and will keep doing so across logins until it is
+    # booted out — a laptop quietly burning CPU on a crash-loop nobody named. Tell
+    # the user how to stop it rather than dying silently on top of it.
+    warn "the LaunchAgent is loaded and KeepAlive will respawn it every ~3s until you stop it:"
+    info "stop it now:      launchctl bootout $LAUNCHD_DOMAIN/$LAUNCHD_SERVER_LABEL"
+    info "remove it (keeps your data):  $0 --env $SLOT --uninstall"
     die "$LAUNCHD_SERVER_LABEL started but did not become healthy"
   }
   st="$(launchd_status "$LAUNCHD_SERVER_LABEL")"
