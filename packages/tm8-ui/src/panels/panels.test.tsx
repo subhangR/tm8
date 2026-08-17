@@ -894,7 +894,18 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
     fireEvent.click(getByTestId('filter-trigger'));
     expect(getByTestId('filter-menu')).toBeTruthy();
-    fireEvent.mouseDown(document.body);
+    /* `pointerdown`, not `mousedown`: iOS often synthesises NO mouse event at all
+       for a tap on inert background, which made this popover a trap on a phone
+       whose only exit was Escape — and a phone has no Escape key. Asserting the
+       mouse spelling here would pin the defect in place. */
+    fireEvent.pointerDown(document.body);
+    expect(queryByTestId('filter-menu')).toBeNull();
+
+    /* And the mouse path still dismisses, because a real mouse press emits
+       `pointerdown` before `mousedown`. This is the desktop regression guard. */
+    fireEvent.click(getByTestId('filter-trigger'));
+    expect(getByTestId('filter-menu')).toBeTruthy();
+    fireEvent.pointerDown(document.body, { pointerType: 'mouse' });
     expect(queryByTestId('filter-menu')).toBeNull();
 
     const kindButton = container.querySelector('.lp__kind') as HTMLElement;

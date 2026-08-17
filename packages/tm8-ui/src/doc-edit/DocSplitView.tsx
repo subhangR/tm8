@@ -178,13 +178,43 @@ function useSplitRatio() {
     const box = frame.current?.getBoundingClientRect();
     if (!box || box.width === 0) return;
     e.preventDefault();
+
+    /* CAPTURE THE POINTER, which every other resizer in this codebase already
+       does (kit/PanelResizer, shell/WorkspaceGrid, graph/GraphView,
+       craft/BlueprintCanvas). Without it a drag that leaves the element — which
+       a resize drag does immediately, by definition — can have its stream
+       retargeted, and on touch the browser is free to decide mid-gesture that
+       this was a scroll after all and stop delivering `pointermove` entirely.
+       The user gets a splitter that follows the finger for 40px and then dies.
+       `touch-action: none` on `.de-split__bar` (doc-edit.css) is the other half:
+       capture stops the retarget, `touch-action` stops the browser claiming the
+       gesture as a pan before the first move is ever dispatched. */
+    const handle = e.currentTarget as HTMLElement;
+    const id = e.pointerId;
+    try {
+      handle.setPointerCapture(id);
+    } catch {
+      /* Capture is a nicety, not a precondition — a stale pointer id throws
+         here and the drag below still works. */
+    }
+
     const move = (ev: PointerEvent) => setRatio(clamp((ev.clientX - box.left) / box.width));
     const up = () => {
+      try {
+        handle.releasePointerCapture(id);
+      } catch {
+        /* Already released — the browser drops capture on pointercancel. */
+      }
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    /* `pointercancel` fires when the system takes the gesture away (a call, a
+       system edge-swipe). Without this listener the move handler leaked and the
+       splitter kept tracking a finger that was no longer there. */
+    window.addEventListener('pointercancel', up);
   }, []);
 
   return { ratio, onKeyDown, onPointerDown, frame };

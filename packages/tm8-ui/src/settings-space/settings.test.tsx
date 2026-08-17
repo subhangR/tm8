@@ -138,6 +138,12 @@ const LIVE_VERBS = [
   /^＋ Invite$/,
   /^discard$/,
   /^reorder .* — alt\+arrow to move$/,
+  // The touch reorder path. Live for exactly the reason the grip beside them is:
+  // they move the DRAFT, which is a real act this seam performs — Save is the
+  // refused verb here, not the reorder. They exist because HTML5 drag-and-drop
+  // fires no events from a finger and alt+arrow needs an alt key, so without
+  // them reordering the menu was impossible on a touch device.
+  /^move .+ (up|down)$/,
   /^rename /,
   /^remove /,
   /^＋ view ref$/,
@@ -645,6 +651,41 @@ describe('T2-3 — the menu editor', () => {
     expect(preview()).not.toBe(before);
     // The preview footer must now say the change is unsaved.
     expect(document.body.textContent).toMatch(/unsaved changes — preview only/);
+  });
+
+  it('THE TOUCH PATH: a plain click on the move button reorders, with no drag and no alt key', () => {
+    /* This is the only reorder path a finger has. The rows use HTML5
+       drag-and-drop, which fires NO events from a touch gesture, and the grip's
+       fallback is alt+arrow, which needs an alt key — so before these buttons
+       existed, reordering this menu was impossible on a touch device rather than
+       merely awkward.
+
+       A plain `click` is deliberately what is asserted: it is the one event a
+       tap reliably produces on every touch platform, which is the whole reason
+       this is a button and not a touch-drag implementation. No `altKey`, no
+       `dragstart`, no pointer sequence. */
+    render(<MenuEditor menu={ROWED} spaceName="atelier" />);
+    const preview = () => screen.getByTestId('menu-preview').textContent ?? '';
+    const before = preview();
+
+    // Messages is the LAST row of Chats, so UP is the direction that moves.
+    fireEvent.click(screen.getByRole('button', { name: 'move Messages up' }));
+
+    expect(preview()).not.toBe(before);
+    expect(document.body.textContent).toMatch(/unsaved changes — preview only/);
+  });
+
+  it('the move buttons name the row without colliding with the grip', () => {
+    /* The grip and the two move buttons sit in one wrapper and all three name
+       the same row. If the move buttons had been called "Move reorder Messages
+       up" — the shape you get from reusing the grip's phrase — then every
+       existing `getByRole(/reorder Messages/)` query in this file would match
+       three controls and fail as ambiguous. The names are kept disjoint on
+       purpose. */
+    render(<MenuEditor menu={ROWED} spaceName="atelier" />);
+    expect(screen.getByRole('button', { name: /reorder Messages/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'move Messages up' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'move Messages down' })).toBeTruthy();
   });
 
   it('discard is dead until there is something to discard, then restores', () => {

@@ -216,6 +216,52 @@
   color: var(--pn-ink-2);
 }
 
+/* THE TOUCH REORDER PATH. Under a fine pointer these do not exist and the row is
+   byte-identical to what it was: the grip drags, alt+arrow moves. Under a coarse
+   pointer the grip is the one thing that CANNOT work — HTML5 drag-and-drop
+   produces no events from a finger — so it steps aside for two buttons that do.
+   See MenuEditor's Grip for why buttons rather than a touch drag. */
+.set-menu .set-grip-wrap {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+.set-menu .set-move {
+  display: none;
+}
+@media (pointer: coarse) {
+  .set-menu .set-grip {
+    display: none;
+  }
+  .set-menu .set-move {
+    display: inline-flex;
+    /* SIDE BY SIDE, not stacked. Stacking is the tidier shape and it is wrong:
+       the 44px floor is a floor on the SMALLER side of a control, so two stacked
+       buttons sharing 44px of height are two 22px targets, and a thumb misses
+       vertically exactly as easily as horizontally. Side by side each one is a
+       real 44px square. */
+    align-items: center;
+    margin-left: -5px;
+  }
+  .set-menu .set-move__btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--pn-ink-3);
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    font-size: 10px;
+    line-height: 1;
+    border-radius: var(--pn-r-xs);
+    cursor: pointer;
+  }
+  .set-menu .set-move__btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
+
 /* Measured at 16x12. Same argument, and these two are destructive. */
 .set-menu .set-row__x,
 .set-menu .set-row__pencil {

@@ -96,8 +96,8 @@ describe('the fullscreen dialog', () => {
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     fireEvent.click(screen.getByLabelText('Close fullscreen graph'));
     const scrim = screen.getByTestId('chat-entity-graph-fullscreen');
-    fireEvent.mouseDown(scrim);
-    fireEvent.mouseUp(scrim);
+    fireEvent.pointerDown(scrim);
+    fireEvent.pointerUp(scrim);
     expect(asks).toEqual([false, false, false]);
     // The dialog itself never closed — the host owns the state (D2).
     expect(screen.getByRole('dialog')).toBeDefined();
