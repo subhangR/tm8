@@ -84,12 +84,25 @@ interface BarKey {
   readonly arrow?: ArrowName;
 }
 
+/**
+ * ORDER IS BY REACH, NOT BY CATEGORY.
+ *
+ * Seven keys at the 44px thumb floor need ~330px and the scroller gets ~260,
+ * so roughly two keys sit off the right edge at rest and the order decides
+ * which two. Esc and Ctrl lead because they are the ones you need in a hurry —
+ * Esc leaves a menu, Ctrl+C stops a runaway process, and a key you have to
+ * scroll to find is not available at the moment either of those matters. Up
+ * comes next: on a shell it is command history, which is most of what a phone
+ * is realistically used for. Left/Right, the pair used for editing a line you
+ * are already writing, are the ones that scroll — editing is exactly the use
+ * this surface is honest about not being good at.
+ */
 const KEYS: readonly BarKey[] = [
   { id: 'esc', label: 'esc', aria: 'Escape', seq: ESC },
   { id: 'tab', label: 'tab', aria: 'Tab', seq: TAB },
-  { id: 'left', label: '←', aria: 'Left arrow', arrow: 'left' },
-  { id: 'down', label: '↓', aria: 'Down arrow', arrow: 'down' },
   { id: 'up', label: '↑', aria: 'Up arrow', arrow: 'up' },
+  { id: 'down', label: '↓', aria: 'Down arrow', arrow: 'down' },
+  { id: 'left', label: '←', aria: 'Left arrow', arrow: 'left' },
   { id: 'right', label: '→', aria: 'Right arrow', arrow: 'right' },
 ];
 
@@ -211,68 +224,85 @@ export function TerminalModifierBar({
           </div>
         ) : null}
 
-        <div className="term-mod__keys" role="group" aria-label="Terminal modifier keys">
-          <button
-            type="button"
-            className={`term-mod__key term-mod__key--ctrl${ctrlArmed ? ' term-mod__key--armed' : ''}`}
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={toggleCtrl}
-            disabled={!live}
-            /* `aria-pressed` and not a label change: the arm is a TOGGLE STATE,
-               and a screen reader that is told "Control" twice with different
-               words cannot tell which of them is the current one. */
-            aria-pressed={ctrlArmed}
-            aria-label="Control — applies to the next key you type"
-            data-testid="terminal-mod-ctrl"
-          >
-            ctrl
-          </button>
-          {KEYS.map((key) => (
+        {/*
+          TWO TRACKS, AND THE SPLIT IS THE POINT.
+
+          Seven keys at the 44px thumb floor need about 330px; the bar has 378
+          and the right-hand cluster takes some of it. Something has to scroll,
+          and the FIRST version let the whole row scroll — which put the exit
+          chip off the right edge at 390px. `TerminalChromeStrip`'s contract
+          says that chip "may never truncate away, hide behind overflow, or drop
+          at a narrow width", and on a phone that is not a style rule: `⌃\`` is
+          a chord the device cannot type, so the chip is the ONLY way out of
+          terminal focus. Behind a horizontal scroll it is a trap.
+
+          So the keys scroll and the exit chip does not. The column readout is
+          pinned with it for the same reason — a number that exists to be seen
+          before the output garbles must not be one swipe away.
+        */}
+        <div className="term-mod__bar">
+          <div className="term-mod__keys" role="group" aria-label="Terminal modifier keys">
             <button
-              key={key.id}
               type="button"
-              className="term-mod__key"
+              className={`term-mod__key term-mod__key--ctrl${ctrlArmed ? ' term-mod__key--armed' : ''}`}
               onPointerDown={(e) => e.preventDefault()}
-              onClick={() => send(key)}
+              onClick={toggleCtrl}
               disabled={!live}
-              aria-label={key.aria}
-              data-testid={`terminal-mod-${key.id}`}
+              /* `aria-pressed` and not a label change: the arm is a TOGGLE
+                 STATE, and a screen reader told "Control" twice with different
+                 words cannot tell which of them is the current one. */
+              aria-pressed={ctrlArmed}
+              aria-label="Control — applies to the next key you type"
+              data-testid="terminal-mod-ctrl"
             >
-              {key.label}
+              ctrl
             </button>
-          ))}
-          {/*
-            THE EXIT CHIP, AND WHY IT IS HERE AS WELL AS IN THE CHROME.
-            `⌃\`` is the reserved escape from terminal focus, and on a desktop
-            it is a physical chord the chip merely documents. On a phone the
-            chord CANNOT BE TYPED, so the chip is not documentation — it is the
-            only exit. Same class as the existing chip so it is the same object
-            the user already knows from the drawer.
-          */}
-          <button
-            type="button"
-            className="term-exit-chip term-mod__exit"
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={() => terminal.current?.blur()}
-            aria-label="Exit terminal focus"
-            data-testid="terminal-mod-exit"
-          >
-            exit <span className="term-exit-chip__key" aria-hidden>⌃`</span>
-          </button>
-          <button
-            type="button"
-            className={`term-mod__key term-mod__key--more${detailsOpen ? ' term-mod__key--armed' : ''}`}
-            onClick={() => setDetailsOpen((open) => !open)}
-            aria-expanded={detailsOpen}
-            aria-label={`Terminal size and limits — ${cols || '?'} columns`}
-            data-testid="terminal-mod-toggle"
-          >
-            {/* THE COLUMN COUNT IS ON THE COLLAPSED BAR, not only inside the
-                panel. A number you have to open a drawer to see is a number
-                nobody sees, and this one exists to be seen before the output
-                garbles rather than after. */}
-            {cols ? `${cols}c` : '···'}
-          </button>
+            {KEYS.map((key) => (
+              <button
+                key={key.id}
+                type="button"
+                className="term-mod__key"
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => send(key)}
+                disabled={!live}
+                aria-label={key.aria}
+                data-testid={`terminal-mod-${key.id}`}
+              >
+                {key.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="term-mod__fixed">
+            <button
+              type="button"
+              className={`term-mod__key term-mod__key--more${detailsOpen ? ' term-mod__key--armed' : ''}`}
+              onClick={() => setDetailsOpen((open) => !open)}
+              aria-expanded={detailsOpen}
+              aria-label={`Terminal size and limits — ${cols || 'unknown'} columns`}
+              data-testid="terminal-mod-toggle"
+            >
+              {cols ? `${cols}c` : '···'}
+            </button>
+            {/*
+              `⌃\`` is the reserved escape from terminal focus. On a desktop it
+              is a physical chord and this chip merely documents it; on a phone
+              the chord cannot be typed, so the chip IS the exit. Same class as
+              the chrome strip's so it reads as the same object — and note the
+              overlay chip on the canvas is hover/focus-revealed, which never
+              fires on a tap, so this is the only one a thumb can find.
+            */}
+            <button
+              type="button"
+              className="term-exit-chip term-mod__exit"
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => terminal.current?.blur()}
+              aria-label="Exit terminal focus"
+              data-testid="terminal-mod-exit"
+            >
+              exit <span className="term-exit-chip__key" aria-hidden>⌃`</span>
+            </button>
+          </div>
         </div>
       </div>
     </AlwaysDark>

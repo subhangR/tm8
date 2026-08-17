@@ -737,20 +737,50 @@
   box-shadow: var(--pn-sh-md);
 }
 
-.cv2-root[data-shell='mobile'] .term-mod__keys {
+/*
+ * TWO TRACKS: keys that may scroll, and a cluster that never may.
+ *
+ * Seven keys at the 44px floor want ~330px and the scroller gets ~250 of the
+ * 378 available, so two of them sit off the right edge at rest. That is
+ * accepted — they scroll into reach, and `KEYS` is ordered so the two that
+ * scroll are the least urgent. What is NOT accepted is the exit chip doing the
+ * same: measured at 390px in the first version, `.term-exit-chip` had a right
+ * edge of 422 and the only way out of terminal focus was behind a swipe.
+ */
+.cv2-root[data-shell='mobile'] .term-mod__bar {
   display: flex;
   align-items: center;
   gap: var(--pn-space-1);
   padding: var(--pn-space-1) var(--pn-space-2);
-  /* The row scrolls rather than wrapping or shrinking: a key that shrinks
-     below the thumb floor to fit is a key that fails the finger it was added
-     for. At 390px the whole set fits; at 320 the tail scrolls. */
+}
+
+.cv2-root[data-shell='mobile'] .term-mod__keys {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  /* `min-width: 0` is what makes the scroller a scroller. A flex item defaults
+     to `min-width: auto`, which refuses to shrink below its content — the track
+     would size to all seven keys and push the pinned cluster off the edge
+     instead of scrolling, which is the exact defect this split exists to fix
+     and looks identical to it. */
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 .cv2-root[data-shell='mobile'] .term-mod__keys::-webkit-scrollbar {
   display: none;
+}
+
+/* Never shrinks, never scrolls, never hides. The column readout is pinned with
+   the exit chip because a number that exists to be seen BEFORE the output
+   garbles must not cost a swipe to find. */
+.cv2-root[data-shell='mobile'] .term-mod__fixed {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
 }
 
 /*
@@ -815,7 +845,8 @@
 .cv2-root[data-shell='mobile'] .term-mod__exit {
   flex: 0 0 auto;
   min-block-size: 44px;
-  margin-inline-start: auto;
+  /* No `margin-inline-start: auto` — it lives in the pinned cluster now, and a
+     right-push inside a `flex: none` group does nothing but hide the intent. */
 }
 
 .cv2-root[data-shell='mobile'] .term-mod__key--more {
