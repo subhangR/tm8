@@ -170,6 +170,31 @@
   display: none;
 }
 
+/* --------------------------------------------------------------------------
+   6. THE ONE SURVIVING BREAKPOINT, WHICH INVERTS UNDER A SHEET
+
+   `entity-view.css` keeps a single `@media (max-width: 1040px)` rule: with the
+   aux column open there is not enough room for three columns above their
+   floors, so the DETAIL yields. That is right for a desktop window dragged
+   narrow — the aux is what the viewer just asked for, and the detail is one
+   click away.
+
+   On the phone it is exactly backwards, and it took driving the sheet to see
+   it. The aux is no longer a column competing for the row; it is a sheet
+   COVERING the detail. The rule still fired (a phone is always under 1040px),
+   so opening the sheet unmounted the very thing the sheet was covering, and
+   the screen behind the scrim was blank grey. A sheet over nothing is not a
+   sheet — it is a navigation that lied about being one.
+
+   Restored rather than the media query weakened: the desktop rule is correct
+   where it was written and is not this lane's to change.
+   -------------------------------------------------------------------------- */
+@media (max-width: 1040px) {
+  .cv2-root[data-shell='mobile'] .ev-root[data-layout='columns']:not([data-aux='none']) .ev-detail {
+    display: flex;
+  }
+}
+
 /* ==========================================================================
    THE SHEET
 
@@ -218,6 +243,11 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* A FLOOR AS WELL AS A CAP. Sized to content alone, a thread with two
+     messages gave the composer ~30% of the screen and cut "…reference a
+     skill" through the descenders. The aux column it replaces is a READING
+     surface; a floor is what keeps it one when the content is short. */
+  height: 72%;
   max-height: 88%;
   background: var(--pn-surface);
   border-top: 1px solid var(--pn-line);

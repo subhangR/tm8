@@ -317,6 +317,28 @@ for (const { name: screen, path } of SCREENS) {
     console.log(`  !! DRILL-IN DID NOT WRITE AN ENTITY ADDRESS: ${opened.hash}`);
   }
 
+  /*
+   * THE SHEET (AC3). The Discussion tab is an AUX target — on the desktop it
+   * opens the third column, and on the phone it must become a sheet. Driven
+   * rather than asserted about: a sheet that renders into a null host returns
+   * null silently, so "the code is there" proves nothing at all.
+   */
+  const discussion = page.getByRole('tab', { name: /Discussion/ }).first();
+  if ((await discussion.count()) > 0) {
+    await discussion.click();
+    const sheet = await record(`${screen}-2b-sheet`);
+    if (!sheet.sheetOpen) console.log('  !! DISCUSSION DID NOT OPEN A SHEET');
+    if (!sheet.auxInSheet) console.log('  !! AUX RENDERED AS A COLUMN, NOT IN THE SHEET');
+    /* Dismiss by the backdrop — the gesture with no button behind it, and the
+       one most likely to be wired wrong. A sheet you cannot close by tapping
+       away is a trap on a device with no Escape key. */
+    await page.mouse.click(195, 40);
+    const closed = await record(`${screen}-2c-sheet-dismissed`);
+    if (closed.sheetOpen) console.log('  !! BACKDROP TAP DID NOT DISMISS THE SHEET');
+  } else {
+    console.log('  (no Discussion tab on this screen)');
+  }
+
   /* UP, via the header chevron — `useScreenStack().pop`, never history.back().
      Lane N's ruling, and the seam both shells share. */
   const chevron = page.locator('.mobile-header__back');
