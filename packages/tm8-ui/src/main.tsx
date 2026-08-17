@@ -11,9 +11,13 @@ import './shell/palette.css';
 import './graph/graph.css';
 import './servers/server.css';
 import { App } from './App';
+import { registerServiceWorker } from './pwa/register';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>,
 );
+
+// Prod builds only, and only on a secure origin — see src/pwa/register.ts.
+registerServiceWorker();
