@@ -120,7 +120,15 @@ describe('CommandPalette', () => {
     const row = getAllByTestId('palette-disabled-row')[0]!;
     expect(row.getAttribute('aria-disabled')).toBe('true');
     expect(row.querySelector('.pal__row-reason')?.textContent).toBeTruthy();
-    expect(row.getAttribute('title')).toBeTruthy();
+    /* THE INLINE LINE IS THE SHORT FORM, AND IT IS NOT THE WHOLE REASON.
+       `shortReason` keeps only the text before the first `:` or em-dash and
+       degrades to a generic placeholder past a 40-char head, so the remedy half
+       was dropped for everyone. The full sentence used to live in `title`, which
+       renders on hover and nowhere else. It is now a `ReasonNote`, reachable by
+       hover, focus OR tap — so `title` is gone and the full text is in the DOM. */
+    expect(row.getAttribute('title')).toBeNull();
+    const full = row.querySelector('.hon-tip')?.textContent ?? '';
+    expect(full.length).toBeGreaterThan(0);
   });
 
   it('arrow keys SKIP disabled rows, and Enter never activates one', () => {
