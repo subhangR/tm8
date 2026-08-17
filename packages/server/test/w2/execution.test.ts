@@ -1,6 +1,6 @@
 /**
  * W2 G11 — execution and session lifecycle. B1 (`execution.prompt` is
- * Server-internal-only) and B2 (one durable unordered pair budget), at the
+ * Server-internal-only) and the durable three-RPC delivery path, at the
  * server API boundary.
  *
  * THE ORACLE THIS FILE EXISTS TO BE
@@ -147,31 +147,18 @@ function fakePromptSettlement(): { awaitOutcome: () => Promise<{ outcome: 'deliv
 const CONFIG = { host: '127.0.0.1', port: 4610 } as unknown as ServerConfig;
 
 /**
- * A stand-in for the three RPCs that behaves like 015 §7 — including the wake
- * count and its refusal at four — but keeps that state OUTSIDE the service, in
- * this object, exactly as Postgres keeps it outside the process.
- *
- * That placement is the assertion. If `W2ExecutionDeliveryService` ever grew a
- * counter of its own, a service rebuilt over this same port would hand out a
- * fresh allowance and `restarting the service does not mint a fresh allowance`
- * below would fail. This is the cheap, no-database half of the durability
- * proof; the executable process-restart proof is in
- * `test/db/w2-execution.pg.test.ts` and destroys the connection pool too.
+ * A stand-in for the three RPCs after 135. Durable rows live in this object,
+ * exactly as Postgres keeps them outside the process; there is deliberately no
+ * wake counter, pair row, pair lock or reservation-version surrogate.
  */
 class FakeDeliveryRpc implements W2DeliveryRpcPort {
   readonly calls: string[] = [];
-  /** The durable counter, deliberately owned by the "database", not the service. */
-  wakes = 0;
+  reservations = 0;
   /**
    * Message ids this "database" reserves as already-settled.
    *
-   * Used to be a `wakes >= 4` cap standing in for `automated_wake_limit`.
-   * Migration `120` removed that refusal from the schema, so a fake that still
-   * produced it would be modelling a database that no longer exists. The TS
-   * behaviour under test never depended on WHICH refusal it was — the service
-   * returns null for ANY non-pending reservation and stops there — so the
-   * trigger moved to a reason the schema still writes (`session_not_live`,
-   * an exited or failed target) and the coverage is unchanged.
+   * The service returns null for any reservation the database already settled;
+   * `session_not_live` is the current reservation-time example.
    */
   readonly refuse = new Set<string>();
 
@@ -186,20 +173,18 @@ class FakeDeliveryRpc implements W2DeliveryRpcPort {
         targetWorkSessionId: lease.targetWorkSessionId,
         status: 'failed_permanent',
         attemptNo,
-        pairBudgetVersion: this.wakes,
         failureReason: 'session_not_live',
       };
       this.rows.set(lease.deliveryId, refused);
       return refused;
     }
-    this.wakes += 1;
+    this.reservations += 1;
     const row: StoredDelivery = {
       deliveryId: lease.deliveryId,
       messageId: lease.messageId,
       targetWorkSessionId: lease.targetWorkSessionId,
       status: 'pending',
       attemptNo,
-      pairBudgetVersion: this.wakes,
       failureReason: null,
     };
     this.rows.set(lease.deliveryId, row);
@@ -209,9 +194,6 @@ class FakeDeliveryRpc implements W2DeliveryRpcPort {
   async claim(lease: DeliveryPrincipalLease): Promise<StoredDelivery> {
     this.calls.push('claim');
     const row = this.rows.get(lease.deliveryId)!;
-    if (row.pairBudgetVersion !== lease.pairBudgetVersion) {
-      throw new Error('delivery reservation not found');
-    }
     const claimed = { ...row, status: 'dispatching' as const };
     this.rows.set(lease.deliveryId, claimed);
     return claimed;
@@ -370,7 +352,6 @@ describe('B1 — the internal delivery seam still works', () => {
       deliveryId: IDS.delivery,
       messageId: IDS.message,
       targetWorkSessionId: IDS.session,
-      reservationVersion: 3,
     };
     const principal = mintSystemDeliveryPrincipal({
       ...binding,
@@ -397,7 +378,6 @@ describe('B1 — the internal delivery seam still works', () => {
       deliveryId: IDS.delivery,
       messageId: IDS.message,
       targetWorkSessionId: IDS.session,
-      reservationVersion: 3,
     };
     const forged = {
       principalType: 'system_delivery_adapter',
@@ -451,7 +431,6 @@ describe('B1 — the internal delivery seam still works', () => {
       deliveryId: IDS.delivery,
       messageId: IDS.message,
       targetWorkSessionId: IDS.otherSession,
-      reservationVersion: 3,
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
 
@@ -463,7 +442,6 @@ describe('B1 — the internal delivery seam still works', () => {
           deliveryId: IDS.delivery,
           messageId: IDS.message,
           targetWorkSessionId: IDS.session,
-          reservationVersion: 3,
           content: 'wake up',
           mode: 'send',
         },
@@ -473,10 +451,10 @@ describe('B1 — the internal delivery seam still works', () => {
   });
 });
 
-// --- B2, without a database --------------------------------------------------
+// --- delivery path, without a database --------------------------------------
 
 /**
- * The fast half of B2. It cannot prove DURABILITY — only Postgres and a real
+ * The fast half of the delivery contract. It cannot prove DURABILITY — only Postgres and a real
  * process teardown can, and `test/db/w2-execution.pg.test.ts` does — but it can
  * prove the two things that make durability possible, in under a millisecond:
  * that the whole path is routed through the RPC port, and that the service
@@ -486,12 +464,12 @@ describe('B1 — the internal delivery seam still works', () => {
  * suite did not have when it first went green. `promptInternal` was proved
  * directly and passed; the SERVICE path around it was never exercised, and it
  * was broken — `isSystemDeliveryPrincipalFor` refused every delivery because
- * G04's adapter hands `authorize` a six-key binding and the guard demands
- * exactly four. A unit test of a component and a unit test of the same
+ * G04's adapter handed `authorize` a larger binding than the guard accepted.
+ * A unit test of a component and a unit test of the same
  * component's wiring are different tests, and only the second one finds a seam
  * that does not fit.
  */
-describe('B2 — the delivery path, over a fake RPC port', () => {
+describe('the delivery path, over a fake RPC port', () => {
   function service(pty: RecordingPty, rpc = new FakeDeliveryRpc()) {
     return {
       rpc,
@@ -533,7 +511,7 @@ describe('B2 — the delivery path, over a fake RPC port', () => {
     expect(rpc.statusOf(result.deliveryId!)).toBe('delivered');
   });
 
-  it('holds NO wake state: the counter lives in the database and the service never caps', async () => {
+  it('has no wake state before or after rebuilding the service', async () => {
     const rpc = new FakeDeliveryRpc();
     const first = new W2ExecutionDeliveryService({
       rpc,
@@ -543,10 +521,10 @@ describe('B2 — the delivery path, over a fake RPC port', () => {
     for (const message of ['m1', 'm2']) {
       expect((await deliver(first, message, IDS.session, 'x')).outcome).toBe('delivered');
     }
-    expect(rpc.wakes).toBe(2);
+    expect(rpc.reservations).toBe(2);
 
-    // A new service over the same durable state — the in-process analogue of a
-    // restart. The count continues; it is not this object's to reset.
+    // A new service over the same durable rows — the in-process analogue of a
+    // restart. Nothing reconstructs a pair counter or cap.
     const ptyAfter = new RecordingPty();
     const second = new W2ExecutionDeliveryService({
       rpc,
@@ -556,10 +534,7 @@ describe('B2 — the delivery path, over a fake RPC port', () => {
     for (const message of ['m3', 'm4', 'm5', 'm6']) {
       expect((await deliver(second, message, IDS.session, 'x')).outcome).toBe('delivered');
     }
-    // Straight past four. Since 120 nothing in this seam or under it caps a
-    // pair, and a process-local counter reappearing here would show as a
-    // refusal on the fifth.
-    expect(rpc.wakes).toBe(6);
+    expect(rpc.reservations).toBe(6);
     expect(ptyAfter.deliveries).toHaveLength(4);
 
     // What the service must STILL do with a reservation the database settled
@@ -583,6 +558,33 @@ describe('B2 — the delivery path, over a fake RPC port', () => {
     expect(result.outcome).toBe('refused');
     expect(rpc.calls).toEqual(['reserve', 'claim', 'settle:failed_retryable']);
     expect(pty.bytes).toBe(0);
+  });
+
+  it('an over-budget envelope settles failed_permanent without a PTY write', async () => {
+    const pty = new RecordingPty();
+    const { rpc, service: svc } = service(pty);
+    const reservation = (await svc.reserve({
+      messageId: IDS.message,
+      targetWorkSessionId: IDS.session,
+      content: 'delivery_envelope_budget_exceeded',
+      mode: 'send',
+      requestId: 'req-over-budget',
+    }))!;
+
+    const result = await svc.reject({
+      ...reservation,
+      requestId: 'req-over-budget',
+      principal: svc.principalFor(reservation),
+      reason: 'delivery_envelope_budget_exceeded',
+    });
+
+    expect(result).toEqual({
+      outcome: 'refused',
+      reason: 'delivery_envelope_budget_exceeded',
+    });
+    expect(rpc.calls).toEqual(['reserve', 'claim', 'settle:failed_permanent']);
+    expect(pty.bytes).toBe(0);
+    expect(rpc.statusOf(reservation.deliveryId)).toBe('failed_permanent');
   });
 
   it('joins duplicate in-flight dispatches into ONE write', async () => {
@@ -635,6 +637,7 @@ describe('the seam handed to the composition root', () => {
     };
 
     expect(typeof messageDelivery.adapter.dispatch).toBe('function');
+    expect(typeof messageDelivery.adapter.reject).toBe('function');
     expect(typeof messageDelivery.reserve).toBe('function');
     expect(typeof messageDelivery.principalFor).toBe('function');
   });
@@ -701,6 +704,7 @@ describe('registerFacadeHandlers carries messageDelivery to the messages seam', 
       threadParentMessageId: null,
       threadRootMessageId: IDS.message,
       body: 'wake up',
+      attachments: [],
       addressingKind: 'channel_mention',
       contextAnchors: [],
       rollingControlMaxBytes: 16_384,

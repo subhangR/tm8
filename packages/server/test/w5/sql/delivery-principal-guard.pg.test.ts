@@ -321,10 +321,16 @@ describe.sequential('W5 Duo A — the delivery principal guard', () => {
     expect(normalise(shippedGuardText)).toBe(normalise(derivedGuardText));
     expect(normalise(shippedGuardText)).toContain(TIGHTENED_CONDITION);
 
-    // The other four checks the guard performs are present in BOTH worlds.
+    // The other checks the guard performs are present in BOTH worlds.
+    //
+    // 'delivery reservation version mismatch' USED to be on this list and is
+    // deliberately absent: 135 removed the wake-budget surrogate pin, so the
+    // guard no longer has a version limb to compare in either world. The list
+    // is enumerated rather than derived precisely so that removing an entry is
+    // a visible edit a reviewer weighs, and the three that remain still prove
+    // the narrowing touched ONLY the role limb.
     for (const surviving of [
       'delivery principal tuple mismatch',
-      'delivery reservation version mismatch',
       'delivery principal expired',
       'delivery principal cannot carry actor claims',
     ]) {

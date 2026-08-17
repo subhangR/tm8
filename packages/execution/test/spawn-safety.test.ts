@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
+import { PromptSettlementWaiter } from '../src/pty/PromptSettlementWaiter.js';
 import { ECHO_AGENT_CMD } from '../src/spawn/manifest.js';
 import { SpawnService } from '../src/spawn/SpawnService.js';
 import { SpawnError } from '../src/spawn/types.js';
@@ -88,11 +89,104 @@ describe('SpawnService spawn acknowledgement safety', () => {
     expect((caught as SpawnError).message).toContain('boot settlement window');
     expect(graph.profilePins).toHaveLength(1);
     expect(graph.manifests).toHaveLength(1);
-    expect(graph.transitions.map((transition) => transition.status)).toEqual(['running', 'failed']);
+    // `running` is not written speculatively anymore: the child died before
+    // its first-turn proof, so the only durable transition is terminal.
+    expect(graph.transitions.map((transition) => transition.status)).toEqual(['failed']);
     expect(graph.transitions.at(-1)).toMatchObject({
       status: 'failed',
       exitCode: 127,
       error: 'agent process exited with code 127',
     });
+  });
+
+  it('refuses spawn acknowledgement when the first turn never settles', async () => {
+    const waiter = new PromptSettlementWaiter();
+    const wiredPty = new PtyHostService({ onPromptSettled: waiter.resolve });
+    const wiredService = new SpawnService({
+      graph,
+      pty: wiredPty,
+      promptSettlement: waiter,
+      baseUrl: 'http://127.0.0.1:4610',
+      dataDir,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, TM8_AGENT_CMD: ECHO_AGENT_CMD },
+      bootSettlementMs: 1,
+      firstPromptSettlementMs: 10,
+    });
+    vi.spyOn(wiredPty, 'beginPromptHandoff').mockImplementation(() => {});
+    vi.spyOn(wiredPty, 'spawnIfAbsent').mockReturnValue({ reused: false });
+    vi.spyOn(wiredPty, 'waitForBootSettlement').mockResolvedValue(null);
+
+    try {
+      await expect(
+        wiredService.spawn(AUTH, {
+          ...REQUEST,
+          taskIds: ['66666666-6666-4666-8666-666666666666'],
+        }),
+      ).rejects.toThrow('first_prompt_settlement_timeout');
+      expect(graph.transitions.map((transition) => transition.status)).toEqual(['failed']);
+    } finally {
+      wiredPty.shutdownAll();
+    }
+  });
+
+  it('queues the first task through the closed loop before marking the session running', async () => {
+    const promptSettlement = {
+      awaitOutcome: vi.fn(async () => ({ outcome: 'delivered' as const })),
+      cancel: vi.fn(),
+    };
+    service = new SpawnService({
+      graph,
+      pty,
+      promptSettlement,
+      baseUrl: 'http://127.0.0.1:4610',
+      dataDir,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, TM8_AGENT_CMD: ECHO_AGENT_CMD },
+      bootSettlementMs: 1,
+    });
+    vi.spyOn(pty, 'beginPromptHandoff').mockImplementation(() => {});
+    vi.spyOn(pty, 'spawnIfAbsent').mockReturnValue({ reused: false });
+    vi.spyOn(pty, 'waitForBootSettlement').mockResolvedValue(null);
+    const deliver = vi.spyOn(pty, 'deliverPrompt').mockResolvedValue(true);
+
+    await expect(
+      service.spawn(AUTH, {
+        ...REQUEST,
+        taskIds: ['66666666-6666-4666-8666-666666666666'],
+      }),
+    ).resolves.toMatchObject({ reused: false });
+
+    expect(deliver).toHaveBeenCalledOnce();
+    expect(deliver.mock.calls[0]?.[1]).toContain('<tm8_task_prompt count="1">');
+    expect(graph.transitions.map((transition) => transition.status)).toEqual(['running']);
+    expect(promptSettlement.cancel).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed terminal-state write after a spawn error', async () => {
+    service = new SpawnService({
+      graph,
+      pty,
+      baseUrl: 'http://127.0.0.1:4610',
+      dataDir,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, TM8_AGENT_CMD: ECHO_AGENT_CMD },
+      bootSettlementMs: 25,
+      failedTransitionRetryMs: 1,
+    });
+    vi.spyOn(pty, 'beginPromptHandoff').mockImplementation(() => {});
+    vi.spyOn(pty, 'spawnIfAbsent').mockImplementation(() => {
+      throw new Error('injected spawn failure');
+    });
+    const transition = vi.spyOn(graph, 'transition')
+      .mockRejectedValueOnce(new Error('injected graph outage'))
+      .mockImplementation(async (_auth, input) => {
+        graph.transitions.push(input);
+      });
+
+    await expect(service.spawn(AUTH, REQUEST)).rejects.toThrow('injected spawn failure');
+
+    expect(graph.created).toHaveLength(1);
+    await vi.waitFor(() => {
+      expect(graph.transitions.map((item) => item.status)).toEqual(['failed']);
+    });
+    expect(transition).toHaveBeenCalledTimes(2);
   });
 });

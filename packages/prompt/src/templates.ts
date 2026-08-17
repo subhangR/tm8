@@ -256,6 +256,8 @@ export interface TaskAssignmentFacts {
   body: string;
   truncated?: boolean;
   fetchRef?: string | null;
+  /** Files attached directly to the task; manifest identity only, never bytes. */
+  attachments?: readonly SessionInputAttachment[];
   /**
    * When the task was DERIVED from a thread message (064/099): the thread's
    * root message id, rendered into <source>/<thread> so the assignment names
@@ -268,12 +270,14 @@ export interface TaskAssignmentFacts {
 
 export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
   const replyAnchorId = f.replyAnchorId ?? f.taskId;
+  const attachments = attachmentManifest(f.attachments ?? []);
   const control = [
     `<trusted_control type="tm8.session-input" version="1" kind="task_assignment" message_id="${attr(f.messageId)}" message_batch_id="none" delivery_attempt_id="none">`,
     `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution ?? 'recorded_only'}" />`,
     `  <to session_id="${attr(f.destinationSessionId)}" />`,
     `  <source anchor_id="${attr(f.taskId)}" anchor_kind="task" message_id="${attr(f.threadRootMessageId)}"${f.threadChannelId ? ` channel_id="${attr(f.threadChannelId)}"` : ''} />`,
     '  <context />',
+    ...attachments.control,
     `  <thread parent_message_id="none" root_message_id="${attr(f.threadRootMessageId)}" />`,
     `  <task id="${attr(f.taskId)}" version="${attr(f.taskVersion)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/send" anchor_id="${attr(replyAnchorId)}" parent_message_id="none" />`,
@@ -286,7 +290,8 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
     ...(f.truncated === undefined ? {} : { truncated: f.truncated }),
     ...(f.fetchRef === undefined ? {} : { fetchRef: f.fetchRef }),
   });
-  return `${control}\n${data}`;
+  const attachmentNames = attachments.names === '' ? '' : `\n${attachments.names}`;
+  return `${control}\n${data}${attachmentNames}`;
 }
 
 // -- §14.4 incoming message ---------------------------------------------------
@@ -326,6 +331,28 @@ export interface IncomingMessageFacts {
    */
   parentBody?: string;
   parentAuthorDisplay?: string;
+  /**
+   * The files the sender attached to THIS message copy. A manifest, never
+   * contents: ids and names, so the agent can fetch what it needs with
+   * `tm8 file download`. Absent and empty render identically (`count="0"`) —
+   * an element that is sometimes missing is one a model stops looking for.
+   */
+  attachments?: readonly SessionInputAttachment[];
+}
+
+/**
+ * One attached file, as the delivery names it.
+ *
+ * `name` is AUTHOR-CONTROLLED. §18.2 explicitly classifies user-supplied labels
+ * and paths as untrusted, so names render in a sibling `attachment-names`
+ * untrusted-data block. The control manifest carries only server-validated
+ * entity ids and declared mime values. File CONTENT is fetched later, by a
+ * command the agent chooses to run, and arrives as untrusted tool output.
+ */
+export interface SessionInputAttachment {
+  fileEntityId: string;
+  name: string;
+  mime?: string | null;
 }
 
 /** Excerpt ceiling for the parent-message block — keeps the worst case well
@@ -333,7 +360,48 @@ export interface IncomingMessageFacts {
  * budget instead. */
 const PARENT_EXCERPT_MAX_CHARS = 1500;
 
+/**
+ * The manifest is bounded twice over. 16 is the contract's own ceiling
+ * (`attachmentIds` is a 0..16 unique array), so a longer list means a caller
+ * built the facts by hand; it is clamped rather than trusted, and the surplus
+ * is DECLARED rather than dropped in silence. The name cap is what keeps a
+ * 4KB filename from pushing an otherwise-deliverable message over its byte
+ * budget — where the dispatch loop's only move is to skip the delivery, which
+ * is the exact silent drop this element exists to end.
+ */
+const ATTACHMENT_MANIFEST_MAX = 16;
+const ATTACHMENT_NAME_MAX_CHARS = 200;
+
+function attachmentManifest(all: readonly SessionInputAttachment[]): {
+  control: string[];
+  names: string;
+} {
+  if (all.length === 0) return { control: ['  <attachments count="0" />'], names: '' };
+  const shown = all.slice(0, ATTACHMENT_MANIFEST_MAX);
+  const omitted = all.length - shown.length;
+  const open =
+    `  <attachments count="${all.length}"` +
+    (omitted > 0 ? ` omitted="${omitted}"` : '') +
+    ' fetch_with="tm8 file download &lt;file-entity-id&gt; --output &lt;path&gt;">';
+  const named = shown.map((file) => {
+      const name = file.name.length > ATTACHMENT_NAME_MAX_CHARS
+        ? `${file.name.slice(0, ATTACHMENT_NAME_MAX_CHARS)}…`
+        : file.name;
+      return { fileEntityId: file.fileEntityId, name };
+    });
+  return {
+    control: [
+      open,
+      ...shown.map((file) =>
+        `    <file entity_id="${attr(file.fileEntityId)}" mime="${attr(file.mime)}" />`),
+      '  </attachments>',
+    ],
+    names: untrustedData({ type: 'attachment-names', body: JSON.stringify(named) }),
+  };
+}
+
 export function incomingMessageInjection(f: IncomingMessageFacts): string {
+  const attachments = attachmentManifest(f.attachments ?? []);
   const context = f.contextAnchors?.length
     ? [
         '  <context>',
@@ -348,6 +416,7 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
     `  <to session_id="${attr(f.destinationSessionId)}" />`,
     `  <source anchor_id="${attr(f.sourceAnchorId)}" anchor_kind="${attr(f.sourceAnchorKind)}" message_id="${attr(f.sourceMessageId)}" />`,
     ...context,
+    ...attachments.control,
     `  <thread parent_message_id="${attr(f.threadParentMessageId)}" root_message_id="${attr(f.threadRootMessageId ?? f.sourceMessageId)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/reply" context_message_id="${attr(f.messageId)}" anchor_id="${attr(f.sourceAnchorId)}" parent_message_id="${attr(f.sourceMessageId)}" />`,
     `  <delivery transport="pty" stored="true" attempt="${attr(f.deliveryAttemptNo)}" status_source="session_message_deliveries" />`,
@@ -359,6 +428,7 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
     ...(f.truncated === undefined ? {} : { truncated: f.truncated }),
     ...(f.fetchRef === undefined ? {} : { fetchRef: f.fetchRef }),
   });
+  const attachmentNames = attachments.names === '' ? '' : `\n${attachments.names}`;
   let parent = '';
   if (f.parentBody !== undefined && f.parentBody !== '') {
     const cut = f.parentBody.length > PARENT_EXCERPT_MAX_CHARS;
@@ -372,7 +442,10 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
       },
     })}`;
   }
-  return assertWithinBudget('incomingMessageInjection', `${control}\n${data}${parent}`);
+  return assertWithinBudget(
+    'incomingMessageInjection',
+    `${control}\n${data}${attachmentNames}${parent}`,
+  );
 }
 
 // -- §14.6 entity handoff -----------------------------------------------------

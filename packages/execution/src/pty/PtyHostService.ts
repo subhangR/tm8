@@ -105,6 +105,10 @@ interface PendingPromptDelivery {
    *  {@link PtyHostOptions.onPromptSettled}). Undefined admits the delivery exactly
    *  as before — no completion signal fires for it. */
   deliveryId?: string;
+  /** Spawn's first turn requires proof that the agent emitted something before
+   * tm8 treats terminal silence as a ready composer. Ordinary prompt delivery
+   * preserves support for quiet line-oriented processes. */
+  requireReadyOutput?: boolean;
 }
 
 /** Outcome `writePromptToEntry`'s closed loop concluded with, reported through
@@ -732,6 +736,8 @@ export class PtyHostService {
    *
    * @param deliveryId Correlation id for the two-signal completion callback.
    *   Omit to admit the delivery exactly as before with no completion signal.
+   * @param requireReadyOutput Spawn's first turn sets this true so a child that
+   *   never emits a byte cannot be mistaken for a ready interactive agent.
    * @returns false only when a queue bound rejects the new delivery.
    */
   async deliverPrompt(
@@ -739,6 +745,7 @@ export class PtyHostService {
     content: string,
     mode: 'send' | 'paste',
     deliveryId?: string,
+    requireReadyOutput = false,
   ): Promise<boolean> {
     const bytes = Buffer.byteLength(content, 'utf8');
     if (bytes > MAX_PENDING_PROMPT_BYTES_PER_SESSION) {
@@ -781,7 +788,7 @@ export class PtyHostService {
       return false;
     }
 
-    queue.deliveries.push({ content, mode, bytes, deliveryId });
+    queue.deliveries.push({ content, mode, bytes, deliveryId, requireReadyOutput });
     queue.bytes += bytes;
     this.drainPendingPrompts(sessionId);
     return true;
@@ -812,7 +819,23 @@ export class PtyHostService {
           const delivery = queue.deliveries.shift();
           if (!delivery) return;
           queue.bytes -= delivery.bytes;
-          const result = await this.writePromptToEntry(sessionId, entry, delivery);
+          let result: PromptDeliveryOutcome;
+          try {
+            result = await this.writePromptToEntry(sessionId, entry, delivery);
+          } catch (error) {
+            // The delivery has already left the FIFO. If the write path throws
+            // here, kill/exit cleanup cannot find it in `queue.deliveries` and
+            // therefore cannot settle a caller waiting on its deliveryId. The
+            // old outer catch logged the exception and leaked that wait forever.
+            // Convert the exception into an honest UNKNOWN outcome for this one
+            // item, then keep draining the remaining FIFO.
+            this.logger.error(
+              'PtyHostService: pending prompt delivery failed',
+              error instanceof Error ? error : new Error(String(error)),
+              { sessionId, deliveryId: delivery.deliveryId },
+            );
+            result = { outcome: 'unknown', reason: 'pty_prompt_write_failed' };
+          }
           // Completion signal (second of the two signals; admission already
           // resolved deliverPrompt's own promise). Only fires when the caller
           // supplied a deliveryId — omitting one keeps a delivery exactly as
@@ -946,9 +969,19 @@ export class PtyHostService {
       entry,
       cold ? PROMPT_COLD_IDLE_MS : PROMPT_IDLE_MS,
       cold ? PROMPT_COLD_READY_TIMEOUT_MS : PROMPT_WARM_READY_TIMEOUT_MS,
+      cold && delivery.requireReadyOutput === true,
     );
     if (this.sessions.get(sessionId) !== entry || entry.exited) {
       return { outcome: 'unknown', reason: 'session_replaced_or_exited' };
+    }
+    // Silence is not readiness. A process that stays alive but never emits one
+    // byte (hung wrapper, credential dialog on a non-PTY channel, inert child)
+    // used to become `bootSettled` merely because 1500ms elapsed, after which
+    // we wrote into a terminal with no evidence that an agent existed. The
+    // initial spawn receipt now depends on this result, so make the cold path
+    // name that exact failure instead of treating a silent process as ready.
+    if (cold && delivery.requireReadyOutput === true && !entry.everSpoke) {
+      return { outcome: 'unknown', reason: 'agent_never_became_ready' };
     }
 
     // 2) Content framing. Wrap in bracketed paste iff the agent turned it on.
@@ -1004,6 +1037,7 @@ export class PtyHostService {
     entry: PtyEntry,
     idleMs: number,
     timeoutMs: number,
+    requireFirstOutput = false,
   ): Promise<void> {
     const start = Date.now();
     for (;;) {
@@ -1011,14 +1045,19 @@ export class PtyHostService {
       const idle = Date.now() - entry.lastOutputAt;
       // Latch boot completion on any genuinely long quiet stretch, whichever gate
       // observed it: a PTY this quiet has finished starting its agent.
-      if (idle >= PROMPT_COLD_IDLE_MS) entry.bootSettled = true;
-      if (idle >= idleMs) return;
+      const outputProven = !requireFirstOutput || entry.everSpoke;
+      if (outputProven && idle >= PROMPT_COLD_IDLE_MS) entry.bootSettled = true;
+      if (outputProven && idle >= idleMs) return;
       const remaining = timeoutMs - (Date.now() - start);
       if (remaining <= 0) return;
       // Sleep just long enough to reach idleMs for the current quiet stretch, but
       // never past the overall ceiling. New output resets lastOutputAt and the
       // next iteration recomputes a fresh (larger) wait.
-      const wait = Math.max(1, Math.min(idleMs - idle, remaining));
+      // Before the first byte there is no quiet-stretch endpoint to wait for;
+      // poll coarsely for evidence instead of spinning 1ms timers after
+      // `idleMs` has elapsed.
+      const untilReadyCheck = outputProven ? idleMs - idle : 100;
+      const wait = Math.max(1, Math.min(untilReadyCheck, remaining));
       await new Promise((resolve) => setTimeout(resolve, wait));
     }
   }

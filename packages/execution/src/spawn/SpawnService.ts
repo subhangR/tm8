@@ -11,6 +11,10 @@ import { chmod, lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/pro
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
+import type {
+  PromptSettlementResult,
+  PromptSettlementWaiter,
+} from '../pty/PromptSettlementWaiter.js';
 import type { Logger, PtyActivity, PtyExitInfo, PtySessionStatus } from '../pty/types.js';
 import { composePrompt } from '@tm8/prompt';
 
@@ -65,6 +69,7 @@ import type {
   SpawnRequest,
   SpawnResult,
   Tm8Manifest,
+  TransitionInput,
   WorkSessionStatus,
 } from './types.js';
 import { SpawnError } from './types.js';
@@ -83,6 +88,19 @@ export interface SpawnServiceOptions {
   env?: NodeJS.ProcessEnv;
   /** Window in which a child exit makes spawn itself fail. Default 150ms. */
   bootSettlementMs?: number;
+  /**
+   * Production's closed-loop PTY settlement bridge. When present, a fresh
+   * spawn queues its first task through the same verified submit path as every
+   * later message and does not acknowledge until that outcome settles.
+   * Optional for legacy embedders which constructed their PTY before the
+   * callback bridge existed; those retain the argv positional fallback.
+   */
+  promptSettlement?: Pick<PromptSettlementWaiter, 'awaitOutcome' | 'cancel'>;
+  /** Hard ceiling for first-turn settlement. Default 90s (the PTY closed
+   * loop's documented cold-path worst case is ~82s). */
+  firstPromptSettlementMs?: number;
+  /** Base delay for retrying a failed terminal-state write. Default 1s. */
+  failedTransitionRetryMs?: number;
   /** Injected only for deterministic compatibility-preflight tests. */
   codexNetworkPreflight?: CodexNetworkPreflight;
   /**
@@ -222,6 +240,9 @@ export class SpawnService {
   private readonly logger: Logger | undefined;
   private readonly env: NodeJS.ProcessEnv;
   private readonly bootSettlementMs: number;
+  private readonly promptSettlement: Pick<PromptSettlementWaiter, 'awaitOutcome' | 'cancel'> | undefined;
+  private readonly firstPromptSettlementMs: number;
+  private readonly failedTransitionRetryMs: number;
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
   private readonly credentialHome: AgentCredentialHomePort | undefined;
   private readonly gitHubCredentials: GitHubCredentialPort | undefined;
@@ -246,6 +267,9 @@ export class SpawnService {
    * the actor who started it.
    */
   private readonly sessionAuth = new Map<string, GraphAuth>();
+  /** Failed spawn terminal writes retried for this process lifetime. Startup
+   * ghost reconciliation is the second line of defence after a node restart. */
+  private readonly failedTransitionRetries = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(options: SpawnServiceOptions) {
     this.graph = options.graph;
@@ -256,6 +280,9 @@ export class SpawnService {
     this.logger = options.logger;
     this.env = options.env ?? process.env;
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
+    this.promptSettlement = options.promptSettlement;
+    this.firstPromptSettlementMs = options.firstPromptSettlementMs ?? 90_000;
+    this.failedTransitionRetryMs = options.failedTransitionRetryMs ?? 1_000;
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
     this.credentialHome = options.credentialHome;
     this.gitHubCredentials = options.gitHubCredentials;
@@ -660,7 +687,7 @@ export class SpawnService {
    *   2. resolve launch config + cwd IN-PROCESS
    *   3. `execution_spawn` — the work_session row and `working_on` edges, one tx
    *   4. compose the manifest, write the FILE and record the ROW
-   *   5. spawn the PTY
+   *   5. queue the first task, spawn the PTY, and await verified submission
    *   6. transition to `running`
    *
    * Steps 1-2 precede 3 because the RPC persists the resolved model/agentTool/
@@ -671,6 +698,7 @@ export class SpawnService {
   async spawn(auth: GraphAuth, request: SpawnRequest): Promise<SpawnResult> {
     const taskIds = request.taskIds ?? [];
     let bootExit: PtyExitInfo | undefined;
+    let firstPromptDeliveryId: string | undefined;
 
     const context = await this.graph.loadSpawnContext(auth, {
       spaceId: request.spaceId,
@@ -898,9 +926,13 @@ export class SpawnService {
         launch.agentTool === 'codex'
           ? `${envelope.task}\n<tm8_session_id>${sessionId}</tm8_session_id>`
           : envelope.task;
+      // Production queues the first task through PtyHostService's closed-loop
+      // submit and waits for its settlement below. Passing it positionally as
+      // well would duplicate the assignment. Legacy embedders without the
+      // settlement bridge retain the positional path for compatibility.
       const command = withAgentPrompt(
         baseCommand,
-        { system: envelope.system, task },
+        { system: envelope.system, task: this.promptSettlement ? '' : task },
         launch,
         this.env,
       );
@@ -976,6 +1008,28 @@ export class SpawnService {
       // dropped on the floor; the handoff parks them in the bounded FIFO and
       // spawnIfAbsent drains it.
       this.pty.beginPromptHandoff(sessionId);
+      let firstPromptOutcome: Promise<PromptSettlementResult> | undefined;
+      if (this.promptSettlement) {
+        firstPromptDeliveryId = `spawn:${sessionId}:${randomUUID()}`;
+        // Registration MUST precede queue admission: a same-tick settlement
+        // must already have somewhere to land (PromptSettlementWaiter's law).
+        firstPromptOutcome = this.promptSettlement.awaitOutcome(firstPromptDeliveryId);
+        const admitted = await this.pty.deliverPrompt(
+          sessionId,
+          task,
+          'send',
+          firstPromptDeliveryId,
+          true,
+        );
+        if (!admitted) {
+          this.promptSettlement.cancel(firstPromptDeliveryId);
+          throw new SpawnError(
+            `initial task prompt was refused by the delivery queue for session ${sessionId}`,
+            'conflict',
+            { sessionId },
+          );
+        }
+      }
       const { reused } = this.pty.spawnIfAbsent({
         sessionId,
         command,
@@ -990,10 +1044,12 @@ export class SpawnService {
       // after that await creates a gap where the PTY entry and its exit evidence
       // have already been removed before we begin watching.
       const bootSettlement = this.pty.waitForBootSettlement(sessionId, this.bootSettlementMs);
-
-      await this.graph.transition(auth, { sessionId, status: 'running' });
-
-      const earlyExit = await bootSettlement;
+      const [earlyExit, promptOutcome] = await Promise.all([
+        bootSettlement,
+        firstPromptDeliveryId && firstPromptOutcome
+          ? this.waitForFirstPromptSettlement(firstPromptDeliveryId, firstPromptOutcome)
+          : Promise.resolve<PromptSettlementResult>({ outcome: 'delivered' }),
+      ]);
       if (earlyExit) {
         bootExit = earlyExit;
         throw new SpawnError(
@@ -1002,6 +1058,17 @@ export class SpawnService {
           { sessionId, exitCode: earlyExit.exitCode, signal: earlyExit.signal },
         );
       }
+      if (promptOutcome.outcome !== 'delivered') {
+        throw new SpawnError(
+          `initial task prompt did not settle as delivered for session ${sessionId}: ` +
+            `${promptOutcome.reason ?? 'unknown outcome'}`,
+          'internal',
+          { sessionId, reason: promptOutcome.reason ?? 'unknown' },
+        );
+      }
+
+      // `running` now means both process survival and first-turn submission.
+      await this.graph.transition(auth, { sessionId, status: 'running' });
 
       this.logger?.info('SpawnService: session spawned', { sessionId, cwd, reused });
 
@@ -1012,6 +1079,11 @@ export class SpawnService {
       // failed before rethrowing — and do not let a cleanup failure mask the
       // original error, which is the one that explains what happened.
       await this.failSession(auth, sessionId, error, bootExit);
+      if (firstPromptDeliveryId) this.promptSettlement?.cancel(firstPromptDeliveryId);
+      // A failure after the child exists must not leave an unowned process. The
+      // notifying kill also abandons a queued first prompt if spawn itself
+      // threw before the PTY was installed, closing the handoff residue.
+      this.pty.kill(sessionId);
       // §4.8: the lease is released, and the WORKTREE IS PRESERVED. A failed
       // spawn is evidence about a process, not about a checkout — and a
       // checkout may already hold work. Removing it here would be the delete
@@ -1211,6 +1283,12 @@ export class SpawnService {
     const info = await this.graph.loadWorkSessionForResume(auth, request.sessionId);
     const sessionId = info.sessionId;
     let bootExit: PtyExitInfo | undefined;
+    // Cleanup owns only a child THIS invocation created. `spawnIfAbsent` can
+    // legitimately discover a live PTY after the optimistic guard above (a
+    // concurrent reattach/race) and answer `reused: true`; a later graph error
+    // must not turn that unrelated failure into destruction of the healthy
+    // process we merely found.
+    let launchedPty = false;
 
     if (this.pty.hasSession(sessionId)) {
       throw new SpawnError(
@@ -1348,6 +1426,9 @@ export class SpawnService {
       // first spawned elsewhere migrates here on resume.
       nodeId: this.nodeId,
     });
+    // A successful resurrection supersedes any process-local cleanup retry left
+    // from the prior run. Without this, a late retry could fail the new run.
+    this.cancelFailedTransitionRetry(sessionId);
 
     const manifestPath = this.manifestPathFor(sessionId);
     // A ledger replay is a transport retry of the original resume result — not
@@ -1512,6 +1593,7 @@ export class SpawnService {
         ...(request.cols ? { cols: request.cols } : {}),
         ...(request.rows ? { rows: request.rows } : {}),
       });
+      launchedPty = !reused;
 
       const bootSettlement = this.pty.waitForBootSettlement(sessionId, this.bootSettlementMs);
       await this.graph.transition(auth, { sessionId, status: 'running' });
@@ -1530,8 +1612,29 @@ export class SpawnService {
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
       await this.failSession(auth, sessionId, error, bootExit);
+      if (launchedPty) this.pty.kill(sessionId);
       this.sessionAuth.delete(sessionId);
       throw error;
+    }
+  }
+
+  private async waitForFirstPromptSettlement(
+    deliveryId: string,
+    outcome: Promise<PromptSettlementResult>,
+  ): Promise<PromptSettlementResult> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        outcome,
+        new Promise<PromptSettlementResult>((resolve) => {
+          timer = setTimeout(() => {
+            this.promptSettlement?.cancel(deliveryId);
+            resolve({ outcome: 'unknown', reason: 'first_prompt_settlement_timeout' });
+          }, this.firstPromptSettlementMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -1566,21 +1669,33 @@ export class SpawnService {
     exitInfo?: PtyExitInfo,
   ): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
+    const transition: TransitionInput = {
+      sessionId,
+      status: 'failed',
+      ...(exitInfo ? { exitCode: exitInfo.exitCode } : {}),
+      // A NAMED unknown, never blank: an Error with an empty message would
+      // otherwise write error = '' — a value that PASSES a `NOT NULL`-style
+      // honesty check while saying nothing, which is the exact failure this
+      // whole fix exists to close.
+      error: exitInfo
+        ? describePtyExit(exitInfo)
+        : message.trim() !== ''
+          ? message
+          : 'spawn failed for an unspecified reason',
+    };
+    if (await this.persistFailedTransition(auth, transition, message)) return;
+    this.scheduleFailedTransitionRetry(auth, transition, message, 1);
+  }
+
+  private async persistFailedTransition(
+    auth: GraphAuth,
+    transition: TransitionInput,
+    originalError: string,
+  ): Promise<boolean> {
     try {
-      await this.graph.transition(auth, {
-        sessionId,
-        status: 'failed',
-        ...(exitInfo ? { exitCode: exitInfo.exitCode } : {}),
-        // A NAMED unknown, never blank: an Error with an empty message would
-        // otherwise write error = '' — a value that PASSES a `NOT NULL`-style
-        // honesty check while saying nothing, which is the exact failure this
-        // whole fix exists to close.
-        error: exitInfo
-          ? describePtyExit(exitInfo)
-          : message.trim() !== ''
-            ? message
-            : 'spawn failed for an unspecified reason',
-      });
+      await this.graph.transition(auth, transition);
+      this.cancelFailedTransitionRetry(transition.sessionId);
+      return true;
     } catch (cleanupError) {
       // CONFLICT, not a fresh failure: sqlstate 23514 here means the row is
       // ALREADY terminal — almost always because the PTY died fast enough
@@ -1596,19 +1711,58 @@ export class SpawnService {
       // row, so no extra query sits on this hot error path.
       const sqlState = (cleanupError as { code?: string } | null)?.code;
       if (sqlState === '23514') {
+        this.cancelFailedTransitionRetry(transition.sessionId);
         this.logger?.info(
           'SpawnService: skipped a redundant failed-transition write — the row is already terminal, ' +
             'almost certainly from the real PTY-exit path recording it first',
-          { sessionId, originalError: message },
+          { sessionId: transition.sessionId, originalError },
         );
-        return;
+        return true;
       }
       this.logger?.error(
         'SpawnService: failed to mark session failed after spawn error',
         cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError)),
-        { sessionId },
+        { sessionId: transition.sessionId },
       );
+      return false;
     }
+  }
+
+  private scheduleFailedTransitionRetry(
+    auth: GraphAuth,
+    transition: TransitionInput,
+    originalError: string,
+    attempt: number,
+  ): void {
+    if (this.failedTransitionRetries.has(transition.sessionId)) return;
+    const delayMs = Math.min(
+      this.failedTransitionRetryMs * 2 ** Math.min(attempt - 1, 5),
+      30_000,
+    );
+    const timer = setTimeout(() => {
+      this.failedTransitionRetries.delete(transition.sessionId);
+      void this.persistFailedTransition(auth, transition, originalError).then((settled) => {
+        if (!settled) {
+          this.scheduleFailedTransitionRetry(auth, transition, originalError, attempt + 1);
+        }
+      });
+    }, delayMs);
+    // A cleanup retry must never keep a server process alive by itself. If the
+    // process exits first, startup ghost reconciliation owns the same row.
+    timer.unref?.();
+    this.failedTransitionRetries.set(transition.sessionId, timer);
+    this.logger?.warn?.('SpawnService: scheduled failed-session transition retry', {
+      sessionId: transition.sessionId,
+      attempt,
+      delayMs,
+    });
+  }
+
+  private cancelFailedTransitionRetry(sessionId: string): void {
+    const timer = this.failedTransitionRetries.get(sessionId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.failedTransitionRetries.delete(sessionId);
   }
 
   /**

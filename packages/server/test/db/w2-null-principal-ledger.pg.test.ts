@@ -36,8 +36,9 @@
 //   identity_id was NULL — measured here, not argued. Migration 033 made such a
 //   row unusable for REPLAY but did not stop it being WRITTEN; migration 037 put
 //   an identity gate AHEAD of the early return, so the write is now refused 28000
-//   before the ledger is reached. Section 3 proves the closure the same way it
-//   proved the hole: executably.
+//   before the ledger is reached. Migration 135 then removes that obsolete RPC
+//   entirely with the rest of the wake machinery. Section 3 now pins both
+//   facts: the historical closure and the live absence.
 //
 // THIS FILE HAS BEEN RE-BOUND THREE TIMES, AND THE REBINDINGS ARE THE RESULT.
 //
@@ -601,42 +602,17 @@ describe.sequential('W2.NULL-PRINCIPAL — a NULL identity_id in the command led
     // AFTER that return. So an identity-less caller passing any unknown uuid
     // takes the ungated branch, records, and COMMITS.
     // -------------------------------------------------------------------------
-    it('POST-037 CLOSED: the formerly ungated path now refuses an unbound caller', async () => {
+    it('POST-135 REMOVED: the formerly ungated reset RPC no longer exists', async () => {
       const cmid = 'nullprin-ungated-wake-budget';
-      const outcome = await attempt(() =>
-        database.transaction(async (client) => {
-          await client.query('set local role tm8_app');
-          await client.query(
-            `select set_config('tm8.identity_id', '', true),
-                    set_config('tm8.actor_id', '', true),
-                    set_config('tm8.node_admin', 'false', true),
-                    set_config('tm8.request_id', 'nullprin-ungated', true)`,
-          );
-          // Control: the caller genuinely has no identity, so a row it records
-          // genuinely carries NULL rather than something that merely looks like it.
-          const bound = await client.query<{ bound: string | null }>(
-            `select internal.identity_id() bound`,
-          );
-          expect(bound.rows[0]!.bound, 'caller was NOT unbound — this probe is vacuous').toBeNull();
-          const result = await client.query<{ value: unknown }>(
-            `select public.reset_session_wake_budget_for_member_reply(
-                      '00000000-0000-4000-8000-0000000000ff'::uuid, $1) value`,
-            [cmid],
-          );
-          return result.rows[0]!.value;
-        }),
+      const functions = await ownerRows<{ signature: string }>(
+        `select p.oid::regprocedure::text signature
+           from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+          where n.nspname='public' and p.proname='reset_session_wake_budget_for_member_reply'`,
       );
+      expect(functions).toEqual([]);
 
-      // 037 put an identity gate ahead of the early return, so the branch that
-      // used to record now refuses. 28000 is the unauthenticated code.
-      expect(
-        outcome.ok,
-        `the formerly ungated branch STILL commits a NULL-principal row: ${describeOutcome(outcome)}`,
-      ).toBe(false);
-      if (outcome.ok) return;
-      expect(outcome.code).toBe('28000');
-
-      // AND THE LEDGER IS UNCHANGED — the refusal wrote nothing.
+      // AND THE LEDGER IS UNCHANGED — removing the door did not synthesize a
+      // compatibility record for its old operation.
       expect(
         await recordedIdentity(cmid),
         'the refusal still left a ledger row behind',
@@ -676,41 +652,28 @@ describe.sequential('W2.NULL-PRINCIPAL — a NULL identity_id in the command led
     // second half against a seeded row, which is the only way to reach it now that
     // the application surface cannot mint one — so if a NULL row ever arises by
     // some route this file has not found, it is still unreplayable.
-    it('POST-037: refused at the identity gate, before the ledger is reached', async () => {
+    it('POST-135: no reset overload or application grant survives', async () => {
       const cmid = 'nullprin-ungated-wake-budget';
-      const outcome = await attempt(() =>
-        database.transaction(async (client) => {
-          await client.query('set local role tm8_app');
-          await client.query(
-            `select set_config('tm8.identity_id', '', true),
-                    set_config('tm8.actor_id', '', true),
-                    set_config('tm8.node_admin', 'false', true),
-                    set_config('tm8.request_id', 'nullprin-ungated-replay', true)`,
-          );
-          const result = await client.query<{ value: unknown }>(
-            `select public.reset_session_wake_budget_for_member_reply(
-                      '00000000-0000-4000-8000-0000000000ff'::uuid, $1) value`,
-            [cmid],
-          );
-          return result.rows[0]!.value;
-        }),
+      const rows = await ownerRows<{ function_exists: boolean; app_exec: boolean | null }>(
+        `select to_regprocedure(
+                  'public.reset_session_wake_budget_for_member_reply(uuid,text)'
+                ) is not null function_exists,
+                case when to_regprocedure(
+                  'public.reset_session_wake_budget_for_member_reply(uuid,text)'
+                ) is null then null else has_function_privilege(
+                  'tm8_app',
+                  'public.reset_session_wake_budget_for_member_reply(uuid,text)',
+                  'EXECUTE'
+                ) end app_exec`,
       );
-      expect(
-        outcome.ok,
-        `an unbound caller was still served by this path: ${describeOutcome(outcome)}`,
-      ).toBe(false);
-      if (outcome.ok) return;
-      // 28000, not 23514: the identity gate fires FIRST now, so the principal pin
-      // is never reached on this path. That ordering is the point — the caller is
-      // stopped before the ledger, not after it.
-      expect(outcome.code).toBe('28000');
+      expect(rows[0]).toEqual({ function_exists: false, app_exec: null });
 
       // Nothing was written, and nothing was left behind.
-      const rows = await ownerRows<{ count: string }>(
+      const ledgerRows = await ownerRows<{ count: string }>(
         `select count(*) count from public.command_ledger where client_mutation_id = $1`,
         [cmid],
       );
-      expect(rows[0]!.count).toBe('0');
+      expect(ledgerRows[0]!.count).toBe('0');
     });
   });
 

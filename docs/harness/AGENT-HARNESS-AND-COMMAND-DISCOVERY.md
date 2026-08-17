@@ -718,7 +718,7 @@ A reply:
 - otherwise surfaces in the authoritative teammate inbox;
 - never creates a parallel “session inbox.”
 
-> **⚠ THE FIFTH-ATTEMPT REFUSAL BELOW WAS REMOVED — 2026-08-14, by migration `120`.** There is no cap on how often one session may wake another. The pair row, its lock and its `version` remain (that version is the reserve → claim → settle pin), and `consecutive_agent_wakes` is now telemetry. Nothing writes `automated_wake_limit` any more. See `SESSION-COMMUNICATION-MODEL.md` §10. Acceptance case **M10** below is historical for the same reason.
+> **⚠ THE WAKE-BUDGET MACHINERY BELOW WAS REMOVED — by migrations `120` and `135`.** There is no cap on how often one session may wake another. `135` removed the surviving pair row, lock, counter, reset/cleanup paths, delivery pair columns, and copied version claim; delivery-row locking and the unique logical-attempt key remain. Nothing writes `automated_wake_limit` any more. See `SESSION-COMMUNICATION-MODEL.md` §10. Acceptance case **M10** below is historical for the same reason.
 >
 > **➕ AND A MESSAGE ON A TASK NOW ROUTES — migration `121`.** Live sessions with a `working_on` edge to a task anchor are delivered that message, so `message send --to <task-id>` reaches the sessions working the task instead of landing silently. See `SESSION-COMMUNICATION-MODEL.md` §8.
 

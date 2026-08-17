@@ -47,6 +47,7 @@ interface Route {
   sourceMessageId: string;
   addressingKind: string;
   body: string;
+  attachments: Array<{ fileEntityId: string; name: string; mime: string }>;
 }
 
 let database: W1ScratchDatabase;
@@ -84,6 +85,7 @@ async function newMessage(opts: {
   parentId?: string;
   batchId?: string;
   authoredFrom?: string;
+  attachments?: Array<{ fileEntityId: string; name: string; mime: string }>;
 }): Promise<string> {
   return asOwner(async (client) => {
     const id = (await client.query<{ id: string }>(`select internal.new_id()::text id`)).rows[0]!.id;
@@ -93,9 +95,18 @@ async function newMessage(opts: {
       [id, fixture.spaceId, opts.parentId ?? null, fixture.alice],
     );
     await client.query(
-      `insert into public.messages(entity_id,anchor_id,root_message_id,author_id,body,message_batch_id)
-       values($1,$2,$3,$4,$5,$6)`,
-      [id, opts.anchorId, opts.parentId ?? null, fixture.alice, opts.body, opts.batchId ?? null],
+      `insert into public.messages(
+         entity_id,anchor_id,root_message_id,author_id,body,message_batch_id,attachments
+       ) values($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+      [
+        id,
+        opts.anchorId,
+        opts.parentId ?? null,
+        fixture.alice,
+        opts.body,
+        opts.batchId ?? null,
+        JSON.stringify(opts.attachments ?? []),
+      ],
     );
     if (opts.authoredFrom) {
       // `authored_from` is recorder-owned: the guard refuses a plain insert
@@ -219,6 +230,26 @@ afterAll(async () => {
 }, 60_000);
 
 describe.sequential('task-anchor session fan-out (121)', () => {
+  it('returns the stored attachment manifest on every canonical route (134)', async () => {
+    const manifest = [{
+      fileEntityId: '77777777-7777-4777-8777-777777777777',
+      name: 'proof.txt',
+      mime: 'text/plain',
+    }];
+    const messageId = await newMessage({
+      anchorId: fixture.taskId,
+      body: 'read the attached proof',
+      attachments: manifest,
+    });
+
+    const routes = await record([messageId]);
+    expect(routes).toHaveLength(2);
+    // STRUCTURAL, not JSON.stringify: jsonb returns its own key order
+    // (mime,name,fileEntityId), so a string comparison against a hand-written
+    // literal fails on ORDER while every value matches.
+    expect(routes.map((route) => route.attachments)).toEqual([manifest, manifest]);
+  });
+
   it('a message on a task reaches every LIVE session working it, and no one else', async () => {
     const messageId = await newMessage({ anchorId: fixture.taskId, body: 'status please' });
     const routes = await record([messageId]);

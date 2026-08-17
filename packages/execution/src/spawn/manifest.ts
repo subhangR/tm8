@@ -714,6 +714,13 @@ export function withAgentResume(
  *
  * The positional goes LAST, after every flag, because both CLIs stop parsing
  * options at the first non-option argument.
+ *
+ * PRODUCTION NOTE (2026-08-16): SpawnService passes an empty `task` when its
+ * PromptSettlementWaiter is wired, launches the interactive provider with this
+ * function's system configuration, then submits the task through the PTY
+ * closed loop and waits for its outcome before recording `running`. Positional
+ * task delivery remains the compatibility path for legacy embedders without a
+ * settlement callback, and the focused unit surface for provider argv.
  */
 export function withAgentPrompt(
   command: string,

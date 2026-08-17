@@ -40,7 +40,6 @@ export interface ReservedMessageDelivery {
   readonly deliveryId: string;
   readonly messageId: string;
   readonly targetWorkSessionId: string;
-  readonly reservationVersion: number;
   readonly expiresAt: string;
   readonly content: string;
   readonly mode: 'send' | 'paste';
@@ -62,6 +61,15 @@ export interface ReservedMessageDeliveryAttempt extends ReservedMessageDelivery 
   readonly principal: unknown;
 }
 
+/**
+ * A pre-reserved attempt that is settled WITHOUT touching the PTY. Used when
+ * the target session's pinned prompt policy cannot admit the rendered
+ * envelope. It still carries the same minted principal as a real dispatch.
+ */
+export interface RejectedMessageDeliveryAttempt extends ReservedMessageDeliveryAttempt {
+  readonly reason: string;
+}
+
 export interface MessageDeliveryDispatchOutcome {
   readonly outcome: 'delivered' | 'refused' | 'unknown';
   readonly reason?: string;
@@ -69,6 +77,7 @@ export interface MessageDeliveryDispatchOutcome {
 
 export interface PreReservedMessageDeliveryAdapter {
   dispatch(attempt: ReservedMessageDeliveryAttempt): Promise<MessageDeliveryDispatchOutcome>;
+  reject(attempt: RejectedMessageDeliveryAttempt): Promise<MessageDeliveryDispatchOutcome>;
 }
 
 export interface HandoffDispatch {
@@ -136,6 +145,11 @@ interface SessionReplyRoute {
   readonly threadParentMessageId: string | null;
   readonly threadRootMessageId: string;
   readonly body: string;
+  readonly attachments: ReadonlyArray<{
+    fileEntityId: string;
+    name: string;
+    mime?: string | null;
+  }>;
   readonly addressingKind: 'channel_mention' | 'direct_message' | 'anchored_message';
   readonly contextAnchors: ReadonlyArray<{ id: string; kind: string }>;
   readonly rollingControlMaxBytes: number;

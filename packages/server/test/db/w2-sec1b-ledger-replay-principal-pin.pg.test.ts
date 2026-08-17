@@ -192,6 +192,30 @@ const APPLIED_MIGRATIONS: readonly string[] = migrationFiles();
  * signature: 020:31 drops `public.undo_command(text, uuid)` and recreates the
  * name with a different signature, and that is not a truncated chain.
  */
+/**
+ * Objects an EARLIER migration declares that a LATER one deliberately drops.
+ *
+ * The chain is forward-only: 015 and 037 remain the exact record of what an
+ * already-deployed database ran, so their `create` statements stay in the file
+ * text forever even after 135 removes what they made. Without this set the
+ * canary reads that text, finds the object absent from the catalog, and reports
+ * a truncated chain — which is the one thing it exists to detect, so a false
+ * positive here destroys the check's meaning rather than merely annoying.
+ *
+ * ENUMERATED, never a predicate. Every entry names the migration that drops it,
+ * so adding one is a deliberate act a reviewer can weigh, and an object that
+ * goes missing for any OTHER reason still fires. Do not replace this with a
+ * name pattern.
+ */
+const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
+  // 135 removes the wake-budget machinery, including the surrogate pin 120 left
+  // in place. See db/migrations/135_remove_wake_budget_machinery.sql.
+  ['public.session_wake_budgets', '135_remove_wake_budget_machinery.sql'],
+  ['internal.validate_wake_budget', '135_remove_wake_budget_machinery.sql'],
+  ['public.reset_session_wake_budget_for_member_reply', '135_remove_wake_budget_machinery.sql'],
+  ['internal.w1_refresh_wake_budget_cleanup_eligibility', '135_remove_wake_budget_machinery.sql'],
+]);
+
 function declaredObjects(sql: string): string[] {
   const patterns = [
     /^create\s+table\s+(?:if\s+not\s+exists\s+)?([a-z_]+)\.([a-z0-9_]+)/gim,
@@ -352,6 +376,8 @@ describe.sequential('W2.SEC-1b ledger_replay principal pin', () => {
       let expectedCount = 0;
       for (const file of APPLIED_MIGRATIONS) {
         for (const object of declaredObjects(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'))) {
+          // A later migration dropping this on purpose is not a truncated chain.
+          if (DROPPED_BY_LATER_MIGRATION.has(object)) continue;
           expectedCount += 1;
           if (!present.has(object)) missing.push(`${file} -> ${object}`);
         }

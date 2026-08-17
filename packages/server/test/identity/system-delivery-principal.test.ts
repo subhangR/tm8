@@ -20,7 +20,6 @@ const claims = (): SystemDeliveryPrincipalClaims => ({
   deliveryId: 'delivery-1',
   messageId: 'message-1',
   targetWorkSessionId: 'session-target-1',
-  reservationVersion: 7,
   expiresAt: '2026-07-26T12:15:00.000Z',
 });
 
@@ -28,7 +27,6 @@ const binding = (): SystemDeliveryPrincipalBinding => ({
   deliveryId: 'delivery-1',
   messageId: 'message-1',
   targetWorkSessionId: 'session-target-1',
-  reservationVersion: 7,
 });
 
 describe('system delivery principal (W0 B1)', () => {
@@ -42,7 +40,6 @@ describe('system delivery principal (W0 B1)', () => {
       'deliveryId',
       'expiresAt',
       'messageId',
-      'reservationVersion',
       'targetWorkSessionId',
     ]);
     expect(Object.isFrozen(principal)).toBe(true);
@@ -99,13 +96,12 @@ describe('system delivery principal (W0 B1)', () => {
     expect(serialized).not.toMatch(/token|secret|nonce|accountId|actorId|role/i);
   });
 
-  it('binds all four reservation coordinates', () => {
+  it('binds all three reservation identity coordinates', () => {
     const principal = mintSystemDeliveryPrincipal(claims());
     const mismatches: SystemDeliveryPrincipalBinding[] = [
       { ...binding(), deliveryId: 'delivery-other' },
       { ...binding(), messageId: 'message-other' },
       { ...binding(), targetWorkSessionId: 'session-other' },
-      { ...binding(), reservationVersion: 8 },
     ];
 
     for (const mismatch of mismatches) {
@@ -129,8 +125,6 @@ describe('system delivery principal (W0 B1)', () => {
       { ...claims(), deliveryId: '' },
       { ...claims(), messageId: '   ' },
       { ...claims(), targetWorkSessionId: null },
-      { ...claims(), reservationVersion: -1 },
-      { ...claims(), reservationVersion: 1.5 },
       { ...claims(), expiresAt: 'not-a-date' },
     ];
 
