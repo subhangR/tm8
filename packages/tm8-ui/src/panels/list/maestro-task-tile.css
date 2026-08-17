@@ -212,6 +212,12 @@
 .cv2-root .pn-tt:hover .pn-tt__arrow:not(.pn-tt__arrow--empty),
 .cv2-root .pn-tt:focus-within .pn-tt__arrow:not(.pn-tt__arrow--empty),
 .cv2-root .pn-tt__arrow--expanded { opacity: 1; }
+/* The subtree arrow was a ONE-WAY DOOR on touch, exactly like `.lp__disclosure`:
+   hidden until hover, and otherwise revealed only by `--expanded`, so a finger
+   could close a subtree and never reopen it. */
+@media (pointer: coarse) {
+  .cv2-root .pn-tt__arrow:not(.pn-tt__arrow--empty) { opacity: 1; }
+}
 .cv2-root .pn-tt__arrow:hover { color: var(--pn-ink-2); background: var(--pn-active); }
 .cv2-root .pn-tt__arrow svg {
   width: 13px;

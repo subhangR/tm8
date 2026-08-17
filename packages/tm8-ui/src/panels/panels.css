@@ -1707,6 +1707,16 @@
   pointer-events: auto;
   transform: translate(0, -50%);
 }
+/* Same defect as `.lp__rowactions`: invisible AND `pointer-events: none` until
+   a hover a finger cannot produce, so a session tile's actions — copy-id and a
+   destructive button among them — simply were not there on touch. */
+@media (pointer: coarse) {
+  .cv2-root .pn-st__actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(0, -50%);
+  }
+}
 .cv2-root .pn-st__btn { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; color: var(--pn-ink-4); background: transparent; border: 1px solid transparent; border-radius: var(--pn-r-sm); cursor: pointer; transition: color var(--pn-dur-fast), background var(--pn-dur-fast); }
 .cv2-root .pn-st__btn:hover { color: var(--pn-ink); background: var(--pn-active); }
 .cv2-root .pn-st__btn--danger:hover { color: var(--pn-block); }
@@ -1906,6 +1916,18 @@
 .cv2-root .lp__tile:hover .lp__disclosure:not(.lp__disclosure--empty),
 .cv2-root .lp__tile:focus-within .lp__disclosure:not(.lp__disclosure--empty),
 .cv2-root .lp__disclosure--expanded { opacity: 1; }
+/* EXPAND WAS A ONE-WAY DOOR ON TOUCH. This caret is `opacity: 0` until hover,
+   and the only other rule that reveals it is `--expanded` — so a finger could
+   COLLAPSE a row that was already open and then never open it again. A control
+   that works in one direction only is worse than one that is missing, because
+   the user watches the tree close and cannot undo it.
+   `(pointer: coarse)` rather than the mobile shell: these rows are the phone's
+   main screens AND the coarse tablet's, and the tablet runs the desktop shell. */
+@media (pointer: coarse) {
+  .cv2-root .lp__disclosure:not(.lp__disclosure--empty) {
+    opacity: 1;
+  }
+}
 .cv2-root .lp__disclosure > span {
   transition: transform var(--pn-dur-fast) var(--pn-ease-out);
 }
@@ -2034,6 +2056,24 @@
   opacity: 1;
   pointer-events: auto;
   transform: translate(0, -50%);
+}
+/* ON TOUCH THIS CLUSTER DID NOT EXIST. `opacity: 0` AND `pointer-events: none`
+   until `:hover` — so on a phone, where there is no hover, every row action on
+   the main list screens (tasks, sessions, channels) was both invisible and
+   un-tappable. Not hard to find: absent. `:focus-within` does not rescue it
+   either, because a tap on the row does not focus a button inside it.
+
+   Revealed at rest on a coarse pointer, and `transform` reset with it — the 3px
+   offset is an entrance animation for something that is no longer entering. The
+   row does not grow, because this cluster is absolutely positioned and was
+   already outside the height calculation; that was the whole point of floating
+   it, and it is what makes revealing it cheap here. */
+@media (pointer: coarse) {
+  .cv2-root .lp__rowactions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(0, -50%);
+  }
 }
 /* A selected row is not a hovered row, so the backing has to follow it. */
 .cv2-root .lp__tile--selected .lp__rowactions { background: var(--pn-active); }

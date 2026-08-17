@@ -905,6 +905,15 @@ button.tch-entity-chip:hover {
 .tch-task-row .tch-run:focus {
   opacity: 1;
 }
+/* The comment above says focus "keeps it reachable and visible for keyboard
+   users" — and that is exactly the gap, because a TAP produces neither `:hover`
+   nor `:focus-visible`, and it does not produce `:focus` on the row either. So
+   Run was invisible on the phone's Home screen, which is the one screen the
+   phone actually ships. */
+@media (pointer: coarse) {
+  .tch-task-row .tch-run { opacity: 1; }
+}
+
 .tch-thread--task[aria-disabled='true'] { cursor: not-allowed; opacity: 0.7; }
 
 /* THE WORKSPACE LIST'S HOME COAT (user ruling 2026-08-16): Tasks and
