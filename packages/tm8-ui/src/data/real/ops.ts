@@ -142,6 +142,7 @@ import {
   type TaskWorkflowInput,
   type TrackingPrMergeInput,
   type TrackingPrMergeResult,
+  type UpdateAttentionRequestInput,
   type WorkInput,
 } from '@tm8/contract';
 import type { HttpClient, QueryParams } from './http';
@@ -744,6 +745,18 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     ): Promise<AttentionRequestMutationResult> {
       return http.call<AttentionRequestMutationResult>('attentionRequests.resolveEntity', {
         params: { entityId: id }, body: input,
+      });
+    },
+
+    /** PATCH /v2/attention-requests/:requestId — the request id is NOT an
+     *  entity id, so it rides `params.requestId` exactly as the catalog row
+     *  spells it (catalog.ts `attentionRequests.update`). */
+    updateAttentionRequest(
+      requestId: string,
+      input: UpdateAttentionRequestInput,
+    ): Promise<AttentionRequestMutationResult> {
+      return http.call<AttentionRequestMutationResult>('attentionRequests.update', {
+        params: { requestId }, body: input,
       });
     },
 

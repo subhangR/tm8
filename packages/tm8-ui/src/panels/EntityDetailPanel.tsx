@@ -265,6 +265,28 @@ export interface EntityDetailPanelProps {
   /** The GRAPH surface (what the session is connected to). Same contract as Debug. */
   graphSurface?: ReactNode;
   /**
+   * ATTENTION HISTORY — every request ever escalated on this entity, settled or
+   * not. Self-fetching; the host wires the seam (`views/attentionSurface.tsx`).
+   *
+   * ONE PROP FOR EVERY KIND, like `attachments` and for the same reason:
+   * `attention_requests.entity_id` references `entities`, so the server will
+   * flag any kind at all and a per-kind prop would be a restriction the backend
+   * does not have.
+   *
+   * IT MOUNTS IN TWO PLACES, which is the one thing here that is not uniform.
+   * Most archetypes take it inline in the Content body. The terminal archetype
+   * and `composition:'chat'` cannot — a live PTY owns its full height and a
+   * chat body ends at its composer, the same two structural exclusions the
+   * attachment strip carries — so for those it rides the ACTIVITY tab instead
+   * (user ruling 2026-08-16). Excluding them outright was the alternative and
+   * was rejected: work sessions are among the most-escalated entities in a
+   * space, and their history would have been CLI-only.
+   *
+   * Absent ⇒ nothing renders. The section is invisible on any entity with no
+   * history anyway, so an unwired host leaves no dangling affordance to explain.
+   */
+  attentionSection?: ReactNode;
+  /**
    * ATTACHMENTS — bytes and an uploader for the strip in the Content body.
    *
    * ONE prop for every kind, deliberately: `attached_to` is an edge type and
@@ -846,6 +868,20 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                   />
                 ) : null;
               const bodyConsumesSlot = config.panel.archetype === 'subtree';
+              /* ATTENTION HISTORY rides on the SAME three exclusions as the
+                 strip — and unlike the strip, the two archetypes it excludes do
+                 not LOSE the section: `PanelBody`'s activity arm mounts it for
+                 them instead. Ordered above the strip because an escalation
+                 someone may still be waiting on outranks a file list. It never
+                 goes into the subtree body's slot: that slot is the description
+                 block's, and a scored queue is not a description. */
+              const attentionSlot =
+                tab === 'content' &&
+                !isTombstone &&
+                config.panel.archetype !== 'terminal' &&
+                config.panel.composition !== 'chat'
+                  ? props.attentionSection
+                  : null;
               return (
                 <>
                   <PanelBody
@@ -856,6 +892,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     surfaceSlot={surfaceSlot}
                     attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
                   />
+                  {attentionSlot}
                   {bodyConsumesSlot ? null : attachmentSlot}
                 </>
               );
@@ -949,7 +986,30 @@ function PanelBody(
     );
   }
   if (tab === 'activity') {
-    return <ActivityTab items={props.activity ?? []} />;
+    /**
+     * THE OVERFLOW HOME FOR THE TWO ARCHETYPES THAT CANNOT TAKE THE SECTION
+     * INLINE — terminal (a live PTY owning its full height) and chat (a body
+     * that ends at its composer). Those two are excluded from the content-body
+     * mount for the same structural reasons the attachment strip excludes them,
+     * and a work session is one of the most-escalated things in a space, so
+     * dropping the section for them would have made session attention history
+     * reachable only from the CLI (user ruling 2026-08-16).
+     *
+     * The CONDITION IS THE EXACT COMPLEMENT of the content-body one, so the
+     * section renders in exactly one place per kind and can never appear twice
+     * — `panels.test.tsx` asserts both halves of that.
+     *
+     * Deliberately ABOVE the feed: it is the shorter, more actionable half, and
+     * an activity feed has no natural end to append below.
+     */
+    const overflow =
+      config.panel.archetype === 'terminal' || config.panel.composition === 'chat';
+    return (
+      <>
+        {overflow ? props.attentionSection : null}
+        <ActivityTab items={props.activity ?? []} />
+      </>
+    );
   }
 
   // Content. A deleted entity keeps its chrome and its place; only the body

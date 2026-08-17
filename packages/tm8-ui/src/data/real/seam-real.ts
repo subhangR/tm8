@@ -413,6 +413,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),
       resolveAttention: (id, input) => ops.resolveAttention(id, input),
+      updateAttentionRequest: (requestId, input) => ops.updateAttentionRequest(requestId, input),
       updateProfile: (input) => ops.updateProfile(input),
       setMemberRole: (spaceId, memberId, input) => ops.setMemberRole(spaceId, memberId, input),
       createInvite: (spaceId, input) => ops.createInvite(spaceId, input),
