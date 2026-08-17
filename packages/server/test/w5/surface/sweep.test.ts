@@ -304,9 +304,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
-    expect(SURFACE).toHaveLength(163);
-    expect(rows).toHaveLength(163);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(163);
+    expect(SURFACE).toHaveLength(166);
+    expect(rows).toHaveLength(166);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(166);
   });
 
   /**
@@ -614,7 +614,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // RE-MEASURE ON THE MERGED TREE, not on this branch: this number is the
     // one thing here that another lane can invalidate without touching this
     // file, and delta arithmetic across a merge is how it goes wrong.
-    expect(server.appliedMigrations.length).toBe(132);
+    // 141: +1 migration file (141_account_lifecycle_ops.sql) -> 132.
+    // 143: +1 migration file (143_signup_requires_claimed_node.sql, the §7.1
+    // unclaimed-node guard) -> 133 on THIS branch. RE-MEASURE on merge: #318
+    // adds 142, so the six-way merged tree is 134, not 133.
+    expect(server.appliedMigrations.length).toBe(133);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

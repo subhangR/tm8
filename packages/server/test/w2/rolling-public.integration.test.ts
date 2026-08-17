@@ -241,6 +241,13 @@ const IDENTITY_V2_NET_NEW_OPERATIONS = [
   // 114: `auth.invite.resolve` joins the same seam — a claim-free read that
   // answers before the caller is anybody here. Net-new, no replacement.
   'auth.invite.resolve',
+  // 141: the three account-lifecycle ops join the same seam. Net-new, no
+  // replacements. `auth.claim.reissue` and `auth.password.change` are gated
+  // (loopback auto-owner / authenticated caller); `auth.invite.signup` is
+  // claim-free like `auth.invite.resolve`.
+  'auth.claim.reissue',
+  'auth.password.change',
+  'auth.invite.signup',
 ] as const;
 
 /**
@@ -474,7 +481,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 139 -> 141 (118): auth.invite.resolve + spaces.members.updateRole, MEASURED
-    expect(registry.size).toBe(146); // +3 (W4/132)
+    expect(registry.size).toBe(149); // +3 (141): account-lifecycle handlers
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -641,7 +648,9 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // bodies bind (gitStatus/gitDiff are GETs and bind nothing).
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, forge write): tracking.pr.merge binds its body.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(95); // +2 (W4/132): TaskWorkflowInputSchema binds upsert, RequiredCommandContextSchema binds delete
+    // +2 (141): AuthPasswordChangeInputSchema + AuthInviteSignupInputSchema bind
+    // their bodies (auth.claim.reissue takes no body, so it binds nothing).
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(97);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -657,7 +666,9 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // nine command operations had no binding while the constant claimed none
     // were missing. They are enumerated now (see input-schemas.ts) so the
     // derived check above has something true to compare against.
-    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(9);
+    // 141: +1 — auth.claim.reissue is genuinely body-less (no input, auth.* so
+    // no CommandContext), enumerated as such rather than left to hide.
+    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(10);
     expect(UNBOUND_COMMAND_OPERATIONS).not.toContain('execution.resume');
     for (const operation of [
       'messages.delete',
@@ -793,8 +804,10 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 143/141 -> 149/147 (2026-08-12, Git UI landing): the six execution.git*
     // rows, all mounted.
     // +3 (W4/132): the three spaces.taskWorkflows routes, all mounted.
-    expect(health).toMatchObject({ ok: true, operations: 165, implemented: 163 });
-    expect(harness.production.server.registry.size).toBe(163);
+    // +3 (141): auth.password.change + auth.invite.signup + auth.claim.reissue,
+    // all mounted and all registered.
+    expect(health).toMatchObject({ ok: true, operations: 168, implemented: 166 });
+    expect(harness.production.server.registry.size).toBe(166);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -814,7 +827,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(163); // +3 (W4/132)
+    expect(registered.size + residual.length).toBe(166); // +3 (141): account-lifecycle handlers
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

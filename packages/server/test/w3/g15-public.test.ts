@@ -75,14 +75,14 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // 131 -> 135: credentials.*; all four are mounted.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows,
     // all mounted.
-    expect(OPERATIONS).toHaveLength(166); // +3 W4/132
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(165); // +3 W4/132
+    expect(OPERATIONS).toHaveLength(169); // +3 141 account-lifecycle
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(168); // +3 141
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
-      operations: 165, // +3 W4/132: routes
-      implemented: 163, // +3 W4/132
+      operations: 168, // +3 141: account-lifecycle routes
+      implemented: 166, // +3 141
     });
   });
 
@@ -121,7 +121,9 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // (the six artifacts rows joined `OPERATIONS`, the 111->117 family; all six
     // are mounted, so none answers 501).
     // The four credentials.* rows bring the mounted set to 132.
-    expect(implemented).toHaveLength(163);
+    // 141: +3 (auth.password.change, auth.invite.signup, auth.claim.reissue),
+    // all mounted and none answering 501 — 163 -> 166.
+    expect(implemented).toHaveLength(166);
   });
 
   /**

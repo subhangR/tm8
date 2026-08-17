@@ -87,8 +87,10 @@ describe('W1 adopted catalog target', () => {
     // 163 -> 166 (2026-08-16, W4/132): spaces.taskWorkflows.list (GET read) +
     // .upsert (POST command) + .delete (DELETE command) — per-type status
     // vocabularies. MEASURED per PIN RULE v3, never carried.
-    expect(OPERATIONS).toHaveLength(166);
-    expect(V1_OPERATIONS).toHaveLength(164);
+    // 166 -> 169 (141): auth.password.change + auth.invite.signup +
+    // auth.claim.reissue — the account-lifecycle ops. MEASURED.
+    expect(OPERATIONS).toHaveLength(169);
+    expect(V1_OPERATIONS).toHaveLength(167);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -110,13 +112,16 @@ describe('W1 adopted catalog target', () => {
     // (PATCH). GET 58->59, POST 73->75, PATCH 10->11.
     // W4/132 (2026-08-16): GET 59->60 (taskWorkflows.list), POST 75->76
     // (.upsert), DELETE 10->11 (.delete). MEASURED from the failing run.
-    }).toEqual({ GET: 60, POST: 76, PATCH: 11, DELETE: 11, PUT: 7, WS: 1 });
+    // 141: POST 76->79 — auth.password.change + auth.invite.signup +
+    // auth.claim.reissue, all POST commands. MEASURED.
+    }).toEqual({ GET: 60, POST: 79, PATCH: 11, DELETE: 11, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
     // W4/132: read +1, command +2. MEASURED.
-    }).toEqual({ read: 64, command: 101, stream: 1 });
+    // 141: command 101->104 (three new commands). MEASURED.
+    }).toEqual({ read: 64, command: 104, stream: 1 });
   });
 });
 

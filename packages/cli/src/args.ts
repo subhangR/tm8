@@ -61,6 +61,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'clear',               // task axis --clear
   'node-admin',          // auth signup --node-admin
   'print-token',         // auth login — print instead of storing per-server
+  'show',                // auth claim --show — reprint the on-box claim token
   'ensure-working-dir',  // project create — create one allowed missing child
 ]);
 

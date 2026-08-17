@@ -511,3 +511,134 @@ export async function claimNode(
     requestId,
   );
 }
+
+/* ── password change (docs/identity/FIRST-RUN-CLAIM-DESIGN.md §10.3) ──────── */
+
+export interface ChangePasswordInput {
+  accountId: string;
+  identityId: string;
+  username: string;
+  currentPassword: string;
+  newPassword: string;
+  /** The session to keep alive; null for a loopback auto-owner (no session). */
+  keepSessionId: string | null;
+}
+
+/**
+ * Rotate the caller's OWN credential — CHANGE, not reset.
+ *
+ * The current password is proven with the same claim-free credential read and
+ * constant-work scrypt the login path uses. Requiring it even though the caller
+ * is already authenticated is the whole security posture of this operation: a
+ * walk-up on an unlocked screen, or a stolen live session, must not be able to
+ * silently re-credential the account and lock the real owner out. There is no
+ * reset-without-the-old-password variant — that needs an out-of-band capability
+ * this lane deliberately does not invent.
+ *
+ * The write is 007's `set_account_credential` under the caller's own claims (an
+ * account may set its own credential without node admin), and then every OTHER
+ * live session is revoked while the one making the change is spared. Both run in
+ * one transaction so a credential is never rotated without its session sweep.
+ */
+export async function changePassword(
+  db: Db,
+  input: ChangePasswordInput,
+  requestId?: string,
+): Promise<{ accountId: string; revokedOtherSessions: number }> {
+  const row = await db.rpc<ResolvedCredential | null>({}, 'resolve_account_credential', [
+    input.username,
+  ]);
+
+  const verifier = row?.passwordHash ?? UNMATCHABLE_VERIFIER;
+  const ok = await hasher.verify(input.currentPassword, verifier);
+  // No stored credential means an unclaimed loopback owner: there is no password
+  // to change — they claim, they do not rotate. Same uniform refusal as a wrong
+  // current password, so neither state is enumerable.
+  if (!row || !row.passwordHash || !ok) throw invalidCredentials();
+  if (row.status !== 'active') throw invalidCredentials();
+  // The credential the caller proved must belong to the account they are
+  // authenticated as. It always should; a mismatch means the username resolved
+  // to someone else's row, which must never rotate under this caller's identity.
+  if (row.accountId !== input.accountId) throw invalidCredentials();
+
+  const newHash = await hasher.hash(input.newPassword);
+  const claims = { identityId: input.identityId, ...(requestId ? { requestId } : {}) };
+  const revoked = await db.tx(claims, async (q) => {
+    await q.rpc('set_account_credential', [input.accountId, newHash, hasher.algorithm]);
+    return q.rpc<number>('revoke_account_sessions_except', [
+      input.accountId,
+      input.keepSessionId,
+    ]);
+  });
+
+  return { accountId: input.accountId, revokedOtherSessions: revoked ?? 0 };
+}
+
+/* ── invite-bound self-signup (docs/identity/FIRST-RUN-CLAIM-DESIGN.md D5) ── */
+
+export interface SignupViaInviteInput {
+  code: string;
+  username: string;
+  password: string;
+  displayName?: string | null;
+  email?: string | null;
+  kind?: 'browser' | 'cli';
+}
+
+export interface IssuedInviteSignup extends IssuedLogin {
+  spaceId: string;
+  memberId: string;
+}
+
+/**
+ * Redeem an invite that CREATES the account — the last piece of D5.
+ *
+ * CLAIM-FREE: the invited person has no identity until this call, so the code is
+ * the only authorization, exactly as it is for `auth.invite.resolve`.
+ * `signup_via_invite` creates the account, the profile, the membership and
+ * consumes the invite atomically, hard-coding a non-admin non-owner account.
+ *
+ * Then it SIGNS THEM IN by delegating to `loginWithPassword` with the credential
+ * just set — the same pattern `claimNode` follows, and for the same reason: TTL
+ * selection, the profile read, the disabled-account check and session issuance
+ * are all proven on the login path, and a second copy would be a second place
+ * for them to drift.
+ */
+export async function signupViaInvite(
+  db: Db,
+  input: SignupViaInviteInput,
+  requestId?: string,
+): Promise<IssuedInviteSignup> {
+  const identityId = `id_${randomUUID()}`;
+  const passwordHash = await hasher.hash(input.password);
+
+  const created = await db.rpc<{
+    account: AccountRowJson;
+    spaceId: string;
+    memberId: string;
+  } | null>({}, 'signup_via_invite', [
+    input.code,
+    identityId,
+    input.username,
+    input.displayName ?? null,
+    input.email ?? null,
+    hasher.algorithm,
+    passwordHash,
+  ]);
+  if (!created) {
+    throw new CollabError('upstream_unavailable', 'signup_via_invite returned no row');
+  }
+
+  const issued = await loginWithPassword(
+    db,
+    {
+      username: input.username,
+      password: input.password,
+      ...(input.kind ? { kind: input.kind } : {}),
+      label: 'invite signup',
+    },
+    requestId,
+  );
+
+  return { ...issued, spaceId: created.spaceId, memberId: created.memberId };
+}

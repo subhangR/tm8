@@ -25,8 +25,10 @@ import {
   ArtifactsPublishInputSchema,
   ArtifactsRestoreInputSchema,
   AuthClaimInputSchema,
+  AuthInviteSignupInputSchema,
   AuthLoginInputSchema,
   AuthLogoutInputSchema,
+  AuthPasswordChangeInputSchema,
   AuthSignupInputSchema,
   CollectionAddItemInputSchema,
   CollectionQuerySchema,
@@ -146,10 +148,16 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'auth.logout': AuthLogoutInputSchema,
   // auth.claim.status takes no input; the catalog marks it a read.
   'auth.claim': AuthClaimInputSchema,
+  // auth.claim.reissue takes no request payload; the handler admits only the
+  // loopback auto-owner and reads nothing from the body.
+  'auth.password.change': AuthPasswordChangeInputSchema,
   // Claim-free, so strictness is the only control on this body: the schema has
   // exactly one member and `.strict()`, which turns a stray actorId into a 400
   // instead of a field nobody is in a position to check.
   'auth.invite.resolve': ResolveInviteInputSchema,
+  // Claim-free like resolve; `.strict()` is again the only control, refusing a
+  // stray actorId/clientMutationId this handler has no identity to check.
+  'auth.invite.signup': AuthInviteSignupInputSchema,
 
   // credentials (Tier B). All three command bodies are BOUND rather than
   // enumerated as unbound gaps, because strictness here is a security control
@@ -322,4 +330,10 @@ export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [
   'interactionProfiles.retire',
   'teamMembers.interactionProfile.setDefault',
   'spaces.interactionProfile.setDefault',
+  // 141: GENUINELY body-less (the first clause above), not a gap. reissue takes
+  // no input — the loopback auto-owner gate and the node's unclaimed state are
+  // the whole of its authorization — and it is auth.*, which refuses
+  // actorId/clientMutationId, so there is no CommandContext to bind either. A
+  // strict empty schema would only break the no-body POST the CLI sends.
+  'auth.claim.reissue',
 ];

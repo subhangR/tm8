@@ -1,24 +1,26 @@
 /**
  * auth.* — local accounts (Identity v2 Stage 1, doc 4 §6).
  *
- * Seven operations, and the seam is deliberately thin: every authorization
+ * Ten operations, and the seam is deliberately thin: every authorization
  * decision except the scrypt comparison lives inside the SECURITY DEFINER
  * RPCs (`ensure_account`'s F1 node-admin gate, `revoke_auth_session`'s
  * self-or-admin gate, `resolve_auth_session`'s revocation/expiry/status
- * checks, and 116's `claim_node` single-use token burn). The handlers bind the
+ * checks, 116's `claim_node` single-use token burn, and 141's
+ * `signup_via_invite`/`revoke_account_sessions_except`). The handlers bind the
  * right claims and translate shapes.
  *
- * FOUR OF THE SEVEN ARE CLAIM-FREE, and that is a property to preserve rather
- * than an omission to tidy up: `auth.login`, `auth.claim`,
- * `auth.claim.status` and `auth.invite.resolve` are reachable on a node where
+ * FIVE OF THE TEN ARE CLAIM-FREE, and that is a property to preserve rather
+ * than an omission to tidy up: `auth.login`, `auth.claim`, `auth.claim.status`,
+ * `auth.invite.resolve` and `auth.invite.signup` are reachable on a node where
  * the caller has no credential — the bootstrap hole every other operation is
- * spared from needing. The first three serve first-run; the fourth lets an
- * invited person see what they are joining before they have an account.
- * See docs/identity/FIRST-RUN-CLAIM-DESIGN.md.
+ * spared from needing. `auth.claim.reissue` is the sixth first-run operation but
+ * is NOT claim-free: it admits only the loopback auto-owner, because the token
+ * it mints is a node-ownership capability. See docs/identity/FIRST-RUN-CLAIM-DESIGN.md.
  *
  * This count is load-bearing and goes stale silently: it read "Four" on the
- * members branch while five were registered, and "Six" here after the merge
- * union made it seven. If you add an operation below, change this line.
+ * members branch while five were registered, "Six" here after the merge union
+ * made it seven, and "Seven" until 141 added the three account-lifecycle ops.
+ * If you add an operation below, change this line.
  *
  * These commands sit OUTSIDE the idempotency ledger on purpose: a session row
  * is not a graph mutation, so there is no `clientMutationId` and no replay
@@ -29,30 +31,41 @@ import { CollabError } from '@tm8/contract';
 import type {
   AuthAccountView,
   AuthClaimInput,
+  AuthClaimReissueResult,
   AuthClaimResult,
   AuthClaimStatusResult,
+  AuthInviteSignupInput,
+  AuthInviteSignupResult,
   AuthLoginInput,
   AuthLoginResult,
   AuthLogoutInput,
   AuthLogoutResult,
+  AuthPasswordChangeInput,
+  AuthPasswordChangeResult,
   AuthSessionGetResult,
   AuthSignupInput,
   AuthSignupResult,
   InvitePreview,
   ResolveInviteInput,
 } from '@tm8/contract';
+import { chmod, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
+import { resolveServerDataDir } from '../../../http/config.js';
 import { clearSessionCookie, sessionCookie } from '../../../http/session-cookie.js';
 import { json, type OperationHandler, type RequestContext } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
 import {
+  changePassword,
   claimNode,
+  issueNodeClaimToken,
   loginWithPassword,
   nodeIsClaimed,
   resolveBearerIdentity,
   signupAccount,
+  signupViaInvite,
   type AccountRowJson,
 } from '../../../identity/pg-auth.js';
 
@@ -336,14 +349,182 @@ function authClaimStatus(deps: FacadeDeps): OperationHandler {
     const result: AuthClaimStatusResult = {
       claimed,
       mode,
-      // Unclaimed: the claim token is the only way in. Claimed: an invite
-      // authorizes its bearer once that lane lands; until then a node admin
-      // provisioning through `auth.signup` is the honest answer, and saying
-      // `invite` before the operation exists would be the lie this whole
-      // surface was written to remove.
-      signupPath: claimed ? 'admin' : 'claim',
+      // Unclaimed: the claim token is the only way in. Claimed: an invite now
+      // authorizes its bearer to self-signup (`auth.invite.signup`, 141), so
+      // `invite` is the honest answer — the exact change §10.0 required in the
+      // SAME commit that lands the signup operation, because until it existed
+      // `invite` was vocabulary nothing could return and `admin` was the truth.
+      // A node admin can still provision through `auth.signup`, but the primary
+      // route for a new person on a claimed node is redeeming an invite.
+      signupPath: claimed ? 'invite' : 'claim',
     };
     return result;
+  };
+}
+
+/**
+ * `auth.claim.reissue` — rotate the first-run claim token when the printed one
+ * is lost (design §3.1, §4.3).
+ *
+ * ON-BOX BY CONSTRUCTION. It admits ONLY the loopback auto-owner arm — the
+ * server's strongest on-box signal (loopback peer, no forwarded headers,
+ * auto-owner enabled), and the same trust this design already extends to a
+ * loopback caller acting as owner without a password. The fresh token is a
+ * node-ownership capability, so admitting a remote caller would let a stranger
+ * force-rotate the operator's saved link (a real, if low-severity, denial) and,
+ * far worse, read the token they just minted. Neither is possible here: an
+ * anonymous or bearer caller is refused, and the plaintext travels only over
+ * this loopback-gated response and into the 0600 `<dataDir>/setup-token`.
+ *
+ * Inert on a CLAIMED node: `issue_node_claim_token` refuses (a claimed node's
+ * token authorizes nothing), and this handler refuses one step earlier with a
+ * message an operator can act on rather than a raw constraint error.
+ *
+ * An ordinary restart REPRINTS the live token (node-claim-boot.ts) rather than
+ * rotating it, so this is the deliberate act §3.1 leans on.
+ */
+function authClaimReissue(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    if (ctx.identity.kind !== 'auto-owner') {
+      throw new CollabError(
+        'forbidden',
+        'reissue is on-box only: run it on the server host, where the loopback owner is trusted',
+      );
+    }
+    if (await nodeIsClaimed(deps.db)) {
+      throw new CollabError(
+        'forbidden',
+        'this node is already claimed; its claim token is inert, so there is nothing to reissue',
+      );
+    }
+
+    const token = await issueNodeClaimToken(deps.db);
+
+    // The durable copy the boot path also writes, so the NEXT restart reprints
+    // this reissued token instead of minting a third one over the top of it.
+    // Failing to write it must not fail the reissue — the token is already valid
+    // and already in this response — so a write error becomes `tokenPath: null`.
+    const dataDir = deps.config.dataDir ?? resolveServerDataDir();
+    const tokenPath = join(dataDir, 'setup-token');
+    let written: string | null = tokenPath;
+    try {
+      await writeFile(tokenPath, `${token}\n`, { mode: 0o600 });
+      await chmod(tokenPath, 0o600);
+    } catch {
+      written = null;
+    }
+
+    const origin = (deps.config.publicOrigin ?? `http://${deps.config.host}:${deps.config.port}`)
+      .replace(/\/$/, '');
+    const result: AuthClaimReissueResult = {
+      token,
+      claimUrl: `${origin}/#claim=${encodeURIComponent(token)}`,
+      tokenPath: written,
+    };
+    return result;
+  };
+}
+
+/**
+ * `auth.password.change` — rotate your OWN credential (design §10.3).
+ *
+ * CHANGE, NOT RESET. The caller is already authenticated — a bearer session or
+ * the loopback auto-owner — but must still prove the CURRENT password inside
+ * `changePassword`, so a walk-up on an open session cannot silently lock the
+ * owner out. An anonymous caller is refused: there is no account to rotate.
+ *
+ * The keep-alive session is this caller's own: a bearer caller keeps the exact
+ * session that made the change (so their shell/browser stays signed in), and
+ * every other live session for the account dies. A loopback auto-owner carries
+ * no session, so nothing is spared and the count is every live bearer session.
+ */
+function authPasswordChange(deps: FacadeDeps): OperationHandler {
+  return async (ctx: RequestContext) => {
+    const body = ctx.body as AuthPasswordChangeInput;
+
+    let accountId: string;
+    let identityId: string;
+    let username: string;
+    let keepSessionId: string | null;
+
+    if (ctx.identity.kind === 'bearer') {
+      if (!ctx.identity.token) {
+        throw new CollabError('unauthenticated', 'bearer session is unresolved');
+      }
+      const session = await resolveBearerIdentity(deps.db, ctx.identity.token);
+      accountId = session.accountId;
+      identityId = session.identityId;
+      username = session.username;
+      keepSessionId = session.sessionId;
+    } else if (ctx.identity.kind === 'anonymous') {
+      throw new CollabError('unauthenticated', 'authentication is required');
+    } else {
+      const owner = await deps.owner();
+      accountId = owner.accountId;
+      identityId = owner.identityId;
+      username = owner.username;
+      keepSessionId = null;
+    }
+
+    const changed = await changePassword(
+      deps.db,
+      {
+        accountId,
+        identityId,
+        username,
+        currentPassword: body.currentPassword,
+        newPassword: body.newPassword,
+        keepSessionId,
+      },
+      ctx.requestId,
+    );
+    const result: AuthPasswordChangeResult = changed;
+    return json(result, { headers: { 'cache-control': 'no-store' } });
+  };
+}
+
+/**
+ * `auth.invite.signup` — redeem an invite that CREATES your account (design D5).
+ *
+ * CLAIM-FREE, exactly like `auth.invite.resolve`: the invited person has no
+ * identity until this call, so `claimsFor` is deliberately NOT invoked and the
+ * INVITE CODE is the authorization. `signup_via_invite` creates the account,
+ * profile and membership and consumes the invite atomically, minting a non-admin
+ * non-owner account no input can escalate.
+ *
+ * Signing up SIGNS YOU IN — a browser call carries the same Secure, HttpOnly
+ * cookie a browser login does, so the ceremony ends inside the app rather than
+ * at a sign-in card asking the person to re-type what they just chose.
+ */
+function authInviteSignup(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const body = ctx.body as AuthInviteSignupInput;
+    const issued = await signupViaInvite(
+      deps.db,
+      {
+        code: body.code,
+        username: body.username,
+        password: body.password,
+        displayName: body.displayName ?? null,
+        email: body.email ?? null,
+        ...(body.kind ? { kind: body.kind } : {}),
+      },
+      ctx.requestId,
+    );
+    const result: AuthInviteSignupResult = {
+      token: issued.token,
+      account: issued.account,
+      session: issued.session,
+      spaceId: issued.spaceId,
+      memberId: issued.memberId,
+    };
+    if ((body.kind ?? 'browser') !== 'browser') return result;
+    return json(result, {
+      headers: {
+        'cache-control': 'no-store',
+        'set-cookie': sessionCookie(issued.token, issued.session.expiresAt),
+      },
+    });
   };
 }
 
@@ -356,6 +537,9 @@ export function registerW2AuthHandlers(registry: HandlerRegistry, deps: FacadeDe
     'auth.session.get': authSessionGet(deps),
     'auth.claim': authClaim(deps),
     'auth.claim.status': authClaimStatus(deps),
+    'auth.claim.reissue': authClaimReissue(deps),
+    'auth.password.change': authPasswordChange(deps),
     'auth.invite.resolve': authInviteResolve(deps),
+    'auth.invite.signup': authInviteSignup(deps),
   });
 }

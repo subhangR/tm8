@@ -1493,6 +1493,88 @@ export interface AuthClaimResult {
   session: AuthSessionView;
 }
 
+/**
+ * `auth.claim.reissue` — rotate the first-run claim token when the printed one
+ * is lost (design §3.1, §4.3).
+ *
+ * ON-BOX BY CONSTRUCTION. The handler admits only the loopback auto-owner arm,
+ * and the fresh secret is written to the 0600 `<dataDir>/setup-token`. The
+ * plaintext is returned here too, but only ever over that loopback-gated
+ * response — the same trust boundary that already lets a loopback caller act as
+ * owner without a password. On a CLAIMED node the operation is inert (a claimed
+ * node's token can authorize nothing), and it refuses rather than minting a
+ * token that would only ever be dead.
+ */
+export interface AuthClaimReissueResult {
+  /** The fresh `tm8c_…` plaintext. Returned only to an on-box loopback caller. */
+  token: string;
+  /** The claim URL the operator can open, fragment-carried like the boot log's. */
+  claimUrl: string;
+  /** The 0600 file the durable copy was written to, or null if the write failed. */
+  tokenPath: string | null;
+}
+
+/**
+ * `auth.password.change` — rotate your OWN credential (design §10.3).
+ *
+ * CHANGE, NOT RESET: the current password is required and proven server-side, so
+ * an open session cannot silently re-credential the account. There is
+ * deliberately no reset-without-the-old-password variant — that needs an
+ * out-of-band capability, and an unauthenticated one would hand the node to
+ * anyone who can reach it. The write is `set_account_credential` under the
+ * caller's own claims (an account may set its own credential without node
+ * admin); every OTHER live session for the account is then revoked, the one
+ * making the change spared.
+ */
+export interface AuthPasswordChangeInput {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface AuthPasswordChangeResult {
+  accountId: string;
+  /**
+   * How many OTHER live sessions were revoked. The session making the change is
+   * deliberately kept, so a caller is not logged out of the shell or browser
+   * they just used. A loopback auto-owner carries no session, so nothing is
+   * spared and the count is every live bearer session for the account.
+   */
+  revokedOtherSessions: number;
+}
+
+/**
+ * `auth.invite.signup` — join a space by redeeming an invite that also CREATES
+ * your account (design D5, §4.4, §5.3).
+ *
+ * CLAIM-FREE, and the INVITE CODE is the authorization: the invited person has
+ * no account until this call, so no claim can be bound. `signup_via_invite`
+ * validates the invite, creates the account (never an admin, never an owner —
+ * §7.3), creates the member row and consumes the invite ATOMICALLY. Signing up
+ * SIGNS YOU IN — the result is `auth.login`'s shape plus the space you joined,
+ * so the operator never sets or learns your password.
+ */
+export interface AuthInviteSignupInput {
+  /** `inv_…` — the code handed to the invited person out of band. */
+  code: string;
+  username: string;
+  password: string;
+  displayName?: string;
+  email?: string;
+  /** Defaults to `browser`. `agent` is refused — agent tokens are minted at spawn. */
+  kind?: 'browser' | 'cli';
+}
+
+export interface AuthInviteSignupResult {
+  /** `tm8s_<sessionId>.<secret>` — returned exactly once, never recoverable. */
+  token: string;
+  account: AuthAccountView;
+  session: AuthSessionView;
+  /** The space the invite joined you to. */
+  spaceId: SpaceId;
+  /** The member row created for you in that space. */
+  memberId: EntityId;
+}
+
 // ---------------------------------------------------------------------------
 // credentials.* — Tier B per-member vendor credentials (sub-doc 11 §D).
 //
