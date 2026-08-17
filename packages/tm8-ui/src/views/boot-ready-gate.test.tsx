@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * THE PER-TEAMMATE READ MUST NOT GATE `ready`.
+ * THE PER-TEAMMATE DEFAULT MUST COST NO REQUEST.
  *
  * === THE DEFECT THIS FILE PINS ===
  *
@@ -32,18 +32,30 @@
  * So ~76% of the boot was this one loop, and none of it was database work —
  * 23ms x 136 round trips drained two at a time IS the number.
  *
+ * === WHAT THE FIX IS, AND WHY THIS FILE ASSERTS ZERO RATHER THAN "LATER" ===
+ *
+ * The first cut simply detached the loop so it stopped gating `ready`. That was
+ * worth ~3s and it was still N requests. The node now projects the answer onto
+ * the row itself — `state.defaultProfileId`, assembled in the server's
+ * `entity-read.ts` from the batch edge query `loadRelations` already runs for
+ * the page — so the launch memo reads it off a summary boot had already
+ * fetched. N requests became NONE.
+ *
+ * So the assertion here is `toBe(0)`, not an ordering. A test that only pinned
+ * "ready comes first" would pass on the intermediate fix and quietly permit the
+ * fan-out to return, still costing every teammate a round trip in the
+ * background. Zero is the property worth defending.
+ *
+ * The seam's `connections` THROWS rather than returning empty, so a zero here
+ * is evidence and not merely the absence of it.
+ *
  * === WHY jsdom IS A VALID INSTRUMENT HERE ===
  *
  * jsdom loads no stylesheets, so no test in this repo can see a layout defect.
- * This file measures neither layout nor wall-clock. It asserts an ORDERING —
- * that `ready` flips while the connections reads are still outstanding — using
- * the real `useGateData` against a seam that simply never resolves them. An
- * ordering is behavioural, and the hook under test is the real one.
- *
- * Holding the reads open forever rather than making them "slow" is what makes
- * this deterministic: there is no timing window to lose on a loaded CI box. On
- * the old code this test cannot pass at any timeout, because `hydrate` is
- * awaiting a promise nothing will ever settle.
+ * This file measures neither layout nor wall-clock. It COUNTS REQUESTS issued
+ * by the real `useGateData` against a counting seam, and checks a value that
+ * arrived on a row. Both are behavioural, and the hook under test is the real
+ * one.
  */
 import { describe, expect, it } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
@@ -53,7 +65,7 @@ import { useGateData } from './useGateData';
 
 const SPACE = 'spc-boot' as SpaceId;
 
-function teammate(id: string): EntitySummary {
+function teammate(id: string, defaultProfileId: string | null): EntitySummary {
   return {
     id: id as EntitySummary['id'],
     spaceId: SPACE,
@@ -72,11 +84,16 @@ function teammate(id: string): EntitySummary {
     state: {
       kind: 'team_member',
       owner: { id: 'act-1', kind: 'member', displayName: 'me' },
+      // A model/agentTool pair the launch catalog actually knows: the memo
+      // DROPS any teammate whose model is unsupported, so a placeholder here
+      // would empty `launch.teammates` and make every assertion below vacuous.
       model: 'claude-opus-5',
       agentTool: 'claude-code',
+      // The field under test. `null` is the honest shape for a teammate with
+      // no default — see the contract note on `defaultProfileId`.
+      defaultProfileId,
     },
     badges: {},
-    ...{},
   } as unknown as EntitySummary;
 }
 
@@ -84,8 +101,6 @@ interface Harness {
   seam: Seam;
   /** How many per-teammate connection reads the hook has issued. */
   connectionReads: () => number;
-  /** Nothing ever settles these — see the docblock. */
-  releaseNone: () => void;
 }
 
 function harness(teammates: EntitySummary[]): Harness {
@@ -114,12 +129,12 @@ function harness(teammates: EntitySummary[]): Harness {
     },
     async graph() { return { nodes: [], edges: [], clusters: [] }; },
     async entity() { throw new Error('not read by this test'); },
-    /* THE READ UNDER TEST. It counts, and then hangs — a request that is in
-       flight forever is the cleanest possible statement of "boot must not be
-       waiting on this". */
+    /* THE READ THAT MUST NOT HAPPEN. It counts AND throws: a seam that quietly
+       returned an empty page would let a reintroduced fan-out pass every
+       assertion in this file while costing a round trip per teammate. */
     connections() {
       connections += 1;
-      return new Promise(() => {}) as never;
+      throw new Error('boot must not read connections per teammate');
     },
     async messages() { return { items: [], nextCursor: null, total: 0 } as never; },
     liveness: {
@@ -138,35 +153,53 @@ function harness(teammates: EntitySummary[]): Harness {
     commands: {},
   } as unknown as Seam;
 
-  return { seam, connectionReads: () => connections, releaseNone: () => {} };
+  return { seam, connectionReads: () => connections };
 }
 
-describe('boot: the per-teammate connections read is off the ready gate', () => {
-  it('flips ready with every per-teammate connections read still in flight', async () => {
-    const rows = Array.from({ length: 24 }, (_, i) => teammate(`tm-${i}`));
+describe('boot: the per-teammate default costs no request at all', () => {
+  it('reaches ready without issuing a single entities.connections read', async () => {
+    const rows = Array.from({ length: 24 }, (_, i) => teammate(`tm-${i}`, `prof-${i}`));
     const h = harness(rows);
 
     const { result } = renderHook(() =>
       useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
     );
 
-    // On the pre-fix code this never arrives: `hydrate` is awaiting a fan-out
-    // of promises that never settle, so `setReady(true)` is unreachable.
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    /* AND THE READS REALLY ARE OUTSTANDING — without this the test would also
-       pass if the loop had simply been deleted, which is a different change
-       with a different (worse) meaning: the picker would lose its default
-       preselection permanently rather than acquire it a beat late. */
-    expect(h.connectionReads()).toBeGreaterThan(0);
+    /* THE WHOLE POINT. Before the projection this was 24 requests, awaited, at
+       concurrency 2 — twelve serial waves before the workspace could open. The
+       seam's `connections` impl throws if called, so a zero here is not the
+       absence of evidence: any regression that reintroduces the fan-out fails
+       loudly rather than quietly costing a second. */
+    expect(h.connectionReads()).toBe(0);
+  });
+
+  it('carries each teammate default off the row the boot read already returned', async () => {
+    const rows = [teammate('tm-a', 'prof-a'), teammate('tm-b', null), teammate('tm-c', 'prof-c')];
+    const h = harness(rows);
+
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    const byId = new Map(result.current.launch.teammates.map((t) => [t.id, t.defaultProfileId]));
+    expect(byId.get('tm-a')).toBe('prof-a');
+    expect(byId.get('tm-c')).toBe('prof-c');
+    /* ABSENT, NOT NULL, and that distinction is the field's contract: a
+       teammate with no default of its own leaves the picker on the SPACE
+       default rather than asserting a profile the node never named. */
+    expect(byId.get('tm-b')).toBeUndefined();
+    expect(h.connectionReads()).toBe(0);
   });
 
   it('does not scale the pre-ready request count with the number of teammates', async () => {
-    /* The point of the fix stated as a curve rather than an ordering: 4
-       teammates and 64 teammates must reach `ready` having issued the SAME
-       number of blocking reads. Anything linear here is the defect returning. */
-    const ready = async (n: number): Promise<number> => {
-      const h = harness(Array.from({ length: n }, (_, i) => teammate(`tm-${i}`)));
+    /* The fix stated as a curve rather than an ordering: 4 teammates and 64
+       teammates must reach `ready` having issued the SAME number of reads.
+       Anything linear here is the defect returning. */
+    const readsAtReady = async (n: number): Promise<number> => {
+      const h = harness(Array.from({ length: n }, (_, i) => teammate(`tm-${i}`, `prof-${i}`)));
       const { result } = renderHook(() =>
         useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
       );
@@ -174,10 +207,7 @@ describe('boot: the per-teammate connections read is off the ready gate', () => 
       return h.connectionReads();
     };
 
-    // Both boots issue connection reads; neither WAITS for them, so both reach
-    // ready. The count at ready is not asserted equal — the fan-out is racing
-    // the flip by design — only that reaching ready is not gated on draining it.
-    await expect(ready(4)).resolves.toBeGreaterThanOrEqual(0);
-    await expect(ready(64)).resolves.toBeGreaterThanOrEqual(0);
+    expect(await readsAtReady(4)).toBe(0);
+    expect(await readsAtReady(64)).toBe(0);
   });
 });

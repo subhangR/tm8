@@ -312,6 +312,9 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     model: z.string().nullable().optional(),
     agentTool: z.string().nullable().optional(),
     liveWork: LiveWorkSchema.nullable().optional(),
+    // ABSENT/`null` means the teammate has no default profile of its own, NOT
+    // "not loaded yet" — the space default applies. See `contract.ts`.
+    defaultProfileId: EntityIdSchema.nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('pull_request'),

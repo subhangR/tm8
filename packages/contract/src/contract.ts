@@ -186,8 +186,23 @@ export type CoreEntityState =
   | { kind: 'message'; anchorId: EntityId; rootMessageId: EntityId | null; author: ActorSummary;
       messageBatchId: string | null; editedAt?: string | null; redactedAt?: string | null }
   | { kind: 'member'; role: 'owner'|'admin'|'member'; score: number; taskDoneCount: number }
+  /* `defaultProfileId` is the teammate's own `defaults_to_profile` target, and
+     it is ADDITIVE and OPTIONAL like `model`/`agentTool` above.
+
+     IT EXISTS SO THAT READING IT IS NOT A REQUEST. Every consumer that wants a
+     teammate's default profile has the teammate row already; before this field
+     the only way to answer was `entities.connections(teammate.id)`, once per
+     teammate, and a launch picker wants the answer for ALL of them. That made
+     it an N+1 on the one read whose count scales with the space — measured at
+     136 round trips and ~3s of a 3.9s workspace boot. The edge rides the batch
+     edge query `loadRelations` already runs for the page, so this costs zero
+     extra queries.
+
+     ABSENT OR `null` MEANS THE TEAMMATE HAS NO DEFAULT OF ITS OWN — the space
+     default applies. It never means "not loaded yet"; that distinction is the
+     whole point of projecting it onto the row rather than resolving it later. */
   | { kind: 'team_member'; owner: ActorSummary; model?: string | null; agentTool?: string | null;
-      liveWork?: LiveWork | null }
+      liveWork?: LiveWork | null; defaultProfileId?: EntityId | null }
   // `ciStatus`/`mergeState` are ADDITIVE and OPTIONAL (forge observer).
   // `null` means this node has no verdict — nothing has observed the pull
   // request yet, or the observer runs unauthenticated — and a consumer renders

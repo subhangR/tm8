@@ -1545,7 +1545,14 @@ export function createFixtureSeam(): FixtureSeam {
       case 'doc':
         return { kind: 'doc', format: (c.format as 'markdown') ?? 'markdown', childCount: 0 };
       case 'team_member':
-        return { kind: 'team_member', owner: viewerActor, model: null, agentTool: null, liveWork: null };
+        // `defaultProfileId: null` — a freshly created teammate has no
+        // `defaults_to_profile` edge yet, and the field's contract is that
+        // absence means exactly that, so the fixture states it rather than
+        // omitting it and leaving the UI to guess.
+        return {
+          kind: 'team_member', owner: viewerActor, model: null, agentTool: null,
+          liveWork: null, defaultProfileId: null,
+        };
       case 'file':
         return {
           kind: 'file', name: (c.name as string) ?? input.title,

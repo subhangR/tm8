@@ -610,6 +610,14 @@ export interface EntityRelations {
   completedBy: Map<string, { actorId: string; at: string }>;
   /** `contains` count, per collection. */
   itemCounts: Map<string, number>;
+  /**
+   * `defaults_to_profile` target, per teammate — the profile a launch preselects.
+   *
+   * A SCALAR, not a list, and the database is what makes that safe:
+   * `edges_defaults_to_profile_source_idx` (015) is UNIQUE on `src_id` for this
+   * type, so a teammate cannot have two. There is no "which one wins" to decide.
+   */
+  defaultProfiles: Map<string, string>;
   /** Raw mark-edge material for `badges.staleness` — derived in badgesOf, never stored. */
   marks: Map<string, EntityMarks>;
 }
@@ -645,6 +653,7 @@ const EMPTY_RELATIONS: EntityRelations = {
   workingOn: new Map(),
   completedBy: new Map(),
   itemCounts: new Map(),
+  defaultProfiles: new Map(),
   marks: new Map(),
 };
 
@@ -673,6 +682,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     workingOn: new Map(),
     completedBy: new Map(),
     itemCounts: new Map(),
+    defaultProfiles: new Map(),
     marks: new Map(),
   };
 
@@ -688,7 +698,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   }>(
     `select id, src_id, dst_id, type, props, created_at, assigned_by, assigned_at
        from public.edges
-      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'has_member', 'depends_on', 'based_on', 'copy_of', 'completed_by'))
+      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'has_member', 'depends_on', 'based_on', 'copy_of', 'completed_by', 'defaults_to_profile'))
          -- \`contains\` alone filters tombstoned members: itemCount must agree
          -- with every list the UI draws (content.items, connections and
          -- collections.query all exclude deleted endpoints), and the projector
@@ -776,6 +786,14 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
         if (wanted.has(edge.src_id)) {
           relations.itemCounts.set(edge.src_id, (relations.itemCounts.get(edge.src_id) ?? 0) + 1);
         }
+        break;
+      /* THE SAME SHAPE AS `contains` ABOVE — a scalar derived from an outbound
+         edge, riding the batch query rather than asking per row. `set` rather
+         than an accumulate because the type is UNIQUE on `src_id` (015:297);
+         if that index were ever dropped this would silently keep the last row
+         the query returned, which is why the invariant is named here. */
+      case 'defaults_to_profile':
+        if (wanted.has(edge.src_id)) relations.defaultProfiles.set(edge.src_id, edge.dst_id);
         break;
       case 'depends_on':
         if (wanted.has(edge.src_id)) {
@@ -1293,6 +1311,10 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         model: row.team_member_model,
         agentTool: row.team_member_agent_tool,
         liveWork: null,
+        // `null`, never omitted: the field's contract is that absence MEANS
+        // "no default of its own", so a teammate that genuinely has none must
+        // say so rather than look like a row that forgot to carry the answer.
+        defaultProfileId: ctx.relations.defaultProfiles.get(row.id) ?? null,
       };
     case 'work_session':
       return {
