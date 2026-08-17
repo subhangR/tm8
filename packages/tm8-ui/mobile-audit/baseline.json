@@ -1,6 +1,14 @@
 {
   "label": "baseline",
-  "commit": "238c10fa",
+  "ref": {
+    "head": "1e7ddb526925406b62acacbe6f0c333b233e0b76",
+    "headShort": "1e7ddb52",
+    "branch": "tm8/01a00ba8",
+    "behindMain": 0,
+    "dirty": false,
+    "dirtyFiles": [],
+    "untrackedCount": 0
+  },
   "minTapPx": 44,
   "epsilonPx": 0.5,
   "space": "sp-atelier",
@@ -3762,7 +3770,7 @@
       "innerWidth": 918,
       "scrollWidth": 918,
       "bodyScrollWidth": 768,
-      "overflowCount": 12,
+      "overflowCount": 9,
       "worstRightEdge": 1009,
       "worstLeftEdge": 0,
       "overflowRoots": [
@@ -3775,11 +3783,6 @@
           "right": 981,
           "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
-        },
-        {
-          "right": 903,
-          "path": "div.ceg > div.ceg__canvas > svg > g",
-          "text": "019f0000…0022Itemedges not read"
         },
         {
           "right": 899,
@@ -3797,14 +3800,26 @@
           "text": "prompts"
         }
       ],
-      "tapTargetsTotal": 35,
-      "tapTargetsUnderMin": 29,
+      "tapTargetsTotal": 34,
+      "tapTargetsUnderMin": 28,
       "tapTargetsSmallest": [
         {
           "w": 1,
           "h": 1,
           "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > input.tch-attach__input",
           "text": ""
+        },
+        {
+          "w": 9,
+          "h": 937,
+          "path": "div.shell-body > div.crf-root > div.crf-split > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 61,
+          "h": 14,
+          "path": "article.tch-turn > div.tch-parts > details.tch-thinking > summary",
+          "text": "Thinking"
         },
         {
           "w": 36,
@@ -3837,22 +3852,16 @@
           "text": "◇019f0000…0022entity"
         },
         {
-          "w": 21,
-          "h": 26,
-          "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > button.tch-attach",
-          "text": "/"
-        },
-        {
           "w": 23,
           "h": 24,
           "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "w": 23,
-          "h": 26,
-          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--active > button.tch-rootcell__plus",
-          "text": "＋"
+          "w": 257,
+          "h": 23,
+          "path": "section.crf-canvas > div.crf-pane-head > label.crf-pick.crf-pick--graph > select",
+          "text": "No graphs yet"
         },
         {
           "w": 56,
@@ -3865,12 +3874,6 @@
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
           "text": "Work"
-        },
-        {
-          "w": 56,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Board"
         }
       ],
       "shell": "desktop",
@@ -5255,13 +5258,19 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 35,
-      "tapTargetsUnderMin": 32,
+      "tapTargetsTotal": 34,
+      "tapTargetsUnderMin": 31,
       "tapTargetsSmallest": [
         {
           "w": 1,
           "h": 1,
           "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > input.tch-attach__input",
+          "text": ""
+        },
+        {
+          "w": 9,
+          "h": 813,
+          "path": "div.shell-body > div.crf-root > div.crf-split > div.kit-resizer",
           "text": ""
         },
         {
@@ -5307,10 +5316,10 @@
           "text": "◇019f0000…0022entity"
         },
         {
-          "w": 23,
-          "h": 26,
-          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--active > button.tch-rootcell__plus",
-          "text": "＋"
+          "w": 763,
+          "h": 23,
+          "path": "section.crf-canvas > div.crf-pane-head > label.crf-pick.crf-pick--graph > select",
+          "text": "No graphs yet"
         },
         {
           "w": 56,
@@ -5323,12 +5332,6 @@
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
           "text": "Work"
-        },
-        {
-          "w": 56,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Board"
         }
       ],
       "shell": "desktop",
