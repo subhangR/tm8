@@ -333,10 +333,36 @@ const noShots = argv.includes('--no-screenshots');
  * deliberately NOT used with an ephemeral port — we let the OS choose and read
  * the choice back off vite's banner.
  */
+/**
+ * A FREE PORT, CHOSEN HERE AND THEN PINNED — never `--port 0`.
+ *
+ * `--port 0` looked like the clean way to say "pick one". It is not: vite does
+ * not honour it, silently falls back to its DEFAULT port, and then either dies
+ * on a collision or — much worse — a `strictPort`-less run lands on a port
+ * another lane's dev server already holds and the harness measures SOMEBODY
+ * ELSE'S APP while reporting confidently. Lanes run in parallel worktrees on
+ * this machine, so that is a live hazard, not a theoretical one.
+ *
+ * So the port is obtained by binding an ephemeral socket, reading what the OS
+ * gave us, and releasing it. There is a race between the release and vite's
+ * bind, and `--strictPort` is what makes that race SAFE: if anything took the
+ * port in between, vite exits loudly instead of quietly serving from elsewhere.
+ * A crash is a fine outcome; a silent wrong-app measurement is not.
+ */
+async function freePort() {
+  const { createServer } = await import('node:net');
+  return new Promise((resolve, reject) => {
+    const s = createServer();
+    s.once('error', reject);
+    s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); });
+  });
+}
+
 async function startVite() {
   const existing = process.env.AUDIT_BASE;
   if (existing) return { base: existing, stop: () => {} };
-  const proc = spawn('./node_modules/.bin/vite', ['--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const port = await freePort();
+  const proc = spawn('./node_modules/.bin/vite', ['--port', String(port), '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
   const base = await new Promise((resolve, reject) => {
     let buf = '';
     const t = setTimeout(() => reject(new Error('vite did not report a URL in 30s:\n' + buf)), 30_000);
