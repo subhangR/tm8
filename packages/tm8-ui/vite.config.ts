@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { createHash } from 'node:crypto';
 
 /**
  * tm8-ui — the new UI, built from the approved design suite (charter R1).
@@ -20,7 +21,45 @@ export default defineConfig({
     strictPort: true,
     host: '127.0.0.1',
     proxy: {
-      '/v2': { target, changeOrigin: false, ws: true },
+      '/v2': {
+        target,
+        changeOrigin: false,
+        ws: true,
+        /* TEMPORARY DIAGNOSTIC TAP (2026-08-15, staging auth lockout): logs
+           method, path, header PRESENCE and body length for auth.login only —
+           never the credential itself. Remove once the sign-in defect is
+           understood. */
+        configure(proxy) {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            if (req.url?.includes('/auth/login')) {
+              const chunks: Buffer[] = [];
+              req.on('data', (c: Buffer) => chunks.push(c));
+              req.on('end', () => {
+                const body = Buffer.concat(chunks);
+                const hash = createHash('sha256').update(body).digest('hex').slice(0, 12);
+                console.log(
+                  '[auth-tap]', new Date().toISOString(), req.method, req.url,
+                  'bearer=', Boolean(req.headers.authorization),
+                  'cookie=', Boolean(req.headers.cookie),
+                  'x-tm8-client=', Boolean(req.headers['x-tm8-client']),
+                  'len=', body.length, 'sha12=', hash,
+                );
+              });
+            }
+          });
+          proxy.on('proxyRes', (proxyRes, req) => {
+            if (req.url?.includes('/auth/login')) {
+              const chunks: Buffer[] = [];
+              proxyRes.on('data', (c: Buffer) => chunks.push(c));
+              proxyRes.on('end', () => {
+                const text = Buffer.concat(chunks).toString('utf8');
+                console.log('[auth-tap]', 'status=', proxyRes.statusCode,
+                  'body=', proxyRes.statusCode === 200 ? '(token issued)' : text.slice(0, 160));
+              });
+            }
+          });
+        },
+      },
       '/health': { target, changeOrigin: false },
     },
   },
