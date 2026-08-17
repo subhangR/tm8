@@ -32,6 +32,25 @@
   line-height: var(--pn-lh-snug);
   letter-spacing: var(--pn-track-tight);
   margin: 1.4em 0 0.5em;
+  /* A jumped-to heading must not land flush against the top edge of the
+     scroller. The reader's outline scrolls headings into view with
+     `block:'start'`, which without this puts the heading's first pixel on the
+     boundary — its own `margin-top` collapses out of the calculation, so the
+     section title reads as clipped and the rule under it sits off-screen.
+     `scroll-margin` is the only property that reserves that gap without moving
+     the heading in normal flow. */
+  scroll-margin-top: 10px;
+}
+
+/* A heading is focusable ONLY as the target of an outline jump (`tabIndex=-1`,
+   set by the renderer alongside the pairing attribute), which means the focus
+   ring here is not decoration: it is the sole confirmation a keyboard user gets
+   that the jump landed. `:focus-visible` rather than `:focus` so a mouse jump
+   does not leave a ring behind on the heading it scrolled to. */
+.cv2-root .md-root :is(h1, h2, h3, h4, h5, h6):focus-visible {
+  outline: 2px solid rgba(var(--pn-brand-rgb), 0.5);
+  outline-offset: 3px;
+  border-radius: 2px;
 }
 .cv2-root .md-root > :first-child { margin-top: 0; }
 .cv2-root .md-root h1 { font-family: var(--pn-serif); font-size: var(--pn-fs-h1); font-weight: 500; }

@@ -1,4 +1,5 @@
-import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
+import type { ComponentPropsWithoutRef, ComponentType } from 'react';
+import ReactMarkdown, { defaultUrlTransform, type Components, type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Mermaid } from './Mermaid';
 // Imported HERE rather than by the app bootstrap so any surface that renders
@@ -110,9 +111,10 @@ function urlTransform(url: string, key: string, node: { tagName?: string }): str
  * constant below and is spread in — there is still one `code`, one `a`, one
  * `table`, and no chance of two tables drifting apart.
  */
-function componentsFor(fileHref?: MarkdownFileHref, extra?: Components): Components {
+function componentsFor(source: string, fileHref?: MarkdownFileHref, extra?: Components): Components {
   return {
     ...COMPONENTS,
+    ...headingComponents(source),
     /**
      * IMAGES ARE NOT FETCHED FROM THE WIDER WEB, and this is a privacy
      * boundary rather than a styling choice.
@@ -202,6 +204,53 @@ function componentsFor(fileHref?: MarkdownFileHref, extra?: Components): Compone
  * renderer for it, and its source is a truer rendering than a second
  * placeholder would be.
  */
+/**
+ * h1–h6, each marked so an outline can find it again.
+ *
+ * WHY ALL SIX ARE GENERATED rather than written out: they differ in one thing
+ * (the tag), and six near-identical overrides is six places for the attribute
+ * to be forgotten in — which for a table of contents means a silently dead
+ * entry.
+ *
+ * `tabIndex={-1}` is what makes the outline reachable by KEYBOARD as well as
+ * by scrollbar. A heading is not focusable by default, so without it the
+ * outline could only move the viewport, leaving the caret behind in the list —
+ * the same defect the browser's own skip-link pattern uses this attribute to
+ * avoid. `-1` keeps it out of the tab ORDER, so nothing is added to the
+ * sequential path through the document.
+ *
+ * A heading whose source line carries no slug renders as a plain heading. That
+ * is the fenced-region and Setext case: `headingsIn` deliberately skips both,
+ * and the outline does not list them, so there is nothing to pair.
+ */
+function headingComponents(source: string): Components {
+  const slugs = headingLineSlugs(source);
+  const tags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
+  const table: Partial<Record<(typeof tags)[number], HeadingComponent>> = {};
+  for (const tag of tags) {
+    const Tag = tag;
+    table[tag] = function Heading({ node, children, ...rest }) {
+      const line = node?.position?.start.line;
+      const slug = line == null ? undefined : slugs.get(line);
+      return (
+        <Tag {...rest} {...(slug != null ? { [MD_HEADING_ATTR]: slug, tabIndex: -1 } : {})}>
+          {children}
+        </Tag>
+      );
+    };
+  }
+  return table;
+}
+
+/**
+ * One override's signature. Written out because `Components` types each of the
+ * six tags separately and a loop cannot narrow per iteration — the alternative
+ * was six copies of the body, which is six places to forget the attribute.
+ * Heading props are identical across h1-h6 (`HTMLHeadingElement` for all six),
+ * so this is a restatement, not a widening.
+ */
+type HeadingComponent = ComponentType<ComponentPropsWithoutRef<'h1'> & ExtraProps>;
+
 const COMPONENTS: Components = {
   code({ className, children, ...rest }) {
     const match = /language-(\w+)/.exec(className ?? '');
@@ -284,7 +333,7 @@ export function Markdown({ source, className, testId = 'markdown', fileHref, com
     <div className={className ? `md-root ${className}` : 'md-root'} data-testid={testId}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        components={componentsFor(fileHref, components)}
+        components={componentsFor(source, fileHref, components)}
         urlTransform={urlTransform}
       >
         {source}
@@ -294,29 +343,148 @@ export function Markdown({ source, className, testId = 'markdown', fileHref, com
 }
 
 /**
+ * One heading of a document, as the outline needs it.
+ *
+ * `slug` is the LOOKUP KEY that pairs an outline entry with the heading element
+ * this renderer draws — see `MD_HEADING_ATTR`. It is not an `id` and not a URL
+ * fragment; read that attribute's docblock for why the distinction is
+ * load-bearing here.
+ */
+export interface DocHeading {
+  /** ATX depth, 1-6 — what lets the outline draw structure instead of a row. */
+  level: number;
+  /** Display text, inline markdown removed (`stripInline`). */
+  text: string;
+  /** Unique within one document, in document order. */
+  slug: string;
+  /** 1-based source line. The key `headingLineSlugs` pairs the render on. */
+  line: number;
+}
+
+/**
+ * HOW A RENDERED HEADING IS FOUND AGAIN — and why this is an attribute and
+ * NOT an `id`.
+ *
+ * An `id` plus `href="#slug"` is the ordinary way to build a table of
+ * contents, and it is wrong twice over in this app:
+ *
+ *  1. THE ROUTER OWNS `location.hash` (`routes/transport.ts` — every route in
+ *     tm8 is `#/…`). An `href="#some-heading"` is therefore not an in-document
+ *     anchor here, it is a NAVIGATION that replaces the whole route. The href
+ *     would also be a broken URL if copied or middle-clicked, which is a worse
+ *     lie than the caption this replaced.
+ *  2. `id`s ARE GLOBAL AND THIS BODY MOUNTS MORE THAN ONCE. Two panels open on
+ *     the same doc (split view), or the reader's own two-theme test render,
+ *     put two copies of every heading in one document. `getElementById` would
+ *     silently resolve to whichever mounted first — scrolling the wrong panel.
+ *
+ * So the pairing is a scoped attribute: the outline queries for it INSIDE its
+ * own body root, where "the heading with this slug" has exactly one answer.
+ */
+export const MD_HEADING_ATTR = 'data-md-heading';
+
+/**
  * The document's headings, in order — the ONE job the hand-rolled parsers keep.
  *
- * The reader promotes headings out of the column into its outline chips, and
- * that is a structural read over the source rather than a rendering concern,
- * so it stays a plain scan. ATX only (`# heading`), matching what the previous
+ * The reader promotes headings out of the column into its outline, and that is
+ * a structural read over the source rather than a rendering concern, so it
+ * stays a plain scan. ATX only (`# heading`), matching what the previous
  * `readDocument` recognised — a Setext heading (underlined with `===`) renders
  * correctly through `Markdown` above but does not reach the outline. Named
  * rather than silently half-supported.
  *
  * Fenced regions are skipped: a `# comment` inside a code block is code, not a
  * chapter, and the old parser put it in the outline.
+ *
+ * DEDUPLICATION LIVES HERE, ONCE. Two headings that read the same slugify the
+ * same, so later collisions take a `-2`, `-3` suffix in document order. The
+ * renderer below does not repeat this logic — it looks each heading's slug up
+ * BY SOURCE LINE, so there is no second counter that could disagree with this
+ * one.
  */
-export function headingsIn(source: string): string[] {
-  const headings: string[] = [];
+export function headingsIn(source: string): DocHeading[] {
+  const headings: DocHeading[] = [];
+  const used = new Map<string, number>();
   let inFence = false;
-  for (const raw of source.split('\n')) {
+  source.split('\n').forEach((raw, i) => {
     if (/^\s*```/.test(raw)) {
       inFence = !inFence;
-      continue;
+      return;
     }
-    if (inFence) continue;
-    const match = /^#{1,6}\s+(.+)$/.exec(raw.trim());
-    if (match) headings.push(match[1].trim());
-  }
+    if (inFence) return;
+    const match = /^(#{1,6})\s+(.+)$/.exec(raw.trim());
+    if (!match) return;
+    /* Trailing `#`s are ATX's optional closing sequence, not text: CommonMark
+       renders `## Two ##` as "Two", so an outline that kept them would not
+       match the heading it points at. */
+    const text = stripInline(match[2].replace(/\s+#+\s*$/, '').trim());
+    if (text === '') return;
+    const base = slugify(text);
+    const seen = used.get(base) ?? 0;
+    used.set(base, seen + 1);
+    headings.push({
+      level: match[1].length,
+      text,
+      slug: seen === 0 ? base : `${base}-${seen + 1}`,
+      line: i + 1,
+    });
+  });
   return headings;
+}
+
+/**
+ * Source line → slug, the pairing the heading overrides render from.
+ *
+ * A LINE NUMBER rather than the heading's text is the key on purpose. The
+ * overrides run per element, in whatever order React re-renders them; a
+ * counter kept across those calls would be shared mutable state whose value
+ * depends on render order, which is precisely how a duplicate-heading document
+ * ends up with two elements claiming one slug. A line is a fact about the
+ * source, so the same source always produces the same pairing.
+ */
+function headingLineSlugs(source: string): Map<number, string> {
+  return new Map(headingsIn(source).map((h) => [h.line, h.slug]));
+}
+
+/**
+ * A heading's text with inline markdown removed, for use as a LABEL.
+ *
+ * The outline is a list of destinations, not a second rendering of the
+ * document, so `` ## The `zoom: 1.1` decision `` belongs in it as "The zoom:
+ * 1.1 decision" — the previous chip row printed the backticks, asterisks and
+ * link brackets verbatim, which read as punctuation noise.
+ *
+ * Deliberately NOT a markdown parser: it unwraps the four inline shapes whose
+ * markers are pure syntax (code, emphasis, link/image text) and leaves
+ * everything else alone. The rendered heading in the column is still the real
+ * renderer's output — this only ever produces plain text.
+ */
+function stripInline(text: string): string {
+  return text
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1') // [label](url), ![alt](src)
+    .replace(/!?\[([^\]]*)\]\[[^\]]*\]/g, '$1') // [label][ref]
+    .replace(/`+([^`]+)`+/g, '$1') // `code`
+    .replace(/(\*\*\*|___)(.+?)\1/g, '$2') // ***bold italic***
+    .replace(/(\*\*|__)(.+?)\1/g, '$2') // **bold**
+    .replace(/(\*|_)(.+?)\1/g, '$2') // *italic*
+    .replace(/~~(.+?)~~/g, '$1') // ~~struck~~
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Heading text → a slug safe to put in an attribute and query for.
+ *
+ * GitHub's shape, because it is the one doc authors have seen: lowercased,
+ * spaces to hyphens, anything else dropped. A heading made entirely of
+ * punctuation (`## ---`) slugifies to nothing, so it falls back to a positional
+ * name rather than an empty selector that would match every such heading.
+ */
+function slugify(text: string): string {
+  const slug = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .trim()
+    .replace(/\s+/g, '-');
+  return slug === '' ? 'section' : slug;
 }

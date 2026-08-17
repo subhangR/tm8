@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import type {
   ActorSummary,
@@ -24,9 +24,12 @@ import { ReaderBody } from './ReaderBody';
  *    children — a body that drew four chips from the number would be
  *    inventing three of them, which is the "1 live above not running"
  *    defect in reader clothing.
- *  · a table-of-contents chip that navigates nowhere is a dead control (R7):
- *    entity-backed entries are live only when a dispatch exists, and the
- *    outline read out of the prose is a LABEL, never a control.
+ *  · a table-of-contents entry that navigates nowhere is a dead control (R7).
+ *    Entity-backed entries are live only when a dispatch exists. The entries
+ *    read out of the prose USED to be inert labels for the same reason — no
+ *    anchoring existed to give them — and are live as of the 2026-08-17
+ *    ruling; `an outline entry goes to its heading` below is what earns that,
+ *    by pinning WHICH heading each one arrives at.
  *  · `history ▸` is the deferred version-history feature's in-body home, so
  *    it renders disabled-carrying-its-reason and never as a live button.
  *
@@ -34,6 +37,25 @@ import { ReaderBody } from './ReaderBody';
  * optional chains) so tsc fails here if the shape drifts, rather than the
  * assertions quietly passing over an `any`.
  */
+
+/**
+ * jsdom SHIPS NO `scrollIntoView` — it has no layout, so there is nothing for
+ * it to scroll. Every case in this file that clicks an outline entry reaches
+ * the reader's jump, so without this the method is missing rather than merely
+ * inert and the handler throws. Defined once for the file because that absence
+ * is a fact about the ENVIRONMENT, not a fixture of one test: the alternative
+ * is a guard in production code for a method every browser has had for a
+ * decade, which would make the real path the untested one.
+ */
+beforeAll(() => {
+  if (!('scrollIntoView' in Element.prototype)) {
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      value: () => {},
+      writable: true,
+      configurable: true,
+    });
+  }
+});
 
 const ada: ActorSummary = { id: 'm-ada', kind: 'member', displayName: 'ada', isAgent: false };
 
@@ -186,16 +208,173 @@ describe('the outline is the chapters we HOLD, never the number the record claim
     expect(labels).toEqual(['Layout spec']);
   });
 
-  it('never makes a heading-derived chip clickable — it is a label, not a control', () => {
+  it('never dispatches an entity open from a heading-derived entry — it jumps in-document', () => {
+    // The reversal of an earlier ruling, kept as a test because the two entry
+    // kinds now LOOK the same and only the dispatch tells them apart: a heading
+    // entry that reached `onOpenEntity` would try to open a doc id it never had.
     const onOpenEntity = vi.fn();
     const { getAllByTestId } = renderReader({
       detail: docDetail(FIXTURE_BODY, { childCount: 1, children: [] }),
       onOpenEntity,
     });
-    const chip = within(getAllByTestId('reader-outline')[0]!).getAllByTestId('reader-toc-chip')[0]!;
-    expect(chip.tagName).not.toBe('BUTTON');
-    fireEvent.click(chip);
+    const entry = within(getAllByTestId('reader-outline')[0]!).getAllByTestId('reader-toc-chip')[0]!;
+    expect(entry.tagName).toBe('BUTTON');
+    fireEvent.click(entry);
     expect(onOpenEntity).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE TABLE OF CONTENTS IS NAVIGATION THAT ARRIVES (user ruling 2026-08-17).
+ *
+ * These pin the behaviour the chip row could not have: clicking an entry moves
+ * the reader to THAT heading. The load-bearing assertion in each is WHICH
+ * element got scrolled — a table of contents whose entries all land on the
+ * first heading is worse than one that does nothing, because it looks like it
+ * worked. Two failure modes get their own case:
+ *
+ *  · DUPLICATE HEADING TEXT. Two sections called "Proof standard" slugify the
+ *    same; without the dedup in `headingsIn` the second entry scrolls to the
+ *    first section, forever.
+ *  · DUPLICATE MOUNTS. This body renders twice here (both themes) and in the
+ *    app whenever two panels split on one doc. A `getElementById` lookup would
+ *    resolve to whichever mounted first, so clicking in the dark copy would
+ *    scroll the light one.
+ *
+ * `scrollIntoView` is not implemented in jsdom, so it is a spy on the
+ * prototype — which is also what makes "which element" observable at all.
+ */
+describe('an outline entry goes to its heading', () => {
+  /** Records the elements `scrollIntoView` was called on, in order. */
+  function spyScroll() {
+    const hit: Element[] = [];
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) {
+      hit.push(this);
+    });
+    return { hit, spy };
+  }
+
+  const MULTI_BODY = [
+    '# Fully mobile-responsive tm8',
+    '',
+    'Opening prose.',
+    '',
+    '## 0. Correcting the premise',
+    '',
+    'More prose.',
+    '',
+    '## Phase 7 — The `zoom: 1.1` decision',
+    '',
+    'Yet more prose.',
+    '',
+    '### Proof standard',
+    '',
+    'Deeper still.',
+    '',
+    '## Proof standard',
+    '',
+    'A second section of the same name, one level up.',
+  ].join('\n');
+
+  function renderMulti() {
+    return renderReader({ detail: docDetail(MULTI_BODY, { childCount: 0, children: [] }) });
+  }
+
+  it('scrolls the heading the entry names, not the first one', () => {
+    const { hit, spy } = spyScroll();
+    const { getAllByTestId } = renderMulti();
+    const outline = getAllByTestId('reader-outline')[0]!;
+    const entries = within(outline).getAllByTestId('reader-toc-chip');
+
+    fireEvent.click(entries[1]!); // "0. Correcting the premise"
+    expect(hit).toHaveLength(1);
+    expect(hit[0]!.tagName).toBe('H2');
+    expect(hit[0]!.textContent).toBe('0. Correcting the premise');
+    spy.mockRestore();
+  });
+
+  it('tells two identically-titled headings apart', () => {
+    const { hit, spy } = spyScroll();
+    const { getAllByTestId } = renderMulti();
+    const entries = within(getAllByTestId('reader-outline')[0]!).getAllByTestId('reader-toc-chip');
+    // Entries 3 and 4 are the `###` and the `##` both called "Proof standard".
+    const labels = entries.map((e) => e.textContent);
+    expect(labels[3]).toBe('Proof standard');
+    expect(labels[4]).toBe('Proof standard');
+
+    fireEvent.click(entries[3]!);
+    fireEvent.click(entries[4]!);
+    expect(hit).toHaveLength(2);
+    // Same text, DIFFERENT elements, and each at its own level — the whole
+    // point of slugging in document order with a dedup suffix.
+    expect(hit[0]).not.toBe(hit[1]);
+    expect(hit[0]!.tagName).toBe('H3');
+    expect(hit[1]!.tagName).toBe('H2');
+    spy.mockRestore();
+  });
+
+  it('scrolls the heading inside ITS OWN body when the same doc is mounted twice', () => {
+    const { hit, spy } = spyScroll();
+    const { getAllByTestId } = renderMulti();
+    const bodies = getAllByTestId('reader-body');
+    expect(bodies).toHaveLength(2);
+
+    // The SECOND mount (the dark copy) is the one that would break under a
+    // document-wide id lookup.
+    const entries = within(getAllByTestId('reader-outline')[1]!).getAllByTestId('reader-toc-chip');
+    fireEvent.click(entries[1]!);
+    expect(hit).toHaveLength(1);
+    expect(bodies[1]!.contains(hit[0]!)).toBe(true);
+    expect(bodies[0]!.contains(hit[0]!)).toBe(false);
+    spy.mockRestore();
+  });
+
+  it('moves focus to the heading so a keyboard user arrives with it', () => {
+    // Without this the viewport moves and the caret stays in the list, so every
+    // subsequent Tab walks the outline again instead of the section.
+    const { spy } = spyScroll();
+    const { getAllByTestId } = renderMulti();
+    const entries = within(getAllByTestId('reader-outline')[0]!).getAllByTestId('reader-toc-chip');
+    fireEvent.click(entries[1]!);
+    expect(document.activeElement?.tagName).toBe('H2');
+    expect(document.activeElement?.textContent).toBe('0. Correcting the premise');
+    spy.mockRestore();
+  });
+
+  it('strips inline markdown from the label but not from the rendered heading', () => {
+    const { getAllByTestId } = renderMulti();
+    const entries = within(getAllByTestId('reader-outline')[0]!).getAllByTestId('reader-toc-chip');
+    // The chip row printed the backticks verbatim. The list is a set of
+    // destinations, so the label is plain text …
+    expect(entries[2]!.textContent).toBe('Phase 7 — The zoom: 1.1 decision');
+    // … while the document itself still renders the code span.
+    const md = getAllByTestId('reader-markdown')[0]!;
+    expect(md.querySelector('h2 code')?.textContent).toBe('zoom: 1.1');
+  });
+
+  it('draws a real list, indented by the depth the document uses', () => {
+    const { getAllByTestId } = renderMulti();
+    const outline = getAllByTestId('reader-outline')[0]!;
+    // A <nav> around an <ol>: the count, the order and the nesting are audible
+    // to a screen reader, which a bare div of pills gave it none of.
+    expect(outline.tagName).toBe('NAV');
+    expect(outline.getAttribute('aria-label')).toBe('Table of contents');
+    const items = outline.querySelectorAll('li');
+    expect(items).toHaveLength(5);
+    // `#` → 0, `##` → 1, `###` → 2. Depth is relative to the shallowest
+    // heading the document actually uses, so a doc of all-`##` is flat.
+    expect([...items].map((li) => li.getAttribute('data-depth'))).toEqual(['0', '1', '1', '2', '1']);
+  });
+
+  it('is flat for a document that never uses its top level', () => {
+    const { getAllByTestId } = renderReader({
+      detail: docDetail(['## One', '', 'a', '', '## Two', '', 'b'].join('\n'), {
+        childCount: 0,
+        children: [],
+      }),
+    });
+    const items = getAllByTestId('reader-outline')[0]!.querySelectorAll('li');
+    expect([...items].map((li) => li.getAttribute('data-depth'))).toEqual(['0', '0']);
   });
 
   it('renders a chapter chip disabled-with-reason when no dispatch was supplied', () => {

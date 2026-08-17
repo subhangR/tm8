@@ -1,9 +1,10 @@
+import { useCallback, useRef } from 'react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
 import { EmptyBody } from '../detail/PanelStates';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
-import { Markdown, headingsIn, type MarkdownFileHref } from '../../kit';
+import { MD_HEADING_ATTR, Markdown, headingsIn, type DocHeading, type MarkdownFileHref } from '../../kit';
 import './reader-body.css';
 
 /**
@@ -37,8 +38,23 @@ import './reader-body.css';
  * longer eyeballed either; `kit/markdown.css` maps headings onto the package's
  * own `--pn-fs-*` scale, so nothing here invents a measure.
  *
- * Headings are now in BOTH places on purpose: the outline chips above are
- * NAVIGATION, the rendered body is the DOCUMENT.
+ * Headings are now in BOTH places on purpose: the outline above is NAVIGATION,
+ * the rendered body is the DOCUMENT.
+ *
+ * THE OUTLINE IS A TABLE OF CONTENTS, NOT A CHIP ROW (user ruling 2026-08-17),
+ * which reverses two decisions recorded below. It used to be a wrapped row of
+ * mono pills in which the heading-derived entries were inert CAPTIONS, because
+ * in-document anchoring was not built. Both halves of that failed the same way
+ * in use: a reader looking at fourteen chapter titles wrapped across five ragged
+ * lines cannot see the document's shape, and the one thing they reach for — go
+ * to that section — was the thing the chips could not do.
+ *
+ * So it is a list now: one entry per line, indented by heading depth, and every
+ * entry is a control that goes somewhere. Nothing about R7 relaxed — the two
+ * kinds of entry stay distinguishable, and an entity entry with no dispatch is
+ * still disabled-with-reason. What changed is that a heading entry now HAS a
+ * dispatch (`kit`'s `MD_HEADING_ATTR` pairing), so honesty no longer requires
+ * it to be a caption.
  */
 
 export interface ReaderBodyProps {
@@ -71,6 +87,45 @@ export interface ReaderBodyProps {
 }
 
 export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEntity, fileHref }: ReaderBodyProps) {
+  /**
+   * The search scope for an outline jump, and the reason it is a ref rather
+   * than `document`. This body mounts more than once — two panels split on the
+   * same doc, and the reader's own test renders it twice for both themes — so
+   * "the heading with this slug" only has one answer WITHIN one body. See
+   * `MD_HEADING_ATTR` for the same argument at the other end of the pairing.
+   */
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  const onJumpToHeading = useCallback((slug: string) => {
+    const root = rootRef.current;
+    if (root == null) return;
+    /*
+     * THE SLUG IS NEVER INTERPOLATED INTO A SELECTOR. It is derived from
+     * author text, so `[data-md-heading="…"]` built by concatenation is a
+     * string from a document being fed to a parser — a heading containing a
+     * quote or a backslash makes it a `SyntaxError` thrown out of a click
+     * handler, and `CSS.escape` is the fix everyone reaches for and is
+     * undefined in jsdom, which means the escaping would be UNTESTED here.
+     * Matching on the attribute's presence and comparing the value in JS has
+     * neither problem and needs no escaping to reason about.
+     */
+    const target = [...root.querySelectorAll<HTMLElement>(`[${MD_HEADING_ATTR}]`)].find(
+      (el) => el.getAttribute(MD_HEADING_ATTR) === slug,
+    );
+    if (target == null) return;
+    target.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    /*
+     * FOCUS FOLLOWS THE JUMP, and it must not scroll a second time. A keyboard
+     * or screen-reader user who activates an outline entry has to arrive at
+     * the heading, or the viewport moves and their caret stays in the list —
+     * every subsequent Tab then walks the outline again instead of the section
+     * they asked for. `preventScroll` leaves the smooth scroll above in charge;
+     * without it the browser's own instant scroll-into-view races it and the
+     * animation is lost.
+     */
+    target.focus({ preventScroll: true });
+  }, []);
+
   const content = detail.content as unknown as Record<string, unknown>;
   const state = detail.state as unknown as Record<string, unknown>;
 
@@ -124,8 +179,14 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
       role="tabpanel"
       aria-labelledby="tab-content"
       data-testid="reader-body"
+      ref={rootRef}
     >
-      <Outline entries={outline} chapterCount={chapterCount} onOpenEntity={onOpenEntity} />
+      <Outline
+        entries={outline}
+        chapterCount={chapterCount}
+        onOpenEntity={onOpenEntity}
+        onJumpToHeading={onJumpToHeading}
+      />
 
       {/* THE DOCUMENT, RENDERED (user ruling 2026-07-31). This used to be a
           flat run of <p>/<blockquote> from a four-shape hand parser, which
@@ -163,29 +224,62 @@ interface OutlineEntry {
   label: string;
   /** Set when the entry is a real entity; null when it was read out of prose. */
   entityId: string | null;
+  /** Set when the entry is a heading in THIS document; null for an entity. */
+  slug: string | null;
+  /**
+   * Indent depth, 0-based. Heading entries carry the document's own nesting;
+   * chapter entities are siblings in the hierarchy we were given and are all
+   * drawn flat — an invented depth would claim a structure the record does not
+   * hold.
+   */
+  depth: number;
 }
 
 /**
  * ENTITIES FIRST, THE DOCUMENT'S OWN HEADINGS SECOND. A child entity is a
- * thing you can open; a heading is text we found. Both make a table of
- * contents, only the first makes a control — which is why they are kept
- * distinguishable all the way to the chip.
+ * thing you can OPEN; a heading is a place in this document you can GO TO.
+ * Both make a table of contents and both are now real controls, but they do
+ * different things — which is why they stay distinguishable all the way to the
+ * row.
+ *
+ * DEPTH IS NORMALISED TO WHAT THE DOCUMENT USES, not to the raw `#` count. A
+ * doc whose every heading is `##` has one level, not a uniform one-step indent,
+ * so the shallowest heading present becomes depth 0. Deeper levels then step
+ * one per level, and depth is capped — see `rd-toc__row` for why the CSS could
+ * not be trusted with an unbounded number.
  */
-function buildOutline(chapters: readonly EntitySummary[], headings: readonly string[]): OutlineEntry[] {
+function buildOutline(chapters: readonly EntitySummary[], headings: readonly DocHeading[]): OutlineEntry[] {
   if (chapters.length > 0) {
-    return chapters.map((c) => ({ key: c.id, label: c.title, entityId: c.id }));
+    return chapters.map((c) => ({ key: c.id, label: c.title, entityId: c.id, slug: null, depth: 0 }));
   }
-  return headings.map((label, i) => ({ key: `h${i}`, label, entityId: null }));
+  const top = headings.reduce((min, h) => Math.min(min, h.level), 6);
+  return headings.map((h) => ({
+    key: h.slug,
+    label: h.text,
+    entityId: null,
+    slug: h.slug,
+    depth: Math.min(h.level - top, MAX_OUTLINE_DEPTH),
+  }));
 }
+
+/**
+ * Indents past this collapse to one measure. A `######` under an `#` is four
+ * steps deep, and at the panel's width every further step is width taken from
+ * a label that is already ellipsing — the nesting stops being readable long
+ * before the levels run out.
+ */
+const MAX_OUTLINE_DEPTH = 3;
 
 function Outline({
   entries,
   chapterCount,
   onOpenEntity,
+  onJumpToHeading,
 }: {
   entries: readonly OutlineEntry[];
   chapterCount: number | null;
   onOpenEntity?: (id: string) => void;
+  onJumpToHeading: (slug: string) => void;
 }) {
   if (entries.length === 0) {
     if (chapterCount == null || chapterCount <= 0) return null;
@@ -200,32 +294,70 @@ function Outline({
       </p>
     );
   }
+  /*
+   * A <nav> around an <ol>, because that is what this is. The chip row was a
+   * bare div of pills — to a screen reader an unlabelled run of buttons with
+   * no count and no boundary, indistinguishable from the toolbar it sat under.
+   * The list makes the count and the nesting audible, and the label is what
+   * lets a user skip the table of contents to reach the document.
+   */
   return (
-    <div className="rd-outline" data-testid="reader-outline">
-      {entries.map((entry) => (
-        <OutlineChip key={entry.key} entry={entry} onOpenEntity={onOpenEntity} />
-      ))}
-    </div>
+    <nav className="rd-toc" data-testid="reader-outline" aria-label="Table of contents">
+      <ol className="rd-toc__list">
+        {entries.map((entry) => (
+          <li className="rd-toc__item" data-depth={entry.depth} key={entry.key}>
+            <OutlineEntryControl entry={entry} onOpenEntity={onOpenEntity} onJumpToHeading={onJumpToHeading} />
+          </li>
+        ))}
+      </ol>
+    </nav>
   );
 }
 
-function OutlineChip({ entry, onOpenEntity }: { entry: OutlineEntry; onOpenEntity?: (id: string) => void }) {
+/**
+ * `data-testid="reader-toc-chip"` OUTLIVES THE CHIP, deliberately. The name no
+ * longer describes the element, and it is kept anyway because it is a selector
+ * two suites reach for — including `e2e/entity-view.spec.ts`, which drives a
+ * real browser this change cannot re-run. Renaming it would be a cosmetic
+ * improvement bought with an unverifiable edit to a test guarding a different
+ * behaviour (a chapter opening beside the document). The stale name is the
+ * cheaper honesty; this comment is the pointer for whoever renames it next
+ * with the e2e in reach.
+ */
+function OutlineEntryControl({
+  entry,
+  onOpenEntity,
+  onJumpToHeading,
+}: {
+  entry: OutlineEntry;
+  onOpenEntity?: (id: string) => void;
+  onJumpToHeading: (slug: string) => void;
+}) {
   const id = entry.entityId;
   if (id == null) {
     /*
-     * A LABEL, NOT A CONTROL. This entry is a heading found in the prose, and
-     * in-document anchoring is not built — so the chip claims no affordance
-     * at all rather than looking clickable and doing nothing (R7's other
-     * half: a dead control is worse than an honest caption).
+     * A HEADING IN THIS DOCUMENT — a jump, not a navigation.
+     *
+     * A <button>, and NOT an `<a href="#slug">`, even though a link is what
+     * this looks and reads like. tm8's router owns `location.hash` (every
+     * route is `#/…`), so that href would leave the document rather than
+     * scroll it, and would be a broken URL the moment anyone copied it. The
+     * full argument lives on `MD_HEADING_ATTR`, next to the other end of the
+     * pairing.
+     *
+     * `slug` is non-null for every heading entry by construction; the guard is
+     * for the type, and falling back to no-op beats a non-null assertion that
+     * would throw in the one case the type says cannot happen.
      */
     return (
-      <span
-        className="rd-chip rd-chip--static"
+      <button
+        type="button"
+        className="rd-toc__row rd-toc__row--heading"
         data-testid="reader-toc-chip"
-        title="Read from the document's own headings — not a linked entity"
+        onClick={() => (entry.slug ? onJumpToHeading(entry.slug) : undefined)}
       >
-        {entry.label}
-      </span>
+        <span className="rd-toc__label">{entry.label}</span>
+      </button>
     );
   }
   if (!onOpenEntity) {
@@ -238,10 +370,29 @@ function OutlineChip({ entry, onOpenEntity }: { entry: OutlineEntry; onOpenEntit
     );
   }
   return (
-    <button type="button" className="rd-chip" data-testid="reader-toc-chip" onClick={() => onOpenEntity(id)}>
-      {entry.label}
+    <button
+      type="button"
+      className="rd-toc__row rd-toc__row--entity"
+      data-testid="reader-toc-chip"
+      onClick={() => onOpenEntity(id)}
+    >
+      <span className="rd-toc__label">{entry.label}</span>
     </button>
   );
+}
+
+/**
+ * Whether this reader may animate a jump.
+ *
+ * Read at CLICK TIME rather than held in state: the jump is the only thing that
+ * consults it, and a media-query listener kept alive for the life of every
+ * mounted document body would be subscription cost for a value nothing renders
+ * from. Guarded for the environment because jsdom implements `matchMedia`
+ * only when a test asks it to.
+ */
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 // ---------------------------------------------------------------------------
