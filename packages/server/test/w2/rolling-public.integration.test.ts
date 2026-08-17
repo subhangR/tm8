@@ -249,6 +249,12 @@ const PROJECT_FOLDER_NET_NEW_OPERATIONS = [
   // 2026-08-09: the VIEWER half. The group could list a directory and attach a
   // file but never SHOW one, so a browser had nothing to render.
   'projects.files.read',
+  // 2026-08-09: the IMPORT half. The group could only ever browse a folder the
+  // node already held; these three put one there. Same storage precondition,
+  // so they mount and refuse together with the rest of the group.
+  'projects.folderUploads.init',
+  'projects.folderUploads.complete',
+  'projects.folderUploads.abort',
 ] as const;
 
 /**
@@ -393,7 +399,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 115 -> 117: entities.commands.gate + projects.contention (Tier 4 git x graph).
     // 117 -> 119: projects.files.list + projects.files.attach.
     // 119 -> 120 (2026-08-09): projects.files.read, the viewer half.
-    expect(registry.size).toBe(120);
+    // 120 -> 123 (2026-08-09): the three projects.folderUploads.* handlers.
+    expect(registry.size).toBe(123);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -549,7 +556,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // auth.session.get is a GET and binds nothing.
     // 69 -> 70 (2026-08-09): entities.commands.gate (Tier 4 git x graph).
     // 70 -> 73: the three credentials.* command bodies are bound.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(74);
+    // 74 -> 77 (2026-08-09): the three projects.folderUploads.* command bodies.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(77);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -698,9 +706,11 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 130/128 -> 134/132: the four credentials.* routes, all mounted.
     // 136/134 -> 137/135 (2026-08-09): projects.files.read, mounted. NOTE
     // `operations` counts HTTP ROUTES, so it trails OPERATIONS.length by the
-    // single WS row: 138 rows -> 137 routes.
-    expect(health).toMatchObject({ ok: true, operations: 137, implemented: 135 });
-    expect(harness.production.server.registry.size).toBe(135);
+    // single WS row: 141 rows -> 140 routes.
+    // 137/135 -> 140/138 (2026-08-09): the three projects.folderUploads.*
+    // routes, all mounted.
+    expect(health).toMatchObject({ ok: true, operations: 140, implemented: 138 });
+    expect(harness.production.server.registry.size).toBe(138);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -719,7 +729,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 128 -> 132: credentials.*.
     // 134 -> 135 (2026-08-09): projects.files.read.
-    expect(registered.size + residual.length).toBe(135);
+    // 135 -> 138 (2026-08-09): the three projects.folderUploads.* rows.
+    expect(registered.size + residual.length).toBe(138);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

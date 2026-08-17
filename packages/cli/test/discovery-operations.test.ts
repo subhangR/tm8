@@ -52,7 +52,10 @@ import { createOutput } from '../src/output.js';
 // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
 // 131 -> 135: credentials.* Tier B.
 // 135 -> 137: projects.files.list/attach (public, UI-only, commandless).
-const EXPECTED_ROWS = 138;
+// 138 -> 141 (2026-08-09): projects.folderUploads.init/complete/abort
+// (public, UI-only, commandless — the browser is the only caller that has
+// bytes the node does not already hold).
+const EXPECTED_ROWS = 141;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -166,7 +169,9 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +1 public: `projects.files.read`, commandless for the same reason
     // `projects.files.list` is — a CLI caller already holds the node filesystem.
-    expect(histogram).toEqual({ public: 134, composite: 1, internal: 1, reserved: 2 });
+    // +3 public: the `projects.folderUploads.*` lifecycle, commandless for the
+    // same reason again.
+    expect(histogram).toEqual({ public: 137, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -189,6 +194,12 @@ describe('the CLI command projection', () => {
       'projects.files.attach',
       'projects.files.list',
       'projects.files.read',
+      // The folder-import lifecycle is a browser transport: the CLI already
+      // holds the node filesystem, so `project create --working-dir` names a
+      // folder that is already there and there is nothing to transfer.
+      'projects.folderUploads.abort',
+      'projects.folderUploads.complete',
+      'projects.folderUploads.init',
     ]);
   });
 
@@ -208,8 +219,8 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the TEN commandless rows named exactly in the test above.
-    expect(counted).toBe(EXPECTED_ROWS - 10);
+    // Minus the THIRTEEN commandless rows named exactly in the test above.
+    expect(counted).toBe(EXPECTED_ROWS - 13);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {

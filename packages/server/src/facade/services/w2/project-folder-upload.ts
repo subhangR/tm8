@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 import {
@@ -38,6 +38,12 @@ export interface MaterializedProjectFolder {
   fileCount: number;
   directoryCount: number;
   totalBytes: number;
+  /** Manifest files that had no entry at their destination path. */
+  addedCount: number;
+  /** Manifest files that overwrote something already at their destination path. */
+  replacedCount: number;
+  /** True when this call created the destination root rather than merging into one. */
+  createdRoot: boolean;
 }
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -151,10 +157,52 @@ function validateRootName(rootName: string): void {
   }
 }
 
+async function entryTypeAt(path: string): Promise<'file' | 'directory' | 'other' | 'absent'> {
+  try {
+    const stats = await lstat(path);
+    if (stats.isDirectory()) return 'directory';
+    if (stats.isFile()) return 'file';
+    return 'other';
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'absent';
+    throw error;
+  }
+}
+
 /**
- * Reconstruct a validated upload beneath a server-approved parent. Creating
- * the destination root is the exclusive reservation: an existing target is
- * never replaced, and any failed verification removes only that new root.
+ * Ensure `<root>/<...segments>` exists as a directory and still resolves inside
+ * `root`. The containment re-check is the point: `mkdir -p` happily follows an
+ * existing subdirectory that is a symlink out of the tree, so proving the
+ * destination parent at the start of the call does not prove where a nested
+ * write lands.
+ */
+async function ensureContainedDirectory(root: string, segments: string[]): Promise<string> {
+  const target = resolve(root, ...segments);
+  await mkdir(target, { recursive: true });
+  const resolved = await realpath(target);
+  if (!isWithinRoot(resolved, root)) {
+    throw new Error(`directory ${segments.join('/')} resolves outside the destination root`);
+  }
+  return resolved;
+}
+
+/**
+ * Reconstruct a validated upload beneath a server-approved parent, MERGING into
+ * an existing root when one is already there (ruling R8): a manifest path
+ * replaces whatever sits at that path, a path the manifest does not name is
+ * left alone, and the caller is told how many were replaced rather than being
+ * left to infer it.
+ *
+ * Every byte is verified against its declared size and sha-256 while landing in
+ * a staging directory, and only then moved into the destination. So a corrupt
+ * or truncated blob cannot destroy a file that was already there — the failure
+ * happens before the destination is touched at all.
+ *
+ * The commit walk itself is not atomic across files: once moves begin, an I/O
+ * failure part-way leaves a partially merged tree. That is stated rather than
+ * papered over, because the alternative (build a whole new tree and swap it)
+ * would delete every path the manifest does not name, which is exactly what R8
+ * says must not happen.
  */
 export async function materializeProjectFolder(
   input: MaterializeProjectFolderInput,
@@ -175,15 +223,22 @@ export async function materializeProjectFolder(
     throw new Error('destination root escapes its parent');
   }
 
-  let ownsDestination = false;
+  const rootType = await entryTypeAt(workingDir);
+  if (rootType === 'file' || rootType === 'other') {
+    // Includes a symlink: lstat does not follow it, so a link named like the
+    // upload root is refused instead of being merged into whatever it points at.
+    throw new Error('destination root exists and is not a directory');
+  }
+  const createdRoot = rootType === 'absent';
+
+  const stagingDir = resolve(resolvedParent, `.tm8-folder-upload-${input.folderUploadId}`);
+  if (!isWithinRoot(stagingDir, resolvedParent)) {
+    throw new Error('staging directory escapes its parent');
+  }
+  await mkdir(stagingDir, { recursive: false });
+
   try {
-    await mkdir(workingDir, { recursive: false });
-    ownsDestination = true;
-
-    for (const directory of input.manifest.directories) {
-      await mkdir(resolve(workingDir, ...directory.split('/')), { recursive: true });
-    }
-
+    // --- stage and verify: nothing below reaches the destination -------------
     for (const file of input.manifest.files) {
       const bytes = await input.readBytes(file.relativePath);
       if (bytes.byteLength !== file.sizeBytes) {
@@ -193,27 +248,63 @@ export async function materializeProjectFolder(
       if (checksum !== file.checksumSha256) {
         throw new Error(`checksum mismatch for ${file.relativePath}`);
       }
-
       const segments = file.relativePath.split('/');
       if (segments.length > 1) {
-        await mkdir(resolve(workingDir, ...segments.slice(0, -1)), { recursive: true });
+        await mkdir(resolve(stagingDir, ...segments.slice(0, -1)), { recursive: true });
       }
-      await writeFile(resolve(workingDir, ...segments), bytes, { flag: 'wx' });
+      await writeFile(resolve(stagingDir, ...segments), bytes, { flag: 'wx' });
     }
 
-    // Re-check the parent after writing. This catches a parent symlink swap
-    // before the result is returned and therefore before a Project is linked.
+    // A parent symlink swap during the transfer would move the destination out
+    // from under the containment proof taken above.
     const finalParent = await realpath(input.destinationParent);
     if (finalParent !== resolvedParent) throw new Error('destination parent changed during upload');
+
+    // --- commit --------------------------------------------------------------
+    if (createdRoot) await mkdir(workingDir, { recursive: false });
+
+    for (const directory of input.manifest.directories) {
+      await ensureContainedDirectory(workingDir, directory.split('/'));
+    }
+
+    let addedCount = 0;
+    let replacedCount = 0;
+    for (const file of input.manifest.files) {
+      const segments = file.relativePath.split('/');
+      const parent = segments.length > 1
+        ? await ensureContainedDirectory(workingDir, segments.slice(0, -1))
+        : workingDir;
+      const destination = resolve(parent, segments[segments.length - 1]!);
+
+      const existing = await entryTypeAt(destination);
+      if (existing === 'directory') {
+        // Replacing a directory with a file would mean deleting everything under
+        // it, which is a destruction the manifest never described.
+        throw new Error(`${file.relativePath} exists as a directory at the destination`);
+      }
+      if (existing === 'absent') addedCount += 1;
+      else replacedCount += 1;
+
+      // rename replaces the destination entry itself, so a symlink sitting there
+      // is overwritten rather than written THROUGH.
+      await rename(resolve(stagingDir, ...segments), destination);
+    }
 
     return {
       workingDir,
       fileCount: input.manifest.files.length,
       directoryCount: input.manifest.directories.length,
       totalBytes: input.manifest.totalBytes,
+      addedCount,
+      replacedCount,
+      createdRoot,
     };
   } catch (error) {
-    if (ownsDestination) await rm(workingDir, { recursive: true, force: true });
+    // Only a root this call created is removed. A pre-existing root belongs to
+    // whoever put it there and is never deleted on a failed merge.
+    if (createdRoot) await rm(workingDir, { recursive: true, force: true });
     throw error;
+  } finally {
+    await rm(stagingDir, { recursive: true, force: true });
   }
 }

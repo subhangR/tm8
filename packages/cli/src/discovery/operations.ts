@@ -988,6 +988,41 @@ const ROWS: Record<OperationName, Row> = {
       '`tm8 file upload <path> --attach-to` is the CLI surface for the same outcome and carries the same ledger',
     ],
   },
+  'projects.folderUploads.init': {
+    cmd: null,
+    sum: 'Freeze a browser-selected folder manifest and open one byte grant per file',
+    authz: 'space',
+    input: 'bound',
+    tags: ['folder', 'upload', 'import', 'project'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'the CLI already holds the node filesystem: `tm8 project create --working-dir` names a folder that is already there, so there is nothing to transfer',
+      'refuses a hostile relative path by NAME rather than normalising it away, so the exact input survives in the log',
+    ],
+  },
+  'projects.folderUploads.complete': {
+    cmd: null,
+    sum: 'Reconstruct an uploaded folder beneath a server-approved parent and link it as a project',
+    authz: 'space',
+    input: 'bound',
+    tags: ['folder', 'upload', 'import', 'project'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'verifies every staged blob against its declared size and sha-256 BEFORE any byte reaches the destination',
+      'merges into an existing root, replacing matching relative paths and reporting the replaced count; paths absent from the manifest are left alone',
+    ],
+  },
+  'projects.folderUploads.abort': {
+    cmd: null,
+    sum: 'Release a folder upload grant and drop everything it staged',
+    authz: 'space',
+    input: 'bound',
+    tags: ['folder', 'upload', 'import', 'project'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'an abandoned grant also expires on its own; abort is the explicit path so a cancelled picker does not wait out the TTL',
+    ],
+  },
 
   // ── files ────────────────────────────────────────────────────────────────
   'files.uploadInit': {
@@ -1714,7 +1749,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:79ba655ef4e5f5395d5366d4604df07835d469e09688095cfe78bdfd40208b90';
+  'sha256:c1b5cc4615186b28293d7653943d0b74dc376159fa1a215287d6aa4feb9467f3';
 
 export const GRAMMAR_VERSION = '2';
 

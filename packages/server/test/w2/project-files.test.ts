@@ -260,12 +260,18 @@ describe('resolving one file for attachment', () => {
 });
 
 describe('W2 connected project folder facade', () => {
-  it('exports one registration seam for exactly the two project-file operations', async () => {
+  it('exports one registration seam for exactly the project-file operations', async () => {
     const { registry } = await registered(new FakeDb());
     // 2 -> 3 (2026-08-09): `projects.files.read`, the viewer half — same jail,
     // same authorization, and it mints nothing.
+    // 3 -> 6 (2026-08-09): the `projects.folderUploads.*` import lifecycle. It
+    // shares this seam because it shares the blob store: a deployment with no
+    // file storage must answer 501 for the import too, not offer an upload
+    // that has nowhere to stage bytes.
     expect(registry.implemented()).toEqual([
       'projects.files.attach', 'projects.files.list', 'projects.files.read',
+      'projects.folderUploads.abort', 'projects.folderUploads.complete',
+      'projects.folderUploads.init',
     ]);
   });
 

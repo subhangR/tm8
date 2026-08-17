@@ -43,23 +43,25 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.catalog).toEqual({
       // 131 -> 135: credentials.* (1 GET/read, 3 commands).
       // 137 -> 138 (2026-08-09): `projects.files.read`, one GET read.
-      total: 138,
-      v1: 136,
+      // 138 -> 141 (2026-08-09): `projects.folderUploads.init/complete/abort`,
+      // three POST commands.
+      total: 141,
+      v1: 139,
       reserved: 2,
-      http: 137,
+      http: 140,
       ws: 1,
-      registerableV1Http: 135,
-      methods: { GET: 53, POST: 58, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 },
-      kinds: { read: 56, command: 81, stream: 1 },
-      uniqueNames: 138,
-      uniqueBindings: 138,
+      registerableV1Http: 138,
+      methods: { GET: 53, POST: 61, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 },
+      kinds: { read: 56, command: 84, stream: 1 },
+      uniqueNames: 141,
+      uniqueBindings: 141,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(137);
+    expect(manifest.routes.http).toHaveLength(140);
     expect(manifest.routes.ws).toEqual([{
       operation: 'events.subscribe',
       method: 'WS',
@@ -85,8 +87,8 @@ describe('W1.C generated catalog and reachability foundations', () => {
     });
     expect(manifest.serverRegistries.inputSchemas.bound).toHaveLength(36);
     expect(manifest.serverRegistries.inputSchemas.unboundCommands).toHaveLength(13);
-    // 134 current registerable v1 HTTP ops minus the 28 W1-implemented.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(107);
+    // 138 current registerable v1 HTTP ops minus the 28 W1-implemented.
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(110);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -111,8 +113,8 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // frozen snapshot. The snapshot itself never rotates, so the four new
       // `credentials.*` operations raise this even though they ARE implemented
       // — this axis measures distance from the FROZEN W1 boundary, not from
-      // what is mounted today. Read out of the failure, which said 100.
-      unimplementedV1Http: 107,
+      // what is mounted today. Read out of the failure, which said 110.
+      unimplementedV1Http: 110,
     });
   });
 
@@ -164,7 +166,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(138);
+    expect(manifest.help.operations).toHaveLength(141);
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -328,7 +330,7 @@ describe('W2.C01 current mounted registry inventory', () => {
       readInputSchemaSourceInventory(),
     ]);
 
-    expect(handlers.facade).toHaveLength(124);
+    expect(handlers.facade).toHaveLength(127);
     // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
     // concurrent feature lane (not the W1 amendment set):
     //  - voice.token.create (voice-channels lane);
@@ -343,15 +345,18 @@ describe('W2.C01 current mounted registry inventory', () => {
     // projects.branches.list adds exactly one facade handler.
     // Tier 4 adds two facade handlers.
     // credentials.* add four facade handlers.
-    expect(handlers.all).toHaveLength(135);
+    // projects.folderUploads.init/complete/abort add three, registered in the
+    // same w2 project-files module because they drive the same blob store.
+    expect(handlers.all).toHaveLength(138);
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
       // `projects.files.read` joins the w2 project-files handler module, so the
       // facade count and this sha move together. The sha is the detector
-      // working, not a pin to route around.
-      .toBe('b9678f4f21a57c2a6eb57da0cf0259a1f16918fdd7372703696f86c44c6e0e28');
+      // working, not a pin to route around. It moved again for the three
+      // `projects.folderUploads.*` rows registered in that same module.
+      .toBe('bb8739550af0df410bd2cefc52de63a78f4bc823efa2da05baa7e58c700981f6');
 
-    expect(inputSchemas.bound).toHaveLength(74);
+    expect(inputSchemas.bound).toHaveLength(77);
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -368,7 +373,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     const registerableV1Http = OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
     );
-    expect(registerableV1Http).toHaveLength(135);
+    expect(registerableV1Http).toHaveLength(138);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);

@@ -114,7 +114,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  it('keeps the exact 137 = 135 v1 + 2 reserved, 136 HTTP + 1 WS boundary', () => {
+  it('keeps the exact 141 = 139 v1 + 2 reserved, 140 HTTP + 1 WS boundary', () => {
     // A21 (execution.liveness), then voice.token.create, are the +1s on every axis they touch.
     // The six artifacts rows (create/publish/revisions.list/preview.start/export/restore) are
     // the latest +6 on OPERATIONS and V1: +4 POST commands, +2 GET reads.
@@ -126,13 +126,15 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // 128 -> 129 (2026-08-09): projects.branches.list, one GET read.
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
     // 137 -> 138 (2026-08-09): projects.files.read, one GET read.
-    expect(OPERATIONS).toHaveLength(138);
-    expect(V1_OPERATIONS).toHaveLength(136);
+    // 138 -> 141 (2026-08-09): projects.folderUploads.init/complete/abort,
+    // three POST commands.
+    expect(OPERATIONS).toHaveLength(141);
+    expect(V1_OPERATIONS).toHaveLength(139);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(137);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(140);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
@@ -144,7 +146,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // execution.transcript moved it to 125; projects.branches.list moves it to 126.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(135);
+    )).toHaveLength(138);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

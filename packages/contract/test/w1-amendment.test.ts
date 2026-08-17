@@ -67,8 +67,12 @@ describe('W1 adopted catalog target', () => {
     // and two login-session POST commands. All four are v1 and human-only.
     // 137 -> 138 (2026-08-09): projects.files.read (GET/read) — the VIEWER
     // half of projects.files.list, which lists a directory but never reads one.
-    expect(OPERATIONS).toHaveLength(138);
-    expect(V1_OPERATIONS).toHaveLength(136);
+    // 138 -> 141 (2026-08-09): projects.folderUploads.init/complete/abort (all
+    // POST commands) — a browser-selected folder MATERIALIZED onto the node and
+    // linked as a project. Three rows because the transfer sits between two
+    // separately-replayable commands and either side can fail alone.
+    expect(OPERATIONS).toHaveLength(141);
+    expect(V1_OPERATIONS).toHaveLength(139);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -84,12 +88,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 53, POST: 58, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 53, POST: 61, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 56, command: 81, stream: 1 });
+    }).toEqual({ read: 56, command: 84, stream: 1 });
   });
 });
 

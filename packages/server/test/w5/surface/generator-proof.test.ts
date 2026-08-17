@@ -178,6 +178,7 @@ describe('W5.C generator proof', () => {
     // 66 -> 69 on 2026-08-02: auth.signup/login/logout bound their input DTOs.
     // 69 -> 70: entities.commands.gate; 70 -> 73: credentials.* command bodies.
     // 73 -> 74: projects.files.attach.
-    expect(ENTRIES).toHaveLength(74);
+    // 74 -> 77 (2026-08-09): the three projects.folderUploads.* command bodies.
+    expect(ENTRIES).toHaveLength(77);
   });
 });

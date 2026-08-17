@@ -323,15 +323,18 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 135 -> 137: projects.files.list (GET/read) + projects.files.attach (POST/command).
   // 137 -> 138 (2026-08-09): `projects.files.read`, one GET read — the viewer
   // half of `projects.files.list`. MEASURED off the merged built catalog.
-  assertEqual(names.length, 138, 'catalog total');
-  assertEqual(V1_OPERATIONS.length, 136, 'v1 total');
+  // 138 -> 141 (2026-08-09): `projects.folderUploads.init/complete/abort`,
+  // three POST commands — a browser-selected folder materialized onto the node.
+  // MEASURED off the merged built catalog, never derived by arithmetic.
+  assertEqual(names.length, 141, 'catalog total');
+  assertEqual(V1_OPERATIONS.length, 139, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
   assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');
-  assertEqual(methods, { GET: 53, POST: 58, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 }, 'method accounting');
-  assertEqual(kinds, { read: 56, command: 81, stream: 1 }, 'kind accounting');
-  assertEqual(router.http.length, 137, 'server router HTTP total');
+  assertEqual(methods, { GET: 53, POST: 61, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 }, 'method accounting');
+  assertEqual(kinds, { read: 56, command: 84, stream: 1 }, 'kind accounting');
+  assertEqual(router.http.length, 140, 'server router HTTP total');
   assertEqual(router.ws.length, 1, 'server router WS total');
   // These four are SNAPSHOT self-checks (the frozen W1 registry boundary) and
   // never move with an amendment; A21's live handler shows up only in the

@@ -42,7 +42,7 @@ describe.sequential('W3 production-Server public harness', () => {
       // 126 against a pin of 124. `execution.transcript` makes it 127 and
       // projects.branches.list makes it 128.
       // Tier 4 adds two more mounted HTTP routes.
-      operations: 137,
+      operations: 140,
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
     // design so it keeps catching the next drift; never a range or a live value.
@@ -59,7 +59,8 @@ describe.sequential('W3 production-Server public harness', () => {
     // `execution.transcript` makes it 125; projects.branches.list makes it 126.
     // Tier 4 adds two facade handlers.
     // 134 -> 135 (2026-08-09): projects.files.read, mounted.
-    expect(body.implemented).toBe(135);
+    // 135 -> 138 (2026-08-09): the three projects.folderUploads.* rows.
+    expect(body.implemented).toBe(138);
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
   });

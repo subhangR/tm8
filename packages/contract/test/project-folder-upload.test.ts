@@ -109,6 +109,30 @@ describe('client-machine project folder upload contract', () => {
       fileCount: 1,
       directoryCount: 1,
       totalBytes: 0,
+      addedCount: 1,
+      replacedCount: 0,
+      merged: false,
     }).success).toBe(true);
+
+    // Ruling R8: a re-upload merges, so the outcome must be able to SAY that it
+    // overwrote something. A result without these fields is not acceptable —
+    // silently replacing bytes is exactly what the counts exist to prevent.
+    expect(ProjectFolderUploadResultSchema.safeParse({
+      folderUploadId: '11111111-1111-4111-8111-111111111111',
+      spaceId: '22222222-2222-4222-8222-222222222222',
+      project: {
+        id: '33333333-3333-4333-8333-333333333333',
+        name: 'Website',
+        workingDir: '/srv/projects/website',
+        trust: 'untrusted',
+        defaults: {},
+        createdAt: '2026-08-09T00:00:00.000Z',
+        updatedAt: '2026-08-09T00:00:00.000Z',
+      },
+      rootName: 'website',
+      fileCount: 1,
+      directoryCount: 1,
+      totalBytes: 0,
+    }).success).toBe(false);
   });
 });

@@ -302,9 +302,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
     // 134 -> 135 (2026-08-09): projects.files.read.
-    expect(SURFACE).toHaveLength(135);
-    expect(rows).toHaveLength(135);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(135);
+    // 135 -> 138 (2026-08-09): projects.folderUploads.init/complete/abort.
+    expect(SURFACE).toHaveLength(138);
+    expect(rows).toHaveLength(138);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(138);
   });
 
   /**
@@ -455,7 +456,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 80 -> 81: 086 (manifest credential-shape guard), merged via #87.
     // 81 -> 82: 087 (single-use, hash-only PTY grants), measured by running
     // this final post-#87 tree rather than inferred across concurrent branches.
-    expect(server.appliedMigrations.length).toBe(82);
+    // 82 -> 84: 088 (menu library items, landed on main as #96) and 089
+    // (project folder uploads). MEASURED by running this tree, not derived.
+    expect(server.appliedMigrations.length).toBe(84);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -694,6 +697,13 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // the handler's own invalid_input is what answers. Requiring the parameter is
   // the point: guessing a default would silently read the wrong file.
   'projects.files.read',
+  // 2026-08-09: `projects.folderUploads.init` clears its :166 gate on the
+  // sweep's schema-valid body and is then refused by the handler, because the
+  // manifest normaliser — not the schema — is what decides whether a set of
+  // relative paths is coherent. Only `init` appears here: `complete` and
+  // `abort` carry nothing but a clientMutationId, so they get past the body
+  // check and are refused for an unknown upload with a different code.
+  'projects.folderUploads.init',
   'savedViews.create',
   'savedViews.update',
   'spaces.create',

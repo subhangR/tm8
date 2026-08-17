@@ -1773,6 +1773,16 @@ export interface ProjectFolderUploadResult {
   fileCount: number;
   directoryCount: number;
   totalBytes: number;
+  /** Manifest files written where the destination held nothing. */
+  addedCount: number;
+  /**
+   * Manifest files that overwrote something already at that path. Re-uploading
+   * a folder merges in place, so this is a fact the caller is owed rather than
+   * a detail: `replacedCount > 0` means existing bytes are gone.
+   */
+  replacedCount: number;
+  /** True when the destination root already existed and was merged into. */
+  merged: boolean;
 }
 
 /** One local branch in a project's working directory. */

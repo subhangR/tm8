@@ -1808,6 +1808,9 @@ export const ProjectFolderUploadResultSchema: z.ZodType<ProjectFolderUploadResul
   fileCount: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_FILES),
   directoryCount: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES),
   totalBytes: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_TOTAL_BYTES),
+  addedCount: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_FILES),
+  replacedCount: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_FILES),
+  merged: z.boolean(),
 }).strict();
 
 export const ProjectBranchSchema: z.ZodType<ProjectBranch> = z.object({
