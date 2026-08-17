@@ -15,57 +15,120 @@
    it here would be a second source for one geometry.
    ========================================================================== */
 
-/* --- outline (the TOC chip row) ------------------------------------------- */
-/* Oracle: `display:flex;gap:5px;flex-wrap:wrap` (line 346). */
-.cv2-root .rd-outline {
+/* --- outline (the table of contents) -------------------------------------- */
+/* WHAT THIS REPLACED, and why the oracle is departed from here. The canvas
+   draws the outline as a wrapped row of mono pills (`display:flex;gap:5px;
+   flex-wrap:wrap`, line 346) and this file reproduced it exactly. On a real
+   document — fourteen chapters, titles of six to nine words — that row wrapped
+   across five ragged lines whose entries began at arbitrary x positions, and
+   no amount of correct tokening made it legible as a table of contents. The
+   oracle's frame carries four short chapter names, which is the case the pill
+   row is right for.
+
+   So: a LIST, one entry per line (user ruling 2026-08-17). The pill treatment
+   is gone rather than restyled — a pill is a tag, and these are destinations.
+   Type stays in the outline's own quiet register (mono micro, ink-3) so the
+   reading column below it is still the loudest thing in the body. */
+.cv2-root .rd-toc {
+  /* The body is a 12px-gap flex column; the list needs no box of its own. */
+  display: block;
+}
+
+/* A HAIRLINE GUIDE down the left of the list.
+   The resting affordance, and a deliberately quiet one. The system's link
+   treatment is brand + underline (`md-link`), and worn by nineteen rows at once
+   it would make the table of contents the loudest thing in the body — the
+   reader archetype's one standing rule is that the reading column wins. The
+   guide instead marks the whole block as a navigational region, which is the
+   thing a reader needs to know at rest; that any single row is clickable is
+   told by the hover and focus states below, which are unmissable. --pn-line,
+   because it bounds a region. */
+.cv2-root .rd-toc__list {
+  margin: 0;
+  padding: 0 0 0 8px;
+  border-left: 1px solid var(--pn-line);
+  /* An <ol> for the semantics — screen readers get the count and the order —
+     with the marker suppressed: the labels ARE the document's own numbering
+     where it has any, and `1.` in front of a heading called "0. Correcting the
+     premise" reads as a contradiction. */
+  list-style: none;
   display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
 }
 
-/* Oracle chip: `font-family:'JetBrains Mono';font-size:10px;color:#8E897B;
-   border:1px solid #E7E3D9;border-radius:999px;padding:2px 9px;
-   background:#FFFFFF` (line 347) — ink-3 / line / card, all tokens.
-
-   BACKGROUND, and the one place the dark canvas is not restated: the oracle's
-   dark chip is #1B1810 on a #221E15 panel (recessed), while our panel body is
-   `--pn-surface` in BOTH themes (panels.css `.pn-panel`), so `--pn-card`
-   keeps the LIGHT relationship — chip one step off the panel — in both. Same
-   token the kit chip uses. Reported as a noted divergence rather than fixed
-   with a per-theme override, which L8 says is the mis-tokenisation smell. */
-.cv2-root .rd-chip {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--pn-mono);
-  font-size: 10px;
-  color: var(--pn-ink-3);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-pill);
-  padding: 2px 9px;
+.cv2-root .rd-toc__item {
+  display: flex;
+  /* The indent, stepped per depth. `data-depth` is capped at 3 by
+     MAX_OUTLINE_DEPTH in the component — an unbounded attribute selector
+     cannot be written, so the cap is not a nicety, it is what makes these
+     four rules total. */
+  padding-left: 0;
 }
+.cv2-root .rd-toc__item[data-depth='1'] { padding-left: 12px; }
+.cv2-root .rd-toc__item[data-depth='2'] { padding-left: 24px; }
+.cv2-root .rd-toc__item[data-depth='3'] { padding-left: 36px; }
 
-/* Oracle hover: `color:#9A581F;border-color:rgba(178,106,43,.4)` (line 347) —
-   brand-2 and the brand rgb triple, so it re-themes without a dark rule. */
-.cv2-root button.rd-chip {
+/* The row: full-width so the whole line is the hit target, not just the words.
+   A 2px-tall pill was a hard thing to hit with a mouse and impossible with a
+   thumb; this row is 22px at the panel's mono micro and spans the column. */
+.cv2-root .rd-toc__row {
   appearance: none;
+  background: none;
+  border: none;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* The touch floor. `min-height` rather than `height` so a label that wraps
+     (see `rd-toc__label`) grows the row instead of being sliced by it. */
+  min-height: 24px;
+  padding: 2px 4px;
+  border-radius: var(--pn-r-sm, 4px);
+  text-align: left;
   cursor: pointer;
   font-family: var(--pn-mono);
-}
-.cv2-root button.rd-chip:hover {
-  color: var(--pn-brand-2);
-  border-color: rgba(var(--pn-brand-rgb), 0.4);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--pn-ink-3);
 }
 
-/* The heading-derived entry: a caption, not a control, so it takes no pointer
-   and no hover — see the component docblock. */
-.cv2-root .rd-chip--static {
-  cursor: default;
+/* Oracle hover for the chip it replaces: `color:#9A581F` (line 347) — brand-2,
+   plus the row's own recessed background, which is what tells a reader the
+   whole line is the target and not the text alone. */
+.cv2-root .rd-toc__row:hover {
+  color: var(--pn-brand-2);
+  background: var(--pn-card);
+}
+/* The underline is on the LABEL, not the row: a row-wide border would draw
+   under the empty space to the right of a short title and read as a divider
+   between entries rather than as a link. Matches `md-link`'s offset so the two
+   link treatments in a doc agree. */
+.cv2-root .rd-toc__row:hover .rd-toc__label,
+.cv2-root .rd-toc__row:focus-visible .rd-toc__label {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Keyboard parity: `:focus-visible` alone would leave a TAP with no feedback
+   at all (it never matches a touch), so the hover rule above carries the
+   colour and this one only adds the ring. */
+.cv2-root .rd-toc__row:focus-visible {
+  outline: 2px solid rgba(var(--pn-brand-rgb), 0.5);
+  outline-offset: -1px;
+}
+
+/* THE LABEL WRAPS, up to two lines, and this is the one place the old chip was
+   actively lossy: `white-space:nowrap` + `text-overflow:ellipsis` on a pill
+   meant a long chapter title was cut mid-word with no way to read the rest.
+   Two lines and then an ellipsis keeps the list scannable without hiding what
+   the entry is. */
+.cv2-root .rd-toc__label {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 
 /* The honest absence when the record claims chapters the outline does not

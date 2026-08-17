@@ -27,6 +27,8 @@ export { BootLoader } from './BootLoader';
 export {
   Markdown,
   headingsIn,
+  MD_HEADING_ATTR,
+  type DocHeading,
   type MarkdownComponents,
   type MarkdownFileHref,
   type MarkdownProps,
