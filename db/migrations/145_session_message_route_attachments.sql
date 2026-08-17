@@ -1,5 +1,13 @@
 -- =============================================================================
--- 134  THE CANONICAL SESSION ROUTE CARRIES ITS MESSAGE'S ATTACHMENT MANIFEST.
+-- 145  THE CANONICAL SESSION ROUTE CARRIES ITS MESSAGE'S ATTACHMENT MANIFEST.
+--
+-- RENUMBERED FROM 134, together with its sibling 146 (was 135) from the same
+-- commit. `134_menu_home_tab.sql` already held 134 on main and is already in the
+-- `applied_migrations` ledger on the deployed nodes; that ledger keys on
+-- FILENAME, so the applied copy keeps the number and this unapplied one moves.
+-- It replaces `public.w2_record_session_message_routes`, which nothing in
+-- 135..143 touches. The relative order with 146 is preserved (145 then 146), as
+-- it was when both were authored as 134 then 135.
 --
 -- THE DEFECT. `w2_post_message_batch` validates every file against the posting
 -- identity and the message audience, stores the bounded

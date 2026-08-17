@@ -208,12 +208,12 @@ const APPLIED_MIGRATIONS: readonly string[] = migrationFiles();
  * name pattern.
  */
 const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
-  // 135 removes the wake-budget machinery, including the surrogate pin 120 left
-  // in place. See db/migrations/135_remove_wake_budget_machinery.sql.
-  ['public.session_wake_budgets', '135_remove_wake_budget_machinery.sql'],
-  ['internal.validate_wake_budget', '135_remove_wake_budget_machinery.sql'],
-  ['public.reset_session_wake_budget_for_member_reply', '135_remove_wake_budget_machinery.sql'],
-  ['internal.w1_refresh_wake_budget_cleanup_eligibility', '135_remove_wake_budget_machinery.sql'],
+  // 146 removes the wake-budget machinery, including the surrogate pin 120 left
+  // in place. See db/migrations/146_remove_wake_budget_machinery.sql.
+  ['public.session_wake_budgets', '146_remove_wake_budget_machinery.sql'],
+  ['internal.validate_wake_budget', '146_remove_wake_budget_machinery.sql'],
+  ['public.reset_session_wake_budget_for_member_reply', '146_remove_wake_budget_machinery.sql'],
+  ['internal.w1_refresh_wake_budget_cleanup_eligibility', '146_remove_wake_budget_machinery.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {

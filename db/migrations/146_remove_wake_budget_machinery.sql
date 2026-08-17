@@ -1,5 +1,44 @@
 -- =============================================================================
--- 135  REMOVE THE WAKE-BUDGET MACHINERY, INCLUDING ITS SURROGATE PIN.
+-- 146  REMOVE THE WAKE-BUDGET MACHINERY, INCLUDING ITS SURROGATE PIN.
+--
+-- RENUMBERED FROM 135, AND THE NEW POSITION IS LOAD-BEARING — NOT COSMETIC.
+-- `135_graph_kind.sql` already held 135 on main and is already recorded in
+-- `applied_migrations` on the deployed nodes, so it keeps the number (the ledger
+-- keys on FILENAME; renaming an applied file re-applies it). But the reason this
+-- file belongs at 146 rather than at any prefix below 139 is ORDERING, and
+-- getting it backwards silently reintroduces a production outage:
+--
+--   139_delivery_pair_budget_version_repair.sql RE-ADDS `pair_budget_version`
+--   (:109) and its five function bodies INSERT INTO and SELECT FROM
+--   `public.session_wake_budgets` (:123, :221, :276-278, :308-310). This file
+--   DROPS that column (:395) and DROPS that table (:397).
+--
+-- So the two files are mutually exclusive, and only one order is coherent:
+--
+--   * THIS FILE AFTER 139 (the shipped order). 139 runs against a chain-built
+--     database where the column and table still exist, which is the no-op it
+--     documents itself as. Then this file strips the pin from all five delivery
+--     functions and drops the columns and table together. End state is
+--     self-consistent: nothing references what is gone.
+--   * THIS FILE BEFORE 139 (what the 135 prefix would have meant) ABORTS THE
+--     DEPLOY. Verified, not reasoned: applying 139 to a schema where this file
+--     has already run takes 139's `else` branch (`pair_budget_version missing --
+--     restoring column, backfill and check`) and then dies on the backfill with
+--
+--         ERROR:  relation "public.session_wake_budgets" does not exist
+--
+--     because this file dropped that table. It fails at MIGRATION time on the
+--     backfill's subquery, before the late-bound function bodies are ever
+--     reached — so the ordering bug is loud rather than the silent 42703 that
+--     139's own header describes. Either way the chain cannot run, and 139 is
+--     already applied on the deployed nodes, so this is not hypothetical.
+--
+--     139's header states "no migration here drops it". That was true when 139
+--     was authored (2026-08-16 18:50) and was falsified by this file landing
+--     from a branch cut before it (17:23); the two commits never shared a tree,
+--     which is how both reached main without either author seeing the conflict.
+--
+-- Do not move this file below 139.
 --
 -- WHAT 120 REMOVED, AND WHAT IT DELIBERATELY LEFT. 120 removed the refusal cap
 -- and its 0..4 constraint together. It left `session_wake_budgets`, the

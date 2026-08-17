@@ -320,7 +320,7 @@ describe('W2 delivery principal without wake-pair machinery, over the real deliv
     expect(files[0]).toBe('001_core_graph.sql');
     expect(files).toContain('015_w1_foundations.sql');
     expect(files).toContain('019_w2_messages_handoffs.sql');
-    expect(files).toContain('135_remove_wake_budget_machinery.sql');
+    expect(files).toContain('146_remove_wake_budget_machinery.sql');
     // No 025/026/028 exist, and G11 does not add one.
     expect(files).not.toContain('026_w2_execution.sql');
   });
