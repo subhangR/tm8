@@ -181,7 +181,11 @@ export function FrameLogin(_props: FrameProps) {
         )}
 
         <AuthRule />
-        <AuthFootnote>{LOGIN.footer}</AuthFootnote>
+        {/* Board keeps the oracle footer; the live gate must not: "forge" is a
+            specimen server name and "flow C" is reviewer vocabulary, and both
+            were being shown to real signed-out viewers. `gateFooter` says what
+            is true of THIS node instead. */}
+        <AuthFootnote>{actions ? LOGIN.gateFooter : LOGIN.footer}</AuthFootnote>
       </AuthCard>
     </AuthStage>
   );

@@ -458,11 +458,29 @@ downstream half.
      lands the signup operation, or it becomes a lie at that moment.
    - The operator-password dead end D5 was chosen to remove is still open.
 
-1. **The first-run wizard's steps 2 and 3.** `FirstRunFrames.tsx` draws
-   `1a`/`1b`/`1c` (claim → name the server → first space) but the handover
-   records that steps 2 and 3 had no operation behind them, so the flow
-   completes at step 1 of 3. `spaces.create` is `v1` and would light up `1c`.
-   Whether to complete the wizard now is a scope call, not a design one.
+1. **The first-run wizard's steps 2 and 3 — DECIDED 2026-08-16 (PR #313).**
+   `FirstRunFrames.tsx` draws `1a`/`1b`/`1c` (claim → name the server → first
+   space); steps 2 and 3 had no operation behind them, so the flow completed at
+   step 1 of 3. The scope call — "complete the wizard now?" — has now been made,
+   with evidence, and the answer is **a truthful one-step gate plus a handoff,
+   not a three-step wizard**:
+   - **1b (name the server) is cut** — verified that **no operation sets the
+     local node's own name** (the catalog's `serverConnections.*` name only
+     *remote* routes, and `server add <name>` is a browser-local nickname). A
+     wired 1b would be a fake control over an operation that does not exist, so
+     it is never promised in the live gate.
+   - **1c (first space) hands off, it is not re-implemented.** The post-claim
+     zero-spaces state now renders a real welcome surface (`views/GateApp.tsx`,
+     `.shell-welcome`) whose CTA opens the existing `NewSpaceProjectDialog` —
+     a full retry-safe Space+project saga (`spaces.create`, optional
+     folder/GitHub/upload project, link, memory, node-admin gated). A
+     gate-internal 1c would be a strictly worse **duplicate** of that surface
+     and the two would drift, so 1c hands off to it. One reachable path:
+     **claim (signs you in) → app boots empty → welcome → dialog**, verified on
+     a genuinely unclaimed node.
+   - `1b`/`1c` remain on the **review board** as the oracle's drawings, refusing
+     as built — the design record, not a live promise. The live gate shows one
+     step and no counter.
 2. **Claim-token delivery on a headless install** where the operator never sees
    stdout and cannot read the data dir. Out of scope; `--reissue` covers the
    case where they can get a shell.

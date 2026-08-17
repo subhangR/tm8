@@ -2115,14 +2115,41 @@ export function GateApp(props: GateAppProps = {}) {
                (nothing to retry — there is nothing to open), and a node that
                answered this Space's reads with a REFUSAL. */
             data.bootError.startsWith('this node has no spaces') ? (
-              <div className="shell-boot" role="alert">
-                <strong>No spaces on this node.</strong>
-                <div>Create a Space and connect the local folder where its project work should be saved.</div>
-                {projectOnboardingPort ? (
-                  <button type="button" className="gov-btn gov-btn--ink" onClick={() => setNewSpaceOpen(true)}>
-                    Create Space & add project
-                  </button>
-                ) : <div>{data.bootError}</div>}
+              /* A NODE WITH ZERO SPACES IS NOT AN ERROR — it is a brand-new
+                 install meeting its first user, and it must NOT wear the outage
+                 skin. This used to render inside `.shell-boot role="alert"` (a
+                 mono status strip built for failures) with a `gov-btn--ink`
+                 CTA whose only stylesheet is `settings-governance/governance.css`
+                 — a file a first-time user has never caused to load, so the
+                 primary call to action fell back to a raw browser button. It is
+                 now its own welcome surface, styled with the shell's own tokens,
+                 and it says what a Space IS before asking the reader to make one. */
+              <div className="shell-welcome" data-testid="welcome-no-spaces">
+                <div className="shell-welcome__card">
+                  <span className="shell-welcome__eyebrow">Welcome to tm8</span>
+                  <h1 className="shell-welcome__title">Create your first Space</h1>
+                  <p className="shell-welcome__body">
+                    A Space is a sharing boundary — its own graph of tasks and docs, its
+                    own members, and its own tabs. Everything you and your agents make
+                    lives in one, and you can create more anytime.
+                  </p>
+                  <p className="shell-welcome__body">
+                    Connecting a project folder points the Space at a directory on this
+                    machine, so the work your agents do is saved there as real files you
+                    can open. A Space works without one — you can add a project later.
+                  </p>
+                  {projectOnboardingPort ? (
+                    <button
+                      type="button"
+                      className="shell-welcome__cta"
+                      onClick={() => setNewSpaceOpen(true)}
+                    >
+                      Create Space &amp; add project
+                    </button>
+                  ) : (
+                    <p className="shell-welcome__note">{data.bootError}</p>
+                  )}
+                </div>
               </div>
             ) : data.bootErrorCode === 'forbidden' ? (
               /* A REFUSAL IS AN ANSWER, AND IT MUST NOT WEAR THE OUTAGE'S

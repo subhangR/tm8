@@ -53,3 +53,31 @@ export function routeBaseUrlFor(serverId: string): string {
     ? ''
     : `/v2/server-connections/${encodeURIComponent(serverId)}/proxy`;
 }
+
+/**
+ * A human label for the node the browser is pointed at RIGHT NOW, for the
+ * gate's chrome — so a viewer claiming or signing in can see WHICH node they
+ * are acting on. With more than one node in play, a chrome line that names the
+ * wrong one at the moment of handing over ownership is a safety problem, not a
+ * cosmetic one.
+ *
+ * The local node identifies by the browser's own origin — host AND scheme,
+ * because the scheme is load-bearing: it says whether the password about to be
+ * typed rides TLS. A named connection identifies by its registered name, which
+ * is all the same-origin relay exposes to the browser.
+ *
+ * Deliberately NEVER a version or product string. The node does not tell the
+ * browser those — `auth.claim.status` carries only `claimed`/`mode`/
+ * `signupPath` — and a confident fabrication ("v0.9.2 · localhost:8787") at the
+ * exact moment ownership is handed over is worse than a plain host. Absence is
+ * the honest answer; there is no fake to fall back to.
+ */
+export function activeNodeLabel(): string {
+  const serverId = readActiveServerId();
+  if (serverId !== LOCAL_SERVER_ID) return serverId;
+  try {
+    return globalThis.location?.origin || LOCAL_SERVER_ID;
+  } catch {
+    return LOCAL_SERVER_ID;
+  }
+}

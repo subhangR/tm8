@@ -1038,6 +1038,80 @@
   color: var(--pn-ink-3);
 }
 
+/* --- First-run welcome (zero spaces) -------------------------------------
+   NOT an error state — a brand-new node meeting its first user. It borrows
+   the auth card's finished grammar (paper ground, a surface card over a hair
+   line, r14, the pop shadow) so the first screen after claiming reads as
+   deliberately as the sign-in card that preceded it. Every value is a token;
+   the CTA is the same ink chip as the auth primary but self-contained, so it
+   does not depend on a Settings-only stylesheet ever having loaded. */
+.cv2-root .shell-welcome {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+}
+.cv2-root .shell-welcome__card {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 32px;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .shell-welcome__eyebrow {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+.cv2-root .shell-welcome__title {
+  margin: 0;
+  font-family: var(--pn-serif);
+  font-weight: 500;
+  font-size: var(--pn-fs-h2);
+  line-height: 1.18;
+  color: var(--pn-ink);
+}
+.cv2-root .shell-welcome__body {
+  margin: 0;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+}
+.cv2-root .shell-welcome__cta {
+  align-self: flex-start;
+  margin-top: 8px;
+  font-family: var(--pn-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border: 1px solid var(--pn-ink);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  cursor: pointer;
+}
+.cv2-root .shell-welcome__cta:hover {
+  background: var(--pn-x-btn-ink-hover);
+  border-color: var(--pn-x-btn-ink-hover);
+}
+.cv2-root .shell-welcome__note {
+  margin: 4px 0 0;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
 /* --- Empty centre (02-LAYOUT §2.2) ---------------------------------------
    The roster that doubles as the grammar lesson. Lives inside the centre's
    dark scope, so every colour below resolves against the DARK token ramp. */
