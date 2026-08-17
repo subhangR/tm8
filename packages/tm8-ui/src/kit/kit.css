@@ -236,19 +236,10 @@
    Scoped to boot on purpose: panels use geometry-true skeletons and never
    this. See the component's header for why the two states differ.
 
-   The mark is a nib tracing a ring — hairline strokes on the warm ramp, one
-   brass arc, no glow. Motion follows the token note (fast, mechanical, no
-   bounce): a linear sweep carrying an eased draw/retract. */
-@keyframes kitBootSweep {
-  to { transform: rotate(360deg); }
-}
-
-/* r=21 → circumference ≈ 131.9. The dash figures below are that length. */
-@keyframes kitBootDraw {
-  0%   { stroke-dasharray: 3 129; stroke-dashoffset: 0; }
-  50%  { stroke-dasharray: 62 70; stroke-dashoffset: -30; }
-  100% { stroke-dasharray: 3 129; stroke-dashoffset: -131; }
-}
+   The mark is the tm8 figure-8 as a Möbius ribbon, turning on its own axis.
+   Its rotation, shading and breathing are all computed per frame in
+   RibbonMark.tsx — there is no CSS keyframe for the mark itself, so the only
+   rule it needs here is a size. */
 
 /* Boot resolves in well under a second on a warm node. Holding the mark back
    briefly means a fast boot shows nothing at all instead of a spinner that
@@ -275,26 +266,13 @@
   justify-content: center;
 }
 
-.cv2-root .kit-boot__ring {
-  display: block;
+/* The ribbon's design box is 560×700, so the height follows from the width at
+   that 4:5 ratio. Sized here and nowhere else: the geometry inside the viewBox
+   is fixed, and scaling it is the only knob a consumer gets. */
+.cv2-root .kit-boot__ribbon {
+  width: 120px;
+  height: 150px;
   transform-origin: 50% 50%;
-  animation: kitBootSweep 2s linear infinite;
-}
-
-.cv2-root .kit-boot__track,
-.cv2-root .kit-boot__arc {
-  fill: none;
-  stroke-width: 1.25;
-}
-
-.cv2-root .kit-boot__track {
-  stroke: var(--pn-line-2);
-}
-
-.cv2-root .kit-boot__arc {
-  stroke: var(--pn-brand);
-  stroke-linecap: round;
-  animation: kitBootDraw 1.6s var(--pn-ease-standard) infinite;
 }
 
 .cv2-root .kit-boot__label {
@@ -315,14 +293,14 @@
   text-align: center;
 }
 
-/* Reduced motion: the ring stops entirely. A slow, low-amplitude fade on the
-   arc alone is the activity signal — enough to read as "working", nothing
-   that sweeps or redraws. */
+/* Reduced motion: the ribbon stops turning. RibbonMark checks the same query
+   in JS and never subscribes to the frame clock, so the mark holds its rest
+   pose rather than being a still frame of a loop that is still running. A
+   slow, low-amplitude fade is left as the activity signal — enough to read as
+   "working", nothing that sweeps or redraws. */
 @media (prefers-reduced-motion: reduce) {
   .cv2-root .kit-boot { opacity: 1; animation: none; }
-  .cv2-root .kit-boot__ring { animation: none; }
-  .cv2-root .kit-boot__arc {
-    stroke-dasharray: 62 70;
+  .cv2-root .kit-boot__ribbon {
     animation: pnPulse 2.4s var(--pn-ease-standard) infinite;
   }
 }

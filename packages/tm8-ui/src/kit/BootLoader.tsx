@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { RibbonMark, type RibbonMotion } from './RibbonMark';
 
 /**
  * BootLoader — the centred wait state for BOOT, and boot only.
@@ -17,9 +18,9 @@ import type { ReactNode } from 'react';
  * text at the boot gate and is used nowhere else. A list, panel or detail that
  * reaches for this instead of a skeleton is the design bug T4's matrix means.
  *
- * The mark is an ink ring with one brass arc tracing it — the atelier's nib,
- * not a UI spinner. Hairline strokes, warm ramp, no glow and no bounce, per
- * the token system's motion note ("fast, mechanical").
+ * The mark is the tm8 figure-8, drawn as a Möbius ribbon in pseudo-3D and
+ * turning on its own axis — the product's own glyph doing the waiting, rather
+ * than a generic arc. See `RibbonMark` for the port and for what it costs.
  *
  * Honesty, same as every other wait state here: `role="status"` + a live
  * region, so a screen reader is told the workspace is loading rather than
@@ -29,21 +30,23 @@ import type { ReactNode } from 'react';
 export function BootLoader({
   label = 'loading workspace',
   detail,
+  motion = 'spin-rewind',
 }: {
   /** The line under the mark. Lowercase; the CSS does the uppercasing. */
   label?: string;
   /** Optional second line — the stage, or why this is taking a while. */
   detail?: ReactNode;
+  /**
+   * Which authored scene list the mark turns on. Both variants shipped in the
+   * design and the choice between them is still open, so it stays a prop
+   * rather than being baked in here.
+   */
+  motion?: RibbonMotion;
 }) {
   return (
     <div className="kit-boot" role="status" aria-live="polite" data-testid="boot-loader">
       <div className="kit-boot__mark" aria-hidden="true">
-        <svg className="kit-boot__ring" viewBox="0 0 48 48" width="48" height="48">
-          {/* The paper: a full hairline ring, always present, never animated. */}
-          <circle className="kit-boot__track" cx="24" cy="24" r="21" />
-          {/* The ink: one arc that draws, retracts and rotates. */}
-          <circle className="kit-boot__arc" cx="24" cy="24" r="21" />
-        </svg>
+        <RibbonMark className="kit-boot__ribbon" motion={motion} />
       </div>
       <span className="kit-boot__label">{label}</span>
       {detail ? <span className="kit-boot__detail">{detail}</span> : null}
