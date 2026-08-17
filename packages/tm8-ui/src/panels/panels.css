@@ -1040,6 +1040,77 @@
   background: var(--pn-hover);
 }
 .cv2-root .pn-preview__label { font-family: var(--pn-mono); font-size: 10px; color: var(--pn-ink-3); }
+/* --- artifact viewer ----------------------------------------------------- */
+/* The viewer variant stretches its children: the frame must fill the panel's
+   width, and the base .pn-preview's flex-start would shrink-wrap it. */
+.cv2-root .pn-preview--viewer { align-items: stretch; }
+/* The chrome is a SECURITY CONTROL, not decoration: the frame below it runs
+   third-party code that can draw anything — including this product — so the
+   line naming the publisher and disowning the content must be part of the
+   viewer's anatomy on every phase, and it must not restyle to match whatever
+   the bundle renders. */
+.cv2-root .pn-preview__chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.cv2-root .pn-preview__who { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cv2-root .pn-preview__publisher {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-2);
+  overflow-wrap: anywhere;
+}
+/* The caution keeps its own colour so it reads apart from metadata — it is
+   the one sentence that must survive a skim. */
+.cv2-root .pn-preview__thirdparty {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--pn-wait);
+  line-height: 1.5;
+}
+.cv2-root .pn-preview__controls { display: flex; align-items: center; gap: 6px; flex: none; }
+.cv2-root .pn-preview__revpick {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-2);
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+/* The frame: full panel width, generous height, card-white ground — the
+   bundle's own page decides its colours and an empty one should read as a
+   page, not as a hole in the panel. */
+.cv2-root .pn-preview__frame {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-card);
+}
+/* Fullscreen is a CSS state, not a browser API: the SAME element with the
+   same chrome pinned over the app (Escape exits). The chrome coming along is
+   the point — a bundle must never own the whole viewport without the line
+   that says whose code it is. */
+.cv2-root .pn-preview--fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  margin: 0;
+  padding: 10px;
+  background: var(--pn-card);
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .pn-preview--fullscreen .pn-preview__frame { flex: 1; min-height: 0; }
 .cv2-root .pn-lifecycle,
 .cv2-root .pn-notice {
   margin: 0;

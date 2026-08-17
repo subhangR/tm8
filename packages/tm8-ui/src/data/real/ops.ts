@@ -148,7 +148,7 @@ import {
 import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 
 import type { HttpClient, QueryParams } from './http';
-import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
+import type { ArtifactRevisionsList, BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
 
 /**
  * Fill in terminal geometry the caller did not state, so a server-hosted PTY
@@ -956,6 +956,19 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<ArtifactPreviewSession>('artifacts.preview.start', {
         params: { artifactId: id },
         body: input,
+      });
+    },
+
+    listArtifactRevisions(id: EntityId): Promise<ArtifactRevisionsList> {
+      return http.call<ArtifactRevisionsList>('artifacts.revisions.list', {
+        params: { artifactId: id },
+      });
+    },
+
+    /** RAW ZIP BYTES — `callBytes`, never `call`: there is no envelope to unwrap. */
+    exportArtifactRevision(id: EntityId, revisionNumber: number): Promise<Blob> {
+      return http.callBytes('artifacts.export', {
+        params: { artifactId: id, revisionNumber: String(revisionNumber) },
       });
     },
 

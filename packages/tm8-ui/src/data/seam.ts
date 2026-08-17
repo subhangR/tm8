@@ -277,6 +277,32 @@ export interface IdentityView {
   memberships: Array<{ spaceId: string; memberId: string; role: string }>;
 }
 
+/**
+ * One published bundle revision, as `artifacts.revisions.list` answers it.
+ * MIRRORS THE SERVER WIRE SHAPE (`revisionDto`) rather than importing a
+ * contract DTO, because the contract declares NONE for this response — the
+ * catalog row exists (`artifacts.revisions.list`, v1) but its output type was
+ * never written down. Recorded as a contract gap under Amendment 12; when the
+ * DTO lands in `@tm8/contract`, this declaration must move there and this
+ * one must die, not diverge.
+ */
+export interface ArtifactRevisionSummary {
+  revisionNumber: number;
+  manifestSha256: string;
+  entrypoint: string;
+  fileCount: number;
+  totalSizeBytes: number;
+  sourceProvenance: Record<string, unknown> | null;
+  createdAt: string;
+  /** Identity id of the publisher, or null when unrecorded. */
+  publishedBy: string | null;
+}
+
+/** `artifacts.revisions.list` — newest first, exactly as the server orders it. */
+export interface ArtifactRevisionsList {
+  revisions: ArtifactRevisionSummary[];
+}
+
 /** Cursor-paged read options. */
 export interface PageOpts {
   cursor?: Cursor;
@@ -854,6 +880,33 @@ export interface Seam {
      * render previews", never fabricate a URL.
      */
     previewArtifact(id: EntityId, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
+    /**
+     * Amendment 12 (2026-08-17, artifact viewer): the artifact detail block
+     * grew from metadata-plus-Run into a real viewer, and the two remaining
+     * artifact catalog ops gain their first UI callers — the revision
+     * switcher (`artifacts.revisions.list`) and download-as-zip
+     * (`artifacts.export`).
+     *
+     * Both sit in THIS group despite being catalog reads, for the zero-churn
+     * reason Amendment 2 put `previewArtifact` here: every detail-panel host
+     * threads exactly `seam.commands` into `EntityDetailPanel`, and the
+     * artifact block's port is a structural subset of this group — a second
+     * prop through every host is precisely the adapter D57.1 warns about.
+     *
+     * CONTRACT GAP (recorded, not papered over): the contract has no DTO for
+     * the revisions-list response; `ArtifactRevisionsList` above mirrors the
+     * server's wire shape and must move into `@tm8/contract` when its DTO
+     * lands.
+     */
+    listArtifactRevisions(id: EntityId): Promise<ArtifactRevisionsList>;
+    /**
+     * `artifacts.export` answers RAW ZIP BYTES — no JSON envelope — so this
+     * is the one member here that resolves a `Blob`; the caller turns it into
+     * an object-URL download. A seam METHOD rather than an href builder (the
+     * `files.downloadHref` idiom) because the export route must carry the
+     * viewer's Authorization header, which an `<a href>` cannot send.
+     */
+    exportArtifactRevision(id: EntityId, revisionNumber: number): Promise<Blob>;
     spawn(input: ExecutionSpawnInput): Promise<CommandResult>;
     /**
      * `execution.terminal.start` — a VANILLA TERMINAL (101): a shell session

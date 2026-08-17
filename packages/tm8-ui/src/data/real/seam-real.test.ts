@@ -349,6 +349,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // Amendment 2 (2026-07-31): the artifacts preview decisions were
       // ratified, so the Run button gained its one command (seam.ts header).
       'previewArtifact',
+      // Amendment 12 (2026-08-17): the artifact viewer's other two ops gain
+      // their first UI callers — the revision switcher's read and download's
+      // raw zip bytes. Catalog READS riding the commands group deliberately;
+      // the amendment on `listArtifactRevisions` records why.
+      'listArtifactRevisions', 'exportArtifactRevision',
       'prompt', 'react',
       // `resolveAttention` shipped into the seam without this lock being
       // updated, so the guard was red in-tree before the attention inbox
