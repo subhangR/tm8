@@ -1,0 +1,279 @@
+/* ==========================================================================
+   PHONE SCREEN BODIES — the desktop floors, scoped OFF the phone, and the
+   sheet that replaces the third column.
+
+   Lane 1 owns the phone's CHROME (`mobile-chrome.css`: the header, the tab
+   bar, the palette). This file owns what is INSIDE the content region, and it
+   is a separate file for that reason rather than for tidiness — two lanes in
+   one stylesheet is a merge conflict on the one artefact whose failure mode is
+   a screen that silently looks wrong.
+
+   §14: colours resolve through `--pn-*` tokens only; the package `hex-ban`
+   test scans this file like every other.
+
+   ── THE SCOPE, AND WHY IT IS AN ATTRIBUTE ──────────────────────────────────
+
+   Every rule here is under `.cv2-root[data-shell='mobile']`. `GateApp` stamps
+   that attribute on the root it renders the phone shell into, and Lane 1
+   established it for the zoom lever. Three properties come out of it:
+
+     - SPECIFICITY WITHOUT `!important`. The desktop rules are `.cv2-root .ev-x`
+       (0,1,1); these are `.cv2-root[data-shell] .ev-x` (0,2,1) and win on
+       weight alone. Nothing is overridden by source order, so this file can be
+       imported anywhere in the cascade and still behave.
+     - THE DESKTOP VALUES ARE NEVER EDITED. Desktop is in daily use and is not
+       this lane. Every floor below is RESTATED under a narrower selector; the
+       original declaration is untouched, so reverting this lane is deleting a
+       file rather than restoring numbers from memory.
+     - IT FOLLOWS THE SHELL FORK, NOT THE WIDTH. `shellFor` is
+       `(pointer: coarse) && width < 500`. A `@media (max-width: 500px)` here
+       would restyle the DESKTOP shell in a narrow window — a shell no part of
+       this program is allowed to change.
+
+   NOT `:has()`. `.cv2-root:has(> [data-shell='mobile'])` reads better and fails
+   SILENTLY where it is unsupported — the rules simply never apply and the
+   screen looks exactly like the bug. Lane 1 hit this and the attribute is the
+   answer it landed on.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. THE SCREEN FILLS THE FRAME
+
+   `.ev-root` is `flex: 1` for the desktop, where its parent is a flex column.
+   The phone's parent is `main.mobile-frame__content`, a BLOCK — `flex: 1` means
+   nothing there, so the root took its CONTENT height and the bottom ~50% of
+   every Tasks/Sessions screen was dead paper. That is the "55 percent blank"
+   in the verification pass, and it is one missing height, not a layout to
+   redesign.
+
+   `height: 100%` resolves against the frame's `1fr` content track, which is a
+   definite height, so the list below can scroll INSIDE the screen instead of
+   scrolling the screen itself.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .ev-root,
+.cv2-root[data-shell='mobile'] .chv-root {
+  height: 100%;
+  min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
+   2. THE FLOORS, SCOPED OFF THE PHONE
+
+   These are the desktop's reading widths, and each is right where it was
+   written. A 320px panel floor is what keeps a two-column entity readable at
+   1440; the same number on a 390px phone is what drew the Tasks list at 200px
+   with the detail pane behind it.
+
+   `min-width: 0` rather than a smaller floor: on one surface there is nothing
+   to protect the region FROM. The floors exist to arbitrate between columns
+   competing for one row, and a phone has one column, so the arbitration has no
+   subject. A phone-sized floor would be a second magic number to keep true.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .pn-panel,
+.cv2-root[data-shell='mobile'] .lp,
+.cv2-root[data-shell='mobile'] .chv-main,
+.cv2-root[data-shell='mobile'] .chv-aside {
+  min-width: 0;
+}
+
+/* The detail region is a fixed reading width solved in `EntityView`
+   (`--ev-detail`, floored at 380). On one surface it IS the surface, so it
+   takes the row instead of reserving a slice of it. */
+.cv2-root[data-shell='mobile'] .ev-detail,
+.cv2-root[data-shell='mobile'] .ev-aux {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+/* The channel aside is `min(440px, 42vw)` — 42% of a phone is not a column,
+   it is a squeeze. Same treatment. */
+.cv2-root[data-shell='mobile'] .chv-aside {
+  width: auto;
+  flex: 1;
+}
+
+/* --------------------------------------------------------------------------
+   3. EDGE TO EDGE, NOT A CARD IN A CORNER
+
+   `.lp` and `.pn-panel` draw a 1px border and a radius because on the desktop
+   they are OBJECTS sitting on paper beside other objects. On the phone the
+   panel IS the screen, and a screen with a rounded outline reads as a card
+   floating in a void — which is precisely what the Tasks screenshot showed.
+
+   The border-right on `.ev-list` goes for the same reason: it separated the
+   list from the detail column, and there is no detail column beside it now.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .lp,
+.cv2-root[data-shell='mobile'] .pn-panel {
+  border: none;
+  border-radius: 0;
+}
+
+.cv2-root[data-shell='mobile'] .ev-list {
+  border-right: none;
+}
+
+/* --------------------------------------------------------------------------
+   4. NO DRAG HANDLES
+
+   `EntityView` stops RENDERING the resizers on one surface, so this is a belt
+   for any other host that composes a `.kit-resizer` into the phone shell. An
+   8x384 handle was the single worst tap target on Tasks — it is a control for
+   an arrangement the phone does not have, and a thumb that finds it can only
+   be disappointed by it.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .kit-resizer {
+  display: none;
+}
+
+/* ==========================================================================
+   THE SHEET
+
+   Structure lives in `mobile.css` (`.mobile-frame__sheet` — absolute, inset 0,
+   above the tab bar). This is its appearance and its pointer behaviour.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   THE EMPTY HOST MUST NOT EAT TAPS.
+
+   `.mobile-frame__sheet` covers the whole frame at `z-index: 30`, and the host
+   div inside it is always mounted so a portal has somewhere to land. Left
+   alone that is an invisible pane over the entire app: every tap on the tab
+   bar and every row press would land on nothing, and the app would read as
+   frozen while looking perfectly correct.
+
+   `pointer-events: none` on the host, `auto` on what is portalled in, is the
+   whole fix. It is stated HERE rather than in `mobile.css` because the
+   always-mounted host is this lane's decision, not the frame's.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] .mobile-frame__sheet,
+.msheet-host {
+  pointer-events: none;
+}
+
+.msheet-host > * {
+  pointer-events: auto;
+}
+
+/* The scrim. It covers the TAB BAR too — a sheet that stopped at the chrome
+   would read as a panel, and `aria-modal` on it would be a lie. */
+.msheet {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.32);
+  animation: msheet-fade var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+/* Bottom-anchored, and capped so the screen underneath stays visible at the
+   top. That strip of context is the difference between a sheet and a
+   navigation: it is what says "this is over your place, not instead of it". */
+.msheet__panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 88%;
+  background: var(--pn-surface);
+  border-top: 1px solid var(--pn-line);
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+  box-shadow: var(--pn-sh-pop);
+  padding-bottom: var(--mobile-safe-bottom, 0px);
+  animation: msheet-rise var(--pn-dur-base) var(--pn-ease-out);
+}
+
+.msheet__head {
+  flex: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  /* The top padding carries the grabber, which is absolutely placed so it
+     centres on the PANEL rather than on the space left over by the title. */
+  padding: 18px var(--pn-space-3) var(--pn-space-2) var(--pn-space-4);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.msheet__grip {
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--pn-line-2);
+}
+
+.msheet__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+}
+
+/* 44px, because this is the sheet's only guaranteed exit. The glyph stays
+   small; the TARGET is what has to be thumb-sized, and those are different
+   numbers — a 12px ✕ centred in 44px of button is correct. */
+.msheet__close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -10px -6px -10px 0;
+  appearance: none;
+  border: none;
+  background: none;
+  border-radius: var(--pn-r-md);
+  color: var(--pn-ink-3);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.msheet__close:active {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+
+.msheet__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.msheet__body > * {
+  flex: 1;
+  min-height: 0;
+}
+
+@keyframes msheet-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes msheet-rise {
+  from { transform: translateY(12%); }
+  to { transform: translateY(0); }
+}
+
+/* §  A sheet that SLIDES is telling you where it came from, and a viewer who
+   has asked for less motion still needs that answer — so the surface still
+   appears, it just stops travelling to get there. */
+@media (prefers-reduced-motion: reduce) {
+  .msheet,
+  .msheet__panel {
+    animation: none;
+  }
+}
