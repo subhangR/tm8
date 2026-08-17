@@ -197,7 +197,7 @@ describe('hidden relations', () => {
 });
 
 describe('summarize', () => {
-  it('answers "what does this session do" in relation label + count pairs', () => {
+  it('counts the entities around the session, never the session itself', () => {
     const graph = buildSessionGraph({
       focusId: FOCUS,
       focus: focusEntity,
@@ -213,9 +213,11 @@ describe('summarize', () => {
       ]),
       hops: 1,
     });
-    expect(summarize(graph).headline).toEqual([
-      { key: 'working_on:out', label: 'Working on', count: 1 },
-      { key: 'authored_from:in', label: 'Wrote', count: 2 },
+    // "What does this session do" is answered by the relation chips, which read
+    // `graph.relations` directly — the summary no longer restates it.
+    expect(graph.relations.map((r) => [r.key, r.label, r.peers.length])).toEqual([
+      ['working_on:out', 'Working on', 1],
+      ['authored_from:in', 'Wrote', 2],
     ]);
     // The focus itself is not one of "the entities around this session".
     expect(summarize(graph).entityCount).toBe(3);

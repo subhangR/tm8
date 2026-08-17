@@ -1,17 +1,21 @@
 /* ==========================================================================
-   SESSION GRAPH — the fourth chip on a work session.
+   SESSION GRAPH — the Connections tab's graph view, and the fourth chip on a
+   work session.
    Tokens only (§14 hex ban); no `minmax(0, …)` tracks (L4 floors are law).
-   Structure is a three-band column: a header that states the finding, a
-   canvas that draws it, and a footer that names every way the drawing is
-   incomplete. The canvas is the only band that grows.
+
+   THE CANVAS IS THE SURFACE, not a band inside it. This was a three-band
+   column — header, canvas, footer — and the two text bands cost about a third
+   of the height before a single node was drawn. Everything that is not the
+   drawing now FLOATS on it: the canvas fills the box edge to edge, and the
+   controls and the incompleteness ledger sit over it in their corners. The
+   drawing therefore begins directly under the tab strip.
    ========================================================================== */
 
 .sg-root {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   min-height: 0;
   height: 100%;
-  background: var(--pn-surface);
+  background: var(--pn-paper);
 }
 
 /* --- states -------------------------------------------------------------- */
@@ -24,57 +28,30 @@
   font-size: var(--pn-fs-sm);
 }
 
-/* --- header: the finding, then the controls ------------------------------ */
+/* --- the floating bar: filters left, depth/refresh/zoom right ------------- */
 
-.sg-head {
+/* `--sg-bar-lead` is the room a HOST reserves at the bar's leading edge for a
+   control of its own drawn in the same corner — the Connections tab puts its
+   List/Graph switch there. Zero by default, because the session's Graph chip
+   mounts this surface with nothing beside it. */
+.sg-bar {
+  position: absolute;
+  z-index: 2;
+  top: var(--pn-space-2);
+  left: var(--pn-space-2);
+  right: var(--pn-space-2);
+  padding-left: var(--sg-bar-lead, 0px);
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--pn-space-3);
-  padding: var(--pn-space-3) var(--pn-space-4);
-  border-bottom: 1px solid var(--pn-line);
-  background: var(--pn-card);
-}
-
-.sg-head__facts {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* The headline is the answer to "what does this session do", so it carries
-   the serif voice the rest of the workspace reserves for content. */
-.sg-head__line {
-  margin: 0;
-  font-family: var(--pn-serif);
-  font-size: var(--pn-fs-h3);
-  line-height: var(--pn-lh-snug);
-  color: var(--pn-ink);
-}
-
-.sg-head__sep { color: var(--pn-ink-4); }
-.sg-head__label { color: var(--pn-ink); }
-
-/* Counts are the measured part of the sentence — mono says "this is a
-   number I read", not "this is a word I chose". */
-.sg-head__count {
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-mono);
-  color: var(--pn-brand);
-}
-
-.sg-head__sub {
-  margin: 0;
-  font-size: var(--pn-fs-micro);
-  color: var(--pn-ink-3);
-}
-
-.sg-head__controls {
-  display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--pn-space-2);
+  pointer-events: none;
 }
+
+/* The bar itself is a pass-through so the canvas can still be dragged through
+   its empty middle; only the controls take the pointer. */
+.sg-bar > * { pointer-events: auto; }
 
 /* --- hop control: a segmented switch, because depth is one choice of three */
 
@@ -133,13 +110,14 @@
 
 /* --- relation filters ----------------------------------------------------- */
 
+/* The filters lead the bar and the viewport controls trail it, so the two
+   halves read as "what is drawn" and "how it is drawn". */
 .sg-relations {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--pn-space-1);
-  padding: var(--pn-space-2) var(--pn-space-4);
-  border-bottom: 1px solid var(--pn-line);
-  background: var(--pn-surface);
+  margin-right: auto;
 }
 
 .sg-rel {
@@ -181,9 +159,10 @@
 
 /* --- canvas --------------------------------------------------------------- */
 
+/* Edge to edge, under everything else. It is the surface, not a band in it. */
 .sg-canvas {
-  flex: 1 1 auto;
-  min-height: 240px;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   touch-action: none;
   cursor: grab;
@@ -314,6 +293,18 @@
 }
 
 .sg-badge--faint { fill: var(--pn-ink-4); }
+
+/* --- the floating foot: selection, then the incompleteness ledger ---------- */
+
+.sg-foot-stack {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
 
 /* --- selection card ------------------------------------------------------- */
 

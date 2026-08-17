@@ -442,11 +442,15 @@ export function buildSessionGraph(input: BuildInput): SessionGraph {
   };
 }
 
+/**
+ * `headline` and `relationCount` lived here to feed a masthead above the canvas.
+ * That masthead is gone — it restated, as a serif sentence, exactly what the
+ * relation chips already say and can be CLICKED to act on — and both fields went
+ * with it rather than remaining a second vocabulary for `graph.relations`, which
+ * is all they were ever derived from.
+ */
 export interface SessionGraphSummary {
-  /** Relations of the focus, with counts — the "what it does" line. */
-  headline: readonly { key: string; label: string; count: number }[];
   entityCount: number;
-  relationCount: number;
   /** Nodes drawn whose own edges were never read; their branches end early. */
   unreadBoundary: number;
 }
@@ -454,9 +458,7 @@ export interface SessionGraphSummary {
 export function summarize(graph: SessionGraph): SessionGraphSummary {
   const entityCells = graph.cells.filter((c): c is EntityCell => c.sort !== 'fold');
   return {
-    headline: graph.relations.map((r) => ({ key: r.key, label: r.label, count: r.peers.length })),
     entityCount: entityCells.length - 1,
-    relationCount: graph.relations.reduce((sum, r) => sum + r.peers.length, 0),
     unreadBoundary: entityCells.filter((c) => c.degree === null).length,
   };
 }

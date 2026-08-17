@@ -531,8 +531,17 @@ export function ConnectionsTab({
         role="tabpanel"
         aria-labelledby="tab-connections"
       >
-        <ConnectionsViewSwitch view={view} onChange={setView} />
+        {/* THE CANVAS GETS THE WHOLE BODY, and the switch floats on it.
+            Drawn as a row above the graph, this control cost a full band of
+            height plus the body's own padding on the one view that has nothing
+            to spare — and it is two words. The graph reserves room for it at
+            the leading edge of its own floating bar (`--sg-bar-lead`), so the
+            switch and the graph's controls land on one line over the drawing
+            instead of two bands above it. */}
         <div className="pn-connections-graph">{graph}</div>
+        <div className="pn-graph-lead">
+          <ConnectionsViewSwitch view={view} onChange={setView} />
+        </div>
       </div>
     );
   }

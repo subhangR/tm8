@@ -63,7 +63,13 @@ afterEach(() => {
 });
 
 describe('SessionGraphBody', () => {
-  it('states what the session touched, in relation label + count', async () => {
+  /**
+   * The relation chips are the ONLY place the finding is stated now — a serif
+   * masthead said the same words above them and cost a band of the canvas's
+   * height to do it. Asserted on the chips rather than on prose because they
+   * are also the filter: the label a viewer reads is the control they click.
+   */
+  it('states what the session touched, as one chip per relation', async () => {
     const seam = seamWith(async (id) =>
       id === FOCUS
         ? page([
@@ -76,9 +82,9 @@ describe('SessionGraphBody', () => {
 
     render(<SessionGraphBody seam={seam} focusId={FOCUS} focus={focus} live={false} />);
 
-    const headline = await screen.findByTestId('session-graph-headline');
-    expect(headline.textContent).toContain('Working on');
-    expect(headline.textContent).toContain('Wrote');
+    const bar = await screen.findByTestId('session-graph-bar');
+    const chips = [...bar.querySelectorAll('.sg-rel')].map((el) => el.textContent);
+    expect(chips).toEqual(['Working on1', 'Wrote2']);
     expect(screen.getByTestId('session-graph-canvas')).toBeTruthy();
   });
 

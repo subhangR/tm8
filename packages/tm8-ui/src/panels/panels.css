@@ -764,19 +764,33 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
-/* The graph arm gives the canvas the whole body. A canvas measures itself from
-   its box, so the body must NOT scroll here — a scrolling parent would let the
-   canvas ask for height forever — and the graph gets `min-height: 0` so it
-   shrinks with the panel instead of overflowing it. */
+/* The graph arm gives the canvas the whole body — LITERALLY the whole body: no
+   padding, no gap, no band above it, so the drawing begins directly under the
+   tab strip. A canvas measures itself from its box, so the body must NOT scroll
+   here; a scrolling parent would let the canvas ask for height forever. */
 .cv2-root .pn-body--graph {
+  position: relative;
   overflow: hidden;
-  gap: 8px;
+  padding: 0;
+  gap: 0;
 }
 .cv2-root .pn-connections-graph {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* The room the graph's own floating bar keeps clear at its leading edge for
+     the switch below. Sized to "List Graph" at this font, plus the bar's gap. */
+  --sg-bar-lead: 112px;
+}
+/* The switch floats in the canvas's top-left corner. It is positioned against
+   the BODY rather than rendered inside the graph, because the graph is an
+   opaque node handed to this tab by its host — this tab cannot render into it. */
+.cv2-root .pn-graph-lead {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  left: 8px;
 }
 
 /* Connections tab: one row per connected ENTITY, its edge types trailing it.

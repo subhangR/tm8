@@ -182,6 +182,17 @@ export interface Placement {
   height: number;
   centre: { x: number; y: number };
   /**
+   * THE BOX THE DRAWING ACTUALLY OCCUPIES, which is not the box it is laid out
+   * in. A radial layout reserves the full circle — `2·(r + card + pad)` on both
+   * axes — but the cells only ever stand on the ANGLES the sweep assigned, so a
+   * graph with four branches leaves most of that square empty. Fitting the
+   * square meant fitting the emptiness: at 100% the cards were drawn at a third
+   * of the size the canvas had room for, and every viewer's first act was to
+   * zoom. This is the union of the drawn cards' own rectangles, so 100% means
+   * "as large as this canvas allows" rather than "as large as the circle allows".
+   */
+  view: { x: number; y: number; w: number; h: number };
+  /**
    * The radius actually used for each hop, so the canvas draws its hop guides
    * on the rings the cells are standing on. Returned rather than recomputed by
    * the caller — the radii now depend on how many cells a hop holds, so a
@@ -308,6 +319,29 @@ export function layoutSessionGraph(graph: SessionGraph): Placement {
     });
   }
 
-  return { cells: placed, links, width, height, centre, radii };
+  /* The union of what was drawn — see `Placement.view`. The focus is always
+     placed, so there is always at least one rectangle to union. */
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of placed) {
+    const { w, h } = cellSize(p.cell.hop);
+    minX = Math.min(minX, p.x - w / 2);
+    maxX = Math.max(maxX, p.x + w / 2);
+    minY = Math.min(minY, p.y - h / 2);
+    maxY = Math.max(maxY, p.y + h / 2);
+  }
+  const view =
+    placed.length === 0
+      ? { x: 0, y: 0, w: width, h: height }
+      : {
+          x: minX - PAD,
+          y: minY - PAD,
+          w: maxX - minX + PAD * 2,
+          h: maxY - minY + PAD * 2,
+        };
+
+  return { cells: placed, links, width, height, centre, radii, view };
 }
 

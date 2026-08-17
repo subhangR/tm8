@@ -27,7 +27,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, EntitySummary } from '@tm8/contract';
 import { KindIcon, getKind } from '../domain';
-import { Eyebrow, Pill, type PillTone } from '../kit';
+import { Pill, type PillTone } from '../kit';
 import { renderBadge } from '../panels/list/tile-badges';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import type { Seam } from '../data/seam';
@@ -227,108 +227,104 @@ export function SessionGraphBody({
 
   return (
     <div className="sg-root" data-testid="session-graph-body">
-      <header className="sg-head">
-        <div className="sg-head__facts">
-          <Eyebrow faint>WHAT THIS SESSION TOUCHED</Eyebrow>
-          <p className="sg-head__line" data-testid="session-graph-headline">
-            {summary.headline.length === 0
-              ? 'No connections recorded yet.'
-              : summary.headline.map((item, index) => (
-                  <span key={item.key}>
-                    {index > 0 ? <span className="sg-head__sep"> · </span> : null}
-                    <span className="sg-head__label">{item.label}</span>{' '}
-                    <span className="sg-head__count">{item.count}</span>
-                  </span>
-                ))}
-          </p>
-          <p className="sg-head__sub">
-            {summary.relationCount} direct {summary.relationCount === 1 ? 'relation' : 'relations'} ·{' '}
-            {summary.entityCount} {summary.entityCount === 1 ? 'entity' : 'entities'} drawn within{' '}
-            {maxHop} {maxHop === 1 ? 'hop' : 'hops'}
-          </p>
-        </div>
-
-        <div className="sg-head__controls">
-          <div className="sg-hops" role="group" aria-label="Graph depth">
-            {HOP_CHOICES.map((choice) => (
-              <button
-                key={choice}
-                type="button"
-                className={choice === hops ? 'sg-hops__opt sg-hops__opt--on' : 'sg-hops__opt'}
-                aria-pressed={choice === hops}
-                onClick={() => setHops(choice)}
-                title={`Walk ${choice} ${choice === 1 ? 'hop' : 'hops'} out from this session`}
-              >
-                {choice} hop{choice === 1 ? '' : 's'}
-              </button>
-            ))}
+      {/* ONE BAR, FLOATING ON THE CANVAS.
+          This surface used to open with a three-line masthead — an eyebrow, a
+          serif headline naming each relation and its count, and a sub-line
+          counting relations and entities — above a second row of relation
+          chips. The headline and the chips stated the SAME fact ("Working on 1
+          · Wrote 2"), so the price of saying it twice was two stacked bands
+          that pushed the drawing itself below the fold, on the one surface
+          whose entire job is the drawing. The chips survive because they are
+          the reading you can ACT on: each one is the filter for its relation.
+          Everything here now floats over the canvas, so the graph starts
+          directly under the tab strip and owns the whole body. */}
+      <div className="sg-bar" data-testid="session-graph-bar">
+        {graph.relations.length > 0 ? (
+          <div className="sg-relations" role="group" aria-label="Relations from this session">
+            {graph.relations.map((relation) => {
+              const off = hidden.has(relation.key);
+              return (
+                <button
+                  key={relation.key}
+                  type="button"
+                  className={off ? 'sg-rel sg-rel--off' : 'sg-rel'}
+                  aria-pressed={!off}
+                  onClick={() => toggleRelation(relation.key)}
+                  title={
+                    off
+                      ? `${relation.label} is hidden — this is your filter, not a fact about the session`
+                      : `Hide ${relation.label.toLowerCase()}`
+                  }
+                >
+                  <span className="sg-rel__dot" data-relation={relation.type} aria-hidden="true" />
+                  {relation.label}
+                  <span className="sg-rel__n">{relation.peers.length}</span>
+                </button>
+              );
+            })}
           </div>
+        ) : null}
+
+        <div className="sg-hops" role="group" aria-label="Graph depth">
+          {HOP_CHOICES.map((choice) => (
+            <button
+              key={choice}
+              type="button"
+              className={choice === hops ? 'sg-hops__opt sg-hops__opt--on' : 'sg-hops__opt'}
+              aria-pressed={choice === hops}
+              onClick={() => setHops(choice)}
+              title={`Walk ${choice} ${choice === 1 ? 'hop' : 'hops'} out from this session`}
+            >
+              {choice}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="sg-btn sg-btn--tight"
+          onClick={() => void load()}
+          aria-busy={reading}
+          aria-label="Refresh"
+          title={
+            /* The depth control lost its "hop" words to fit one bar, so the
+               tooltip that survives has to carry what the row is counting. */
+            `Re-read these connections · showing ${summary.entityCount} ${
+              summary.entityCount === 1 ? 'entity' : 'entities'
+            } within ${maxHop} ${maxHop === 1 ? 'hop' : 'hops'}`
+          }
+        >
+          {reading ? '⋯' : '↻'}
+        </button>
+        <div className="sg-zoom" role="group" aria-label="Zoom">
           <button
             type="button"
-            className="sg-btn"
-            onClick={() => void load()}
-            aria-busy={reading}
-            title="Re-read this session's connections"
+            className="sg-btn sg-btn--tight"
+            onClick={() => setZoom((z) => Math.max(ZOOM_MIN, Number((z - 0.2).toFixed(2))))}
+            aria-label="Zoom out"
           >
-            {reading ? 'reading…' : '↻ refresh'}
+            −
           </button>
-          <div className="sg-zoom" role="group" aria-label="Zoom">
-            <button
-              type="button"
-              className="sg-btn sg-btn--tight"
-              onClick={() => setZoom((z) => Math.max(ZOOM_MIN, Number((z - 0.2).toFixed(2))))}
-              aria-label="Zoom out"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              className="sg-btn sg-btn--tight"
-              onClick={() => {
-                setZoom(1);
-                setPan({ x: 0, y: 0 });
-              }}
-              title="Fit"
-            >
-              {Math.round(zoom * 100)}%
-            </button>
-            <button
-              type="button"
-              className="sg-btn sg-btn--tight"
-              onClick={() => setZoom((z) => Math.min(ZOOM_MAX, Number((z + 0.2).toFixed(2))))}
-              aria-label="Zoom in"
-            >
-              +
-            </button>
-          </div>
+          <button
+            type="button"
+            className="sg-btn sg-btn--tight"
+            onClick={() => {
+              setZoom(1);
+              setPan({ x: 0, y: 0 });
+            }}
+            title="Fit"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            type="button"
+            className="sg-btn sg-btn--tight"
+            onClick={() => setZoom((z) => Math.min(ZOOM_MAX, Number((z + 0.2).toFixed(2))))}
+            aria-label="Zoom in"
+          >
+            +
+          </button>
         </div>
-      </header>
-
-      {graph.relations.length > 0 ? (
-        <div className="sg-relations" role="group" aria-label="Relations from this session">
-          {graph.relations.map((relation) => {
-            const off = hidden.has(relation.key);
-            return (
-              <button
-                key={relation.key}
-                type="button"
-                className={off ? 'sg-rel sg-rel--off' : 'sg-rel'}
-                aria-pressed={!off}
-                onClick={() => toggleRelation(relation.key)}
-                title={
-                  off
-                    ? `${relation.label} is hidden — this is your filter, not a fact about the session`
-                    : `Hide ${relation.label.toLowerCase()}`
-                }
-              >
-                <span className="sg-rel__dot" data-relation={relation.type} aria-hidden="true" />
-                {relation.label}
-                <span className="sg-rel__n">{relation.peers.length}</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+      </div>
 
       <div
         className="sg-canvas"
@@ -353,13 +349,16 @@ export function SessionGraphBody({
       >
         <svg
           className="sg-svg"
-          viewBox={`0 0 ${placement.width} ${placement.height}`}
+          viewBox={`${placement.view.x} ${placement.view.y} ${placement.view.w} ${placement.view.h}`}
           preserveAspectRatio="xMidYMid meet"
           role="img"
           aria-label={`Graph of ${graph.cells.length} entities around this session`}
         >
+          {/* Zoom pivots on the middle of what is DRAWN, not on the layout's
+              ring centre: the two differ once the view is the tight box, and
+              pivoting on the old centre walked the cards off-screen. */}
           <g
-            transform={`translate(${pan.x} ${pan.y}) translate(${placement.centre.x} ${placement.centre.y}) scale(${zoom}) translate(${-placement.centre.x} ${-placement.centre.y})`}
+            transform={`translate(${pan.x} ${pan.y}) translate(${placement.view.x + placement.view.w / 2} ${placement.view.y + placement.view.h / 2}) scale(${zoom}) translate(${-(placement.view.x + placement.view.w / 2)} ${-(placement.view.y + placement.view.h / 2)})`}
           >
             {placement.radii.map((r, index) => (
               <circle
@@ -398,15 +397,19 @@ export function SessionGraphBody({
         </svg>
       </div>
 
-      {selected ? (
-        <SelectionCard
-          cell={selected}
-          onOpen={onOpenEntity}
-          onClose={() => setSelectedId(null)}
-        />
-      ) : null}
-
-      <GraphFooter graph={graph} result={result} summary={summary} hiddenCount={hidden.size} />
+      {/* Both of these belong to the bottom edge and only one of them is
+          always there, so they stack in one floating foot rather than each
+          claiming `bottom: 0` and landing on the other. */}
+      <div className="sg-foot-stack">
+        {selected ? (
+          <SelectionCard
+            cell={selected}
+            onOpen={onOpenEntity}
+            onClose={() => setSelectedId(null)}
+          />
+        ) : null}
+        <GraphFooter graph={graph} result={result} summary={summary} hiddenCount={hidden.size} />
+      </div>
     </div>
   );
 }
