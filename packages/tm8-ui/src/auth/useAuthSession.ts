@@ -229,14 +229,10 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
             isOwner: verdict.account.isOwner,
           });
         }
-      } else if (verdict.state === 'gated' || verdict.state === 'unclaimed') {
-        // The node will not sign this caller in now — either it will not vouch
-        // for a credential-free caller (`gated`: multi mode or not loopback), or
-        // it has not been claimed yet (`unclaimed`: the claim ceremony must win,
-        // see `fetchAutoOwnerSession`). Either way a warm browser that rendered
-        // the app from a stale cache is signed out HERE, exactly as a revoked
-        // pass closes the gate on reload — dropping it to the card the node's
-        // claim status calls for (the claim card while `claimed` is false).
+      } else if (verdict.state === 'gated') {
+        // The node will not vouch for a credential-free caller now. A warm
+        // browser that rendered the app from a stale cache is signed out HERE,
+        // exactly as a revoked pass closes the gate on reload.
         setSnapshot((s) => (s.autoOwner ? { ...s, autoOwner: null } : s));
       }
       // 'unreachable' → left as it stands: a cold browser stays signed out, a
