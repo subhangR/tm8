@@ -602,10 +602,19 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // no registry row. Numbered 140 after measuring every ref, remote and
     // local (max was 139).
     // MEASURED, never arithmetic: `ls db/migrations/*.sql | wc -l` = 131.
+    // 131 -> 132 (2026-08-17, multi-mode boot fix): 142_resolve_node_owner —
+    // a claim-free SECURITY DEFINER read of the single is_owner account by
+    // FLAG, so a claimed node (whose owner username claim_node renamed off
+    // `owner`) resolves its loopback owner instead of missing the read and
+    // crashing into F1 at boot. MEASURED on THIS branch, never arithmetic:
+    // `ls db/migrations/*.sql | wc -l` = 132. WARNING: PR #319 also adds a
+    // migration (141); each PR alone measures 132, but MERGED together the
+    // count becomes 133 — whoever lands second must RE-MEASURE this pin on the
+    // merged tree, not increment.
     // RE-MEASURE ON THE MERGED TREE, not on this branch: this number is the
     // one thing here that another lane can invalidate without touching this
     // file, and delta arithmetic across a merge is how it goes wrong.
-    expect(server.appliedMigrations.length).toBe(131);
+    expect(server.appliedMigrations.length).toBe(132);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
