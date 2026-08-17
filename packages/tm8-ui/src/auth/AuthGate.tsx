@@ -96,6 +96,12 @@ export function AuthGate({
   // "not asked yet" and "asked, could not reach the node" must render
   // differently. See the render guard below.
   const [claimSettled, setClaimSettled] = useState(false);
+  // Was this browser COLD at mount — no cached claim answer to paint from? The
+  // blank below is bounded to cold browsers, and it must stay bounded to the
+  // answer the FIRST paint had: the claim probe lands mid-flight and would
+  // otherwise turn a cold browser warm halfway through, letting a card paint
+  // before the loopback probe has said whether a card belongs at all.
+  const [coldAtMount] = useState(() => readCachedNodeClaim() === null);
 
   // Asked only while signed OUT. A signed-in viewer has already answered the
   // question this read exists to ask, and firing it anyway would put a
@@ -181,10 +187,24 @@ export function AuthGate({
   // account that does not exist, which is the exact false promise this lane
   // removes. A warm browser has the cached answer and never reaches this.
   //
-  // `claimSettled` bounds it: an unreachable node settles with a null answer
-  // and falls through to the sign-in card with the transport error, rather
-  // than blanking forever.
-  if (!initialFrame && !nodeClaim && !claimSettled) return null;
+  // TWO probes bound this blank on a cold browser, and BOTH must be waited on:
+  // `claimSettled` (which card, if any) and `checkingLoopback` (whether this is
+  // the loopback auto-owner, who gets no card at all). Painting a sign-in card
+  // while the loopback probe is still out — even for the round trip it takes —
+  // is the very flash the owner on their own machine must never see: the app is
+  // coming, not a password prompt. Both settle on an unreachable or multi-mode
+  // node (a null claim answer, a `gated` loopback answer) and fall through to
+  // the sign-in card with the honest transport error, rather than blanking
+  // forever.
+  //
+  // Bounded to `coldAtMount`, not to the LIVE `nodeClaim`: the claim probe
+  // resolves mid-blank and sets `nodeClaim`, so keying on `!nodeClaim` would
+  // stop blanking the instant the claim answer arrived — and paint its card a
+  // round trip before the loopback answer that might replace the whole gate
+  // with the app. A warm browser (not cold at mount) skips the blank entirely
+  // and shows its cached card at once; if the loopback probe then says
+  // auto-owner, `status` flips it into the app.
+  if (!initialFrame && coldAtMount && (!claimSettled || session.checkingLoopback)) return null;
 
   // Which card to show is the NODE's answer (`auth.claim.status`), not this
   // browser's inference — see `defaultSignedOutFrame`.
