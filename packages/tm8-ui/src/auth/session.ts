@@ -606,6 +606,7 @@ export async function claimNodeOnServer(
  */
 export type AutoOwnerVerdict =
   | { state: 'auto-owner'; account: GateAccount }
+  | { state: 'unclaimed' } // the node resolves the auto-owner, but has not been claimed — the claim ceremony must win, or the first-run password is never set
   | { state: 'gated' } // the node answered, but will not vouch for a credential-free caller
   | { state: 'unreachable' }; // the node could not be asked
 
@@ -723,10 +724,22 @@ export function loopbackAutoOwnerPossible(serverId = readActiveServerId()): bool
  * THE LOOPBACK RELOAD CHECK — `auth.session.get` with NO pass, the mirror of
  * `verifyStoredSession`. The bare client is deliberate (as for `auth.login`):
  * the auto-owner identity stands on the loopback peer alone, never on a stored
- * pass. The three verdicts map exactly as the pass reload check's do:
+ * pass. The four verdicts map exactly as the pass reload check's do, with one
+ * addition the pass check has no analogue for — `unclaimed`:
  *
- *   `auto-owner`  — the node vouches for this credential-free caller. Cached
- *                   and rendered as a signed-in, sessionless identity.
+ *   `auto-owner`  — the node vouches for this credential-free caller AND has
+ *                   been claimed. Cached and rendered as a signed-in,
+ *                   sessionless identity.
+ *   `unclaimed`   — the node resolves the auto-owner (that is HOW the owner row
+ *                   is minted on first run) but `auth.claim.status` says it has
+ *                   never been claimed. Signing in here would bury the claim
+ *                   ceremony: the node would never get a password, and the
+ *                   first off-box login over the tailnet would meet a sign-in
+ *                   card with no credential behind it — §1's original dead end,
+ *                   restored by a different route (FIRST-RUN-CLAIM-DESIGN §5.1
+ *                   step 4, D3). So the claim card must win while `claimed` is
+ *                   false; auto-owner resumes the instant the node is claimed.
+ *                   Treated like `gated` by the gate — no sign-in, cache cleared.
  *   `gated`       — the node answered but will not (`multi` mode, or the
  *                   caller is not loopback). The cache is cleared, so a warm
  *                   browser that rendered the app from a stale entry is signed
@@ -738,6 +751,12 @@ export function loopbackAutoOwnerPossible(serverId = readActiveServerId()): bool
  *                   an unreachable node as auto-owner would promise an app that
  *                   cannot load, the mirror of offering a claim ceremony that
  *                   cannot succeed.
+ *
+ * The claim status is fetched TOGETHER with the identity: auto-owner is only a
+ * sign-in on a claimed node, so both facts must be in hand before the gate acts
+ * on either — otherwise the app flashes before the claim card. The `auth.session.get`
+ * answer is settled first (it decides whether the claim question even matters),
+ * then the claim question is asked; on loopback that second hop is negligible.
  */
 export async function fetchAutoOwnerSession(): Promise<AutoOwnerVerdict> {
   const { client, serverId } = bareClientForActiveServer();
@@ -746,6 +765,24 @@ export async function fetchAutoOwnerSession(): Promise<AutoOwnerVerdict> {
     if (result.authKind !== 'auto-owner') {
       clearCachedAutoOwner(serverId);
       return { state: 'gated' };
+    }
+    // AUTO-OWNER, BUT ONLY ON A CLAIMED NODE. Prefer the live claim answer,
+    // fall back to the cache — a warm claimed node whose `claim.status` flaked
+    // must still sign the owner in on its last-known `claimed: true`.
+    const claim = (await fetchNodeClaim()) ?? readCachedNodeClaim();
+    if (claim?.claimed === false) {
+      // The node has not been claimed. Withhold the app so the claim card wins.
+      clearCachedAutoOwner(serverId);
+      return { state: 'unclaimed' };
+    }
+    if (!claim) {
+      // The node vouched for the caller but its claim state could not be read
+      // AT ALL (no live answer, no cache). Do NOT sign in on an unknown claim
+      // state: an unclaimed first-run node is exactly where a blind sign-in
+      // buries the ceremony, and a transport-honest card is recoverable on the
+      // next load whereas a buried ceremony is not. Same ruling as `unreachable`
+      // — a warm auto-owner stays in on its cache, a cold browser stays out.
+      return { state: 'unreachable' };
     }
     const account = toGateAccount(result.account);
     writeCachedAutoOwner(serverId, account);
