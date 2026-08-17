@@ -295,6 +295,78 @@ describe('141 account-lifecycle ops — runtime + escalation resistance', () => 
   }, 40_000);
 });
 
+describe('143 signup_via_invite refuses on an UNCLAIMED node (§7.1 guard)', () => {
+  let server: W3PublicServer;
+
+  beforeAll(async () => {
+    server = await startW3PublicServer('unclaimed');
+  }, 120_000);
+
+  afterAll(async () => {
+    await server?.close();
+  });
+
+  it('an invite redeemed before the owner claims is REFUSED, burns nothing, and leaves the node claimable', async () => {
+    // The node is UNCLAIMED (nobody has claimed; the loopback auto-owner has no
+    // credential). The auto-owner can still create a space + invite — neither
+    // writes a password, so the node stays unclaimed.
+    const space = successData<{ space: { id: string } }>(
+      await server.request('POST', '/v2/spaces', {
+        name: 'premature',
+        clientMutationId: `premature-space-${Math.random()}`,
+      }),
+    );
+    const invite = successData<{ invite?: { code: string }; code?: string }>(
+      await server.request('POST', `/v2/spaces/${space.space.id}/invites`, {
+        role: 'member',
+        maxUses: 1,
+        clientMutationId: `premature-inv-${Math.random()}`,
+      }),
+    );
+    const code = invite.invite?.code ?? invite.code;
+    if (!code) throw new Error('no invite code');
+
+    // The claim-free signup is REFUSED (forbidden), because the node is not
+    // claimed — the §7.1 dead end, turned into a guard.
+    const res = await server.request('POST', '/v2/auth/invite/signup', {
+      code,
+      username: 'earlybob',
+      password: 'earlybob-password-123',
+    });
+    expect(res.status).toBe(403);
+    expect(errorCode(res)).toBe('forbidden');
+
+    // It burned NOTHING: the invite is unconsumed and no account was created.
+    const [inv] = await server.rows<{ use_count: number }>(
+      'select use_count from public.space_invites where code = $1',
+      [code],
+    );
+    expect(inv.use_count).toBe(0);
+    const [orphan] = await server.rows('select 1 from public.accounts where lower(username) = $1', [
+      'earlybob',
+    ]);
+    expect(orphan).toBeUndefined();
+
+    // THE PROOF THE DEAD END IS CLOSED: the owner can still claim the node.
+    const token = await setupToken(server.dataDir);
+    const claim = await server.request('POST', '/v2/auth/claim', {
+      token,
+      username: 'realowner',
+      password: 'real-password-123',
+    });
+    expect(claim.status).toBe(200);
+
+    // And AFTER the claim, the same invite now works — the guard was ordering,
+    // not a permanent block.
+    const afterClaim = await server.request('POST', '/v2/auth/invite/signup', {
+      code,
+      username: 'latebob',
+      password: 'latebob-password-123',
+    });
+    expect(afterClaim.status).toBe(200);
+  }, 40_000);
+});
+
 describe('141 auth.claim.reissue — happy path on an UNCLAIMED node', () => {
   let server: W3PublicServer;
 
