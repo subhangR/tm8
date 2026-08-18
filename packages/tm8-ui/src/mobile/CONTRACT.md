@@ -231,6 +231,38 @@ carry 9.5px labels (`lp__tab`, `lp__chip`, `lp__foot`), 11.5px (`lp__kind`, `lp_
 (`mobile-tabs__label`). **A 44px button with 9.5px text is tappable and unreadable.** Not a threshold in
 this program and invisible to the tap census, which is exactly why it needs writing down.
 
+**DO NOT INFER A MEMBERSHIP TEST FROM THE THREE EXAMPLES BELOW.** All three happen to pin a literal
+height and hide their overflow, and a test built from that pair — *"pins a dimension AND hides the
+overflow"* — is **REFUTED**. It scores the container that actually produced a failing capture
+(`.tch-tray__tabs`, a chip 11px past a 390 frame) as a NON-member, decidably. **A rule with a wrong
+decidable test is worse than an honest fuzzy one: the fuzzy one makes you look, the wrong one tells
+you not to.**
+
+Two reasons it escapes, and the second is the one to carry:
+
+- **The dimension can be pinned by the FLEX CONTEXT, not by a literal.** `display:flex; flex:1;
+  min-width:0; overflow:hidden` has no `height:` or `width:` to grep. `flex: 1` bounds a box to its
+  parent as firmly as `width: 340px`, and `min-width: 0` is what lets it be bounded *below its
+  content*. Flex and grid containers are where this codebase lives.
+- **`overflow: hidden` governs what a HUMAN sees, not what the INSTRUMENT measures.** The census reads
+  the CHILD's rect: the offending chip measured `right: 401` while its parent clipped it visually. So
+  "hides the overflow" is not the property that makes a container dangerous — it is R3's mechanism
+  read from the wrong end.
+
+**A candidate pair that survives that counter-example — recorded as UNVALIDATED, tested against five
+containers with one positive, none of them this file's:** (A) the container's size on that axis is
+bounded by its PARENT rather than its content (`flex:1`, `width:100%`, a grid track, or a literal);
+(B) at least one CHILD cannot shrink to fit (a literal size, a `min-*` floor, or the default
+`min-width:auto` with content that does not ellipsise). Both true ⇒ the child MUST overflow, and the
+census sees it. In the case that prompted this, the fix fell straight out of (B): give the child
+`min-width: 0` and the ancestors that already carried it finally get to do their job — two
+declarations and no height cost.
+
+**THE REUSABLE CORRECTION:** the refuted test asks *"does the container clip?"*, a question about what
+a human sees. The question that predicts a failing row is *"can a child be forced past the edge?"* —
+about what the census measures. **Properties for a membership test must be chosen against the
+instrument that grades you.**
+
 And the one this file learnt the hard way: **unpin the container before growing what is inside it.**
 `.lp__selector` (36px), `.lp__filters` (32px + `overflow: hidden`) and `.lp__actions` (34px) all clip
 a control you just enlarged, and **no metric in this program can see vertical clipping** (DEF-037).
