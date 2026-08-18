@@ -1912,6 +1912,13 @@
     transform: translate(0, -50%);
   }
 }
+/* Member 3 of 3 of the shell-marker half — see `.lp__rowactions` above and the
+   enumeration over `.pn-tt__actions` in `maestro-task-tile.css`. */
+.cv2-root[data-shell='mobile'] .pn-st__actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
 .cv2-root .pn-st__btn { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; color: var(--pn-ink-4); background: transparent; border: 1px solid transparent; border-radius: var(--pn-r-sm); cursor: pointer; transition: color var(--pn-dur-fast), background var(--pn-dur-fast); }
 .cv2-root .pn-st__btn:hover { color: var(--pn-ink); background: var(--pn-active); }
 .cv2-root .pn-st__btn--danger:hover { color: var(--pn-block); }
@@ -2284,6 +2291,18 @@
     pointer-events: auto;
     transform: translate(0, -50%);
   }
+}
+/* THE SHELL-MARKER HALF, STATED ON ALL THREE MEMBERS OF THE SHAPE — see the
+   enumeration over `.pn-tt__actions` in `maestro-task-tile.css`. The phone
+   shell is also reachable by user override on a fine pointer, where
+   `(pointer: coarse)` is FALSE and a hover a mouse can produce is still not a
+   hover a LIST gives you. Three containers carry this pattern and all three
+   now carry both signals; a fourth would be a defect, and the way to know is
+   to count them. */
+.cv2-root[data-shell='mobile'] .lp__rowactions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
 }
 /* A selected row is not a hovered row, so the backing has to follow it. */
 .cv2-root .lp__tile--selected .lp__rowactions { background: var(--pn-active); }
@@ -3201,6 +3220,48 @@
    reason. The label span in `--wide` is included and wants to be: it is text
    inside its own button, never a target of its own. */
 .cv2-root .lp__cluster > button > * { pointer-events: none; }
+
+/* THE SHAPE, ENUMERATED — R17. "A control the gate grew to 44px whose glyph is
+   a CENTRED CHILD ELEMENT." Growing the box is what creates the fault: at 16px
+   the glyph nearly IS the button, so a press that lands on the child lands
+   close enough; at 44px the glyph is a small mark floating at dead centre,
+   which is where a thumb aims and where `elementFromPoint()` looks.
+   DEF-006 is this fault, found on `lp__statedot` AFTER the gate grew it.
+
+   MEMBERS, walked one by one rather than guessed at — the grown controls are
+   the gate's §7 block, and the question per control is "is its centre an
+   ELEMENT or a text node?", because a text node returns its parent and is
+   therefore safe:
+
+     .lp__statedot     button > svg glyph          AFFECTED — fixed above, DEF-006
+     .lp__rowaction    button > span > glyph       AFFECTED — fixed above (cluster)
+     .pn-tt__ind       button > svg                AFFECTED — fixed above (cluster)
+     .lp__disclosure   button > span > TileChevron AFFECTED — fixed HERE
+     .lp__new          text only ("＋ New")         safe
+     .lp__quick        text only (`${icon} ${label}`) safe
+     .pn-tt__title     text only                   safe
+     .lp__title        text only                   safe
+     .ibx-chip         text + count                safe
+     .lp__kind         span.lp__kind-glyph + TEXT  UNCERTAIN, see below
+
+   4 of 4 AFFECTED members are treated. That count is the checkable claim; "I
+   made the glyphs pointer-transparent" is not.
+
+   `.lp__disclosure` is NOT DEF-018 and this is not a raid on shell's row —
+   DEF-018 is the SIZE (16x16) and it landed in the gate. This is the OCCLUSION
+   that the gate's own fix introduced, exactly as DEF-017's size fix introduced
+   DEF-006's occlusion on the dot. Same pair, second instance, and nobody has
+   filed it. Fixed defensively because it is one line in a file this lane owns
+   and the alternative is shipping a 44px chevron that swallows the press. It
+   is UNVERIFIABLE on today's fixture — `lp__disclosure` renders only on the
+   generic tile, whose kinds the category partition filters away — so it is
+   flagged as an unfiled, unverified fix rather than claimed.
+
+   `.lp__kind` is left alone and stated rather than silently skipped: its centre
+   falls in its LABEL TEXT, not in its leading glyph span, so the press already
+   reaches the button. If a future label ever renders empty, the centre moves
+   onto the glyph and it joins the list. */
+.cv2-root .lp__disclosure > * { pointer-events: none; }
 .cv2-root .lp__rowdetail--chips .lp__rowaction:hover { color: var(--pn-block); }
 
 /* THE PANEL'S CHIP BAND — the strip's own row under the tab strip.
