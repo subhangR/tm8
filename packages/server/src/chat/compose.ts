@@ -65,11 +65,14 @@ export interface ChatProviderToolPolicy {
  * mode and the MCP repo tools answer `project_unavailable`.
  */
 export function chatProviderToolPolicy(mode: ChatMode, hasProject = true): ChatProviderToolPolicy {
-  const projectlessTools = ['WebFetch', 'WebSearch', 'TodoWrite'];
+  // Skill is repo-independent, so it rides both surfaces. Task/native subagents
+  // stay excluded — chat delegates through tm8_delegate into trackable worker
+  // sessions, never invisible in-process subagents.
+  const projectlessTools = ['WebFetch', 'WebSearch', 'TodoWrite', 'Skill'];
   const availableTools = hasProject
     ? [
         'Read', 'Glob', 'Grep', 'Bash',
-        'WebFetch', 'WebSearch', 'Edit', 'Write', 'TodoWrite',
+        'WebFetch', 'WebSearch', 'Edit', 'Write', 'TodoWrite', 'Skill',
       ]
     : projectlessTools;
   const nativeAllowed = hasProject
@@ -403,9 +406,18 @@ export function composeChatBootstrap(ctx: {
   db: Db;
   dataDir: string;
   baseUrl: string;
+  /**
+   * Node-level tm8-curated skills plugin directory. When set, chat runtimes
+   * load it and expose `Skill`; when absent, `Skill` is offered but resolves
+   * nothing (slash-command surface stays disabled). main() reads it from
+   * `TM8_CHAT_SKILLS_DIR`.
+   */
+  skillsPluginDir?: string;
 }): ChatBootstrapComposition {
   return {
-    runtime: wrapExecutionAgentRuntime(new ClaudeHeadlessAdapter()),
+    runtime: wrapExecutionAgentRuntime(
+      new ClaudeHeadlessAdapter(ctx.skillsPluginDir ? { pluginDir: ctx.skillsPluginDir } : {}),
+    ),
     resolveLaunchConfig: createChatLaunchConfigResolver(ctx),
     onError: (error) => {
       // eslint-disable-next-line no-console

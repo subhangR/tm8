@@ -884,7 +884,15 @@ export async function main(): Promise<void> {
       // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
       // launch-config resolver. Without this line the chat ships dead — the
       // orchestrator only exists when a runtime is injected (see compose.ts).
-      chat: composeChatBootstrap,
+      // TM8_CHAT_SKILLS_DIR, when set, is the tm8-curated Claude Code plugin
+      // directory that turns the chat `Skill` tool on; unset ⇒ Skill is offered
+      // but resolves nothing (no behaviour change).
+      chat: (chatCtx) => composeChatBootstrap({
+        ...chatCtx,
+        ...(process.env.TM8_CHAT_SKILLS_DIR?.trim()
+          ? { skillsPluginDir: process.env.TM8_CHAT_SKILLS_DIR.trim() }
+          : {}),
+      }),
     });
     const { registry, router } = server;
     console.log(`tm8-server listening on ${url}`);
