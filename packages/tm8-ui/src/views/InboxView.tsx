@@ -35,7 +35,23 @@ export interface InboxViewProps {
    * rather than clickable and silently inert, so passing this is what makes
    * the rows live.
    */
-  onOpenEntity?: (id: EntityId) => void;
+  /**
+   * DEF-005 — THE `kind` IS NOW THREADED, and it is not decoration.
+   *
+   * The desktop host opens an entity by navigating to the WORKSPACE and pushing
+   * a bare id onto its panel stack, so it never needed one. The phone has no
+   * workspace (it is one of the refused-forever refs) and its stacks are keyed
+   * BY KIND — `screenKeyOf.kind(k)` — so a bare id is not enough to open
+   * anything there. `landingOfRoute`'s `entity` arm records the same constraint
+   * and the same reason: resolving a kind from an id "is a read".
+   *
+   * The row already carries it (`inbox/inbox-model.ts:95`,
+   * `target: { id, kind, title }`), so it is passed on rather than looked up.
+   * The desktop's existing `(id) => …` handler stays valid unchanged: a
+   * one-parameter function is assignable to a two-parameter type, and it simply
+   * ignores what it does not need.
+   */
+  onOpenEntity?: (id: EntityId, kind: string) => void;
 }
 
 export function InboxView({ seam, onOpenEntity }: InboxViewProps) {
@@ -45,12 +61,12 @@ export function InboxView({ seam, onOpenEntity }: InboxViewProps) {
       data={data}
       {...(onOpenEntity
         ? {
-            onOpenNotification: (row: { target: { id: string } | null }) => {
+            onOpenNotification: (row: { target: { id: string; kind: string } | null }) => {
               // A notification with no target has nowhere to go. Returning
               // early is honest; synthesizing a destination would send the
               // viewer somewhere the notification never pointed.
               if (!row.target) return;
-              onOpenEntity(row.target.id as EntityId);
+              onOpenEntity(row.target.id as EntityId, row.target.kind);
             },
           }
         : {})}

@@ -371,6 +371,94 @@
   pointer-events: auto;
   transform: translate(0, -50%);
 }
+/* DEF-030 / DEF-036 — ON TOUCH THIS CLUSTER DID NOT EXIST, AND THE FIX THAT
+   SAID IT DID MISSED THIS ONE OF THREE.
+
+   `56e1bc72` ("the row controls that were not merely hidden, but absent")
+   revealed `.lp__rowactions` in `panels.css` and `.pn-st__actions` beside it,
+   under `(pointer: coarse)`, for exactly the reason written there. There are
+   THREE containers carrying the `.lp__cluster` vocabulary, not two — the task
+   tile's is this one, and it was not in that commit. So the fix read as landed
+   while the tasks list, the busiest of the three phone list screens, kept
+   `opacity: 0` and `pointer-events: none` at rest.
+
+   That is what the `before-lanes` run measured and what its shot shows: on
+   `entity-list-tasks` at phone-390, `inertCount` 67 with `lp__rowaction`
+   Archive / Change collections / Complete / Run all at `pointer-events:none`,
+   and no cluster visible on any of the 46 rows in the capture. The two rows
+   that were fixed reported nothing, which is why one missing container looked
+   like a finished fix.
+
+   BOTH SIGNALS, deliberately, and they are not the same question:
+     - `(pointer: coarse)` is the PRODUCT rule and is the sibling rules'
+       spelling verbatim — these rows are the phone's main screens and the
+       coarse tablet's, and the tablet runs the desktop shell.
+     - `[data-shell='mobile']` covers the phone shell reached by the user
+       override on a fine pointer, where the row actions are just as
+       unreachable by hover-in-a-list and the media query is false.
+   Neither implies the other, and a capture taken through the override seam
+   would have reported the coarse-only rule as unfixed. */
+@media (pointer: coarse) {
+  .cv2-root .pn-tt__actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(0, -50%);
+  }
+}
+.cv2-root[data-shell='mobile'] .pn-tt__actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
+
+/* DEF-036 — THE FLOW HALF, WHICH REVEALING THE CLUSTER DOES NOT FIX BY ITSELF.
+
+   Un-inerting the buttons satisfies DEF-030's machine floor and would still
+   have left Archive unreachable, which is why the ledger files these as two
+   rows and closes them together. The cluster FLOATS over the row's right edge
+   on an opaque backing — a desktop hover affordance, where it appears under a
+   pointer that is already there and vanishes again. Revealed permanently on a
+   390px row it sits ON TOP OF the title it shares the line with: the title
+   would be legible for ~170px and then covered by an opaque box, and the tap
+   that opens the row would land on Archive instead. "Visible" and "reachable"
+   are two questions, and floating answers only the first.
+
+   So on the phone the cluster LEAVES THE FLOAT and takes its own line under the
+   title. The row gets taller. Per CONTRACT.md §7 that is the correct outcome
+   and not a cost — density is a desktop constraint — and it is the only
+   arrangement where the title is whole AND every action is at the bar.
+
+   THE ROW WAS ALREADY UNPINNED FOR THIS, which is the only reason it is safe:
+   `.pn-tt__main` is `min-height`, not `height`, and the gate's §7e floor
+   already made `.pn-tt__title` 44px tall, so the phone row is >= 44 before this
+   rule adds anything. Growing a 22px control inside a pinned 29px row is the
+   trap CONTRACT.md §6 names, and it is not the trap here. */
+.cv2-root[data-shell='mobile'] .pn-tt__main {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.cv2-root[data-shell='mobile'] .pn-tt__actions {
+  position: static;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 4px;
+  padding-left: 0;
+  /* The backing existed to keep the badges readable UNDER the floating
+     cluster. In the flow there is nothing under it to keep readable, and a
+     tinted strip across the row would read as a second selected state. */
+  background: none;
+  transform: none;
+}
+/* The bar, on both axes, for every control in the cluster — `min-*` rather
+   than `width`/`height` so `.lp__rowaction--wide` keeps its `width: auto` and
+   grows around its label instead of being squared off at 44. */
+.cv2-root[data-shell='mobile'] .pn-tt__actions .lp__rowaction,
+.cv2-root[data-shell='mobile'] .pn-tt__actions .pn-tt__ind {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+}
+
 /* A selected or expanded row is not hovered, so the backing must match the row
    it floats over rather than the hover tint. */
 .cv2-root .pn-tt--active .pn-tt__actions,
