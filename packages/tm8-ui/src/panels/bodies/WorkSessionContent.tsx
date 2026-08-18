@@ -186,16 +186,41 @@ export function WorkSessionContent({
     initialSurface.current = resolveInitialSurface({ requestedSurface, preferenceKey, oneSurface });
   }
   /*
-   * A ROUTE MAY NAME A SURFACE THIS SHELL REFUSES, and that is a real arrival
-   * rather than an error: somebody shares `?contentSurface=git` from a desktop.
-   * The switch cannot select it (it is not offered), so it is held HERE and
-   * answered with a refusal that names the surface asked for. Held rather than
-   * silently rewritten to Transcript, which would leave the address and the
-   * screen disagreeing on the one device where the address is how the screen
-   * was arrived at.
+   * WHAT WAS ASKED FOR AND CANNOT BE GIVEN — held, and answered by name.
+   *
+   * A viewer arrives wanting a surface this shell refuses. It is a real arrival
+   * rather than an error, and rewriting it silently to Transcript would leave
+   * the request and the screen disagreeing with nothing on screen saying so.
+   *
+   * TWO SOURCES, AND THE SECOND IS THE ONE THAT ACTUALLY FIRES TODAY. I wrote
+   * this reading `requestedSurface` alone and then checked whether that could
+   * ever be non-null here — it cannot. `EntityView`, which is the ONLY host the
+   * phone shell mounts, holds `contentSurfaces` in COMPONENT STATE and passes
+   * the route's value to nobody; the navStore's `contentSurface` reaches
+   * `nav.surfaceOf` and thus WorkspaceView, which has no phone arrangement at
+   * all. So the route arm is correct, and on this shell it is dead — it starts
+   * working the day `contentSurface` becomes route state on the phone, which is
+   * DEF-045's shape and is not this row.
+   *
+   * THE PREFERENCE ARM IS REACHABLE NOW, and it is the likelier arrival anyway:
+   * `tm8:work-session-surface:v1` is written by the viewer's own last click on
+   * THIS session, per member, on whatever device made it. Somebody reading a
+   * session's Git rail on a desktop and then opening the same session on their
+   * phone is the ordinary case, not the exotic one — and without this they
+   * would land on the transcript with no explanation of why the surface they
+   * left is gone.
+   *
+   * Resolved ONCE, beside the initial surface, because it describes the ARRIVAL.
+   * Re-deriving it every render would keep the card up after the viewer moved on
+   * — an answer to a question they have stopped asking.
    */
-  const refusedSurface =
-    oneSurface && requestedSurface && PHONE_REFUSED[requestedSurface] ? requestedSurface : null;
+  const arrivalRefusal = useRef<ContentSurface | null>(null);
+  if (initialSurface.current !== null && arrivalRefusal.current === null) {
+    const asked = requestedSurface ?? readPreference(preferenceKey);
+    arrivalRefusal.current = oneSurface && asked && PHONE_REFUSED[asked] ? asked : null;
+  }
+  const [refusalDismissed, setRefusalDismissed] = useState(false);
+  const refusedSurface = refusalDismissed ? null : arrivalRefusal.current;
   const [surface, setSurface] = useState<ContentSurface>(initialSurface.current);
   const [terminalMounted, setTerminalMounted] = useState(initialSurface.current === 'terminal');
   const [transcriptMounted, setTranscriptMounted] = useState(
@@ -231,6 +256,11 @@ export function WorkSessionContent({
     (next: ContentSurface, focus = false) => {
       if (next === 'transcript') setTranscriptMounted(true);
       if (next === 'terminal') setTerminalMounted(true);
+      /* The arrival refusal answers "why am I not where I asked to be". Once
+         the viewer has chosen a surface for themselves they have stopped
+         asking, and a card that stays is an answer to a dead question taking
+         space off the surface they did choose. */
+      setRefusalDismissed(true);
       setSurface(next);
       writePreference(preferenceKey, next);
       onSurfaceChange?.(next);

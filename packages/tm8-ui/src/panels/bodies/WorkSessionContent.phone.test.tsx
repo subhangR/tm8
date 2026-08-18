@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MobileSurfaceProvider } from '../../mobile';
 import { WorkSessionContent } from './WorkSessionContent';
@@ -96,6 +96,47 @@ describe('WorkSessionContent on a phone', () => {
     /* It is a STATEMENT, not a fourth tab: a screen reader walking the tablist
        must not be offered something it cannot select. */
     expect(screen.getAllByRole('tab')).toHaveLength(2);
+  });
+
+  /**
+   * THE ARRIVAL THAT ACTUALLY HAPPENS, and the reason this case exists at all.
+   *
+   * I wrote the refusal card reading `requestedSurface` and then checked whether
+   * that could ever be non-null on this shell. It cannot: `EntityView` is the
+   * only host the phone mounts, and it holds `contentSurfaces` in COMPONENT
+   * STATE — the navStore's route value reaches `nav.surfaceOf`, i.e.
+   * WorkspaceView, which has no phone arrangement. So the route arm is correct
+   * and, today, dead code on a phone.
+   *
+   * The PREFERENCE arm is the one that fires, and it is the likelier arrival
+   * anyway: read a session's Git rail on a desktop, open the same session on
+   * your phone. Without this the reader lands on the transcript with no
+   * explanation of why the surface they left is gone — which is the silent
+   * removal this whole arrangement exists to avoid.
+   */
+  it('names the refusal for a viewer arriving with a refused surface in their stored preference', () => {
+    window.localStorage.setItem(`tm8:work-session-surface:v1:member-a:${SESSION}`, 'git');
+
+    phone(
+      <WorkSessionContent
+        sessionId={SESSION}
+        viewerMemberId="member-a"
+        profile={null}
+        terminal={<div>native terminal</div>}
+        transcript={<div>agent transcript</div>}
+        git={<div data-testid="git-rail">git rail</div>}
+      />,
+    );
+
+    const refusal = screen.getByTestId('work-session-surface-refused');
+    expect(refusal.dataset.surfaceRefused).toBe('git');
+    expect(screen.getByTestId('work-session-content').dataset.surface).toBe('transcript');
+    expect(screen.queryByTestId('git-rail')).toBeNull();
+
+    /* And it goes once the viewer has chosen for themselves — the card answers
+       "why am I not where I asked to be", and they have stopped asking. */
+    fireEvent.click(screen.getByRole('tab', { name: 'Terminal' }));
+    expect(screen.queryByTestId('work-session-surface-refused')).toBeNull();
   });
 
   it('answers a route that names a refused surface by naming THAT surface', () => {
