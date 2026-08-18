@@ -1,0 +1,28 @@
+// A DIAGNOSTIC config. Nothing runs it automatically, and it does NOT pass.
+//
+// `tsconfig.json` here has `include: ["src"]`, so neither `tsc -b` nor vitest
+// ever typechecks `test/**`. A type error in a new test file is therefore
+// INVISIBLE to CI — the test still runs, because vitest transpiles without
+// checking, so the file goes green while lying about the types it asserts on.
+// Two real errors in `test/facade/status-category.test.ts` were found exactly
+// this way and fixed before that file was committed (a missing `EntityRelations`
+// field, and an unguarded regex capture).
+//
+//     npx tsc -p packages/server/tsconfig.tests.json
+//
+// As of 2026-08-18 that reports 216 PRE-EXISTING errors across 39 test files,
+// which is why this is not wired into `tools/ci/check.sh`: turning it on is a
+// cleanup of its own, not a rider on a feature branch. Until someone does that,
+// the way to use this is to run it and grep for YOUR file.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false,
+    "rootDir": "."
+  },
+  "include": ["src", "test"]
+}
