@@ -735,7 +735,7 @@ export function EntityView(props: EntityViewProps) {
          EntityDetailPanel hosts — this host was once the one that missed it
          ("feed scope session_chat_v1 is not applicable to a channel anchor"),
          and three others repeated the miss until the fork moved out. */
-      chatSurface={conversationSurfaceFor(detail, selectedId, {
+      conversationSurface={conversationSurfaceFor(detail, selectedId, {
         seam: data.seam,
         spaceId: data.spaceId,
         connection: data.connection,

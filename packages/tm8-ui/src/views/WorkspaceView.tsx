@@ -488,7 +488,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
            * opened from the Entity List Panel readable and postable; the shared
            * helper is what keeps the other hosts from un-learning it).
            */
-          chatSurface={conversationSurfaceFor(detail, id, {
+          conversationSurface={conversationSurfaceFor(detail, id, {
             seam: data.seam,
             spaceId: data.spaceId,
             connection: data.connection,

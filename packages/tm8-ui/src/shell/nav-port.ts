@@ -18,9 +18,19 @@
  * runs the law and hands the store the settled RESULT via `applyNormalization`.
  */
 import type { EntityId } from '@tm8/contract';
+import type { ContentSurface } from '../routes/types';
 
 export type PanelTab = 'content' | 'discussion' | 'connections' | 'activity';
-export type ContentSurface = 'terminal' | 'chat' | 'git' | 'debug' | 'graph';
+
+/**
+ * RE-EXPORTED, NOT RE-DECLARED. This was a second literal copy of the same
+ * union, and the Chat→Transcript rename is what proved the cost: the two
+ * drifted apart the moment one was edited, and the type error surfaced three
+ * files away from either definition. `routes` is upstream of `shell` in the
+ * §1.1 DAG, so this is the alias the file's own docblock says it should have
+ * become — a binding target, never a second definition.
+ */
+export type { ContentSurface };
 export type PanelHost = 'stack' | 'pinned' | 'peek' | 'z4';
 
 export interface NavPanelState {

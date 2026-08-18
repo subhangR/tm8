@@ -45,7 +45,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
  *
  * Closes on `/>` or `>` AT THE OPENING TAG'S OWN INDENTATION. Matching the
  * first `/>` at any depth ends the block early — these mounts pass whole
- * elements as props (`chatSurface={<LazySessionChatSurface … />}`), and a
+ * elements as props (`conversationSurface={<LazySessionChatSurface … />}`), and a
  * nested close would truncate the block before the attribute being checked,
  * failing a host that is in fact wired correctly.
  */
@@ -162,7 +162,7 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
 
   /**
    * THE SURFACE SET, asserted as a set — not one prop at a time. The slot
-   * behind `chatSurface` is contested (session chat today, a Transcript
+   * behind `conversationSurface` is contested (session chat today, a Transcript
    * surface confirmed incoming, a Discussion surface proposed), so the guard
    * names every member a host must supply for the panel's conversation
    * surface to work WHATEVER fills the slot. A presence check on one prop
@@ -170,7 +170,7 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
    * set is the same three-host outage this assertion was added after.
    */
   const CONVERSATION_SURFACE_SET: readonly { prop: string; why: string }[] = [
-    { prop: 'chatSurface', why: 'the slot itself — absent, the panel renders its "unavailable in this view" alert' },
+    { prop: 'conversationSurface', why: 'the slot itself — absent, the panel renders its "unavailable in this view" alert' },
     { prop: 'viewerMemberId', why: "the viewer's identity — absent, posts run as 'anonymous' and own-message treatments cannot work" },
     { prop: 'contentSurface', why: 'the terminal⇄conversation request — absent, the surface switch has no host memory' },
     { prop: 'onContentSurfaceChange', why: 'the way back — absent, "switch to terminal" from the surface is dead' },
@@ -229,10 +229,10 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
           `${file} builds graphSurface inline; use graphSurfaceFor() so every host stays identical`,
         ).toBe(true);
       }
-      if (block.includes('chatSurface')) {
+      if (block.includes('conversationSurface')) {
         expect(
           block.includes('conversationSurfaceFor'),
-          `${file} builds chatSurface inline; use conversationSurfaceFor() so WHICH surface ` +
+          `${file} builds conversationSurface inline; use conversationSurfaceFor() so WHICH surface ` +
             'fills the slot (channel feed, session chat, a future transcript) is decided in ' +
             'one place and can never drift per host',
         ).toBe(true);

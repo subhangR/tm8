@@ -45,7 +45,7 @@ it('mounts Chat under the same Content body only when the safe pinned projection
       ctx={{ spaceId: FIXTURE_SPACE_ID }}
       liveness="stale"
       contentSurface="terminal"
-      chatSurface={<div>canonical session feed</div>}
+      conversationSurface={<div>canonical session feed</div>}
       onContentSurfaceChange={onContentSurfaceChange}
     />,
   );

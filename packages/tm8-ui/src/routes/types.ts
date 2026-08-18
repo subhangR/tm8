@@ -14,10 +14,32 @@ export const PANEL_TABS: readonly PanelTab[] = ['content', 'discussion', 'connec
 
 /**
  * Per-panel content surface, meaningful only for work_session panels. NEVER
- * expands the `t` vocabulary. Phase 1 preserves-and-clamps `chat` (D12).
+ * expands the `t` vocabulary. Phase 1 preserves-and-clamps (D12).
  */
-export type ContentSurface = 'terminal' | 'chat' | 'git' | 'debug' | 'graph';
-export const CONTENT_SURFACES: readonly ContentSurface[] = ['terminal', 'chat', 'git', 'debug', 'graph'];
+export type ContentSurface = 'terminal' | 'transcript' | 'git' | 'debug' | 'graph';
+export const CONTENT_SURFACES: readonly ContentSurface[] = [
+  'terminal',
+  'transcript',
+  'git',
+  'debug',
+  'graph',
+];
+
+/**
+ * RETIRED TOKENS THAT STILL DECODE. `chat` was this slot's name until the
+ * session panel's surface became the agent transcript, and links carrying it
+ * are already in people's hands — in pasted URLs, in bookmarks, in messages in
+ * this app's own channels.
+ *
+ * The preserve-don't-rewrite ruling (DECISIONS.md) is why this exists and also
+ * why it is one-directional: an old token is ACCEPTED on the way in and is
+ * never EMITTED on the way out, so a link keeps working while the vocabulary
+ * still retires. A URL that arrives as `chat` leaves as `transcript` the next
+ * time the route is written.
+ */
+export const LEGACY_CONTENT_SURFACES: Readonly<Record<string, ContentSurface>> = {
+  chat: 'transcript',
+};
 
 /** `origin = {slug}[.{mode}]`, registry-validated. */
 export interface Origin {

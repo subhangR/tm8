@@ -227,7 +227,7 @@ export function GraphScreen(props: GraphScreenProps) {
       onContentSurfaceChange={(surface) => {
         setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
       }}
-      chatSurface={props.chat && data.seam ? conversationSurfaceFor(detail, selectedId, {
+      conversationSurface={props.chat && data.seam ? conversationSurfaceFor(detail, selectedId, {
         seam: data.seam,
         spaceId: data.spaceId,
         connection: props.chat.connection,

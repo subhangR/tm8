@@ -34,7 +34,14 @@ import type {
   QValue,
   Route,
 } from './types';
-import { COCKPIT_STAGES, CONTENT_SURFACES, MAX_HASH_LENGTH, PANEL_TABS, emptyPanels } from './types';
+import {
+  COCKPIT_STAGES,
+  CONTENT_SURFACES,
+  LEGACY_CONTENT_SURFACES,
+  MAX_HASH_LENGTH,
+  PANEL_TABS,
+  emptyPanels,
+} from './types';
 
 // ---------------------------------------------------------------------------
 // Percent-encoding (RFC 3986)
@@ -63,7 +70,9 @@ function dec(value: string): string | null {
 
 const MODES = new Set<string>(ALL_MODES);
 const TABS = new Set<string>(PANEL_TABS);
-const SURFACES = new Set<string>(CONTENT_SURFACES);
+// Retired tokens are ACCEPTED here and canonicalized below — see
+// LEGACY_CONTENT_SURFACES for why a dead name still parses.
+const SURFACES = new Set<string>([...CONTENT_SURFACES, ...Object.keys(LEGACY_CONTENT_SURFACES)]);
 
 /**
  * Query values are kept RAW here on purpose. `URLSearchParams` would decode
@@ -125,6 +134,9 @@ function parsePairs<T extends string>(
   raw: string | null,
   allowed: ReadonlySet<string>,
   onDrop: () => void,
+  /** Retired tokens mapped to their current spelling. Applied AFTER `allowed`,
+   *  so an alias must also be a member of `allowed` to survive. */
+  canonical: Readonly<Record<string, string>> = {},
 ): Record<EntityId, T> {
   if (raw === null) return {};
   if (raw.length === 0) {
@@ -144,7 +156,7 @@ function parsePairs<T extends string>(
       onDrop();
       return {};
     }
-    out[id] = value as T;
+    out[id] = (canonical[value] ?? value) as T;
   }
   return out;
 }
@@ -212,7 +224,12 @@ export function parse(hash: string): ParseOutcome {
     pinned: parseIdList(query.get('pin'), drop('pins')),
     right: parseIdList(query.get('r'), drop('right')),
     tabs: parsePairs<PanelTab>(query.get('t'), TABS, drop('tabs')),
-    contentSurface: parsePairs<ContentSurface>(query.get('contentSurface'), SURFACES, drop('tabs')),
+    contentSurface: parsePairs<ContentSurface>(
+      query.get('contentSurface'),
+      SURFACES,
+      drop('tabs'),
+      LEGACY_CONTENT_SURFACES,
+    ),
     session: null,
   };
 

@@ -842,13 +842,11 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
     }
   });
 
-  it('ships Terminal and Chat on work_session only', () => {
-    expect(getKind('work_session').panel.contentSurfaces).toEqual(['terminal', 'chat']);
-    for (const row of allKinds()) {
-      if (row.kind === 'work_session') continue;
-      expect(row.panel.contentSurfaces).toBeUndefined();
-    }
-  });
+  // `panel.contentSurfaces` is gone. It declared `['terminal','chat']` and
+  // claimed to be "the complete work-session surface vocabulary" while the
+  // strip shipped five surfaces, and it had no production reader at all — this
+  // test was its only one. The live vocabulary is CONTENT_SURFACES in
+  // routes/types.ts, which the switch actually reads.
 
   it("D2: chat surfaces end at the composer — composition:'chat' on channel and work_session only", () => {
     // The flag is what the panel's strip/footer exclusion reads; work_session

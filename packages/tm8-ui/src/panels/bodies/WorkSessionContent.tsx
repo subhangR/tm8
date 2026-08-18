@@ -1,16 +1,27 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { WorkSessionInteractionProfileProjection } from '@tm8/contract';
-import type { ContentSurface } from '../../routes';
+import { CONTENT_SURFACES, type ContentSurface } from '../../routes';
 
 const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
 
 const SURFACE_LABEL: Readonly<Record<ContentSurface, string>> = {
   terminal: 'Terminal',
-  chat: 'Chat',
+  transcript: 'Transcript',
   git: 'Git',
   debug: 'Debug',
   graph: 'Graph',
+};
+
+/**
+ * A viewer whose last click on this session was the retired Chat chip has
+ * `chat` in local storage. Their preference is honoured under its new name
+ * rather than silently discarded — losing a viewer's own choice to a rename we
+ * made is not something they can diagnose. Same one-directional treatment the
+ * route codec gives the token: read, never written.
+ */
+const LEGACY_SURFACE_PREFERENCE: Readonly<Record<string, ContentSurface>> = {
+  chat: 'transcript',
 };
 
 export interface WorkSessionContentProps {
@@ -20,13 +31,21 @@ export interface WorkSessionContentProps {
   /** Explicit route selection. It outranks the viewer-local preference. */
   requestedSurface?: ContentSurface | null;
   terminal: ReactNode;
-  chat: ReactNode;
   /**
-   * The DEBUG surface (the session's CLI journal). Always offered — it does not
-   * depend on the immutable chat pin — so the switch shows a Debug chip whether
-   * or not Chat exists. Rendered ONLY while selected so its poll stops the
-   * moment the viewer leaves it (the "poll only while selected" half of the
-   * honesty rule); the terminal, by contrast, stays mounted throughout.
+   * The TRANSCRIPT surface — `execution.transcript` rendered as a conversation.
+   * Offered UNCONDITIONALLY, like Git, Debug and Graph. It used to hide behind
+   * the interaction profile's immutable chat pin, which was the wrong gate for
+   * reading a file off disk: whether an agent keeps a transcript is a fact
+   * about the agent tool, not about the session's chat template. The read's own
+   * `available:false`-with-reason draws the empty state, which names the cause
+   * instead of hiding the tab and leaving nothing to ask about.
+   */
+  transcript: ReactNode;
+  /**
+   * The DEBUG surface (the session's CLI journal). Rendered ONLY while selected
+   * so its poll stops the moment the viewer leaves it (the "poll only while
+   * selected" half of the honesty rule); the terminal and the transcript, by
+   * contrast, stay mounted throughout.
    */
   debug?: ReactNode;
   /**
@@ -44,8 +63,8 @@ export interface WorkSessionContentProps {
   graph?: ReactNode;
   onSurfaceChange?: (surface: ContentSurface) => void;
   /**
-   * USER RULING 2026-07-31 — "the terminal, chat tab should be at the top row
-   * at the right with two switchable chips."
+   * USER RULING 2026-07-31 — the surface tabs belong "at the top row at the
+   * right with switchable chips" (given when the strip was Terminal/Chat).
    *
    * The switch used to own a 52px row of its own directly above the canvas.
    * That row bought nothing the panel bar could not hold, and it cost the
@@ -66,11 +85,19 @@ export interface WorkSessionContentProps {
 }
 
 /**
- * The work-session Content switch owns presentation only. The immutable pin
- * decides whether Chat exists; DEBUG always exists; the launch provider/model
- * never enters this component. Terminal and Chat mount lazily on first use,
- * then stay mounted for this panel's lifetime so switching its surface retains
- * state. Cross-panel/app-lifetime terminal residency remains a separate layer.
+ * The work-session Content switch owns presentation only: which chip is
+ * selected, and which pane is mounted. Every surface is offered — the last
+ * conditional one was Chat, gated by the interaction profile's immutable pin,
+ * and it retired with the name. The launch provider/model never enters this
+ * component.
+ *
+ * TERMINAL and TRANSCRIPT mount lazily on first use and then STAY mounted for
+ * this panel's lifetime, so switching away and back retains scrollback and
+ * scroll position. Debug, Git and Graph mount only while selected, because
+ * unmounting is what stops their polls. The transcript sits with the first
+ * group despite polling too: its poll already stops on a session that is not
+ * live, so unmounting would buy nothing and cost the reader their place.
+ * Cross-panel/app-lifetime terminal residency remains a separate layer.
  */
 export function WorkSessionContent({
   sessionId,
@@ -78,30 +105,29 @@ export function WorkSessionContent({
   profile,
   requestedSurface = null,
   terminal,
-  chat,
+  transcript,
   debug,
   git,
   graph,
   onSurfaceChange,
   switchSlot = null,
 }: WorkSessionContentProps) {
-  const chatAvailable = profile?.chatEnabled === true;
-  // The offered surfaces, in fixed order. Terminal is always first (and the
-  // default); Chat is gated by the immutable pin; Debug and Graph are always
-  // offered, in that order.
+  // The offered surfaces, in fixed order. Terminal is always first and is the
+  // default; every other surface is always offered. Nothing is gated any more —
+  // the last gate was Chat's immutable pin, and it went with Chat.
   const surfaces = useMemo<ContentSurface[]>(
-    () => ['terminal', ...(chatAvailable ? (['chat'] as const) : []), 'git', 'debug', 'graph'],
-    [chatAvailable],
+    () => ['terminal', 'transcript', 'git', 'debug', 'graph'],
+    [],
   );
   const preferenceKey = `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
   const initialSurface = useRef<ContentSurface | null>(null);
   if (initialSurface.current === null) {
-    initialSurface.current = resolveInitialSurface({ requestedSurface, chatAvailable, preferenceKey });
+    initialSurface.current = resolveInitialSurface({ requestedSurface, preferenceKey });
   }
   const [surface, setSurface] = useState<ContentSurface>(initialSurface.current);
   const [terminalMounted, setTerminalMounted] = useState(initialSurface.current === 'terminal');
-  const [chatMounted, setChatMounted] = useState(() =>
-    initialSurface.current === 'chat',
+  const [transcriptMounted, setTranscriptMounted] = useState(
+    () => initialSurface.current === 'transcript',
   );
   const previousRequest = useRef(requestedSurface);
   const tabRefs = useRef<Partial<Record<ContentSurface, HTMLButtonElement | null>>>({});
@@ -113,31 +139,19 @@ export function WorkSessionContent({
   useEffect(() => {
     if (previousRequest.current === requestedSurface) return;
     previousRequest.current = requestedSurface;
-    if (requestedSurface === 'chat' && !chatAvailable) {
-      setTerminalMounted(true);
-      setSurface('terminal');
-      return;
-    }
     if (requestedSurface) {
-      if (requestedSurface === 'chat') setChatMounted(true);
+      if (requestedSurface === 'transcript') setTranscriptMounted(true);
       if (requestedSurface === 'terminal') setTerminalMounted(true);
       setSurface(requestedSurface);
     }
-  }, [chatAvailable, requestedSurface]);
+  }, [requestedSurface]);
 
-  // A fresh projection may revoke Chat while the panel stays mounted. Clamp
-  // the rendering immediately; never leave an unavailable pane selected.
-  useEffect(() => {
-    if (!chatAvailable && surface === 'chat') {
-      setTerminalMounted(true);
-      setSurface('terminal');
-    }
-  }, [chatAvailable, surface]);
+  // The clamp that used to live here is gone with the pin: no projection can
+  // revoke a surface any more, so there is no unavailable pane to fall off.
 
   const select = useCallback(
     (next: ContentSurface, focus = false) => {
-      if (next === 'chat' && !chatAvailable) return;
-      if (next === 'chat') setChatMounted(true);
+      if (next === 'transcript') setTranscriptMounted(true);
       if (next === 'terminal') setTerminalMounted(true);
       setSurface(next);
       writePreference(preferenceKey, next);
@@ -146,12 +160,11 @@ export function WorkSessionContent({
         queueMicrotask(() => tabRefs.current[next]?.focus());
       }
     },
-    [chatAvailable, onSurfaceChange, preferenceKey],
+    [onSurfaceChange, preferenceKey],
   );
 
-  // Roving tabindex over the DYNAMIC surface list — the arrow keys walk
-  // whatever chips are offered (two or three), not a hardcoded terminal/chat
-  // flip.
+  // Roving tabindex over the surface list — the arrow keys walk whatever chips
+  // are offered rather than a hardcoded pair.
   const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const current = event.currentTarget.dataset.surface as ContentSurface;
     const index = surfaces.indexOf(current);
@@ -213,10 +226,10 @@ export function WorkSessionContent({
     <div className="pn-work-session-content" data-testid="work-session-content" data-surface={surface}>
       {switchEl ? (switchSlot ? createPortal(switchEl, switchSlot) : switchEl) : null}
 
-      {chatAvailable && profile?.compatibility === 'unknown_template' ? (
+      {profile?.compatibility === 'unknown_template' ? (
         <p className="pn-surface-compat" role="status">
-          This session uses a newer interaction template. Terminal opens first; Chat uses the core-safe
-          message feed and composer.{' '}
+          This session uses a newer interaction template. Terminal opens first; the other surfaces
+          read this session directly and are unaffected by the template.{' '}
           {/* §14.3.1 — preserve and display the failed pinned key/version as safe diagnostics
               rather than hiding the mismatch. The immutable pin is never rewritten to clear this. */}
           <span className="pn-surface-compat__diag">
@@ -240,19 +253,21 @@ export function WorkSessionContent({
       >
         {terminalMounted ? terminal : null}
       </div>
-      {chatAvailable ? (
-        <div
-          id={panelId('chat')}
-          role="tabpanel"
-          aria-labelledby={tabId('chat')}
-          aria-hidden={surface !== 'chat'}
-          className="pn-work-session-content__surface"
-          data-active={surface === 'chat' ? 'true' : 'false'}
-          data-testid="work-session-chat-surface"
-        >
-          {chatMounted ? chat : null}
-        </div>
-      ) : null}
+      <div
+        id={panelId('transcript')}
+        role="tabpanel"
+        aria-labelledby={tabId('transcript')}
+        aria-hidden={surface !== 'transcript'}
+        className="pn-work-session-content__surface"
+        data-active={surface === 'transcript' ? 'true' : 'false'}
+        data-testid="work-session-transcript-surface"
+      >
+        {/* Mounted on first use and then KEPT mounted, like the terminal and
+            unlike Debug/Git/Graph: its own poll already stops on a session that
+            is not live, so unmounting would buy nothing and would cost the
+            reader their scroll position on every switch. */}
+        {transcriptMounted ? transcript : null}
+      </div>
       <div
         id={panelId('debug')}
         role="tabpanel"
@@ -297,37 +312,23 @@ export function WorkSessionContent({
 
 function resolveInitialSurface({
   requestedSurface,
-  chatAvailable,
   preferenceKey,
 }: {
   requestedSurface: ContentSurface | null;
-  chatAvailable: boolean;
   preferenceKey: string;
 }): ContentSurface {
-  // The route wins first, but a `chat` request on a session without Chat falls
-  // through to the terminal default.
-  if (
-    requestedSurface === 'terminal' ||
-    requestedSurface === 'git' ||
-    requestedSurface === 'debug' ||
-    requestedSurface === 'graph'
-  ) {
-    return requestedSurface;
-  }
-  if (requestedSurface === 'chat' && chatAvailable) return 'chat';
+  // The route wins first. Every surface is offered now, so there is no longer a
+  // request that has to fall through to the terminal for want of a pane.
+  if (requestedSurface) return requestedSurface;
   const saved = readPreference(preferenceKey);
-  if (saved === 'git' || saved === 'debug' || saved === 'graph') return saved;
-  if (saved === 'chat' && chatAvailable) return 'chat';
-  if (saved === 'terminal') return 'terminal';
+  if (saved) return saved;
   // USER RULING 2026-08-01 — "I want all the default to be only terminal. I
   // should still be able to switch, but the default is always terminal."
   //
   // The pinned projection's `initialContentSurface` no longer opens the panel.
-  // The pin still decides whether Chat EXISTS (chatEnabled); it no longer
-  // decides what is shown first. Route (?contentSurface) and the viewer's own
-  // prior click on this session still outrank this, so switching works and
-  // sticks exactly as before — a freshly spawned session, which has neither,
-  // opens on the terminal.
+  // Route (?contentSurface) and the viewer's own prior click on this session
+  // still outrank this, so switching works and sticks exactly as before — a
+  // freshly spawned session, which has neither, opens on the terminal.
   return 'terminal';
 }
 
@@ -335,9 +336,10 @@ function readPreference(key: string): ContentSurface | null {
   if (typeof window === 'undefined') return null;
   try {
     const saved = window.localStorage.getItem(key);
-    return saved === 'terminal' || saved === 'chat' || saved === 'git' || saved === 'debug' || saved === 'graph'
-      ? saved
-      : null;
+    if (saved === null) return null;
+    const canonical = LEGACY_SURFACE_PREFERENCE[saved];
+    if (canonical) return canonical;
+    return CONTENT_SURFACES.includes(saved as ContentSurface) ? (saved as ContentSurface) : null;
   } catch {
     return null;
   }
