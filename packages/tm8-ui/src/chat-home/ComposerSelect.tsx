@@ -28,7 +28,7 @@
  * in `emptyNote` — "no teammates exist" and "the roster has not loaded" are
  * different answers, and only the caller knows which one it is handing over.
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { EntityId } from '@tm8/contract';
 import { Avatar, useMenuAnchor } from '../kit';
@@ -83,6 +83,7 @@ export function ComposerSelect({
   const selectedIndex = options.findIndex((option) => option.id === value);
   const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined;
   const activeIndex = options.length ? Math.min(active, options.length - 1) : 0;
+  const menuId = useId();
 
   const choose = (option: ComposerSelectOption): void => {
     onChange(option.id);
@@ -101,6 +102,11 @@ export function ComposerSelect({
         aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
+        /* Focus stays on the trigger while arrows browse the portal, so the
+           trigger must SAY which row is active — without this the arrows
+           moved a highlight no screen reader ever announced. */
+        aria-controls={open ? menuId : undefined}
+        aria-activedescendant={open && options.length ? `${menuId}-opt-${activeIndex}` : undefined}
         disabled={disabled}
         onClick={() => {
           setActive(selectedIndex >= 0 ? selectedIndex : 0);
@@ -151,12 +157,13 @@ export function ComposerSelect({
               {options.length === 0 ? (
                 <p className="tch-pickmenu__note" role="status">{emptyNote}</p>
               ) : (
-                <div role="listbox" aria-label={`${label} options`}>
+                <div role="listbox" id={menuId} aria-label={`${label} options`}>
                   {options.map((option, index) => (
                     <button
                       key={option.id}
                       type="button"
                       role="option"
+                      id={`${menuId}-opt-${index}`}
                       className="tch-pickmenu__opt"
                       data-testid={`${testId}-${option.id}`}
                       data-active={index === activeIndex || undefined}

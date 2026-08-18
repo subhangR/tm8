@@ -143,16 +143,23 @@ describe('Home root column', () => {
     expect(view.getByText('Nothing loaded here matches.')).toBeTruthy();
   });
 
-  it('D8: an entity in B hides the conversation pane WITHOUT unmounting it', () => {
+  it('D8 revised (Cockpit 2026-08-18): an entity in B hides the TRANSCRIPT without unmounting it — the control panel stays', () => {
     const view = renderHome({
       root: 'task',
       centerOverride: <div data-testid="fake-center">terminal here</div>,
     });
     expect(view.getByTestId('tch-center-override')).toBeTruthy();
+    // The transcript hides but keeps its mount (a streaming thread must not
+    // tear down); the conversation section itself stays visible because the
+    // composer and the entity tray keep the bottom berth under the stage.
     const conversation = view.container.querySelector('.tch-conversation');
     expect(conversation).not.toBeNull();
-    expect(conversation?.getAttribute('data-hidden')).toBe('true');
-    expect(conversation?.hasAttribute('hidden')).toBe(true);
+    expect(conversation?.hasAttribute('hidden')).toBe(false);
+    const transcript = view.container.querySelector('.tch-transcript');
+    expect(transcript).not.toBeNull();
+    expect(transcript?.getAttribute('data-hidden')).toBe('true');
+    expect(transcript?.hasAttribute('hidden')).toBe(true);
+    expect(view.container.querySelector('.tch-composer-wrap')).not.toBeNull();
   });
 
   it('D9: while an entity occupies B, no chat row draws active', async () => {

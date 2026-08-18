@@ -32,34 +32,68 @@ export function EntityTray({
   resolveEntity,
   onOpenEntity,
   onOpenGraph,
+  activeEntityId = null,
+  onShowChat,
+  chatBusy = false,
 }: {
   turns: readonly ChatTurn[];
   suppressEntityIds?: ReadonlySet<string> | undefined;
   resolveEntity?: ChatEntityResolver | undefined;
+  /** Opening an entity tab. On the Home host this swaps the STAGE
+   *  (`onSelectEntity` → centerOverride); elsewhere it opens the panel. */
   onOpenEntity?: ((id: EntityId) => void) | undefined;
   /** The Graph door. Absent ⇒ no button — never a dead control. */
   onOpenGraph?: (() => void) | undefined;
+  /** The entity currently occupying the stage — its tab draws active and the
+   *  Chat tab does not. */
+  activeEntityId?: string | null | undefined;
+  /** The way back (Cockpit ruling 2026-08-18): a Chat tab, always first.
+   *  Absent ⇒ this host has no stage to come back from, no tab drawn. */
+  onShowChat?: (() => void) | undefined;
+  /** The thread is streaming/thinking while something else holds the stage —
+   *  the Chat tab pulses so an answer never lands unseen. */
+  chatBusy?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const stageActive = activeEntityId != null;
   const seeds = useMemo(() => {
     const { seeds: all } = foldGraphSeeds(turns, suppressEntityIds);
     return [...all.filter((s) => s.mutated), ...all.filter((s) => !s.mutated)];
   }, [turns, suppressEntityIds]);
 
-  if (seeds.length === 0) return null;
+  if (seeds.length === 0 && !stageActive) return null;
   const visible = expanded ? seeds : seeds.slice(0, TRAY_VISIBLE_LIMIT);
   const hidden = seeds.length - visible.length;
 
   return (
     <nav className="tch-tray" aria-label="Entities in this thread" data-testid="chat-entity-tray">
       <div className="tch-tray__tabs" data-expanded={expanded || undefined}>
+        {onShowChat ? (
+          <button
+            type="button"
+            className="tch-tray__chat"
+            data-active={!stageActive || undefined}
+            aria-current={!stageActive || undefined}
+            onClick={onShowChat}
+          >
+            <span aria-hidden>⌂</span> Chat
+            {stageActive && chatBusy ? (
+              <span className="tch-tray__pulse" role="status" aria-label="The agent is still working in this thread" />
+            ) : null}
+          </button>
+        ) : null}
         {visible.map((seed) => (
-          <EntityChip
+          <span
             key={seed.id}
-            refInfo={{ id: seed.id, kind: seed.kind, title: seed.title }}
-            resolve={resolveEntity}
-            onOpen={onOpenEntity}
-          />
+            className="tch-tray__tab"
+            data-active={seed.id === activeEntityId || undefined}
+          >
+            <EntityChip
+              refInfo={{ id: seed.id, kind: seed.kind, title: seed.title }}
+              resolve={resolveEntity}
+              onOpen={onOpenEntity}
+            />
+          </span>
         ))}
         {hidden > 0 ? (
           <button
