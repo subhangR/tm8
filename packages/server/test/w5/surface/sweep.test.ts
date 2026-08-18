@@ -676,7 +676,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 143
     //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 143
     //   (origin/main is 142; this branch is the +1.)
-    expect(server.appliedMigrations.length).toBe(143);
+    // 143 -> 144 (2026-08-18): 153_chat_per_turn_mode.sql — per-turn chat mode
+    // (messages.requested_chat_mode + chat_turns.mode + trigger copy). MEASURED
+    // on this branch after rebasing onto main (which already carried 152), not
+    // derived:
+    //   ls db/migrations/*.sql | wc -l                             -> 144
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 144
+    //   (origin/main is 143; this branch is the +1.)
+    expect(server.appliedMigrations.length).toBe(144);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
