@@ -64,11 +64,29 @@ const port: CredentialsPort = {
   }),
 };
 
+/**
+ * The shell reads SEVEN things on mount (SettingsShell.tsx:67-75), and this
+ * double supplied four. The three missing ones are not optional: the shell
+ * calls them while BUILDING the array it hands to `Promise.allSettled`, so a
+ * missing method throws a TypeError synchronously — before `allSettled` exists
+ * to settle it — and the rejection escapes the effect entirely.
+ *
+ * That produced no test failure. Every assertion in this file passed; vitest
+ * merely exited non-zero on two unhandled rejections, which is invisible unless
+ * something is watching the exit code. Nothing was, until packages/tm8-ui
+ * joined the CI gate — this is the first thing that gate caught.
+ */
 const settingsPort = {
   loadSpace: async () => null,
   loadMembers: async () => [],
   loadIdentity: async () => ({ memberId: 'm-1', displayName: 'Ada', avatar: null, role: 'owner' }) as never,
   loadMenu: async () => ({ menu: null, source: 'default', error: null }) as never,
+  // Empty rather than rejected: the shell renders `null` as "has not been read"
+  // and an empty list as "read, and there are none". This double is not
+  // exercising either distinction, so it should not accidentally assert one.
+  loadInvites: async () => [] as never,
+  loadAxes: async () => [] as never,
+  loadWorkflows: async () => [] as never,
   updateProfile: async () => ({}) as never,
 };
 
