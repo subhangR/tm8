@@ -290,7 +290,25 @@ export function ChatHomeScreen({
   const [detail, setDetail] = useState<ChatThreadDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
+  /* PER-THREAD DRAFTS (Cockpit ruling 2026-08-18): one box per conversation,
+     not one box for the screen — switching threads no longer carries half a
+     message into the wrong conversation, and a send in flight clears only the
+     ORIGIN thread's draft (the setter is keyed at closure time). Session-local
+     by design: reload survival belongs to the store-keyed pattern the channel
+     composer uses and is a later step. */
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draftKey = selectedRootId ?? 'new-thread';
+  const draft = drafts[draftKey] ?? '';
+  const setDraft = useCallback(
+    (next: string | ((current: string) => string)) => {
+      setDrafts((current) => {
+        const existing = current[draftKey] ?? '';
+        const value = typeof next === 'function' ? next(existing) : next;
+        return value === existing ? current : { ...current, [draftKey]: value };
+      });
+    },
+    [draftKey],
+  );
   const [phase, setPhase] = useState<ComposerPhase>('idle');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');

@@ -682,6 +682,12 @@ button.tch-entity-chip:hover {
 .tch-send,
 .tch-stop { margin-left: var(--pn-space-2); }
 
+/* The primary action and the thread-setting triggers get a real keyboard
+   ring — hover styling alone leaves a keyboard user aiming blind. */
+.tch-send:focus-visible,
+.tch-stop:focus-visible,
+.tch-pick__trigger:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
 .tch-send {
   border-color: transparent;
   background: var(--pn-brand-2);
