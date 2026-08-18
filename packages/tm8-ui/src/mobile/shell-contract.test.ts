@@ -34,6 +34,7 @@ const shell = read('../views/MobileShell.tsx');
 const screens = read('./mobile-screens.css');
 const frame = read('./mobile.css');
 const contract = readFileSync(new URL('./CONTRACT.md', import.meta.url), 'utf8');
+const gate = read('../views/GateApp.tsx');
 
 describe('DEF-012 — the refusal card cannot render a sentence that is false', () => {
   it('derives its copy from the view-ref classification, not from a constant', () => {
@@ -277,13 +278,75 @@ describe('DEF-043 — the way out of the files refusal reaches a screen that exi
   });
 });
 
+describe('UP is defined for an entity screen, not only for a kind screen', () => {
+  /*
+   * THE GAP: `stackKey` is empty for anything that is not a KIND target, so an
+   * `entity` target selected the empty stack and the chevron did not render AT
+   * ALL. A cold arrival on a channel link — the most shared address this product
+   * has — had no up affordance whatsoever.
+   *
+   * Pop needs a stack and only a kind screen hosts one. An entity's parent is
+   * not on a stack; it is a fact about the entity. So UP is SYNTHESIZED here.
+   */
+  it('derives the parent from the entity kind rather than popping', () => {
+    expect(shell).toContain('upTarget');
+    expect(shell).toMatch(/activeTarget\?\.type === 'entity' && slugOfKind\(activeTarget\.kind\)/);
+  });
+
+  it('goes through onStepUp, never navigateTo — R15 requires a REPLACE', () => {
+    // `navigateTo` pushes. Pushing here would put the entity behind you, so the
+    // phone's back gesture returns to it and a link-follower is trapped in a
+    // two-item loop with no exit — the exact failure R15 exists to prevent,
+    // recreated on the exact entry path it was written for.
+    expect(shell).toContain('props.onStepUp?.(upTarget)');
+    expect(gate).toContain('stepUpTo');
+    expect(gate).toMatch(/coldEntry\.current[\s\S]{0,400}history: 'replace'/);
+  });
+
+  it('is NOT drawn for a kind with no collection to go up to', () => {
+    // `slugOfKind` is null for the `special` and `anchored` strategies
+    // (voice_channel, message) — there is genuinely nowhere up to go, and a
+    // chevron there would be a control that cannot perform. Absent, not inert.
+    expect(shell).toMatch(/upTarget && props\.onStepUp/);
+  });
+});
+
+describe('the contract closes the specificity loophole, not just the edit one', () => {
+  it('rules that outweighing a shell rule IS a shell change', () => {
+    // Every rule in mobile-screens.css is (0,2,1) BY DESIGN. A lane that needs a
+    // floor changed and gets no timely ruling restates it at (0,3,1) in its own
+    // stylesheet — not an edit of a shell file, legal by the letter of the old
+    // rule, and exactly the collision the gate exists to prevent. It is also
+    // silent: nothing fails, the shell rule just stops winning.
+    expect(contract).toMatch(/specificity\s+exists\s+to\s+outweigh\s+a\s+shell\s+rule\s+is\s+a\s+shell\s+change/i);
+  });
+
+  it('names an arbiter and an SLA, because a ledger row notifies nobody', () => {
+    // `\s+` rather than a literal space throughout: this file is prose wrapped
+    // at ~100 columns, so any multi-word assertion can land across a newline.
+    // A test that fails on where a paragraph happens to wrap is testing the
+    // formatter, not the rule.
+    expect(contract).toMatch(/direct\s+message/i);
+    expect(contract).toMatch(/within\s+one\s+working\s+session/i);
+  });
+
+  it('rules the one lane-amendable seam once, rather than three times', () => {
+    // Two of three lanes need MobileShell.tsx in week one. Adjudicating per
+    // collision is how bad precedent gets set.
+    expect(contract).toMatch(/LANE-AMENDABLE/);
+    expect(contract).toMatch(/screenFor/);
+    // And the honest-absence rule survives the amendment.
+    expect(contract).toMatch(/\?\? \(\(\) => undefined\)/);
+  });
+});
+
 describe('the contract is written down, because the lanes are gated on it', () => {
   it('states what a lane may not touch', () => {
     // After this lands, a lane changing shell CSS is a defect rather than a
     // lane decision — which is only fair if the boundary is written somewhere
     // a lane can read.
     expect(contract).toContain('mobile-screens.css');
-    expect(contract).toContain('through the ledger');
+    expect(contract).toMatch(/through\s+the\s+ledger/);
     // The three shared facts a lane is most likely to break by accident.
     expect(contract).toContain("data-shell");
     expect(contract).toContain('zoom');
@@ -295,6 +358,6 @@ describe('the contract is written down, because the lanes are gated on it', () =
     // move, so the tablet failure must be recorded as known and owned — the
     // owner being a task id rather than a name, because a task outlives prose.
     expect(contract).toContain('01a016b4-9359-77c6-9078-4354ba8202db');
-    expect(contract).toMatch(/known, recorded failure/i);
+    expect(contract).toMatch(/known,\s+recorded\s+failure/i);
   });
 });

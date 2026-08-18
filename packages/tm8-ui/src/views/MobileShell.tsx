@@ -40,7 +40,7 @@ import { CopyLinkControl } from '../share';
 import { Avatar, VectorIcon } from '../kit';
 import type { Theme } from '../theme/useTheme';
 import { isUnbuiltViewRef } from './view-ref-screens';
-import { CHANNEL_KIND, KIND_ART, VIEW_ART, getKind, type KindArt } from '../domain';
+import { CHANNEL_KIND, KIND_ART, VIEW_ART, getKind, slugOfKind, type KindArt } from '../domain';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
@@ -85,6 +85,13 @@ export interface MobileShellProps {
    * privacy-lane invariant, not an implementation detail of one shell.
    */
   onSelectSpace?: (id: SpaceId) => void;
+  /**
+   * Navigate UP, honouring R15's replace-on-cold-arrival concession. Supplied by
+   * the host because history belongs to the host — this shell must never build a
+   * `Route` or touch `history` (`no-router-fork.test.ts` enforces it). Absent ⇒
+   * the entity chevron is not drawn, per the honest-absence rule.
+   */
+  onStepUp?: (target: MenuTarget) => void;
   /** Theme, controlled by the host so the phone writes the same state the root
       stamp reads — a second `useTheme()` here would be a second truth. */
   theme?: Theme;
@@ -211,6 +218,38 @@ export function MobileShell(props: MobileShellProps) {
    */
   const stackKey = activeTarget?.type === 'kind' ? screenKeyOf.kind(activeTarget.ref) : '';
   const screenStack = useScreenStack(stackKey);
+
+  /*
+   * UP FOR AN ENTITY SCREEN — a SYNTHESIZED parent, not a pop.
+   *
+   * THE GAP THIS CLOSES. `stackKey` is empty for anything that is not a KIND
+   * target, so an `entity` target selects the empty stack, `selected` is null,
+   * and THE CHEVRON DID NOT RENDER AT ALL. A cold arrival on a channel link —
+   * `#/s/{space}/e/{channelId}`, the single most shared address in this product
+   * — had no up affordance whatsoever. The tab bar was the only navigation, and
+   * it does not mean "up", it means "go to a destination".
+   *
+   * The existing mechanism was never wrong; it was UNDEFINED here. Pop needs a
+   * stack, and only a kind screen hosts one. An entity's parent is not on a
+   * stack — it is a FACT ABOUT THE ENTITY: its kind's collection. So this
+   * derives that parent instead of popping to it.
+   *
+   * IT IS A STEP-UP, NOT A NAVIGATION, and the distinction is R15. `navigateTo`
+   * pushes; pushing here would put the entity behind you, so the phone's back
+   * gesture would return to it and trap a link-follower in a two-item loop with
+   * no exit — the exact failure R15 exists to prevent, re-created on the exact
+   * entry path it was written for. `onStepUp` carries the replace concession.
+   *
+   * NOT DRAWN WHEN THE KIND HAS NO COLLECTION. `slugOfKind` is null for the
+   * `special` and `anchored` strategies (`voice_channel`, `message`), which have
+   * no `k/` view BY DESIGN — so there is genuinely nowhere up to go, and a
+   * chevron there would be a control that cannot perform. Absent, not inert.
+   */
+  const upTarget: MenuTarget | null =
+    activeTarget?.type === 'entity' && slugOfKind(activeTarget.kind)
+      ? { type: 'kind', ref: activeTarget.kind }
+      : null;
+  const showUp = Boolean(screenStack.selected) || Boolean(upTarget && props.onStepUp);
   /*
    * DEF-034's lookup, SUMMARY FIRST and detail as the fallback — the same order
    * `capabilitiesOf` documents and for the same reason. A channel reached from
@@ -251,12 +290,21 @@ export function MobileShell(props: MobileShellProps) {
       {/* Rendered ONLY when something is open. A chevron at a screen root would
           be dead chrome that either does nothing or leaves the app, and the tab
           bar is already the navigation there. */}
-      {screenStack.selected ? (
+      {showUp ? (
         <button
           type="button"
           className="mobile-header__back"
-          aria-label={`Up to ${title}`}
-          onClick={() => screenStack.pop()}
+          /* The label names WHERE UP GOES, which for an entity is its
+             collection and for an open entity on a kind screen is that screen.
+             "Up to Tasks" is a promise the press then keeps. */
+          aria-label={`Up to ${upTarget ? getKind(upTarget.ref).labelPlural : title}`}
+          onClick={() => {
+            if (screenStack.selected) {
+              screenStack.pop();
+              return;
+            }
+            if (upTarget) props.onStepUp?.(upTarget);
+          }}
         >
           <VectorIcon paths={CHEVRON_UP_ART} size={20} strokeWidth={1.6} />
         </button>

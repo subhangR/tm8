@@ -75,6 +75,21 @@ The phone shows **one surface**. The rule for anything additional:
 - **A FULL SCREEN** when the thing *replaces your place* and belongs in the back stack: it is a
   navigation, it gets an address, and the phone's own back gesture walks to it.
 
+**THE TIEBREAKER, for the case that sits on the line.** "Open an arbitrary entity" is
+reference-while-reading from a chat tool-call chip and navigation from an Inbox row — same entity,
+same verb, different answer. Decide by **provenance**:
+
+> **Tapped from inside content you are reading → SHEET. Tapped in a list or an inbox whose whole
+> purpose is to go there → FULL SCREEN.**
+
+The underlying question that tiebreaker encodes is *does this need an address*. A sheet has none.
+
+**AND THE HONESTY CONSEQUENCE (a §8 item):** a sheet has no address, so while one is open the header's
+`CopyLinkControl` still copies the **underlying screen's** route. Copying a link that does not name
+what is on screen is exactly the class of lie §8 forbids. **RULED: sheet content is never the subject
+of a share.** A surface worth sharing is a surface worth addressing, and that makes it a full screen
+by the rule above — so the tiebreaker and the share rule agree rather than needing a second mechanism.
+
 The distinction is not cosmetic: pushing what should be a sheet puts a referenced entity into the
 back stack, so backing out walks the screen stack instead of returning you to the paragraph you
 tapped from.
@@ -95,6 +110,20 @@ disagree about what dismiss means.
 - The **tab bar is the navigation at a screen root.** Five destinations, each a real route.
 - Nothing in the phone shell reads or writes `location`/`history` or builds a `Route`. Navigate with
   `navigateTo`.
+- **UP is defined for an entity screen too, and it is a SYNTHESIZED parent rather than a pop.** Only a
+  kind screen hosts a screen stack, so an `entity` target has nothing to pop — the chevron simply did
+  not render, and a cold arrival on a channel link had no up affordance at all. An entity's parent is
+  a fact about the entity: its kind's collection. Not drawn when `slugOfKind` is null (`voice_channel`,
+  `message`), because there is genuinely nowhere up to go.
+- **UP goes through `onStepUp`, never `navigateTo`.** `navigateTo` pushes; R15 requires the first step
+  up from a cold arrival to be a REPLACE, or the phone's back gesture returns you to the thing you
+  just left and traps a link-follower in a two-item loop. The host owns that concession.
+- **Scroll restoration:** popping back to a list restores its scroll position. A sheet preserves place
+  structurally (the screen stays mounted); a pushed screen does not, so the pop path must restore it
+  explicitly. Unspecified here means each lane invents a different answer.
+- **Focus return:** dismissing a sheet returns focus to the control that opened it; popping a screen
+  returns focus to the row that pushed it. `MobileSheet` already binds Escape — focus is the other
+  half of the same promise.
 - **Route state lives on the target, not in component state.** `mode` and `groupBy` are route state
   (DEF-045): a layout choice that lives in local state is neither shareable nor survivable across a
   reload, and the phone was dropping both while the desktop threaded them.
@@ -113,6 +142,17 @@ Two constraints, which are **acceptance and not advice**:
   element**. A pseudo-element hit area is invisible to it and to the after-run diff: it would score
   as fixed while the thumb still missed.
 
+**THE SURVIVING OFFENDER HAS AN OWNER.** `input.lp__searchinput` (332x23 at 390, 372x23 at 430) is the
+only sub-44 target left on tasks, sessions and channels, and being under 16px type it is *also* an iOS
+zoom-on-focus row. It sits on lane-shared list surface governed by §7, which lanes may not edit — so it
+is **the shell contract's**, filed as a follow-up beside the readability floor below. Assigning it now
+is what stops it being everyone's and no one's.
+
+**THE READABILITY FLOOR IS THE UNBUILT SIBLING OF THIS TOKEN.** The controls this contract grew to 44px
+carry 9.5px labels (`lp__tab`, `lp__chip`, `lp__foot`), 11.5px (`lp__kind`, `lp__new`) and 11px
+(`mobile-tabs__label`). **A 44px button with 9.5px text is tappable and unreadable.** Not a threshold in
+this program and invisible to the tap census, which is exactly why it needs writing down.
+
 And the one this file learnt the hard way: **unpin the container before growing what is inside it.**
 `.lp__selector` (36px), `.lp__filters` (32px + `overflow: hidden`) and `.lp__actions` (34px) all clip
 a control you just enlarged, and **no metric in this program can see vertical clipping** (DEF-037).
@@ -130,9 +170,38 @@ a control you just enlarged, and **no metric in this program can see vertical cl
 | `src/views/MobileShell.tsx` | shell contract | not edit. Chrome is not lane surface. |
 | `src/panels/panels.css` | Lane B | Lane B edits it. Phone *sizing* of shared list primitives is in `mobile-screens.css` §7. |
 
+**A LANE SELECTOR WHOSE SPECIFICITY EXISTS TO OUTWEIGH A SHELL RULE IS A SHELL CHANGE.**
+Every rule in `mobile-screens.css` is `(0,2,1)` *by design*. A lane that needs a floor changed and gets
+no timely ruling will restate it at `(0,3,1)` in a lane-owned stylesheet — not an edit of a shell file,
+legal by the letter of the rule above, and **the exact collision this gate exists to prevent**. It is
+also silent: nothing fails, the shell rule simply stops winning. Forbidden by intent, not by file path.
+
 **If a lane needs a shell rule changed, it requests the change through the ledger.** Editing it
 directly is the collision this gate exists to prevent — and because the three lanes see the *same*
 shared components, a lane "just fixing its own screen" is three lanes writing one file.
+
+**THE REQUEST PATH HAS A NAMED ARBITER AND AN SLA**, because "request through the ledger" has nobody
+on the other end of it — and a ledger row does not reach a running worker. **Anchor and ledger posts do
+not notify; only direct session messages do.** So: open the ledger row **and** send a direct message to
+triage; the ruling comes back as a direct message; the ruling is committed to this file within one
+working session. A lane blocked on an unanswered request escalates rather than reaching for
+specificity.
+
+**THE ONE SEAM THAT IS LANE-AMENDABLE, ruled once so it is not adjudicated three times.** Two of three
+lanes need `MobileShell.tsx` in week one — Lane A's `messages` port lives in the refusal arm of
+`screenFor`, Lane B's "open an arbitrary entity" needs a callback threaded into that same switch, and
+Lane C has already asked for launch props through it.
+
+> **`screenFor` and `MobileShellProps` are LANE-AMENDABLE via ledger-approved PR.
+> The CHROME — header, tab bar, frame, sheet primitive, account sheet — is NOT.**
+
+Two conditions on any such amendment, both already law in this file:
+- **A callback is threaded as a real prop that is ABSENT when it cannot perform.** Never
+  `?? (() => undefined)`. `MobileShell`'s own switch documents the regression that produced this rule:
+  a handler that exists and does nothing switches off the honest states the screens check for, and
+  every inbox row and tool-call chip became a live-looking control that swallowed the press.
+- **The refusal arm stays honest.** A new screen means the route stops being refused; it never means
+  the refusal card starts telling a story about a screen that is not there.
 
 **FILE-LEVEL OWNERSHIP IS NECESSARY BUT NOT SUFFICIENT.** Lane A (composer) and Lane B (entity
 surfaces) both touch shared input/list primitives, which are singletons here. One lane owns a shared
