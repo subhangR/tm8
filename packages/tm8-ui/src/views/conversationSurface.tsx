@@ -30,13 +30,19 @@ import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attentio
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
 import { DiscussionSurface } from '../channel-screen/DiscussionSurface';
+import { LazyTranscriptSurface } from '../transcript/LazyTranscriptSurface';
 import type { SessionChatSeam } from '../channel-screen/SessionChatSurface';
+import type { TranscriptSeam } from '../transcript/TranscriptSurface';
 import type { ChannelFeedPort } from '../channel-screen/useChannelFeed';
 import type { ConnectionState, SessionLiveness } from '../data/seam';
 
-/** The surfaces this slot can compose. Open by design — 'transcript' is the
- *  remaining expected entrant; each gets its own composer. */
-export type ConversationSurfaceKind = 'channel-feed' | 'session-chat' | 'discussion';
+/** The surfaces this slot can compose. All four expected entrants have now
+ *  landed, each with its own composer and one resolver arm. */
+export type ConversationSurfaceKind =
+  | 'channel-feed'
+  | 'session-chat'
+  | 'discussion'
+  | 'transcript';
 
 /**
  * What a host must already own to fill the slot. Every member is something the
@@ -44,7 +50,9 @@ export type ConversationSurfaceKind = 'channel-feed' | 'session-chat' | 'discuss
  * exists only for this slot.
  */
 export interface ConversationSurfaceHost {
-  seam: SessionChatSeam;
+  /** Widened when the transcript arm landed: the same gate seam every host
+   *  already passes, now named for both surfaces that read from it. */
+  seam: SessionChatSeam & TranscriptSeam;
   spaceId: string;
   connection: ConnectionState;
   livenessOf(id: string): SessionLiveness;
@@ -57,10 +65,20 @@ export interface ConversationSurfaceHost {
   onSwitchToTerminal(): void;
 }
 
-/** The registry's default surface for an entity: hub → its channel feed,
- *  everything else → the session chat. */
+/**
+ * The registry's default surface for an entity: hub → its channel feed,
+ * everything else → the session TRANSCRIPT.
+ *
+ * The non-hub arm used to be `'session-chat'`, which read the graph's message
+ * feed for the session. Per Subhang's ruling the session panel shows the
+ * agent's own transcript instead, and the graph conversation moves to the
+ * Discussion tab where it is not competing with the agent's words.
+ * `'session-chat'` stays in the union: it is still what a host can ask for
+ * explicitly, and deleting a composer is a separate change from changing a
+ * default.
+ */
 export function defaultConversationSurfaceKind(detail: EntityDetail): ConversationSurfaceKind {
-  return getKind(detail.kind).panel.archetype === 'hub' ? 'channel-feed' : 'session-chat';
+  return getKind(detail.kind).panel.archetype === 'hub' ? 'channel-feed' : 'transcript';
 }
 
 export function channelFeedSurfaceFor(
@@ -150,6 +168,30 @@ export function discussionSurfaceFor(
   );
 }
 
+/**
+ * THE TRANSCRIPT ARM — `execution.transcript` rendered as a conversation.
+ *
+ * It needs strikingly little from the host compared to the other three arms,
+ * and that is the point rather than an accident: the transcript is a file the
+ * node reads off disk, so there is no feed port, no viewer identity, no
+ * composer policy and no scope. The surface self-fetches through the seam
+ * exactly as `SessionDebugBody` does, with the same hook.
+ */
+export function transcriptSurfaceFor(
+  _detail: EntityDetail,
+  entityId: EntityId,
+  host: ConversationSurfaceHost,
+): ReactNode {
+  return (
+    <LazyTranscriptSurface
+      seam={host.seam}
+      sessionId={entityId}
+      liveness={host.livenessOf(entityId)}
+      onSwitchToTerminal={host.onSwitchToTerminal}
+    />
+  );
+}
+
 export function conversationSurfaceFor(
   detail: EntityDetail | null | undefined,
   entityId: EntityId,
@@ -164,5 +206,7 @@ export function conversationSurfaceFor(
       return sessionChatSurfaceFor(detail, entityId, host);
     case 'discussion':
       return discussionSurfaceFor(detail, entityId, host);
+    case 'transcript':
+      return transcriptSurfaceFor(detail, entityId, host);
   }
 }

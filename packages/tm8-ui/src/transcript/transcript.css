@@ -50,6 +50,47 @@
 
 .tr-surface__state {
   padding: var(--pn-space-5) var(--pn-space-4);
+  color: var(--pn-ink-3);
+  font-size: 12px;
+}
+
+/*
+ * A real button that reads as a link. It is a `<button>` and not an `<a>`
+ * because it performs an action rather than going to an address — there is no
+ * URL for "retry this read" or "switch this panel's surface".
+ */
+.tr-linkbtn {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--pn-brand-2);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.tr-linkbtn:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+/* Lifted from `.tch-send` (chat-home.css:735) so the primary action looks the
+   same in both places, keyboard ring included. */
+.tr-send {
+  margin-left: var(--pn-space-2);
+  border-color: transparent;
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
+}
+
+.tr-send:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+.tr-send:disabled {
+  opacity: 0.42;
+  cursor: default;
 }
 
 /* ---- turns ------------------------------------------------------------- */
