@@ -720,6 +720,12 @@ function measureInPage({ MIN_TAP, EPS }) {
      * makes iOS zoom the whole page on focus. Reported as lists, not counts, so
      * a reader can see WHICH strings are involved.
      */
+    /*
+     * COUNT AND SAMPLE, TOGETHER. This array is capped at 24 and shipped with
+     * NO count for most of tonight — the one array whose truncation a reader
+     * could not detect. I claimed to have fixed that in an earlier commit and
+     * did not run it; the edit never applied and the claim stood for hours.
+     */
     tinyText: (() => {
       const out = [];
       for (const el of document.querySelectorAll('*')) {
@@ -737,6 +743,25 @@ function measureInPage({ MIN_TAP, EPS }) {
         }
       }
       return out.slice(0, 24);
+    })(),
+    /* The count beside the capped sample — see the tinyText docblock. */
+    tinyTextCount: (() => {
+      const out = [];
+      for (const el of document.querySelectorAll('*')) {
+        const cs = getComputedStyle(el);
+        if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        const size = parseFloat(cs.fontSize);
+        const tag = el.tagName.toLowerCase();
+        const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1);
+        if ((tag === 'input' || tag === 'textarea' || tag === 'select') && size < 16) {
+          out.push({ px: size, kind: 'input-zoom-risk', cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40), text: (el.getAttribute('aria-label') || '').slice(0, 24) });
+        } else if (ownText && size < 12) {
+          out.push({ px: size, kind: 'unreadable', cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40), text: (el.textContent || '').trim().slice(0, 24) });
+        }
+      }
+      return out.length;
     })(),
     /*
      * FORM CONTROLS UNDER THE 16px iOS FOCUS-ZOOM FLOOR, counted separately.
