@@ -29,8 +29,18 @@
  * bootstrap the RPC doors require. The invariant must hold for a writer that
  * bypassed the catalog, which is exactly the writer phase 5's backfills will be.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
+
+/**
+ * vitest's defaults are 5s per TEST and 10s per HOOK, and a generous third
+ * argument on `beforeAll` covers NEITHER of the tests. The matrix below drives
+ * 132 ordered pairs at two round trips each, and the override cases 11 apiece —
+ * comfortably under 5s on an idle machine and NOT on CI's two-core box, where
+ * the failure arrives as NAMED test failures that read exactly like real
+ * regressions. Set at file top, per the in-tree precedent.
+ */
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 180_000 });
 
 const MIGRATION = '148_workflows.sql';
 const SPACE = '00000000-0000-4000-8000-000000000001';

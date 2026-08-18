@@ -24,17 +24,18 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {138/136/137/135} (2026-08-09, merge): execution.dispatch.
         // -> {166/164/165/163} (2026-08-16, W4/132): spaces.taskWorkflows.*.
         // -> {169/167/168/166} (141): the three account-lifecycle ops.
-        total: 169,
-        v1: 167,
+        // -> {172/170/171/169} (148): spaces.workflows.*.
+        total: 172,
+        v1: 170,
         reserved: 2,
-        http: 168,
+        http: 171,
         ws: 1,
-        registerableV1Http: 166,
+        registerableV1Http: 169,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
         { noun: 'project', operationCount: 19 },
-        { noun: 'space', operationCount: 27 }, // +3 (W4/132): spaces.taskWorkflows.*
+        { noun: 'space', operationCount: 30 }, // +3 (148): spaces.workflows.*
       ]),
     });
     expect(JSON.stringify(response.result)).not.toContain('/v2/');

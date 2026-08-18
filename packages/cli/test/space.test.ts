@@ -241,6 +241,26 @@ const ROWS: ReadonlyArray<{
     method: 'DELETE',
     params: { spaceId: SPACE, workflowId: AXIS },
   },
+  { op: 'spaces.workflows.list', argv: ['space', 'workflow', 'list'], method: 'GET', params: { spaceId: SPACE } },
+  {
+    op: 'spaces.workflows.upsert',
+    // A whole workflow in one call, including the initial-state marker — the
+    // shape the door actually takes, not a stub that would pass without it.
+    argv: [
+      'space', 'workflow', 'set', 'Epic flow', '--kind', 'c:epic',
+      '--state', 'Draft:to_do:initial', '--state', 'Committed:in_progress',
+      '--state', 'Shipped:done', '--state', 'Dropped:cancelled',
+      '--transition', 'Committed->Shipped',
+    ],
+    method: 'POST',
+    params: { spaceId: SPACE },
+  },
+  {
+    op: 'spaces.workflows.delete',
+    argv: ['space', 'workflow', 'delete', AXIS, '--yes'],
+    method: 'DELETE',
+    params: { spaceId: SPACE, workflowId: AXIS },
+  },
   { op: 'spaces.leaderboard', argv: ['space', 'leaderboard', 'get'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.awards', argv: ['space', 'award', 'list'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.menu.get', argv: ['space', 'menu', 'get'], method: 'GET', params: { spaceId: SPACE } },
@@ -278,7 +298,7 @@ const READS = [
 describe('the registered command set', () => {
   it('registers all 27 Space rows and nothing that is not in the projection', async () => {
     const paths = (await spaceCommands()).map((c) => c.path.join(' '));
-    expect(paths).toHaveLength(27);
+    expect(paths).toHaveLength(30);
     expect(new Set(paths).size).toBe(paths.length);
     for (const p of paths) {
       expect(isCommandPath(p.split(' ')), `${p} is wired but absent from the projection`).toBe(true);
@@ -315,8 +335,8 @@ describe('every row binds its path from the catalog', () => {
       checked++;
     }
     // Vacuity guard: a loop that silently iterates zero rows passes everything.
-    expect(checked).toBe(27); // +3 (W4/132): task-workflow list|set|delete
-    expect(ROWS).toHaveLength(27);
+    expect(checked).toBe(30); // +3 (148): workflow list|set|delete
+    expect(ROWS).toHaveLength(30);
   });
 });
 

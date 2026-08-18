@@ -48,15 +48,16 @@ import { isExitCode } from '../src/exit.js';
 // 150 -> 152 (2026-08-12): projects.file.history + projects.file.blame (GET reads, with CLI commands).
 // 166 -> 169 (141): auth.password.change + auth.invite.signup + auth.claim.reissue
 // (the three account-lifecycle ops of FIRST-RUN-CLAIM-DESIGN.md §10) — MEASURED.
-const EXPECTED_ROWS = 169; // 163 -> 166 (W4/132): spaces.taskWorkflows list/upsert/delete — MEASURED
+// 169 -> 172 (148): spaces.workflows list/upsert/delete — MEASURED
+const EXPECTED_ROWS = 172;
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
 
 describe('the catalog itself is the shape W4 was briefed on', () => {
-  it('169 rows = 167 v1 + 2 reserved, 168 HTTP + 1 WS (measured; +3 141 account-lifecycle)', () => {
+  it('172 rows = 170 v1 + 2 reserved, 171 HTTP + 1 WS (measured; +3 148 workflows)', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(167);
+    expect(V1_OPERATIONS.length).toBe(170);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
   });
@@ -132,9 +133,9 @@ describe('every row resolves through the client and the error mapping', () => {
     expect(resolved.size).toBe(EXPECTED_ROWS);
     // 136 HTTP rows produced an honest 8; the single WS row produced usage 2
     // without a request. Both are resolutions; neither is a fall-through.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(168);
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(171);
     expect([...resolved.entries()].filter(([, c]) => c === 2)).toEqual([['events.subscribe', 2]]);
-    expect(requested).toHaveLength(168);
+    expect(requested).toHaveLength(171);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
@@ -167,7 +168,7 @@ describe('every row resolves through the client and the error mapping', () => {
         expect(data.echoed, op.name).toContain(bindPath(op.name, params(op.name)));
       }
     }
-    expect(httpRows).toBe(168);
+    expect(httpRows).toBe(171);
   });
 });
 

@@ -62,7 +62,8 @@ import { createOutput } from '../src/output.js';
 // 163 -> 166 (2026-08-16, W4/132): spaces.taskWorkflows list/set/delete, all
 // public, all with `space task-workflow` commands. MEASURED.
 // 166 -> 169 (141): the three account-lifecycle ops. MEASURED.
-const EXPECTED_ROWS = 169;
+// 169 -> 172 (148): the three spaces.workflows ops. MEASURED.
+const EXPECTED_ROWS = 172;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -128,7 +129,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 169 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 172 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -175,7 +176,8 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
-    expect(histogram).toEqual({ public: 165, composite: 1, internal: 1, reserved: 2 });
+    // 165 -> 168 (148): all three spaces.workflows ops are public.
+    expect(histogram).toEqual({ public: 168, composite: 1, internal: 1, reserved: 2 });
   });
 });
 

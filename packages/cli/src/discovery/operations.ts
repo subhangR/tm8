@@ -583,7 +583,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaces.workflows.upsert': {
     cmd: ['space', 'workflow', 'set'],
-    syn: 'tm8 space workflow set <name> --kind <kind> --state <name>:<category>[:initial][:default]... [--transition [<from>]->[<to>]]... [--space <space-id>] [--mutation-id <id>]',
+    syn: 'tm8 space workflow set <name> --kind <kind> --state <name>:<category>[:initial][:default]... [--transition <from>-><to>]... [--space <space-id>] [--mutation-id <id>]',
     sum: 'Create or replace a workflow — its states, and any transition overrides',
     authz: 'space',
     input: 'bound',
@@ -2127,7 +2127,9 @@ export const CATALOG_DIGEST =
   // Re-measured 141 (+ auth.password.change, auth.invite.signup,
   // auth.claim.reissue) — read from the regenerated conformance manifest, never
   // hand-derived.
-  'sha256:69d3df5f1f02ccf9ab38c817c945d0d3ab2ec1e9c2532f3a5c187ff63ecd4e9f';
+  // Re-measured 148 (+ the three spaces.workflows rows) — read from the
+  // regenerated conformance manifest, never hand-derived.
+  'sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417';
 
 export const GRAMMAR_VERSION = '2';
 

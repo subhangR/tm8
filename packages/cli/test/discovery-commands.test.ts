@@ -108,7 +108,7 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('the projection holds 152 command paths; the registry is an honest subset of them', () => {
+  it('the projection holds 159 command paths; the registry is an honest subset of them', () => {
     // 123 catalog rows − 2 with no command (execution.prompt, bridge.fetchBlob)
     // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
@@ -148,7 +148,9 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // reissue` over the three new account-lifecycle rows, plus `node mode` — an
     // ALIAS over `auth.claim.status` (which already reports the mode), ZERO new
     // catalog rows, the same sugar posture as `worktree status` over entities.get.
-    expect(COMMAND_PATHS).toHaveLength(156);
+    // 156 -> 159 (148): space workflow list|set|delete over the three
+    // spaces.workflows rows.
+    expect(COMMAND_PATHS).toHaveLength(159);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);
