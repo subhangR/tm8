@@ -452,6 +452,50 @@ export function RowActionCluster({
   );
 }
 
+/**
+ * DOES THIS HOST WIRE ANY CONTROL THIS KIND DECLARES — the second half of the
+ * 2026-08-18 ruling, and the one that answers for a WHOLE band rather than a
+ * slot.
+ *
+ * `ChannelView` and `GraphScreen` mount `EntityDetailPanel` with no `controls`
+ * prop at all, so the strip fell back to `{ kind, ctx }` and every control in
+ * it rendered NOT-WIRED. Measured on a channel through that exact shape: four
+ * slots, four refusals, zero live — a 37px band that could not do anything at
+ * all. Each refusal was individually honest; the band was the lie, because it
+ * looked like a place where work happens.
+ *
+ * DECLARATION *AND* WIRING, and neither alone. The registry says which controls
+ * the kind HAS; the host says which of them it can actually perform. A band is
+ * worth its row only where those two overlap.
+ *
+ * NOT ON CAPABILITIES. `capabilitiesOf` is `undefined` until the row's detail
+ * lands, so folding it in here would flap the whole band in and out as reads
+ * settle. A control the viewer may not use still renders — refused, with its
+ * reason — because that IS a thing they tried to do. This asks the stabler
+ * question: is anyone home to receive the write.
+ *
+ * ARCHIVE IS DELIBERATELY NOT IN THE SET. Every kind has a tombstone, so
+ * counting it would put a bare Archive bar under every panel in the app — the
+ * exact outcome `controlsFor` was written to prevent (EntityDetailPanel.tsx).
+ * This predicate NARROWS that gate; it never widens it, and callers keep both.
+ */
+export function stripHasLiveControl(props: ControlHost, config: KindConfig): boolean {
+  const list = config.list;
+  return (
+    (list.stateControl !== undefined
+      && list.stateControl.readOnlyReason === undefined
+      && props.onSetState !== undefined)
+    || ((list.valueControls?.length ?? 0) > 0 && props.onSetValue !== undefined)
+    || (list.axisControls !== undefined
+      && (props.taskAxes?.length ?? 0) > 0
+      && props.onSetAxis !== undefined)
+    || (list.assignControl !== undefined && props.onAssign !== undefined)
+    || (list.membership !== undefined
+      && props.onMembership !== undefined
+      && props.connectionsOf !== undefined)
+  );
+}
+
 export function EntityControlStrip({
   row,
   props,
@@ -512,10 +556,31 @@ export function EntityControlStrip({
       className={chips ? 'lp__rowdetail lp__rowdetail--chips' : 'lp__rowdetail'}
       onClick={(e) => e.stopPropagation()}
     >
-      {line(
-        control?.label ?? 'State',
-        <RowStateControl row={row} props={props} control={control} pill={config.panel.statusPill} />,
-      )}
+      {/* USER RULING 2026-08-18 — "just taking up height in most places".
+          A kind that HAS no state gets no state slot, where it used to get a
+          permanently dead `no state` badge. This is D67's own law applied to
+          the disclosure rather than to the control: the collapsed row already
+          carries the kind's status mark, so the strip's copy said the same
+          thing a second time, in a slot, forever, on 14 of 19 kinds.
+
+          IT IS NOT THE OTHER THREE REFUSALS. A kind that HAS a state still
+          draws it when the node observes it (`readOnlyReason`), while
+          permissions load, and when the host left the write unwired — those
+          are things a user tried to do and must be told about. "This kind
+          never had a state" is not; nothing was attempted and nothing can be.
+          `RowStateControl` now REQUIRES a control, so the distinction is the
+          compiler's rather than this call site's to remember. */}
+      {control
+        ? line(
+            control.label,
+            <RowStateControl
+              row={row}
+              props={props}
+              control={control}
+              pill={config.panel.statusPill}
+            />,
+          )
+        : null}
 
       {(list.valueControls ?? []).map((value) =>
         line(value.label, <RowValueControl row={row} props={props} control={value} />),
@@ -1183,15 +1248,22 @@ function RestoreIcon() {
 /**
  * The state dropdown, or the honest reason there is not one.
  *
- * FOUR DISTINCT REFUSALS, kept apart because collapsing them is how a UI
+ * THREE DISTINCT REFUSALS, kept apart because collapsing them is how a UI
  * starts lying about which thing is missing:
  *
- *   no `stateControl`  — this KIND has no state to set (14 of 19 core kinds).
  *   `readOnlyReason`   — it HAS a state, but the node observes it (sessions).
  *   capabilities absent — not refused, still LOADING (the CheckingPermission
  *                        vocabulary, never the disabled one).
  *   no `onSetState`    — the host did not wire the write; disabled-with-reason
  *                        rather than a select that silently drops the change.
+ *
+ * THERE WERE FOUR. The fourth was "this KIND has no state to set", drawn as a
+ * dead `no state` badge for 14 of 19 kinds — removed by USER RULING 2026-08-18
+ * (see the strip's own note). `control` is REQUIRED now rather than optional,
+ * so that refusal cannot come back by a caller passing `undefined`: the two
+ * call sites both hold a control already (the strip guards on it, and the
+ * tile's dot is gated on `list.stateControl && !treatment`). The other three
+ * survive because each is a thing a user tried to do.
  *
  * TWO ANATOMIES, ONE CONTROL — the same pairing `RowMembershipControl` makes,
  * for the same reason (user ruling 2026-08-16: "there is a status button on
@@ -1218,7 +1290,8 @@ export function RowStateControl({
 }: {
   row: ControlSubject;
   props: ControlHost;
-  control: StateControl | undefined;
+  /** REQUIRED — see the note above; a kind with no state draws no control. */
+  control: StateControl;
   /** The kind's existing value→word / value→tone map. The ONLY source for both. */
   pill: StatusPillSpec | undefined;
   /** `dot` for the collapsed tile's status mark. */
@@ -1254,16 +1327,6 @@ export function RowStateControl({
         {face}
       </DisabledAction>
     );
-
-  if (!control) {
-    return refuse(
-      {
-        cause: `${getKind(props.kind).label} has no state to set on this node`,
-        remedy: 'the contract records no status field for this kind, so nothing could be written',
-      },
-      <span className="lp__statesel lp__statesel--absent">no state</span>,
-    );
-  }
 
   // Structural read of the state envelope: the registry names the FIELD, so no
   // kind is named here and a new stateful kind needs no edit to this file.
