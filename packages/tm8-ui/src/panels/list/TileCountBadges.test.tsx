@@ -66,14 +66,16 @@ describe('TileCountBadges', () => {
     expect(screen.getByTestId('tile-count-badges').querySelector('[data-count-kind="message"]')?.textContent).toBe('5');
   });
 
-  it('shows actual human authors in a compact stack with honest overflow', () => {
+  it('draws one quiet person mark, its title naming the known authors and honest overflow', () => {
     render(<TileCountBadges
       counters={counters({ messages: 7, humanMessages: 7, agentMessages: 0 })}
       humanAuthors={{ actors: [ada, noor], total: 5 }}
     />);
     const human = screen.getByTestId('tile-count-badges').querySelector('[data-count-kind="human-message"]');
-    expect(human?.querySelectorAll('.kit-avatar')).toHaveLength(2);
-    expect(human?.querySelector('.kit-avatarstack__more')?.textContent).toBe('+3');
+    // One glyph, not a face per author — a tile row says WHO posted only on
+    // hover, via the mark's own tooltip, never as extra pixels in the row.
+    expect(human?.querySelectorAll('svg')).toHaveLength(1);
+    expect(human?.querySelector('svg title')?.textContent).toBe('Ada, Noor, +3 more');
     expect(human?.textContent?.endsWith('7')).toBe(true);
   });
 
