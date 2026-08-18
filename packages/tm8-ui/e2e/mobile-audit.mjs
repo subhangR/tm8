@@ -747,10 +747,30 @@ for (const vp of VIEWPORTS) {
     }
     if (negHits.length) problems.push(`${vp.name}/${route.name}: VOID — ${negHits.join('; ')}`);
 
-    /* THE SUBSTRATE. Not a threshold — an ADMISSIBILITY test. A row measured at
-       any zoom but 1 is not comparable to the baseline at all. */
-    const zoomOk = m.zooms.every((z) => z === '1' || z === 1 || z === 'normal');
-    if (!zoomOk) problems.push(`${vp.name}/${route.name}: VOID for comparison — zooms=${JSON.stringify(m.zooms)}, expected every value "1"`);
+    /*
+     * THE SUBSTRATE. Not a threshold — an ADMISSIBILITY test.
+     *
+     * SCOPED TO THE SHELL, and that scoping is load-bearing. The hazard is a
+     * CHANGED zoom, not a non-unit one: `.cv2-root[data-shell='mobile'] { zoom: 1 }`
+     * scopes off a `zoom: 1.1` that app.css puts on `.cv2-root` as a DESKTOP
+     * experiment. So 1.1 is the correct, intended value on the desktop shell and
+     * 1 is the correct value on the phone. A flat "every value must be 1" would
+     * void every desktop and tablet row — which is the evidence R11 exists to
+     * require — while a flat "must be 1.1" would miss the gate failing open on a
+     * phone. Either way the check would be worse than none, because it would
+     * fire constantly and get ignored.
+     *
+     * Deviation from the shell's expected value is what voids the row, and it
+     * catches the gate breaking in BOTH directions: mobile leaking 1.1 (tap
+     * targets inflate ~10% and cross 44px with no fix), or desktop losing its
+     * 1.1. A nested root reading '1' inside the desktop shell is the mobile gate
+     * legitimately scoping a descendant, so it is allowed there.
+     */
+    const expectedZoom = m.shell === 'mobile' ? '1' : '1.1';
+    const zoomOk = m.zooms.every((z) => String(z) === expectedZoom || (m.shell !== 'mobile' && String(z) === '1'));
+    if (!zoomOk) {
+      problems.push(`${vp.name}/${route.name}: VOID for comparison — zooms=${JSON.stringify(m.zooms)}, expected every value "${expectedZoom}" in the ${m.shell} shell`);
+    }
 
     /* THE REFUSAL. A row measured in the wrong shell looks exactly like a real
        row and is pure fiction — see trap 2. Record the failure instead. */
