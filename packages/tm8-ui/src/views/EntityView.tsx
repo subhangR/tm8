@@ -965,6 +965,13 @@ export function EntityView(props: EntityViewProps) {
           onKindChange={props.onKindChange}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onComplete={rowLifecycle.complete}
+          /* The session row's ⏻, from the SAME executor the detail panel's
+             Terminate uses. It was drawn here and on Home with no handler at
+             all — live, gated on liveness, and inert — because only
+             WorkspaceView passed one. A verb with a dedicated prop is dead on
+             every host that forgets it, so all three pass it now. */
+          onTerminate={primaries.terminate}
           onSetValue={rowLifecycle.setValue}
           onSetAxis={rowLifecycle.setAxis}
           taskAxes={data.taskAxes}

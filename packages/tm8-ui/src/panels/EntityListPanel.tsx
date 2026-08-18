@@ -336,6 +336,14 @@ export interface EntityListPanelProps {
   onArchive?: (ref: ActionRef, entityId: string) => void;
 
   /**
+   * The row cluster's tick — a dedicated prop for the same reason `onArchive`
+   * and `onTerminate` are. See `ControlHost.onComplete`: routed through the
+   * general `onAction` it reached the session-START switch, drew live, and was
+   * dropped on the floor. Absent ⇒ the tick renders its not-wired refusal.
+   */
+  onComplete?: (entityId: string) => void;
+
+  /**
    * Commit a value chosen in an expanded row's `valueControls` picker.
    *
    * ITS OWN PROP, NOT `onSetState`, because the two are not the same write. A
@@ -3072,9 +3080,19 @@ export function Tile({
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
         onSelect={() => props.onSelect?.(row.id)}
-        actions={
-          <RowActionCluster row={row} props={props} config={config} openFlow={flowRef} onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions} />
-        }
+        actions={(own) => (
+          <RowActionCluster
+            row={row}
+            props={props}
+            config={config}
+            openFlow={flowRef}
+            onFlow={setFlowRef}
+            onOpenLaunch={props.launch?.onFullOptions}
+            /* Copy — this anatomy's own affordance, placed by the cluster so
+               it lands before Terminate. See `MaestroSessionTile.actions`. */
+            anatomyActions={own}
+          />
+        )}
         detail={<EntityControlStrip row={row} props={props} config={config} />}
       />
       {relatedBlock}
