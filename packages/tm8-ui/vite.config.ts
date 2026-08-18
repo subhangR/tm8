@@ -74,10 +74,15 @@ export default defineConfig({
     // which is not jsdom's Storage at any origin. PER-FILE STUBS REMAIN
     // NECESSARY (see `src/views/realSeamFlag.test.ts`).
     //
-    // KNOWN-OPEN, deliberately not chased: the next probe is whether the runner
-    // can start without the node-level `--localstorage-file` injection it warns
-    // about on every run — the current suspect for shadowing jsdom's Storage.
-    // Suspected, not asserted.
+    // CLOSED 2026-08-18 — the suspect was the culprit, measured in
+    // `test-setup.ts`: Node's experimental global `localStorage` (no
+    // `--localstorage-file` ⇒ a stub on 22, plain `undefined` on 26) is
+    // copied over jsdom's Storage when the worker global is populated. The
+    // setup file installs a working Map-backed Storage before every file,
+    // which also ends the parallel-run flakiness: per-file stubs used to
+    // leak through re-used worker globals, so unstubbed files passed or
+    // failed by which neighbour ran first in their worker.
     environmentOptions: { jsdom: { url: 'http://localhost' } },
+    setupFiles: ['./test-setup.ts'],
   },
 });
