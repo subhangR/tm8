@@ -387,7 +387,27 @@ const ARCHIVED_TIER: LifecycleTier = {
  */
 function statelessTiers(): readonly LifecycleTier[] {
   return [
-    { id: 'open', label: 'Open', filter: { category: ['to_do', 'in_progress'], deleted: 'exclude' } },
+    /*
+     * OPEN IS NOT CATEGORY-FILTERED. Phase 5 changed this to
+     * `category: ['to_do','in_progress']` on the premise that every kind has a
+     * workflow and every entity a status — so every tier is a query that can
+     * return rows.
+     *
+     * The premise does not hold for a row whose category is ABSENT. A status
+     * clause is `NULL = any(...)`: absent never matches a present clause
+     * (domain-store.ts:440). So a category-filtered Open tab renders EMPTY for
+     * any uncategorised entity — which is what emptied the channel list.
+     *
+     * And absent-category is a state this product deliberately models: board-v2
+     * ships a whole uncategorised COLUMN, and cannot express it as a query
+     * either — it reads the base and narrows client-side
+     * (board-model.ts:342, BoardV2Screen.tsx:160-166).
+     *
+     * Open therefore shows everything not deleted, as it did before phase 5.
+     * Done stays category-filtered: a row with no category has not been done,
+     * so excluding it there is correct rather than lossy.
+     */
+    { id: 'open', label: 'Open', filter: NOT_DELETED },
     { id: 'done', label: 'Done', filter: { category: ['done', 'cancelled'], deleted: 'exclude' } },
     ARCHIVED_TIER,
   ];
