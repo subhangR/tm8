@@ -361,7 +361,15 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   }
 
   if (f.readyToPull) {
-    where.push(`t.work_status in ('open','pulled')`);
+    // Phase 5 (152): the category, not the two literals it used to enumerate.
+    // `open` and `pulled` were exactly the `to_do` literals, so this is the same
+    // set said once — and it now follows a space that renamed its states, which
+    // the literal list could not. `t.entity_id is not null` keeps the preset
+    // TASK-SHAPED: every kind carries a category from 152 onward, so dropping
+    // the literal without saying "and it is a task" would have widened
+    // "what can I pull" to every doc and channel in the space.
+    where.push(`t.entity_id is not null`);
+    where.push(`e.status_category = 'to_do'`);
     where.push(UNBLOCKED_PREDICATE);
   }
 

@@ -670,7 +670,13 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 142
     //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 142
     //   (origin/main is 141; this branch is the +1.)
-    expect(server.appliedMigrations.length).toBe(142);
+    // 142 -> 143 (2026-08-18): 152_universal_status.sql — phase 5, every kind
+    // gets a workflow and every entity a status. MEASURED on this branch after
+    // `git fetch` confirmed origin/main was still at 151, not derived:
+    //   ls db/migrations/*.sql | wc -l                             -> 143
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 143
+    //   (origin/main is 142; this branch is the +1.)
+    expect(server.appliedMigrations.length).toBe(143);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
