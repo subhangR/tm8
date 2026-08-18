@@ -285,7 +285,16 @@ const STATES = [
   {
     name: 'tasks-detail',
     path: 'k/tasks',
-    steps: [{ click: 'button.pn-tt__title' }],
+    /*
+     * DRIVE TO THE POPULATED TIER FIRST — otherwise this opens the wrong task.
+     * The default "To Do" tier holds ONE row, "Name the empty states", whose
+     * `acceptance.total` is 0. So the detail it opens has NO criterion rows,
+     * and any row scoped to `sb-criterion__box` would verify its absence
+     * against a task that never had one — an absence acceptance checked on a
+     * surface too thin to contain the thing, which is the DEF-016/018 shape.
+     * "In Progress" holds taskUuidTitle (acceptance 4) and taskGuideLines (3).
+     */
+    steps: [{ click: 'button.lp__tab', text: 'In Progress' }, { click: 'button.pn-tt__title' }],
     /* `data-mode="detail"` on the EntityView root, not merely a back chevron:
        the chevron proves SOMETHING was pushed, this proves the DETAIL rendered. */
     expect: '[data-testid="entity-view"][data-mode="detail"]',
@@ -725,6 +734,19 @@ function measureInPage({ MIN_TAP, EPS }) {
           kindTotal: (host.querySelector('[data-testid="kind-total"]')?.textContent || '').trim(),
         };
       })(),
+    },
+    /*
+     * CONTENT WITNESSES — siblings of the offender, never the offender.
+     * An ABSENCE acceptance is only meaningful if the content that renders the
+     * thing is on screen. Reported as counts so a row can be marked VOID rather
+     * than passed on an empty surface.
+     */
+    contentWitness: {
+      acceptanceRows: document.querySelectorAll('[data-testid="acceptance-row"], .sb-criterion').length,
+      runChips: document.querySelectorAll('.sb-runchip').length,
+      descriptionBlock: !!document.querySelector('.sb-description, [data-testid="description"]'),
+      detailPanel: !!document.querySelector('[data-testid="entity-detail-panel"]'),
+      panelTabs: !!document.querySelector('[data-testid="panel-tabs"]'),
     },
     /* Which screen a voice target actually got. A FACT, not a grade — see the
        voice-room route note. */
