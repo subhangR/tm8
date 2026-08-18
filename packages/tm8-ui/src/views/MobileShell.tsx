@@ -49,6 +49,7 @@ import type { Notice } from '../shell';
 import { EntityView } from './EntityView';
 import { ChannelView } from './ChannelView';
 import { InboxView } from './InboxView';
+import { openEntityOnPhone } from './openEntityOnPhone';
 import { ChatHomeSurface } from '../chat-home';
 import type { GateData } from './useGateData';
 
@@ -530,29 +531,60 @@ function screenFor(props: MobileShellProps): ReactNode {
   }
 
   /*
-   * WHY NEITHER OF THESE IS HANDED AN `onOpenEntity`, and why that is the fix
-   * rather than the omission it looks like.
+   * DEF-005 — THE PHONE CAN NOW OPEN AN ARBITRARY ENTITY, AND THE REASON IT
+   * COULD NOT IS WORTH KEEPING RATHER THAN DELETING.
    *
-   * Opening an arbitrary entity is a WORKSPACE move — the desktop does it by
-   * navigating to the workspace and pushing the id onto the panel stack, and the
-   * workspace is precisely what has no phone arrangement (see the default arm).
-   * The phone's `entity` route is the CHANNEL screen, so routing a task or a
-   * session there would draw a message feed for something that has none: the
-   * misroute `GateApp` was repaired for.
+   * What stood here before was a correct diagnosis with the wrong conclusion.
+   * The diagnosis: `InboxScreen` renders its rows disabled-WITH-REASON, and
+   * `EntityChip` renders an inert badge, by asking whether the callback EXISTS
+   * — so passing `() => undefined` is not "no handler", it is a handler that
+   * does nothing, and it switches the honest states off and turns every inbox
+   * row into a live-looking control that swallows the press. That is exactly
+   * right and it is why nothing is defaulted below.
    *
-   * Both of these screens already have an honest answer for a host that cannot
-   * navigate — `InboxScreen` renders its rows disabled-WITH-REASON, and
-   * `EntityChip` renders an inert badge instead of a button — and both check it
-   * by asking whether the callback EXISTS. So they were each passed
-   * `() => undefined`, which is not "no handler": it is a handler that does
-   * nothing. The prop was present, the honest states switched themselves off,
-   * and every inbox row and every tool-call chip on a phone became a live-looking
-   * control that swallowed the press. Passing nothing is what makes them tell
-   * the truth. Wiring them for real is a phone workspace, not a callback.
+   * The conclusion — "wiring them for real is a phone workspace, not a
+   * callback" — read the desktop's IMPLEMENTATION as the requirement. The
+   * desktop opens an entity by navigating to the workspace and pushing a bare
+   * id onto its panel stack, and the workspace is refused forever on a phone,
+   * so the move looked impossible. But the phone already has the two halves it
+   * needs and has had since the gate landed: a KIND SCREEN THAT HOSTS A STACK,
+   * and the header chevron that pops it (CONTRACT.md §5). Navigate to the kind
+   * and seed the id onto that screen's stack, which is precisely what the gate's
+   * own DEF-002 fix does for a pasted `e/{id}` link (`GateApp.tsx:657`). The
+   * shared store is the seam; `mobile/index.ts` says so in terms.
+   *
+   * WHAT IT COST TO GET WRONG, recorded because the shape is the point: the
+   * before-run scored the inbox a PASS. Rows that cannot be opened have nothing
+   * under 44px, `entity-detail-bare-link` reported `tapUnder44 = 0 of 6`, and
+   * absence measured as health on one of the five destinations the tab bar
+   * promises.
+   *
+   * `openEntityOnPhone` returns FALSE for a kind with no `k/` screen — the
+   * `special`/`anchored` strategies have no route by design — and the reader is
+   * told so out loud. Silence there would be RULE R13's failure verbatim: a
+   * control that renders, presses and does nothing.
+   *
+   * STILL OPEN, AND NOT SILENTLY: chat's tool-call chips are the other consumer
+   * this row names. They are Lane A's surface and Lane A consumes this seam;
+   * this arm wires the inbox half only.
    */
   switch (activeTarget.ref) {
     case 'inbox':
-      return <InboxView seam={data.seam} />;
+      return (
+        <InboxView
+          seam={data.seam}
+          onOpenEntity={(id, kind) => {
+            if (openEntityOnPhone(props.navigateTo, id, kind)) return;
+            onNotice({
+              id: `open-entity:${id}`,
+              tone: 'info',
+              title: getKind(kind).label,
+              body: 'This kind has no phone screen in this build, so there is nowhere to open it. The link still names it.',
+              ttlMs: 6000,
+            });
+          }}
+        />
+      );
     case 'dashboard':
       return (
         <ChatHomeSurface
