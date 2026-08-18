@@ -206,9 +206,29 @@ const ROUTES = [
     /* DEF-035. `MobileShell`'s `entity` branch renders ChannelView for ANY
        entity target, and `nav-targets.ts` emits entity targets for voice rooms
        as well as channels. This is the address that proves what a phone does
-       with one. `vc-standup` is the OCCUPIED room (participantCount 3). */
+       with one. `vc-standup` is the OCCUPIED room (participantCount 3).
+       NO WITNESS DECLARED ON PURPOSE: on main this renders ChannelView and on a
+       branch that guards it, the unbuilt-voice card. Asserting either would make
+       the row pass on one tree and void on the other, so what rendered is
+       reported as a FACT (`voiceGuard`) rather than graded. */
     name: 'voice-room', path: 'voice/vc-standup', phone: 'screen',
-    note: 'DEF-035 — voice room target; entity branch renders ChannelView for any kind',
+    note: 'DEF-035 — voice room target; reports which screen the phone chose',
+  },
+  {
+    /* DEF-002 — the BARE deep link, no `?origin=`. On main `landingOfRoute`
+       returns null for this and it lands on mobile-unrouted; a fix should
+       resolve it to the entity's own collection with the entity open, WITHOUT
+       rewriting the address. `phone: 'refusal'` so the negative-witness check
+       does not void the row on main, where the refusal IS the result. */
+    name: 'entity-bare-link', path: 'e/task-4f8c2a9e', phone: 'refusal',
+    note: 'DEF-002 — bare entity link, no origin param',
+  },
+  {
+    /* THE CONTROL CASE. `voice_channel` has no `k/` view by design, so the
+       bare-link rule must correctly yield NOTHING here. If this one also
+       resolves, the fix over-reached. */
+    name: 'voice-bare-link', path: 'e/vc-standup', phone: 'refusal',
+    note: 'DEF-002 control — bare voice link MUST still refuse',
   },
 ];
 
@@ -537,6 +557,60 @@ function measureInPage({ MIN_TAP, EPS }) {
       loading: [...document.querySelectorAll('.mobile-empty')].some((n) => /loading|hydrating/i.test(n.textContent || '')),
       chatInFlight: !!document.querySelector('[data-testid="chat-detail-loading"], [data-testid="chat-thinking"]'),
     },
+    /*
+     * CONTENT VOLUME. A screen that resolved has a body; one that refused has a
+     * sentence. Reported so "it landed somewhere" and "it landed on the right
+     * thing" stay two separate questions.
+     */
+    contentChars: (() => {
+      const frame = document.querySelector('.mobile-frame') || document.querySelector('.shell-root') || document.body;
+      const clone = frame.cloneNode(true);
+      for (const sel of ['.mobile-header', '.mobile-tabs']) for (const n of clone.querySelectorAll(sel)) n.remove();
+      return (clone.innerText || '').trim().length;
+    })(),
+    /*
+     * TEXT FLOORS. <12px body text is unreadable on a phone; <16px on an INPUT
+     * makes iOS zoom the whole page on focus. Reported as lists, not counts, so
+     * a reader can see WHICH strings are involved.
+     */
+    tinyText: (() => {
+      const out = [];
+      for (const el of document.querySelectorAll('*')) {
+        const cs = getComputedStyle(el);
+        if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        const size = parseFloat(cs.fontSize);
+        const tag = el.tagName.toLowerCase();
+        const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1);
+        if ((tag === 'input' || tag === 'textarea' || tag === 'select') && size < 16) {
+          out.push({ px: size, kind: 'input-zoom-risk', cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40), text: (el.getAttribute('aria-label') || '').slice(0, 24) });
+        } else if (ownText && size < 12) {
+          out.push({ px: size, kind: 'unreadable', cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40), text: (el.textContent || '').trim().slice(0, 24) });
+        }
+      }
+      return out.slice(0, 24);
+    })(),
+    /* Which screen a voice target actually got. A FACT, not a grade — see the
+       voice-room route note. */
+    voiceGuard: {
+      unbuiltCard: !!document.querySelector('[data-testid="mobile-unbuilt-voice-view"]'),
+      channelView: !!document.querySelector('.chv-main, .chv-tabs'),
+    },
+    /* The phone chrome's own controls, for the cheap machine floors. */
+    chrome: (() => {
+      const pick = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height), text: (el.textContent || '').trim().slice(0, 40) };
+      };
+      return {
+        accountMenu: pick('[data-testid="mobile-account-menu"]'),
+        refusalOut: pick('[data-testid="mobile-refusal-out"]'),
+        headerTitle: (document.querySelector('.mobile-header__title')?.textContent || '').trim().slice(0, 60),
+      };
+    })(),
     /* What the page believes about itself, so a reader can tell a real 0 from a
        0 taken off a boot error or the wrong shell. */
     shell: document.querySelector('.mobile-frame') ? 'mobile' : document.querySelector('.shell-root') ? 'desktop' : 'none',
