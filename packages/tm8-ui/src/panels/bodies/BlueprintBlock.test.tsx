@@ -79,6 +79,31 @@ describe('the blueprint block', () => {
     expect(view.queryByTestId('panel-blueprint')).toBeNull();
   });
 
+  it('sizes its box from the FOLD, not from a constant', () => {
+    /* A fixed height was wrong in both directions: measured in Chrome at the
+       panel's 320px minimum, a 4-node graph drew 36px tall inside a 320px box
+       — ~90% empty — while its titles rendered 4px against 23.1px body text.
+       Both numbers now come from `view.bounds`, so the box cannot disagree
+       with what is actually drawn. jsdom cannot measure the RESULT, but it can
+       pin that the fold's own geometry is what reaches CSS. */
+    const view = render(<BlueprintBlock detail={graphDetail(BLUEPRINT)} />);
+    const box = view.getByTestId('panel-blueprint');
+
+    const aspect = box.style.getPropertyValue('--pn-bp-aspect');
+    const floor = box.style.getPropertyValue('--pn-bp-floor');
+    /* Shaped `w / h` off the drawn bounds, and a floor in px — not empty, which
+       is what a constant or a missing fold would leave behind. */
+    expect(aspect).toMatch(/^\d+(\.\d+)? \/ \d+(\.\d+)?$/);
+    expect(floor).toMatch(/^\d+px$/);
+
+    /* The floor is a FRACTION of the drawn width — the point is that it is
+       smaller than natural size but not arbitrarily small. */
+    const drawnWidth = Number(aspect.split('/')[0]!.trim());
+    const floorPx = Number(floor.replace('px', ''));
+    expect(floorPx).toBeGreaterThan(0);
+    expect(floorPx).toBeLessThan(drawnWidth);
+  });
+
   it('is DECLARED by the graph kind, which is the whole wiring', () => {
     /* The block reaches the panel because the registry asks for it, and it is
        FIRST — the canvas is the row's body, the envelope fields sit under it.

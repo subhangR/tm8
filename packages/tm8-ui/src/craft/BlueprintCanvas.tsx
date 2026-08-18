@@ -10,12 +10,24 @@
  * dashed with a "spec" flag so intent never passes as fact, and a reference
  * card opens its real entity.
  *
- * THE CANVAS CARRIES ITS OWN STYLES. `craft.css` used to be imported only by
- * `CraftScreen`, which was invisible for as long as the studio was the only
- * mount — the detail panel's blueprint block would then have drawn a
- * completely unstyled canvas on every screen but Craft. A component that can
- * be mounted anywhere has to bring its own CSS; bundlers dedupe the import,
- * so the studio pays nothing for it.
+ * THE CANVAS CARRIES ITS OWN STYLES — DEFENSIVELY, and this docblock once
+ * claimed more than that.
+ *
+ * It said the panel's blueprint block "would have drawn a completely unstyled
+ * canvas on every screen but Craft" without this import. That was FALSE for
+ * the shipped bundle and was stated as fact. Measured against `vite build` on
+ * both trees: the app emits ONE stylesheet, linked unconditionally from
+ * `index.html`, and it already carried `craft.css` — because `CraftScreen` is
+ * imported EAGERLY at `GateApp.tsx:44`. There is real code splitting (67
+ * chunks; ChatHomeScreen and ChannelScreen are dynamic) but the studio is not
+ * part of it, so its CSS was never conditional.
+ *
+ * What the import actually buys: a component mounted from the panel layer
+ * stops depending on an unrelated screen's import graph. It is load-bearing
+ * only the day `CraftScreen` becomes lazy — which is a real possibility, and
+ * a silent one, since NOTHING tests this (jsdom loads no stylesheets, so
+ * deleting the import reds zero of 929 tests). Keep it; just don't believe
+ * the sentence that used to be here.
  */
 import './craft.css';
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
