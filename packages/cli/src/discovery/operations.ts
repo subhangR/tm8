@@ -782,7 +782,14 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'bound',
     ver: 'expectedVersion',
-    tags: ['done', 'finish', 'close'],
+    /* `'close'` REMOVED (sub-doc 5, C4). The UI uses "close" to mean TERMINATE
+       a live session — `handleSessionClose = primaries.terminate` — so
+       `tm8 help --query close` answering *task complete* pointed the word at
+       the wrong button. The action label is already `Terminate` and it stays
+       that; nothing in the product now spells terminate "close", so nothing
+       should route the search there either. Completion's own words are
+       enough. */
+    tags: ['done', 'finish', 'complete'],
     notes: [
       'it alone checks acceptance criteria and writes completer relationships, activity, and awards',
       '`task transition <id> done` is refused with invariant_violation / use_complete_command',
@@ -978,12 +985,12 @@ const ROWS: Record<OperationName, Row> = {
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
     cmd: ['entity', 'query'],
-    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--work-status <status>...] [--assignee <actor-id>...] [--ready] [--limit <count>] [--cursor <cursor>]',
+    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--status <status>...] [--assignee <actor-id>...] [--ready] [--limit <count>] [--cursor <cursor>]',
     sum: 'Query entities across a Space by kind, hierarchy, status, axis, assignee, or edge',
     authz: 'space',
     input: 'bound',
     tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
-    examples: ['tm8 entity query --kind task --assignee <actor-id> --work-status working'],
+    examples: ['tm8 entity query --kind task --assignee <actor-id> --status working'],
   },
   'collections.addItem': {
     cmd: ['collection', 'add'],

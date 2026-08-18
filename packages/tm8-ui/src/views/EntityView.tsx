@@ -368,12 +368,12 @@ export function EntityView(props: EntityViewProps) {
      Terminate button behaves identically wherever a session panel is opened. */
   /* A useCallback, not an inline arrow — see WorkspaceView for why an unstable
      reporter churns the whole dispatcher's identity every render. */
-  const notifyCloseFailed = useCallback(
+  const notifyTerminateFailed = useCallback(
     (_verb: ActionRef, _entityId: string, error: unknown) => {
       props.onNotice({
-        id: 'session-close-failed',
+        id: 'session-terminate-failed',
         tone: 'error',
-        title: 'Session could not be closed',
+        title: 'Session could not be terminated',
         body: String((error as { message?: string })?.message ?? error),
         ttlMs: 6_000,
       });
@@ -383,7 +383,7 @@ export function EntityView(props: EntityViewProps) {
   const primaries = usePanelPrimaries({
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
-    onError: notifyCloseFailed,
+    onError: notifyTerminateFailed,
   });
 
   /* D67 — the expanded row's state dropdown and archive control. Same executor

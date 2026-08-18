@@ -243,7 +243,7 @@ describe('fixture seam — commands + echo events', () => {
     const t = (await seam.commands.createTask({
       spaceId: FIXTURE_SPACE_ID, title: 'seq run', clientMutationId: 'cmid-s1',
     }) as CommandResult).patches[0];
-    await seam.commands.patchTask(t.id, { expectedVersion: 1, workStatus: 'working', clientMutationId: 'cmid-s2' });
+    await seam.commands.patchTask(t.id, { expectedVersion: 1, status: 'working', clientMutationId: 'cmid-s2' });
     await seam.commands.react(t.id, { reaction: 'like', enabled: true, clientMutationId: 'cmid-s3' });
     await seam.commands.deleteEntity(t.id, { clientMutationId: 'cmid-s4' });
     await seam.commands.restoreEntity(t.id, { clientMutationId: 'cmid-s5' });
@@ -342,7 +342,7 @@ describe('fixture seam — commands + echo events', () => {
       clientMutationId: 'cmid-sp1', spaceId: FIXTURE_SPACE_ID,
       teamMemberId: 'ent-tm-forge', taskIds: [taskGuideLines.id],
     })).patches[0];
-    expect(seam.liveness.statusOf({ id: spawned.id, workStatus: asWorkStatus('running') })).toBe('live');
+    expect(seam.liveness.statusOf({ id: spawned.id, status: asWorkStatus('running') })).toBe('live');
     expect(snaps[snaps.length - 1]?.liveEntityIds).toContain(spawned.id);
 
     await seam.commands.terminate(spawned.id, { clientMutationId: 'cmid-sp2' });
@@ -356,7 +356,7 @@ describe('fixture seam — liveness predicate (R-UI-5)', () => {
   it('computes all four values; stale/live hold out of the box', async () => {
     const seam = await openSeam();
     const statusOf = (id: string, ws: string | null) =>
-      seam.liveness.statusOf({ id, workStatus: ws === null ? null : asWorkStatus(ws) });
+      seam.liveness.statusOf({ id, status: ws === null ? null : asWorkStatus(ws) });
 
     // not-running: the record itself says so
     expect(statusOf(sessionExited.id, 'exited')).toBe('not-running');
@@ -401,7 +401,7 @@ describe('fixture controls', () => {
     expect(snaps).toHaveLength(1);
     expect(snaps[0].nodeBootId).toBe('boot-2');
     // previously-live session is now honestly stale
-    expect(seam.liveness.statusOf({ id: sessionLive.id, workStatus: asWorkStatus('running') })).toBe('stale');
+    expect(seam.liveness.statusOf({ id: sessionLive.id, status: asWorkStatus('running') })).toBe('stale');
   });
 
   it('triggerResync fires onResync with the spaceId', async () => {
@@ -542,7 +542,7 @@ describe('fixture seam — server-parity of the Board wave (PR #253 review findi
     const bare = await seam.query({ spaceId: FIXTURE_SPACE_ID, kinds: ['task'] });
     const empties = await seam.query({
       spaceId: FIXTURE_SPACE_ID, kinds: ['task'],
-      filters: { priority: [], workStatus: [], assigneeIds: [] },
+      filters: { priority: [], status: [], assigneeIds: [] },
     });
     expect(empties.page.items.map((s) => s.id)).toEqual(bare.page.items.map((s) => s.id));
   });
@@ -564,7 +564,7 @@ describe('fixture seam — server-parity of the Board wave (PR #253 review findi
     // more than the medium-priority tasks alone
     const mediumTasks = result.page.items.filter((s) => s.state.kind === 'task' && s.state.priority === 'medium');
     expect(medium.items.length).toBeGreaterThan(mediumTasks.length);
-    const status = await seam.query({ spaceId: FIXTURE_SPACE_ID, kinds: ['task'], groupBy: 'workStatus', limit: 100 });
+    const status = await seam.query({ spaceId: FIXTURE_SPACE_ID, kinds: ['task'], groupBy: 'status', limit: 100 });
     expect(status.groups!.find((g) => g.key === 'in_review')!.label).toBe('In review');
   });
 

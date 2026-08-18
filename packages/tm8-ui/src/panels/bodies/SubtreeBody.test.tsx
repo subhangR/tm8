@@ -67,11 +67,23 @@ function taskDetail(): EntityDetail {
 /**
  * SUBTREE children.
  *
- * `taskTombstone` is the ONLY task summary in the fixtures carrying a CLOSED
- * workStatus, so it is doing double duty as the done-row specimen. That is a
- * fixture gap, not a design choice — reported to the coordinator rather than
- * papered over here.
+ * THE FIXTURE GAP THIS FILLS LOCALLY: no shared task summary carries
+ * `status: 'done'` / `category: 'done'`. `taskTombstone` (`cancelled`) used to
+ * stand in for one, which worked only while cancelled counted as done — phase
+ * 7 separated them, so the stand-in became a specimen of the OPPOSITE case and
+ * the test would have passed for the wrong reason. The done specimen is built
+ * here rather than added to `fixtures/` because every count pin in the suite
+ * reads that module.
  */
+const taskDone: EntitySummary = {
+  ...taskBlocked,
+  id: 'task-done-specimen' as EntitySummary['id'],
+  title: 'Shipped the thing',
+  category: 'done',
+  state: { ...taskBlocked.state, status: 'done' } as EntitySummary['state'],
+};
+
+/** The SUBTREE children a detail is rendered with. */
 function withChildren(children: readonly EntitySummary[]): EntityDetail {
   const base = taskDetail();
   return {
@@ -446,13 +458,21 @@ describe('SUBTREE — child work, counted and struck from registry data', () => 
     expect(within(section).getAllByTestId('subtree-row')).toHaveLength(2);
   });
 
-  it('strikes a child whose status is in its kind’s DONE lifecycle tier', () => {
-    const { getByTestId } = renderBody({ detail: withChildren([taskTombstone, taskBlocked]) });
+  it('strikes a child in the DONE category — and NOT a cancelled one', () => {
+    const { getByTestId } = renderBody({
+      detail: withChildren([taskDone, taskTombstone, taskBlocked]),
+    });
     const rows = within(getByTestId('subtree-section')).getAllByTestId('subtree-row');
-    // taskTombstone: workStatus 'cancelled' — a member of the task row's done
-    // tier filter. taskBlocked: 'blocked' — an open status.
-    expect(rows[0]?.getAttribute('data-done')).toBe('true');
-    expect(rows[1]?.getAttribute('data-done')).toBe('false');
+    // PHASE 9/C3 — ONE definition of completed: `category === 'done'`.
+    //
+    // The row for `taskTombstone` (status `cancelled`) USED TO BE STRUCK: the
+    // rule scraped the done TIER's filter, which carried `['done','cancelled']`
+    // because cancelled rode inside Done. It does not any more, and the change
+    // is the ruling, not a regression — a cancelled task STOPPED, it did not
+    // finish, and the fourth category exists so the product can say so.
+    expect(rows[0]?.getAttribute('data-done'), 'done').toBe('true');
+    expect(rows[1]?.getAttribute('data-done'), 'cancelled is not done').toBe('false');
+    expect(rows[2]?.getAttribute('data-done'), 'blocked').toBe('false');
   });
 
   it('takes the status WORD from the registry, including its authored label', () => {

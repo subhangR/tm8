@@ -54,7 +54,7 @@ function Harness() {
 
   const detail: EntityDetail = {
     ...base,
-    state: { ...base.state, workStatus: status } as EntityDetail['state'],
+    state: { ...base.state, status: status } as EntityDetail['state'],
     deletedAt: archived ? '2026-08-04T00:00:00.000Z' : null,
   };
 

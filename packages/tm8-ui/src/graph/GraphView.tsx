@@ -89,7 +89,7 @@ const PAN_STEP = 80;
  * keyed by SOURCE, never by kind; adding a kind touches neither).
  */
 const STATUS_FIELD: Record<Exclude<StatusSource, 'none'>, string> = {
-  workStatus: 'workStatus',
+  status: 'status',
   sessionStatus: 'status',
   prState: 'state',
   profileStatus: 'status',

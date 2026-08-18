@@ -42,7 +42,7 @@ function summary(
 
 const task = summary('task-1', {
   kind: 'task',
-  workStatus: 'working',
+  status: 'working',
   priority: 'medium',
   axes: {},
   assignees: [],

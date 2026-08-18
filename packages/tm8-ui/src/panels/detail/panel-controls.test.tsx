@@ -11,7 +11,7 @@
  *  1. CREATE-TIME ASSIGN / PRIORITY. The generic-create pattern (T5-6) commits
  *     the entity the instant "+ New task" is pressed and opens its PANEL with
  *     the title in edit focus — so the panel IS the create form, and it drew
- *     `workStatus` as a read-only header pill and `priority` / `assignees` as
+ *     `status` as a read-only header pill and `priority` / `assignees` as
  *     `<span>`s in the meta grid. There was no control on the one surface a
  *     new task is born on. `authoring/StatusSelect` had existed, fully built
  *     and exported, mounted by nothing but its own test.
@@ -134,10 +134,10 @@ function panel(detail: EntityDetail, controls: ControlHost | null, onRestore?: (
 }
 
 /** A task in whatever work status the case needs. */
-function taskAt(workStatus: string, extra: Partial<EntityDetail> = {}): EntityDetail {
+function taskAt(status: string, extra: Partial<EntityDetail> = {}): EntityDetail {
   return {
     ...TASK,
-    state: { ...TASK.state, workStatus } as EntityDetail['state'],
+    state: { ...TASK.state, status } as EntityDetail['state'],
     ...extra,
   };
 }

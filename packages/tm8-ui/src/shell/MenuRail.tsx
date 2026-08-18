@@ -95,7 +95,7 @@ export type MenuTarget =
        * The BOARD's grouping choice (W3) — route state exactly like `mode`,
        * held by the shell so a grouped board is shareable and survives
        * reload. The rail never sets it; `routes/q.ts` carries it as
-       * `q.groupBy` (`workStatus` | `assignee` | `axis:<name>`).
+       * `q.groupBy` (`status` | `assignee` | `axis:<name>`).
        */
       groupBy?: GroupByKey;
     }

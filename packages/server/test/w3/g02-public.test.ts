@@ -437,7 +437,7 @@ describe.sequential('W3.G02 universal entities, commands and tracking through th
         status: 'working',
       }),
     );
-    expect(working.entity).toMatchObject({ state: { kind: 'task', workStatus: 'working' } });
+    expect(working.entity).toMatchObject({ state: { kind: 'task', status: 'working' } });
 
     const refused = await harness.request<CommandResultLike>(
       'POST',
@@ -465,7 +465,7 @@ describe.sequential('W3.G02 universal entities, commands and tracking through th
       code: refused.body.error?.code ?? null,
       message: refused.body.error?.message ?? null,
       details: refused.body.error?.details ?? null,
-      workStatus: after[0]?.work_status,
+      status: after[0]?.work_status,
       ledger: after[0]?.ledger,
       completedEdges: after[0]?.completed_edges,
     }).toEqual({
@@ -473,7 +473,7 @@ describe.sequential('W3.G02 universal entities, commands and tracking through th
       code: 'invariant_violation',
       message: expect.any(String),
       details: expect.objectContaining({ reason: 'use_complete_command' }),
-      workStatus: 'working',
+      status: 'working',
       ledger: 0,
       completedEdges: 0,
     });
@@ -489,7 +489,7 @@ describe.sequential('W3.G02 universal entities, commands and tracking through th
         completerIds: [memberId],
       }),
     );
-    expect(completed.entity).toMatchObject({ state: { kind: 'task', workStatus: 'done' } });
+    expect(completed.entity).toMatchObject({ state: { kind: 'task', status: 'done' } });
 
     const rows = await harness.rows<{
       work_status: string;

@@ -32,14 +32,14 @@ const rowsFor =
     rows;
 
 const tasks = fixtureSummaries.filter((s) => s.state.kind === 'task');
-const taskOf = (workStatus: string): EntitySummary => {
+const taskOf = (status: string): EntitySummary => {
   const base = tasks[0];
   if (!base) throw new Error('fixtures carry no task');
   return {
     ...base,
-    id: `board-${workStatus}-${base.id}`,
-    title: `Board fixture ${workStatus}`,
-    state: { ...base.state, workStatus } as EntitySummary['state'],
+    id: `board-${status}-${base.id}`,
+    title: `Board fixture ${status}`,
+    state: { ...base.state, status } as EntitySummary['state'],
     badges: {},
   };
 };
@@ -81,20 +81,36 @@ function renderBoard(opts: {
 }
 
 describe('A2 — board columns come from the registry, not the payload', () => {
-  it('renders the OPEN tier vocabulary in stateControl order, plus the Done sink', () => {
+  it('renders the WHOLE stateControl vocabulary, in its order, and nothing else', () => {
     const { getAllByTestId } = renderBoard({ snapshot: snapshot() });
     const keys = getAllByTestId('board-column').map((col) => col.getAttribute('data-column'));
-    // stateControl.options order ∩ open tier, then the §1.3 sink. One source:
-    // if this drifts from the registry, the picker and the board disagree.
-    expect(keys).toEqual(['open', 'pulled', 'working', 'in_review', 'blocked', 'done']);
+    // PHASE 7 — the FULL vocabulary, and no synthetic sink.
+    //
+    // This used to read `open, pulled, working, in_review, blocked, done`:
+    // the five open-TIER statuses plus a §1.3 "drop to complete" sink standing
+    // in for the terminal column the Open tab excluded. The board no longer
+    // runs under a category tab — its columns ARE that partition — so `done`
+    // is an ordinary fetched column and `cancelled` is on screen for the first
+    // time. One source: if this drifts from the registry, the picker and the
+    // board disagree.
+    expect(keys).toEqual([
+      'open',
+      'pulled',
+      'working',
+      'in_review',
+      'blocked',
+      'done',
+      'cancelled',
+    ]);
   });
 
   it('column words and tones come from panel.statusPill — in_review reads "in review"', () => {
     const { getAllByTestId } = renderBoard({ snapshot: snapshot() });
     const labels = getAllByTestId('board-column').map((col) => col.getAttribute('aria-label'));
     expect(labels).toContain('in review');
-    // The sink states its grammar, in the done pill's word.
-    expect(labels).toContain('done — drop to complete');
+    // The terminal column states its own word, not a sink's grammar.
+    expect(labels).toContain('done');
+    expect(labels.some((l) => (l ?? '').includes('drop to complete'))).toBe(false);
   });
 
   it('a group key the registry does not declare is APPENDED raw, never dropped', () => {
@@ -275,7 +291,7 @@ describe('§1.1 — the mode wiring', () => {
  *
  * The gap: `routes/q.ts` parsed `groupBy` including `axis:<name>` and
  * `useGateData` executed any grouped read, while `registry.ts` pinned
- * `workStatus` and nothing rendered a picker — the middle of the wire. The
+ * `status` and nothing rendered a picker — the middle of the wire. The
  * highest-risk half is drag: a drop on an axis board must write THE AXIS,
  * never a status the columns no longer show (W3/4).
  * ===========================================================================
@@ -392,11 +408,11 @@ describe('W3 — the axis board', () => {
     const onGroupBy = vi.fn();
     const { getByTestId } = renderAxisBoard({
       snapshot: snapshot(),
-      groupBy: 'workStatus',
+      groupBy: 'status',
       onGroupBy,
     });
     const picker = getByTestId('board-groupby') as HTMLSelectElement;
-    expect([...picker.options].map((o) => o.value)).toEqual(['workStatus', 'assignee', 'axis:type']);
+    expect([...picker.options].map((o) => o.value)).toEqual(['status', 'assignee', 'axis:type']);
     fireEvent.change(picker, { target: { value: 'axis:type' } });
     expect(onGroupBy).toHaveBeenCalledWith('axis:type');
   });
@@ -435,7 +451,7 @@ describe('W3 — the axis board', () => {
     const row = taskOf('open');
     const { getAllByTestId } = renderAxisBoard({
       snapshot: snapshot({ groups: groups(['open', [row]]) }),
-      groupBy: 'workStatus',
+      groupBy: 'status',
       onSetState: onSetState as never,
       onSetAxis,
     });
@@ -470,8 +486,8 @@ describe('W4 — the status board pre-flights workflow-forbidden drops', () => {
     statuses: ['open', 'working', 'in_review', 'done'],
   };
 
-  const typedTask = (workStatus: string, type: string): EntitySummary => {
-    const row = taskOf(workStatus);
+  const typedTask = (status: string, type: string): EntitySummary => {
+    const row = taskOf(status);
     return { ...row, state: { ...row.state, axes: { type } } as EntitySummary['state'] };
   };
 

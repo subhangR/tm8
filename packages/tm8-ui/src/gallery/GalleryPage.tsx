@@ -42,7 +42,7 @@ function statusTone(s: EntitySummary): PillTone {
   if (s.deletedAt) return 'idle';
   if (s.kind === 'task' && s.state.kind === 'task') {
     const m: Record<string, PillTone> = { open: 'idle', pulled: 'idle', working: 'run', in_review: 'info', done: 'run', blocked: 'block', cancelled: 'idle' };
-    return m[s.state.workStatus] ?? 'idle';
+    return m[s.state.status] ?? 'idle';
   }
   if (s.kind === 'work_session' && s.state.kind === 'work_session') {
     const m: Record<string, PillTone> = { spawning: 'wait', running: 'run', idle: 'idle', exited: 'idle', failed: 'block' };
@@ -53,7 +53,7 @@ function statusTone(s: EntitySummary): PillTone {
 
 function statusWord(s: EntitySummary): string {
   if (s.deletedAt) return 'deleted';
-  if (s.state.kind === 'task') return s.state.workStatus;
+  if (s.state.kind === 'task') return s.state.status;
   if (s.state.kind === 'work_session') return s.state.status;
   if (s.state.kind === 'pull_request') return s.state.stale ? 'stale' : s.state.state;
   return s.kind;

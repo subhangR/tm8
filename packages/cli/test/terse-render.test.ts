@@ -52,7 +52,7 @@ function taskSummary(overrides: Record<string, unknown> = {}): Record<string, un
     counters: COUNTERS,
     state: {
       kind: 'task',
-      workStatus: 'open',
+      status: 'open',
       priority: 'high',
       axes: {},
       dueDate: null,
@@ -77,7 +77,7 @@ describe('projectTerse — the shape, chosen once', () => {
   it('NEVER projects away version or state — the two load-bearing fields', () => {
     const terse = projectTerse(taskSummary()) as Record<string, unknown>;
     expect(terse['version']).toBe(7);
-    // state passes through VERBATIM: workStatus, acceptance counts, and the
+    // state passes through VERBATIM: status, acceptance counts, and the
     // ActorSummaries inside it (assignees are work data, not decoration).
     expect(terse['state']).toEqual(taskSummary()['state']);
   });
@@ -168,7 +168,7 @@ describe('the gate — opt-in at the render boundary', () => {
     expect(text).toContain('"projected": true');
     expect(text).not.toContain('"counters"');
     expect(text).toContain('"version": 7');
-    expect(text).toContain('"workStatus": "open"');
+    expect(text).toContain('"status": "open"');
   });
 
   it('terse applies to jsonl lines too — one boundary, no per-command drift', () => {

@@ -273,7 +273,7 @@ export function pageOf<T>(item: z.ZodType<T>): z.ZodType<Page<T>> {
 export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   z.object({
     kind: z.literal('task'),
-    workStatus: WorkStatusSchema,
+    status: WorkStatusSchema,
     priority: PrioritySchema,
     axes: z.record(z.string()),
     dueDate: z.string().nullable().optional(),
@@ -455,7 +455,7 @@ export const PullStateSchema: z.ZodType<PullState> = z.lazy(() => z.object({
   pinnedVersion: z.number().int(),
   contentStale: z.boolean(),
   discussionMoved: z.boolean(),
-  workStatus: z.string().nullable().optional(),
+  status: z.string().nullable().optional(),
   pulledAt: IsoTimestamp,
 }).strict());
 
@@ -794,14 +794,14 @@ export const EntityDetailSchema: z.ZodType<EntityDetail> = z.lazy(() => z.object
 // ---------------------------------------------------------------------------
 
 const GroupBySchema = z.union([
-  z.literal('workStatus'),
+  z.literal('status'),
   z.literal('assignee'),
   z.literal('priority'),
-  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "workStatus", "assignee", "priority" or "axis:<name>"'),
+  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "status", "assignee", "priority" or "axis:<name>"'),
 ]);
 
 const CollectionFiltersSchema = z.object({
-  workStatus: z.array(WorkStatusSchema).optional(),
+  status: z.array(WorkStatusSchema).optional(),
   axes: z.record(z.array(z.string())).optional(),
   assigneeIds: z.array(EntityIdSchema).optional(),
   priority: z.array(PrioritySchema).optional(),
@@ -823,7 +823,7 @@ const CollectionFiltersSchema = z.object({
   // 500s is indistinguishable at the client from a node that is down.
   activeSince: z.string().datetime({ offset: true }).optional(),
   // Kind-neutral lifecycle bucket. Deliberately NOT refined against
-  // `sessionStatus` the way `workStatus` and `priority` are: those two are
+  // `sessionStatus` the way `status` and `priority` are: those two are
   // task-only literals, so pairing them with a session filter is provably the
   // empty set. `category` is a question a work_session will answer in a later
   // phase, so the pair is a legitimate future query, and refusing it now would
@@ -836,10 +836,10 @@ const CollectionFiltersSchema = z.object({
   // ever return the always-empty set — the confident-zero a caller reads as
   // "nothing matched" when the truth is "nothing COULD match". The pair was
   // unauthorable before sessionStatus existed, so refusing it is additive.
-  if (f.workStatus && f.workStatus.length > 0 && f.sessionStatus && f.sessionStatus.length > 0) {
+  if (f.status && f.status.length > 0 && f.sessionStatus && f.sessionStatus.length > 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'workStatus and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
+      message: 'status and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
     });
   }
   // Same law for the priority axis: priority is task-only, so pairing it with
@@ -1729,7 +1729,7 @@ export const PatchTaskInputSchema: z.ZodType<PatchTaskInput> = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   axes: z.record(z.string()).optional(),
-  workStatus: WorkStatusSchema.optional(),
+  status: WorkStatusSchema.optional(),
   priority: PrioritySchema.optional(),
   acceptanceCriteria: z.array(AcceptanceCriterionSchema).optional(),
   pointsEstimate: z.number().nullable().optional(),

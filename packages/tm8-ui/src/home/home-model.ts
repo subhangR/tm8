@@ -25,7 +25,7 @@
  * WHAT IT DELIBERATELY DOES NOT DO: it does not send, or ask for, the contract's
  * `needsActorId` / `inFlightForActorId` preset filters. They are declared
  * (contract.ts §2.1) and the real seam passes filters through verbatim, but the
- * FIXTURE seam's `query()` matches only `workStatus`/`sessionStatus`/
+ * FIXTURE seam's `query()` matches only `status`/`sessionStatus`/
  * `assigneeIds`/`deleted` and IGNORES every other key silently — so a
  * `needsActorId` query returns the UNFILTERED set, and labelling that "NEEDS
  * YOU" would be a fabricated count on the loudest row of the screen. Home
@@ -73,7 +73,7 @@ export function assignableKinds(): KindConfig[] {
  * mapping table is exactly how a mapping drifts.
  */
 const STATUS_FIELD: Record<Exclude<StatusSource, 'none'>, string> = {
-  workStatus: 'workStatus',
+  status: 'status',
   sessionStatus: 'status',
   prState: 'state',
   profileStatus: 'status',

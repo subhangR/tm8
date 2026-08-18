@@ -130,17 +130,6 @@ export interface BoardPlan {
   columns: ColumnPlan[];
 }
 
-/**
- * The status-axis filter key a kind's state control narrows by — the same
- * pairing the server's `collections.ts` implements. Registry-driven: a kind
- * whose control names a source this table does not know simply has no exact
- * per-state read, and its workflow columns fall back honestly.
- */
-const STATE_SOURCE_FILTER: Readonly<Record<string, keyof QueryFilter>> = {
-  workStatus: 'workStatus',
-  status: 'sessionStatus',
-};
-
 /** Default-first within a category: `isDefault`, then lowest position — the
  * ruled tiebreak (contract `WorkflowState.isDefault`). */
 function defaultFirst(states: readonly WorkflowState[]): WorkflowState[] {
@@ -212,7 +201,12 @@ export function planFor(
   useWorkflow: boolean,
 ): BoardPlan {
   const control = kind.list.stateControl;
-  const sourceKey = control ? STATE_SOURCE_FILTER[control.source] : undefined;
+  /* The status-axis filter key this kind's states are exactly readable by —
+     REGISTRY DATA (`stateControl.filterKey`), not a table keyed on
+     `stateControl.source`. Phase 9 collapsed `source` to the single member
+     `status` for every kind, so the old table's two rows became one key twice
+     and a session's board would have asked for a task's filter. */
+  const sourceKey = control?.filterKey;
   const optionIds = new Set((control?.options ?? []).map((o) => o.id));
 
   if (useWorkflow && workflow) {

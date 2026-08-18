@@ -487,7 +487,7 @@ function fixtureLaunchRecord(sessionId: EntityId): SessionLaunchRecord {
           title: 'Wire the DEBUG surface',
           description: 'Show the spawn-time configuration, not just the command journal.',
           priority: 'high',
-          workStatus: 'in_progress',
+          status: 'in_progress',
           acceptanceCriteria: [],
         },
       ],
@@ -853,7 +853,7 @@ function seedAttentionRows(summaries: ReadonlyMap<EntityId, EntitySummary>): Att
 }
 
 /**
- * Migration 147/150's ruled workStatus → category mapping, mirrored so fixture
+ * Migration 147/150's ruled status → category mapping, mirrored so fixture
  * summaries carry the same denormalized `category` the node projects (the
  * server derives it in a trigger on every status write; `touch` is this
  * fixture's equivalent single seam). Every other kind honestly OMITS the key —
@@ -871,7 +871,7 @@ const WORK_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
 
 function stampCategory(s: EntitySummary): void {
   if (s.state.kind !== 'task') return;
-  const category = WORK_STATUS_CATEGORY[s.state.workStatus];
+  const category = WORK_STATUS_CATEGORY[s.state.status];
   if (category) s.category = category;
 }
 
@@ -1147,7 +1147,7 @@ export function createFixtureSeam(): FixtureSeam {
    */
   function requireWorkflowAllows(s: EntitySummary, status: string): void {
     if (s.state.kind !== 'task') return;
-    if (s.state.workStatus === status) return;
+    if (s.state.status === status) return;
     const typeValue = (s.state.axes ?? {})['type'];
     if (typeof typeValue !== 'string' || typeValue === '') return;
     const rule = taskWorkflows.find((w) => w.typeValue === typeValue);
@@ -1395,7 +1395,7 @@ export function createFixtureSeam(): FixtureSeam {
    */
   function groupsFor(rows: EntitySummary[], input: CollectionQuery): { groups?: CollectionGroup[] } {
     const groupBy = input.groupBy;
-    if (groupBy !== 'workStatus' && groupBy !== 'priority' && groupBy !== 'assignee') return {};
+    if (groupBy !== 'status' && groupBy !== 'priority' && groupBy !== 'assignee') return {};
     /**
      * The server's `groupItems` arms, mirrored (collections.ts): a
      * multi-assignee task appears in EVERY assignee column, no assignee is
@@ -1405,8 +1405,8 @@ export function createFixtureSeam(): FixtureSeam {
      * Unassigned) instead of vanishing from the groups it counts toward.
      */
     const keysOf = (row: EntitySummary): readonly (readonly [string, string])[] => {
-      if (groupBy === 'workStatus') {
-        const status = row.state.kind === 'task' ? row.state.workStatus : 'open';
+      if (groupBy === 'status') {
+        const status = row.state.kind === 'task' ? row.state.status : 'open';
         return [[status, GROUP_STATUS_LABELS[status] ?? status]];
       }
       if (groupBy === 'priority') {
@@ -1556,7 +1556,7 @@ export function createFixtureSeam(): FixtureSeam {
     switch (kind) {
       case 'task':
         return {
-          kind: 'task', workStatus: 'open', priority: 'medium', axes: {},
+          kind: 'task', status: 'open', priority: 'medium', axes: {},
           dueDate: null, assignees: [], acceptance: { total: 0, completed: 0 },
         };
       case 'channel':
@@ -1880,7 +1880,7 @@ export function createFixtureSeam(): FixtureSeam {
         /* Empty lists are NO constraint — the server guards every arm with
            `length > 0` (collections.ts), so `priority: []` must not read as
            "match nothing" here while the node reads it as "unfiltered". */
-        if (f?.workStatus?.length && !(s.state.kind === 'task' && f.workStatus.includes(s.state.workStatus))) return false;
+        if (f?.status?.length && !(s.state.kind === 'task' && f.status.includes(s.state.status))) return false;
         /* Phase 1's category predicate (PR #353): NULL never matches, so the
            filter's PRESENCE restricts to entities that have a status at all —
            `NULL = any(...)` server semantics, mirrored. */
@@ -2650,7 +2650,7 @@ export function createFixtureSeam(): FixtureSeam {
           ...(input.position !== undefined ? { position: input.position } : {}),
           excerpt: input.description,
           state: {
-            kind: 'task', workStatus: 'open', priority: input.priority ?? 'medium',
+            kind: 'task', status: 'open', priority: input.priority ?? 'medium',
             axes: input.axes ?? {}, dueDate: input.dueDate ?? null, assignees: [],
             acceptance: { total: criteria.length, completed: criteria.filter((c) => c.done).length },
           },
@@ -3108,9 +3108,9 @@ export function createFixtureSeam(): FixtureSeam {
         requireVersion(s, input.expectedVersion);
         // W4 — the 132 trigger mirror: a status write outside the row's type
         // vocabulary refuses here exactly as `public.tasks`'s trigger does.
-        if (input.workStatus !== undefined) requireWorkflowAllows(s, input.workStatus);
+        if (input.status !== undefined) requireWorkflowAllows(s, input.status);
         if (input.title !== undefined) s.title = input.title;
-        if (input.workStatus !== undefined) s.state.workStatus = input.workStatus;
+        if (input.status !== undefined) s.state.status = input.status;
         if (input.priority !== undefined) s.state.priority = input.priority;
         if (input.axes !== undefined) s.state.axes = input.axes;
         if (input.dueDate !== undefined) s.state.dueDate = input.dueDate;
@@ -3199,7 +3199,7 @@ export function createFixtureSeam(): FixtureSeam {
         const s = requireSummary(id);
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
         requireVersion(s, input.expectedVersion);
-        s.state.workStatus = 'done';
+        s.state.status = 'done';
         s.state.acceptance = { ...s.state.acceptance, completed: s.state.acceptance.total };
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
@@ -3211,7 +3211,7 @@ export function createFixtureSeam(): FixtureSeam {
         // W4 — the 132 trigger mirror. `complete` next door is deliberately
         // unguarded: `done` is structural, so no vocabulary can exclude it.
         requireWorkflowAllows(s, input.status);
-        s.state.workStatus = input.status;
+        s.state.status = input.status;
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
@@ -3625,7 +3625,7 @@ export function createFixtureSeam(): FixtureSeam {
               spaceId: subject.spaceId,
               parentId: subject.id,
               state: {
-                kind: 'task', workStatus: 'open', priority: 'medium', axes: {},
+                kind: 'task', status: 'open', priority: 'medium', axes: {},
                 dueDate: null, assignees: [], acceptance: { total: 0, completed: 0 },
               },
             });
@@ -4149,16 +4149,16 @@ export function createFixtureSeam(): FixtureSeam {
       },
       /**
        * THE R-UI-5 predicate — the only place liveness truth is computed:
-       *   workStatus !== 'running'  → 'not-running'
+       *   status !== 'running'  → 'not-running'
        *   no snapshot for the space → 'unknown' (rendered neutral, NEVER live)
        *   id ∈ liveEntityIds        → 'live'
        *   otherwise                 → 'stale'
        * NOTE (flagged to bridge, not fixed here — seam.ts is locked): the seam
-       * types `workStatus` with the task `WorkStatus` vocabulary, which cannot
+       * types `status` with the task `WorkStatus` vocabulary, which cannot
        * express the work_session `'running'` literal; the comparison widens.
        */
       statusOf(session): SessionLiveness {
-        if ((session.workStatus as string | null) !== 'running') return 'not-running';
+        if ((session.status as string | null) !== 'running') return 'not-running';
         const s = summaries.get(session.id);
         const snap = s ? livenessBySpace.get(s.spaceId) : undefined;
         if (!snap) return 'unknown';

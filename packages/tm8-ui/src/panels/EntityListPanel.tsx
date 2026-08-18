@@ -17,7 +17,7 @@ import type {
   KindConfig,
   LaunchCapacity,
   LaunchProjectOption,
-  LifecycleTier,
+  StatusCategoryTab,
   ListPageState,
   ListRowFacts,
   LiveTreatment,
@@ -248,7 +248,7 @@ export interface EntityListPanelProps {
    * W3 — the board's GROUPING choice, wired exactly like `mode`: the route
    * holds it (`q.groupBy`), the shell passes the pair down, and local state
    * remains the uncontrolled fallback seeded from the registry's
-   * `board.groupBy` default. The choice is among `workStatus`, `assignee`,
+   * `board.groupBy` default. The choice is among `status`, `assignee`,
    * and `axis:<name>` for each axis the space defines (`taskAxes`).
    */
   groupBy?: GroupByKey;
@@ -458,7 +458,31 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const config = getKind(props.kind);
   const list = config.list;
 
-  const [tierId, setTierId] = useState<string | null>(list.lifecycle?.[0]?.id ?? null);
+  /**
+   * The open category tab, RESOLVED PER KIND rather than remembered across a
+   * kind change.
+   *
+   * THE BUG THIS FIXES (sub-doc 6, "known bug to fix while in here"): the id
+   * was seeded once from the mounting kind's first tab and `onKindChange`
+   * swapped `props.kind` UNDER IT. The old tab ids overlapped between kinds —
+   * every kind had `open`, `done`, `archived` — so the stale id kept resolving
+   * to *a* tab and the panel degraded silently instead of breaking loudly.
+   * Under the closed four every kind's ids overlap ALWAYS, so the resolution
+   * can never fail and the silence would be permanent.
+   *
+   * Held as a nullable OVERRIDE that the kind resets, not as the value itself:
+   * `null` means "whatever this kind opens on", which is the first tab. A
+   * `useEffect` reset would paint the wrong tab for one frame first.
+   */
+  const [categoryTabOverride, setCategoryTabOverride] = useState<string | null>(null);
+  const [tabbedKind, setTabbedKind] = useState<string>(props.kind);
+  if (tabbedKind !== props.kind) {
+    setTabbedKind(props.kind);
+    setCategoryTabOverride(null);
+  }
+  const categoryTabId =
+    (tabbedKind === props.kind ? categoryTabOverride : null) ?? list.categories?.[0]?.id ?? null;
+  const setCategoryTabId = setCategoryTabOverride;
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     () => new Set((list.sections ?? []).filter((s) => s.collapsedByDefault).map((s) => s.id)),
   );
@@ -481,10 +505,26 @@ export function EntityListPanel(props: EntityListPanelProps) {
      passes the pair, local fallback otherwise, seeded from the registry
      DEFAULT (`board.groupBy` stays the seed, no longer the pin). */
   const [localGroupBy, setLocalGroupBy] = useState<GroupByKey | null>(null);
-  const groupBy = props.groupBy ?? localGroupBy ?? list.board?.groupBy ?? 'workStatus';
+  const groupBy = props.groupBy ?? localGroupBy ?? list.board?.groupBy ?? 'status';
   const setGroupBy = props.onGroupBy ?? setLocalGroupBy;
 
-  const activeTier = list.lifecycle?.find((t) => t.id === tierId) ?? null;
+  /**
+   * The open tab — AND `null` IN BOARD MODE, deliberately.
+   *
+   * A board's COLUMNS are a partition of the status axis. So is the tab row.
+   * Two controls for one axis is the defect that made the retired `Current` /
+   * `Completed` sections wrong, and on a board it is worse than cosmetic: with
+   * the tabs applied, the To Do board holds only the to_do columns, so
+   * DRAGGING A CARD FROM To Do TO In Progress — the single most-performed
+   * kanban gesture — has no target to land on.
+   *
+   * It was survivable while the tabs were `Open · Done · Archived`, because
+   * `open` spanned five statuses and the board's whole in-flight vocabulary
+   * fitted inside one tab. The closed four split that tab in half, and the
+   * gesture with it. The board owns the axis while it is on screen; `CategoryTabs`
+   * is not rendered, so nothing draws a control that is not in effect.
+   */
+  const activeTab = mode === 'board' ? null : (list.categories?.find((t) => t.id === categoryTabId) ?? null);
   const members = props.members ?? EMPTY_MEMBERS;
 
   /**
@@ -525,17 +565,20 @@ export function EntityListPanel(props: EntityListPanelProps) {
   }, [members]);
 
   /**
-   * Every tier's count, computed ONCE per render and shared by the three
+   * Every tab's count, computed ONCE per render and shared by the three
    * surfaces that show it (tabs, footer, selector total). They were three
    * calls to the same function; with paging state joined in it is now enough
    * work to be worth not tripling, and sharing also makes it structurally
    * impossible for the tab and the footer to disagree.
    */
-  const tierCounts = (list.lifecycle ?? []).map((tier) => ({
-    tier,
-    ...tierCount(props, config, tier),
+  const tabCounts = (list.categories ?? []).map((tab) => ({
+    tab,
+    ...tabCount(props, config, tab),
   }));
-  const anyTierTruncated = tierCounts.some((c) => c.label.endsWith('+'));
+  /* The selector total's `+` — carried only when a tab's number is still the
+     loaded length rather than the server's. Once every tab reports an exact
+     total the sum IS exact, and the hedge disappears on its own. */
+  const anyTabTruncated = tabCounts.some((c) => !c.exact && c.label.endsWith('+'));
 
   return (
     <section
@@ -552,8 +595,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
         <KindSelector
           config={config}
           total={
-            list.lifecycle
-              ? `${tierCounts.reduce((n, c) => n + c.n, 0)}${anyTierTruncated ? '+' : ''}`
+            list.categories
+              ? `${tabCounts.reduce((n, c) => n + c.n, 0)}${anyTabTruncated ? '+' : ''}`
               : undefined
           }
           liveCount={liveCountFor(props, config)}
@@ -579,14 +622,18 @@ export function EntityListPanel(props: EntityListPanelProps) {
         inputRef={props.searchInputRef}
       />
 
-      <TierTabs
-        tiers={list.lifecycle}
-        activeTierId={tierId}
-        onTier={setTierId}
-        tierLabel={(tier: LifecycleTier) =>
-          tierCounts.find((c) => c.tier.id === tier.id)?.label ?? '0'
-        }
-      />
+      {/* Hidden in board mode — the columns ARE this partition. See
+          `activeTab`. */}
+      {mode === 'board' ? null : (
+        <CategoryTabs
+          tabs={list.categories}
+          activeTabId={categoryTabId}
+          onTab={setCategoryTabId}
+          tabLabel={(tab: StatusCategoryTab) =>
+            tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
+          }
+        />
+      )}
 
       <FilterRow
         config={config}
@@ -606,12 +653,11 @@ export function EntityListPanel(props: EntityListPanelProps) {
         sortKey={sortKey}
         onSort={setSortKey}
         viewerActorId={props.ctx.viewerActorId}
-        tiers={list.lifecycle}
-        activeTierId={tierId}
-        onTier={setTierId}
-        tierLabel={(tier: LifecycleTier) =>
-          tierCounts.find((c) => c.tier.id === tier.id)?.label ?? '0'
-        }
+        /* THE FOUR TAB PROPS ARE GONE (sub-doc 6, "dead wiring"). `FilterRow`
+           was handed `tabs` / `activeTabId` / `onTab` / `tabLabel` and never
+           read one of them — the tab row is `CategoryTabs`, a separate
+           component one element up, and has been since tabs got their own
+           row. Four props that compute a count nobody renders. */
         compact={props.compact}
         people={members.length > 1 ? members : []}
         selectedPeople={selectedPeople}
@@ -643,14 +689,14 @@ export function EntityListPanel(props: EntityListPanelProps) {
           <BoardBody
             props={props}
             config={config}
-            tier={activeTier}
-            onTier={setTierId}
+            tab={activeTab}
+            onTab={setCategoryTabId}
             groupBy={groupBy}
             onGroupBy={setGroupBy}
             filter={
               bandFilter(
-                activeTier?.filter ?? {},
-                activeTier,
+                activeTab?.filter ?? {},
+                activeTab,
                 selected,
                 config,
                 props.ctx,
@@ -661,19 +707,19 @@ export function EntityListPanel(props: EntityListPanelProps) {
             query={query}
           />
         ) : list.sections && list.sections.length > 0 ? (
-          /* A section the active tier excludes outright renders NO heading.
+          /* A section the active tab excludes outright renders NO heading.
              Its rows would be empty by construction, and an empty band under
-             "COMPLETED · 0" inside the Open tier states something false about
-             the tier rather than about the data. */
+             "COMPLETED · 0" inside the Open tab states something false about
+             the tab rather than about the data. */
           list.sections
-            .filter((section) => narrow(section.filter, activeTier?.filter) !== null)
+            .filter((section) => narrow(section.filter, activeTab?.filter) !== null)
             .map((section) => (
             <Band
               key={section.id}
               label={section.label}
               filter={bandFilter(
                 section.filter,
-                activeTier,
+                activeTab,
                 selected,
                 config,
                 props.ctx,
@@ -699,8 +745,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
           <Band
             label={null}
             filter={bandFilter(
-              activeTier?.filter ?? {},
-              activeTier,
+              activeTab?.filter ?? {},
+              activeTab,
               selected,
               config,
               props.ctx,
@@ -715,12 +761,17 @@ export function EntityListPanel(props: EntityListPanelProps) {
         )}
       </div>
 
-      {/* T0-1 draws a footer count line on every kind: "9 open · 601 done ·
-          33 archived". Same per-tier counts as the tabs above — one source,
-          three surfaces (tabs, footer, selector total). */}
-      {tierCounts.length > 0 ? (
+      {/* T0-1 draws a footer count line on every kind: "9 to do · 4 in
+          progress · 601 done · 12 cancelled". Same per-tab counts as the tabs
+          above — one source, three surfaces (tabs, footer, selector total).
+
+          The tab's LABEL, lowercased — not its `id`. The ids are the
+          contract's `StatusCategory` literals, so printing them would put
+          `to_do` and `in_progress` in front of a user; the label is the word
+          the tab above already shows them. */}
+      {tabCounts.length > 0 ? (
         <div className="lp__foot" data-testid="list-footer">
-          {tierCounts.map((c) => `${c.label} ${c.tier.id}`).join(' · ')}
+          {tabCounts.map((c) => `${c.label} ${c.tab.label.toLowerCase()}`).join(' · ')}
         </div>
       ) : null}
     </section>
@@ -732,42 +783,33 @@ export function EntityListPanel(props: EntityListPanelProps) {
 // ---------------------------------------------------------------------------
 
 /**
- * D14 — the lifecycle-tab partition is applied CLIENT-SIDE, deliberately.
- *
- * `CollectionQuery` has no member that filters work_sessions by
- * `WorkSessionStatus` (its `filters.workStatus` is the TASK vocabulary), so
- * rather than invent a contract shape the registry declares `statuses` and
- * the panel partitions rows the seam already delivered. Read STRUCTURALLY —
- * "does this row's state carry a `status`?" — never by kind, so this stays
- * inside the no-branching law. When the contract gains the member, the
- * partition retires and no call site changes.
- */
-/**
  * THE THREE AXES MUST NARROW, NOT OVERWRITE.
  *
- * A visible list is the intersection of three independently-chosen
- * constraints: the SECTION band, the lifecycle TIER, and the filter CHIPS.
- * This used to be `{...section, ...tier, ...chips}`, and object spread is the
- * wrong operator for every one of them:
+ * A visible list is the intersection of independently-chosen constraints: the
+ * SECTION band (no kind declares one today), the CATEGORY TAB, and the filter
+ * CHIPS. This used to be `{...section, ...tab, ...chips}`, and object spread
+ * is the wrong operator for every one of them:
  *
- *   - ARRAYS. `{workStatus:['open','pulled','working']}` spread under
- *     `{workStatus:['done']}` yields `['done']` — the Open tab showing done
+ *   - ARRAYS. `{status:['open','pulled','working']}` spread under
+ *     `{status:['done']}` yields `['done']` — the Open tab showing done
  *     rows. Two lists of allowed values compose by INTERSECTION; each one
  *     says "only these", and both are still true.
- *     Concretely: on the Open tier the band headed "Completed" was queried
+ *     Concretely: on the Open tab the band headed "Completed" was queried
  *     with the OPEN statuses, so it rendered open tasks under a "Completed"
  *     heading and was an exact duplicate of the "Current" band above it. A
  *     user who marked a task done watched it stay put in a band labelled
  *     Completed, which reads as "done did not work".
  *   - SCALARS take the LATER value, because a scalar has no intersection.
- *     Argument order is therefore load-bearing: section, then tier, then
- *     chips. `deleted` is the case that matters — it is the outer lifecycle
- *     scope, and a section's `deleted:'exclude'` restates the common case
- *     rather than constraining anything, so THE TIER WINS. Reading that pair
- *     as a contradiction does not reveal a bug, it empties the Archived tier
- *     ('only') against every section ('exclude') — the one tier whose
- *     partition already worked.
- *   - EMPTY. An empty intersection is not `[]`. `workStatus: []` means NO
+ *     Argument order is therefore load-bearing: section, then tab, then
+ *     chips. `deleted` is the case that matters, and PHASE 7 SHARPENED IT.
+ *     Every category tab now carries `deleted:'exclude'` and the ARCHIVE CHIP
+ *     carries `'only'` or `'include'` — chips apply LAST, so the chip wins and
+ *     "archived AND in progress" is askable. Reading that pair as a
+ *     contradiction instead would empty the archive against every tab, which
+ *     is exactly the failure the old Archived TAB had against every section.
+ *     Archived is orthogonal to status; the composition rule is what makes it
+ *     expressible as a filter rather than as a partition member.
+ *   - EMPTY. An empty intersection is not `[]`. `status: []` means NO
  *     CONSTRAINT — client-side and server-side both — so emitting it would
  *     turn "nothing can satisfy this" into "show me everything", which is the
  *     loudest possible wrong answer.
@@ -778,9 +820,17 @@ export function EntityListPanel(props: EntityListPanelProps) {
  * unsatisfiable wastes a round trip and gets back a `[]` indistinguishable
  * from a genuinely empty collection.
  *
- * This subsumes `scopeToTier`, which composed the section/tier pair under
+ * This subsumes `scopeToTier`, which composed the section/tab pair under
  * exactly these rules. Two functions for one law is one too many, and the
- * chips need the same treatment the tier got.
+ * chips need the same treatment the tab got.
+ *
+ * ONE CROSS-KEY RELATIONSHIP IS DECLARED RATHER THAN KNOWN HERE: a status
+ * chip carries its own `category` beside its `status` (`registry.statusFilter`),
+ * so picking `Done` on the To Do tab is an EMPTY ARRAY INTERSECTION under the
+ * rule above and gets the stated refusal. Without that second member the tab
+ * and the chip would be different keys, the merge would succeed, and the
+ * server would answer honestly with nothing — an unexplained empty list, which
+ * is what this function exists to prevent.
  */
 export function narrow(...parts: readonly (QueryFilter | undefined | null)[]): QueryFilter | null {
   const out: Record<string, unknown> = {};
@@ -809,8 +859,8 @@ export function narrow(...parts: readonly (QueryFilter | undefined | null)[]): Q
 /**
  * D20 RETIRED (D56). The client-side status partition that used to run here is
  * DELETED, not translated: the contract gained
- * `CollectionQuery.filters.sessionStatus`, so the tier's own `filter` is an
- * ordinary filter the SEAM executes, exactly like the task tiers beside it.
+ * `CollectionQuery.filters.sessionStatus`, so the tab's own `filter` is an
+ * ordinary filter the SEAM executes, exactly like the task tabs beside it.
  *
  * Deliberately not re-implemented against `filter.sessionStatus` — that would
  * put server-side filtering on the client as well, and the two would disagree
@@ -818,7 +868,7 @@ export function narrow(...parts: readonly (QueryFilter | undefined | null)[]): Q
  */
 function bandFilter(
   filter: QueryFilter,
-  tier: LifecycleTier | null,
+  tab: StatusCategoryTab | null,
   selected: Readonly<Record<string, readonly string[]>>,
   config: KindConfig,
   ctx: ActionContext,
@@ -830,7 +880,7 @@ function bandFilter(
 ): QueryFilter | null {
   return narrow(
     filter,
-    tier?.filter,
+    tab?.filter,
     mergeSelectedFilters(config, selected, ctx),
     /* `createdByIds` IS NOT A MEMBER OF `CollectionQuery.filters` — it belongs
        to `EntityConnectionsQuery`. This is carried through unchanged because
@@ -851,7 +901,7 @@ const NO_ROWS: readonly EntitySummary[] = Object.freeze([]);
 function rowsForBand(
   props: EntityListPanelProps,
   filter: QueryFilter,
-  tier: LifecycleTier | null,
+  tab: StatusCategoryTab | null,
   selected: Readonly<Record<string, readonly string[]>>,
   config: KindConfig,
   selectedPeople: readonly string[] = [],
@@ -860,49 +910,61 @@ function rowsForBand(
   /**
    * D20 RETIRED (D56). The client-side status partition that used to run here
    * is DELETED, not translated: the contract gained
-   * `CollectionQuery.filters.sessionStatus`, so the tier's own `filter` is an
-   * ordinary filter the SEAM executes, exactly like the task tiers beside it.
+   * `CollectionQuery.filters.sessionStatus`, so the tab's own `filter` is an
+   * ordinary filter the SEAM executes, exactly like the task tabs beside it.
    *
    * Deliberately not re-implemented against `filter.sessionStatus` — that
    * would put server-side filtering on the client as well, and the two would
    * disagree the moment a status is added. One filter, executed once, at the
    * seam.
    */
-  const merged = bandFilter(filter, tier, selected, config, props.ctx, selectedPeople);
-  // Disjoint band: the section asks for statuses this tier excludes, so it can
+  const merged = bandFilter(filter, tab, selected, config, props.ctx, selectedPeople);
+  // Disjoint band: the section asks for statuses this tab excludes, so it can
   // hold nothing. Its caller skips the heading entirely — see `sectionsFor`.
   return merged === null ? NO_ROWS : props.rowsFor(merged, sort);
 }
 
 /**
- * A tier's count is its OWN query's result size — the same source the tab
- * label, the footer line and the kind-selector total all read. A count FIELD
- * would be a second source that could disagree with the query it claims to
- * summarise (A1a's design note, and it is the right one).
+ * A tab's count is its OWN query's answer — the same source the tab label, the
+ * footer line and the kind-selector total all read. A count FIELD on the
+ * registry would be a second source, free to disagree with the query it claims
+ * to summarise (A1a's design note, and it is the right one).
  *
- * COUNTED UNDER NO SORT, DELIBERATELY. A count is order-independent, and the
- * read key includes the sort — so counting under the active sort would fire a
- * fresh query per tier every time the user changes the order, to learn a
- * number that cannot have changed.
+ * PHASE 7 — THE NUMBER IS NOW A SERVER AGGREGATE. It used to be
+ * `rowsFor(filter).length`: the LOADED rows, which stop at the page the server
+ * served, so a 601-row Done tab read `50` and the honest `countLabel` hedge
+ * turned that into `50+`. One source is what stopped the three surfaces
+ * DISAGREEING; it never stopped them being wrong TOGETHER, which is the worse
+ * failure because it looks like a working feature.
  *
- * `more` is the honesty half. The count is `rows.length`, and rows stop at the
- * page the server served, so a saturated first page makes 601 read as 50. The
- * caller renders `50+` while the server still holds a cursor.
+ * `page.total` is a `CollectionResult` member the facade now populates for
+ * every collection read — a `count(*)` over the same WHERE, cursor excluded.
+ * `entities.status_category` is indexed (migration 147) and every tab's filter
+ * is exactly that predicate, so the four counts are four index aggregates.
  *
- * Phase 5 (migration 152) removed the `unsupported` short-circuit that used to
- * stand here: every kind has a workflow and every entity a status, so every
- * tier of every kind is now a query that can return rows. A zero here is a
- * COUNTED zero rather than a declared one.
+ * `n` FALLS BACK to the loaded length when the server volunteered no total —
+ * a rolling node that predates the aggregate — and `countLabel` still renders
+ * the `+`. Absence stays "we do not know", never a fabricated exact number.
+ *
+ * COUNTED UNDER NO SORT, DELIBERATELY. A count is order-independent and the
+ * read key includes the sort, so counting under the active sort would fire a
+ * fresh query per tab every time the user reorders, to learn a number that
+ * cannot have changed.
  */
-function tierCount(
+function tabCount(
   props: EntityListPanelProps,
   config: KindConfig,
-  tier: LifecycleTier,
-): { n: number; label: string } {
-  const merged = bandFilter(tier.filter, tier, {}, config, props.ctx);
-  if (merged === null) return { n: 0, label: '0' };
-  const n = props.rowsFor(merged).length;
-  return { n, label: countLabel(n, props.pageStateOf?.(merged)) };
+  tab: StatusCategoryTab,
+): { n: number; label: string; exact: boolean } {
+  const merged = bandFilter(tab.filter, tab, {}, config, props.ctx);
+  if (merged === null) return { n: 0, label: '0', exact: true };
+  const page = props.pageStateOf?.(merged);
+  const loaded = props.rowsFor(merged).length;
+  return {
+    n: page?.total ?? loaded,
+    label: countLabel(loaded, page),
+    exact: page?.total !== undefined,
+  };
 }
 
 /**
@@ -965,11 +1027,11 @@ function KindSelector({
 }: {
   config: KindConfig;
   /**
-   * Sum of the lifecycle tiers — T0-1 draws it beside the kind name.
+   * Sum of the lifecycle tabs — T0-1 draws it beside the kind name.
    *
-   * A STRING, because the honest value may be `601+`. Summing three tier
+   * A STRING, because the honest value may be `601+`. Summing three tab
    * counts each capped at a page produced `150` for a 700-row space and said
-   * it with a number's confidence; carrying the `+` up from whichever tier is
+   * it with a number's confidence; carrying the `+` up from whichever tab is
    * truncated keeps the total as honest as its worst input.
    */
   total?: string;
@@ -1342,36 +1404,36 @@ function SearchRow({
 
 /**
  * THE LIFECYCLE TIER TABS — Open / Done / Archived, universal across
- * collection kinds (D41, user-ratified). Their own row: a tier is the
+ * collection kinds (D41, user-ratified). Their own row: a tab is the
  * lifecycle band you are looking at, and the filter chips below narrow WITHIN
- * it. T0-1 draws both, and the count on each tab comes from that tier's own
+ * it. T0-1 draws both, and the count on each tab comes from that tab's own
  * query — the same source as the footer line and the kind-selector total.
  */
-function TierTabs({
-  tiers,
-  activeTierId,
-  onTier,
-  tierLabel,
+function CategoryTabs({
+  tabs,
+  activeTabId,
+  onTab,
+  tabLabel,
 }: {
-  tiers?: readonly LifecycleTier[];
-  activeTierId: string | null;
-  onTier: (id: string) => void;
+  tabs?: readonly StatusCategoryTab[];
+  activeTabId: string | null;
+  onTab: (id: string) => void;
   /** Already rendered — `50+` when the page is saturated, `50` when it is all. */
-  tierLabel: (tier: LifecycleTier) => string;
+  tabLabel: (tab: StatusCategoryTab) => string;
 }) {
-  if (!tiers || tiers.length === 0) return null;
+  if (!tabs || tabs.length === 0) return null;
   return (
     <div className="lp__tierrow" role="tablist" aria-label="Lifecycle">
-      {tiers.map((tier) => (
+      {tabs.map((tab) => (
         <button
-          key={tier.id}
+          key={tab.id}
           type="button"
           role="tab"
-          aria-selected={tier.id === activeTierId}
-          className={tier.id === activeTierId ? 'lp__tab lp__tab--active' : 'lp__tab'}
-          onClick={() => onTier(tier.id)}
+          aria-selected={tab.id === activeTabId}
+          className={tab.id === activeTabId ? 'lp__tab lp__tab--active' : 'lp__tab'}
+          onClick={() => onTab(tab.id)}
         >
-          {`${tier.label} ${tierLabel(tier)}`}
+          {`${tab.label} ${tabLabel(tab)}`}
         </button>
       ))}
     </div>
@@ -1384,10 +1446,6 @@ function FilterRow({
   onToggleOption,
   sortKey,
   onSort,
-  tiers,
-  activeTierId,
-  onTier,
-  tierLabel,
   compact,
   people,
   selectedPeople,
@@ -1403,11 +1461,6 @@ function FilterRow({
   onToggleOption: (specId: string, optionId: string, multi: boolean) => void;
   sortKey: SortKey | undefined;
   onSort: (key: SortKey) => void;
-  tiers?: readonly LifecycleTier[];
-  activeTierId: string | null;
-  onTier: (id: string) => void;
-  /** Each tier's own query size — the one source the tabs, footer and total share. */
-  tierLabel: (tier: LifecycleTier) => string;
   compact?: boolean;
   people: readonly ActorSummary[];
   selectedPeople: readonly string[];
@@ -1441,10 +1494,10 @@ function FilterRow({
     <div className="lp__filterbar" ref={barRef}>
     <div className="lp__filters">
       {/* Filter chips and the picker trigger. The lifecycle TABS are a
-          separate row above (TierTabs): tabs are a lifecycle TIER and filters
+          separate row above (CategoryTabs): tabs are a lifecycle TIER and filters
           narrow WITHIN it, so they coexist — T0-1 draws both. They were an
           either/or here only while work_session was the one kind with tabs,
-          and making tiers universal exposed that shortcut by deleting the
+          and making tabs universal exposed that shortcut by deleting the
           filter chips from every kind at once. */}
       {active.map(({ spec, option }) => (
         <button
@@ -1689,7 +1742,7 @@ function FilterRow({
 
 /**
  * Merge every selected option's contract-shaped filter. Array members UNION
- * (several `status` options combine into one `workStatus` list) rather than
+ * (several `status` options combine into one `status` list) rather than
  * overwrite, which is what `multi` means in the data.
  *
  * UNION HERE, INTERSECTION IN `narrow`, AND BOTH ARE RIGHT. Two options of the
@@ -1759,18 +1812,30 @@ interface BoardColumnSpec {
    * columns say something else (W3/4).
    */
   axisValue?: string | null;
-  /** The §1.3 Done sink — a drop target, never a fetched column. */
-  sink: boolean;
+  /**
+   * THE §1.3 DONE SINK IS RETIRED (phase 7). It was a synthetic drop target
+   * for the option routed `via:'complete'`, and it existed for exactly one
+   * reason: the Open TIER excluded `done`, so the board had no terminal column
+   * and the single most-performed kanban action was impossible. The board no
+   * longer runs under a category tab at all — its columns ARE that partition
+   * — so `done` is an ordinary fetched column with real rows, and a synthetic
+   * one beside it would be a second Done that only ever holds the cards you
+   * completed in this browser tab.
+   *
+   * The field stays so the three column builders keep one shape; it is `false`
+   * everywhere and there is no branch left that sets it.
+   */
+  sink: false;
 }
 
 /**
- * Column MEMBERSHIP and ORDER = stateControl.options ∩ the active tier's
- * workStatus filter; words/tones from panel.statusPill. One source — the
- * picker, the pill and the column cannot drift (§1.3).
+ * Column MEMBERSHIP and ORDER = stateControl.options ∩ the active CATEGORY
+ * TAB; words/tones from panel.statusPill. One source — the picker, the pill
+ * and the column cannot drift (§1.3).
  */
 function boardColumns(
   config: KindConfig,
-  tier: LifecycleTier | null,
+  tab: StatusCategoryTab | null,
   groups: readonly CollectionGroup[],
 ): BoardColumnSpec[] {
   const stateControl = config.list.stateControl;
@@ -1786,30 +1851,16 @@ function boardColumns(
     return groups.map((g) => ({ key: g.key, label: g.label, tone: 'idle', option: null, sink: false }));
   }
 
-  const tierStatuses = tier?.filter.workStatus as readonly string[] | undefined;
+  /* PHASE 7 — the intersection runs on the CATEGORY, both sides declared.
+     It used to read the tab's own `filter.status` array, which worked only
+     while a tab spelled its band as task status literals; the four category
+     tabs spell it as `{ category: [...] }`, and every kind's options now carry
+     their own `category` (registry data). An option with no category is not
+     filtered out — an unbucketable state shows on every tab rather than
+     vanishing from all four. */
   const columns: BoardColumnSpec[] = stateControl.options
-    .filter((o) => !tierStatuses || tierStatuses.includes(o.id))
+    .filter((o) => tab === null || o.category === undefined || o.category === tab.id)
     .map((o) => ({ key: o.id, label: labelOf(o.id), tone: toneOf(o.id), option: o, sink: false }));
-
-  // §1.3 — the Done sink. The tier rule alone would leave the Open board with
-  // no terminal column, making the single most-performed Kanban action
-  // impossible. Derived from DATA: the option routed `via:'complete'` that the
-  // active tier excludes. `cancelled` gets no sink — a rare deliberate act
-  // that stays in the state picker.
-  if (tier?.id === 'open') {
-    const sinkOption = stateControl.options.find(
-      (o) => o.via === 'complete' && !columns.some((c) => c.key === o.id),
-    );
-    if (sinkOption) {
-      columns.push({
-        key: sinkOption.id,
-        label: `${labelOf(sinkOption.id)} — drop to complete`,
-        tone: toneOf(sinkOption.id),
-        option: sinkOption,
-        sink: true,
-      });
-    }
-  }
 
   // A group key the registry does not declare renders APPENDED with the raw
   // key and neutral tone — never dropped (§1.3).
@@ -1846,7 +1897,7 @@ function axisBoardColumns(
       tone: 'idle' as PillTone,
       option: null,
       axisValue: value,
-      sink: false,
+      sink: false as const,
     })),
   ];
   for (const group of groups) {
@@ -1881,8 +1932,8 @@ function assigneeBoardColumns(groups: readonly CollectionGroup[]): BoardColumnSp
 function BoardBody({
   props,
   config,
-  tier,
-  onTier,
+  tab,
+  onTab,
   groupBy,
   onGroupBy,
   filter,
@@ -1890,8 +1941,8 @@ function BoardBody({
 }: {
   props: EntityListPanelProps;
   config: KindConfig;
-  tier: LifecycleTier | null;
-  onTier: (tierId: string) => void;
+  tab: StatusCategoryTab | null;
+  onTab: (categoryTabId: string) => void;
   groupBy: GroupByKey;
   onGroupBy: (groupBy: GroupByKey) => void;
   filter: QueryFilter;
@@ -1903,8 +1954,6 @@ function BoardBody({
       for the status/assignee dimensions. */
   const axisName = groupBy.startsWith('axis:') ? groupBy.slice('axis:'.length) : null;
   const axis = axisName === null ? null : (props.taskAxes ?? []).find((a) => a.name === axisName) ?? null;
-  /** Cards completed via the sink THIS view session — its only body (§1.3). */
-  const [completedHere, setCompletedHere] = useState<readonly EntitySummary[]>([]);
   /** The §1.5 inline refusal: rendered at the refusing column's header. */
   const [refusal, setRefusal] = useState<{ column: string; reason: string } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -1913,9 +1962,18 @@ function BoardBody({
   /** §8.1 roving focus: column index + card index within it. */
   const [focus, setFocus] = useState<{ col: number; row: number }>({ col: 0, row: 0 });
 
-  // Archived tier: board disabled with reason — archived rows have no
-  // workflow. Same honesty kit as every other foreseeable refusal (§8.5).
-  if (tier?.id === 'archived') {
+  // ARCHIVED: board disabled with reason — an archived row is not moving
+  // through a workflow, whatever status it kept. Same honesty kit as every
+  // other foreseeable refusal (§8.5).
+  //
+  // PHASE 7: keyed on the RESOLVED FILTER, not on a tab id. Archived stopped
+  // being a tab and became a filter chip that composes with any category, so
+  // "am I looking at the archive" is a question only the merged filter can
+  // answer now — `deleted: 'only'` is the one value that means every row on
+  // screen is archived. `'include'` deliberately does NOT disable the board:
+  // that view is mostly live rows, and refusing it would refuse the majority
+  // to protect the minority.
+  if (filter.deleted === 'only') {
     return (
       <div className="lp__board lp__board--off" data-testid="board-disabled">
         <DisabledAction
@@ -1931,7 +1989,7 @@ function BoardBody({
   const snapshot = props.boardFor?.(filter, groupBy);
 
   /**
-   * The GROUP-BY PICKER (W3, D2 made true): `workStatus`, `assignee`, and one
+   * The GROUP-BY PICKER (W3, D2 made true): `status`, `assignee`, and one
    * `axis:<name>` per axis the SPACE defines — per-space data, not registry
    * config, exactly like the W1 pickers. Rendered on every board state
    * (loading, error, even an unresolvable axis) so the user can always
@@ -1945,7 +2003,7 @@ function BoardBody({
       value={groupBy}
       onChange={(e) => onGroupBy(e.target.value as GroupByKey)}
     >
-      <option value="workStatus">by status</option>
+      <option value="status">by status</option>
       <option value="assignee">by assignee</option>
       {(props.taskAxes ?? []).map((a) => (
         <option key={a.id} value={`axis:${a.name}`}>
@@ -1983,7 +2041,7 @@ function BoardBody({
   }
 
   // No source wired: say so. A board that silently renders nothing is
-  // indistinguishable from an empty tier, and only one of those is true.
+  // indistinguishable from an empty tab, and only one of those is true.
   if (!props.boardFor) {
     return (
       <div className="lp__board lp__board--off" data-testid="board-unwired">
@@ -2015,15 +2073,15 @@ function BoardBody({
       ? axisBoardColumns(axis, snapshot?.groups ?? [])
       : groupBy === 'assignee'
         ? assigneeBoardColumns(snapshot?.groups ?? [])
-        : boardColumns(config, tier, snapshot?.groups ?? []);
+        : boardColumns(config, tab, snapshot?.groups ?? []);
   const groupOf = new Map((snapshot?.groups ?? []).map((g) => [g.key, g] as const));
   const itemsOf = (column: BoardColumnSpec): readonly EntitySummary[] =>
-    column.sink ? matching(completedHere, query) : matching(groupOf.get(column.key)?.items ?? [], query);
+    matching(groupOf.get(column.key)?.items ?? [], query);
 
   // §8.4 — quick-add ONLY on the column whose status is the kind's creation
   // status: the FIRST stateControl option (creation IS that state; a quick-add
   // elsewhere would silently create a card belonging to another column).
-  const creationKey = groupBy === 'workStatus' ? stateControl?.options[0]?.id : undefined;
+  const creationKey = groupBy === 'status' ? stateControl?.options[0]?.id : undefined;
 
   /**
    * A drop WRITES THE GROUPING DIMENSION (W3/4) — the single highest-risk
@@ -2035,7 +2093,7 @@ function BoardBody({
    * something else.
    */
   const dispatchDrop = (row: EntitySummary, column: BoardColumnSpec): void => {
-    if (!column.sink && itemsOf(column).some((r) => r.id === row.id)) return;
+    if (itemsOf(column).some((r) => r.id === row.id)) return;
 
     if (column.axisValue !== undefined) {
       if (axis === null || !props.onSetAxis) return;
@@ -2088,9 +2146,7 @@ function BoardBody({
         // §1.5/§8.5: attempted-and-refused renders where the act happened.
         // The card never moved (no optimistic swap), so nothing snaps back.
         setRefusal({ column: column.key, reason: result.reason });
-        return;
       }
-      if (column.sink) setCompletedHere((prior) => [...prior, row]);
     });
   };
 
@@ -2186,17 +2242,7 @@ function BoardBody({
             dragging={dragging}
             onDragStart={setDragging}
             onDrop={dispatchDrop}
-            createSlot={!column.sink && column.key === creationKey ? props.createSlot : undefined}
-            doneTierLink={
-              column.sink
-                ? () => {
-                    const doneTier = list.lifecycle?.find((t) =>
-                      (t.filter.workStatus as readonly string[] | undefined)?.includes(column.key),
-                    );
-                    if (doneTier) onTier(doneTier.id);
-                  }
-                : undefined
-            }
+            createSlot={column.key === creationKey ? props.createSlot : undefined}
           />
         ))}
       </div>
@@ -2217,7 +2263,7 @@ function BoardColumn({
   onDragStart,
   onDrop,
   createSlot,
-  doneTierLink,
+  doneTabLink,
 }: {
   column: BoardColumnSpec;
   /** `undefined` ⇒ loading: header renders from the registry, body shimmers. */
@@ -2232,7 +2278,7 @@ function BoardColumn({
   onDragStart: (row: EntitySummary | null) => void;
   onDrop: (row: EntitySummary, column: BoardColumnSpec) => void;
   createSlot?: ReactNode;
-  doneTierLink?: () => void;
+  doneTabLink?: () => void;
 }) {
   const droppable = Boolean(
     (column.option && props.onSetState) || (column.axisValue !== undefined && props.onSetAxis),
@@ -2240,13 +2286,7 @@ function BoardColumn({
 
   return (
     <section
-      className={
-        column.sink
-          ? 'lp__board-col lp__board-col--sink'
-          : focused
-            ? 'lp__board-col lp__board-col--focused'
-            : 'lp__board-col'
-      }
+      className={focused ? 'lp__board-col lp__board-col--focused' : 'lp__board-col'}
       data-testid="board-column"
       data-column={column.key}
       aria-label={column.label}
@@ -2293,12 +2333,8 @@ function BoardColumn({
             <div className="lp__board-skeleton" aria-hidden />
           </>
         ) : rows.length === 0 ? (
-          column.sink ? (
-            <p className="lp__board-empty">drop a card here to complete it</p>
-          ) : (
-            // §1.3: an empty column is a real answer.
-            <p className="lp__board-empty">{`nothing in ${column.label}`}</p>
-          )
+          // §1.3: an empty column is a real answer.
+          <p className="lp__board-empty">{`nothing in ${column.label}`}</p>
         ) : (
           rows.map((row, index) => (
             <div
@@ -2327,11 +2363,6 @@ function BoardColumn({
         )}
       </div>
 
-      {column.sink && doneTierLink ? (
-        <button type="button" className="lp__board-done-link" onClick={doneTierLink}>
-          {'View all done →'}
-        </button>
-      ) : null}
     </section>
   );
 }
@@ -2353,7 +2384,7 @@ function Band({
   label: string | null;
   /**
    * The band's own already-narrowed query, or `null` when the section, the
-   * tier and the chips cannot all hold at once. The band OWNS the read: it is
+   * tab and the chips cannot all hold at once. The band OWNS the read: it is
    * the only place that knows which question these rows answer, and paging
    * needs that question back to ask for the next page.
    */
@@ -2921,7 +2952,31 @@ export function Tile({
   const statusTitle = treatment?.reason ?? treatment?.label ?? badgeStatus?.word;
 
   const selected = props.selectedId === row.id;
-  const done = row.deletedAt != null;
+  /**
+   * TWO FACTS, TWO NAMES — sub-doc 5, collisions C2 and C3.
+   *
+   * `archived` was called `done` and meant `deletedAt != null`, and it fed the
+   * task tile's `completed` prop. So an ARCHIVED task rendered with the
+   * COMPLETED strikethrough, and would have kept doing it the moment a real
+   * `done` entered this file — a wrong answer that looks like a right one.
+   *
+   * `completed` now has exactly ONE definition, here, for every kind:
+   * `category === 'done'`. It used to have two, 36 lines apart — the session
+   * tile read `recordedStatus === 'exited'` (which files a CRASHED session as
+   * unfinished while the Done tab counted it) and the task tile read
+   * `archived || statusWord === 'done'` (which files an archived to-do as
+   * finished, and reads a WORD off a badge that liveness may have replaced).
+   * Neither matched the tab above them.
+   *
+   * `category` rides the summary (phase 1), so this is a fact that arrives
+   * with the row — no hydration lottery, and a collapsed tile answers it. Its
+   * ABSENCE means the entity has no status at all, which is not `done`.
+   *
+   * `cancelled` is deliberately NOT completed: a cancelled task stopped, it
+   * did not finish, and the fourth category exists to say so.
+   */
+  const archived = row.deletedAt != null;
+  const completed = row.category === 'done';
   const controlExpanded = controlCard && (detailsExpanded || flowRef !== null);
   const controlFacts = controlCard ? factsForControlCard(row) : null;
   // Session tiles carry the same chip slot: the index resolves a session's
@@ -3059,8 +3114,8 @@ export function Tile({
         status={recordedStatus}
         attention={attention}
         selected={selected}
-        archived={row.deletedAt != null}
-        completed={recordedStatus === 'exited'}
+        archived={archived}
+        completed={completed}
         live={live}
         streaming={streaming}
         statusTone={statusTone}
@@ -3106,7 +3161,8 @@ export function Tile({
         selected={selected}
         attention={attention}
         attentionReason={row.badges.attention?.latestReason}
-        completed={done || statusWord === 'done'}
+        archived={archived}
+        completed={completed}
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
@@ -3290,7 +3346,18 @@ export function Tile({
 
           <button
             type="button"
-            className={done ? 'lp__title lp__title--done' : 'lp__title'}
+            className={[
+              'lp__title',
+              /* Two facts, two classes — C2. `--completed` is the
+                 strikethrough (this row FINISHED); `--archived` only dims
+                 (this row was FILED AWAY). The one class used to be named
+                 `--done` and was driven by `deletedAt`, so archiving struck a
+                 row through as though it had been completed. */
+              completed ? 'lp__title--completed' : '',
+              archived ? 'lp__title--archived' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
             title={row.title}
             aria-current={selected ? 'true' : undefined}
             onClick={(event) => {

@@ -274,16 +274,16 @@ describe('ops: divergence 1 — no task route; fields travel inside content', ()
     expect((f.last().body as { clientMutationId: string }).clientMutationId).toBe('task_fixed');
   });
 
-  it('patchTask nests workStatus in content — update_task_content reads it from there', async () => {
+  it('patchTask nests status in content — update_task_content reads it from there', async () => {
     const { ops, f } = harness({ patches: [] });
-    await ops.patchTask('e-1', { expectedVersion: 4, workStatus: 'working', title: 'renamed' });
+    await ops.patchTask('e-1', { expectedVersion: 4, status: 'working', title: 'renamed' });
 
     expect(f.last().method).toBe('PATCH');
     expect(f.last().url).toBe('/v2/entities/e-1');
     expect(f.last().body).toEqual({
       title: 'renamed',
       expectedVersion: 4,
-      content: { workStatus: 'working' },
+      content: { status: 'working' },
     });
   });
 

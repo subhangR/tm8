@@ -29,7 +29,7 @@ const taskSummary: EntitySummary = {
   updatedAt: '2026-07-25T12:00:00.000Z', deletedAt: null,
   createdBy: actor, counters,
   state: {
-    kind: 'task', workStatus: 'open', priority: 'medium', axes: {},
+    kind: 'task', status: 'open', priority: 'medium', axes: {},
     assignees: [actor],
     assignments: [{
       assignee: actor,
@@ -139,7 +139,7 @@ describe('DTO schemas', () => {
   it('accepts a canonical task summary and rejects drift', () => {
     expect(EntitySummarySchema.safeParse(taskSummary).success).toBe(true);
     expect(EntitySummarySchema.safeParse({ ...taskSummary, surprise: 1 }).success).toBe(false);
-    expect(EntitySummarySchema.safeParse({ ...taskSummary, state: { ...taskSummary.state, workStatus: 'banana' } }).success).toBe(false);
+    expect(EntitySummarySchema.safeParse({ ...taskSummary, state: { ...taskSummary.state, status: 'banana' } }).success).toBe(false);
     expect(EntitySummarySchema.safeParse({ ...taskSummary, counters: { ...counters, viewerReaction: undefined } }).success).toBe(false); // DEV-10: always present
   });
 
@@ -171,7 +171,7 @@ describe('DTO schemas', () => {
     // A22 — each filter alone is legal…
     const base = { spaceId: '019f9896-928d-79b6-ba1c-1cdcc1d30a6f' };
     expect(CollectionQuerySchema.safeParse({ ...base, filters: { sessionStatus: ['running', 'idle'] } }).success).toBe(true);
-    expect(CollectionQuerySchema.safeParse({ ...base, filters: { workStatus: ['open'] } }).success).toBe(true);
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { status: ['open'] } }).success).toBe(true);
     expect(CollectionQuerySchema.safeParse({
       ...base,
       filters: {
@@ -185,7 +185,7 @@ describe('DTO schemas', () => {
     // produce the confident zero. The refusal names the mechanism.
     const pair = CollectionQuerySchema.safeParse({
       ...base,
-      filters: { workStatus: ['open'], sessionStatus: ['running'] },
+      filters: { status: ['open'], sessionStatus: ['running'] },
     });
     expect(pair.success).toBe(false);
     if (!pair.success) {
@@ -292,7 +292,24 @@ describe('DTO schemas', () => {
 describe('command input schemas (DEF-1/2/3 conventions)', () => {
   it('rejects unknown fields, closed-enum violations, and wrong types', () => {
     expect(WorkInputSchema.safeParse({ status: 'working' }).success).toBe(true);
-    expect(WorkInputSchema.safeParse({ workStatus: 'done' }).success).toBe(false);       // DEF-1
+    /**
+     * DEF-1 IS NOT A SCHEMA RULE, and this line used to claim it was.
+     *
+     * It read `safeParse({ workStatus: 'done' })` and expected `false` — and
+     * it got `false`, but for the UNKNOWN-FIELD reason on the line below it,
+     * never for the value. `WorkInput`'s member has always been spelled
+     * `status`, so the case DEF-1 describes was never actually exercised.
+     * Phase 9's rename made the misspelling impossible to keep, which is how a
+     * silently-vacuous assertion came to light.
+     *
+     * `done` PARSES, and that is correct: DEF-1 ("completion goes through
+     * complete_task") is enforced by `set_work_state`, which refuses with
+     * `invariant_violation / use_complete_command` — a refusal that names the
+     * command to use instead. A schema rejection would replace that sentence
+     * with a shape error, which is a worse answer to the same mistake.
+     */
+    expect(WorkInputSchema.safeParse({ status: 'done' }).success).toBe(true);
+    expect(WorkInputSchema.safeParse({ workStatus: 'working' }).success).toBe(false);  // DEF-3
     expect(WorkInputSchema.safeParse({ status: 'banana' }).success).toBe(false);          // DEF-2
     expect(WorkInputSchema.safeParse({ status: 'working', speed: 'fast' }).success).toBe(false); // DEF-3
     expect(WorkInputSchema.safeParse({ status: 'working', startedAt: 'yesterdayish' }).success).toBe(false);

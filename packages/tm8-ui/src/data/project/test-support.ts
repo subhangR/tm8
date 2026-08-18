@@ -52,7 +52,7 @@ export function summary(id: string, over: Partial<EntitySummary> = {}): EntitySu
     counters: counters(),
     state: {
       kind: 'task',
-      workStatus: 'open',
+      status: 'open',
       priority: 'medium',
       axes: {},
       assignees: [],

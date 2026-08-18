@@ -198,10 +198,10 @@ export function MaestroSessionTile({
       {detailsExpanded && tasks.length > 0 ? (
         <div className="pn-st__tasklines">
           {tasks.map((task) => {
-            const taskState = task.state as unknown as { workStatus?: string };
+            const taskState = task.state as unknown as { status?: string };
             return (
-              <div key={task.id} className="pn-st__taskline" title={`${task.title} (${taskState.workStatus ?? 'work item'})`}>
-                <StatusGlyph kind={taskState.workStatus ?? 'open'} size={13} />
+              <div key={task.id} className="pn-st__taskline" title={`${task.title} (${taskState.status ?? 'work item'})`}>
+                <StatusGlyph kind={taskState.status ?? 'open'} size={13} />
                 <span className="pn-st__tasklineLabel">{task.title}</span>
               </div>
             );

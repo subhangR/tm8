@@ -42,13 +42,13 @@ const CODE_RULE: TaskWorkflow = {
   statuses: ['open', 'working', 'in_review', 'done'] as never,
 };
 
-const task = (over: { workStatus?: string; axes?: Record<string, string> }): EntitySummary => {
+const task = (over: { status?: string; axes?: Record<string, string> }): EntitySummary => {
   const base = fixtureSummaries.find((s) => s.state.kind === 'task' && s.deletedAt == null)!;
   return {
     ...base,
     state: {
       ...base.state,
-      ...(over.workStatus !== undefined ? { workStatus: over.workStatus } : {}),
+      ...(over.status !== undefined ? { status: over.status } : {}),
       axes: over.axes ?? {},
     } as EntitySummary['state'],
   };
@@ -86,7 +86,7 @@ function stateSelect(): HTMLSelectElement {
 
 describe('W4 — the strip select narrows under a workflow, without changing shape', () => {
   it('a forbidden status is a DISABLED option carrying the reason IN ITS LABEL — never hidden', () => {
-    mount(task({ workStatus: 'open', axes: { type: 'code' } }), { taskWorkflows: [CODE_RULE] });
+    mount(task({ status: 'open', axes: { type: 'code' } }), { taskWorkflows: [CODE_RULE] });
     expandFirstRow();
 
     const options = [...stateSelect().querySelectorAll('option')];
@@ -113,9 +113,9 @@ describe('W4 — the strip select narrows under a workflow, without changing sha
 
   it('no type value, no rule for the value, or no workflows at all = today exactly', () => {
     const cases: Array<[EntitySummary, readonly TaskWorkflow[] | undefined]> = [
-      [task({ workStatus: 'open', axes: {} }), [CODE_RULE]],
-      [task({ workStatus: 'open', axes: { type: 'design' } }), [CODE_RULE]],
-      [task({ workStatus: 'open', axes: { type: 'code' } }), undefined],
+      [task({ status: 'open', axes: {} }), [CODE_RULE]],
+      [task({ status: 'open', axes: { type: 'design' } }), [CODE_RULE]],
+      [task({ status: 'open', axes: { type: 'code' } }), undefined],
     ];
     for (const [row, workflows] of cases) {
       const view = mount(row, { taskWorkflows: workflows as never });
@@ -130,7 +130,7 @@ describe('W4 — the strip select narrows under a workflow, without changing sha
 
 describe('W4 — the OFF-WORKFLOW mark is derived, drawn, and never a repair', () => {
   it('a current status outside the vocabulary draws the caption naming type and status', () => {
-    mount(task({ workStatus: 'blocked', axes: { type: 'code' } }), { taskWorkflows: [CODE_RULE] });
+    mount(task({ status: 'blocked', axes: { type: 'code' } }), { taskWorkflows: [CODE_RULE] });
     const strip = expandFirstRow();
 
     const mark = within(strip).getByTestId('row-state-offworkflow');
@@ -143,7 +143,7 @@ describe('W4 — the OFF-WORKFLOW mark is derived, drawn, and never a repair', (
 
   it('moving OUT of an off-workflow status is free — the current value never bars itself', () => {
     const onSetState = vi.fn();
-    mount(task({ workStatus: 'blocked', axes: { type: 'code' } }), {
+    mount(task({ status: 'blocked', axes: { type: 'code' } }), {
       taskWorkflows: [CODE_RULE],
       onSetState,
     });
@@ -155,7 +155,7 @@ describe('W4 — the OFF-WORKFLOW mark is derived, drawn, and never a repair', (
   });
 
   it('an in-vocabulary status draws no mark', () => {
-    mount(task({ workStatus: 'in_review', axes: { type: 'code' } }), { taskWorkflows: [CODE_RULE] });
+    mount(task({ status: 'in_review', axes: { type: 'code' } }), { taskWorkflows: [CODE_RULE] });
     expandFirstRow();
     expect(screen.queryByTestId('row-state-offworkflow')).toBeNull();
   });
@@ -172,7 +172,7 @@ describe('W4 — the tile dot narrows through the SAME control', () => {
 
   it('a forbidden menu row is aria-disabled with the reason, and a click dispatches nothing', () => {
     const onSetState = vi.fn();
-    mount(task({ workStatus: 'open', axes: { type: 'code' } }), {
+    mount(task({ status: 'open', axes: { type: 'code' } }), {
       taskWorkflows: [CODE_RULE],
       onSetState,
     });
@@ -199,7 +199,7 @@ describe('W4 — the tile dot narrows through the SAME control', () => {
   });
 
   it('the off-workflow fact rides the 16px mark as title text — the tile anatomy has no room for a caption', () => {
-    mount(task({ workStatus: 'blocked', axes: { type: 'code' } }), {
+    mount(task({ status: 'blocked', axes: { type: 'code' } }), {
       taskWorkflows: [CODE_RULE],
       onSetState: vi.fn(),
     });

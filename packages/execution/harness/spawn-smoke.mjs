@@ -47,7 +47,7 @@ const fakeGraph = (workingDir) => ({
         title: 'prove the G1A loop',
         description: '',
         priority: 'high',
-        workStatus: 'open',
+        status: 'open',
         acceptanceCriteria: [],
       })),
     };

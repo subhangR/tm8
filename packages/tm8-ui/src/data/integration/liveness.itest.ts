@@ -72,7 +72,7 @@ describe('execution.liveness serves real data through the seam (real node, A21)'
   it("statusOf answers 'unknown' BEFORE any snapshot — never 'live'", () => {
     // Order matters: this runs before the first refresh() below, pinning the
     // pre-snapshot honesty that survived from this file's first life.
-    const answer = harness.seam.liveness.statusOf({ id: taskId, workStatus: 'running' });
+    const answer = harness.seam.liveness.statusOf({ id: taskId, status: 'running' });
     expect(answer, "no liveness evidence yet — the answer must be 'unknown'").toBe('unknown');
     expect(answer).not.toBe('live');
   });
@@ -93,7 +93,7 @@ describe('execution.liveness serves real data through the seam (real node, A21)'
     // The R-UI-5 core case, now data-backed end-to-end: the snapshot above is
     // real and fresh, the session id is not in its live set, recorded status
     // says running — the ONLY honest answer is 'stale', never 'live'.
-    const answer = harness.seam.liveness.statusOf({ id: taskId, workStatus: 'running' });
+    const answer = harness.seam.liveness.statusOf({ id: taskId, status: 'running' });
     expect(answer).toBe('stale');
     expect(answer).not.toBe('live');
   });
@@ -101,10 +101,10 @@ describe('execution.liveness serves real data through the seam (real node, A21)'
   it("statusOf answers 'not-running' from recorded status alone, no snapshot consulted", () => {
     // Unchanged from the first life: the classification that proves 'unknown'
     // and 'stale' are real distinctions rather than blanket fallbacks.
-    for (const workStatus of ['done', 'cancelled', 'open', 'blocked', 'exited'] as const) {
-      expect(harness.seam.liveness.statusOf({ id: taskId, workStatus })).toBe('not-running');
+    for (const status of ['done', 'cancelled', 'open', 'blocked', 'exited'] as const) {
+      expect(harness.seam.liveness.statusOf({ id: taskId, status })).toBe('not-running');
     }
-    expect(harness.seam.liveness.statusOf({ id: taskId, workStatus: null })).toBe('not-running');
+    expect(harness.seam.liveness.statusOf({ id: taskId, status: null })).toBe('not-running');
   });
 
   it('openSpace still resolves without awaiting the liveness read (LLD §16)', async () => {

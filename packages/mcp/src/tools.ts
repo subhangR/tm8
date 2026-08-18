@@ -77,7 +77,7 @@ const READ_GUIDES = [
   guide('entities.connections', 'Read typed graph connections.', { params: { id: '<entity-id>' }, query: { limit: '50' } }),
   guide('entities.versions', 'Read version history.', { params: { id: '<entity-id>' }, query: { limit: '50' } }),
   guide('collections.query', 'Find entities by space, kind, status, assignee, hierarchy or edge.', {
-    body: { spaceId: '<space-id>', kinds: ['task'], filters: { workStatus: ['working'] }, limit: 50 },
+    body: { spaceId: '<space-id>', kinds: ['task'], filters: { status: ['working'] }, limit: 50 },
   }),
   guide('graph.query', 'Traverse the entity graph from a focus.', {
     body: { spaceId: '<space-id>', focusId: '<entity-id>', hops: 2, limit: 100 },

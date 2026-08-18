@@ -358,7 +358,7 @@ export interface EntityDetailPanelProps {
    * THE CONTROL STRIP'S HOST — state, priority and assignment on the panel.
    *
    * THE SAME `ControlHost` THE LIST PASSES, and the same components behind it.
-   * Before this prop existed the panel drew `workStatus` as a read-only header
+   * Before this prop existed the panel drew `status` as a read-only header
    * pill and `priority` / `assignees` as `<span>`s in the meta grid, so the
    * surface the generic-create pattern opens the instant you press "+ New
    * task" was the one surface where none of the three could be set. That is

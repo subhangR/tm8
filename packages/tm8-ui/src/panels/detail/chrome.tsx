@@ -219,7 +219,7 @@ export function StatusPillFor({
  * knows how to fetch each named scalar. Adding a kind touches neither.
  */
 const STATUS_FIELD: Record<Exclude<StatusSource, 'none'>, string> = {
-  workStatus: 'workStatus',
+  status: 'status',
   sessionStatus: 'status',
   prState: 'state',
   profileStatus: 'status',

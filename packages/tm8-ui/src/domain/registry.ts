@@ -31,7 +31,7 @@ import type {
   FilterSpec,
   KindConfig,
   ListConfig,
-  LifecycleTier,
+  StatusCategoryTab,
   ListRowFacts,
   LiveTreatment,
   MembershipListControl,
@@ -65,21 +65,54 @@ export const ALL_MODES: readonly CollectionMode[] = ['list', 'board', 'tree', 'f
 
 const NOT_DELETED: QueryFilter = { deleted: 'exclude' };
 
-const TASK_OPEN_STATUSES = ['open', 'pulled', 'working', 'in_review', 'blocked'] as const;
-const TASK_CLOSED_STATUSES = ['done', 'cancelled'] as const;
+/* TASK_OPEN_STATUSES / TASK_CLOSED_STATUSES ARE GONE (phase 9's rename table).
+   They were a hand-kept bucketing of task status LITERALS — one of the six
+   incompatible bucketings the program set out to retire — and every reader of
+   them now reads `filters.category` instead, which is the same partition
+   expressed once, on the server, for every kind. A space that names its own
+   statuses is bucketed correctly without editing this file. */
 
+/**
+ * The per-status refinement chip — FINER than the tab row, never a rival to it.
+ * The tabs partition by category; this narrows to one status inside one.
+ *
+ * EACH OPTION CARRIES ITS CATEGORY ALONGSIDE ITS STATUS, and that second
+ * member is doing real work. `narrow()` detects a contradiction by
+ * INTERSECTING ARRAYS UNDER THE SAME KEY, so before phase 7 — when the tab
+ * also spoke `status` — picking `Done` on the Open tab produced an empty
+ * intersection and the panel said "these two contradict this tab" instead of
+ * going quietly blank. The tabs speak `category` now, and a `status` chip
+ * beside a `category` tab is two different keys: the merge would succeed, the
+ * server would answer honestly with nothing, and the user would be back in
+ * front of the unexplained empty list this refusal was built for.
+ *
+ * Declaring the category makes the relationship VISIBLE TO THE EXISTING RULE
+ * rather than adding a new one. On its own tab it narrows to itself and costs
+ * nothing (`['done'] ∩ ['done']`); on any other tab the intersection is empty
+ * and the refusal fires exactly as it always did.
+ *
+ * The mapping mirrors `TASK_STATE_CONTROL`'s and, through it, migration 147's.
+ */
 const statusFilter: FilterSpec = {
   id: 'status',
   label: 'Status',
   multi: true,
   options: [
-    { id: 'open', label: 'Open', filter: { workStatus: ['open'] } },
-    { id: 'pulled', label: 'Pulled', filter: { workStatus: ['pulled'] } },
-    { id: 'working', label: 'Working', filter: { workStatus: ['working'] } },
-    { id: 'in_review', label: 'In review', filter: { workStatus: ['in_review'] } },
-    { id: 'blocked', label: 'Blocked', filter: { workStatus: ['blocked'] } },
-    { id: 'done', label: 'Done', filter: { workStatus: ['done'] } },
-    { id: 'cancelled', label: 'Cancelled', filter: { workStatus: ['cancelled'] } },
+    { id: 'open', label: 'Open', filter: { status: ['open'], category: ['to_do'] } },
+    { id: 'pulled', label: 'Pulled', filter: { status: ['pulled'], category: ['to_do'] } },
+    { id: 'working', label: 'Working', filter: { status: ['working'], category: ['in_progress'] } },
+    {
+      id: 'in_review',
+      label: 'In review',
+      filter: { status: ['in_review'], category: ['in_progress'] },
+    },
+    { id: 'blocked', label: 'Blocked', filter: { status: ['blocked'], category: ['in_progress'] } },
+    { id: 'done', label: 'Done', filter: { status: ['done'], category: ['done'] } },
+    {
+      id: 'cancelled',
+      label: 'Cancelled',
+      filter: { status: ['cancelled'], category: ['cancelled'] },
+    },
   ],
 };
 
@@ -171,17 +204,22 @@ const CHANNEL_MEMBER_CONTROL: AssignControl = {
 };
 
 const TASK_STATE_CONTROL: StateControl = {
-  source: 'workStatus',
+  source: 'status',
+  filterKey: 'status',
   label: 'State',
   command: 'set-state',
+  /* `category` MIRRORS `internal.work_status_category()` (migration 147) and
+     the server's `WORK_STATUS_CATEGORY` — the ruled mapping, including its two
+     judgement calls: `pulled` is `to_do` (claimed is not started) and
+     `blocked` is `in_progress` (started, and stuck is not un-started). */
   options: [
-    { id: 'open' },
-    { id: 'pulled' },
-    { id: 'working' },
-    { id: 'in_review' },
-    { id: 'blocked' },
-    { id: 'done', via: 'complete' },
-    { id: 'cancelled' },
+    { id: 'open', category: 'to_do' },
+    { id: 'pulled', category: 'to_do' },
+    { id: 'working', category: 'in_progress' },
+    { id: 'in_review', category: 'in_progress' },
+    { id: 'blocked', category: 'in_progress' },
+    { id: 'done', category: 'done', via: 'complete' },
+    { id: 'cancelled', category: 'cancelled' },
   ],
 };
 
@@ -194,14 +232,19 @@ const TASK_STATE_CONTROL: StateControl = {
  */
 const SESSION_STATE_CONTROL: StateControl = {
   source: 'status',
+  filterKey: 'sessionStatus',
   label: 'State',
   command: 'set-state',
+  /* A session's OBSERVED lifecycle, bucketed. `failed` is `done` and not
+     `cancelled`: under this model failure is a RUNTIME FACT that gets a badge
+     (design invariant 4), and the run itself did reach its end — nobody
+     cancelled it. `idle` is in_progress: an idle session is still alive. */
   options: [
-    { id: 'spawning' },
-    { id: 'running' },
-    { id: 'idle' },
-    { id: 'exited' },
-    { id: 'failed' },
+    { id: 'spawning', category: 'in_progress' },
+    { id: 'running', category: 'in_progress' },
+    { id: 'idle', category: 'in_progress' },
+    { id: 'exited', category: 'done' },
+    { id: 'failed', category: 'done' },
   ],
   readOnlyReason:
     'A session’s state is observed, not chosen — the node reports it from the process. Use Terminate to stop a live session.',
@@ -214,20 +257,23 @@ const readyToPullFilter: FilterSpec = {
 };
 
 /**
- * THE `deleted` CHIP IS GONE, AND ITS ABSENCE IS THE FIX.
+ * THE `deleted` CHIP IS BACK, AS `archivedFilter`, AND PHASE 7 IS WHY.
  *
- * It offered `Hide deleted` / `Deleted only` — the two values the lifecycle
- * TABS already are: Open and Done both carry `deleted: 'exclude'`, Archived
- * carries `deleted: 'only'`. `deleted` is a scalar, so a chip and a tab naming
- * it could only ever CONTRADICT each other, and the merge resolved that by
- * letting whichever applied last win. Choosing `Deleted only` on the Open tab
- * silently showed archived rows under a tab labelled Open; choosing
- * `Hide deleted` on the Archived tab emptied it with no explanation.
+ * It was deleted for a good reason that has now stopped being true. It used to
+ * name the same axis the TAB ROW named — Open and Done carried
+ * `deleted: 'exclude'`, Archived carried `deleted: 'only'` — and since
+ * `deleted` is a scalar the two controls could only agree or overrule each
+ * other. Choosing `Deleted only` on the Open tab silently showed archived rows
+ * under a tab labelled Open. A chip that can only contradict the tab is not a
+ * filter, it is a second control for one axis.
  *
- * A chip that can only agree with the tab or overrule it is not a filter, it
- * is a second control for the same axis. Deleting it leaves one control per
- * axis, which is also what makes `narrow`'s contradiction rule safe to apply
- * strictly below.
+ * Phase 7 removed the archive TAB, because archived is `deleted_at` and status
+ * is a workflow position — orthogonal axes, and a tab row is a partition of
+ * ONE axis. With the tabs now unanimously `deleted: 'exclude'`, the chip is
+ * the only control naming `deleted`, and it composes instead of contradicting:
+ * "archived, in progress" is a question the old tab row could not ask at all.
+ *
+ * One control per axis, still. The axis just moved.
  */
 
 /**
@@ -335,83 +381,82 @@ const COLLECTIONS_BLOCK: ContentBlockRef = {
 function baseList(overrides: Partial<ListConfig> & Pick<ListConfig, 'tile'>): ListConfig {
   return {
     quickCreate: true,
-    filters: [assigneeFilter, attentionFilter],
     sort: DEFAULT_SORT,
     // Universal by DEFAULT (D41): a kind opts into a richer partition, never
-    // out of having tiers at all. A row that forgot them would silently lose
-    // its tabs, so absence is not an available state.
-    lifecycle: statelessTiers(),
+    // out of having tabs at all. A row that forgot them would silently lose
+    // its tab row, so absence is not an available state.
+    categories: CATEGORY_TABS,
     // Universal for the same reason: `contains` accepts every dst kind, so
     // every list can be lensed by a collection and every row added to one.
     membership: COLLECTION_MEMBERSHIP,
     ...overrides,
+    /* APPENDED AFTER THE OVERRIDES, DELIBERATELY. `filters` is a whole-array
+       override — task and work_session both replace it — so a default entry
+       is not a default at all, it is a suggestion two kinds ignore. The
+       archive filter is universal by the same ruling the tabs are (it is the
+       tab that was removed), so it is layered on top where a kind cannot drop
+       it by declaring its own chips. Last in the row on purpose: it is an
+       envelope disposition, not a property of the work. */
+    filters: [...(overrides.filters ?? [assigneeFilter, attentionFilter]), archivedFilter],
   };
 }
 
 
 // ---------------------------------------------------------------------------
-// Lifecycle tiers (D41) — Open / Done / Archived, universal on collection kinds
+// Category tabs (D41 + PHASE 7) — the closed four, identical on every kind
 // ---------------------------------------------------------------------------
 
 /**
- * `archived` is the honest one: `deleted: 'only'` is a real `CollectionQuery`
- * member, so the archive tier is a genuine query for EVERY kind rather than an
- * invention. `open`/`done` are only expressible where the kind carries a state
- * axis the contract knows — task via `workStatus`, work_session via
- * `sessionStatus` (D56). Everywhere else `done` is declared UNSUPPORTED with its
- * reason: the tab renders, its count is honestly zero, and nothing fabricates
- * a completion concept the backend cannot answer for.
+ * THE FOUR TABS. One declaration, every kind, because `filters.category` asks
+ * a question every kind can now answer (phase 5 gave all twenty a workflow).
+ *
+ * THIS FILE USED TO HOLD THREE DIFFERENT TAB ROWS — `TASK_TIERS` keyed on
+ * `status` literals, `SESSION_TIERS` keyed on `sessionStatus` literals, and
+ * `statelessTiers()` keyed on categories — that were meant to mean the same
+ * thing and could not, because two of them named a per-kind vocabulary. A
+ * session that FAILED counted as Done; a task that was CANCELLED counted as
+ * Done; a custom status nobody listed counted as neither. The category is the
+ * one axis every kind shares, so it is the one axis the tab row runs on, and a
+ * space that invents `Triaged` files it under a tab without touching this file.
+ *
+ * `deleted: 'exclude'` on all four: archived rows are reached through the
+ * ARCHIVE FILTER, which composes with whichever category tab is open. See
+ * `archivedFilter` below and `StatusCategoryTab`'s docblock for why archived
+ * cannot be a tab.
  */
-const ARCHIVED_TIER: LifecycleTier = {
-  id: 'archived',
-  label: 'Archived',
-  filter: { deleted: 'only' },
-};
+const CATEGORY_TABS: readonly StatusCategoryTab[] = [
+  { id: 'to_do', label: 'To Do', filter: { category: ['to_do'], deleted: 'exclude' } },
+  {
+    id: 'in_progress',
+    label: 'In Progress',
+    filter: { category: ['in_progress'], deleted: 'exclude' },
+  },
+  { id: 'done', label: 'Done', filter: { category: ['done'], deleted: 'exclude' } },
+  { id: 'cancelled', label: 'Cancelled', filter: { category: ['cancelled'], deleted: 'exclude' } },
+];
 
 /**
- * The default tiers for a kind with no kind-specific state axis: open, done,
- * archived — all three REAL queries.
+ * ARCHIVED, AS A FILTER CHIP — the other half of retiring the archive tab.
  *
- * PHASE 5 (migration 152) RETIRED `NO_DONE_REASON` AND THE UNSUPPORTED TIER.
- * The reason it carried — "the contract records no done/closed concept for this
- * kind" — stopped being true: every kind now has a workflow, every entity a
- * status, and `filters.category` (shipped in phase 1) is a contract member the
- * seam executes untranslated. There is no longer anything for an honestly-empty
- * tab to be honest about, so it is a populated one.
+ * `deleted` is a SCALAR clause, so `narrow()`'s later-wins rule lets this
+ * option override the `exclude` every category tab carries; picking it inside
+ * the In Progress tab asks for archived in-progress rows, which the tab row
+ * could never express. Not `multi`: `deleted` takes one value, and offering
+ * two mutually exclusive options as though they combined would be a lie about
+ * the query.
  *
- * Three tiers, not four, ON PURPOSE. `cancelled` gets its own permanent tab —
- * that is a RULED change (sub-doc 7 §3.4) and it is PHASE 7's, along with the
- * `LifecycleTier` → category rename. Until then `cancelled` rides with `done`
- * exactly where it has always ridden, so this file changes what the Done tab
- * CONTAINS without changing how many tabs there are.
+ * Two options rather than one toggle because "only archived" and "archived
+ * too" are different questions and the row should not make the user guess
+ * which one a single chip means.
  */
-function statelessTiers(): readonly LifecycleTier[] {
-  return [
-    { id: 'open', label: 'Open', filter: { category: ['to_do', 'in_progress'], deleted: 'exclude' } },
-    { id: 'done', label: 'Done', filter: { category: ['done', 'cancelled'], deleted: 'exclude' } },
-    ARCHIVED_TIER,
-  ];
-}
-
-const TASK_TIERS: readonly LifecycleTier[] = [
-  { id: 'open', label: 'Open', filter: { workStatus: [...TASK_OPEN_STATUSES], deleted: 'exclude' } },
-  { id: 'done', label: 'Done', filter: { workStatus: [...TASK_CLOSED_STATUSES], deleted: 'exclude' } },
-  ARCHIVED_TIER,
-];
-
-// D56 — the D20 workaround is GONE. `CollectionQuery.filters.sessionStatus`
-// exists now (contract dd41e89), so these are ordinary contract filters the
-// seam executes untranslated, exactly like the task tiers beside them. No
-// client-side partition, no structural read on the row, nothing to remember.
-const SESSION_TIERS: readonly LifecycleTier[] = [
-  {
-    id: 'open',
-    label: 'Open',
-    filter: { sessionStatus: ['spawning', 'running', 'idle'], deleted: 'exclude' },
-  },
-  { id: 'done', label: 'Done', filter: { sessionStatus: ['exited', 'failed'], deleted: 'exclude' } },
-  ARCHIVED_TIER,
-];
+const archivedFilter: FilterSpec = {
+  id: 'archived',
+  label: 'Archived',
+  options: [
+    { id: 'only', label: 'Archived only', filter: { deleted: 'only' } },
+    { id: 'include', label: 'Include archived', filter: { deleted: 'include' } },
+  ],
+};
 
 // ---------------------------------------------------------------------------
 // work_session liveness presentation (R-UI-5: PRESENTS the seam verdict,
@@ -560,7 +605,7 @@ const ROWS: readonly KindConfig[] = [
     hiddenModes: [],
     chip: {
       glyph: '◻',
-      tintBy: 'workStatus',
+      tintBy: 'status',
       tones: {
         open: 'idle',
         pulled: 'info',
@@ -571,26 +616,21 @@ const ROWS: readonly KindConfig[] = [
         cancelled: 'idle',
       },
     },
-    card: { fields: ['workStatus', 'priority', 'assignees', 'acceptance'] },
+    card: { fields: ['status', 'priority', 'assignees', 'acceptance'] },
     list: baseList({
-      sections: [
-        {
-          id: 'current',
-          label: 'Current',
-          filter: { workStatus: [...TASK_OPEN_STATUSES], deleted: 'exclude' },
-        },
-        {
-          id: 'completed',
-          label: 'Completed',
-          filter: { workStatus: [...TASK_CLOSED_STATUSES], deleted: 'exclude' },
-          collapsedByDefault: true,
-        },
-      ],
+      /* THE `Current` / `Completed` SECTIONS ARE GONE (phase 7).
+         They partitioned the task list on exactly the axis the tab row now
+         partitions it on, so under four category tabs they were the deleted
+         `deleted` chip's defect again in a different control: every row in the
+         Done tab fell into a `Completed` section that is `collapsedByDefault`,
+         so opening Done would have shown a collapsed heading and no work. One
+         control per axis — the tabs own this one. Sections remain in the type
+         for triage grouping that is NOT the status axis. */
       tree: { by: 'hierarchy', guideLines: true },
       tile: {
         anatomy: 'control-card',
         badges: [
-          { source: 'workStatus' },
+          { source: 'status' },
           { source: 'priority' },
           { source: 'axes' },
           { source: 'assignees' },
@@ -600,7 +640,6 @@ const ROWS: readonly KindConfig[] = [
           { source: 'workingActors' },
         ],
       },
-      lifecycle: TASK_TIERS,
       primaryActions: ['run', 'coordinate'],
       filters: [assigneeFilter, taskAttentionFilter, statusFilter, readyToPullFilter],
       sort: [...DEFAULT_SORT, BY_DUE, BY_PRIORITY],
@@ -615,11 +654,11 @@ const ROWS: readonly KindConfig[] = [
       assignControl: TASK_ASSIGN_CONTROL,
       // A2: the board's DEFAULT grouping — the field the state picker
       // writes. Since W3 this is a seed, not a pin: the board's own picker
-      // offers `workStatus`, `assignee`, and `axis:<name>` per axis the
+      // offers `status`, `assignee`, and `axis:<name>` per axis the
       // SPACE defines, and the choice rides the route (`q.groupBy`). The
       // server computes the groups (collections.ts groupItems); the client
       // never groups (L3).
-      board: { groupBy: 'workStatus' },
+      board: { groupBy: 'status' },
       // D44: every task ROW gets Run, not just the panel primary. It resolves
       // to the same ActionRef the panel and palette use, and its `flow:'launch'`
       // marker means the row opens the launch config rather than bare-spawning.
@@ -674,7 +713,7 @@ const ROWS: readonly KindConfig[] = [
       // gate honesty). A registry field, so the panel never asks the kind.
       gitSection: true,
       statusPill: {
-        source: 'workStatus',
+        source: 'status',
         tones: {
           open: 'idle',
           pulled: 'info',
@@ -713,7 +752,6 @@ const ROWS: readonly KindConfig[] = [
     },
     card: { fields: ['sessionStatus', 'agentTool', 'model', 'activityAt'] },
     list: baseList({
-      lifecycle: SESSION_TIERS,
       tree: { by: 'hierarchy', guideLines: true, messagePulse: true },
       tile: {
         anatomy: 'session-tree',
@@ -1013,7 +1051,7 @@ const ROWS: readonly KindConfig[] = [
           params: { tiles: 'taskDoneCount=tasks done,score=points,teamMembers=teammates' },
         },
         { block: 'items', label: 'TEAMMATES OWNED', params: { source: 'teamMembers' } },
-        { block: 'items', label: 'CURRENT WORK', params: { source: 'work', statusKey: 'workStatus' } },
+        { block: 'items', label: 'CURRENT WORK', params: { source: 'work', statusKey: 'status' } },
       ],
     },
   },

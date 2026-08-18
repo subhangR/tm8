@@ -307,9 +307,9 @@ export function HomeView(props: HomeViewProps) {
   const notifyActionFailed = useCallback(
     (_verb: ActionRef, _entityId: string, error: unknown) => {
       onNotice({
-        id: 'session-close-failed',
+        id: 'session-terminate-failed',
         tone: 'error',
-        title: 'Session could not be closed',
+        title: 'Session could not be terminated',
         body: String((error as { message?: string })?.message ?? error),
         ttlMs: 6_000,
       });

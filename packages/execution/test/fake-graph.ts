@@ -97,7 +97,7 @@ export class FakeGraph implements GraphPort {
         title: `fixture task ${i + 1}`,
         description: 'prove the loop',
         priority: 'high',
-        workStatus: 'open',
+        status: 'open',
         acceptanceCriteria: [],
       })),
     };

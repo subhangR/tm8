@@ -839,7 +839,7 @@ describe('composeManifest', () => {
         title: 'wire the prompt seam',
         description: '',
         priority: 'high',
-        workStatus: 'open',
+        status: 'open',
         acceptanceCriteria: [],
       },
     ];

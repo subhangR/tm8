@@ -398,17 +398,17 @@ export function createDomainStore(
  *   · a missing `deleted` clause means 'exclude' — `collections.ts:248` reads
  *     `f.deleted ?? 'exclude'`, so the unfiltered list is not "everything";
  *   · a NULL state axis never matches a status filter (contract §CollectionQuery
- *     on `sessionStatus`), so a doc is 'out' of `workStatus: ['open']` rather
+ *     on `sessionStatus`), so a doc is 'out' of `status: ['open']` rather
  *     than being waved through.
  *
- * NO KIND LITERAL LIVES HERE. `workStatus` and `status` are STATE FIELD names
+ * NO KIND LITERAL LIVES HERE. `status` and `status` are STATE FIELD names
  * read structurally off `EntityState`; which kinds carry them is the
  * registry's business and never this function's.
  */
 export type Membership = 'in' | 'out' | 'unknown';
 
 /** The filter clauses this module can decide. Everything else ⇒ 'unknown'. */
-const DECIDABLE_CLAUSES = new Set(['deleted', 'workStatus', 'sessionStatus', 'category']);
+const DECIDABLE_CLAUSES = new Set(['deleted', 'status', 'sessionStatus', 'category']);
 
 export function membershipOf(filter: unknown, summary: EntitySummary): Membership {
   const clauses: Record<string, unknown> =
@@ -426,7 +426,7 @@ export function membershipOf(filter: unknown, summary: EntitySummary): Membershi
   if (deleted === 'only' && summary.deletedAt === null) return 'out';
 
   const state = summary.state as unknown as Record<string, unknown>;
-  if (!matchesAxis(clauses.workStatus, state.workStatus)) return 'out';
+  if (!matchesAxis(clauses.status, state.status)) return 'out';
   if (!matchesAxis(clauses.sessionStatus, state.status)) return 'out';
   /* Phase 1's envelope fact (PR #353): `category` rides the SUMMARY, so the
      clause is decidable here exactly like the status axes — an absent

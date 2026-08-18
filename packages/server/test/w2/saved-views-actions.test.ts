@@ -46,7 +46,7 @@ const VIEW_ROW = {
   owner_member_id: IDS.member,
   name: 'Urgent work',
   share_mode: 'private',
-  query: { spaceId: IDS.space, kinds: ['task'], filters: { workStatus: ['open'] } },
+  query: { spaceId: IDS.space, kinds: ['task'], filters: { status: ['open'] } },
   graph_layout: { [IDS.entity]: { x: 12, y: 24 } },
   created_at: new Date('2026-07-26T10:00:00.000Z'),
   updated_at: new Date('2026-07-26T10:00:00.000Z'),

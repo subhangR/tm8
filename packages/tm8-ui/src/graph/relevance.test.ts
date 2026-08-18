@@ -38,7 +38,7 @@ function node(over: Partial<EntitySummary> = {}): EntitySummary {
     deletedAt: null,
     createdBy: { id: 'a1', displayName: 'A', isAgent: false },
     counters: { likes: 0, dislikes: 0, stars: 0, points: 0, messages: 0, viewerReaction: null },
-    state: { kind: 'task', workStatus: 'open', priority: 'medium', axes: {}, assignees: [],
+    state: { kind: 'task', status: 'open', priority: 'medium', axes: {}, assignees: [],
              acceptance: { total: 0, completed: 0 } },
     badges: {},
     ...over,

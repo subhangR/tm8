@@ -3,7 +3,7 @@
  * predicate, which is the ONLY place in the whole UI where liveness truth is
  * computed.
  *
- *     statusOf(s):  workStatus ∉ {running, idle}  → 'not-running'
+ *     statusOf(s):  status ∉ {running, idle}  → 'not-running'
  *                   no snapshot / snapshot > 90s  → 'unknown'   (neutral, NEVER live)
  *                   s.id ∈ live set               → 'live'
  *                   otherwise                     → 'stale'
@@ -11,7 +11,7 @@
  * The 'unknown' row is the entire point of the rule and the easiest one to
  * quietly lose: a session whose liveness we cannot currently establish is NOT
  * live, and it is not stale either — claiming either would be a green badge
- * over an absence. It renders neutral. `recordedStatus` (`workStatus`) comes
+ * over an absence. It renders neutral. `recordedStatus` (`status`) comes
  * from the entity cache, never from this read (C-1).
  *
  * Cadence (LLD §9): on `openSpace` · on `entity.upsert` whose entity is a
@@ -171,7 +171,7 @@ export function createLivenessManager(deps: LivenessDeps): LivenessManager {
     statusOf(session): SessionLiveness {
       // `idle` means the agent is quiet, not that its PTY exited. The live-set
       // snapshot remains authoritative for both running and idle records.
-      const recorded = session.workStatus as string | null;
+      const recorded = session.status as string | null;
       if (recorded !== 'running' && recorded !== 'idle') return 'not-running';
       let sawFresh = false;
       for (const snap of snapshots.values()) {

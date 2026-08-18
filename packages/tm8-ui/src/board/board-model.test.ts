@@ -23,13 +23,13 @@ const group = (key: string, items: EntitySummary[], over: Partial<CollectionGrou
 
 describe('buildFilters — narrow()\'s law', () => {
   it('OMITS empty axes and answers undefined for the all-empty state', () => {
-    /* `workStatus: []` would either match nothing or be refused — both
+    /* `status: []` would either match nothing or be refused — both
        misread "no chips pressed" as a constraint. And `undefined` is the
        exact cache key `boardFor` uses for the unfiltered read, so the
        untouched board and the just-cleared board share one snapshot. */
     expect(buildFilters(EMPTY_FILTERS)).toBeUndefined();
     expect(buildFilters({ statuses: ['open'], priorities: [], people: [], assignedBy: [] })).toEqual({
-      workStatus: ['open'],
+      status: ['open'],
     });
     expect(buildFilters({ statuses: [], priorities: ['high'], people: ['m-1'], assignedBy: [] })).toEqual({
       priority: ['high'],
@@ -48,7 +48,7 @@ describe('columnsFor — the column law per pivot', () => {
     /* §1.3 — an empty column is a real answer and the drop target that makes
        it changeable; a groups-keyed board would hide every state the page
        happened not to contain. */
-    const cols = columnsFor('workStatus', [group('working', [row('t1')])], EMPTY_FILTERS, []);
+    const cols = columnsFor('status', [group('working', [row('t1')])], EMPTY_FILTERS, []);
     expect(cols.map((c) => c.key)).toEqual(STATUS_COLUMNS.map((s) => s.key));
     expect(cols.find((c) => c.key === 'working')?.items).toHaveLength(1);
     expect(cols.find((c) => c.key === 'blocked')?.items).toHaveLength(0);
@@ -56,7 +56,7 @@ describe('columnsFor — the column law per pivot', () => {
 
   it('status: narrows to the selected chips — an excluded column must not stay a drop target', () => {
     const filters: BoardFilterState = { statuses: ['open', 'done'], priorities: [], people: [], assignedBy: [] };
-    const cols = columnsFor('workStatus', [], filters, []);
+    const cols = columnsFor('status', [], filters, []);
     expect(cols.map((c) => c.key)).toEqual(['open', 'done']);
   });
 
@@ -67,7 +67,7 @@ describe('columnsFor — the column law per pivot', () => {
 
   it('carries the server\'s TRUE total beside the page-scoped items', () => {
     const cols = columnsFor(
-      'workStatus',
+      'status',
       [group('open', [row('t1')], { total: 12 })],
       EMPTY_FILTERS,
       [],
@@ -110,7 +110,7 @@ describe('columnsFor — the column law per pivot', () => {
 describe('applyMoves / settledMoves — the optimistic overlay', () => {
   const columns = () =>
     columnsFor(
-      'workStatus',
+      'status',
       [group('open', [row('t1'), row('t2')], { total: 2 }), group('working', [row('t3')], { total: 1 })],
       EMPTY_FILTERS,
       [],
@@ -128,7 +128,7 @@ describe('applyMoves / settledMoves — the optimistic overlay', () => {
 
   it('settles a move once the RAW read already agrees, and only that one', () => {
     const fresh = columnsFor(
-      'workStatus',
+      'status',
       [group('open', [row('t2')]), group('working', [row('t1'), row('t3')])],
       EMPTY_FILTERS,
       [],

@@ -480,32 +480,46 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(getByTestId('list-quick-start').tagName).toBe('BUTTON');
   });
 
-  it('D41: lifecycle tabs are UNIVERSAL, and coexist with sections rather than replacing them', () => {
+  it('PHASE 7: FOUR category tabs, the same four words, on every kind', () => {
     // Pre-ratification this asserted the opposite — that task had NO tabs.
-    // The user ratified the three-tier model as drawn on every collection
-    // kind, and T0-1 draws tabs AND sections together: tabs are the lifecycle
-    // band, sections are triage grouping within it.
+    // The user ratified universal tabs; phase 7 made them the closed four and
+    // made them IDENTICAL, which is the stronger claim: they are not four tabs
+    // each kind spells its own way, they are one declaration.
     for (const kind of ['task', 'work_session', 'doc']) {
       const panel = render(<EntityListPanel kind={kind} rowsFor={rowsFor([])} ctx={ctx} />);
-      expect(panel.getAllByRole('tab'), `${kind} tabs`).toHaveLength(3);
+      expect(
+        panel.getAllByRole('tab').map((t) => (t.textContent ?? '').replace(/\s*\d+\+?$/, '')),
+        `${kind} tabs`,
+      ).toEqual(['To Do', 'In Progress', 'Done', 'Cancelled']);
       panel.unmount();
     }
-    // and task keeps its sections — the withdrawal of the rename proposal
-    expect(getKind('task').list.sections?.length).toBeGreaterThan(0);
+    // The sections that used to fight the tabs on the same axis are GONE.
+    expect(getKind('task').list.sections).toBeUndefined();
+  });
+
+  it('PHASE 7: ARCHIVED left the tab row and became a filter option', () => {
+    // A tab row is a partition of ONE axis, and archived is a different axis
+    // (`deleted_at`). As a tab it meant "archived INSTEAD OF done"; as a chip
+    // it composes with whichever category is open.
+    const view = render(<EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />);
+    expect(view.queryAllByRole('tab', { name: /Archived/ })).toHaveLength(0);
+    fireEvent.click(view.getByTestId('filter-trigger'));
+    expect(view.getByRole('menuitemcheckbox', { name: 'Archived only' })).toBeTruthy();
+    expect(view.getByRole('menuitemcheckbox', { name: 'Include archived' })).toBeTruthy();
   });
 
   it('D41: the filter chips SURVIVE alongside the tabs', () => {
-    // Making tiers universal briefly deleted the filter trigger from every
+    // Making tabs universal briefly deleted the filter trigger from every
     // kind, because tabs and chips had been coded as either/or while
     // work_session was the only kind with tabs. They are different axes.
     const { getByTestId, getAllByRole } = render(
       <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
     );
-    expect(getAllByRole('tab')).toHaveLength(3);
+    expect(getAllByRole('tab')).toHaveLength(4);
     expect(getByTestId('filter-trigger')).toBeTruthy();
   });
 
-  it('PHASE 5: a stateless kind renders three LIVE tabs — nothing is dimmed as unsupported', () => {
+  it('PHASE 5: a stateless kind renders four LIVE tabs — nothing is dimmed as unsupported', () => {
     // What this replaced: A1a measured that most kinds had no completion state
     // the contract could express, so `done` carried `unsupported` and its tab
     // rendered dimmed with a reason. Migration 152 filled that hole — every
@@ -516,24 +530,30 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const { container, getAllByRole } = render(
       <EntityListPanel kind={stateless!.kind} rowsFor={rowsFor([])} ctx={ctx} />,
     );
-    expect(getAllByRole('tab')).toHaveLength(3);
+    expect(getAllByRole('tab')).toHaveLength(4);
     expect(container.querySelector('[data-unsupported]'), 'no tab may be dimmed').toBeNull();
     for (const tab of getAllByRole('tab')) {
       expect(tab.getAttribute('title'), 'a live tab carries no refusal reason').toBeNull();
     }
   });
 
-  it('D41: tab counts, footer line and selector total all come from the SAME per-tier query', () => {
+  it('D41: tab counts, footer line and selector total all come from the SAME per-tab query', () => {
     const { getByTestId, getAllByRole } = render(
       <EntityListPanel kind="task" rowsFor={rowsFor([taskUuidTitle, taskGuideLines])} ctx={ctx} />,
     );
     const tabCounts = getAllByRole('tab').map((t) => Number((t.textContent ?? '').match(/\d+$/)?.[0] ?? 0));
     const total = Number(getByTestId('kind-total').textContent);
-    // The total is the sum of the tiers — not a second source that could
+    // The total is the sum of the tabs — not a second source that could
     // disagree with the tabs it claims to summarise.
     expect(total).toBe(tabCounts.reduce((a, b) => a + b, 0));
     const footer = getByTestId('list-footer').textContent ?? '';
-    for (const id of ['open', 'done', 'archived']) expect(footer).toContain(id);
+    // The tab's LABEL lowercased, never its `StatusCategory` id: `to_do` and
+    // `in_progress` are contract literals and must not reach a user.
+    for (const word of ['to do', 'in progress', 'done', 'cancelled']) {
+      expect(footer).toContain(word);
+    }
+    expect(footer).not.toContain('to_do');
+    expect(footer).not.toContain('in_progress');
   });
 
   it('marks a generic attention request IN PLACE — the flagged parent keeps its children', () => {
@@ -657,7 +677,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
      * This row is `status: 'exited'` with `livenessOf → 'not-running'`. It used
      * to carry a hand-rolled "Close session" button that this test clicked and
      * that fired `onTerminate` — but that button was wired to the SAME executor
-     * the registry's `terminate` uses (`handleSessionClose = primaries.terminate`),
+     * the registry's `terminate` uses (`handleSessionTerminate = primaries.terminate`),
      * minus its liveness gate. So it dispatched `execution.terminate` at a
      * session with no process left to kill: a live-looking control whose command
      * could only be refused downstream.
@@ -886,9 +906,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // selection overwriting the first.
     const union = (seen as Record<string, unknown>[]).find(
       (f) =>
-        Array.isArray(f.workStatus) &&
-        (f.workStatus as string[]).includes('blocked') &&
-        (f.workStatus as string[]).includes('open'),
+        Array.isArray(f.status) &&
+        (f.status as string[]).includes('blocked') &&
+        (f.status as string[]).includes('open'),
     );
     expect(union, `no query carried the unioned filter; saw ${JSON.stringify(seen)}`).toBeTruthy();
   });

@@ -178,7 +178,7 @@ describe.sequential('W2.G05 collection, graph, and undo PostgreSQL semantics', (
       spaceId: fixture.spaceId,
       kinds: ['task'],
       parentId: fixture.rootId,
-      groupBy: 'workStatus',
+      groupBy: 'status',
       sort: 'position',
       limit: 1,
     };
@@ -244,13 +244,13 @@ describe.sequential('W2.G05 collection, graph, and undo PostgreSQL semantics', (
     expect(byKey.get('high')!.items.map((item) => item.id)).toEqual([fixture.childId]);
     expect(byKey.get('medium')!.items.map((item) => item.id)).toEqual([fixture.rootId]);
 
-    // The filter ANDs with workStatus (both are task-narrowing predicates).
+    // The filter ANDs with status (both are task-narrowing predicates).
     const anded = await asApp(database, fixture.identityId, (q) => queryCollection(
       q,
       {
         spaceId: fixture.spaceId,
         kinds: ['task'],
-        filters: { priority: ['high'], workStatus: ['done'] },
+        filters: { priority: ['high'], status: ['done'] },
       },
       fixture.identityId,
     ));

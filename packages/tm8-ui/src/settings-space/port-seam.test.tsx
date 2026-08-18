@@ -290,7 +290,7 @@ describe('the workflow registry round-trips through the port', () => {
     // per-TARGET rule, not a transition matrix.)
     await seam.commands.work(task.id, { status: 'working' as never });
     const after = await seam.entity(task.id);
-    expect((after.state as { workStatus?: string }).workStatus).toBe('working');
+    expect((after.state as { status?: string }).status).toBe('working');
 
     // An unruled type stays untouched — today's behaviour exactly.
     const other = tasks.page.items.find((t) => t.deletedAt == null && t.id !== task.id)!;

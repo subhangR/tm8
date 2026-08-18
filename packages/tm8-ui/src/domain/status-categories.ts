@@ -1,6 +1,6 @@
 /**
  * The TRANSITIONAL bridge between the closed category union and the task
- * `workStatus` vocabulary, client-side — registry-adjacent DATA in the same
+ * `status` vocabulary, client-side — registry-adjacent DATA in the same
  * D18 sense as `HOME_RAIL_KINDS`: it names vocabulary members, so it lives in
  * `domain/` where kind vocabulary is legal, and nowhere else.
  *

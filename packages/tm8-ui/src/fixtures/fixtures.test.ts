@@ -62,7 +62,7 @@ describe('fixture dataset', () => {
     expect(sessionStale.activityAt < '2026-07-28T11:30:00.000Z').toBe(true);
 
     // NEEDS YOU: in_review + viewer-held pull
-    expect(taskUuidTitle.state.kind === 'task' && taskUuidTitle.state.workStatus === 'in_review').toBe(true);
+    expect(taskUuidTitle.state.kind === 'task' && taskUuidTitle.state.status === 'in_review').toBe(true);
 
     // delivery facets: contentStale-only, discussionMoved-only, and both
     const pulls = taskUuidTitle.badges.pulls ?? [];

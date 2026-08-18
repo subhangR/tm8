@@ -83,7 +83,7 @@ describe('the governance port reaches real data through a real seam', () => {
     // The function identity matters less than this: calling it goes to the
     // seam every time, so a consumer cannot hold a stale answer baked at read
     // time. A verdict for an id the node has never seen is never 'live'.
-    const verdict = port.statusOf({ id: 'session-that-does-not-exist', workStatus: null });
+    const verdict = port.statusOf({ id: 'session-that-does-not-exist', status: null });
     expect(verdict).not.toBe('live');
   });
 

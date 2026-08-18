@@ -6,10 +6,43 @@
  * limit/cursor: those never belong in a URL). An unknown `v` is treated as
  * UNPARSEABLE and discarded atomically — the version byte is what lets the
  * dossier supersede this codec later without breaking old links.
+ *
+ * ## PHASE 9 — `workStatus` LINKS STILL WORK, and they are translated here
+ *
+ * The vocabulary sweep renamed `CollectionQuery.filters.workStatus` to
+ * `filters.status` and the `groupBy` literal with it. That is a change to the
+ * VOCABULARY OF v1, not a new codec version, so `v` stays 1 and this decoder
+ * accepts both spellings and emits the new one.
+ *
+ * A link is the one place the old word can still ARRIVE from, because a URL
+ * outlives the build that wrote it. Without this, an old link degraded two
+ * ways and both were worse than they look: an old `groupBy` failed the
+ * validation below and discarded the WHOLE `q` atomically — losing the user's
+ * filters and sort as well — and an old `filters` key sailed through
+ * unvalidated into a `.strict()` server schema, turning a bookmark into a
+ * REFUSED read rather than a degraded one.
+ *
+ * This is a migration shim, not a second live sense of the word: nothing
+ * WRITES `workStatus` any more, and `encodeQ` emits only the new spelling, so
+ * a translated link normalises itself the first time the URL is rewritten.
  */
 import type { QValue } from './types';
 
 const SORT_KEYS = new Set(['activityAt_desc', 'createdAt_desc', 'position', 'dueDate', 'priority']);
+
+/** The pre-phase-9 spelling of `filters.status` / `groupBy: 'status'`. */
+const LEGACY_STATUS_KEY = 'workStatus';
+
+/**
+ * Move a legacy `workStatus` filter onto `status`, leaving everything else
+ * alone. An explicit `status` in the same payload WINS — a link carrying both
+ * was written by a newer build, and the new key is the one it meant.
+ */
+function renameLegacyStatus(filters: Record<string, unknown>): Record<string, unknown> {
+  if (!(LEGACY_STATUS_KEY in filters)) return filters;
+  const { [LEGACY_STATUS_KEY]: legacy, ...rest } = filters;
+  return rest.status === undefined && legacy !== undefined ? { ...rest, status: legacy } : rest;
+}
 
 function toBase64Url(bytes: Uint8Array): string {
   let binary = '';
@@ -51,7 +84,7 @@ export function decodeQ(raw: string): QValue | null {
   const value: QValue = { v: 1 };
   if (candidate.filters !== undefined) {
     if (typeof candidate.filters !== 'object' || candidate.filters === null) return null;
-    value.filters = candidate.filters as QValue['filters'];
+    value.filters = renameLegacyStatus(candidate.filters as Record<string, unknown>) as QValue['filters'];
   }
   if (candidate.sortBy !== undefined) {
     if (typeof candidate.sortBy !== 'string' || !SORT_KEYS.has(candidate.sortBy)) return null;
@@ -60,8 +93,9 @@ export function decodeQ(raw: string): QValue | null {
   if (candidate.groupBy !== undefined) {
     const groupBy = candidate.groupBy;
     if (typeof groupBy !== 'string') return null;
-    if (groupBy !== 'workStatus' && groupBy !== 'assignee' && !groupBy.startsWith('axis:')) return null;
-    value.groupBy = groupBy as QValue['groupBy'];
+    const current = groupBy === LEGACY_STATUS_KEY ? 'status' : groupBy;
+    if (current !== 'status' && current !== 'assignee' && !current.startsWith('axis:')) return null;
+    value.groupBy = current as QValue['groupBy'];
   }
   return value;
 }

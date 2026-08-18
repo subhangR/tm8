@@ -828,7 +828,13 @@ function SubtreeSection({
 function SubtreeRow({ child, onOpenEntity }: { child: EntitySummary; onOpenEntity?: (id: string) => void }) {
   const config = getKind(child.kind);
   const value = statusValueOf(child);
-  const done = value != null && closedStatusValues(config).includes(value);
+  /* PHASE 9/C3 — ONE definition of completed, the same one the list tile and
+     the tab row use: `category === 'done'`. It used to scrape every string
+     array out of the kind's `done` TIER filter and test the child's status
+     word against it, which meant three different predicates on three kinds and
+     none of them reachable for a status a space invented. `cancelled` is
+     deliberately NOT struck: it stopped, it did not finish. */
+  const done = child.category === 'done';
   const tone = value == null ? 'idle' : (config.panel.statusPill?.tones[value] ?? config.chip.tones?.[value] ?? 'idle');
   const word = value == null ? null : (config.panel.statusPill?.labels?.[value] ?? value.replace(/_/g, ' '));
 
@@ -1046,7 +1052,7 @@ function LinkedSection({
  * to the coordinator rather than taken unilaterally.
  */
 const STATUS_FIELD: Record<Exclude<StatusSource, 'none'>, string> = {
-  workStatus: 'workStatus',
+  status: 'status',
   sessionStatus: 'status',
   prState: 'state',
   profileStatus: 'status',
@@ -1064,27 +1070,6 @@ function statusValueOf(summary: EntitySummary): string | null {
   if (!field) return null;
   const raw = (summary.state as unknown as Record<string, unknown>)[field];
   return typeof raw === 'string' ? raw : null;
-}
-
-/**
- * The status values that count as DONE for a kind — read off its `done`
- * LIFECYCLE TIER, which since D56 carries a real contract-shaped filter.
- *
- * Phase 5 (migration 152) retired the `unsupported` arm this used to check
- * first. Every kind's done tier is a real query now, and for the kinds that had
- * none it is `category: ['done','cancelled']` — so the values this returns are
- * the two closed CATEGORIES rather than nothing, and a child in either is
- * struck. That is the same rule the two kinds with a state axis already ran,
- * arriving for the other twenty.
- */
-function closedStatusValues(config: KindConfig): readonly string[] {
-  const done = config.list.lifecycle?.find((tier) => tier.id === 'done');
-  if (!done) return [];
-  const out: string[] = [];
-  for (const member of Object.values(done.filter as unknown as Record<string, unknown>)) {
-    if (Array.isArray(member) && member.every((v) => typeof v === 'string')) out.push(...(member as string[]));
-  }
-  return out;
 }
 
 /**

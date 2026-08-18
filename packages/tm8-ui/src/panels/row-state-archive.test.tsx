@@ -178,7 +178,7 @@ describe('D67 — the picker writes the value the user chose', () => {
   it('re-selecting the current value writes nothing', () => {
     const onSetState = vi.fn();
     const [row] = rowsOfKind('task');
-    const current = (row!.state as unknown as { workStatus: string }).workStatus;
+    const current = (row!.state as unknown as { status: string }).status;
     mount('task', { onSetState }, [row!]);
     expandFirstRow();
 
@@ -263,7 +263,7 @@ describe('the collapsed tile writes state through the same control', () => {
   it('marks the current value and writes nothing when it is re-chosen', () => {
     const onSetState = vi.fn();
     const [row] = rowsOfKind('task');
-    const current = (row!.state as unknown as { workStatus: string }).workStatus;
+    const current = (row!.state as unknown as { status: string }).status;
     mount('task', { onSetState }, [row!]);
     openTileMenu();
 
@@ -372,7 +372,7 @@ describe('D67 — the three refusals stay distinct', () => {
 
 describe('D67 — archive is a layer ON TOP of state, not a value inside it', () => {
   it('never offers "archived" as a state option', () => {
-    // Archiving does not change `workStatus` — a task keeps it across an
+    // Archiving does not change `status` — a task keeps it across an
     // archive/restore round-trip — so listing it beside `blocked` would claim
     // the two are the same kind of fact.
     for (const config of allKinds()) {

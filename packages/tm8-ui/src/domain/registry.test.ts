@@ -189,13 +189,16 @@ describe('collection modes (D13)', () => {
 describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', () => {
   // Every surviving behavior names the FIELD that carries it. A behavior with
   // no field is a spec defect, not an inline special case.
-  it('1. task current/completed sections → list.sections', () => {
-    const sections = getKind('task').list.sections;
-    expect(sections?.map((s) => s.id)).toEqual(['current', 'completed']);
-    expect(sections?.[1].collapsedByDefault).toBe(true);
-    // Contract-shaped: the seam can execute these without translation.
-    expect(sections?.[0].filter.workStatus).toContain('working');
-    expect(sections?.[1].filter.workStatus).toContain('done');
+  it('1. PHASE 7 — task declares NO sections: the tab row owns that axis', () => {
+    // It used to declare `current` / `completed`, keyed on task status
+    // literals, and that partition is EXACTLY what the four category tabs are.
+    // Two controls for one axis is what the deleted `deleted` chip was, and
+    // the harm was concrete: every row in the Done tab fell into `completed`,
+    // which is `collapsedByDefault`, so opening Done showed a collapsed
+    // heading and no work. `sections` survives in the TYPE for triage grouping
+    // that is not the status axis; no kind declares one today.
+    expect(getKind('task').list.sections).toBeUndefined();
+    for (const row of allKinds()) expect(row.list.sections).toBeUndefined();
   });
 
   it('2. hierarchy expansion → list.tree', () => {
@@ -303,93 +306,118 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(getKind('task').panel.primaries).toEqual(['run', 'edit']);
   });
 
-  it('5. sessions lifecycle → list.lifecycle, D20 partition RETIRED (D56)', () => {
-    const tiers = getKind('work_session').list.lifecycle;
-    expect(tiers?.map((t) => t.id)).toEqual(['open', 'done', 'archived']);
-    // The contract now carries `sessionStatus`, so these are ordinary filters
-    // the seam executes untranslated — no client-side partition anywhere.
-    expect(tiers?.[0].filter.sessionStatus).toEqual(['spawning', 'running', 'idle']);
-    expect(tiers?.[1].filter.sessionStatus).toEqual(['exited', 'failed']);
-    for (const tier of tiers ?? []) expect(tier.filter).toBeTruthy();
+  it('5. PHASE 7 — a session partitions by CATEGORY, like every other kind', () => {
+    // The session tabs used to be keyed on `sessionStatus` literals, which is
+    // how a session that CRASHED came to be filed under "Done". Its states now
+    // declare their own categories (registry data) and its TABS are the same
+    // four every kind draws — one partition, one vocabulary, no kind-specific
+    // tab row left in this file.
+    const tabs = getKind('work_session').list.categories;
+    expect(tabs?.map((t) => t.id)).toEqual(['to_do', 'in_progress', 'done', 'cancelled']);
+    for (const tab of tabs ?? []) {
+      expect(tab.filter).toEqual({ category: [tab.id], deleted: 'exclude' });
+    }
   });
 
-  it('D56 — no tier anywhere carries a client-side partition any more', () => {
+  it('5b. PHASE 7 — the session state options carry the ruled categories', () => {
+    const options = getKind('work_session').list.stateControl?.options ?? [];
+    expect(options.map((o) => [o.id, o.category])).toEqual([
+      ['spawning', 'in_progress'],
+      ['running', 'in_progress'],
+      ['idle', 'in_progress'],
+      // `failed` is `done`, NOT `cancelled`: failure is a runtime fact that
+      // gets a badge, and the run did reach its end — nobody cancelled it.
+      ['exited', 'done'],
+      ['failed', 'done'],
+    ]);
+  });
+
+  it('D56 — no tab anywhere carries a client-side partition any more', () => {
     // The retirement is a DELETION, not a translation: if the field comes back
     // on any row, the workaround has been reintroduced beside the contract
     // member that replaced it, and the two would diverge silently.
     for (const row of allKinds()) {
-      for (const tier of row.list.lifecycle ?? []) {
-        expect(tier).not.toHaveProperty('statuses');
+      for (const tab of row.list.categories ?? []) {
+        expect(tab).not.toHaveProperty('statuses');
       }
     }
   });
 
-  it('D41 — every COLLECTION kind carries all three tiers, in order', () => {
-    // Universal by ruling. A kind that forgot them would silently lose its
-    // tabs, so the test asserts presence rather than trusting each row.
-    for (const row of collectionKinds()) {
-      expect(row.list.lifecycle?.map((t) => t.id)).toEqual(['open', 'done', 'archived']);
-    }
-    expect(getKind(CUSTOM_KIND_FALLBACK).list.lifecycle?.map((t) => t.id)).toEqual([
-      'open',
-      'done',
-      'archived',
-    ]);
-  });
-
-  it('D41 — archived is a REAL query for every kind, never an invention', () => {
-    // `deleted: 'only'` is a genuine CollectionQuery member, which is why the
-    // archive tier is honest universally where `done` is not.
+  it('PHASE 7 — every kind carries THE SAME four category tabs, in order', () => {
+    // Universal by ruling, and now universal in the strongest sense: not four
+    // tabs each kind spells its own way, but ONE declaration. The ids are the
+    // contract's closed `StatusCategory` union, so a kind cannot invent a
+    // fifth bucket and a space that names its own statuses is filed correctly
+    // without touching the registry.
+    const FOUR = ['to_do', 'in_progress', 'done', 'cancelled'];
     for (const row of allKinds()) {
-      const archived = row.list.lifecycle?.find((t) => t.id === 'archived');
-      expect(archived?.filter).toEqual({ deleted: 'only' });
+      expect(row.list.categories?.map((t) => t.id), `${row.kind}`).toEqual(FOUR);
+      expect(row.list.categories?.map((t) => t.label)).toEqual([
+        'To Do',
+        'In Progress',
+        'Done',
+        'Cancelled',
+      ]);
     }
+    expect(getKind(CUSTOM_KIND_FALLBACK).list.categories?.map((t) => t.id)).toEqual(FOUR);
+    expect(collectionKinds().length).toBeGreaterThan(0);
   });
 
-  it('PHASE 5 — EVERY kind can express done: no tier is unsupported any more', () => {
-    // The inversion of the test that used to stand here. It asserted that only
-    // task (workStatus) and work_session (sessionStatus, D56) could express
-    // completion and that the other twenty said so out loud via `unsupported`.
-    // Migration 152 gave every kind a workflow and every entity a status, so
-    // there is no kind left that cannot answer — and `unsupported` is gone from
-    // `LifecycleTier` entirely rather than left set to undefined everywhere.
+  it('PHASE 7 — every tab is the SAME mechanical category query, on every kind', () => {
+    // The whole point of the rename: `open` used to mean five status literals
+    // on task, three sessionStatus literals on work_session and two categories
+    // everywhere else — one tab id, three incompatible predicates. There is
+    // one predicate now and it follows from the id.
     for (const row of allKinds()) {
-      const done = row.list.lifecycle?.find((t) => t.id === 'done');
-      expect(done, `${row.kind} lost its done tier`).toBeTruthy();
-      expect(done?.label).toBe('Done');
-      expect(done).not.toHaveProperty('unsupported');
-      // A REAL query, not a bare `deleted: 'exclude'` standing in for one.
-      expect(Object.keys(done!.filter).length).toBeGreaterThan(1);
+      for (const tab of row.list.categories ?? []) {
+        expect(tab.filter, `${row.kind}/${tab.id}`).toEqual({
+          category: [tab.id],
+          deleted: 'exclude',
+        });
+      }
     }
   });
 
-  it('PHASE 5 — the kinds with no state axis partition by CATEGORY, contract-shaped', () => {
-    // `filters.category` shipped in phase 1 and is executed by the seam
-    // untranslated, exactly like `workStatus` and `sessionStatus` beside it.
-    // Three tiers, not four: `cancelled` rides with `done` until phase 7 gives
-    // it its own permanent tab (ruled, sub-doc 7 §3.4).
-    const stateless = allKinds().filter((row) => !['task', 'work_session'].includes(row.kind));
-    expect(stateless.length).toBeGreaterThan(15);
-    for (const row of stateless) {
-      const tiers = row.list.lifecycle ?? [];
-      expect(tiers.find((t) => t.id === 'open')?.filter).toEqual({
-        category: ['to_do', 'in_progress'],
-        deleted: 'exclude',
-      });
-      expect(tiers.find((t) => t.id === 'done')?.filter).toEqual({
-        category: ['done', 'cancelled'],
-        deleted: 'exclude',
-      });
+  it('PHASE 7 — ARCHIVED IS NOT A TAB; it is a filter that composes', () => {
+    // Archived is `deleted_at`, orthogonal to status — an archived task keeps
+    // its status across the round-trip. As a TAB it was a partition member,
+    // so it said "archived INSTEAD OF done" and made the archive of an
+    // in-progress row unreachable from any tab. As a chip it narrows whichever
+    // category tab is open, which is a question the tab row could not ask.
+    for (const row of allKinds()) {
+      expect(row.list.categories?.some((t) => (t.id as string) === 'archived')).toBe(false);
+      // Every tab EXCLUDES archived rows, so the chip is the only control
+      // naming `deleted` and cannot contradict a tab.
+      for (const tab of row.list.categories ?? []) expect(tab.filter.deleted).toBe('exclude');
+
+      const chip = row.list.filters.find((f) => f.id === 'archived');
+      expect(chip, `${row.kind} lost the archive filter`).toBeTruthy();
+      expect(chip?.options.map((o) => o.filter.deleted)).toEqual(['only', 'include']);
+      // NOT multi: `deleted` takes one value, and two options that cannot
+      // combine must not be offered as though they did.
+      expect(chip?.multi).toBeFalsy();
     }
   });
 
-  it('D41 — carries NO count field: counts come from each tier query total', () => {
+  it('PHASE 7 — cancelled has its OWN tab; it no longer hides inside Done', () => {
+    // RULED (sub-doc 7 §3.4). Done used to carry `['done','cancelled']`, which
+    // told a user that abandoned work and finished work are one outcome.
+    for (const row of allKinds()) {
+      const done = row.list.categories?.find((t) => t.id === 'done');
+      expect(done?.filter.category).toEqual(['done']);
+      const cancelled = row.list.categories?.find((t) => t.id === 'cancelled');
+      expect(cancelled?.label).toBe('Cancelled');
+      expect(cancelled?.filter.category).toEqual(['cancelled']);
+    }
+  });
+
+  it('D41 — carries NO count field: counts come from each tab query total', () => {
     // One source, three surfaces (tab label, footer line, selector total). A
     // count field would be a second source that could disagree with the query.
     for (const row of allKinds()) {
-      for (const tier of row.list.lifecycle ?? []) {
-        expect(tier).not.toHaveProperty('count');
-        expect(tier).not.toHaveProperty('total');
+      for (const tab of row.list.categories ?? []) {
+        expect(tab).not.toHaveProperty('count');
+        expect(tab).not.toHaveProperty('total');
       }
     }
   });
@@ -417,7 +445,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
   it('uses only the CLOSED §2.2 field vocabulary', () => {
     const CLOSED: readonly (keyof ListConfig)[] = [
       'sections',
-      'lifecycle',
+      'categories',
       'tree',
       'tile',
       'liveCount',

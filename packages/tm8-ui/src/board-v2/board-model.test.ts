@@ -156,7 +156,7 @@ describe('planFor — workflow columns only when EVERY state is exactly queryabl
     expect(plan.mode).toBe('workflow');
     expect(plan.workflowName).toBe('wf-epic');
     expect(plan.columns.map((c) => c.label)).toEqual(['open', 'working', 'in_review', 'done']);
-    expect(plan.columns[1]?.filter).toEqual({ workStatus: ['working'] });
+    expect(plan.columns[1]?.filter).toEqual({ status: ['working'] });
     expect(plan.columns.map((c) => c.category)).toEqual(['to_do', 'in_progress', 'in_progress', 'done']);
   });
 

@@ -151,6 +151,12 @@
   color: var(--pn-ink-4);
   text-decoration: line-through;
 }
+/* ARCHIVED IS NOT COMPLETED (C2). Filing a row away dims it; it does not
+   strike it through, which is the mark this tile reserves for work that
+   finished. Same 0.62 the session tile has always used for the same fact. */
+.cv2-root .pn-tt--archived {
+  opacity: 0.62;
+}
 
 /* DEPTH IS THE WRAPPER, EXACTLY AS IT IS FOR SESSIONS. `lp__tree--control
    .lp__children` now carries the same 19px inset and the same per-ancestor

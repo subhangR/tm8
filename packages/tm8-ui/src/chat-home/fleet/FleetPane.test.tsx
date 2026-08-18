@@ -167,7 +167,7 @@ describe('FleetPane — sections follow the read, not the payload’s hint', () 
   it('sessions and tasks separate once their reads settle', async () => {
     const read = readerFor({
       [SESSION]: detail({ id: SESSION, title: 'lane one', state: { kind: 'work_session', status: 'idle' } }),
-      [TASK]: detail({ id: TASK, kind: 'task', title: 'ship the pane', state: { kind: 'task', workStatus: 'in_progress' } }),
+      [TASK]: detail({ id: TASK, kind: 'task', title: 'ship the pane', state: { kind: 'task', status: 'in_progress' } }),
     });
     render(<FleetPane turns={[spawnTurn]} readEntity={read} />);
     await screen.findByText('lane one');

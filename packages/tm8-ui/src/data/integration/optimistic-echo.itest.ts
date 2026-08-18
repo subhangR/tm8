@@ -73,7 +73,7 @@ function stubSummary(id: string, spaceId: string, title: string): EntitySummary 
     counters: { likes: 0, dislikes: 0, stars: 0, points: 0, messages: 0, viewerReaction: null },
     state: {
       kind: 'task',
-      workStatus: 'open',
+      status: 'open',
       priority: 'medium',
       axes: {},
       assignees: [],

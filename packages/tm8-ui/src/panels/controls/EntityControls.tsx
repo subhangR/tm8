@@ -14,7 +14,7 @@
  *
  * The DETAIL PANEL then turned out to hold the third copy. Its `MetaGrid`
  * rendered `priority`, `assignees` and `dueDate` as `<span>`s and its header
- * rendered `workStatus` as a read-only `Pill`, so the surface a user lands on
+ * rendered `status` as a read-only `Pill`, so the surface a user lands on
  * the instant they press "+ New task" — the generic-create pattern commits the
  * entity immediately and opens its panel — was the one surface with no way to
  * set any of them. That is the defect as the user reported it: "while creating
@@ -234,11 +234,11 @@ export interface ControlHost {
  *
  * WHY ARCHIVE SITS BESIDE THE DROPDOWN RATHER THAN INSIDE IT. They are two
  * different layers, and the ruling names both: the dropdown writes the kind's
- * OWN state (a task's `workStatus`), while archive writes the TOMBSTONE
+ * OWN state (a task's `status`), while archive writes the TOMBSTONE
  * (`entities.deleted_at`) that every kind shares and that the Archived
  * lifecycle tier queries as `deleted: 'only'`. Folding "Archived" into the
  * state list would claim it is a work status — it is not, a task keeps its
- * `workStatus` across an archive/restore round-trip (verified on this node),
+ * `status` across an archive/restore round-trip (verified on this node),
  * and only 5 of 19 kinds have a state list to fold it into at all.
  *
  * ARCHIVE FLIPS TO RESTORE ON `deletedAt`, which is a STRUCTURAL read of the

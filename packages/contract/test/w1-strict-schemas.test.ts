@@ -107,7 +107,7 @@ const taskSummary = {
   activityAt: occurredAt, createdAt: occurredAt, updatedAt: occurredAt, deletedAt: null,
   createdBy: actor, counters,
   state: {
-    kind: 'task' as const, workStatus: 'open' as const, priority: 'medium' as const,
+    kind: 'task' as const, status: 'open' as const, priority: 'medium' as const,
     axes: {}, assignees: [], acceptance: { total: 0, completed: 0 },
   },
   badges: {},

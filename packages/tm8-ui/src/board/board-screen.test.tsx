@@ -86,8 +86,12 @@ describe('the status board', () => {
     const view = await mountBoard();
     expect(columnKeys(view)).toEqual(['open', 'pulled', 'working', 'in_review', 'blocked', 'done', 'cancelled']);
     // Cards landed where their state says; an empty column says so in words.
+    // `open` HOLDS A CARD NOW (`taskQueued`, added with the four category tabs
+    // — the fixtures had no unstarted task at all), so the empty-column
+    // sentence is measured on `pulled`, which still has none.
     expect(column(view, 'working').getByText(GUIDE)).toBeTruthy();
-    expect(column(view, 'open').getByText('nothing in Open')).toBeTruthy();
+    expect(column(view, 'open').getByText('Name the empty states')).toBeTruthy();
+    expect(column(view, 'pulled').getByText('nothing in Pulled')).toBeTruthy();
     view.unmount();
   });
 
@@ -96,7 +100,7 @@ describe('the status board', () => {
     openAxis(view, 'bd-filter-status');
     fireEvent.click(view.getByTestId('bd-filter-status-working'));
     /* The filtered snapshot is a fresh cache key — the fixture applies
-       `workStatus` for real, so an option that stopped reaching the seam
+       `status` for real, so an option that stopped reaching the seam
        would leave the other tasks visible and fail here. */
     await waitFor(() => expect(columnKeys(view)).toEqual(['working']));
     await waitFor(() => expect(view.getAllByTestId('bd-card')).toHaveLength(1));

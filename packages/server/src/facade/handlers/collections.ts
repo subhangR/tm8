@@ -269,7 +269,7 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   // the whole reason the column was denormalized — a category filter that
   // needed the task join could never serve the kinds that gain a status later.
   //
-  // Kind-narrowing, by the same mechanism `workStatus` uses: an entity with no
+  // Kind-narrowing, by the same mechanism `status` uses: an entity with no
   // status has a NULL `status_category`, and `NULL = any(...)` is never true.
   // So the filter's PRESENCE restricts the page to entities that have a status,
   // which in this phase means tasks — no `kinds` clause required, and no
@@ -303,17 +303,17 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     );
   }
 
-  if (f.workStatus && f.workStatus.length > 0) {
-    where.push(`t.work_status = any(${p.add(f.workStatus)}::text[])`);
+  if (f.status && f.status.length > 0) {
+    where.push(`t.work_status = any(${p.add(f.status)}::text[])`);
   }
 
-  // Board tab wave (2026-08-16): same kind-narrowing semantics as workStatus —
+  // Board tab wave (2026-08-16): same kind-narrowing semantics as status —
   // t.priority is NULL for every non-task row, so presence restricts to tasks.
   if (f.priority && f.priority.length > 0) {
     where.push(`t.priority = any(${p.add(f.priority)}::text[])`);
   }
 
-  // A22: same kind-narrowing semantics as workStatus — ws.status is NULL for
+  // A22: same kind-narrowing semantics as status — ws.status is NULL for
   // every non-work_session row, and NULL = any(...) is never true, so the
   // filter's presence restricts the result to work_sessions in these statuses.
   if (f.sessionStatus && f.sessionStatus.length > 0) {
@@ -488,13 +488,13 @@ function groupItems(items: EntitySummary[], groupBy: NonNullable<CollectionQuery
   };
 
   for (const item of items) {
-    if (groupBy === 'workStatus') {
-      const status = item.state.kind === 'task' ? item.state.workStatus : 'open';
+    if (groupBy === 'status') {
+      const status = item.state.kind === 'task' ? item.state.status : 'open';
       put(status, WORK_STATUS_LABELS[status] ?? status, item);
       continue;
     }
     if (groupBy === 'priority') {
-      // Non-task rows have no priority; 'medium' mirrors the workStatus arm's
+      // Non-task rows have no priority; 'medium' mirrors the status arm's
       // 'open' default so the bucket and the SQL total cannot disagree.
       const priority = item.state.kind === 'task' ? item.state.priority : 'medium';
       put(priority, PRIORITY_LABELS[priority] ?? priority, item);
@@ -545,7 +545,7 @@ export async function queryCollection(
   const sort = SORTS[sortName];
   if (!sort) throw new CollabError('invalid_input', `unsupported sort: ${String(query.sort)}`);
 
-  if (query.groupBy && !['workStatus', 'assignee', 'priority'].includes(query.groupBy) && !query.groupBy.startsWith('axis:')) {
+  if (query.groupBy && !['status', 'assignee', 'priority'].includes(query.groupBy) && !query.groupBy.startsWith('axis:')) {
     throw new CollabError('invalid_input', `unsupported groupBy: ${query.groupBy}`);
   }
 
@@ -601,6 +601,8 @@ export async function queryCollection(
     nextCursor: hasMore && last
       ? encodeCursor([fingerprint, sortKeyOf(last, sortName), last.id])
       : null,
+    // THE TRUE SIZE OF THE MATCH — phase 7's counts ruling. See `queryTotal`.
+    total: await queryTotal(q, baseWhere, p.values.slice(0, baseParamCount)),
   };
 
   // The query as resolved, so re-running it is reproducible.
@@ -629,7 +631,7 @@ export async function queryCollection(
       groups.push({
         key,
         label:
-          query.groupBy === 'workStatus'
+          query.groupBy === 'status'
             ? (WORK_STATUS_LABELS[key] ?? key)
             : query.groupBy === 'priority'
               ? (PRIORITY_LABELS[key] ?? key)
@@ -642,6 +644,54 @@ export async function queryCollection(
     }
   }
   return { query: resolved, page, groups };
+}
+
+/**
+ * THE TRUE SIZE OF THE MATCH, from a server aggregate — `Page.total`.
+ *
+ * ## What this fixes
+ *
+ * `Page.total` has been a contract member all along and the facade never
+ * populated it, so every count in the product was `rows.length` over the rows
+ * that happened to be LOADED. A 601-row Done tab read `50` because the first
+ * page was full; the honest workaround (`countLabel`'s `50+`) is a hedge, not
+ * a number. The four category tabs, the footer line and the kind-selector
+ * total all read that one source, so they could never disagree with each
+ * other — they under-counted TOGETHER, which is the failure mode that looks
+ * like a working feature.
+ *
+ * ## Why it is affordable now
+ *
+ * `entities.status_category` is a real column with a partial index
+ * (`(space_id, status_category) where deleted_at is null`, migration 147), so
+ * the tab reads — the highest-frequency counted query in the product — are an
+ * index-only aggregate. The joins in `ENTITY_FROM` are `entity_id`-unique
+ * LEFT JOINs, which Postgres eliminates outright for a count that names none
+ * of their columns, so the plan is usually just the entity index.
+ *
+ * ## Query-scoped, not page-scoped
+ *
+ * Computed against `baseWhere` — the WHERE with the CURSOR CLAUSE EXCLUDED,
+ * the same base `groupTotals` uses. A total that shrank as you paged would be
+ * describing the page, and the page already describes itself.
+ *
+ * `count(*)`, not `count(distinct e.id)`: every predicate `buildWhere`
+ * produces is either a scalar comparison on `e`/`t`/`ws` or an `exists (…)`
+ * subquery, and neither multiplies rows. `groupTotals` needs the `distinct`
+ * because it adds a real `left join` on `public.edges` for the assignee key.
+ */
+async function queryTotal(
+  q: Querier,
+  where: readonly string[],
+  params: readonly unknown[],
+): Promise<number> {
+  const rows = await q.query<{ total: number }>(
+    `select count(*)::int as total
+     ${ENTITY_FROM}
+      where ${where.join('\n        and ')}`,
+    [...params],
+  );
+  return Number(rows[0]?.total ?? 0);
 }
 
 /**
@@ -659,7 +709,7 @@ async function groupTotals(
   const values = [...params];
   let keyExpr: string;
   let extraJoin = '';
-  if (groupBy === 'workStatus') {
+  if (groupBy === 'status') {
     keyExpr = `coalesce(t.work_status, 'open')`;
   } else if (groupBy === 'priority') {
     keyExpr = `coalesce(t.priority, 'medium')`;
