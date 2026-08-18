@@ -20,6 +20,12 @@
 .cv2-root { color-scheme: light; }
 .cv2-root[data-theme="dark"],
 [data-theme="dark"] .cv2-root { color-scheme: dark; }
+/* The centre stage forces its OWN dark scope (WorkspaceGrid stamps
+   data-theme="dark" on an inner element, LLD §12) — without this arm its
+   native scrollbars stayed light-scheme on a dark canvas, the one place a
+   default scrollbar reads as foreign chrome. color-scheme inherits, so the
+   stamped subtree is covered whichever theme the app itself is in. */
+.cv2-root [data-theme="dark"] { color-scheme: dark; }
 
 /* --- Compact Server + Space bar ------------------------------------------ */
 .cv2-root .shell-tabbar {
