@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
-import { exec, execFile, spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { constants, createReadStream } from 'node:fs';
 import { BlockList, isIP } from 'node:net';
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
@@ -14,7 +14,6 @@ import type { CatalogTransport } from './catalog-client.js';
 import { DIRECT_TOOL_NAMES, type DirectToolName } from './modes.js';
 
 const execFileAsync = promisify(execFile);
-const execAsync = promisify(exec);
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_OUTPUT_BYTES = 256 * 1024;
 const MAX_GREP_SCAN_BYTES = 50 * 1024 * 1024;
@@ -84,7 +83,6 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   { name: 'repo_write', description: 'Write a UTF-8 file directly in the Build checkout.', inputSchema: objectSchema({ path: stringProp('Project-relative path.'), content: stringProp('Complete new content.') }, ['path', 'content']), annotations: annotations(false, true) },
   { name: 'repo_edit', description: 'Replace exact text directly in one project file.', inputSchema: objectSchema({ path: stringProp('Project-relative path.'), oldText: stringProp('Exact text to replace.'), newText: stringProp('Replacement text.'), replaceAll: { type: 'boolean', description: 'Replace every occurrence instead of requiring exactly one.' } }, ['path', 'oldText', 'newText']), annotations: annotations(false, true) },
   { name: 'repo_multi_edit', description: 'Preflight and apply several exact repository edits.', inputSchema: objectSchema({ edits: { type: 'array', minItems: 1, maxItems: 100, items: objectSchema({ path: stringProp('Project-relative path.'), oldText: stringProp('Exact text to replace.'), newText: stringProp('Replacement text.'), replaceAll: { type: 'boolean' } }, ['path', 'oldText', 'newText']) } }, ['edits']), annotations: annotations(false, true) },
-  { name: 'repo_bash', description: 'Run a bounded shell command in the Build checkout. Deployment policy may require approval.', inputSchema: objectSchema({ command: stringProp('Shell command.'), timeoutMs: integerProp('Timeout in milliseconds.', 100, 60_000) }, ['command']), annotations: annotations(false, true) },
   { name: 'session_transcript', description: 'Read the largest supported bounded worker transcript window.', inputSchema: objectSchema({ sessionId: stringProp('Work-session entity id.'), last: integerProp('Newest entries.', 1, 200) }, ['sessionId']), annotations: annotations(true) },
   { name: 'session_tail', description: 'Read the newest live transcript window for a worker session.', inputSchema: objectSchema({ sessionId: stringProp('Work-session entity id.'), last: integerProp('Newest entries.', 1, 100) }, ['sessionId']), annotations: annotations(true) },
   { name: 'session_followup', description: 'Steer a worker by posting a durable message anchored to its session.', inputSchema: objectSchema({ sessionId: stringProp('Work-session entity id.'), body: stringProp('Follow-up instruction.') }, ['sessionId', 'body']), annotations: annotations(false) },
@@ -217,7 +215,6 @@ export async function callDirectTool(
     case 'repo_write': return repoWrite(args, context);
     case 'repo_edit': return repoEdit(args, context);
     case 'repo_multi_edit': return repoMultiEdit(args, context);
-    case 'repo_bash': return repoBash(args, context);
     case 'session_transcript': return sessionTranscript(args, context, false);
     case 'session_tail': return sessionTranscript(args, context, true);
     case 'session_followup': return sessionFollowup(args, context);
@@ -432,20 +429,6 @@ async function repoMultiEdit(args: Record<string, unknown>, context: DirectToolC
     throw new DirectToolError('tool_failed', 'multi-edit commit failed; completed writes were rolled back');
   }
   return result('repo_multi_edit', { files: [...pending.values()].map((value) => ({ path: value.path, replacements: value.replacements, bytes: Buffer.byteLength(value.text) })) });
-}
-
-async function repoBash(args: Record<string, unknown>, context: DirectToolContext) {
-  const command = requiredString(args.command, 'command');
-  const timeout = integer(args.timeoutMs, 'timeoutMs', 100, 60_000) ?? 15_000;
-  const root = await projectRoot(context);
-  const env = { PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: process.env.LANG ?? 'C.UTF-8' };
-  try {
-    const { stdout, stderr } = await execAsync(command, { cwd: root, timeout, maxBuffer: MAX_OUTPUT_BYTES, env, shell: '/bin/bash' });
-    return result('repo_bash', { exitCode: 0, stdout: cap(stdout), stderr: cap(stderr) });
-  } catch (error) {
-    const value = error as { code?: number | string; stdout?: string; stderr?: string; killed?: boolean };
-    return result('repo_bash', { exitCode: typeof value.code === 'number' ? value.code : null, killed: value.killed === true, stdout: cap(value.stdout ?? ''), stderr: cap(value.stderr ?? '') });
-  }
 }
 
 async function sessionTranscript(args: Record<string, unknown>, context: DirectToolContext, tail: boolean) {
@@ -1276,11 +1259,6 @@ function safeGitRemote(remote: string): string | null {
 
 function result(tool: string, data: Record<string, unknown>): Record<string, unknown> {
   return { schemaVersion: 'tm8.mcp.result.v1', tool, ...data };
-}
-
-function cap(value: string, bytes = MAX_OUTPUT_BYTES): string {
-  const buffer = Buffer.from(value);
-  return buffer.byteLength <= bytes ? value : `${buffer.subarray(0, bytes).toString('utf8')}\n…truncated…`;
 }
 
 function objectOf(raw: unknown, field = 'tool arguments'): Record<string, unknown> {

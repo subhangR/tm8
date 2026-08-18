@@ -54,19 +54,20 @@ describe('chat launch composition', () => {
 
   it('gives every mode the same native surface and prefers it over duplicate MCP tools', () => {
     for (const mode of MODES) {
-      // Bash is the one carve-out, and it is never pre-approved in any mode.
+      // Every mode now sees the SAME built-ins, Bash included. Bash is visible
+      // but still never pre-approved in this slice — the runtime posture change
+      // (dontAsk → bypassPermissions) is a separate slice.
       expect([mode, chatProviderToolPolicy(mode).availableTools]).toEqual([mode, [
-        'Read', 'Glob', 'Grep',
-        ...(mode === 'plan' || mode === 'build' ? ['Bash'] : []),
+        'Read', 'Glob', 'Grep', 'Bash',
         'WebFetch', 'WebSearch', 'Edit', 'Write', 'TodoWrite',
       ]]);
       expect(chatAllowedTools(mode)).not.toContain('Bash');
       expect(chatAllowedTools(mode)).not.toContain('Write(/**)');
       // Claude's built-ins own repo and web; the duplicate MCP tools stay
       // registered as provider-neutral fallbacks but are not pre-approved.
+      // (repo_bash is gone entirely — native Bash covers shell.)
       for (const duplicate of [
-        'mcp__tm8__repo_read_file', 'mcp__tm8__repo_edit',
-        'mcp__tm8__repo_bash', 'mcp__tm8__web_search',
+        'mcp__tm8__repo_read_file', 'mcp__tm8__repo_edit', 'mcp__tm8__web_search',
       ]) {
         expect([mode, duplicate, chatAllowedTools(mode).includes(duplicate)])
           .toEqual([mode, duplicate, false]);
@@ -76,14 +77,14 @@ describe('chat launch composition', () => {
         'mcp__tm8__tm8_read', 'mcp__tm8__tm8_act', 'mcp__tm8__tm8_delegate',
         'mcp__tm8__doc_create', 'mcp__tm8__memory_write', 'mcp__tm8__git_diff',
         'mcp__tm8__session_followup', 'mcp__tm8__repo_multi_edit',
+        // The inline presentation tools are now pre-approved in EVERY mode,
+        // not just Explain.
+        'mcp__tm8__explain_diagram',
       ]) {
         expect([mode, expected, chatAllowedTools(mode).includes(expected)])
           .toEqual([mode, expected, true]);
       }
     }
-    // The inline presentation tools remain Explain's alone.
-    expect(chatAllowedTools('explain')).toContain('mcp__tm8__explain_diagram');
-    expect(chatAllowedTools('build')).not.toContain('mcp__tm8__explain_diagram');
   });
 
   it('withholds only the repository half when no trusted project is linked', () => {
