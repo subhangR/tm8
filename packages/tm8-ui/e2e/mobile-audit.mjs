@@ -234,7 +234,11 @@ const ROUTES = [
   /* ── LANE A cases (DEF-025/026/027/028/039) ────────────────────────────── */
   {
     name: 'chat-home', path: 'home', phone: 'screen',
-    witness: '[data-testid="chat-home-screen"]',
+    /* CLASS-BASED, not the testid. A testid witness is unfalsifiable from the
+       row JSON, and the usual failure is a FALSE ALARM: a non-colliding testid
+       returns zero hits and reads as "witness absent" on a capture that was
+       fine. `.tch-root` is the same element (ChatHomeScreen.tsx:1027). */
+    witness: '.tch-root',
     note: 'Lane A cases A + C — composer foot, root bar, thinking summary',
   },
   {
@@ -242,7 +246,8 @@ const ROUTES = [
        the tabbed list; this route opens the channel directly, so `.chv-tab` and
        the `.chs-*` feed rows are reachable regardless of that bug. */
     name: 'chat-channel', path: 'channel/ch-design', phone: 'screen',
-    witness: '[data-testid="channel-view"]',
+    /* Same reasoning — `.chv-root` is the same element (ChannelView.tsx:319). */
+    witness: '.chv-root',
     note: 'Lane A cases B + D — chv-tab strip and the threaded feed',
   },
 ];
@@ -838,6 +843,39 @@ function measureInPage({ MIN_TAP, EPS }) {
       detailPanel: !!document.querySelector('[data-testid="entity-detail-panel"]'),
       panelTabs: !!document.querySelector('[data-testid="panel-tabs"]'),
     },
+    /*
+     * LANE A — AT-REST COMPOSER REACHABILITY. No keyboard involved.
+     *
+     * The keyboard-up case is ruled unverifiable on this engine and is not
+     * measured here. This is ordinary resting geometry on a route already
+     * driven, and it is a DIFFERENT question: is the composer on screen at all
+     * before anything is focused.
+     *
+     * (c) is what decides what (a) and (b) MEAN. `.mobile-frame__content` is
+     * `overflow-y: auto` while `.tch-root` inside it is `overflow: hidden`, so
+     * which of the two absorbs the excess is the open question — and below the
+     * fold on a SCROLLING surface is reachable, while below the fold on one
+     * that does not scroll is not. A rect alone cannot tell them apart.
+     */
+    composerAtRest: (() => {
+      const box = (sel) => { const el = document.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height) }; };
+      const wrap = box('.tch-composer-wrap');
+      const send = box('.tch-send');
+      const frame = box('.mobile-frame');
+      const tabbar = box('.mobile-frame__tabbar') || box('.mobile-tabs');
+      const content = document.querySelector('.mobile-frame__content');
+      const tchRoot = document.querySelector('.tch-root');
+      return {
+        composerWrap: wrap, send, frame, tabbar,
+        // (a) composer bottom vs frame bottom
+        composerBottomVsFrameBottom: wrap && frame ? wrap.bottom - frame.bottom : null,
+        // (b) Send bottom vs tab-bar top  — positive means Send is BELOW the bar's top edge
+        sendBottomVsTabbarTop: send && tabbar ? send.bottom - tabbar.top : null,
+        // (c) does the surface scroll at all, and where does the excess live
+        frameContentScroll: content ? { scrollHeight: content.scrollHeight, clientHeight: content.clientHeight, overflowBy: Math.max(0, content.scrollHeight - content.clientHeight) } : null,
+        tchRootScroll: tchRoot ? { scrollHeight: tchRoot.scrollHeight, clientHeight: tchRoot.clientHeight, overflowBy: Math.max(0, tchRoot.scrollHeight - tchRoot.clientHeight), overflowY: getComputedStyle(tchRoot).overflowY } : null,
+      };
+    })(),
     /* Which screen a voice target actually got. A FACT, not a grade — see the
        voice-room route note. */
     voiceGuard: {
