@@ -47,6 +47,16 @@ import type { Querier } from '../db/types.js';
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
 import { loadUnreadCounts } from '../facade/entity-read.js';
+// The ONE narrowing of the status columns, shared with the read path. Both
+// files used to narrow `work_status` on their own and DISAGREED about an
+// unrecognised value; `facade/status.ts` is the fix and its docblock is the
+// argument. `WorkStatusDriftError` is re-exported below because it was this
+// module's export first and callers (and a test) name it here.
+import {
+  categoryFragment,
+  narrowWorkStatus,
+  WorkStatusDriftError,
+} from '../facade/status.js';
 import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from '../facade/message-author-projection.js';
 import {
   loadLinkedPullRequestBadges,
@@ -90,6 +100,12 @@ export class EntityKindDriftError extends Error {
  * `EntityKind` has a template-literal arm (`c:${string}`) that an array of
  * literals cannot express — a list would reject every custom kind.
  */
+// Re-exported, not re-declared: this class was `projector.ts`'s export before
+// the narrowing moved to `facade/status.ts`, and `test/events/
+// projector-work-status-drift.test.ts` imports it from here. Keeping the name
+// resolvable at its original address costs one line and breaks nothing.
+export { WorkStatusDriftError };
+
 function entityKind(raw: string, entityId: string): EntityKind {
   const parsed = EntityKindSchema.safeParse(raw);
   if (!parsed.success) throw new EntityKindDriftError(raw, entityId);
@@ -110,53 +126,6 @@ function oneOf<T extends string>(raw: unknown, allowed: readonly T[], fallback: 
 }
 
 /**
- * Thrown when `tasks.work_status` holds a value the contract's `WorkStatus`
- * does not name.
- *
- * Deliberately fatal, for the same reason `EntityKindDriftError` is: the only
- * way to reach it is drift between the database and the frozen contract. The
- * column carries a DDL CHECK, so an unrecognised value means a migration has
- * widened the set without the contract following — an operator's bug, not a
- * runtime state.
- *
- * Until this existed the value went through `oneOf(..., 'open')` and an
- * unrecognised status arrived at the client as `open`: a live task silently
- * reported as untouched over the event feed while the read path and the
- * database both said otherwise. That is data corruption attributed to
- * everything except its cause, and it gets strictly worse once statuses are
- * user-defined — a status this file has never heard of stops being impossible.
- *
- * NOTE for the phase that makes statuses user-defined: the fix there is to
- * widen what this function ACCEPTS, not to restore a fallback. A fallback
- * cannot distinguish "a status we do not know yet" from "a status that does
- * not exist", and picking `open` for either is the bug this class replaces.
- */
-export class WorkStatusDriftError extends Error {
-  constructor(status: string, entityId: string) {
-    super(
-      `database contains task work_status '${status}' (entity ${entityId}) which is not in the frozen contract — ` +
-        `db/migrations tasks.work_status has drifted from @tm8/contract WorkStatus`,
-    );
-    this.name = 'WorkStatusDriftError';
-  }
-}
-
-/**
- * Narrow a raw `work_status` to the contract's `WorkStatus`, loudly.
- *
- * NULL keeps the `oneOf` behaviour — it is the "detail table did not join"
- * case, and `open` is the value the migration declares for a fresh task. A
- * non-null string outside the union is the drift case and raises.
- */
-function workStatus(raw: unknown, entityId: string): WorkStatus {
-  if (raw === null || raw === undefined) return 'open';
-  if (typeof raw === 'string' && (WORK_STATUSES as readonly string[]).includes(raw)) {
-    return raw as WorkStatus;
-  }
-  throw new WorkStatusDriftError(String(raw), entityId);
-}
-
-/**
  * The title a deleted entity gets instead of its real one.
  *
  * Duplicated from `facade/entity-read.ts:222`, where it is module-private rather
@@ -166,25 +135,7 @@ function workStatus(raw: unknown, entityId: string): WorkStatus {
  */
 const TOMBSTONE_TITLE = 'Deleted';
 
-/**
- * `satisfies`, not a bare `as const`: this list is what `workStatus()` accepts,
- * so a contract that adds a status while this list stands still would make the
- * new value a fatal drift error. The `satisfies` catches a value that is NOT in
- * the contract; the `Exhaustive` check below catches a contract value missing
- * HERE. Together they pin the list to `WorkStatus` in both directions.
- */
-const WORK_STATUSES = [
-  'open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled',
-] as const satisfies readonly WorkStatus[];
-
-/** Compile error if `WorkStatus` gains an arm `WORK_STATUSES` does not list. */
-type _WorkStatusesAreExhaustive = Exclude<WorkStatus, (typeof WORK_STATUSES)[number]> extends never
-  ? true
-  : ['WORK_STATUSES is missing a WorkStatus arm', Exclude<WorkStatus, (typeof WORK_STATUSES)[number]>];
-const _workStatusesAreExhaustive: _WorkStatusesAreExhaustive = true;
-void _workStatusesAreExhaustive;
-
-const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
+const PRIORITIES =['low', 'medium', 'high', 'urgent'] as const;
 const DOC_FORMATS = ['markdown', 'mermaid', 'excalidraw'] as const;
 const MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
 const WS_STATUSES = ['spawning', 'running', 'idle', 'exited', 'failed'] as const;
@@ -237,6 +188,8 @@ interface SummaryRow {
   updated_at: Date | string;
   deleted_at: Date | string | null;
   created_by: string;
+  /** 147; optional keeps pre-147 row fixtures source-compatible. */
+  status_category?: string | null;
   likes: number | null;
   dislikes: number | null;
   stars: number | null;
@@ -363,6 +316,11 @@ const SUMMARY_SQL = `
 select
   e.id, e.space_id, e.kind, e.parent_id, e.position, e.visibility, e.version,
   e.activity_at, e.created_at, e.updated_at, e.deleted_at, e.created_by,
+  -- MIRRORS entity-read's ENTITY_COLUMNS. The envelope carries the category so
+  -- the event feed and the read path agree about which tab a row belongs in;
+  -- omitting it here would make a live status change move a row on refresh but
+  -- not on the socket, which reads as a caching bug for a week.
+  e.status_category,
   c.likes, c.dislikes, c.stars, c.points, c.messages,
   c.human_messages, c.agent_messages, c.docs, c.memories,
   t.title            as task_title,
@@ -811,6 +769,9 @@ export class PgEntityProjector implements EntityProjector {
       updatedAt: isoRequired(r.updated_at),
       deletedAt: iso(r.deleted_at),
       createdBy: actors.get(r.created_by) ?? this.unknownActor(r.created_by),
+      // MIRRORS entity-read's toEntitySummary, spread for spread: the key is
+      // ABSENT when the entity has no status, never a defaulted bucket.
+      ...categoryFragment(r.status_category, r.id),
       counters,
       state: this.stateOf(r, actors, assignees, assignments, members, unreadCounts, containsCounts),
       // `EntityBadges` fields are all optional, so `{}` is a valid and honest
@@ -1023,7 +984,7 @@ export class PgEntityProjector implements EntityProjector {
         return {
           kind: 'task',
           // Raises rather than coercing: see WorkStatusDriftError.
-          workStatus: workStatus(r.work_status, r.id),
+          workStatus: narrowWorkStatus(r.work_status, r.id),
           priority: oneOf(r.priority, PRIORITIES, 'medium'),
           axes: asStringRecord(r.axes),
           dueDate: iso(r.due_date),

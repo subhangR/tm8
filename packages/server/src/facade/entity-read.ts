@@ -55,6 +55,8 @@ import {
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
 import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message-author-projection.js';
+// The ONE narrowing of the status columns, shared with `events/projector.ts`.
+import { categoryFragment, narrowWorkStatus } from './status.js';
 
 // ---------------------------------------------------------------------------
 // Row shape
@@ -68,6 +70,12 @@ import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message
 export const ENTITY_COLUMNS = `
   e.id, e.space_id, e.kind, e.parent_id, e.position, e.visibility, e.version,
   e.activity_at, e.created_at, e.updated_at, e.deleted_at, e.created_by,
+  -- 147. Denormalized onto the envelope precisely so it can live in THIS
+  -- column list: the category is the tab/filter predicate, and a predicate
+  -- that needed the task join would be unavailable to the twenty kinds that
+  -- will carry a status in a later phase. MIRRORED by projector.ts's
+  -- SUMMARY_SQL — the two column lists must not drift.
+  e.status_category,
   coalesce(ec.likes, 0)    as likes,
   coalesce(ec.dislikes, 0) as dislikes,
   coalesce(ec.stars, 0)    as stars,
@@ -192,6 +200,8 @@ export interface EntityRow {
   updated_at: Date | string;
   deleted_at: Date | string | null;
   created_by: string;
+  /** 147; optional keeps legacy row fixtures source-compatible. */
+  status_category?: string | null;
   likes: number;
   dislikes: number;
   stars: number;
@@ -1238,7 +1248,12 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
     case 'task':
       return {
         kind: 'task',
-        workStatus: (row.work_status ?? 'open') as WorkStatus,
+        // Raises rather than casting. This was `(row.work_status ?? 'open') as
+        // WorkStatus` — an UNCHECKED cast, while the event path had already
+        // been made to raise on the same value (phase 0). The two paths
+        // disagreeing about a drifted status is worse than either posture, and
+        // the loud one is the ruled direction: see `facade/status.ts`.
+        workStatus: narrowWorkStatus(row.work_status, row.id),
         priority: (row.priority ?? 'medium') as 'low' | 'medium' | 'high' | 'urgent',
         axes: row.task_axes ?? {},
         dueDate: dateOnly(row.due_date),
@@ -1758,6 +1773,10 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
     updatedAt: iso(row.updated_at),
     deletedAt: isoOrNull(row.deleted_at),
     createdBy: actorOf(ctx.actors, row.created_by),
+    // Spread-when-known, like the 108 counters above it and for the same
+    // reason: an entity with no status must OMIT the key rather than claim a
+    // bucket. MIRRORED by projector.ts's summary literal.
+    ...categoryFragment(row.status_category, row.id),
     counters: {
       likes: row.likes,
       dislikes: row.dislikes,

@@ -260,6 +260,25 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
       where.push('e.deleted_at is null');
   }
 
+  // The lifecycle bucket, beside the soft-delete posture on purpose: these are
+  // the two envelope-level dispositions a list row has, and the four category
+  // tabs run this predicate on every read. It sits on `e`, not on `t`, which is
+  // the whole reason the column was denormalized — a category filter that
+  // needed the task join could never serve the kinds that gain a status later.
+  //
+  // Kind-narrowing, by the same mechanism `workStatus` uses: an entity with no
+  // status has a NULL `status_category`, and `NULL = any(...)` is never true.
+  // So the filter's PRESENCE restricts the page to entities that have a status,
+  // which in this phase means tasks — no `kinds` clause required, and no
+  // silently-included doc claiming to be To Do.
+  //
+  // Indexed by `entities(space_id, status_category) where deleted_at is null`
+  // (147), which is the shape this actually runs in: space predicate first,
+  // category second, tombstones already excluded by the default posture above.
+  if (f.category && f.category.length > 0) {
+    where.push(`e.status_category = any(${p.add(f.category)}::text[])`);
+  }
+
   if (query.kinds && query.kinds.length > 0) {
     where.push(`e.kind = any(${p.add(query.kinds)}::text[])`);
   }
