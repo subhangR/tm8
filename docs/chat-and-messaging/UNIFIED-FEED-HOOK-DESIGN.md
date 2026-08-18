@@ -184,3 +184,86 @@ object. They stay where they are and are passed through.
    top of a hook that already exists.
 
 Step 1 is the whole risk. Steps 2–4 are mechanical once it holds.
+
+---
+
+## 7. The streaming port — what must be COPIED rather than re-derived
+
+Steps 1–4 are done: one reader serves every anchor. What remains is parts and
+streaming, and this section exists because the hardest part of it is not the
+code that renders a part — it is four pieces of ordering bookkeeping in
+`ChatHomeScreen` that look incidental and are not. Each exists because of a
+real multiplayer failure. Re-deriving them from scratch means rediscovering
+those failures in production.
+
+Read from `ChatHomeScreen.tsx:509-590`.
+
+### 7.1 What is safely portable as-is
+
+`chat-home/turn-model.ts` is pure, framework-free and correct:
+
+- **`projectTurnParts`** — folds an append-only part log into render state, one
+  card per `toolCallId` whose status is the newest state by `seq`. Storage stays
+  append-only; only the projection collapses.
+- **`mergeChatTurnFrame`** — applies one frame. Note `:92`: a `done` for a
+  message with no delta or snapshot row is **dropped**, because fabricating an
+  empty assistant turn would put a blank bubble with an invented timestamp in
+  the transcript.
+- **`reconcileDetails`** — unions a fresh snapshot with what is on screen, so a
+  read that captured its snapshot before parts were durable but resolved after
+  them cannot make visible content disappear.
+
+`chat-home/wire.ts:turnPartFromMessagePart` converts a `MessagePart` (which the
+shared loader already attaches to every `MessageView`) into a `ChatTurnPart`.
+So **rendering parts needs no streaming at all**:
+`projectTurnParts(message.parts.map(turnPartFromMessagePart))`. That is step 1
+and it is genuinely small.
+
+### 7.2 The four guards — copy them
+
+**(a) `firstSeenRef` + `frameSeqRef` — the ordering guard.** A monotonic
+counter stamps the first frame seen for each message id. On a `done`
+(`:580-583`), the expectation only settles if that turn *started after* our own
+post. Without it, **another member's older turn finishing hides the pulse for
+your still-queued one** — the in-flight indicator dies while your turn is
+genuinely still running. This is the one the brief singles out, and it is
+invisible in single-player testing.
+
+**(b) `liveTurnsRef` — the concurrency guard.** A `done` settles only when no
+other turn is in flight (`:576`). Two agents answering in one thread otherwise
+end the streaming state on whichever finishes first.
+
+**(c) `recentFramesRef` — the replay cache.** Capped at 2000, sliced to 1000
+(`:532-534`). On `done` it drops that message's deltas but **keeps the done
+frame** (`:517-522`), because the parts are durable by then and the deltas are
+pure replay weight — but the done still carries the usage merge a later replay
+needs.
+
+**(d) The two "someone else did something" reads.** A frame for a root the list
+has never seen means another member started a thread → re-read the list, once,
+behind `refreshingThreadsRef` (`:539-544`). A delta for a message id absent
+from the open thread means another participant started a turn → re-read the
+detail (`:559-565`).
+
+### 7.3 The shape mismatch to resolve first
+
+`mergeChatTurnFrame` and `reconcileDetails` operate on `ChatThreadDetail`,
+chat-home's own shape — not on `MessageView`/`FeedItem`. `projectTurnParts`
+operates on `ChatTurnPart[]` and is therefore free of it.
+
+So the honest order is: **render parts first** (no shape work, no streaming),
+and only then decide whether the streaming path adapts frames onto feed items
+or keeps a per-thread detail projection beside the feed. Deciding that before
+parts render is deciding it without evidence.
+
+### 7.4 The caveat that outranks all of it
+
+Streaming is a **latency upgrade, never correctness**: `orchestrator.ts:331-346`
+appends the durable part *then* publishes, so a client that misses every frame
+is still correct after a re-read. Nothing above may be allowed to become
+load-bearing for correctness.
+
+And a session **cannot emit parts at all**: `append_chat_message_part`
+(migration 104:355) is the only writer and raises `P0002` for any message with
+no `chat_turns` row. The two "turn" concepts do not collapse. Render
+`parts?.length ? <Parts/> : <Markdown/>` and stay honest about which is which.
