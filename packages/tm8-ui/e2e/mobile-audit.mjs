@@ -591,6 +591,18 @@ function measureInPage({ MIN_TAP, EPS }) {
       }
       return out.slice(0, 24);
     })(),
+    /*
+     * LIST POPULATION (R14). A row-scoped defect cannot be closed on an empty
+     * list: "selector absent" on zero rows is VACUOUS, not a pass — it is the
+     * trap that took three of the gate's own rows. `listRows` is the count of
+     * real row tiles, and `kindTotal` is what the collection believes it holds,
+     * because those two disagreeing tells you WHICH kind of empty you have:
+     * kindTotal 0 means the collection is genuinely empty, while kindTotal > 0
+     * with listRows 0 means rows exist but the active tier hides them.
+     */
+    listRows: document.querySelectorAll('[data-testid="list-tile"]').length,
+    kindTotal: (document.querySelector('[data-testid="kind-total"]')?.textContent || '').trim(),
+    activeTier: (document.querySelector('.lp__tab--active')?.textContent || '').trim().slice(0, 24),
     /* Which screen a voice target actually got. A FACT, not a grade — see the
        voice-room route note. */
     voiceGuard: {
