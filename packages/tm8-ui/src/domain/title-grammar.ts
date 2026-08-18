@@ -61,6 +61,11 @@ export function placeholderNameFor(
 ): string {
   const normalized = titleNormalizerFor(config)(placeholder);
   if (config.titleGrammar !== 'slug') return normalized;
-  const suffix = Math.random().toString(36).slice(2, 6);
+  // Six base36 chars (~2.2e9 space), and always exactly six: a single
+  // `Math.random().toString(36)` draw can be shorter than the slice for small
+  // values, so concatenating two draws before slicing guarantees the width.
+  // A 4-char suffix collided ~1% of the time over a rapid burst of presses —
+  // the very `channels_space_id_name_key` duplicate this suffix exists to avoid.
+  const suffix = (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 6);
   return `${normalized.slice(0, 80 - suffix.length - 1)}-${suffix}`;
 }
