@@ -389,7 +389,7 @@ describe('G2.6 — default base ref is the project default branch, not parked HE
 
   it('no requested base ref → origin/HEAD’s branch, not the parked branch', async () => {
     const { ref, oid } = await manager.resolveBaseRef(clone);
-    expect(ref).toBe('main');
+    expect(ref).toBe('origin/main');
     expect(oid).toBe(originMainOid);
     expect(oid).not.toBe(parkedOid);
   });
@@ -402,11 +402,46 @@ describe('G2.6 — default base ref is the project default branch, not parked HE
       branch: 'tm8/d12-default', baseCommitOid: oid,
     });
     try {
-      expect(ref).toBe('main');
+      expect(ref).toBe('origin/main');
       expect(await git(['rev-parse', 'HEAD'], path)).toBe(originMainOid);
     } finally {
       await manager.remove({ repoRoot: clone, path, force: true });
     }
+  });
+
+  // The remote-tracking ref is preferred over its local twin, so a shared
+  // checkout whose local `main` nobody has pulled in a while does not hand the
+  // new lane a stale base. Without the remote-first ordering this resolves to
+  // local `main` and the lane starts life behind — the whole defect, just
+  // smaller. This is the assertion that pins the ORDER, not merely the tier.
+  it('local main behind origin/main → based on origin/main, not the stale local branch', async () => {
+    const behindOrigin = join(base, 'origin-repo-behind');
+    await mkdir(behindOrigin, { recursive: true });
+    await git(['init', '-b', 'main'], behindOrigin);
+    await writeFile(join(behindOrigin, 'a.txt'), 'a\n');
+    await git(['add', '.'], behindOrigin);
+    await commit(behindOrigin, 'shared history');
+
+    const checkout = join(base, 'behind-checkout');
+    await git(['clone', behindOrigin, checkout], base);
+    const localMainOid = await git(['rev-parse', 'main'], checkout);
+
+    // The remote moves on; the checkout fetches but never pulls — exactly what
+    // a shared checkout looks like after any other lane lands a PR.
+    await writeFile(join(behindOrigin, 'f.txt'), 'f\n');
+    await git(['add', '.'], behindOrigin);
+    await commit(behindOrigin, 'landed while the checkout sat still');
+    const remoteMainOid = await git(['rev-parse', 'HEAD'], behindOrigin);
+    await git(['fetch', 'origin'], checkout);
+
+    expect(await git(['rev-parse', 'main'], checkout)).toBe(localMainOid);
+    expect(await git(['rev-parse', 'origin/main'], checkout)).toBe(remoteMainOid);
+    expect(localMainOid).not.toBe(remoteMainOid);
+
+    const { ref, oid } = await manager.resolveBaseRef(checkout);
+    expect(ref).toBe('origin/main');
+    expect(oid).toBe(remoteMainOid);
+    expect(oid).not.toBe(localMainOid);
   });
 
   it('an explicitly requested ref is still honoured verbatim', async () => {

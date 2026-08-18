@@ -180,14 +180,25 @@ export class WorktreeManager {
    * `origin/HEAD` is the authoritative answer when it exists, but it is written
    * by `clone`, not by `fetch`, so a remote added after the fact has none — its
    * absence is a normal path here, never an error. `git ls-remote --symref` is
-   * deliberately NOT probed as a second source: this runs inside the
-   * per-project lock during provisioning, and making a lane's base depend on
-   * the network being up trades a wrong base for an unavailable one.
+   * deliberately NOT probed as a second source: it is a NETWORK round trip in
+   * the spawn hot path, so it would buy a new failure mode — spawn fails
+   * because the network is down — for an answer the remote-tracking refs below
+   * already give offline. (This function is NOT under the per-project lock;
+   * provisioning takes that lock at step 4, after base ref resolution at step 2.
+   * The reason to skip the probe is the network, not contention.)
    *
-   * The local branch is preferred over its remote-tracking twin so that a
-   * repository with no network still provisions off something real; freshness
-   * of local `main` versus `origin/main` is a fetch-cadence question, not this
-   * function's.
+   * The remote-tracking ref is preferred over its LOCAL twin at every tier. The
+   * base a lane wants is what `main` will be when its work merges, and
+   * `origin/main` is that; local `main` on a shared checkout is an artifact of
+   * whoever last pulled — measured 3 commits behind on the machine this was
+   * written on. Remote-tracking refs are written by `fetch`, so reading one
+   * costs no network. The local branch still follows as a fallback, which is
+   * what covers a repository with no remote or one never fetched.
+   *
+   * The case this deliberately loses: a local `main` AHEAD of `origin/main`
+   * with unpushed commits is not used as the base. For a lane that will open a
+   * pull request against the remote, dropping commits the remote has never seen
+   * is the correct answer, not a bug to be fixed back.
    */
   private async defaultBaseRefCandidates(repoRoot: string): Promise<string[]> {
     const candidates: string[] = [];
@@ -210,13 +221,13 @@ export class WorktreeManager {
     );
     if (originHead.code === 0) {
       const remoteRef = originHead.stdout.trim(); // e.g. `origin/main`
-      push(remoteRef.startsWith('origin/') ? remoteRef.slice('origin/'.length) : remoteRef);
       push(remoteRef);
+      push(remoteRef.startsWith('origin/') ? remoteRef.slice('origin/'.length) : remoteRef);
     }
-    push('main');
     push('origin/main');
-    push('master');
+    push('main');
     push('origin/master');
+    push('master');
 
     // Last: the branch HEAD is parked on. Before this function existed that was
     // the FIRST and only answer, which is how 36 of 68 measured lanes were
