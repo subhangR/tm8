@@ -639,7 +639,19 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 138
     //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 138
     //   (origin/main is still 137; this branch is the +1.)
-    expect(server.appliedMigrations.length).toBe(138);
+    // 138 -> 139 (2026-08-18): 148_pr_owning_session_space_scope.sql, the D2
+    // cross-Space nudge fix. ONE file, MEASURED on the merged tree — and worth
+    // recording WHY it is 148 and not 147, because the reason is this pin's
+    // whole failure mode: three lanes were writing migrations in parallel, the
+    // 147 prefix was reserved for this one, and #353 took it first. Renumbering
+    // was mandatory (a duplicate prefix aborts `migrationFiles()`), and it does
+    // not change the count.
+    //   ls db/migrations/*.sql | wc -l                                  -> 139
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql       -> 139
+    //   (origin/main is 138 at ff3370b8; this branch is the +1.)
+    // ⚠ If a sibling lane's migration merges before this one, this pin is a
+    // GUARANTEED conflict. Re-MEASURE on the merged tree; never add one.
+    expect(server.appliedMigrations.length).toBe(139);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
