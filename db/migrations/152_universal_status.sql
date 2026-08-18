@@ -412,9 +412,21 @@ begin
     raise exception '152: % entities have a status but no category', uncategorised;
   end if;
 
-  -- 5.2 The seeding table was actually applied — not merely available. Counted
-  -- as a DISAGREEMENT (rows of a done-seeded kind that are not done), because a
-  -- count of matching rows is vacuously satisfied by an empty database.
+  -- 5.2 The seeding table was actually applied to the rows that exist. Counted
+  -- as a DISAGREEMENT (rows of a done-seeded kind that are NOT done) rather
+  -- than as a count of matches, because a match count is satisfied by any
+  -- number including zero.
+  --
+  -- WHAT THIS CANNOT SAY, stated rather than implied: on a database with no
+  -- commits and no merged PRs both checks below pass vacuously, and a migration
+  -- cannot manufacture rows to test itself against. So this block is the guard
+  -- for the databases that matter — the live graph and any populated node,
+  -- where a wrong seed is exactly what it would catch — and
+  -- `universal-status.pg.test.ts` is the guard on a fresh one, where it creates
+  -- rows of both kinds and asserts each side. VERIFIED by negative control:
+  -- emptying `internal.kind_seeds_done` leaves this block green and turns the
+  -- test file's five done-kind cases red, which is the division of labour
+  -- working rather than a hole.
   select count(*) into n
     from public.entities e
    where internal.kind_seeds_done(e.kind)
