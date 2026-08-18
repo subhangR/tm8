@@ -379,8 +379,13 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       '--mcp-config',
       input.mcpConfigPath,
       '--strict-mcp-config',
+      // Chat is the human's orchestrating main thread and runs full-power,
+      // full-trust Claude Code (ruled): no interactive approvals, Bash
+      // unrestricted, workspace trusted. The exfiltration surface this opens on
+      // the per-thread token file is covered by secret redaction of the tm8
+      // token shape, not by withholding the shell.
       '--permission-mode',
-      'dontAsk',
+      'bypassPermissions',
       ...(input.availableTools.length > 0
         ? ['--tools', input.availableTools.join(',')]
         : ['--disallowed-tools', ...CLAUDE_BUILTIN_TOOLS]),

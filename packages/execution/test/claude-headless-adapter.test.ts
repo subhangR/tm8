@@ -112,7 +112,7 @@ describe('ClaudeHeadlessAdapter', () => {
       join(root, 'mcp.json'),
       '--strict-mcp-config',
       '--permission-mode',
-      'dontAsk',
+      'bypassPermissions',
       '--tools',
       'Read,Bash',
       '--allowed-tools',
