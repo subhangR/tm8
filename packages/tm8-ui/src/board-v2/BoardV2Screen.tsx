@@ -312,7 +312,7 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
             semantics on the shared dropdown: choosing a kind replaces the
             previous choice. */}
         <FilterSelect
-          label={kind.labelPlural}
+          label="Kind"
           testId="b2-kind"
           options={kindOptions}
           selected={[kind.kind]}
