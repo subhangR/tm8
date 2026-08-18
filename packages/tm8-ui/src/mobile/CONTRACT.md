@@ -364,7 +364,39 @@ The phone shell's identity is honest refusal, so these are contract, not taste:
   menu, no space switcher and no sign-out, and every tap census scored those screens as passing
   (DEF-003). Geometry will never flag a control that does not exist; only a person looking will.
 
-## 9. VERTICAL CLIPPING IS INVISIBLE TO EVERY METRIC HERE — DEF-037
+## 9. READING THE INSTRUMENT — COUNTS ARE FIELDS, ARRAYS ARE SAMPLES
+
+**`occluded[]`, `tapWorst[]`, `clipped[]` and `tinyText[]` can be CAPPED SAMPLES. The counts are
+separate fields.** Derive numbers from `occludedCount`, `tapUnder44`, `clippedCount`,
+`tinyTextCount` — treat the arrays as *examples*, never as inventories. If you quote an array length,
+say it is a sample and give the field beside it.
+
+Measured, so the sizes are not folklore. In `before-lanes-results.json` the caps are **12 for
+`tapWorst` and 6 for `occluded`**:
+
+| surface | `tapUnder44` | `len(tapWorst)` | `occludedCount` | `len(occluded)` |
+|---|---|---|---|---|
+| `entity-list-tasks` | 44 | 12 | 13 | 6 |
+| `entity-list-channels` | **49** | **12** | 0 | 0 |
+| `entity-detail-task` | 28 | 12 | 1 | 1 |
+
+**Computing "offenders on this surface" from `len(tapWorst)` under-reports by 37 on that channels
+row.** And the failure is silent in the worst way: **the sample is always internally consistent, so
+nothing looks wrong.** It is the same instrument fact that produced a `tinyTextCount` of 16 with a
+six-element sample — a per-class fix there repairs the six you can see and ships the ten you cannot.
+
+**NOT EVERY DATASET IS CAPPED, AND THAT IS WHY THIS MUST BE CHECKED RATHER THAN ASSUMED.** The
+contract run's own JSONs (`BEFORE-main-ce7aa295` / `AFTER-contract-93caef11`) are **complete**:
+`len(tapTargetsSmallest) == tapTargetsUnderMin` on all 50 phone rows in each, with arrays up to 32
+entries. The gate's "8 of 11 selectors genuinely fixed" was derived by scanning those arrays, and it
+**survives — because completeness was verified on every row it used**, not because arrays are
+generally safe. Two files from the same program, two different truncation behaviours.
+
+**So the rule is procedural, not a fact about the format:** before deriving anything from an array,
+compare its length to its count field on the rows you are about to use. One line of arithmetic
+separates an inventory from a sample, and nothing in the data announces which one you have.
+
+## 10. VERTICAL CLIPPING IS INVISIBLE TO EVERY METRIC HERE — DEF-037
 
 Horizontal overflow got a per-element measure. **Vertical clipping did not, and there is nothing to
 build one out of.** `overflowCount` scores a screen 0 while text is sliced through the middle of the
