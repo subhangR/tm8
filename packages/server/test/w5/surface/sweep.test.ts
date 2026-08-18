@@ -654,7 +654,16 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 140
     //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 140
     //   (origin/main is 139; this branch is the +1.)
-    expect(server.appliedMigrations.length).toBe(140);
+    // 140 -> 141 (2026-08-18): 150_doors_resolve_categories.sql — phase 3, the
+    // three doors. MEASURED on a tree freshly rebased onto main, not derived by
+    // adding one to the number above:
+    //   ls db/migrations/*.sql | wc -l                             -> 141
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 141
+    //   (origin/main is 140; this branch is the +1.)
+    // The same warning still applies verbatim: a sibling lane merging first
+    // makes this line a guaranteed conflict, and the fix is to re-measure the
+    // merged tree, never to add one.
+    expect(server.appliedMigrations.length).toBe(141);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
