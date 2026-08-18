@@ -1775,6 +1775,7 @@ export function GateApp(props: GateAppProps = {}) {
             <MessagesView
               seam={data.seam}
               spaceId={data.spaceId as SpaceId}
+              viewerActorId={viewerMemberId ?? undefined}
               onOpenEntity={(id) => {
                 /* A lens, not a terminus — leaving a conversation for the
                    entity it lives on lands in the workspace with the panel

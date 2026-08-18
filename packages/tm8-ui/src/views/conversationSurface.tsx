@@ -76,6 +76,7 @@ export function channelFeedSurfaceFor(
       onOpenEntity={host.onOpenEntity}
       threads={kindRow.panel.threads === true}
       anchorTitle={`${kindRow.chip.glyph}${detail.title}`}
+      viewerMemberId={host.viewerMemberId}
     />
   );
 }

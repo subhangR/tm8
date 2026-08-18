@@ -362,6 +362,7 @@ export function ChannelView({
                 </div>
               ) : (
           <LazyChannelScreen
+                  viewerActorId={viewerMemberId ?? undefined}
                   anchorId={channelId}
                   anchorNoun="this channel"
                   page={feed.page}

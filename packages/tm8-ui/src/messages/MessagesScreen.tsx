@@ -70,6 +70,8 @@ export interface MessagesScreenProps {
   onOpenEntity?: (id: EntityId) => void;
   /** Injected for determinism; recency is a pure projection of it. */
   now?: Date;
+  /** The viewer, for own-message sidedness — see ChannelScreen. */
+  viewerActorId?: string | undefined;
 }
 
 /**
@@ -87,7 +89,7 @@ const MODE_TABS: readonly { mode: MessagesMode; label: string }[] = [
   { mode: 'all', label: 'All messages' },
 ];
 
-export function MessagesScreen({ data, onOpenEntity, now }: MessagesScreenProps) {
+export function MessagesScreen({ data, onOpenEntity, now , viewerActorId }: MessagesScreenProps) {
   const clock = now ?? new Date();
   const tabsId = useId();
   const panelId = useId();
@@ -244,6 +246,7 @@ export function MessagesScreen({ data, onOpenEntity, now }: MessagesScreenProps)
             ) : (
               <div className="msg-read__surface">
                 <ChannelScreen
+                  viewerActorId={viewerActorId}
                   anchorId={selected.id}
                   anchorNoun={ANCHOR_NOUN}
                   anchorTitle={selected.title}

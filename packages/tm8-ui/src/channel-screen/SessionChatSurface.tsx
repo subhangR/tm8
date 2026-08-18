@@ -226,6 +226,7 @@ export function SessionChatSurface({
 
   return (
     <ChannelScreen
+      viewerActorId={viewerMemberId}
       anchorId={sessionId}
       anchorNoun="this session"
       page={projectedPage}

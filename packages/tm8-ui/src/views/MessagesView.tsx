@@ -31,12 +31,15 @@ export interface MessagesViewProps {
   onOpenEntity?: (id: EntityId) => void;
   /** Injected for determinism in tests; the screen's recency column reads it. */
   now?: Date;
+  /** The viewer, for own-message sidedness — see ChannelScreen. */
+  viewerActorId?: string | undefined;
 }
 
-export function MessagesView({ seam, spaceId, onOpenEntity, now }: MessagesViewProps) {
+export function MessagesView({ seam, spaceId, onOpenEntity, now, viewerActorId }: MessagesViewProps) {
   const data = useMessagesData(seam, spaceId);
   return (
     <MessagesScreen
+      viewerActorId={viewerActorId}
       data={data}
       {...(onOpenEntity ? { onOpenEntity } : {})}
       {...(now ? { now } : {})}

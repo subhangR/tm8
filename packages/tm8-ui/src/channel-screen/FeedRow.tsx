@@ -76,17 +76,30 @@ export function FeedRowGroup({
   anchorId,
   clustered = false,
   handlers,
+  viewerActorId,
 }: {
   group: FeedGroup;
   anchorId: EntityId;
   /** This row continues the author run above it — no repeated byline. */
   clustered?: boolean;
   handlers: FeedRowHandlers;
+  /** The viewer, for own-message sidedness (user ruling 2026-08-18: own
+   *  messages right-in-a-bubble, everyone else left). Absent ⇒ every row
+   *  keeps the left column — never a guess. */
+  viewerActorId?: string | undefined;
 }) {
   if (group.kind === 'operation') {
     return <MutationGroupRow group={group} />;
   }
-  return <FeedRow item={group.item} anchorId={anchorId} clustered={clustered} handlers={handlers} />;
+  return (
+    <FeedRow
+      item={group.item}
+      anchorId={anchorId}
+      clustered={clustered}
+      handlers={handlers}
+      viewerActorId={viewerActorId}
+    />
+  );
 }
 
 function FeedRow({
@@ -94,20 +107,24 @@ function FeedRow({
   anchorId,
   clustered,
   handlers,
+  viewerActorId,
 }: {
   item: FeedItem;
   anchorId: EntityId;
   clustered: boolean;
   handlers: FeedRowHandlers;
+  viewerActorId?: string | undefined;
 }) {
   const isMessage = item.itemKind === 'message';
+  const author = isMessage ? item.message.state.author ?? item.message.createdBy : null;
+  const own = viewerActorId !== undefined && author?.id === viewerActorId;
   const cls = [
     'chs-row',
     clustered ? 'chs-row--follow' : '',
     isMessage ? '' : 'chs-row--activity',
   ].filter(Boolean).join(' ');
   return (
-    <li className={cls}>
+    <li className={cls} data-own={own || undefined}>
       <article
         className="chs-row__grid"
         {...(isMessage ? { 'data-feed-message-id': item.message.id, tabIndex: -1 } : {})}
