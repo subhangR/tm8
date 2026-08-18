@@ -61,7 +61,7 @@ import {
   slugOfKind,
 } from '../domain';
 import type { CockpitStage, NavView } from '../routes/types';
-import type { HomeRootOption } from '../chat-home/ChatHomeScreen';
+import type { ListRootOption } from '../panels/ListRootHeader';
 import { HomeRail } from './HomeRail';
 import { HomeTrail } from './HomeTrail';
 import { inTreeOf } from './home-tree';
@@ -163,9 +163,9 @@ export interface HomeChatRegions {
   onRoot(root: HomeRoot): void;
   /** What the header's kind cell names (R5) — the current kind root, or the
    *  remembered one while Chats is the root. */
-  kindCell: HomeRootOption;
+  kindCell: ListRootOption;
   /** The switcher's kind list — the rail flattened (R4). */
-  rootKindOptions: readonly HomeRootOption[];
+  rootKindOptions: readonly ListRootOption[];
   /** Region B's entity occupant, for A's honest per-root highlight (D9). */
   selectedEntityId: EntityId | null;
   /** SELECTING (D7): a row puts its entity in B. */
@@ -261,12 +261,12 @@ export function HomeView(props: HomeViewProps) {
   if (root !== CHATS_ROOT) lastKindRef.current = root;
   const cellKind = root === CHATS_ROOT ? lastKindRef.current : root;
   const cellConfig = getKind(cellKind);
-  const kindCell = useMemo<HomeRootOption>(
+  const kindCell = useMemo<ListRootOption>(
     () => ({ kind: cellConfig.kind, label: cellConfig.labelPlural, single: cellConfig.label }),
     [cellConfig],
   );
   /* R4: the switcher IS the rail flattened — both render `homeRailGroups()`. */
-  const rootKindOptions = useMemo<HomeRootOption[]>(
+  const rootKindOptions = useMemo<ListRootOption[]>(
     () =>
       homeRootKinds().map((config) => ({
         kind: config.kind,

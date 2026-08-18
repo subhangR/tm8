@@ -99,13 +99,13 @@ export interface ChatHomeScreenProps {
    * (while Chats is the root) the kind the viewer would return to. The host
    * owns the memory; this screen only renders the cell.
    */
-  kindCell?: HomeRootOption;
+  kindCell?: ListRootOption;
   /**
    * The switcher's kind list, the icon rail FLATTENED (R4: rail ≡ switcher
    * by construction — both come from `homeRootKinds()`). Picking one
    * SWITCHES the root; it never creates (R5).
    */
-  rootKindOptions?: readonly HomeRootOption[];
+  rootKindOptions?: readonly ListRootOption[];
   /**
    * The entity currently occupying region B, for the HONEST active-row
    * highlight (D9): a task/session row draws active only when it IS the
@@ -249,14 +249,16 @@ export interface ChatHomeScreenProps {
   viewerId?: string | undefined;
 }
 
-/**
- * One switcher/cell entry: a kind, its plural label, and its singular.
+/*
+ * `ListRootOption` WAS RE-EXPORTED HERE AS A PURE ALIAS OF `ListRootOption`.
  *
  * The shape moved to `panels/ListRootHeader` when the Work tab adopted the
- * same header (task 01a0102f) — it is no longer Home's alone. The alias stays
- * so every existing importer (HomeView, GateApp) keeps its name.
+ * same header (task 01a0102f), and the alias was kept so existing importers
+ * would not have to change. The cost of that kindness was that `views/HomeView`
+ * imported a Work-tab type FROM CHAT HOME — a dependency describing nothing
+ * real, and one that would have broken HomeView for no reason the day this
+ * file moved or shrank. Importers now name the canonical type directly.
  */
-export type HomeRootOption = ListRootOption;
 
 type ComposerPhase =
   | 'idle'
