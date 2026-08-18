@@ -4,6 +4,7 @@ import type {
   DurableWorkspaceEvent,
   EntityFeedPage,
   FeedItem,
+  FeedVia,
   MessageBatchResult,
   MessageView,
   PostMessageInput,
@@ -131,11 +132,34 @@ export function createChatMutationController({
   };
 }
 
+/**
+ * A SHELL FOR OPTIMISTIC ITEMS WHEN NO SERVER PAGE HAS LANDED YET.
+ *
+ * `EntityFeedPage.resolvedScope` is the SERVER'S answer, and it is printed to
+ * the viewer in the provenance line precisely because it outranks what the
+ * client asked for. Before the first read resolves there is no such answer, and
+ * once `key.scope` is optional there may not even be a request to echo — so any
+ * value here is a guess wearing the server's clothes.
+ *
+ * `predicates: []` is the marker that this page carries no server answer. The
+ * server can never return it: every scope resolves to at least one predicate
+ * (`feed-context.ts` FEED_VIA_SQL), so an empty list is structurally impossible
+ * from a real read. `Provenance` tests exactly that and stays silent rather than
+ * printing a scope nobody resolved — the same `null`-is-not-`[]` rule this
+ * codebase applies to every other "not measured yet".
+ */
+const UNRESOLVED_PREDICATES: FeedVia[] = [];
+
+/** True when the page is the local shell above, not a server answer. */
+export function isUnresolvedFeedPage(page: EntityFeedPage): boolean {
+  return page.predicates.length === 0;
+}
+
 /** Feed truth plus only those journal entries whose storage is not yet known. */
 export function chatPageWithJournal(entry: ChatEntry): EntityFeedPage {
   const base: EntityFeedPage = entry.page ?? {
-    resolvedScope: entry.key.scope,
-    predicates: ['anchored'],
+    resolvedScope: entry.key.scope ?? 'direct_v1',
+    predicates: UNRESOLVED_PREDICATES,
     items: [],
     nextCursor: null,
   };
@@ -176,8 +200,8 @@ function settleStored(
     const page = items.length > 0
       ? {
           ...(entry.page ?? {
-            resolvedScope: entry.key.scope,
-            predicates: ['anchored'] as const,
+            resolvedScope: entry.key.scope ?? 'direct_v1',
+            predicates: UNRESOLVED_PREDICATES,
             nextCursor: null,
           }),
           items: dedupeAndSort([...(entry.page?.items ?? []), ...items]),

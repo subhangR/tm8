@@ -18,7 +18,21 @@ const EMPTY_DRAFT = Object.freeze({ newMessage: '', replies: Object.freeze({}), 
 export interface ChatStateKeyParts {
   viewerMemberId: string;
   sessionId: string;
-  scope: FeedScope;
+  /**
+   * The REQUESTED scope, and ABSENT unless the caller can defend one.
+   *
+   * Omitting it is the correct reading for every anchor kind: the server
+   * resolves it (`feed-context.ts:176 defaultScopeFor`) and treats `undefined`
+   * and the literal `'default'` identically (`:265`). Naming one that does not
+   * apply to the anchor is not a soft degrade — `:267-276` raises
+   * `invalid_input` / `feed_scope_not_applicable`.
+   *
+   * REQUESTED, NEVER RESOLVED. This value is part of the localStorage draft key
+   * below, and `EntityFeedPage.resolvedScope` is not known until a read
+   * completes — keying on it would change the key mid-flight and orphan the
+   * viewer's half-written message.
+   */
+  scope?: FeedScope;
   /** Stable projection/filter identity; `chronological` is the default feed. */
   filter: string;
 }
@@ -101,11 +115,20 @@ export interface ChatStoreOptions {
   now?: () => string;
 }
 
+/**
+ * An absent scope is spelled `'default'` DELIBERATELY, not left to
+ * `JSON.stringify` (which would emit `null` for a missing array element). It is
+ * the same word the wire uses for the same meaning — `EntityFeedQuery.scope` is
+ * `'default' | FeedScope` — so one vocabulary covers the request and the key.
+ *
+ * Every existing caller passes a scope, so no key spelled before this change
+ * moves, and no persisted draft is orphaned by it.
+ */
 export function chatStateKey(parts: ChatStateKeyParts): string {
   return JSON.stringify([
     parts.viewerMemberId,
     parts.sessionId,
-    parts.scope,
+    parts.scope ?? 'default',
     parts.filter,
   ]);
 }
