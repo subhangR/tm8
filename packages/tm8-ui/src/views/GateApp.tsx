@@ -2052,10 +2052,12 @@ export function GateApp(props: GateAppProps = {}) {
                   newEntityUnavailable={regions.newEntityUnavailable}
                   routeThreadId={regions.routeThreadId}
                   onThreadSelected={regions.onThreadSelected}
-                  graphFull={regions.graphFull}
-                  onGraphFullChange={regions.onGraphFullChange}
-                  graphFilters={regions.graphFilters}
-                  onGraphFiltersChange={regions.onGraphFiltersChange}
+                  stage={regions.stage}
+                  onStageChange={regions.onStageChange}
+                  /* The fleet's Transcript link lands on the session's own
+                     panel, on its Transcript surface — this screen links to
+                     that renderer and never repeats it. */
+                  onOpenTranscript={openEntity}
                   centerOverride={regions.centerOverride}
                   slots={homeSlots}
                   viewerName={data.viewerActor?.displayName}

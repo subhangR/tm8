@@ -452,31 +452,41 @@ describe('the unified Home root and the right trail (task 01a00932)', () => {
   });
 });
 
-describe('the fullscreen graph param (plan 01a0094b D2)', () => {
-  it('parses ?graph=full on an addressed conversation', () => {
-    const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?graph=full`);
-    expect(dropped).toEqual([]);
-    expect(route?.target).toEqual({
-      view: 'home',
-      root: { type: 'chats', threadId: id(1), graph: 'full' },
-    });
+describe('the Cockpit stage param `?stage=`', () => {
+  /* REPLACES `?graph=full` and `?gf=`. The Cockpit ruling retires the
+     fullscreen graph dialog and the facet rail that edited `gf`, and both
+     stages that remain are ordinary occupants of region B. The lossy-tolerant
+     parse is inherited verbatim, because a stale link to the retired
+     parameters must degrade to the plain conversation rather than announce
+     that it once meant something. */
+
+  it('parses each stage on an addressed conversation', () => {
+    for (const stage of ['fleet', 'graph'] as const) {
+      const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?stage=${stage}`);
+      expect(dropped).toEqual([]);
+      expect(route?.target).toEqual({
+        view: 'home',
+        root: { type: 'chats', threadId: id(1), stage },
+      });
+    }
   });
 
   it('round-trips through build, with and without a thread', () => {
     for (const threadId of [id(1), null]) {
-      const route = routeOf({
-        target: { view: 'home', root: { type: 'chats', threadId, graph: 'full' } },
-      });
-      const { hash, dropped } = build(normalize(route));
-      expect(dropped).toEqual([]);
-      expect(hash).toContain('graph=full');
-      const back = parse(hash);
-      expect(back.route?.target).toEqual(route.target);
+      for (const stage of ['fleet', 'graph'] as const) {
+        const route = routeOf({
+          target: { view: 'home', root: { type: 'chats', threadId, stage } },
+        });
+        const { hash, dropped } = build(normalize(route));
+        expect(dropped).toEqual([]);
+        expect(hash).toContain(`stage=${stage}`);
+        expect(parse(hash).route?.target).toEqual(route.target);
+      }
     }
   });
 
   it('LOSSY-TOLERANT: an unknown value is silently ignored — no drop, no crash', () => {
-    for (const raw of ['graph=weird', 'graph=', 'graph=%ZZ']) {
+    for (const raw of ['stage=weird', 'stage=', 'stage=%ZZ']) {
       const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?${raw}`);
       expect(dropped).toEqual([]);
       expect(route?.target).toEqual({
@@ -486,69 +496,38 @@ describe('the fullscreen graph param (plan 01a0094b D2)', () => {
     }
   });
 
-  it('normalize still collapses a bare chats root, but never one holding the graph', () => {
+  it('THE RETIRED PARAMS DEGRADE, they do not resurrect', () => {
+    /* Links to `?graph=full` and `?gf=` exist in the wild — in histories, in
+       pasted messages. They must land on the plain conversation silently.
+       Asserting this is what stops a later reader from "restoring" them. */
+    for (const raw of ['graph=full', 'gf=k%3Atask%3Bm', 'graph=full&gf=k%3Atask']) {
+      const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?${raw}`);
+      expect(dropped).toEqual([]);
+      expect(route?.target).toEqual({
+        view: 'home',
+        root: { type: 'chats', threadId: id(1) },
+      });
+    }
+  });
+
+  it('normalize still collapses a bare chats root, but never one holding a stage', () => {
     const bare = routeOf({
       target: { view: 'home', root: { type: 'chats', threadId: null } },
     });
     expect(normalize(bare).target).toEqual({ view: 'home' });
-    const full = routeOf({
-      target: { view: 'home', root: { type: 'chats', threadId: null, graph: 'full' } },
+    const staged = routeOf({
+      target: { view: 'home', root: { type: 'chats', threadId: null, stage: 'fleet' } },
     });
-    expect(normalize(full).target).toEqual({
+    expect(normalize(staged).target).toEqual({
       view: 'home',
-      root: { type: 'chats', threadId: null, graph: 'full' },
+      root: { type: 'chats', threadId: null, stage: 'fleet' },
     });
     // Idempotent, as normalize must stay.
-    expect(normalize(normalize(full))).toEqual(normalize(full));
+    expect(normalize(normalize(staged))).toEqual(normalize(staged));
   });
 
   it('bare /home never grows the param — only the /chat segment reads it', () => {
-    const { route } = parse(`#/s/${SPACE}/home?graph=full`);
+    const { route } = parse(`#/s/${SPACE}/home?stage=fleet`);
     expect(route?.target).toEqual({ view: 'home' });
-  });
-});
-
-describe('the graph filter param `gf` (plan 01a0094b step 5)', () => {
-  it('rides opaquely and round-trips, with or without graph=full', () => {
-    for (const graph of ['full', null] as const) {
-      const route = routeOf({
-        target: {
-          view: 'home',
-          root: {
-            type: 'chats',
-            threadId: id(1),
-            ...(graph ? { graph } : {}),
-            graphFilters: 'k:task;m',
-          },
-        },
-      });
-      const { hash, dropped } = build(normalize(route));
-      expect(dropped).toEqual([]);
-      expect(hash).toContain('gf=');
-      expect(parse(hash).route?.target).toEqual(route.target);
-    }
-  });
-
-  it('survives a threadless route and blocks the bare-home collapse', () => {
-    const route = routeOf({
-      target: {
-        view: 'home',
-        root: { type: 'chats', threadId: null, graphFilters: 'e:assigned_to' },
-      },
-    });
-    expect(normalize(route).target).toEqual(route.target);
-    const { hash } = build(normalize(route));
-    expect(parse(hash).route?.target).toEqual(route.target);
-  });
-
-  it('an empty or undecodable gf is silently ignored', () => {
-    for (const raw of ['gf=', 'gf=%ZZ']) {
-      const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?${raw}`);
-      expect(dropped).toEqual([]);
-      expect(route?.target).toEqual({
-        view: 'home',
-        root: { type: 'chats', threadId: id(1) },
-      });
-    }
   });
 });

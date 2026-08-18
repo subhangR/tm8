@@ -60,7 +60,7 @@ import {
   kindOfSlug,
   slugOfKind,
 } from '../domain';
-import type { NavView } from '../routes/types';
+import type { CockpitStage, NavView } from '../routes/types';
 import type { HomeRootOption } from '../chat-home/ChatHomeScreen';
 import { HomeRail } from './HomeRail';
 import { HomeTrail } from './HomeTrail';
@@ -182,12 +182,13 @@ export interface HomeChatRegions {
   routeThreadId?: EntityId | null;
   /** The screen's thread selection, so the address can carry it (D1). */
   onThreadSelected?(id: EntityId | null): void;
-  /** `?graph=full` — the entity graph fullscreen, route-owned (01a0094b D2). */
-  graphFull?: boolean;
-  onGraphFullChange?(open: boolean): void;
-  /** `?gf=` — the graph's serialised filters, opaque at this layer (step 5). */
-  graphFilters?: string | null;
-  onGraphFiltersChange?(encoded: string | null): void;
+  /**
+   * `?stage=` — which non-entity Cockpit stage is up (fleet | graph), and the
+   * verb that swaps it. Route-owned for the reason `?graph=full` was: Back
+   * leaves the stage, a reload restores it, and the view can be linked.
+   */
+  stage?: CockpitStage | null;
+  onStageChange?(next: CockpitStage | null): void;
   /**
    * A KIND root's list CONTENT: the WORKSPACE's own `EntityListPanel` —
    * the exact tree, tiles, lifecycle tabs, sort and in-panel search the
@@ -235,6 +236,12 @@ export function HomeView(props: HomeViewProps) {
         ? routeRootKind
         : loadHomeRoot(data.spaceId);
   const routeThreadId = routeRoot?.type === 'chats' ? routeRoot.threadId : null;
+  /* THE STAGE the address names. A stage and an entity both want region B, and
+     the ENTITY WINS when both are addressed: the entity was opened by a click
+     the viewer just made, while a stage can persist in a link from yesterday.
+     Resolved here, once, so the screen never has to arbitrate. */
+  const routeStage: CockpitStage | null =
+    routeRoot?.type === 'chats' && !centerId ? (routeRoot.stage ?? null) : null;
 
   /* Switching the root is BROWSING (D6): it renames the address's root and
      touches neither trail. Remembered so a bare `/home` returns here. */
@@ -633,34 +640,21 @@ export function HomeView(props: HomeViewProps) {
         view: 'home',
         root: { type: 'chats', threadId: id },
       }),
-    /* The graph's fullscreen view is part of the address too (`?graph=full`,
-       01a0094b D2): opening PUSHES history, so Back closes the dialog. The
-       `?gf=` filters survive open/close both ways — a filter chosen
-       fullscreen still shapes the inline summary after Back (step 5). */
-    graphFull: routeRoot?.type === 'chats' && routeRoot.graph === 'full',
-    onGraphFullChange: (open) =>
+    /* The Cockpit's non-entity stages are part of the address too (`?stage=`,
+       replacing `?graph=full`/`?gf=`): opening PUSHES history, so Back leaves
+       the stage, a reload restores it, and a viewer can send someone the fleet
+       of a conversation. */
+    /* The stage PANE itself is rendered by the screen, not composed here: the
+       fleet and the graph are both folds of the THREAD, and the turns live in
+       the screen. This layer owns only the address. */
+    stage: routeStage,
+    onStageChange: (next) =>
       navStore.getState().navigate({
         view: 'home',
         root: {
           type: 'chats',
           threadId: routeThreadId,
-          ...(open ? { graph: 'full' as const } : {}),
-          ...(routeRoot?.type === 'chats' && routeRoot.graphFilters
-            ? { graphFilters: routeRoot.graphFilters }
-            : {}),
-        },
-      }),
-    graphFilters: routeRoot?.type === 'chats' ? (routeRoot.graphFilters ?? null) : null,
-    onGraphFiltersChange: (encoded) =>
-      navStore.getState().navigate({
-        view: 'home',
-        root: {
-          type: 'chats',
-          threadId: routeThreadId,
-          ...(routeRoot?.type === 'chats' && routeRoot.graph === 'full'
-            ? { graph: 'full' as const }
-            : {}),
-          ...(encoded ? { graphFilters: encoded } : {}),
+          ...(next ? { stage: next } : {}),
         },
       }),
     renderRootList,

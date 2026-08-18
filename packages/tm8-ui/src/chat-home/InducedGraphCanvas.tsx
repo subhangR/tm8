@@ -1,6 +1,6 @@
 /**
  * INDUCED GRAPH CANVAS — the one SVG that draws an `InducedPlacement`, shared
- * by the inline strip (`ChatEntityGraph`) and the fullscreen view. The host
+ * by the Cockpit's Graph stage and by Craft's blueprint canvas. The host
  * owns the fold, the connection reads, the caption, filters and the late
  * title resolution; this component only draws what it is handed.
  *
@@ -24,6 +24,10 @@ import { HUB_DEGREE } from '../session-graph/model';
 import type { ChatEntityRef } from './entity-refs';
 import type { InducedNode } from './induced-graph';
 import { CARD_H, CARD_W, type InducedPlacement, type PlacedLine } from './induced-layout';
+/* THE CANVAS OWNS ITS OWN STYLES NOW. The retired inline strip used to import
+   this on the canvas's behalf, which meant the drawing's appearance depended
+   on which host happened to mount it. */
+import './chat-entity-graph.css';
 
 export interface InducedGraphCanvasProps {
   placement: InducedPlacement;

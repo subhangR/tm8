@@ -23,6 +23,7 @@ import type { CollectionMode } from '../domain';
 import { decodeQ, encodeQ } from './q';
 import type {
   BuildOutcome,
+  CockpitStage,
   ContentSurface,
   DropClass,
   NavView,
@@ -33,7 +34,7 @@ import type {
   QValue,
   Route,
 } from './types';
-import { CONTENT_SURFACES, MAX_HASH_LENGTH, PANEL_TABS, emptyPanels } from './types';
+import { COCKPIT_STAGES, CONTENT_SURFACES, MAX_HASH_LENGTH, PANEL_TABS, emptyPanels } from './types';
 
 // ---------------------------------------------------------------------------
 // Percent-encoding (RFC 3986)
@@ -249,22 +250,19 @@ function parseTarget(
         return { view: 'home', root: { type: 'kind', slug: rest[2] } };
       }
       if (rest[1] === 'chat') {
-        /* `?graph=full` opens the conversation's entity graph fullscreen
-           (plan 01a0094b D2). Deliberately NOT a drop-notice param: any other
-           value is a stale or foreign link and silently renders the plain
-           conversation — lossy-tolerant, per the fullscreen ruling. */
-        const graph = query.get('graph') === 'full' ? ('full' as const) : null;
-        /* `gf` rides OPAQUELY: graph-view.ts owns the vocabulary and decodes
-           leniently, so this layer only requires a decodable non-empty string. */
-        const gfRaw = query.get('gf');
-        const graphFilters = gfRaw === null ? null : dec(gfRaw);
+        /* `?stage=` names a Cockpit stage that is not an entity. Deliberately
+           NOT a drop-notice param: any other value is a stale or foreign link
+           and silently renders the plain conversation — lossy-tolerant, the
+           rule inherited from the `?graph=full` parameter this replaces. */
+        const stage = COCKPIT_STAGES.has(query.get('stage') as CockpitStage)
+          ? (query.get('stage') as CockpitStage)
+          : null;
         return {
           view: 'home',
           root: {
             type: 'chats',
             threadId: rest[2] ?? null,
-            ...(graph ? { graph } : {}),
-            ...(graphFilters ? { graphFilters } : {}),
+            ...(stage ? { stage } : {}),
           },
         };
       }
@@ -365,10 +363,10 @@ function pathOf(route: Route): string {
       if (root?.type === 'kind') return `${base}/home/k/${enc(root.slug)}`;
       if (root?.type === 'chats' && root.threadId) return `${base}/home/chat/${enc(root.threadId)}`;
       /* `chats` with no thread is the default root: `/home` IS that address,
-         so the canonical form drops the segment (normalize agrees) — UNLESS
-         the fullscreen graph param needs the `/chat` segment to survive a
-         round-trip, since bare `/home` does not read `graph`. */
-      if (root?.type === 'chats' && (root.graph || root.graphFilters)) return `${base}/home/chat`;
+         so the canonical form drops the segment (normalize agrees) — UNLESS a
+         stage is up, which needs the `/chat` segment to survive a round-trip,
+         since bare `/home` does not read `stage`. */
+      if (root?.type === 'chats' && root.stage) return `${base}/home/chat`;
       return `${base}/home`;
     }
     case 'feed':
@@ -438,10 +436,7 @@ export function build(route: Route): BuildOutcome {
 
   const viewParams: Param[] = [];
   if (t.view === 'home') {
-    if (t.root?.type === 'chats' && t.root.graph) viewParams.push(['graph', t.root.graph]);
-    if (t.root?.type === 'chats' && t.root.graphFilters) {
-      viewParams.push(['gf', enc(t.root.graphFilters)]);
-    }
+    if (t.root?.type === 'chats' && t.root.stage) viewParams.push(['stage', t.root.stage]);
   } else if (t.view === 'kind') {
     if (t.mode) viewParams.push(['mode', t.mode]);
   } else if (t.view === 'entity') {
@@ -534,15 +529,14 @@ export function normalize(route: Route): Route {
   }
 
   /* Canonical Home root: `chats` with no thread IS the bare `/home` form —
-     unless the fullscreen graph param is set, which only the `/chat` segment
-     carries (bare `/home` does not read `graph`, so collapsing would lose it). */
+     unless a stage is up, which only the `/chat` segment carries (bare `/home`
+     does not read `stage`, so collapsing would lose it). */
   const target: NavView =
     route.target.view === 'home' &&
     route.target.root &&
     route.target.root.type === 'chats' &&
     route.target.root.threadId === null &&
-    !route.target.root.graph &&
-    !route.target.root.graphFilters
+    !route.target.root.stage
       ? { view: 'home' }
       : route.target;
 

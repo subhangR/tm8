@@ -18,6 +18,7 @@ export {
 } from './fleet-rows';
 export {
   chatEntityRefFrom,
+  readFleetEntity,
   resetFleetEntityCache,
   useFleetEntities,
   type FleetEntityRead,

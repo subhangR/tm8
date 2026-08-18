@@ -50,7 +50,12 @@ export function resetFleetEntityCache(): void {
   detailCache.clear();
 }
 
-function readCached(id: string, read: FleetEntityReader): Promise<EntityDetail> {
+/**
+ * THE shared read. Exported so the chip resolver can be a PROJECTION of this
+ * cache rather than a second one over the same seam op — see
+ * `ChatHomeSurface`.
+ */
+export function readFleetEntity(id: string, read: FleetEntityReader): Promise<EntityDetail> {
   const cached = detailCache.get(id);
   if (cached) return cached;
   if (detailCache.size >= CACHE_CAP) {
@@ -85,7 +90,7 @@ export function useFleetEntities(
     for (const id of key === '' ? [] : key.split(',')) {
       if (store.current.has(id)) continue;
       store.current.set(id, { state: 'pending' });
-      readCached(id, read).then(
+      readFleetEntity(id, read).then(
         (detail) => {
           if (!alive.current) return;
           store.current.set(id, { state: 'loaded', detail });
