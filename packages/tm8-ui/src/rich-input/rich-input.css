@@ -304,3 +304,37 @@
   min-width: var(--mobile-touch-min);
   min-height: var(--mobile-touch-min);
 }
+
+
+/* --- the trigger popover, with the keyboard up --------------------------- */
+
+/* THE SLASH / MENTION PICKER IS NOT CONVERTED TO A SHEET, AND THAT IS A
+   DELIBERATE READING OF THE CONTRACT RATHER THAN AN OMISSION. Contract §4
+   names anchored popovers as the thing a sheet replaces — specifically the
+   ones that "do not survive the trip to a 390px HEADER", which is why the
+   account menu is a sheet. That is a menu hanging off a small trigger, and
+   `ComposerSelect`'s three thread-setting menus ARE that case and have been
+   moved (see the docblock at its render).
+
+   This one is a different animal: it is full-width, anchored above a
+   full-width composer, and it is driven ENTIRELY BY THE TEXTAREA — the hook's
+   keyboard contract gives it no focusable parts, and the reader filters it by
+   continuing to type. A `MobileSheet` is `aria-modal` with a backdrop over the
+   screen that opened it, so making this one a sheet would cover the composer
+   the reader is typing into and put focus outside the modal it claims to trap
+   — it would break the interaction it exists to serve, in exchange for a rule
+   written about a different shape. Raised with the coordinator rather than
+   decided quietly, and NOT forked: the sheet rule is applied where the
+   contract's own words put it.
+
+   What it DOES need is to stop being taller than the room it has. The frame is
+   `calc(100dvh - var(--mobile-keyboard-inset))`, so with the keyboard up it is
+   a few hundred pixels tall, and a 238px list above a composer would not fit.
+   Composed against the PUBLISHED TOKEN — no second `visualViewport` listener,
+   per contract §3, and no measurement in this file at all. The 0.4 is the
+   share of the frame the list may take: the composer with 44px controls plus
+   the header is most of the rest, and a picker that took half would leave the
+   writer unable to see the line being completed. */
+.cv2-root[data-shell='mobile'] .ri-popover [role='listbox'] {
+  max-height: min(238px, calc((100dvh - var(--mobile-keyboard-inset, 0px)) * 0.4));
+}

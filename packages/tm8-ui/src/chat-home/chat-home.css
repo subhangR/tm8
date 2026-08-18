@@ -1387,3 +1387,34 @@ button.tch-entity-chip:hover {
   flex-wrap: wrap;
   row-gap: var(--pn-space-1);
 }
+
+
+/* --- the thread-setting sheet (shell contract §4) ------------------------- */
+
+/* `ComposerSelect` draws its options in a `MobileSheet` on the phone instead
+   of the portalled anchored menu — see the docblock at its render for why the
+   contract requires that. The sheet supplies the panel, the title and the
+   dismiss; this supplies only the list inside it, so the rules below are the
+   ones `.tch-pickmenu` was contributing and NOT its geometry (the max-height,
+   the border and the shadow all belong to the sheet now, and restating them
+   here would draw a card inside a card).
+
+   NOT scoped to the shell marker, and that is deliberate rather than an
+   oversight: `.tch-picksheet` is only ever rendered inside `MobileSheet`,
+   which returns null wherever `sheetHost` is null — so this class cannot
+   appear off the phone and a `[data-shell='mobile']` prefix would be a guard
+   against a state that cannot occur, of the kind this codebase treats as
+   noise rather than safety. */
+.tch-picksheet {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The rows take the touch floor. They are the whole point of the sheet — a
+   thread setting the writer came here to change — and at 390px they have the
+   full width, so the floor is the block axis. */
+.tch-picksheet .tch-pickmenu__opt {
+  min-block-size: var(--mobile-touch-min);
+  padding: var(--pn-space-2) var(--pn-space-3);
+}
