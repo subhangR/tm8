@@ -57,3 +57,25 @@
   line-height: 1.6;
   color: var(--pn-ink-3);
 }
+
+/* THE DRAWING. Cards and lines speak the session-graph family's visual
+   language (sg-*, imported by the stage); these are the treatments that
+   family does not have. They came across from the retired
+   `chat-entity-graph.css` — minus every rule that served the dialog's search
+   dimming, selection neighbourhood and hover raising, all of which died with
+   the dialog. */
+
+/* A node this conversation MUTATED is emphasised; a node it only read is not. */
+.cgs-cell--mutated .sg-box {
+  stroke: var(--pn-brand);
+  stroke-width: 1.5;
+}
+
+.cgs-cell__flag {
+  font-size: 9px;
+  opacity: 0.85;
+}
+
+.cgs-line__labels {
+  font-size: 10px;
+}

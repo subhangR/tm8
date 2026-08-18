@@ -253,10 +253,23 @@ function parseTarget(
         /* `?stage=` names a Cockpit stage that is not an entity. Deliberately
            NOT a drop-notice param: any other value is a stale or foreign link
            and silently renders the plain conversation — lossy-tolerant, the
-           rule inherited from the `?graph=full` parameter this replaces. */
-        const stage = COCKPIT_STAGES.has(query.get('stage') as CockpitStage)
-          ? (query.get('stage') as CockpitStage)
-          : null;
+           rule inherited from the `?graph=full` parameter this replaces.
+
+           BACK-COMPAT, decode-only (route-token preserve rule): `?graph=full`
+           was the address of the fullscreen entity graph, and links to it are
+           in histories and in pasted messages. It DECODES to the Graph stage,
+           which is where that view lives now, so an old link still lands on
+           the thing it named. Nothing ENCODES it — `build` only ever emits
+           `?stage=`, so the alias fades from every URL the app produces
+           without breaking the ones it already handed out.
+
+           `?gf=` is not aliased and simply dies undecoded: it was opaque at
+           this layer by design, it addressed a facet rail that no longer
+           exists, and its state is reconstructible by the viewer in two
+           clicks. Reviving a filter vocabulary to honour it would be keeping
+           a feature alive to honour its own URL. */
+        const raw = query.get('stage') ?? (query.get('graph') === 'full' ? 'graph' : null);
+        const stage = COCKPIT_STAGES.has(raw as CockpitStage) ? (raw as CockpitStage) : null;
         return {
           view: 'home',
           root: {
@@ -365,7 +378,7 @@ function pathOf(route: Route): string {
       /* `chats` with no thread is the default root: `/home` IS that address,
          so the canonical form drops the segment (normalize agrees) — UNLESS a
          stage is up, which needs the `/chat` segment to survive a round-trip,
-         since bare `/home` does not read `stage`. */
+         since bare `/home` does not read `stage` (nor the `graph` alias). */
       if (root?.type === 'chats' && root.stage) return `${base}/home/chat`;
       return `${base}/home`;
     }

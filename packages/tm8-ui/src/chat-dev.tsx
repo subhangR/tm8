@@ -11,7 +11,6 @@ import { ChatHomeScreen } from './chat-home/ChatHomeScreen';
 import { createChatHomeFixturePort } from './chat-home/fixtures';
 import type { ChatModelOption } from './chat-home/types';
 import type { CockpitStage } from './routes/types';
-import './chat-home/chat-entity-graph.css';
 import './session-graph/session-graph.css';
 
 /**

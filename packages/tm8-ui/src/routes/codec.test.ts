@@ -496,11 +496,39 @@ describe('the Cockpit stage param `?stage=`', () => {
     }
   });
 
-  it('THE RETIRED PARAMS DEGRADE, they do not resurrect', () => {
-    /* Links to `?graph=full` and `?gf=` exist in the wild — in histories, in
-       pasted messages. They must land on the plain conversation silently.
-       Asserting this is what stops a later reader from "restoring" them. */
-    for (const raw of ['graph=full', 'gf=k%3Atask%3Bm', 'graph=full&gf=k%3Atask']) {
+  it('BACK-COMPAT: `?graph=full` decodes to the Graph stage, and is never encoded', () => {
+    /* Route-token preserve rule, per the coordinator's ruling. Links to
+       `?graph=full` are in histories and in pasted messages, and the view it
+       named still exists — it is a stage now. So an old link lands on the
+       thing it asked for, while `build` emits only `?stage=`, letting the
+       alias fade from every URL the app produces without breaking the ones it
+       already handed out. */
+    const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?graph=full`);
+    expect(dropped).toEqual([]);
+    expect(route?.target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: id(1), stage: 'graph' },
+    });
+    // Decode-only: re-encoding that route emits the new spelling, not the old.
+    const { hash } = build(normalize(routeOf({ target: route!.target })));
+    expect(hash).toContain('stage=graph');
+    expect(hash).not.toContain('graph=full');
+  });
+
+  it('`?stage=` WINS over the alias when a link carries both', () => {
+    const { route } = parse(`#/s/${SPACE}/home/chat/${id(1)}?stage=fleet&graph=full`);
+    expect(route?.target).toEqual({
+      view: 'home',
+      root: { type: 'chats', threadId: id(1), stage: 'fleet' },
+    });
+  });
+
+  it('`?gf=` dies undecoded — it addressed a rail that no longer exists', () => {
+    /* Unlike `graph`, this has nothing to alias TO: it was opaque at this
+       layer by design and named a facet rail the Cockpit ruling retired.
+       Asserting it stops a later reader from reviving a filter vocabulary to
+       honour its own URL. */
+    for (const raw of ['gf=k%3Atask%3Bm', 'gf=']) {
       const { route, dropped } = parse(`#/s/${SPACE}/home/chat/${id(1)}?${raw}`);
       expect(dropped).toEqual([]);
       expect(route?.target).toEqual({

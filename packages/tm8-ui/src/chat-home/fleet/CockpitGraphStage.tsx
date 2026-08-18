@@ -26,6 +26,11 @@
  *   · first-seen placement order, because re-sorting on a settle moves every
  *     card the viewer was about to click.
  *
+ * THE CANVAS IS NOT AMONG THEM. Per the coordinator's ruling the old drawing
+ * dies with the rest of the graph UI; `CockpitGraphCanvas` is the ported one,
+ * minus the search/selection/hover machinery that existed only for the retired
+ * fullscreen dialog.
+ *
  * Retyping those would be how we quietly lose them. So this file is thin on
  * purpose: it composes the surviving derivation and draws it once.
  *
@@ -44,7 +49,7 @@ import '../../session-graph/session-graph.css';
 import type { ChatEntityRef } from '../entity-refs';
 import { foldGraphSeeds } from '../graph-seeds';
 import { buildInducedGraph } from '../induced-graph';
-import { InducedGraphCanvas } from '../InducedGraphCanvas';
+import { CockpitGraphCanvas } from './CockpitGraphCanvas';
 import { layoutInducedGraph } from '../induced-layout';
 import type { ChatTurn } from '../types';
 import { useInducedConnections } from '../use-induced-connections';
@@ -134,7 +139,7 @@ export function CockpitGraphStage({
       ) : (
         <>
           <div className="cgs__canvas">
-            <InducedGraphCanvas
+            <CockpitGraphCanvas
               placement={placement}
               ariaLabel={`${graph.nodes.length} entities this conversation named, with ${graph.edges.length} relations between them`}
               late={late}
