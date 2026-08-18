@@ -389,26 +389,38 @@ nowhere in the census* — derived by scanning arrays. It stands only because
 used. **Verify first, then you may say "none". Otherwise you may only say "not among the ones I can
 see".**
 
-Measured, so the sizes are not folklore. In `before-lanes-results.json` the caps are **12 for
-`tapWorst` and 6 for `occluded`**:
+**THREE DIFFERENT TRUNCATION BEHAVIOURS EXIST IN THIS PROGRAM, AND EACH FIGURE BELOW IS LABELLED WITH
+THE TOOL IT CAME FROM.** Getting this wrong once already propagated a real measurement from one
+artifact as a property of another.
 
-| surface | `tapUnder44` | `len(tapWorst)` | `occludedCount` | `len(occluded)` |
+**1. The OFFICIAL instrument (`*-contract-*.json`, the files the lanes are graded by) — UNCAPPED here.**
+Verified by me on the artifacts: `len(tapTargetsSmallest) == tapTargetsUnderMin` on **all 50 phone
+rows of both `BEFORE-main-ce7aa295` and `AFTER-contract-93caef11`**, with arrays up to 32 entries.
+
+**2. The official instrument's declared caps**, from its owner reading its source rather than its
+output — recorded here as relayed, not as something this contract measured:
+`tapTargetsSmallest` **64** (raised so this gate could enumerate its selectors), `tinyText` **24**,
+`overflowRoots` **12**, `hidden` / `inert` / `occluded` **8** each. Note 64 ≫ the 32 seen above, which
+is why (1) came back uncapped: **this contract's rows never approached the cap.**
+
+**3. `before-lanes-results.json` — the build service's DISCARDED live-node harness, NOT the official
+instrument.** It caps `tapWorst` at 12 and `occluded` at 6:
+
+| surface (discarded harness) | `tapUnder44` | `len(tapWorst)` | `occludedCount` | `len(occluded)` |
 |---|---|---|---|---|
 | `entity-list-tasks` | 44 | 12 | 13 | 6 |
 | `entity-list-channels` | **49** | **12** | 0 | 0 |
-| `entity-detail-task` | 28 | 12 | 1 | 1 |
 
-**Computing "offenders on this surface" from `len(tapWorst)` under-reports by 37 on that channels
-row.** And the failure is silent in the worst way: **the sample is always internally consistent, so
-nothing looks wrong.** It is the same instrument fact that produced a `tinyTextCount` of 16 with a
-six-element sample — a per-class fix there repairs the six you can see and ships the ten you cannot.
+That 49-behind-12 is a real observation **about that harness** and says nothing about the tool the
+lanes are graded by. **The two files do not even share a schema** — the official one carries
+`basis`/`ref`/`engine`; the discarded one carries `nodeOrigin`/`method`/`keyboardInsetProxy` and no
+`basis` at all. That difference is the cheapest available tell for which tool produced a number.
 
-**NOT EVERY DATASET IS CAPPED, AND THAT IS WHY THIS MUST BE CHECKED RATHER THAN ASSUMED.** The
-contract run's own JSONs (`BEFORE-main-ce7aa295` / `AFTER-contract-93caef11`) are **complete**:
-`len(tapTargetsSmallest) == tapTargetsUnderMin` on all 50 phone rows in each, with arrays up to 32
-entries. The gate's "8 of 11 selectors genuinely fixed" was derived by scanning those arrays, and it
-**survives — because completeness was verified on every row it used**, not because arrays are
-generally safe. Two files from the same program, two different truncation behaviours.
+**So "the arrays are samples" is FALSE as a fact about the format**, and a lane that learns it that way
+will over-correct and distrust complete data — its own failure. The structural fix is landing at the
+instrument (`tinyText` was the one array with a cap and *no count field*, so its truncation was
+undetectable by any reader; it now emits `{count, items}`, and `basis.arrayCaps` / `basis.countFields`
+record which is which). **The procedure below is the fallback for everything that predates that.**
 
 **So the rule is procedural, not a fact about the format:** before deriving anything from an array,
 compare its length to its count field on the rows you are about to use. One line of arithmetic
