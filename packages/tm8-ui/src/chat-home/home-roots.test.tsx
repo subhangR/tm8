@@ -12,7 +12,8 @@
  */
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { ChatHomeScreen, type ChatHomeScreenProps, type HomeRootOption } from './ChatHomeScreen';
+import { ChatHomeScreen, type ChatHomeScreenProps } from './ChatHomeScreen';
+import type { ListRootOption } from '../panels/ListRootHeader';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatModelOption } from './types';
 
@@ -21,8 +22,8 @@ const MODELS: ChatModelOption[] = [
   { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
 ];
 
-const TASK_CELL: HomeRootOption = { kind: 'task', label: 'Tasks', single: 'Task' };
-const ROOT_OPTIONS: HomeRootOption[] = [
+const TASK_CELL: ListRootOption = { kind: 'task', label: 'Tasks', single: 'Task' };
+const ROOT_OPTIONS: ListRootOption[] = [
   TASK_CELL,
   { kind: 'work_session', label: 'Sessions', single: 'Session' },
   { kind: 'doc', label: 'Docs', single: 'Doc' },
