@@ -178,27 +178,43 @@ selector.
 Growing `.pn-tt__status` stays correct — it is what stops a 44px control being clipped by a 16px cell
 when one IS present. It simply must not be read as evidence that a control is at bar.
 
-**WHAT IS *NOT* ESTABLISHED, AND MUST NOT BE WRITTEN DOWN AS IF IT WERE.** It is tempting to conclude
-that because `lp__statedot` was never observed in the census, `statusControl` was undefined — and
-therefore that the wrapper's `title=` was live, making it a hover-delivered tooltip on a touch
-surface. **That inference assumes the census reliably matches `lp__statedot` when it is present, and
-that reliability is the open question.** Two branches survive the evidence:
+**WHAT THE WRAPPER'S `title=` DOES AND DOES NOT IMPLY — three values, not two.**
+It is tempting to conclude that because `lp__statedot` was not observed in the fixture census,
+`statusControl` was undefined, and therefore the wrapper's `title=` was live and the row carried a
+touch-dead affordance. **That is a binary, and the question is three-valued.** `statusControl`
+(`EntityControls.tsx`) resolves to:
 
-- **A** — `lp__statedot` genuinely absent ⇒ `statusControl` undefined ⇒ the wrapper carries `title` ⇒
-  a touch-dead affordance on that row (§8's `title=` rule, DEF-032/DEF-033's fault class).
-- **B** — `lp__statedot` PRESENT but unmatched by the census ⇒ `statusControl` WAS passed ⇒ the
-  control exists at 16x16, DEF-017 is live and sizeable, the wrapper's `title` is `undefined`, and
-  **there is no touch-dead affordance at all.** B would also mean the instrument has been silently
-  under-reporting every row-scoped selector in this program, including the ones closed as fixed.
+- **(a)** `button.lp__statedot[data-testid="row-state-trigger"]` — a live control. Measure ITS rect;
+  the wrapper's is not the tap target. This is DEF-017's actual subject.
+- **(b)** `DisabledIconControl`, a `hon-disabled` span — an HONEST REFUSAL, reached when the action is
+  unavailable or `onSetState` is absent. **Excluded from the 44px bar by ledger R2**, because there is
+  nothing to tap.
+- **(c)** `undefined` → a plain glyph, **and only here** does the wrapper carry `title=` and become a
+  hover-delivered explanation on a touch surface.
 
-The discriminator is a `lp__statedot` node count on the *populated* tier, where 0 separates A from B
-directly. Until that runs, **the `title=` consequence is CONDITIONAL ON A and is recorded as
-conditional.**
+**A binary collapses (b) into (c) and invents a defect where there is an honest refusal.** Which value
+holds on a given row is a question about fixture state, and it is measured, not reasoned.
 
-**THE HAZARD ONE LEVEL UP, which is why this block is worded this carefully:** the evidence for "the
-control is absent" was *the same census whose ability to see that control is in doubt*. An instrument
-cannot be the witness for its own blind spot. When a conclusion depends on a null result, ask what
-would have to be true for the null to be an artefact — and go and measure that instead.
+**AND THE INSTRUMENT CAN SEE THIS SELECTOR — verified, so a tempting second inference is closed off.**
+It would be natural to read "never observed" as evidence the census cannot match `lp__statedot` at all,
+which would mean every row-scoped count in this program is suspect. It cannot be read that way:
+`before-lanes-results.json` (file `01a01678-f0a9-77a9-9b4b-af78bf16054f`) records, on
+`entity-list-tasks` at **both** phone widths, `button.lp__statedot` with
+`testid: "row-state-trigger"` — 5 entries in `tapWorst` at 16x16 and 6 in `occluded`, blocked by its
+own child `svg`. **The census has demonstrably matched this exact selector on this exact surface.** So
+a null on the current three-row fixture is a fact about WHICH OF (a)/(b)/(c) those three rows are in,
+not about the instrument's vision.
+
+`MaestroTaskTile.tsx` does not contain the string `lp__statedot` because it receives that control as a
+**prop** — the two are NESTED, not parallel. A grep answers *"is this string in this file"* and gets
+read as *"does this renderer produce this control"*; **a control passed in as a prop is invisible to
+that question.**
+
+**THE HAZARD ONE LEVEL UP, which is why this block is worded this carefully:** the first draft of it
+argued from a null result produced by an instrument, as though the null were a fact about the code. It
+was a fact about the census. **An instrument cannot be the witness for its own blind spot.** When a
+conclusion rests on a null, ask what would have to be true for the null to be an ARTEFACT — and go
+measure that instead. Here, measuring it closed the question in the instrument's favour.
 
 **THE SURVIVING OFFENDER HAS AN OWNER.** `input.lp__searchinput` (332x23 at 390, 372x23 at 430) is the
 only sub-44 target left on tasks, sessions and channels, and being under 16px type it is *also* an iOS
