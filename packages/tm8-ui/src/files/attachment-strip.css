@@ -21,6 +21,14 @@
   min-width: 0;
 }
 
+/* NOTHING ATTACHED, NOTHING DRAWN — but the element STAYS, because the drop
+   listeners are hung off its closest marked ancestor and unmounting it would
+   remove the last way to attach. `display:none` is deliberate here (unlike
+   `.fn-tiles__input`, which is clipped precisely so it stays reachable): this
+   root has nothing an assistive user could act on while idle, and the drop
+   target it enables is the panel, not this box. */
+.fn-tiles--idle { display: none; }
+
 /* --- one tile -------------------------------------------------------------- */
 
 .fn-tile {
@@ -234,6 +242,20 @@
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   color: var(--pn-brand-2);
+}
+/* WHEN THE HOST IS THE WHOLE PANEL, the hint cannot be a flex item: the panel
+   is a column of header/tabs/body/footer, and appending a row to it reflows
+   every one of them mid-drag. It floats over the body instead, and never eats
+   the pointer — a badge that swallowed the drop would be the one bug this
+   whole affordance cannot have. */
+.pn-panel.fn-drophost--active { position: relative; }
+.pn-panel.fn-drophost--active::after {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--pn-space-3);
+  text-align: center;
+  pointer-events: none;
 }
 
 /* --- the lightbox ------------------------------------------------------------ */

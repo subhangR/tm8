@@ -388,9 +388,15 @@ function zipFilename(name: string, revisionNumber: number): string {
 }
 
 /**
- * ARTIFACT VIEWER — the rendered bundle, in-block, plus the chrome that keeps
- * that rendering honest: who published it, which revision, and that the page
- * inside the frame is third-party content.
+ * ARTIFACT VIEWER — the rendered bundle, in-block, under one thin row of the
+ * controls that act on it (revision, restart, fullscreen, download).
+ *
+ * THE BLOCK IS THE FRAME (owner ruling 2026-08-18). It used to open with a
+ * bordered banner carrying the publisher line and the third-party caution, and
+ * the section above it carried a `PREVIEW` eyebrow — together ~200px of a panel
+ * whose entire purpose is the page below. Both are gone; the sentence they
+ * carried moved onto the frame's own `title`, which is the accessible name of
+ * the element actually running the code (see `frameTitle`).
  *
  * AUTORUNS when the detail opens (owner ruling 2026-08-16, superseding the
  * §9.5 click-gate; the block mounts only inside the artifact DETAIL panel, so
@@ -411,8 +417,9 @@ function zipFilename(name: string, revisionNumber: number): string {
  * The accepted residual (TM8-ARTIFACTS-DESIGN §12.1): a hostile bundle can
  * draw a pixel-perfect fake tm8 login and POST keystrokes anywhere — open
  * network inside the frame is server policy. The publisher line and the
- * third-party wording in the chrome are the compensating control for exactly
- * that, which is why they render on every phase, not only around a live frame.
+ * third-party wording are the compensating control for exactly that; they now
+ * ride the frame's accessible name instead of a banner, so they are reachable
+ * on the element at risk rather than merely adjacent to it.
  */
 function ArtifactPreviewBlock({
   detail,
@@ -553,63 +560,66 @@ function ArtifactPreviewBlock({
   if (fileCount != null) facts.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
   if (totalBytes != null) facts.push(formatBytes(totalBytes));
 
+  /**
+   * The provenance sentence, now carried by the FRAME rather than by a banner
+   * above it (owner ruling 2026-08-18: the chrome was eating the viewport the
+   * artifact exists to fill). It is still the accessible name of the very
+   * element that runs the third-party code — a screen reader announces it on
+   * entry and a pointer surfaces it on hover — so §12.1's compensating control
+   * keeps naming the publisher and disowning the content; what it no longer
+   * does is claim 200px of a 900px panel to say so on every phase.
+   */
+  const frameTitle = [
+    `artifact preview · ${detail.title}`,
+    `published by ${detail.createdBy.displayName} (${detail.createdBy.isAgent ? 'agent' : 'human'})`,
+    ...(shownRevision != null ? [`revision ${shownRevision}`] : []),
+    ...facts,
+    "third-party content — this page is the artifact's own code, not tm8 UI; never enter tm8 credentials into it",
+  ].join(' · ');
+
   return (
     <div className={`pn-preview pn-preview--viewer${fullscreen ? ' pn-preview--fullscreen' : ''}`}>
       <div className="pn-preview__chrome">
-        <div className="pn-preview__who">
-          <span className="pn-preview__publisher">
-            published by <strong>{detail.createdBy.displayName}</strong>
-            {` (${detail.createdBy.isAgent ? 'agent' : 'human'})`}
-            {shownRevision != null ? ` · revision ${shownRevision}` : ''}
-            {facts.length > 0 ? ` · ${facts.join(' · ')}` : ''}
-          </span>
-          <span className="pn-preview__thirdparty">
-            Third-party content — the page below is the artifact&apos;s own code, not tm8 UI.
-            Never enter tm8 credentials into it.
-          </span>
-        </div>
-        <div className="pn-preview__controls">
-          {revisions !== null && revisions.length > 0 ? (
-            <select
-              className="pn-preview__revpick"
-              aria-label="revision"
-              value={String(selectedRevision ?? currentRevision ?? revisions[0]!.revisionNumber)}
-              onChange={(e) => setSelectedRevision(Number(e.target.value))}
-            >
-              {revisions.map((r) => (
-                <option key={r.revisionNumber} value={String(r.revisionNumber)}>
-                  {`rev ${r.revisionNumber}${r.revisionNumber === currentRevision ? ' · current' : ''}`}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          <button
-            type="button"
-            className="pn-btn"
-            disabled={previewArtifact === undefined || run.phase === 'starting'}
-            title="Mint a fresh preview and reload the frame."
-            onClick={() => setRestartNonce((n) => n + 1)}
+        {revisions !== null && revisions.length > 0 ? (
+          <select
+            className="pn-preview__revpick"
+            aria-label="revision"
+            value={String(selectedRevision ?? currentRevision ?? revisions[0]!.revisionNumber)}
+            onChange={(e) => setSelectedRevision(Number(e.target.value))}
           >
-            {run.phase === 'starting' ? 'Starting…' : 'Restart ▷'}
-          </button>
-          <button
-            type="button"
-            className="pn-btn"
-            aria-pressed={fullscreen}
-            onClick={() => setFullscreen((f) => !f)}
-          >
-            {fullscreen ? 'Exit fullscreen' : 'Fullscreen ⛶'}
-          </button>
-          <button
-            type="button"
-            className="pn-btn"
-            disabled={exportArtifactRevision === undefined || exporting || shownRevision == null}
-            title={exportArtifactRevision === undefined ? 'Export is not wired here.' : 'Download this revision as a zip.'}
-            onClick={() => void onDownload()}
-          >
-            {exporting ? 'Saving…' : 'Download ⇩'}
-          </button>
-        </div>
+            {revisions.map((r) => (
+              <option key={r.revisionNumber} value={String(r.revisionNumber)}>
+                {`rev ${r.revisionNumber}${r.revisionNumber === currentRevision ? ' · current' : ''}`}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        <button
+          type="button"
+          className="pn-btn"
+          disabled={previewArtifact === undefined || run.phase === 'starting'}
+          title="Mint a fresh preview and reload the frame."
+          onClick={() => setRestartNonce((n) => n + 1)}
+        >
+          {run.phase === 'starting' ? 'Starting…' : 'Restart ▷'}
+        </button>
+        <button
+          type="button"
+          className="pn-btn"
+          aria-pressed={fullscreen}
+          onClick={() => setFullscreen((f) => !f)}
+        >
+          {fullscreen ? 'Exit fullscreen' : 'Fullscreen ⛶'}
+        </button>
+        <button
+          type="button"
+          className="pn-btn"
+          disabled={exportArtifactRevision === undefined || exporting || shownRevision == null}
+          title={exportArtifactRevision === undefined ? 'Export is not wired here.' : 'Download this revision as a zip.'}
+          onClick={() => void onDownload()}
+        >
+          {exporting ? 'Saving…' : 'Download ⇩'}
+        </button>
       </div>
       {previewArtifact === undefined ? (
         <div className="pn-preview__box pn-preview__box--none">
@@ -620,7 +630,7 @@ function ArtifactPreviewBlock({
       ) : run.phase === 'running' ? (
         <iframe
           className="pn-preview__frame"
-          title={`artifact preview · ${detail.title}`}
+          title={frameTitle}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           src={run.previewUrl}

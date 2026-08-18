@@ -307,17 +307,37 @@ describe('removing an attachment cuts the LINK, not the file', () => {
 // ---------------------------------------------------------------------------
 
 describe('the ＋ tile', () => {
-  it('IS the empty state — no prose, no dropzone rows, and it acts directly with one wired path', async () => {
-    const projects = vi.fn().mockResolvedValue([]);
+  it('is NOT drawn on an empty anchor — the idle strip is silent, but still mounted for drop', () => {
+    // Owner ruling 2026-08-18, reversing the addendum's "the ＋ tile IS the
+    // empty state": on an entity that has never had a file, that tile is
+    // ~140px of dashed box offering something nobody asked for. Drop is the
+    // path now, which is why the ROOT must survive — the drop listeners hang
+    // off it (`rootRef.current.closest(...)`), so an unmounted strip would
+    // take the last way to attach with it.
     render(
       <AttachmentStrip
         anchorId={'e1' as never}
         files={[]}
+        projectFolder={{ projects: vi.fn(), list: vi.fn(), attach: vi.fn() } as never}
+      />,
+    );
+    expect(screen.queryByTestId('attachment-add')).toBeNull();
+    expect(screen.queryByText(/no attachments/i)).toBeNull();
+    const root = screen.getByTestId('attachment-strip');
+    expect(root.dataset.idle).toBe('true');
+    expect(root.className).toContain('fn-tiles--idle');
+  });
+
+  it('comes back the moment the anchor has a file, and acts directly with one wired path', async () => {
+    const projects = vi.fn().mockResolvedValue([]);
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        files={[row({ fileEntityId: 'f1', name: 'notes.txt', mime: 'text/plain' })]}
         projectFolder={{ projects, list: vi.fn(), attach: vi.fn() } as never}
       />,
     );
-    expect(screen.queryByText(/no attachments/i)).toBeNull();
-    expect(screen.queryByText(/drop files here/i)).toBeNull();
+    expect(screen.getByTestId('attachment-strip').dataset.idle).toBeUndefined();
     // One wired path ⇒ no menu, straight to the picker: a one-item menu is a
     // click tax.
     fireEvent.click(screen.getByTestId('attachment-add'));
@@ -329,7 +349,8 @@ describe('the ＋ tile', () => {
     render(
       <AttachmentStrip
         anchorId={'e1' as never}
-        files={[]}
+        /* One file, because the ＋ is gated on a non-idle strip now. */
+        files={[row({ fileEntityId: 'f1', name: 'notes.txt', mime: 'text/plain' })]}
         startUpload={() => { throw new Error('unused'); }}
         projectFolder={{ projects: vi.fn(), list: vi.fn(), attach: vi.fn() } as never}
       />,

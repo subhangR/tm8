@@ -1612,9 +1612,12 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       // Same shape `file` uses: a preview block first, then the detail fields.
+      // The viewer block carries NO label (owner ruling 2026-08-18): an eyebrow
+      // reading PREVIEW over a frame that is visibly a preview is a row of
+      // height spent on a word, and this panel's whole job is the frame.
       archetype: 'generic',
       blocks: [
-        { block: 'artifact-preview', label: 'PREVIEW' },
+        { block: 'artifact-preview' },
         { block: 'fields', label: 'DETAILS' },
         COLLECTIONS_BLOCK,
       ],

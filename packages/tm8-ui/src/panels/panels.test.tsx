@@ -127,6 +127,21 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     },
   );
 
+  /**
+   * THE PANEL IS A DROP HOST (2026-08-18). With the empty ＋ tile gone, drop is
+   * the attach path — and before this the only marked host in the product was
+   * the task body's description block, so every other kind would have been left
+   * with no way to attach at all. This is the one assertion standing between
+   * "the strip got quieter" and "attaching silently died for 18 kinds".
+   */
+  it('marks itself a drop host, so the strip has a target on every kind', () => {
+    const detail = fixtureDetails[sessionStale.id]!;
+    const { getByTestId } = render(
+      <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} liveness="stale" />,
+    );
+    expect(getByTestId('entity-detail-panel').hasAttribute('data-attachment-drophost')).toBe(true);
+  });
+
   it('routes the body by ARCHETYPE, never by kind — work_session gets the terminal body', () => {
     const detail = fixtureDetails[sessionStale.id]!;
     const { getByTestId } = render(

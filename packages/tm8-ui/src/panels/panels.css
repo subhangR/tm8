@@ -1089,39 +1089,20 @@
 /* The viewer variant stretches its children: the frame must fill the panel's
    width, and the base .pn-preview's flex-start would shrink-wrap it. */
 .cv2-root .pn-preview--viewer { align-items: stretch; }
-/* The chrome is a SECURITY CONTROL, not decoration: the frame below it runs
-   third-party code that can draw anything — including this product — so the
-   line naming the publisher and disowning the content must be part of the
-   viewer's anatomy on every phase, and it must not restyle to match whatever
-   the bundle renders. */
+/* ONE THIN ROW of controls, and nothing else (owner ruling 2026-08-18). The
+   publisher line and third-party caution that used to sit here in a bordered
+   card cost ~200px above a frame the panel exists to show; they moved onto the
+   frame's own `title`. No border and no ground: this row is the frame's
+   handle, not a card in its own right, and every pixel it does not take is
+   pixels the artifact gets. */
 .cv2-root .pn-preview__chrome {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-end;
+  gap: 6px;
   flex-wrap: wrap;
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: 8px;
-  padding: 8px 10px;
+  flex: none;
 }
-.cv2-root .pn-preview__who { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.cv2-root .pn-preview__publisher {
-  font-family: var(--pn-mono);
-  font-size: 11px;
-  color: var(--pn-ink-2);
-  overflow-wrap: anywhere;
-}
-/* The caution keeps its own colour so it reads apart from metadata — it is
-   the one sentence that must survive a skim. */
-.cv2-root .pn-preview__thirdparty {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  color: var(--pn-wait);
-  line-height: 1.5;
-}
-.cv2-root .pn-preview__controls { display: flex; align-items: center; gap: 6px; flex: none; }
 .cv2-root .pn-preview__revpick {
   font-family: var(--pn-mono);
   font-size: 11px;
@@ -1131,20 +1112,33 @@
   border-radius: 6px;
   padding: 4px 6px;
 }
+/* THE FRAME TAKES THE SLACK. `.pn-body` is already a flex column, so the
+   artifact's section can claim every pixel its siblings (details, collections)
+   do not need instead of standing at a fixed 420px with dead panel below it —
+   a viewer that scrolls while the panel has empty space is the complaint this
+   answers. The min-height stays as the floor for the crowded case, where the
+   body scrolls exactly as before. */
+.cv2-root .pn-body > .pn-section[data-testid='block-artifact-preview'] {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .pn-preview--viewer:not(.pn-preview--fullscreen) { flex: 1 1 auto; min-height: 0; }
 /* The frame: full panel width, generous height, card-white ground — the
    bundle's own page decides its colours and an empty one should read as a
    page, not as a hole in the panel. */
 .cv2-root .pn-preview__frame {
   width: 100%;
+  flex: 1 1 auto;
   min-height: 420px;
   border: 1px solid var(--pn-line);
   border-radius: 8px;
   background: var(--pn-card);
 }
-/* Fullscreen is a CSS state, not a browser API: the SAME element with the
-   same chrome pinned over the app (Escape exits). The chrome coming along is
-   the point — a bundle must never own the whole viewport without the line
-   that says whose code it is. */
+/* Fullscreen is a CSS state, not a browser API: the SAME element with the same
+   controls pinned over the app (Escape exits, and the Exit button rides along
+   because a cross-origin frame swallows its own keys). */
 .cv2-root .pn-preview--fullscreen {
   position: fixed;
   inset: 0;

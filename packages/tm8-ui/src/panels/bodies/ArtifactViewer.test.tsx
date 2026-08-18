@@ -217,32 +217,38 @@ describe('artifact viewer — revisions, download, chrome, fullscreen', () => {
     }
   });
 
-  it('names the publisher and disowns the frame content, alongside the frame', async () => {
+  it('names the publisher and disowns the content ON THE FRAME ITSELF', async () => {
+    // The publisher line + third-party wording are the phishing countermeasure
+    // (§12.1 residual). They used to be a banner above the frame; the owner
+    // ruled that banner out on 2026-08-18 for the ~200px it cost, so they now
+    // ride the frame's accessible name — the element that actually runs the
+    // third-party code, which is a strictly closer place to hang them.
     const previewArtifact = vi.fn(async () => session());
     const { container } = renderViewer({ previewArtifact });
     await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull());
-    const text = container.textContent ?? '';
-    expect(text).toContain('published by');
-    expect(text).toContain('forge');
-    expect(text).toContain('(agent)');
-    expect(text).toContain('revision 3');
-    expect(text).toContain('not tm8 UI');
+    const title = container.querySelector('iframe')!.getAttribute('title') ?? '';
+    expect(title).toContain('published by forge (agent)');
+    expect(title).toContain('revision 3');
+    expect(title).toContain('not tm8 UI');
+    expect(title).toContain('never enter tm8 credentials');
   });
 
-  it('the security chrome renders on EVERY phase, not only around a live frame', async () => {
-    // The publisher line + third-party wording are the phishing
-    // countermeasure (§12.1 residual) — a phase that drops them is a security
-    // regression, so each phase asserts them (review F7).
-    const chromePresent = (container: HTMLElement) => {
+  it('NO phase draws the old banner — the viewer opens on its controls', async () => {
+    // The counterpart to the assertion above: the sentence is on the frame, so
+    // it must not have quietly survived as visible text anywhere. A phase with
+    // no frame carries no residual to compensate for — there is nothing
+    // executing — and it, too, must not reintroduce the band.
+    const bannerAbsent = (container: HTMLElement) => {
       const text = container.textContent ?? '';
-      expect(text).toContain('published by');
-      expect(text).toContain('not tm8 UI');
+      expect(text).not.toContain('published by');
+      expect(text).not.toContain('Third-party content');
+      expect(container.querySelector('.pn-preview__who')).toBeNull();
     };
     // not-wired: no command executor at all.
-    chromePresent(renderViewer(undefined).container);
+    bannerAbsent(renderViewer(undefined).container);
     cleanup();
     // starting: the mint never settles inside this test.
-    chromePresent(renderViewer({ previewArtifact: vi.fn(() => new Promise(() => {})) }).container);
+    bannerAbsent(renderViewer({ previewArtifact: vi.fn(() => new Promise(() => {})) }).container);
     cleanup();
     // refusal: a session with no previewUrl.
     {
@@ -250,7 +256,7 @@ describe('artifact viewer — revisions, download, chrome, fullscreen', () => {
         previewArtifact: vi.fn(async () => session({ previewUrl: undefined })),
       });
       await findByText(/did not mint a preview URL/);
-      chromePresent(container);
+      bannerAbsent(container);
       cleanup();
     }
     // error: the mint rejects.
@@ -261,8 +267,21 @@ describe('artifact viewer — revisions, download, chrome, fullscreen', () => {
         }),
       });
       await findByText(/node fell over/);
-      chromePresent(container);
+      bannerAbsent(container);
+      // The controls survive every phase even though the banner does not —
+      // Restart is how a caller gets out of the error state.
+      expect(container.querySelector('.pn-preview__chrome')).not.toBeNull();
     }
+  });
+
+  it('the viewer block carries NO eyebrow — nothing sits between the tabs and the frame', () => {
+    // The eyebrow is drawn by `ContentBlock` from `block.label`, so the ruling
+    // is enforced where the label would come from: registry data. Asserting
+    // the absence in the DOM instead would pass for the wrong reason on any
+    // mount that renders the block directly, as this suite's own does.
+    const viewer = BLOCKS.find((b) => b.block === 'artifact-preview');
+    expect(viewer).toBeDefined();
+    expect(viewer!.label).toBeUndefined();
   });
 
   it('fullscreen is a class state on the same element; Escape exits', async () => {
