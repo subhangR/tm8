@@ -22,6 +22,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { landingOfRoute, routeViewOf } from '../domain/nav-targets';
+import { slugOfKind } from '../domain/registry';
 
 const strip = (text: string) =>
   text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
@@ -232,6 +234,46 @@ describe('DEF-013…020 — the shared touch floor is a token, and it is not a b
     // sizing override. This asserts the ruling was applied rather than
     // forgotten.
     expect(screens).not.toMatch(/\.hon-disabled[^{]*\{[^}]*min-(block-size|inline-size|height|width)/);
+  });
+});
+
+describe('DEF-043 — the way out of the files refusal reaches a screen that exists', () => {
+  /*
+   * THE TRAP THIS PINS, and it is a real one that the build service caught in
+   * the ledger's own wording rather than in the code: the URL is `k/files`,
+   * the KIND is `file`, and `MenuTarget` carries the KIND. Driving `k/file`
+   * directly does NOT resolve — it lands on the unrouted card, which would
+   * have pointed a reader out of an honest refusal into "this link doesn't
+   * name a screen this build has". A strictly worse dead end than the one the
+   * row exists to remove.
+   *
+   * So the affordance passes `ref: 'file'` and `routeViewOf` produces the
+   * `files` slug. Passing `ref: 'files'` — the slug — would make
+   * `slugOfKind('files')` return null, and `navigateTo` REFUSES a target with
+   * no route: the button would render, be pressed, and do nothing. Both
+   * failure modes are asserted below so neither can be "fixed" into the other.
+   */
+  it('navigates by KIND, and that produces the files slug', () => {
+    expect(slugOfKind('file')).toBe('files');
+    expect(routeViewOf({ type: 'kind', ref: 'file' })).toMatchObject({ view: 'kind', slug: 'files' });
+  });
+
+  it('the slug is NOT a valid target ref — passing it would make the button inert', () => {
+    expect(slugOfKind('files')).toBeNull();
+    expect(routeViewOf({ type: 'kind', ref: 'files' })).toBeNull();
+  });
+
+  it('the round trip lands back on the file kind', () => {
+    const route = routeViewOf({ type: 'kind', ref: 'file' });
+    expect(route).not.toBeNull();
+    expect(landingOfRoute(route!)).toMatchObject({ target: { type: 'kind', ref: 'file' } });
+  });
+
+  it('the card still refuses — the affordance is beside the refusal, not instead of it', () => {
+    // Silently aliasing `files` to `k/files` would violate the shell's own
+    // honesty law, one row after fixing a card that lies (DEF-012).
+    expect(shell).toContain('mobile-refusal-out');
+    expect(shell).toMatch(/data-testid="mobile-not-on-phone"/);
   });
 });
 
