@@ -530,6 +530,18 @@ function measureInPage({ MIN_TAP, EPS }) {
 
   const describeTap = ({ el, r }) => ({
     w: Math.round(r.width), h: Math.round(r.height),
+    /* VERTICAL COORDINATES. The rows carried no vertical position of any kind —
+       every numeric field was a width, a horizontal edge or a count — so no
+       vertical defect was auditable after the fact by anyone. That is where
+       DEF-037's blindness actually begins. */
+    top: Math.round(r.top), bottom: Math.round(r.bottom),
+    /* THE TESTID, so a testid-based acceptance is checkable by anyone holding
+       this file rather than only by the session that produced it. Without it
+       every R10 testid witness is unfalsifiable post hoc — and the failure is
+       usually a FALSE ALARM (a non-colliding testid returns zero hits and reads
+       as "witness absent"), with `terminal-body` vs the class `pn-terminal-body`
+       the rarer false-confidence case. */
+    testid: el.getAttribute('data-testid') || undefined,
     path: pathOf(el), text: (el.textContent || '').trim().slice(0, 30),
   });
 
@@ -1063,7 +1075,16 @@ for (const vp of VIEWPORTS) {
      * screen that silently stood in, so they are not reported as a threshold
      * result at all: the row is VOID.
      */
-    let witnessOk = true;
+    /*
+     * NULL, NOT TRUE, WHEN NOTHING WAS CHECKED.
+     *
+     * `witnessOk: true` on a row with `witness: null` reads as "verified" and
+     * means "nobody asked" — 76 rows of 90 in a contract file were exactly
+     * that pair, because only `tasks-board` had a witness anyone demanded. A
+     * field that cannot say "I did not check" will say "pass", which is the
+     * same shape as `stateOpened` one field over.
+     */
+    let witnessOk = route.witness ? true : null;
     if (route.witness) {
       witnessOk = await page.locator(route.witness).first().isVisible().catch(() => false);
       if (!witnessOk) {
