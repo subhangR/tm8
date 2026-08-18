@@ -7,7 +7,7 @@
 // point is that the PTY assertions can run with no Postgres at all.
 
 import { randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
@@ -71,6 +71,7 @@ import type {
   Tm8Manifest,
   TransitionInput,
   WorkSessionStatus,
+  WorktreeAllocationRow,
 } from './types.js';
 import { SpawnError } from './types.js';
 
@@ -199,6 +200,24 @@ async function repairPrivateChildDirectories(path: string): Promise<void> {
       if (info.isDirectory()) await chmod(entryPath, PRIVATE_DIRECTORY_MODE);
     }),
   );
+}
+
+/**
+ * "Is there still a directory at this path?" — the observation resume needs
+ * before it will honour a recorded worktree path.
+ *
+ * `stat`, not `lstat`: a worktree reachable through a symlinked path is still
+ * reachable, and refusing it would fail a resume that would have worked. Any
+ * error at all (gone, unreadable, a file) answers `false` — the caller's only
+ * two options are "use this directory" or "refuse", and every error means the
+ * first one is not available.
+ */
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -1360,12 +1379,51 @@ export class SpawnService {
       );
     }
 
-    // Project cwd is re-read from the graph (it may legitimately have moved);
-    // a scratch cwd is named for the SESSION id, which resume shares — so the
-    // conversation's own files are still there.
-    const cwd = context.project
-      ? context.project.workingDir
-      : join(this.dataDir, 'scratch', sessionId);
+    // WORKTREE FIRST, and it is the whole point of this block.
+    //
+    // Resume used to compute this as `context.project.workingDir` outright,
+    // which sent every resumed WORKTREE session back into the SHARED checkout
+    // while the manifest below still emitted `mode: 'worktree'`. Nothing showed
+    // it: the branch probe reads `info.workdirPath`, so `checkoutBranch` stayed
+    // right while the cwd was wrong, and the session committed to whatever
+    // branch the shared checkout happened to be parked on. §7.4's first
+    // prohibition — a session told it is isolated and running in the shared
+    // checkout — arrived through resume rather than through spawn.
+    //
+    // The row is the authority here, NOT `resolveWorkdir`: re-resolving would
+    // re-run the request-time DECISION (persona defaults, a policy that has
+    // since changed) and could legitimately answer a different mode than the
+    // one this conversation's files actually live in. A resume restores a
+    // place; it does not choose one.
+    //
+    // Project cwd is still re-read from the graph (it may legitimately have
+    // moved); a scratch cwd is named for the SESSION id, which resume shares —
+    // so the conversation's own files are still there.
+    const worktreeCwd = info.workdirMode === 'worktree' ? info.workdirPath : null;
+    if (info.workdirMode === 'worktree' && worktreeCwd === null) {
+      throw new SpawnError(
+        `work session ${sessionId} is recorded as an isolated worktree but its row carries no ` +
+          `workdir path — refusing to resume it into the shared checkout`,
+        'conflict',
+        { sessionId, workdirMode: info.workdirMode },
+      );
+    }
+    // A reclaimed checkout REFUSES, and refuses BEFORE `resumeWorkSession`
+    // touches the row. Falling through to the project directory is precisely
+    // the defect above; making that fallback unreachable is what keeps it from
+    // coming back.
+    if (worktreeCwd !== null && !(await isDirectory(worktreeCwd))) {
+      throw new SpawnError(
+        `the worktree for session ${sessionId} is gone — '${worktreeCwd}' is no longer a ` +
+          `directory. Refusing to resume: an isolated session must not silently reland in the ` +
+          `shared checkout.`,
+        'not_found',
+        { sessionId, workdirPath: worktreeCwd },
+      );
+    }
+    const cwd =
+      worktreeCwd ??
+      (context.project ? context.project.workingDir : join(this.dataDir, 'scratch', sessionId));
 
     // Resolve the native id BEFORE any state change (fail-closed, maestro's
     // codex_resume_id_unavailable pattern). Claude ids are pre-minted at spawn,
@@ -1460,6 +1518,38 @@ export class SpawnService {
     this.sessionAuth.set(sessionId, auth);
 
     try {
+      // §3.4 — one write-capable live session per worktree, re-asserted for the
+      // NEW run. Resume never did this: the previous run's lease was either
+      // still hanging off a dead session (see `handlePtyExit`) or had been
+      // swept by reconciliation, and in the swept case a resumed session went
+      // back into a checkout it held no claim on, where a fresh spawn was free
+      // to take it out from under it.
+      //
+      // Re-acquiring a lease this session ALREADY holds is a success, not a
+      // conflict: `acquire_worktree_lease` refuses only when the holder is
+      // some OTHER session (081:282-284). A resume that refused because the
+      // session still owned its own worktree would be a new bug.
+      if (worktreeCwd !== null) {
+        const allocation = await this.findWorktreeAllocation(
+          auth,
+          (row) => row.path === worktreeCwd,
+        );
+        if (allocation) {
+          await this.graph.acquireWorktreeLease(auth, allocation.worktreeId, sessionId);
+        } else {
+          // Not fatal. The cwd fix above already put this session in the right
+          // place, and the directory is provably there; an allocation this node
+          // cannot see is a bookkeeping gap, not a reason to strand a
+          // conversation. It IS worth saying out loud, because until it is
+          // fixed nothing enforces exclusivity on that checkout.
+          this.logger?.warn?.(
+            'SpawnService: resumed worktree session has no allocation on this node — ' +
+              'its checkout is unleased and nothing prevents a second session taking it',
+            { sessionId, workdirPath: worktreeCwd, nodeId: this.nodeId },
+          );
+        }
+      }
+
       // Re-pin the interaction profile for the new run; non-fatal on failure —
       // a resume that degrades to the core-default profile frame is strictly
       // better than one that refuses, because the restored conversation already
@@ -1493,14 +1583,15 @@ export class SpawnService {
 
       // Refresh the lane fact (107): a shared checkout may have changed
       // branches since the last run, and a lane branch may have been renamed.
-      // Worktree sessions probe their own checkout (the stored workdir_path);
-      // scratch sessions have nothing to probe and keep NULL.
-      const branchProbePath =
-        info.workdirMode === 'worktree'
-          ? info.workdirPath
-          : info.workdirMode === 'project'
-            ? cwd
-            : null;
+      // Scratch has no repo by construction and keeps NULL.
+      //
+      // This probes `cwd` for BOTH repo modes now, and that is deliberate. It
+      // used to read `info.workdirPath` for worktree mode and `cwd` for
+      // project mode — a divergence that was invisibly load-bearing: it kept
+      // the displayed branch correct while the cwd above was wrong, which is
+      // exactly why the defect had no surface. One expression, one answer: the
+      // branch reported is now the branch of the directory the PTY gets.
+      const branchProbePath = info.workdirMode === 'scratch' ? null : cwd;
       if (branchProbePath !== null) {
         await this.captureCheckoutBranch(
           auth,
@@ -2084,8 +2175,92 @@ export class SpawnService {
         { sessionId, status, sqlState },
       );
     } finally {
+      // In `finally`, not after the `try`: a transition that FAILED still means
+      // the agent is gone, and the checkout must come back either way.
+      await this.releaseWorktreeLeaseAfterExit(auth, sessionId);
     }
   };
+
+  /**
+   * The one lookup that turns a session (or a path) back into the worktree it
+   * is bound to.
+   *
+   * `work_sessions` records the workdir PATH, not the worktree entity id, and
+   * `WorkSessionResumeInfo` carries no worktree id either — so both the resume
+   * lease and the exit release have to ask the allocation table. Scoping to
+   * THIS node is not a limitation of the query, it is the correct bound: an
+   * allocation is a checkout on a specific node's disk, and both callers have
+   * already established that the checkout is on this one (resume stat()ed the
+   * directory; exit just ran a PTY in it).
+   *
+   * Returns null rather than throwing. Both callers have a defined, non-fatal
+   * behaviour for "no allocation", and neither should turn a bookkeeping gap
+   * into a dead session.
+   */
+  private async findWorktreeAllocation(
+    auth: GraphAuth,
+    match: (row: WorktreeAllocationRow) => boolean,
+  ): Promise<WorktreeAllocationRow | null> {
+    // A node with no id owns no allocations to look up — `worktree_allocations`
+    // is keyed by node_id, so there is nothing to ask for.
+    if (this.nodeId === null) return null;
+    try {
+      const rows = await this.graph.listNodeWorktreeAllocations(auth, this.nodeId);
+      return rows.find(match) ?? null;
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not read this node worktree allocations', {
+        nodeId: this.nodeId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * D6a — hand the checkout back when the agent that held it is gone.
+   *
+   * This used to be a literally empty `finally { }`. The consequence was not
+   * theoretical: the lease is a `unique(lease_session_id) where not null` row
+   * that nothing else clears on a CLEAN exit, so a session that finished
+   * normally PINNED its worktree. Reconciliation does release a lease held by a
+   * terminal session — but reconciliation is a node-boot sweep, so in practice
+   * the checkout stayed unavailable until the next reboot.
+   *
+   * The worktree itself is NEVER touched here. §6.3: a checkout may hold
+   * unpushed work, and an exiting process is evidence about a process, not
+   * about a directory.
+   *
+   * Loud but non-fatal, and it must stay that way — this runs in the `finally`
+   * of the exit transition, and a throw here would replace the transition's
+   * own (already reported) outcome with this one.
+   */
+  private async releaseWorktreeLeaseAfterExit(
+    auth: GraphAuth,
+    sessionId: string,
+  ): Promise<void> {
+    try {
+      const allocation = await this.findWorktreeAllocation(
+        auth,
+        (row) => row.leaseSessionId === sessionId,
+      );
+      if (!allocation) return;
+      await this.graph.releaseWorktreeLease(auth, allocation.worktreeId);
+    } catch (error) {
+      // LOUD for the same reason the transition above is: the damage is a
+      // worktree that silently stops being allocatable, and the node degrades
+      // over hours with nothing pointing back here.
+      this.loud(
+        `FAILED to release the worktree lease held by session ${sessionId} after its PTY ` +
+          `exited — that checkout stays leased to a dead session until the next ` +
+          `reconciliation sweep: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      this.logger?.error?.(
+        'SpawnService: failed to release worktree lease on PTY exit',
+        error instanceof Error ? error : new Error(String(error)),
+        { sessionId },
+      );
+    }
+  }
 
   /** Exit-path failures must never depend on a logger having been injected. */
   private loud(message: string): void {
