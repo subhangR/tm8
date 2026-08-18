@@ -809,8 +809,16 @@ export interface CollectionQuery {
     deleted?: 'exclude'|'only'|'include';
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
-  /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
-  groupBy?: 'status'|'assignee'|'priority'|`axis:${string}`;
+  /**
+   * `priority` added 2026-08-16 (Board tab wave); `kind` added by phase 6
+   * (155) — same additive posture as the rest of the union.
+   *
+   * `kind` is what `axis:type` used to be. Grouping a board by epic/bug/story
+   * was grouping by a TAG; those values are kinds now, so the grouping is over
+   * the entity's own kind and works for every kind family rather than for the
+   * one axis a space happened to name `type`.
+   */
+  groupBy?: 'status'|'assignee'|'priority'|'kind'|`axis:${string}`;
   sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'priority';
   cursor?: Cursor; limit?: number;
 }
@@ -2111,11 +2119,6 @@ export interface TaskAxisInput extends CommandContext {
   position: number;
 }
 
-/** POST /v2/spaces/:spaceId/task-workflows — upsert on (space, typeValue). */
-export interface TaskWorkflowInput extends CommandContext {
-  typeValue: string;
-  statuses: WorkStatus[];
-}
 
 /**
  * POST /v2/spaces/:spaceId/workflows — upsert on (space, kind, name).
@@ -2634,34 +2637,15 @@ export interface TaskAxis {
   position: number;
 }
 
-/**
- * GET /v2/spaces/:spaceId/task-workflows (W4, 132).
- *
- * One row per (space, `type` value): the SUBSET of work statuses tasks of
- * that type may be moved TO. `{open, working, done}` are STRUCTURAL — the
- * schema requires them in every vocabulary (creation, the spawn door, and
- * completion must never be authorable out of existence) — so the narrowable
- * set is exactly {pulled, in_review, blocked, cancelled}. Enforcement is a
- * trigger on `tasks`; a task whose status falls outside its type's
- * vocabulary (after a type change) is off-workflow: a DERIVED fact, flagged
- * by clients, never stored and never rewritten.
- */
-export interface TaskWorkflow {
-  id: string;
-  spaceId: SpaceId;
-  /** The `type` AXIS value this rule governs (strictly `type`, by ruling). */
-  typeValue: string;
-  statuses: WorkStatus[];
-}
 
 /**
  * GET /v2/spaces/:spaceId/workflows — a named set of states and transitions.
  *
- * SUPERSEDES `TaskWorkflow`, which stays in place read-only until phase 6. The
- * difference that matters: a `TaskWorkflow` is a SUBSET of seven hardcoded
- * statuses, and a `Workflow` is an open set of user-named states each carrying
- * one of the four closed CATEGORIES. Today the statuses are hardcoded and the
- * subset is data; here the categories are hardcoded and the statuses are data.
+ * REPLACED `TaskWorkflow`, retired by phase 6 (migration 153) with the `type`
+ * axis it was keyed on. The difference that mattered: a `TaskWorkflow` was a
+ * SUBSET of seven hardcoded statuses keyed on a TAG VALUE, and a `Workflow` is
+ * an open set of user-named states each carrying one of the four closed
+ * CATEGORIES, keyed on a KIND.
  */
 export interface Workflow {
   id: string;
@@ -2726,12 +2710,6 @@ export interface SpaceSettings {
   /** `role` (118) is the role redemption confers — 'admin' or 'member', never 'owner'. */
   invites: Array<{ id: string; code: string; role: Exclude<SpaceMemberRole, 'owner'>; maxUses: number; uses: number; expiresAt: string | null; revoked: boolean }>;
   taskAxes: TaskAxis[];
-  /**
-   * W4 ride-along: the same one settings round trip that carries `taskAxes`
-   * carries the workflows keyed on them — the two are curated together and
-   * read together. Optional so pre-132 fixtures read as "none defined".
-   */
-  taskWorkflows?: TaskWorkflow[];
 }
 
 /** Member-authorized settings projection returned by A03 and settings reads. */
@@ -4555,6 +4533,26 @@ export interface EntityKindDef {
   fieldSchema: CustomFieldDef[];
   /** Which universal capabilities are surfaced (all default on). */
   capabilities: Record<string, boolean>;
+  /**
+   * The `extends` link (153). NOT decoration: it names which irreducible code
+   * runs for entities of this kind. A kind with `baseKind: 'task'` carries a
+   * task detail row and inherits assignees, acceptance criteria, points, the
+   * spawn door and the completion gate. `null` for every core kind and for a
+   * custom kind that extends nothing. Only `'task'` is servable today — the
+   * base is a promise that a detail row of that shape can be CREATED, and it
+   * is the only base whose create door exists.
+   */
+  baseKind: 'task' | null;
+  /**
+   * Display labels (153). `null` means the client's own registry row is
+   * authoritative, which is the answer for every core kind until phase 10
+   * serves them. Before 153 a custom kind had no label at all and every one of
+   * them rendered as "Item".
+   */
+  label: string | null;
+  labelPlural: string | null;
+  /** The workflow governing this kind (152). `null` means the built-in default. */
+  workflowId: string | null;
   createdBy?: EntityId | null;
   createdAt: string;
 }
@@ -4565,6 +4563,17 @@ export interface EntityKindCreateInput extends CommandContext {
   icon?: string | null;
   fieldSchema: CustomFieldDef[];
   capabilities?: Record<string, boolean>;
+  /**
+   * `extends`. Set at creation and never patched: re-basing a kind would change
+   * which detail table its EXISTING rows are supposed to have, which is a data
+   * migration wearing an update's clothes. A kind that extends `task` may not
+   * declare a field schema yet — the create door writes a task detail row and
+   * no custom-fields row, so a declared field would be a schema nothing can
+   * populate.
+   */
+  baseKind?: 'task' | null;
+  label?: string | null;
+  labelPlural?: string | null;
 }
 
 /**
@@ -4577,4 +4586,6 @@ export interface EntityKindUpdateInput extends CommandContext {
   fieldSchema?: CustomFieldDef[];
   capabilities?: Record<string, boolean>;
   allowTightening?: boolean;
+  label?: string | null;
+  labelPlural?: string | null;
 }

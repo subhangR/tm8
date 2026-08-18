@@ -52,17 +52,11 @@ export const OPERATIONS = [
   { name: 'spaces.taskAxes.create',  method: 'POST',   path: '/v2/spaces/:spaceId/task-axes',               kind: 'command', status: 'v1' },
   { name: 'spaces.taskAxes.update',  method: 'PATCH',  path: '/v2/spaces/:spaceId/task-axes/:axisId',       kind: 'command', status: 'v1' },
   { name: 'spaces.taskAxes.delete',  method: 'DELETE', path: '/v2/spaces/:spaceId/task-axes/:axisId',       kind: 'command', status: 'v1' },
-  // W4 (132): per-type status vocabularies. Upsert, not create+update — the
-  // natural key is (space, type value) and the UI edits one row per value.
-  { name: 'spaces.taskWorkflows.list',   method: 'GET',    path: '/v2/spaces/:spaceId/task-workflows',             kind: 'read',    status: 'v1' },
-  { name: 'spaces.taskWorkflows.upsert', method: 'POST',   path: '/v2/spaces/:spaceId/task-workflows',             kind: 'command', status: 'v1' },
-  { name: 'spaces.taskWorkflows.delete', method: 'DELETE', path: '/v2/spaces/:spaceId/task-workflows/:workflowId', kind: 'command', status: 'v1' },
   // Phase 2 (148): the real workflow tables — open, user-named states each
-  // carrying one of the four closed categories. SUPERSEDES taskWorkflows above,
-  // which stays read-only until phase 6 retires the `type` axis. Upsert is
+  // carrying one of the four closed categories. REPLACED `spaces.taskWorkflows.*`,
+  // retired by phase 6 (153) with the `type` axis it was keyed on. Upsert is
   // WHOLE-DOCUMENT (states and transitions ride along) because every invariant
-  // here is about a workflow as a whole; same reasoning that put `statuses` on
-  // the taskWorkflows upsert rather than shipping an add-status op.
+  // here is about a workflow as a whole.
   { name: 'spaces.workflows.list',   method: 'GET',    path: '/v2/spaces/:spaceId/workflows',             kind: 'read',    status: 'v1' },
   { name: 'spaces.workflows.upsert', method: 'POST',   path: '/v2/spaces/:spaceId/workflows',             kind: 'command', status: 'v1' },
   { name: 'spaces.workflows.delete', method: 'DELETE', path: '/v2/spaces/:spaceId/workflows/:workflowId', kind: 'command', status: 'v1' },

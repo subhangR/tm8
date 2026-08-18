@@ -95,7 +95,7 @@ import type {
   SessionFileChange, SessionFileChanges, SessionFileHunk,
   SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
   SessionTranscriptStuck,
-  ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StatusCategory, StreamAttachGrant, TaskAxis, TaskAxisInput, TaskWorkflow, TaskWorkflowInput,
+  ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StatusCategory, StreamAttachGrant, TaskAxis, TaskAxisInput,
   Workflow, WorkflowInput, WorkflowState, WorkflowStateInput, WorkflowTransition, WorkflowTransitionInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingPrMergeInput, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
@@ -797,7 +797,8 @@ const GroupBySchema = z.union([
   z.literal('status'),
   z.literal('assignee'),
   z.literal('priority'),
-  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "status", "assignee", "priority" or "axis:<name>"'),
+  z.literal('kind'),
+  z.custom<`axis:${string}`>((v) => typeof v === 'string' && v.startsWith('axis:'), 'must be "status", "assignee", "priority", "kind" or "axis:<name>"'),
 ]);
 
 const CollectionFiltersSchema = z.object({
@@ -2036,14 +2037,6 @@ export const TaskAxisInputSchema: z.ZodType<TaskAxisInput> = z.object({
   axisValues: z.array(z.string()),
   kind: z.enum(['default', 'manual']),
   position: z.number().finite(),
-}).strict();
-
-export const TaskWorkflowInputSchema: z.ZodType<TaskWorkflowInput> = z.object({
-  ...commandContextShape,
-  typeValue: z.string().min(1),
-  // The structural {open, working, done} rule is the DATABASE's constraint;
-  // duplicating it here would be a second copy free to drift.
-  statuses: z.array(WorkStatusSchema),
 }).strict();
 
 export const WorkflowStateInputSchema: z.ZodType<WorkflowStateInput> = z.object({
@@ -3300,6 +3293,13 @@ export const EntityKindDefSchema: z.ZodType<EntityKindDef> = z.object({
   icon: z.string().nullable().optional(),
   fieldSchema: z.array(CustomFieldDefSchema),
   capabilities: z.record(z.boolean()),
+  // 153. `.nullable()` and NOT `.optional()`: the server always answers these,
+  // and "absent" would be a third state beside "no base" and "unlabelled" that
+  // nothing means.
+  baseKind: z.literal('task').nullable(),
+  label: z.string().nullable(),
+  labelPlural: z.string().nullable(),
+  workflowId: z.string().nullable(),
   createdBy: EntityIdSchema.nullable().optional(),
   createdAt: IsoTimestamp,
 }).strict();
@@ -3310,6 +3310,9 @@ export const EntityKindCreateInputSchema: z.ZodType<EntityKindCreateInput> = z.o
   icon: z.string().nullable().optional(),
   fieldSchema: z.array(CustomFieldDefSchema),
   capabilities: z.record(z.boolean()).optional(),
+  baseKind: z.literal('task').nullable().optional(),
+  label: z.string().nullable().optional(),
+  labelPlural: z.string().nullable().optional(),
 }).strict();
 
 export const EntityKindUpdateInputSchema: z.ZodType<EntityKindUpdateInput> = z.object({
@@ -3318,6 +3321,8 @@ export const EntityKindUpdateInputSchema: z.ZodType<EntityKindUpdateInput> = z.o
   fieldSchema: z.array(CustomFieldDefSchema).optional(),
   capabilities: z.record(z.boolean()).optional(),
   allowTightening: z.boolean().optional(),
+  label: z.string().nullable().optional(),
+  labelPlural: z.string().nullable().optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------
@@ -3373,13 +3378,6 @@ export const TaskAxisSchema: z.ZodType<TaskAxis> = z.object({
   axisValues: z.array(z.string()),
   kind: z.enum(['default', 'manual']),
   position: z.number(),
-}).strict();
-
-export const TaskWorkflowSchema: z.ZodType<TaskWorkflow> = z.object({
-  id: z.string(),
-  spaceId: SpaceIdSchema,
-  typeValue: z.string(),
-  statuses: z.array(WorkStatusSchema),
 }).strict();
 
 export const WorkflowStateSchema: z.ZodType<WorkflowState> = z.object({
@@ -3448,7 +3446,6 @@ export const SpaceSettingsSchema: z.ZodType<SpaceSettings> = z.lazy(() => z.obje
     revoked: z.boolean(),
   }).strict()),
   taskAxes: z.array(TaskAxisSchema),
-  taskWorkflows: z.array(TaskWorkflowSchema).optional(),
 }).strict());
 
 export const SpaceSettingsViewSchema: z.ZodType<SpaceSettingsView> = z.lazy(() => z.object({
@@ -3468,7 +3465,6 @@ export const SpaceSettingsViewSchema: z.ZodType<SpaceSettingsView> = z.lazy(() =
     revoked: z.boolean(),
   }).strict()),
   taskAxes: z.array(TaskAxisSchema),
-  taskWorkflows: z.array(TaskWorkflowSchema).optional(),
   menu: MenuConfigSchema,
   defaultChannelId: EntityIdSchema.nullable(),
   defaultInteractionProfileId: EntityIdSchema.nullable(),
