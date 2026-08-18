@@ -368,8 +368,26 @@ The phone shell's identity is honest refusal, so these are contract, not taste:
 
 **`occluded[]`, `tapWorst[]`, `clipped[]` and `tinyText[]` can be CAPPED SAMPLES. The counts are
 separate fields.** Derive numbers from `occludedCount`, `tapUnder44`, `clippedCount`,
-`tinyTextCount` — treat the arrays as *examples*, never as inventories. If you quote an array length,
-say it is a sample and give the field beside it.
+`tinyTextCount` — treat the arrays as *examples*, never as inventories.
+
+> **A statement about "every finding" cannot be made from a capped array AT ALL, in either
+> direction** — not *"these are all of them"* and not *"none of them is X"*. **Only the count field
+> speaks for the population, and it speaks about SIZE ONLY, never about CONTENT.**
+
+**THE SECOND HALF IS THE DANGEROUS ONE, and it is easy to miss while congratulating yourself about the
+first.** Under-counting a total from a short array produces *a small number*. A **universal negative**
+asserted from a truncated sample — "the largest size ever flagged is 11.5, nothing at 12 or above
+appears" — produces **something that looks like a PROOF, and it is what you then build a threshold
+against.** That claim was true of 96 sampled entries and asserted of 283. It survived only because
+someone answered it from the SOURCE rather than the data; the conclusion held and the evidence offered
+for it did not.
+
+**WHAT LICENSES A UNIVERSAL NEGATIVE: a completeness check, per row, before you make it.** This
+contract's own "8 of 11 selectors genuinely fixed" IS a universal negative — *this selector appears
+nowhere in the census* — derived by scanning arrays. It stands only because
+`len(tapTargetsSmallest) == tapTargetsUnderMin` was verified on all 50 phone rows of both files it
+used. **Verify first, then you may say "none". Otherwise you may only say "not among the ones I can
+see".**
 
 Measured, so the sizes are not folklore. In `before-lanes-results.json` the caps are **12 for
 `tapWorst` and 6 for `occluded`**:
@@ -395,6 +413,19 @@ generally safe. Two files from the same program, two different truncation behavi
 **So the rule is procedural, not a fact about the format:** before deriving anything from an array,
 compare its length to its count field on the rows you are about to use. One line of arithmetic
 separates an inventory from a sample, and nothing in the data announces which one you have.
+
+**AND THE REASON THIS IS A CONTRACT SECTION RATHER THAN A NOTE ON A ROW.** This rule was written down
+at least four separate times before it was needed here — as *"a count is not an inventory"* about
+`tinyText`; in DEF-030's file, stating that `inert` caps at 6 against a true count of 67; in DEF-006's
+file, rendered literally as `x 6 shown of 13`; and it was still rediscovered at full cost by two
+sessions reading different fields of the same object.
+
+**Four statements of one rule, each filed against the single array that prompted it, none of them
+promoted to a rule about arrays.** The lesson is not "we keep making this mistake". It is:
+
+> **A finding filed only against its own case does not generalise, and will be rediscovered at full
+> cost. When something you learn is true of the INSTRUMENT, file it where the instrument is
+> described — not where you happened to hit it.**
 
 ## 10. VERTICAL CLIPPING IS INVISIBLE TO EVERY METRIC HERE — DEF-037
 
