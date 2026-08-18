@@ -228,11 +228,11 @@ const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
   // table keyed by a task's type value has nothing left to key on. The table and
   // all three of its functions are DROPPED rather than left orphaned, for the
   // same one-authority reason as 150's pair above. See
-  // db/migrations/153_kind_absorbs_the_type_axis.sql.
-  ['public.task_workflows', '153_kind_absorbs_the_type_axis.sql'],
-  ['internal.validate_task_workflow', '153_kind_absorbs_the_type_axis.sql'],
-  ['public.upsert_task_workflow', '153_kind_absorbs_the_type_axis.sql'],
-  ['public.delete_task_workflow', '153_kind_absorbs_the_type_axis.sql'],
+  // db/migrations/154_kind_absorbs_the_type_axis.sql.
+  ['public.task_workflows', '154_kind_absorbs_the_type_axis.sql'],
+  ['internal.validate_task_workflow', '154_kind_absorbs_the_type_axis.sql'],
+  ['public.upsert_task_workflow', '154_kind_absorbs_the_type_axis.sql'],
+  ['public.delete_task_workflow', '154_kind_absorbs_the_type_axis.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {

@@ -283,7 +283,7 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   }
 
   if (query.kinds && query.kinds.length > 0) {
-    // 153: A KIND FILTER SELECTS A FAMILY, not a literal.
+    // 154: A KIND FILTER SELECTS A FAMILY, not a literal.
     //
     // This is a CONTINUITY requirement, not a feature. Before phase 6 a task
     // tagged `type=epic` was a `task` and every list filtering `kinds:['task']`
@@ -519,7 +519,7 @@ function groupItems(items: EntitySummary[], groupBy: NonNullable<CollectionQuery
       continue;
     }
     if (groupBy === 'kind') {
-      // 153: what `axis:type` used to be. The type values ARE kinds now, so
+      // 154: what `axis:type` used to be. The type values ARE kinds now, so
       // grouping epics from bugs from stories is grouping by the entity's own
       // kind — and it works for every family rather than for the one axis a
       // space happened to name `type`.

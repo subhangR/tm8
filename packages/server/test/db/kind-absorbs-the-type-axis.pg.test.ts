@@ -1,5 +1,5 @@
 /**
- * 153 against a real Postgres: a `c:` kind that EXTENDS `task` behaves as one,
+ * 154 against a real Postgres: a `c:` kind that EXTENDS `task` behaves as one,
  * and the `type` axis is gone.
  *
  * ## What only this file can say
@@ -13,7 +13,7 @@
  * holds here — the in-file block guards a POPULATED node, this file guards a
  * fresh one, and the two claims are different.
  *
- * The claims here are BEHAVIOURAL, and each is a literal that 153 replaced with
+ * The claims here are BEHAVIOURAL, and each is a literal that 154 replaced with
  * `internal.base_kind_of`. Every case below fails against `main`:
  *
  *   * `internal.validate_entity_parent` — the amendment. `c:epic` parents a
@@ -54,7 +54,7 @@ let fixture: Fixture;
 let unique = 0;
 function cmid(label: string): string {
   unique += 1;
-  return `kind-153-${label}-${unique}`;
+  return `kind-154-${label}-${unique}`;
 }
 
 async function asOwner<T>(
@@ -73,7 +73,7 @@ async function asApp<T>(
     await client.query('set local role tm8_app');
     await client.query(
       `select set_config('tm8.identity_id',$1,true),set_config('tm8.actor_id','',true),
-              set_config('tm8.node_admin','false',true),set_config('tm8.request_id','req-153',true)`,
+              set_config('tm8.node_admin','false',true),set_config('tm8.request_id','req-154',true)`,
       [fixture.identityId],
     );
     return fn(async (sql, params = []) => (await client.query(sql, params)).rows as Record<string, unknown>[]);
@@ -85,7 +85,7 @@ async function seed(db: W1ScratchDatabase): Promise<Fixture> {
     await client.query('set local role tm8_graph_owner');
     const f = (
       await client.query<Fixture>(
-        `select 'kind-153-owner'::text "identityId",
+        `select 'kind-154-owner'::text "identityId",
                 internal.new_id()::text "spaceId",
                 internal.new_id()::text "memberId"`,
       )
@@ -159,7 +159,7 @@ async function entityRow(id: string): Promise<{ kind: string; parent_id: string 
 }
 
 beforeAll(async () => {
-  database = await createW1ScratchDatabase('kind-absorbs-153');
+  database = await createW1ScratchDatabase('kind-absorbs-154');
   database.apply(migrationFiles());
   fixture = await seed(database);
 });
@@ -172,7 +172,7 @@ afterAll(async () => {
 // 1. The kind row
 // ---------------------------------------------------------------------------
 
-describe('153 — entity_kinds carries the extends link and its labels', () => {
+describe('154 — entity_kinds carries the extends link and its labels', () => {
   it('a custom kind may extend task, and the door answers with the new fields', async () => {
     const view = await defineKind('c:epic', { baseKind: 'task', label: 'Epic', labelPlural: 'Epics' });
     expect(view.kind).toBe('c:epic');
@@ -216,7 +216,7 @@ describe('153 — entity_kinds carries the extends link and its labels', () => {
 // 2. An epic IS a task
 // ---------------------------------------------------------------------------
 
-describe('153 — a kind that extends task gets the task machinery', () => {
+describe('154 — a kind that extends task gets the task machinery', () => {
   it('create_task makes an entity of the custom kind WITH a tasks detail row', async () => {
     const epicId = await createTask('Q3 platform', { kind: 'c:epic' });
     const row = await entityRow(epicId);
@@ -241,7 +241,7 @@ describe('153 — a kind that extends task gets the task machinery', () => {
   });
 
   it('THE AMENDMENT: an epic parents a task', async () => {
-    // Ruled 2026-08-18. Before 153 `internal.validate_entity_parent` compared
+    // Ruled 2026-08-18. Before 154 `internal.validate_entity_parent` compared
     // kind literals, so this was refused — which made the IS-A claim a lie at
     // exactly the layer where epics matter.
     const epicId = await createTask('Parent epic', { kind: 'c:epic' });
@@ -285,7 +285,7 @@ describe('153 — a kind that extends task gets the task machinery', () => {
 // 3. The doors
 // ---------------------------------------------------------------------------
 
-describe('153 — every task door reaches an epic', () => {
+describe('154 — every task door reaches an epic', () => {
   it('set_work_state moves it, and the category follows (internal.live_entity)', async () => {
     const epicId = await createTask('Workable', { kind: 'c:epic' });
     await asApp((q) =>
@@ -403,7 +403,7 @@ describe('153 — every task door reaches an epic', () => {
 // 4. The type axis is gone, and cannot come back
 // ---------------------------------------------------------------------------
 
-describe('153 — the type axis and task_workflows are retired', () => {
+describe('154 — the type axis and task_workflows are retired', () => {
   it('a new space is born without a type axis', async () => {
     const rows = await database.query(
       `select 1 from public.task_axes where lower(btrim(name)) = 'type'`,

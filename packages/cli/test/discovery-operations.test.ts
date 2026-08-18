@@ -63,7 +63,7 @@ import { createOutput } from '../src/output.js';
 // public, all with `space task-workflow` commands. MEASURED.
 // 166 -> 169 (141): the three account-lifecycle ops. MEASURED.
 // 169 -> 172 (148): the three spaces.workflows ops. MEASURED.
-// 172 -> 169 (153, phase 6): the three spaces.taskWorkflows ops are GONE —
+// 172 -> 169 (154, phase 6): the three spaces.taskWorkflows ops are GONE —
 // `task_workflows` and its two RPCs were dropped when the `type` axis was
 // retired into custom kinds. MEASURED.
 const EXPECTED_ROWS = 169;
@@ -179,7 +179,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
-    // 168 -> 165 (153, phase 6): the three public taskWorkflows rows are gone.
+    // 168 -> 165 (154, phase 6): the three public taskWorkflows rows are gone.
     expect(histogram).toEqual({ public: 165, composite: 1, internal: 1, reserved: 2 });
   });
 });

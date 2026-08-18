@@ -472,7 +472,7 @@ describe('W3 — the axis board', () => {
  * `type` vocabulary forbade WITHOUT calling the server, in the strip's own
  * words, and dispatched normally for an untyped or unruled row.
  *
- * Phase 6 (migration 153) dropped `public.task_workflows` and the trigger that
+ * Phase 6 (migration 154) dropped `public.task_workflows` and the trigger that
  * made such a refusal foreseeable, and retired the `type` axis into custom
  * entity KINDS. The pre-flight it asserted is gone from `EntityListPanel`, so
  * the cases were DELETED rather than weakened — with the rule gone there is

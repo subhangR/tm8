@@ -101,7 +101,7 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 137 -> 138 (2026-08-09): execution.dispatch (public, `session dispatch`).
     // 142 -> 144 (2026-08-12): collections.addItem/removeItem.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(rows).toHaveLength(169); // +3 148 (spaces.workflows); -3 153 (spaces.taskWorkflows)
+    expect(rows).toHaveLength(169); // +3 148 (spaces.workflows); -3 154 (spaces.taskWorkflows)
 
     const earned = rows.filter((r) => r.availabilitySource === 'contract');
     const unknownRows = rows.filter((r) => r.availability === 'unknown');
@@ -119,7 +119,7 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 129 -> 133: the four credentials.* v1 rows join the `none` population.
     // 135 -> 136: execution.dispatch, a v1 row, joins `none` too.
     // 142 -> 148 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(unknownRows).toHaveLength(167) /* 167 -> 170 (148): the three spaces.workflows rows, non-reserved ; 170 -> 167 (153): the three taskWorkflows rows leave */;
+    expect(unknownRows).toHaveLength(167) /* 167 -> 170 (148): the three spaces.workflows rows, non-reserved ; 170 -> 167 (154): the three taskWorkflows rows leave */;
     expect(unknownRows.every((r) => r.availabilitySource === 'none')).toBe(true);
   }, 15_000);
 });

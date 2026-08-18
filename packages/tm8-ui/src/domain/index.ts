@@ -147,7 +147,7 @@ export { placeholderNameFor, slugifyTitle, titleNormalizerFor } from './title-gr
  * `./workflows` (W4, migration 132) exported six symbols HERE — STRUCTURAL_STATUSES,
  * WORKFLOW_AXIS, workflowTypeOf, workflowVocabularyOf, workflowRefusalText and
  * offWorkflowType — the one client-side statement of the per-`type` status rule.
- * The module is DELETED in phase 6: migration 153 dropped `public.task_workflows`
+ * The module is DELETED in phase 6: migration 154 dropped `public.task_workflows`
  * whole (151 had already dropped its check constraint and moved the completion
  * gate onto the →done transition), and the `type` axis it keyed on is retired
  * into custom entity KINDS. There is no rule left for this file to state once.

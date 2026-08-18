@@ -439,7 +439,7 @@ export interface Seam {
    *
    * These are now the ONLY workflows. The legacy per-`type` status-subset
    * rules that used to ride `spaceSettings().taskWorkflows` are gone: phase 6
-   * (migration 153) dropped `public.task_workflows` whole and retired the
+   * (migration 154) dropped `public.task_workflows` whole and retired the
    * `type` axis into custom entity KINDS, so there is no second workflow
    * concept left to be confused with this one.
    */

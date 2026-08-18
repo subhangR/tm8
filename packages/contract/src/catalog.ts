@@ -54,7 +54,7 @@ export const OPERATIONS = [
   { name: 'spaces.taskAxes.delete',  method: 'DELETE', path: '/v2/spaces/:spaceId/task-axes/:axisId',       kind: 'command', status: 'v1' },
   // Phase 2 (148): the real workflow tables — open, user-named states each
   // carrying one of the four closed categories. REPLACED `spaces.taskWorkflows.*`,
-  // retired by phase 6 (153) with the `type` axis it was keyed on. Upsert is
+  // retired by phase 6 (154) with the `type` axis it was keyed on. Upsert is
   // WHOLE-DOCUMENT (states and transitions ride along) because every invariant
   // here is about a workflow as a whole.
   { name: 'spaces.workflows.list',   method: 'GET',    path: '/v2/spaces/:spaceId/workflows',             kind: 'read',    status: 'v1' },

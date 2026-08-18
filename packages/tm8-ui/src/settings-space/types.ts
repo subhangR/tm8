@@ -54,7 +54,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'axes', label: 'Task axes', heading: 'Task axes' },
   /* A `workflows` section STOOD HERE (W4, migration 132): per-`type`-value
      status subsets, authored beside the axis whose values they keyed on.
-     Phase 6 (migration 153) dropped `public.task_workflows` whole and re-homed
+     Phase 6 (migration 154) dropped `public.task_workflows` whole and re-homed
      the `type` axis into custom entity KINDS, so there is no per-type
      vocabulary left to author. Workflows are now per-KIND (152) and are named
      state sets, not status subsets. Task axes above SURVIVE — only the axis

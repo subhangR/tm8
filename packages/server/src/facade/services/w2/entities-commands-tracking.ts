@@ -881,7 +881,7 @@ async function kindFor(q: Querier, id: string): Promise<string> {
 }
 
 /**
- * WHICH IRREDUCIBLE CODE RUNS FOR A `c:*` KIND (153).
+ * WHICH IRREDUCIBLE CODE RUNS FOR A `c:*` KIND (154).
  *
  * `entity_kinds.base_kind` is the inheritance link, and it is the ONE thing that
  * decides which door a custom kind goes through. A kind with `base_kind = 'task'`
@@ -892,7 +892,7 @@ async function kindFor(q: Querier, id: string): Promise<string> {
  *
  * The database's own resolver is `internal.base_kind_of`, but `internal` hands
  * `tm8_app` execute one function at a time (009, 019, 047, 070, 083, 148) and
- * 153 granted no such thing, so this reads the column. That read is a
+ * 154 granted no such thing, so this reads the column. That read is a
  * unique-index probe on `entity_kinds(space_id, kind)` — a table with tens of
  * rows — and each command resolves it at most once, which is why there is no
  * cache here to go stale.
@@ -908,7 +908,7 @@ async function baseKindOf(q: Querier, kind: string, spaceId: string): Promise<st
 
 /**
  * The `create_task` argument vector, shared by the `task` arm and by every
- * custom kind that extends it. The trailing argument is 153's new fifteenth
+ * custom kind that extends it. The trailing argument is 154's new fifteenth
  * parameter — the kind being created — which the door checks against
  * `internal.base_kind_of` before it writes the envelope, so an unrelated `c:`
  * kind is refused there by name rather than by a detail-trigger further in.
@@ -929,11 +929,11 @@ function createTaskArgs(
 
 /**
  * The `update_task_content` argument vector, shared for the same reason as
- * `createTaskArgs`: 153 gave the door two callers instead of one, and the arm
+ * `createTaskArgs`: 154 gave the door two callers instead of one, and the arm
  * for `c:epic` must plumb the SAME content — axes, priority, the acceptance
  * criteria and their `done` provenance — or a task-based custom kind would be
  * patchable in name only. The door itself needs no kind argument: it asserts
- * through `internal.live_entity`, which 153 widened to accept a base kind.
+ * through `internal.live_entity`, which 154 widened to accept a base kind.
  */
 function updateTaskContentArgs(
   id: string,
@@ -1207,7 +1207,7 @@ export class W2EntitiesCommandsTrackingService {
           if (!input.kind.startsWith('c:')) {
             throw new CollabError('forbidden', `entities.create is owned by the ${input.kind} lifecycle`);
           }
-          // 153: a custom kind is not automatically a `custom_entities` row any
+          // 154: a custom kind is not automatically a `custom_entities` row any
           // more. If it EXTENDS task it goes through the task door, so it is
           // born with a title, the workflow's initial state and everything the
           // `type` axis used to only decorate.
@@ -1377,10 +1377,10 @@ export class W2EntitiesCommandsTrackingService {
           }
           default: {
             if (!kind.startsWith('c:')) throw new CollabError('not_implemented', `entities.patch does not support ${kind}`);
-            // 153, the create door's mirror: a kind that extends task keeps its
+            // 154, the create door's mirror: a kind that extends task keeps its
             // body in `public.tasks`, so `update_custom_entity` would patch a
             // row that does not exist. `update_task_content` asserts the kind
-            // through `internal.live_entity`, which 153 widened to accept a base
+            // through `internal.live_entity`, which 154 widened to accept a base
             // kind, so this call needs no other change than being made at all.
             if (await baseKindOf(q, kind, spaceId) === 'task') {
               raw = await q.rpc('update_task_content', updateTaskContentArgs(id, input, content, envelope));

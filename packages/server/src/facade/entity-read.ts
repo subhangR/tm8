@@ -76,7 +76,7 @@ export const ENTITY_COLUMNS = `
   -- will carry a status in a later phase. MIRRORED by projector.ts's
   -- SUMMARY_SQL — the two column lists must not drift.
   e.status_category,
-  -- 153. The "extends" link, resolved for THIS row. A kind whose base_kind is
+  -- 154. The "extends" link, resolved for THIS row. A kind whose base_kind is
   -- 'task' carries a public.tasks detail row and must be assembled as a task —
   -- the same claim the database makes when it lets that row exist at all
   -- (internal.validate_detail_envelope). A scalar subquery rather than a join
@@ -203,7 +203,7 @@ export interface EntityRow {
   id: string;
   space_id: string;
   kind: string;
-  /** 153: `entity_kinds.base_kind` — the `extends` link, or null. See `behaviourKindOf`. */
+  /** 154: `entity_kinds.base_kind` — the `extends` link, or null. See `behaviourKindOf`. */
   base_kind: string | null;
   parent_id: string | null;
   position: number;
@@ -1107,7 +1107,7 @@ export async function loadUnreadCounts(
 /** The kind-specific display title. Never an id, never raw content (L3). */
 /**
  * WHICH CODE RUNS for this row — `entity_kinds.base_kind` when the kind extends
- * one, else the kind itself. 153's `internal.base_kind_of`, on the read side.
+ * one, else the kind itself. 154's `internal.base_kind_of`, on the read side.
  *
  * The distinction it draws is the whole of phase 6. `row.kind` is IDENTITY: it
  * is what the entity is called, what its icon and label come from, what a board
@@ -1116,7 +1116,7 @@ export async function loadUnreadCounts(
  * `base_kind = 'task'` answers `c:epic` to the first question and `task` to the
  * second, and every switch below is asking the second one.
  *
- * Before 153 the two were the same string for every row in the graph, which is
+ * Before 154 the two were the same string for every row in the graph, which is
  * why every one of these switches read `row.kind` and was right to.
  */
 export function behaviourKindOf(row: Pick<EntityRow, 'kind' | 'base_kind'>): string {
@@ -1280,7 +1280,7 @@ function surfaceOf(raw: string | null): { initialContentSurface?: 'terminal' | '
 }
 
 function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
-  // 153: the BEHAVIOUR kind. A `c:epic` gets the task arm, so `state.kind` is
+  // 154: the BEHAVIOUR kind. A `c:epic` gets the task arm, so `state.kind` is
   // `'task'` while `summary.kind` stays `'c:epic'`. That is not a mismatch —
   // it is the two questions this file's `behaviourKindOf` docblock separates,
   // answered. A client switching on `state.kind` is asking "what can I do with
@@ -1714,7 +1714,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
-  // 153: the sets are keyed on BEHAVIOUR, so a `c:epic` is editable,
+  // 154: the sets are keyed on BEHAVIOUR, so a `c:epic` is editable,
   // hierarchical and pullable because a task is — which is the same claim its
   // `base_kind` already makes to the database's doors. The sets keep naming
   // core kinds only; widening happens at the lookup, so a kind defined
@@ -1809,7 +1809,7 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   if (row.kind === 'pull_request' || row.kind === 'commit' || row.kind === 'file') {
     return { ...base, canEdit: live };
   }
-  // 153: only a BASE-LESS custom kind takes this arm. A kind that extends
+  // 154: only a BASE-LESS custom kind takes this arm. A kind that extends
   // `task` has already been answered as a task above, and re-narrowing it here
   // would take back the inheritance one line after granting it.
   if (row.kind.startsWith('c:') && row.base_kind === null) {

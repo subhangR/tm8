@@ -35,8 +35,8 @@ export type BoardPivot = 'status' | 'assignee' | 'priority';
  * The axes `collections.query` can group tasks by. `axis:*` is out of scope
  * until custom axes get a picker.
  *
- * `kind` joined in phase 6 (migration 153), when `CollectionQuery.groupBy`
- * gained the literal: it is what `axis:type` used to be. 153 retired the task
+ * `kind` joined in phase 6 (migration 154), when `CollectionQuery.groupBy`
+ * gained the literal: it is what `axis:type` used to be. 154 retired the task
  * `type` axis into custom entity KINDS — a space's epics and bugs are `c:`
  * kinds that `extend` task — so grouping by kind is the pivot that carries
  * that view forward. It is READ-ONLY; see `KIND_PIVOT_IS_READ_ONLY`.
@@ -187,7 +187,7 @@ export function columnsFor(
   }
 
   /*
-   * KIND (153): the server's groups VERBATIM, in its order, with no canonical
+   * KIND (154): the server's groups VERBATIM, in its order, with no canonical
    * skeleton. There cannot be one — the column vocabulary is the space's own
    * registered kinds plus whatever core kinds the query touched, which is data,
    * not a reading order this module could author. Nothing is synthesised for a

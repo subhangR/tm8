@@ -92,7 +92,7 @@ describe('W1 adopted catalog target', () => {
     // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) + .upsert
     // (POST command) + .delete (DELETE command) — the real workflow tables.
     // MEASURED per PIN RULE v3, never carried.
-    // 172 -> 169 (153, phase 6): spaces.taskWorkflows.list/.upsert/.delete
+    // 172 -> 169 (154, phase 6): spaces.taskWorkflows.list/.upsert/.delete
     // RETIRE with the `type` axis they were keyed on. The first time this pin
     // has ever moved DOWN — 148's spaces.workflows.* is what replaced them.
     // MEASURED per PIN RULE v3, never carried.
@@ -123,7 +123,7 @@ describe('W1 adopted catalog target', () => {
     // auth.claim.reissue, all POST commands. MEASURED.
     // 148: GET 60->61 (workflows.list), POST 79->80 (.upsert), DELETE 11->12
     // (.delete). MEASURED from the failing run.
-    // 153: GET 61->60 (taskWorkflows.list), POST 80->79 (.upsert), DELETE
+    // 154: GET 61->60 (taskWorkflows.list), POST 80->79 (.upsert), DELETE
     // 12->11 (.delete). MEASURED from the failing run.
     }).toEqual({ GET: 60, POST: 79, PATCH: 11, DELETE: 11, PUT: 7, WS: 1 });
     expect({
@@ -133,7 +133,7 @@ describe('W1 adopted catalog target', () => {
     // W4/132: read +1, command +2. MEASURED.
     // 141: command 101->104 (three new commands). MEASURED.
     // 148: read 64->65, command 104->106. MEASURED.
-    // 153: read 65->64, command 106->104. MEASURED.
+    // 154: read 65->64, command 106->104. MEASURED.
     }).toEqual({ read: 64, command: 104, stream: 1 });
   });
 });

@@ -163,7 +163,7 @@ export function axisKindRefs(): string[] {
 /*
  * `workflowStatusVocabulary()` STOOD HERE — the status list the Workflows
  * section offered, derived from the axis-bearing kind's own registry row.
- * It went with that section in phase 6 (migration 153): `task_workflows` is
+ * It went with that section in phase 6 (migration 154): `task_workflows` is
  * dropped, so there is no per-`type` vocabulary to curate.
  */
 

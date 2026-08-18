@@ -181,7 +181,7 @@ const LIVE_VERBS = [
   /^Create axis$/,
   /^Save axis$/,
   // The Workflows section (W4, 132) listed four live controls HERE. It is
-  // GONE in phase 6 (migration 153): `public.task_workflows` was dropped whole
+  // GONE in phase 6 (migration 154): `public.task_workflows` was dropped whole
   // and the catalog ops `spaces.taskWorkflows.upsert|delete` left the contract
   // with it, so there is no per-`type` vocabulary left to author. The task-axis
   // controls above SURVIVE — only the axis named `type` died, as data.

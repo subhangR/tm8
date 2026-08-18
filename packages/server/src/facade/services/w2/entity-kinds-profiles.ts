@@ -205,7 +205,7 @@ export class W2EntityKindsProfileService {
         input.capabilities ?? {},
         envelope.actorId ?? null,
         cmid,
-        // 153: the three trailing arguments the door grew when `kind` absorbed
+        // 154: the three trailing arguments the door grew when `kind` absorbed
         // the `type` axis. `baseKind` is what makes `c:epic extends task` true
         // rather than merely recorded — it selects WHICH IRREDUCIBLE CODE RUNS
         // for entities of this kind — and it is create-only: `w2_update_entity_kind`
@@ -230,7 +230,7 @@ export class W2EntityKindsProfileService {
     if (input.fieldSchema !== undefined) patch.fieldSchema = input.fieldSchema;
     if (input.capabilities !== undefined) patch.capabilities = input.capabilities;
     if (input.allowTightening !== undefined) patch.allowTightening = input.allowTightening;
-    // 153: the display vocabulary a `type` value used to carry now lives on the
+    // 154: the display vocabulary a `type` value used to carry now lives on the
     // kind. Patch keys are camelCase because the RPC's whitelist reads them that
     // way; `baseKind` is deliberately absent from this list (see create).
     if (input.label !== undefined) patch.label = input.label;

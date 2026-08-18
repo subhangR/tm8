@@ -1,5 +1,5 @@
 -- =============================================================================
--- 153  KIND ABSORBS THE TYPE AXIS.
+-- 154  KIND ABSORBS THE TYPE AXIS.
 --
 -- Phase 6 of "Kind, Status, Category, Workflow", and the phase the first five
 -- were building toward. 147 gave the envelope a category, 149 built the workflow
@@ -196,7 +196,7 @@ begin
   if parent.space_id <> new.space_id then
     raise exception 'parent must be in the same space' using errcode = '23514';
   end if;
-  -- 153: SAME BASE KIND, not the same kind. The literal comparison this
+  -- 154: SAME BASE KIND, not the same kind. The literal comparison this
   -- replaces is the reason `c:epic` could never parent a story. The message
   -- names both the kinds and the bases, because "task must be the same kind as
   -- task" is the refusal a reader would otherwise get when two custom kinds
@@ -228,7 +228,7 @@ end
 $$;
 
 comment on function internal.validate_entity_parent() is
-  'Hierarchy is same-BASE-kind as of 153 (was same-kind since 001). Space, '
+  'Hierarchy is same-BASE-kind as of 154 (was same-kind since 001). Space, '
   'self-parent and cycle rules unchanged.';
 
 -- 3.2 POSITION. The direct consequence of 3.1: siblings under one parent may now
@@ -266,7 +266,7 @@ begin
   if e.id is null then
     raise exception '% detail row has no entity', expected using errcode = '23503';
   end if;
-  -- 153: a detail row belongs to an entity whose BASE kind is this table's kind.
+  -- 154: a detail row belongs to an entity whose BASE kind is this table's kind.
   if internal.base_kind_of(e.kind, e.space_id) <> expected then
     raise exception '% detail row requires an entity of kind % (got %)', expected, expected, e.kind
       using errcode = '23514';
@@ -306,7 +306,7 @@ begin
 
   select * into registered from public.edge_types where type = new.type;
   if found then
-    -- 153: an endpoint satisfies the registry by its own kind OR by its base.
+    -- 154: an endpoint satisfies the registry by its own kind OR by its base.
     -- Both are accepted, so a registry array naming a custom kind directly
     -- keeps working.
     src_base := internal.base_kind_of(src.kind, src.space_id);
@@ -344,7 +344,7 @@ begin
   if e.id is null then
     raise exception 'entity % not found', target using errcode = 'P0002';
   end if;
-  -- 153: the kind OR its base satisfies the expectation.
+  -- 154: the kind OR its base satisfies the expectation.
   if expected_kind is not null
      and e.kind <> expected_kind
      and internal.base_kind_of(e.kind, e.space_id) <> expected_kind then
@@ -456,7 +456,7 @@ $$;
 
 comment on function internal.workflow_for_entity(uuid, text) is
   'Which workflow governs an entity: entity_kinds.workflow_id (the space row, '
-  'then the core row), else THE built-in default. 153 removed the per-type arm '
+  'then the core row), else THE built-in default. 154 removed the per-type arm '
   'and its parameter when the type axis was retired into kind.';
 
 create function internal.workflow_initial_state(p_space_id uuid, p_kind text)
@@ -481,7 +481,7 @@ begin
     raise exception 'entity % not found', p_entity_id using errcode = 'P0002';
   end if;
 
-  -- 153: 150 read `tasks.axes ->> 'type'` here and threaded it into the
+  -- 154: 150 read `tasks.axes ->> 'type'` here and threaded it into the
   -- resolver. The kind IS the answer now.
   wf_id := internal.workflow_for_entity(e.space_id, e.kind);
   if wf_id is null then
@@ -520,7 +520,7 @@ begin
   select * into e from public.entities where id = p_entity_id;
   if e.id is null then return null; end if;
 
-  -- 153: the type-value lookup that stood here is gone with the axis.
+  -- 154: the type-value lookup that stood here is gone with the axis.
   wf_id := internal.workflow_for_entity(e.space_id, e.kind);
   if wf_id is null then return null; end if;
 
@@ -582,7 +582,7 @@ $$;
 
 comment on function internal.workflow_kind_is_executable(text) is
   'Whether entities of this kind reach the spawn and completion doors — true '
-  'for `task` and for every kind that extends it. 153 widened it from the '
+  'for `task` and for every kind that extends it. 154 widened it from the '
   'literal, which is the widening 150 wrote it to receive.';
 
 -- -----------------------------------------------------------------------------
@@ -628,7 +628,7 @@ begin
   actor := internal.resolve_actor(p_actor_id, p_space_id);
   perform internal.bind_actor(actor);
 
-  -- 153: the door accepts `task` and any kind of this space that EXTENDS task.
+  -- 154: the door accepts `task` and any kind of this space that EXTENDS task.
   -- Refusing here rather than letting the detail-envelope trigger refuse means
   -- the caller gets "kind X does not extend task" instead of "task detail row
   -- requires an entity of kind task", which names the wrong thing.
@@ -637,7 +637,7 @@ begin
       detail = json_build_object('reason', 'kind_does_not_extend_task', 'kind', kind)::text;
   end if;
 
-  -- 150: the workflow's INITIAL state, not the literal 'open'. 153: resolved
+  -- 150: the workflow's INITIAL state, not the literal 'open'. 154: resolved
   -- from the KIND, which is where the vocabulary the `type` value used to carry
   -- now lives.
   initial_state := internal.workflow_initial_state(p_space_id, kind);
@@ -681,7 +681,7 @@ declare
 begin
   replay := internal.ledger_replay(p_client_mutation_id, 'entities.commands.complete');
   if replay is not null then return replay; end if;
-  -- 153: base kind, so a `c:epic` completes through the same door and the same
+  -- 154: base kind, so a `c:epic` completes through the same door and the same
   -- gate. `for update` posture unchanged.
   select * into e from public.entities
    where id = p_task_id
@@ -809,7 +809,7 @@ begin
       end if;
 
     when 'assign' then
-      -- 153: base kind on both arms. An epic is assignable because it is a task.
+      -- 154: base kind on both arms. An epic is assignable because it is a task.
       if internal.base_kind_of(source.kind, source.space_id) = 'task'
          and target.kind in ('member','team_member') then
         task_id := source.id;
@@ -829,7 +829,7 @@ begin
         p_target_id, p_source_id, 'depends_on', '{"hard":true}'::jsonb, actor, null);
 
     when 'subtask', 'reparent' then
-      -- 153: SAME BASE KIND, matching internal.validate_entity_parent exactly.
+      -- 154: SAME BASE KIND, matching internal.validate_entity_parent exactly.
       if internal.base_kind_of(source.kind, source.space_id)
          <> internal.base_kind_of(target.kind, target.space_id) then
         raise exception 'hierarchy placements require same-base-kind endpoints' using errcode = '22023';
@@ -980,7 +980,7 @@ begin
   end if;
   perform internal.require_space_admin(p_space_id);
   actor := internal.resolve_actor(p_actor_id, p_space_id);
-  -- 153: `label` and `labelPlural` join the patch key whitelist. `baseKind` does
+  -- 154: `label` and `labelPlural` join the patch key whitelist. `baseKind` does
   -- NOT. Re-basing a kind would change which detail table its EXISTING rows are
   -- supposed to have, and no amount of validation makes that a patch — it is a
   -- data migration wearing an update's clothes.
@@ -1065,7 +1065,7 @@ begin
   end if;
 
   -- Fast path. A task is already its own anchor: return it and write NOTHING.
-  -- 153: BASE kind, and the reported `sourceKind` is the row's own kind rather
+  -- 154: BASE kind, and the reported `sourceKind` is the row's own kind rather
   -- than the literal `task`, because "you launched an epic" is what happened.
   if internal.base_kind_of(source.kind, source.space_id) = 'task' then
     return jsonb_build_object(
@@ -1306,7 +1306,7 @@ begin
   update public.tasks set axes = axes - 'type' where axes ? 'type';
   delete from public.task_axes where name = 'type';
 
-  raise notice '153: % kinds created, % tasks re-kinded', kinds_created, tasks_rekinded;
+  raise notice '154: % kinds created, % tasks re-kinded', kinds_created, tasks_rekinded;
 end
 $migrate$;
 
@@ -1372,7 +1372,7 @@ begin
   perform internal.w1_set_writer(null);
   insert into public.space_menu_configs(space_id, schema_version, revision, payload)
   values (space_id, 1, 1, internal.w1_default_menu_payload());
-  -- 153: the `type` axis seed was here. A new space gets no taxonomy axis;
+  -- 154: the `type` axis seed was here. A new space gets no taxonomy axis;
   -- taxonomy is KIND now, and `task_axes` survives for honest tags.
   perform internal.record_activity(space_id, member_id, member_id, 'joined',
             null, jsonb_build_object('role', 'owner'));
@@ -1395,7 +1395,7 @@ alter table public.task_axes
   add constraint task_axes_type_is_a_kind check (lower(btrim(name)) <> 'type');
 
 comment on constraint task_axes_type_is_a_kind on public.task_axes is
-  '153. `type` is not an axis — it is the kind. Axes remain for honest tags '
+  '154. `type` is not an axis — it is the kind. Axes remain for honest tags '
   '(team, quarter).';
 
 -- -----------------------------------------------------------------------------
@@ -1437,33 +1437,33 @@ begin
    where table_schema = 'public' and table_name = 'entity_kinds'
      and column_name in ('base_kind','label','label_plural') and is_nullable = 'YES';
   if n <> 3 then
-    raise exception '153 verify: expected 3 nullable new entity_kinds columns, found %', n;
+    raise exception '154 verify: expected 3 nullable new entity_kinds columns, found %', n;
   end if;
 
   -- task_workflows and its trigger are gone
   if to_regclass('public.task_workflows') is not null then
-    raise exception '153 verify: public.task_workflows still exists';
+    raise exception '154 verify: public.task_workflows still exists';
   end if;
   if exists (select 1 from pg_trigger where tgname = 'tasks_validate_workflow' and not tgisinternal) then
-    raise exception '153 verify: tasks_validate_workflow still exists';
+    raise exception '154 verify: tasks_validate_workflow still exists';
   end if;
   if exists (select 1 from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
               where ns.nspname = 'public' and p.proname in ('upsert_task_workflow','delete_task_workflow')) then
-    raise exception '153 verify: a task_workflow RPC survived';
+    raise exception '154 verify: a task_workflow RPC survived';
   end if;
 
   -- no `type` axis anywhere, and no task still carrying the tag
   select count(*) into bad from public.task_axes where lower(btrim(name)) = 'type';
-  if bad > 0 then raise exception '153 verify: % type axis rows survived', bad; end if;
+  if bad > 0 then raise exception '154 verify: % type axis rows survived', bad; end if;
   select count(*) into bad from public.tasks where axes ? 'type';
-  if bad > 0 then raise exception '153 verify: % tasks still carry axes.type', bad; end if;
+  if bad > 0 then raise exception '154 verify: % tasks still carry axes.type', bad; end if;
 
   -- every kind this file created is well-formed: custom, task-based, labelled,
   -- and every entity wearing it has the task detail row that claim implies
   select count(*) into bad from public.entity_kinds k
    where k.base_kind is not null
      and (k.origin <> 'custom' or k.base_kind <> 'task' or k.label is null or k.label_plural is null);
-  if bad > 0 then raise exception '153 verify: % malformed base_kind rows', bad; end if;
+  if bad > 0 then raise exception '154 verify: % malformed base_kind rows', bad; end if;
 
   select count(*) into bad
     from public.entities e
@@ -1471,7 +1471,7 @@ begin
    where k.base_kind = 'task'
      and not exists (select 1 from public.tasks t where t.entity_id = e.id);
   if bad > 0 then
-    raise exception '153 verify: % entities of a task-based kind have no tasks row', bad;
+    raise exception '154 verify: % entities of a task-based kind have no tasks row', bad;
   end if;
 
   -- and every one of them still has a status in its kind's workflow — the
@@ -1485,10 +1485,10 @@ begin
      and (e.status_id is null
           or s.workflow_id is distinct from internal.workflow_for_entity(e.space_id, e.kind));
   if bad > 0 then
-    raise exception '153 verify: % migrated entities hold a status outside their kind''s workflow', bad;
+    raise exception '154 verify: % migrated entities hold a status outside their kind''s workflow', bad;
   end if;
 
-  raise notice '153 verify: ok';
+  raise notice '154 verify: ok';
 end
 $verify$;
 
