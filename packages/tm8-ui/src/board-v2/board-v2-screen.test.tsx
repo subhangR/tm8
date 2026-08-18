@@ -240,6 +240,25 @@ describe('workflow columns', () => {
   });
 });
 
+describe('the client-appended tab', () => {
+  it('sits right after Board in the tab row, opens the v2 screen, and reads current there', async () => {
+    /* Mounted on Board V1 first: the seat must exist WITHOUT the route ever
+       having been visited (it is appended client-side, not menu data), and
+       clicking it must navigate — the store write is the navigation. */
+    const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/board`)} />);
+    await waitFor(() => view.getByTestId('board-screen'));
+    const tabs = view.getAllByRole('tab').map((t) => t.textContent);
+    expect(tabs.indexOf('Board v2')).toBe(tabs.indexOf('Board') + 1);
+
+    fireEvent.click(view.getByRole('tab', { name: 'Board v2' }));
+    await waitFor(() => view.getByTestId('board-v2-screen'));
+    // …and the tab claims the route: v2 highlights, Board v1 does not.
+    expect(view.getByRole('tab', { name: 'Board v2' }).getAttribute('aria-selected')).toBe('true');
+    expect(view.getByRole('tab', { name: 'Board' }).getAttribute('aria-selected')).toBe('false');
+    view.unmount();
+  });
+});
+
 describe('the create control', () => {
   it('renders a live ＋ New control that follows the selected kind', async () => {
     const view = await mountBoard();
