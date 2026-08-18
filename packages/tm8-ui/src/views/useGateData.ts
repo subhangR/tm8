@@ -634,7 +634,17 @@ export interface GateOptions {
   seam?: Seam;
 }
 
-export function useGateData(options: GateOptions): GateData {
+/*
+ * THE RETURN TYPE INCLUDES `pull`, WHICH IT ALWAYS RETURNED.
+ *
+ * The memo below is built as `GateData & { pull }` and this annotation was a
+ * bare `GateData`, so the widening threw the field away at the boundary: every
+ * caller that needed it had to re-assert it, and `MobileShellProps` carries a
+ * `GateData & { pull?: ... }` intersection for exactly that reason. Stating it
+ * here instead means callers stop re-declaring a fact this hook already knows.
+ * Nothing about what is RETURNED changes — only what the type says about it.
+ */
+export function useGateData(options: GateOptions): GateData & { pull: (id: string) => void } {
   // One seam and one domain store for the app's lifetime. `useRef` rather than
   // `useMemo` because StrictMode may discard a memo, and a second seam would
   // mean a second event stream and a silently divided cache.

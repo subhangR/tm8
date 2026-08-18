@@ -196,6 +196,228 @@
 }
 
 /* ==========================================================================
+   7. THE TOUCH FLOOR — ONE BLOCK, THREE SCREENS, EIGHT LEDGER ROWS
+      DEF-013, 014, 015, 016, 017, 018, 019, 020.
+
+   THIS BLOCK EXISTS SO THAT THREE LANES DO NOT EACH WRITE IT.
+
+   Tasks, Sessions and Channels are not three screens with a similar control
+   strip — they are ONE component tree (`EntityView` hosting `EntityListPanel`),
+   so the `before-lanes` run counted the SAME under-44 control three times and
+   the raw "57 of 90" headline read as three lanes' worth of work. It is one
+   lane's worth, it is here, and `panels.css` is NOT TOUCHED: every floor below
+   is RESTATED under this file's narrower selector exactly as sections 1-6 do.
+   A lane that changes shell CSS after this lands is a defect, not a lane
+   decision — see `CONTRACT.md` §7.
+
+   ── THE TWO CONSTRAINTS, WHICH ARE ACCEPTANCE AND NOT ADVICE ──────────────
+
+   NO BLANKET `button { min-height: 44px }`. The phone shell renders
+   desktop-shared components, several of them inside sheets, and a blanket rule
+   inflates every dense one — which is how the fixed-height clipping documented
+   at length in section 4 gets re-triggered somewhere nobody is looking. Every
+   rule below names its class.
+
+   NO `::after` HIT-AREA EXTENSIONS. The instrument measures
+   `getBoundingClientRect()` OF THE ELEMENT, so a pseudo-element hit area is
+   invisible to it and to the after-run diff — it would score as fixed while the
+   thumb still missed. Real padding, real `min-block-size`, real boxes.
+
+   ── AND THE THIRD ONE, WHICH THIS FILE LEARNT THE HARD WAY ────────────────
+
+   A CONTAINER WITH A FIXED HEIGHT CLIPS A CONTROL YOU JUST GREW, AND NO METRIC
+   IN THIS PROGRAM CAN SEE IT. That is section 4's whole story: `.lp__actions`
+   is `height: 34px` + `overflow: hidden`, and its contents were sliced through
+   the middle of the glyphs while `overflowCount` scored the screen 0. There are
+   two more of those over these controls — `.lp__selector` (36px) and
+   `.lp__filters` (32px + `overflow: hidden`) — so they are unpinned FIRST,
+   below, before anything inside them is allowed to grow. Growing a control
+   inside a pinned box would have passed the tap census and produced a screen
+   with its filter bar cut in half.
+
+   Density is a desktop constraint. These rows get taller on a phone, and that
+   is the correct outcome rather than a cost.
+   ========================================================================== */
+
+/* --- 7a. UNPIN THE BOXES, BEFORE GROWING ANYTHING INSIDE THEM ------------- */
+
+/* `height` → `min-height`, for the same reason section 4 gives: the row's job
+   is to hold whatever the host put in it, and a fixed height is a promise about
+   content these containers do not get to make. `flex-wrap` because at 390px a
+   44px kind selector and a 44px view switcher no longer share one line. */
+.cv2-root[data-shell='mobile'] .lp__selector,
+.cv2-root[data-shell='mobile'] .lp--compact .lp__selector {
+  height: auto;
+  min-height: 36px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding-block: 4px;
+  overflow: visible;
+}
+
+.cv2-root[data-shell='mobile'] .lp__filters {
+  height: auto;
+  min-height: 32px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding-block: 4px;
+  /* The desktop `overflow: hidden` is a floor guard against a long chip pushing
+     the row wider than the panel. With the row allowed to WRAP, the guard has
+     nothing left to guard and is only a blade. */
+  overflow: visible;
+}
+
+/* Section 4 already unpinned `.lp__actions` for the wrapping-text defect. Its
+   floor is restated here only because `.lp__new` and `.lp__quick` (DEF-019) are
+   its children and a 34px floor under a 44px child would be a number that
+   silently stopped being true. */
+.cv2-root[data-shell='mobile'] .lp__actions {
+  min-height: var(--mobile-touch-min);
+}
+
+/* --- 7b. DEF-013 — the list/board view switcher (17x15 and 18x15) --------- */
+
+/* Measured identically at 390 and 430 on tasks, sessions AND channels, which is
+   what proves it is a font-and-padding size rather than a width-dependent one.
+   The TYPE IS LEFT ALONE deliberately: the row is about the target, and
+   changing the type as well would make the after-run diff on this control
+   impossible to attribute. */
+.cv2-root[data-shell='mobile'] .lp__view {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  padding: 0 var(--pn-space-2);
+}
+
+/* --- 7c. DEF-014 — the tier tabs (To Do / In Progress / Done / Cancelled) - */
+
+/* `.lp__tabs` is already `overflow-x: auto`, so taller and wider tabs scroll
+   rather than overflow — which is why this row can take the full floor on both
+   axes without putting anything past the right edge. */
+.cv2-root[data-shell='mobile'] .lp__tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  padding: 0 var(--pn-space-3);
+}
+
+/* --- 7d. DEF-015 — the filter-bar chips ---------------------------------- */
+
+.cv2-root[data-shell='mobile'] .lp__chip {
+  display: inline-flex;
+  align-items: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+/* --- 7e. DEF-016 — the button that OPENS a row --------------------------- */
+
+/* The primary action of a list screen, at 16px tall. Wide (336 at 390, 376 at
+   430) and hittable across, a third of a fingertip down.
+
+   `padding-block` AND NOT `display: flex`. These are `<button>`s carrying
+   `white-space: nowrap` + `overflow: hidden` + `text-overflow: ellipsis`, and
+   `text-overflow` does not apply to a flex container — making them flex to
+   centre the text would silently delete the truncation contract that
+   `maestro-task-tile.css` spends a paragraph explaining, and the failure would
+   be a title that spills instead of ellipsising. Padding grows the box and
+   leaves the text a block box to ellipsise inside. */
+.cv2-root[data-shell='mobile'] .pn-tt__title,
+.cv2-root[data-shell='mobile'] .lp__title {
+  min-block-size: var(--mobile-touch-min);
+  padding-block: calc((var(--mobile-touch-min) - 1.3em) / 2);
+}
+
+/* --- 7f. DEF-017 — the row state dot (16x16) ----------------------------- */
+
+/* THE COLUMN GROWS WITH THE CONTROL, and that is the load-bearing half.
+   `.pn-tt__status` is a 16px grid cell with `place-items: center`, so a 44px
+   button inside it would hang 14px past the cell on each side and be CLIPPED by
+   `.lp__tile`'s `overflow: hidden` — while `getBoundingClientRect()` still
+   reported a clean 44x44 and the instrument passed it. A tap target that
+   measures 44 and draws 16 is worse than one that measures 16, because it
+   closes the row while leaving the thumb exactly where it was.
+
+   Only the SIZE half of this control is here. The OCCLUSION half — the dot
+   covered by its own child svg on 13 rows — is DEF-006 and is Lane B's, in the
+   component. Both must flip; neither fixes the other. */
+.cv2-root[data-shell='mobile'] .pn-tt__status {
+  inline-size: var(--mobile-touch-min);
+  block-size: var(--mobile-touch-min);
+}
+
+.cv2-root[data-shell='mobile'] .lp__statedot {
+  inline-size: var(--mobile-touch-min);
+  block-size: var(--mobile-touch-min);
+}
+
+/* --- 7g. DEF-018 — the tree expand chevrons (16x16) ---------------------- */
+
+/* Nested channels cannot be expanded on a phone without this, and the control
+   is already `opacity: 1` under `(pointer: coarse)` — panels.css fixed the
+   VISIBILITY of it for touch and left the 16px box.
+
+   RE-ANCHORED TO THE ROW'S LEADING CORNER rather than grown around its own
+   centre. Growing in place would put the box 8px above and 7px left of the
+   tile, where `.lp__tile { overflow: hidden }` clips it — the same
+   measures-44-draws-16 trap as 7f. Anchored at the corner the whole 44x44 is
+   inside the tile and inside the row's own height, and `place-items: center`
+   re-centres the caret in it: the glyph moves ~7px right and ~8px down and
+   reads as a disclosure gutter, which is what it now is.
+
+   IT OVERLAPS THE ROW'S LEADING MARK, deliberately and knowingly. On the tree
+   rows this control appears on, that mark is the kind glyph — decoration, not a
+   control — so the overlap costs no affordance. It is NOT applied to the task
+   tile, whose leading slot is the live state trigger of 7f; those are different
+   trees and this rule reaches only the one that has a disclosure. */
+.cv2-root[data-shell='mobile'] .lp__disclosure {
+  top: 0;
+  left: 0;
+  inline-size: var(--mobile-touch-min);
+  block-size: var(--mobile-touch-min);
+}
+
+/* --- 7h. DEF-019 — kind selector and list actions (20-23px) -------------- */
+
+.cv2-root[data-shell='mobile'] .lp__kind,
+.cv2-root[data-shell='mobile'] .lp__quick,
+.cv2-root[data-shell='mobile'] .lp__new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+/* --- 7i. DEF-020 — the Inbox unread filter chip (48x16) ------------------ */
+
+/* Inbox is not any lane's surface — it is one of the five tab-bar promises, so
+   it is the shell's. Of its four under-44 elements exactly ONE is a tap-target
+   defect: the other three are `hon-disabled` and are excluded from the bar by
+   ledger RULE R2, because there is nothing there to tap. They are NOT grown
+   here, and that is the ruling rather than an omission — growing a dead control
+   to 44px produces a bigger dead control. Their defect is affordance
+   (DEF-031/032) and it is fixed in the component, not in a stylesheet.
+
+   `.ibx-chip` is unscoped in `inbox.css` (0,1,0); this selector is (0,3,0) and
+   wins on weight, so the desktop value is untouched exactly like every other
+   restatement in this file. */
+.cv2-root[data-shell='mobile'] .ibx-chip {
+  display: inline-flex;
+  align-items: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+
+/* ==========================================================================
    THE SHEET
 
    Structure lives in `mobile.css` (`.mobile-frame__sheet` — absolute, inset 0,

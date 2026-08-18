@@ -10,7 +10,7 @@
  * state and the URL, the panels own anatomy. This file is composition only.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ChatMode, EntityId, EntitySummary, MenuViewRef, ProjectTrustLevel, SpaceId } from '@tm8/contract';
+import type { ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
   MenuRail,
@@ -37,6 +37,7 @@ import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { CopyLinkControl } from '../share';
 import { useShellKind } from '../mobile';
 import { MobileShell } from './MobileShell';
+import { isUnbuiltViewRef } from './view-ref-screens';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
@@ -45,6 +46,7 @@ import { CraftScreen } from '../craft';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
+import type { Landing } from '../domain/nav-targets';
 import type { NavView } from '../routes';
 import { getKind } from '../domain';
 import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
@@ -129,70 +131,18 @@ const HOME_TARGET: MenuTarget = { type: 'view', ref: 'dashboard' };
 /** Board v2's client-appended tab seat — not a menu group id (see shellTabs). */
 const BOARD_V2_TAB_ID = 'board-v2';
 
-/**
- * WHAT THIS FILE ACTUALLY RENDERS FOR EACH `MenuViewRef`, written down.
+/*
+ * THE VIEW-REF CLASSIFICATION NOW LIVES IN `view-ref-screens.ts`.
  *
- * THE DEFECT THIS CLOSES. The render switch below is one order-dependent
- * ternary chain, and it used to end `: data.ready ? <WorkspaceView/>`. That
- * final arm was not a match on the workspace — it was EVERYTHING LEFT OVER. A
- * target this file had no branch for did not throw, did not warn, and did not
- * say so: it silently drew the workspace under whatever the rail was
- * highlighting. That has shipped twice already (the voice-room misroute, and
- * channels falling through), and both times the symptom was "I clicked a thing
- * and got the workspace", which reads as a no-op rather than as a bug.
- *
- * WHY A TABLE AND NOT A SWITCH. `satisfies Record<MenuViewRef, …>` makes a ref
- * ADDED to the contract a compile error here until someone says which of the
- * three things it is. That is the same guard `domain/nav-targets.ts` uses, for
- * the same reason: the failure mode being designed out is a new member falling
- * through to a default, so the default has to stop existing.
- *
- *   'mounted'   — has its own branch above, which wins before the table is read
- *   'unbuilt'   — no screen in this build; the honest card SAYS SO
- *   'workspace' — the three-panel workspace, matched EXPLICITLY
- *
- * A ref NOT in this table is not a MenuViewRef at all — it came from storage
- * (`last-place.ts` validates the shape, never the ref) or from a caller that
- * invented one. It gets the unrecognised card, which is loud, not the unbuilt
- * card, which would claim we simply have not built it yet.
+ * Moved by the shell contract (DEF-012). It is not this module's private fact:
+ * the phone's refusal card must derive its copy from the SAME table this switch
+ * derives its branches from, or the two disagree — which is exactly what
+ * happened on `feed`, where the card claimed the link "still works on a
+ * desktop" about a ref this table classifies `unbuilt`. `MobileShell` cannot
+ * import it from here (this module imports `MobileShell`), so the shared fact
+ * got a home both renderings can reach. The table, its docblock and its
+ * `satisfies Record<MenuViewRef, …>` guard are unchanged — only their address.
  */
-const VIEW_REF_SCREENS = {
-  dashboard: 'mounted',
-  inbox: 'mounted',
-  graph: 'mounted',
-  files: 'mounted',
-  settings: 'mounted',
-  git: 'mounted',
-  messages: 'mounted',
-  /* The task Board (2026-08-16): the kanban screen, mounted below. */
-  board: 'mounted',
-  /* The Craft studio (2026-08-16): the blueprint split pane, mounted below. */
-  craft: 'mounted',
-  workspace: 'workspace',
-  /* The last genuinely unbuilt view ref. */
-  feed: 'unbuilt',
-  /* NOT unbuilt — an ALIAS, and as of the router mount this row is UNREACHABLE.
-     `domain/nav-targets.ts` resolves `channels` to the `channel`-kind
-     EntityView, which is mounted and always has been. Phase 0.5 classified it
-     `unbuilt` because that is what the chain did with it then, and left the
-     resolution to "the router mount, which owns both directions" — this is that
-     mount, and both directions now resolve it. `routeViewOf` turns the alias
-     into `k/channels` on the way out, so it never becomes an `unroutableTarget`;
-     `landingOfRoute` turns it into the kind target on the way back in, so it is
-     never what `activeTarget` derives to. Nothing can reach this row.
-
-     KEPT ANYWAY, and not as clutter: the table is `satisfies
-     Record<MenuViewRef, …>`, so every ref must be classified or the file does
-     not compile — which is the property that makes a NEW ref a build failure
-     rather than a silent fallthrough. Deleting an unreachable row would trade
-     that guarantee for tidiness. */
-  channels: 'unbuilt',
-} as const satisfies Record<MenuViewRef, 'mounted' | 'unbuilt' | 'workspace'>;
-
-/** `true` when this build has no screen for the ref and should say so. */
-function isUnbuiltViewRef(ref: string): boolean {
-  return VIEW_REF_SCREENS[ref as MenuViewRef] === 'unbuilt';
-}
 
 /**
  * A target that reached the end of the render switch unmatched.
@@ -413,9 +363,82 @@ export function GateApp(props: GateAppProps = {}) {
    */
   const [unroutableTarget, setUnroutableTarget] = useState<MenuTarget | null>(null);
 
+  /**
+   * DEF-002 — A BARE `e/{id}` DEEP LINK RESOLVES, INSTEAD OF OPENING NOTHING.
+   *
+   * ── THE DEFECT ────────────────────────────────────────────────────────────
+   *
+   * `#/s/{space}/e/{id}` — the form a person pastes into a message — landed on
+   * "This link doesn't name a screen this build has" while the IDENTICAL id
+   * with `?origin=tasks` rendered a full detail surface. The id was never the
+   * problem; the bare form was simply not resolved. A phone is where links are
+   * RECEIVED, which is why this is filed against the phone even though the
+   * parse it fails in is shared.
+   *
+   * ── WHY IT LIVES HERE AND NOT IN `landingOfRoute` ────────────────────────
+   *
+   * `landingOfRoute` is right to return null: resolving the no-origin form
+   * needs the entity's KIND, and the kind is a READ. Its own comment says so,
+   * and a pure function cannot do a read. So the resolution belongs to the
+   * first caller that can — this one.
+   *
+   * ── THE RULE IT APPLIES IS ALREADY THIS CODEBASE'S ───────────────────────
+   *
+   * §2.2's canonical-reload rule, which `EntityFullView.companionOf` already
+   * implements for LEAVING an entity: with no origin, the companion screen is
+   * resolved from the entity's kind. This is that same rule applied on ARRIVAL,
+   * producing exactly what `?origin=` would have produced — the kind's
+   * collection, with the entity seeded onto it. The two directions now agree
+   * rather than one of them being a dead end.
+   *
+   * ── IT IS DELIBERATELY NOT PHONE-ONLY, AND THAT WAS RULED ────────────────
+   *
+   * Resolving this for the phone alone would fork route→screen between the two
+   * shells, which is the one thing `mobile/no-router-fork.test.ts` exists to
+   * prevent: two shells that disagree about where a link lands are two
+   * products. So the desktop gets it too. Its `e/{id}` arm (ruling M1, the
+   * "full view isn't built yet" card further down) stays exactly where the rule
+   * genuinely yields nothing — `slugOfKind` returns null for the `special` and
+   * `anchored` strategies (`voice_channel`, `message`), which have no `k/` view
+   * BY DESIGN and so have nowhere to collapse to. That card's own copy says
+   * "Open the entity from its collection in the meantime", which is precisely
+   * what this now does without asking.
+   *
+   * NULL WHILE THE READ IS IN FLIGHT, and that is correct rather than a gap:
+   * an unresolved link renders the honest card for the moment it is unresolved,
+   * and re-renders into the screen when the kind lands. Guessing a screen
+   * before knowing the kind is the misroute this whole chain was repaired for.
+   */
+  const landing = useMemo<Landing | null>(() => {
+    const direct = landingOfRoute(navView);
+    if (direct) return direct;
+    if (navView.view !== 'entity' || navView.origin) return null;
+    const kind = data.detailOf(navView.entityId)?.kind ?? null;
+    if (!kind) return null;
+    /* The kind must have a `k/` view to collapse to. `slugOfKind` answering
+       null is a FACT ABOUT THE KIND, not a broken link — see `companionOf`. */
+    if (!slugOfKind(kind)) return null;
+    return { target: { type: 'kind', ref: kind }, openEntity: navView.entityId };
+  }, [navView, data]);
+
+  /*
+   * ASK FOR THE KIND, ONCE, when the address named an entity and nothing in
+   * the cache knows what it is. Without this the resolution above would wait
+   * forever on a read nobody started: a cold arrival from a pasted link is by
+   * definition the case where the entity is in no list page yet.
+   *
+   * `pull` early-returns on an entity it already holds, so this is idempotent
+   * and the dependency list can stay honest about what wakes it.
+   */
+  useEffect(() => {
+    if (navView.view !== 'entity' || navView.origin) return;
+    if (data.detailOf(navView.entityId)) return;
+    data.pull(navView.entityId);
+  }, [navView, data]);
+
   const activeTarget = useMemo<MenuTarget | null>(
-    () => unroutableTarget ?? landingOfRoute(navView)?.target ?? null,
-    [unroutableTarget, navView],
+    () => unroutableTarget ?? landing?.target ?? null,
+    [unroutableTarget, landing],
   );
 
   /** Home. Named once because both the render branch and Mod+\ ask for it. */
@@ -621,14 +644,18 @@ export function GateApp(props: GateAppProps = {}) {
     }
     if (navSpaceId) routedSpace.current = navSpaceId;
 
-    const landing = landingOfRoute(navView);
+    /* THE RESOLVED landing, not `landingOfRoute` again — otherwise a bare
+       `e/{id}` would derive a target (above) and never seed the entity onto
+       it, landing the viewer on the right collection with the thing they
+       followed the link for not open. DEF-002 is only half fixed without
+       this line, and the half that would be missing is the visible half. */
     if (!landing?.openEntity) return;
     /* Only a kind screen can host one today: `landingOfRoute` produces an
        `openEntity` for the `entity` route alone, and that route's target is
        always a kind. Narrowed rather than assumed. */
     if (!landing.target || landing.target.type !== 'kind') return;
     screenStackStore.getState().open(screenKeyOf.kind(landing.target.ref), landing.openEntity);
-  }, [navView, navSpaceId]);
+  }, [navView, navSpaceId, landing]);
 
   /**
    * THE OTHER DIRECTION: THE ENTITY A SCREEN HAS OPEN BECOMES PART OF THE
@@ -1526,6 +1553,25 @@ export function GateApp(props: GateAppProps = {}) {
           {...(data.spaces.find((sp) => sp.id === data.spaceId)?.name
             ? { spaceLabel: data.spaces.find((sp) => sp.id === data.spaceId)?.name }
             : {})}
+          /* DEF-003 — THE ACCOUNT AFFORDANCE'S INPUTS.
+             The phone had no way to sign out, switch space or change theme,
+             because `AccountMenu` and `SpaceSwitcher` are mounted on the
+             DESKTOP branch below and nowhere else. The phone gets the same
+             VERBS through its own arrangement (a sheet, not an anchored
+             popover) rather than a second copy of the desktop's chrome.
+
+             `onSelectSpace` carries the whole pairing — leave the space
+             context, THEN select — because that ordering is the privacy-lane
+             invariant recorded at the `SpaceSwitcher` mount below, and an
+             invariant with two spellings is an invariant with one bug. */
+          viewerActor={data.viewerActor}
+          spaces={data.spaces}
+          onSelectSpace={(id) => {
+            leaveSpaceContext();
+            data.selectSpace(id);
+          }}
+          theme={theme}
+          onThemeChange={setTheme}
           notices={<NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />}
         />
       </div>

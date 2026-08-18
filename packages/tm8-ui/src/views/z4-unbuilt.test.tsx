@@ -95,26 +95,73 @@ describe('promote cannot produce a state nothing can host', () => {
   });
 });
 
-describe('a pasted e/{id} is a real address with no screen, and says exactly that', () => {
-  it('draws the unbuilt-screen card, not the unrecognised-target card', async () => {
+/**
+ * DEF-002 — A BARE `e/{id}` NOW RESOLVES, AND THIS SUITE MOVED WITH IT.
+ *
+ * These two tests used to assert that a pasted `e/{id}` drew the unbuilt-screen
+ * card. That was the honest state of the build when they were written and it is
+ * no longer the behaviour, so they assert the new behaviour instead of being
+ * loosened around it.
+ *
+ * WHAT CHANGED AND WHY IT IS NOT A WEAKENING. `landingOfRoute` still returns
+ * null for the no-origin form — resolving it needs the entity's KIND, which is
+ * a read, and a pure function cannot do a read. `GateApp` now performs that
+ * read and applies §2.2's canonical-reload rule, the same rule
+ * `EntityFullView.companionOf` already applies when LEAVING an entity: with no
+ * origin, the companion screen is the entity's own collection. So the route
+ * resolves to exactly what `?origin=` would have produced.
+ *
+ * The M1 card is NOT deleted — the third test below is it, kept for the case
+ * where the rule genuinely yields nothing. That is the distinction the original
+ * file was written to protect, and it survives.
+ */
+describe('a pasted bare e/{id} lands on the entity, not on a card (DEF-002)', () => {
+  it('resolves to the entity’s own collection with the entity open', async () => {
+    /* The form a person PASTES. A phone is where links are received, which is
+       why this is a shell-contract row even though the parse is shared. */
     const target = createMemoryTarget(`#/s/${SPACE}/e/task-4f8c2a9e`);
     const view = render(<GateApp routerTarget={target} />);
-    await waitFor(() => view.getByTestId('entity-full-view-unbuilt'));
-    /* The distinction that matters: this route is RIGHT and unhosted, not
-       wrong. Claiming the build has no screen for it would be false about a
-       frozen, specified route. */
+
+    /* The entity is seeded onto the collection's screen stack — the same seam
+       `?origin=tasks` writes, reached without the origin being spelled out. */
+    await waitFor(() =>
+      expect(screenStackStore.getState().stacks['kind:task']).toContain('task-4f8c2a9e'),
+    );
+
+    /* And the honest-refusal cards are BOTH absent: this is neither an
+       unrecognised target nor a specified-but-unhosted one any more. */
     expect(view.queryByTestId('unrouted-target')).toBeNull();
+    expect(view.queryByTestId('entity-full-view-unbuilt')).toBeNull();
     view.unmount();
   });
 
-  it('keeps the address it was given', async () => {
-    /* The link is still shareable and still correct — it is only undrawable.
-       Rewriting it would destroy the one thing that still works. */
+  it('keeps the address it was given — the bare link stays shareable', async () => {
+    /* THE ADDRESS IS NOT REWRITTEN, and that is deliberate rather than
+       incidental. `sameDestination` compares `entity` routes by id alone, so
+       the screen→URL sync sees the resolved `e/{id}?origin=tasks` it would emit
+       as THE SAME PLACE the address already names and declines to write. The
+       reader keeps the exact string they were sent, and it keeps working. */
     const hash = `#/s/${SPACE}/e/task-4f8c2a9e`;
     const target = createMemoryTarget(hash);
     const view = render(<GateApp routerTarget={target} />);
-    await waitFor(() => view.getByTestId('entity-full-view-unbuilt'));
+    await waitFor(() =>
+      expect(screenStackStore.getState().stacks['kind:task']).toContain('task-4f8c2a9e'),
+    );
     expect(target.getHash()).toBe(hash);
+    view.unmount();
+  });
+
+  it('still draws the M1 card for a kind that has nowhere to collapse to', async () => {
+    /* THE CASE THE ORIGINAL SUITE EXISTED FOR, PRESERVED.
+       `slugOfKind` returns null for the `special` and `anchored` strategies —
+       `voice_channel` and `message` have no `k/` view BY DESIGN (WLT §2.1). A
+       null there is a FACT ABOUT THE KIND, not a broken link, so the rule
+       yields nothing and ruling M1's card is still the honest answer: the route
+       is right, and there is no screen behind it. */
+    const target = createMemoryTarget(`#/s/${SPACE}/e/vc-standup`);
+    const view = render(<GateApp routerTarget={target} />);
+    await waitFor(() => view.getByTestId('entity-full-view-unbuilt'));
+    expect(view.queryByTestId('unrouted-target')).toBeNull();
     view.unmount();
   });
 });

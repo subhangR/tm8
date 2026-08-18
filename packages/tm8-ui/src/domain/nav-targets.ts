@@ -58,7 +58,11 @@ import { kindOfSlug, slugOfKind } from './registry';
  * `strategy: 'collection'` on 2026-08-01 and WLT §2.1 has not caught up; the
  * code is the truth and the spec amendment follows it.
  */
-const CHANNEL_KIND = 'channel';
+/* EXPORTED for the shells' entity-arm guards. Both `GateApp` and `MobileShell`
+   must tell a channel from a voice room BY KIND — the discrimination rule
+   stated above — and a bare `'channel'` literal in each of them is two places
+   for that rule to be spelled and one place for it to be spelled wrong. */
+export const CHANNEL_KIND = 'channel';
 
 /**
  * The kind of a VOICE ROOM, which the rail also emits as an `entity` target.

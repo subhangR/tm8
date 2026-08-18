@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { useKeyboardInset } from '../terminal/useKeyboardInset';
 import './mobile.css';
 
 /**
@@ -69,8 +70,49 @@ export interface MobileFrameProps {
 }
 
 export function MobileFrame({ header, children, tabBar, sheet, notices }: MobileFrameProps) {
+  /*
+   * THE KEYBOARD IS A FRAME CONCERN — shell contract, §3 of `CONTRACT.md`.
+   *
+   * MEASURED ONCE, HERE, AND PUBLISHED AS A NUMBER. `useKeyboardInset` already
+   * existed and was called by exactly one surface (the terminal's modifier
+   * bar), which is the shape that would have had three lanes each wiring their
+   * own listener to the same `visualViewport` and each choosing their own
+   * arithmetic for it. A composer, a modifier bar and a sheet that disagree
+   * about where the keyboard starts is three bugs, not one.
+   *
+   * WHY THE WHOLE FRAME SHRINKS rather than each bottom-anchored thing lifting
+   * itself. On iOS the soft keyboard OVERLAYS the layout viewport: `innerHeight`
+   * does not change, `100dvh` does not change, and the tab bar goes under the
+   * keyboard where no finger reaches it. Shrinking the frame is the behaviour
+   * `interactive-widget=resizes-content` would give us if iOS honoured it — the
+   * whole arrangement stays on screen and above the keyboard, and every region
+   * (header, content, notices, tab bar, sheet) inherits that for free without
+   * knowing the keyboard exists. A per-region lift would have to be re-derived
+   * by every future region and forgotten by one of them.
+   *
+   * It is inert everywhere it should be: no `visualViewport` (every desktop
+   * browser without the API) reports 0, and Android — which genuinely does
+   * resize the layout viewport — reports ~0 because `innerHeight` has already
+   * shrunk, so the frame is not shortened twice.
+   */
+  const keyboardInset = useKeyboardInset();
+
   return (
-    <div className="mobile-frame" data-shell="mobile">
+    <div
+      className="mobile-frame"
+      data-shell="mobile"
+      /* The BOOLEAN half of the same measurement, for the rules that need to
+         know "is it up" rather than "how far". Absent rather than `="down"`, so
+         a selector for it is a presence check and the DOM stays quiet in the
+         state the app is in almost all of the time. */
+      {...(keyboardInset > 0 ? { 'data-keyboard': 'up' } : {})}
+      /* A CUSTOM PROPERTY, NOT A HEIGHT. The frame's own height composes it in
+         `mobile.css` beside `100dvh` and the safe-area tokens, so the whole
+         viewport arithmetic stays readable in one place in the stylesheet
+         rather than being half in CSS and half in a style attribute. It is also
+         then available to any region that needs to compose against it. */
+      style={{ '--mobile-keyboard-inset': `${keyboardInset}px` } as CSSProperties}
+    >
       {header ? (
         <header className="mobile-frame__header" role="banner">
           {header}
