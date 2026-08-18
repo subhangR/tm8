@@ -665,6 +665,36 @@ function measureInPage({ MIN_TAP, EPS }) {
         headerTitle: (document.querySelector('.mobile-header__title')?.textContent || '').trim().slice(0, 60),
       };
     })(),
+    /*
+     * WHICH ARRAYS IN THIS ROW WERE CUT — the field that makes a sample
+     * self-describing.
+     *
+     * Every list above is a capped sample with a `…Count` beside it, and that
+     * pairing was stated three separate times in this program, each filed
+     * against the one array that prompted it, and rediscovered at full cost
+     * anyway. A rule that lives where it was found does not generalise.
+     *
+     * The hazard is not only under-counting a total from a short array. It is
+     * the MIRROR: a UNIVERSAL NEGATIVE asserted from a truncated sample —
+     * "nothing in here is over 12px" — which reads as a proof and is what a
+     * threshold gets built against. Under-counting looks like a small number;
+     * a false universal negative looks like evidence.
+     *
+     * So the data now answers "is this array complete?" itself. An EMPTY object
+     * means nothing was cut and the arrays in this row ARE the population — the
+     * only condition under which a claim about "every finding" is admissible.
+     * A non-empty entry names the array, what it holds, and what you can see.
+     */
+    truncatedArrays: (() => {
+      const cut = {};
+      const note = (name, total, shown) => { if (total > shown) cut[name] = { count: total, shown }; };
+      note('overflowRoots', over.length, Math.min(over.length, 12));
+      note('tapTargetsSmallest', small.length, Math.min(small.length, 64));
+      note('tapTargetsHidden', hidden.length, Math.min(hidden.length, 8));
+      note('tapTargetsInert', inert.length, Math.min(inert.length, 8));
+      note('tapTargetsOccluded', occluded.length, Math.min(occluded.length, 8));
+      return cut;
+    })(),
     /* What the page believes about itself, so a reader can tell a real 0 from a
        0 taken off a boot error or the wrong shell. */
     shell: document.querySelector('.mobile-frame') ? 'mobile' : document.querySelector('.shell-root') ? 'desktop' : 'none',
