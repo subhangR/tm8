@@ -283,7 +283,25 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   }
 
   if (query.kinds && query.kinds.length > 0) {
-    where.push(`e.kind = any(${p.add(query.kinds)}::text[])`);
+    // 153: A KIND FILTER SELECTS A FAMILY, not a literal.
+    //
+    // This is a CONTINUITY requirement, not a feature. Before phase 6 a task
+    // tagged `type=epic` was a `task` and every list filtering `kinds:['task']`
+    // showed it. Phase 6 makes it a `c:epic`, so a literal comparison would
+    // have silently emptied the Work tab, the home presets and both boards of
+    // every epic, bug and story in the graph on migration day — a
+    // data-visibility regression with no error anywhere.
+    //
+    // A kind matches by its own name OR by what it extends, which is the same
+    // rule `internal.base_kind_of` states everywhere else. The EXISTS is
+    // correlated on the row's own space so one space's `c:epic` cannot be
+    // pulled in by another's.
+    const kindsParam = p.add(query.kinds);
+    where.push(`(e.kind = any(${kindsParam}::text[]) or exists (
+      select 1 from public.entity_kinds k
+       where k.kind = e.kind and k.space_id = e.space_id
+         and k.base_kind = any(${kindsParam}::text[])
+    ))`);
   }
 
   if (query.subtreeOf) {
@@ -500,6 +518,19 @@ function groupItems(items: EntitySummary[], groupBy: NonNullable<CollectionQuery
       put(priority, PRIORITY_LABELS[priority] ?? priority, item);
       continue;
     }
+    if (groupBy === 'kind') {
+      // 153: what `axis:type` used to be. The type values ARE kinds now, so
+      // grouping epics from bugs from stories is grouping by the entity's own
+      // kind — and it works for every family rather than for the one axis a
+      // space happened to name `type`.
+      //
+      // The label is the raw kind string, and deliberately so: the server has
+      // no display registry, `entity_kinds.label` may be null for every core
+      // kind until phase 10 serves it, and inventing 'Epic' from 'c:epic' here
+      // would put a second, worse labelling authority beside the client's.
+      put(item.kind, item.kind, item);
+      continue;
+    }
     if (groupBy === 'assignee') {
       const assignees = item.state.kind === 'task' ? item.state.assignees : [];
       if (assignees.length === 0) {
@@ -545,7 +576,7 @@ export async function queryCollection(
   const sort = SORTS[sortName];
   if (!sort) throw new CollabError('invalid_input', `unsupported sort: ${String(query.sort)}`);
 
-  if (query.groupBy && !['workStatus', 'assignee', 'priority'].includes(query.groupBy) && !query.groupBy.startsWith('axis:')) {
+  if (query.groupBy && !['workStatus', 'assignee', 'priority', 'kind'].includes(query.groupBy) && !query.groupBy.startsWith('axis:')) {
     throw new CollabError('invalid_input', `unsupported groupBy: ${query.groupBy}`);
   }
 

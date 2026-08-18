@@ -200,6 +200,8 @@ interface SummaryRow {
   /** Link counters (108); optional keeps pre-108 row fixtures source-compatible. */
   docs?: number | null;
   memories?: number | null;
+  /** 153: `entity_kinds.base_kind`. See `behaviourKind` below and its read-path twin. */
+  base_kind?: string | null;
   task_title: string | null;
   task_description: string | null;
   work_status: string | null;
@@ -321,6 +323,14 @@ select
   -- omitting it here would make a live status change move a row on refresh but
   -- not on the socket, which reads as a caching bug for a week.
   e.status_category,
+  -- 153. MIRRORS entity-read's ENTITY_COLUMNS twin, and for the same reason
+  -- the category is here: an entity whose kind EXTENDS task carries a
+  -- public.tasks detail row, and the event path must assemble it as a task or
+  -- an epic would arrive over the socket with an empty custom-kind state and a
+  -- title of nothing — while the read path served it correctly.
+  (select k.base_kind from public.entity_kinds k
+    where k.kind = e.kind and k.space_id = e.space_id and k.base_kind is not null
+    limit 1) as base_kind,
   c.likes, c.dislikes, c.stars, c.points, c.messages,
   c.human_messages, c.agent_messages, c.docs, c.memories,
   t.title            as task_title,
@@ -848,11 +858,21 @@ export class PgEntityProjector implements EntityProjector {
    * If you are here to "fix one side", read the paragraph above first: widening
    * the gap by patching only one implementation is worse than the gap.
    */
+  /**
+   * WHICH CODE RUNS for this row — 153's `internal.base_kind_of` on the event
+   * path, and the exact twin of entity-read's `behaviourKindOf`. `r.kind` is
+   * identity (label, icon, what a board groups by); this is behaviour (which
+   * detail table holds the body, which state shape the client gets).
+   */
+  private behaviourKind(r: SummaryRow): string {
+    return r.base_kind ?? r.kind;
+  }
+
   private titleOf(r: SummaryRow): string {
     // A deleted entity must not keep announcing its real title over the event
     // feed. Matches entity-read.ts:485, which tombstones before the kind switch.
     if (r.deleted_at !== null) return TOMBSTONE_TITLE;
-    switch (r.kind) {
+    switch (this.behaviourKind(r)) {
       case 'task':
         return r.task_title ?? '';
       case 'doc':
@@ -940,8 +960,9 @@ export class PgEntityProjector implements EntityProjector {
   private excerptOf(r: SummaryRow): string | null {
     if (r.deleted_at !== null) return null;
     if (r.kind === 'message' && r.msg_redacted_at !== null) return null;
+    const behaviour = this.behaviourKind(r);
     const source =
-      r.kind === 'task' ? r.task_description
+      behaviour === 'task' ? r.task_description
       : r.kind === 'doc' ? r.doc_body
       : r.kind === 'message' ? r.msg_body
       : r.kind === 'channel' ? r.channel_topic
@@ -975,7 +996,12 @@ export class PgEntityProjector implements EntityProjector {
     unreadCounts: ReadonlyMap<string, number>,
     containsCounts: ReadonlyMap<string, number>,
   ): EntityState {
-    switch (r.kind) {
+    // 153: the BEHAVIOUR kind, exactly as the read path's twin does. A `c:epic`
+    // takes the task arm and its `state.kind` is `'task'`, while the summary's
+    // own `kind` stays `c:epic`. The custom-kind `default` arm below is now
+    // reached only by a BASE-LESS custom kind — which is why its drift check
+    // still holds: a base-bearing kind never gets there.
+    switch (this.behaviourKind(r)) {
       case 'task': {
         const criteria = Array.isArray(r.acceptance_criteria) ? r.acceptance_criteria : [];
         const completed = criteria.filter(
@@ -1119,13 +1145,20 @@ export class PgEntityProjector implements EntityProjector {
         };
       case 'spell':
       case 'skill': {
-        const description = r.kind === 'spell' ? r.spell_description : r.skill_description;
+        // 153: the switch is on the BEHAVIOUR kind now, so TypeScript no longer
+        // narrows `r.kind` here. `base_kind` is constrained to 'task', so this
+        // arm is reachable only when `r.kind` IS the literal — re-derive it
+        // rather than cast, so the day another base becomes legal this stops
+        // compiling instead of lying.
+        const isSpell = r.kind === 'spell';
+        const literal = isSpell ? ('spell' as const) : ('skill' as const);
+        const description = isSpell ? r.spell_description : r.skill_description;
         // `equipped` is relative to a context (a task/persona equips a spell via
         // an `equips` edge); an event has no such context. False is the honest
         // default for "not equipped in any context I was told about".
         return description === null
-          ? { kind: r.kind, equipped: false }
-          : { kind: r.kind, description, equipped: false };
+          ? { kind: literal, equipped: false }
+          : { kind: literal, description, equipped: false };
       }
       case 'collection':
         return {

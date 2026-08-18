@@ -76,6 +76,18 @@ export const ENTITY_COLUMNS = `
   -- will carry a status in a later phase. MIRRORED by projector.ts's
   -- SUMMARY_SQL — the two column lists must not drift.
   e.status_category,
+  -- 153. The "extends" link, resolved for THIS row. A kind whose base_kind is
+  -- 'task' carries a public.tasks detail row and must be assembled as a task —
+  -- the same claim the database makes when it lets that row exist at all
+  -- (internal.validate_detail_envelope). A scalar subquery rather than a join
+  -- because entity_kinds is a tens-of-rows table with a unique index on
+  -- (space_id, kind), and because a join would multiply the row when a space
+  -- and the core registry both name a kind.
+  --
+  -- MIRRORED by projector.ts's SUMMARY_SQL — the two column lists must not drift.
+  (select k.base_kind from public.entity_kinds k
+    where k.kind = e.kind and k.space_id = e.space_id and k.base_kind is not null
+    limit 1) as base_kind,
   coalesce(ec.likes, 0)    as likes,
   coalesce(ec.dislikes, 0) as dislikes,
   coalesce(ec.stars, 0)    as stars,
@@ -191,6 +203,8 @@ export interface EntityRow {
   id: string;
   space_id: string;
   kind: string;
+  /** 153: `entity_kinds.base_kind` — the `extends` link, or null. See `behaviourKindOf`. */
+  base_kind: string | null;
   parent_id: string | null;
   position: number;
   visibility: string;
@@ -1091,9 +1105,27 @@ export async function loadUnreadCounts(
 // ---------------------------------------------------------------------------
 
 /** The kind-specific display title. Never an id, never raw content (L3). */
+/**
+ * WHICH CODE RUNS for this row — `entity_kinds.base_kind` when the kind extends
+ * one, else the kind itself. 153's `internal.base_kind_of`, on the read side.
+ *
+ * The distinction it draws is the whole of phase 6. `row.kind` is IDENTITY: it
+ * is what the entity is called, what its icon and label come from, what a board
+ * groups by. This is BEHAVIOUR: which detail table holds the body, which state
+ * shape the client gets, which capabilities the row carries. A `c:epic` with
+ * `base_kind = 'task'` answers `c:epic` to the first question and `task` to the
+ * second, and every switch below is asking the second one.
+ *
+ * Before 153 the two were the same string for every row in the graph, which is
+ * why every one of these switches read `row.kind` and was right to.
+ */
+export function behaviourKindOf(row: Pick<EntityRow, 'kind' | 'base_kind'>): string {
+  return row.base_kind ?? row.kind;
+}
+
 export function titleOf(row: EntityRow): string {
   if (row.deleted_at) return TOMBSTONE_TITLE;
-  switch (row.kind) {
+  switch (behaviourKindOf(row)) {
     case 'task':
       return row.task_title ?? 'Untitled task';
     case 'doc':
@@ -1167,7 +1199,7 @@ export function titleOf(row: EntityRow): string {
 
 function excerptOf(row: EntityRow): string | undefined {
   if (row.deleted_at) return undefined;
-  switch (row.kind) {
+  switch (behaviourKindOf(row)) {
     case 'task':
       return excerpt(row.task_description);
     case 'doc':
@@ -1248,7 +1280,13 @@ function surfaceOf(raw: string | null): { initialContentSurface?: 'terminal' | '
 }
 
 function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
-  switch (row.kind) {
+  // 153: the BEHAVIOUR kind. A `c:epic` gets the task arm, so `state.kind` is
+  // `'task'` while `summary.kind` stays `'c:epic'`. That is not a mismatch —
+  // it is the two questions this file's `behaviourKindOf` docblock separates,
+  // answered. A client switching on `state.kind` is asking "what can I do with
+  // this", and the honest answer for an epic is everything it can do with a
+  // task; a client rendering a label reads `summary.kind` and gets `c:epic`.
+  switch (behaviourKindOf(row)) {
     case 'task':
       return {
         kind: 'task',
@@ -1668,14 +1706,21 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
+  // 153: the sets are keyed on BEHAVIOUR, so a `c:epic` is editable,
+  // hierarchical and pullable because a task is — which is the same claim its
+  // `base_kind` already makes to the database's doors. The sets keep naming
+  // core kinds only; widening happens at the lookup, so a kind defined
+  // tomorrow needs no edit here.
+  const behaviour = behaviourKindOf(row);
+
   return {
-    canEdit: live && editable.has(row.kind),
+    canEdit: live && editable.has(behaviour),
     // 007:1437 refuses to delete a member entity — leaving the space is the
     // only way that row goes away.
     canDelete: live && row.kind !== 'member',
-    canAddChild: live && hierarchical.has(row.kind),
+    canAddChild: live && hierarchical.has(behaviour),
     canLink: live,
-    canPull: live && pullable.has(row.kind),
+    canPull: live && pullable.has(behaviour),
     canReact: live,
     canGrantPoints: live && (row.kind === 'member' || row.kind === 'team_member'),
     // Not gated on acceptance criteria — see the note above.
@@ -1756,7 +1801,10 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   if (row.kind === 'pull_request' || row.kind === 'commit' || row.kind === 'file') {
     return { ...base, canEdit: live };
   }
-  if (row.kind.startsWith('c:')) {
+  // 153: only a BASE-LESS custom kind takes this arm. A kind that extends
+  // `task` has already been answered as a task above, and re-narrowing it here
+  // would take back the inheritance one line after granting it.
+  if (row.kind.startsWith('c:') && row.base_kind === null) {
     return { ...base, canEdit: live, canAddChild: live, canPull: live };
   }
   return base;
