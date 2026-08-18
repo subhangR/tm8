@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
 import { Avatar, RibbonMark, Timestamp } from '../kit';
@@ -19,6 +19,7 @@ import { mergeChatTurnFrame, projectTurnParts, reconcileDetails } from './turn-m
 import { ChatEntityGraph } from './ChatEntityGraph';
 import type { ChatEntityResolver } from './EntityChip';
 import { ComposerSelect } from './ComposerSelect';
+import { EntityTray } from './EntityTray';
 import { TurnParts } from './TurnParts';
 import { composeThreadColumn } from './thread-column';
 import type {
@@ -289,7 +290,25 @@ export function ChatHomeScreen({
   const [detail, setDetail] = useState<ChatThreadDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
+  /* PER-THREAD DRAFTS (Cockpit ruling 2026-08-18): one box per conversation,
+     not one box for the screen — switching threads no longer carries half a
+     message into the wrong conversation, and a send in flight clears only the
+     ORIGIN thread's draft (the setter is keyed at closure time). Session-local
+     by design: reload survival belongs to the store-keyed pattern the channel
+     composer uses and is a later step. */
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draftKey = selectedRootId ?? 'new-thread';
+  const draft = drafts[draftKey] ?? '';
+  const setDraft = useCallback(
+    (next: string | ((current: string) => string)) => {
+      setDrafts((current) => {
+        const existing = current[draftKey] ?? '';
+        const value = typeof next === 'function' ? next(existing) : next;
+        return value === existing ? current : { ...current, [draftKey]: value };
+      });
+    },
+    [draftKey],
+  );
   const [phase, setPhase] = useState<ComposerPhase>('idle');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
@@ -597,6 +616,39 @@ export function ChatHomeScreen({
       : null;
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
+
+  /* THE DOCK-DOWN (Cockpit ruling 2026-08-18): the centred composer of a new
+     thread travels to its bottom berth when the first send lands, instead of
+     teleporting. FLIP — the centred position is remembered while `newThread`
+     holds, and on the flip the wrap starts from the inverted delta and
+     transitions to rest. Guarded by prefers-reduced-motion: reduced means the
+     old instant swap, not a slower slide. */
+  const composerWrapRef = useRef<HTMLDivElement | null>(null);
+  const emptyComposerTopRef = useRef<number | null>(null);
+  const wasNewThreadRef = useRef(newThread);
+  useLayoutEffect(() => {
+    const wrap = composerWrapRef.current;
+    if (newThread) {
+      emptyComposerTopRef.current = wrap?.getBoundingClientRect().top ?? null;
+    } else if (wasNewThreadRef.current && wrap && emptyComposerTopRef.current !== null) {
+      const reduced = typeof window === 'undefined'
+        || typeof window.matchMedia !== 'function'
+        || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const delta = emptyComposerTopRef.current - wrap.getBoundingClientRect().top;
+      if (!reduced && delta !== 0) {
+        wrap.style.transform = `translateY(${delta}px)`;
+        wrap.style.transition = 'none';
+        // Reflow commits the inverted start before the transition plays.
+        void wrap.getBoundingClientRect();
+        wrap.style.transition = 'transform var(--pn-dur-slow, 250ms) var(--pn-ease-standard, ease)';
+        wrap.style.transform = '';
+        const settle = () => { wrap.style.transition = ''; };
+        wrap.addEventListener('transitionend', settle, { once: true });
+      }
+      emptyComposerTopRef.current = null;
+    }
+    wasNewThreadRef.current = newThread;
+  }, [newThread]);
   const selectionUnavailable =
     teammateId === ''
       ? 'No agent teammate is available in this space.'
@@ -1164,7 +1216,16 @@ export function ChatHomeScreen({
           )}
         </div>
 
-        <div className="tch-composer-wrap" data-phase={phase}>
+        <div className="tch-composer-wrap" data-phase={phase} ref={composerWrapRef}>
+          {detail && !newThread ? (
+            <EntityTray
+              turns={detail.turns}
+              suppressEntityIds={ownMessageIds}
+              resolveEntity={resolveEntity}
+              onOpenEntity={onOpenEntity}
+              onOpenGraph={onGraphFullChange ? () => onGraphFullChange(true) : undefined}
+            />
+          ) : null}
           {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
           {refusal ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
           {phase === 'stopped-continuable' ? (
@@ -1271,10 +1332,8 @@ export function ChatHomeScreen({
                   disabled={pinned}
                   emptyNote="No model is available from the launch catalog."
                 />
-                {pinned ? <span className="tch-pinned">pinned for this thread</span> : null}
               </span>
               <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
-              <span className="tch-hint">Enter to send · Shift+Enter for a new line</span>
               {phase === 'streaming' ? (
                 /* The agent-running state lives ON the send button: a loader
                    that is also Stop. Enter still queues a send — the server

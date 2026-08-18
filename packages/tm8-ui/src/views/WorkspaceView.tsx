@@ -14,7 +14,6 @@ import type {
   EntityId,
   EntitySummary,
   ExecutionSpawnInput,
-  WorkSessionInteractionProfileProjection,
 } from '@tm8/contract';
 import {
   EntityDetailPanel,
@@ -53,8 +52,7 @@ import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
 import { openEntityAndResolve } from './open-entity';
-import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
-import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
+import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
@@ -408,10 +406,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       }
 
       const admission = engine.canPin(id);
-      const content = detail?.content as unknown as {
-        interactionProfile?: WorkSessionInteractionProfileProjection | null;
-      } | undefined;
-      const recordedStatus = (detail?.state as unknown as { status?: string } | undefined)?.status;
       return (
         /* The action bar's executor — `edit` and `add-child` (a subchannel).
            A COMPONENT and not a hook call, because this is a callback that
@@ -483,37 +477,21 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onContentSurfaceChange={(surface) => nav.setContentSurface?.(id, surface)}
           /*
            * ONE SLOT, TWO SURFACES, CHOSEN BY ARCHETYPE — never by kind (§15.2).
-           * `terminal` entities get the session chat; `hub` entities get their
-           * channel feed, which is what makes a channel opened from the Entity
-           * List Panel a channel you can actually read and post to (user ruling
-           * 2026-08-01). Any other archetype gets no feed and HubBody's
-           * unchanged front-door body.
+           * The fork itself lives in `conversationSurfaceFor`, shared by all five
+           * EntityDetailPanel hosts (user ruling 2026-08-01 made a channel
+           * opened from the Entity List Panel readable and postable; the shared
+           * helper is what keeps the other hosts from un-learning it).
            */
-          chatSurface={detail && getKind(detail.kind).panel.archetype === 'hub' ? (
-            <LazyChannelChatSurface
-              port={channelFeedPort}
-              channelId={id}
-              connection={data.connection}
-              onOpenEntity={(entityId) => openEntity(entityId)}
-              threads={getKind(detail.kind).panel.threads === true}
-              anchorTitle={`${getKind(detail.kind).chip.glyph}${detail.title}`}
-            />
-          ) : detail ? (
-            <LazySessionChatSurface
-              seam={data.seam}
-              sessionId={id}
-              spaceId={data.spaceId}
-              viewerMemberId={props.viewerMemberId ?? 'anonymous'}
-              connection={data.connection}
-              sessionExited={recordedStatus === 'exited' || recordedStatus === 'failed'}
-              defaultLimit={content?.interactionProfile?.feedPolicy.pageSize}
-              composerPolicy={content?.interactionProfile?.composerPolicy}
-              needsAttention={needsAttentionOf(detail, data.livenessOf)}
-              attentionDetail={QUIET_SESSION_DETAIL}
-              onOpenEntity={openEntity}
-              onSwitchToTerminal={() => nav.setContentSurface?.(id, 'terminal')}
-            />
-          ) : undefined}
+          chatSurface={conversationSurfaceFor(detail, id, {
+            seam: data.seam,
+            spaceId: data.spaceId,
+            connection: data.connection,
+            livenessOf: data.livenessOf,
+            channelFeedPort,
+            viewerMemberId: props.viewerMemberId,
+            onOpenEntity: openEntity,
+            onSwitchToTerminal: () => nav.setContentSurface?.(id, 'terminal'),
+          })}
           messages={messages}
           connections={data.connectionsOf(id)}
           linkedPullRequests={data.linkedPullRequestsOf?.(id) ?? []}

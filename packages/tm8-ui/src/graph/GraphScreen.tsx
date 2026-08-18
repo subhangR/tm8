@@ -35,6 +35,10 @@ import { taskGitSectionFor } from '../views/taskGitSection';
 import { graphSurfaceFor } from '../views/graphSurface';
 import { attachmentsFor } from '../files/port';
 import { useMembershipSurface } from '../views/membershipSurface';
+import { conversationSurfaceFor } from '../views/conversationSurface';
+import type { ChannelFeedPort } from '../channel-screen/useChannelFeed';
+import type { ConnectionState } from '../data/seam';
+import type { ContentSurface } from '../routes';
 
 export interface GraphScreenData {
   spaceId: string;
@@ -82,6 +86,17 @@ export interface GraphScreenProps {
   launch?: LaunchSources;
   /** Where a failed panel command reports. Absent ⇒ it fails silently. */
   onNotice?(notice: Notice): void;
+  /**
+   * The chat slot's host wiring — a PROP for the same reason `launch` is: the
+   * data port names what this screen reads, and these are the shell's ports.
+   * Absent (or with no `data.seam`) the panel renders its honest
+   * "unavailable in this view" fallback instead of a dead conversation tab.
+   */
+  chat?: {
+    channelFeedPort: ChannelFeedPort;
+    connection: ConnectionState;
+    viewerMemberId?: string | null;
+  };
   nodes: readonly EntitySummary[];
   edges: readonly EdgeView[];
   timeline?: readonly GraphTimelineStep[];
@@ -108,6 +123,9 @@ export function GraphScreen(props: GraphScreenProps) {
 
   const [selectedId, setSelectedId] = useState<EntityId | null>(null);
   const [mode, setMode] = useState<DetailMode>('aside');
+  /* Terminal⇄chat request per subject — the chat surface's "switch to
+     terminal" must be a real handler at this mount too. */
+  const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface | null>>({});
 
   const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
 
@@ -201,6 +219,23 @@ export function GraphScreen(props: GraphScreenProps) {
       )}
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(selectedId)}
+      viewerMemberId={props.chat?.viewerMemberId}
+      contentSurface={contentSurfaces[selectedId] ?? null}
+      onContentSurfaceChange={(surface) => {
+        setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
+      }}
+      chatSurface={props.chat && data.seam ? conversationSurfaceFor(detail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: props.chat.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort: props.chat.channelFeedPort,
+        viewerMemberId: props.chat.viewerMemberId,
+        onOpenEntity: (id) => setSelectedId(id),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      }) : undefined}
       messages={messages}
       // The executor the other three panel hosts pass. Without it every
       // title-editable kind selected here dresses its title as locked and
@@ -218,6 +253,9 @@ export function GraphScreen(props: GraphScreenProps) {
         ...post,
       })}
       streaming={data.activity[selectedId] ?? false}
+      /* Reading sideways from the aside re-aims the SAME aside — the graph
+         stays put, exactly like a node click. */
+      onOpenEntity={(id) => setSelectedId(id as EntityId)}
       onPromote={() => setMode((m) => (m === 'aside' ? 'full' : 'aside'))}
       onClose={() => {
         setSelectedId(null);

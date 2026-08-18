@@ -107,8 +107,12 @@ describe('EntityChip in the transcript', () => {
     const view = render(
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={onOpenEntity} />,
     );
-    await waitFor(() => expect(view.getAllByTestId('chat-entity-chip')).toHaveLength(2));
-    fireEvent.click(view.getByText('Unblock the storage lane'));
+    // The thread's two entities render TWICE by design: the transcript's
+    // touched row, and the docked entity tray above the composer (Cockpit
+    // ruling 2026-08-18) — both fold from the same extraction.
+    await waitFor(() => expect(view.getAllByTestId('chat-entity-chip')).toHaveLength(4));
+    const tray = view.getByTestId('chat-entity-tray');
+    fireEvent.click(within(tray).getByText('Unblock the storage lane'));
     expect(onOpenEntity).toHaveBeenCalledWith(TASK_ID);
   });
 });
