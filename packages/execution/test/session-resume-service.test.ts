@@ -19,8 +19,17 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 import { SpawnService } from '../src/spawn/SpawnService.js';
+import { resolveAgentBinary } from '../src/spawn/manifest.js';
 import { SpawnError, type WorkSessionResumeInfo } from '../src/spawn/types.js';
 import { FakeGraph } from './fake-graph.js';
+
+// The one test below drives resume PAST its binary preflight (assertAgentRuntime)
+// to reach the PTY-reuse race. That preflight legitimately fails closed when the
+// real `claude` CLI is absent — as it is on CI — so the scenario is only
+// reachable where the binary exists. Gate it on binary presence, the same way
+// credential-injection-live.test.ts gates its real-CLI probes, so CI skips it
+// cleanly instead of surfacing 'agent CLI claude was not found' as a failure.
+const CLAUDE_BINARY = resolveAgentBinary('claude', process.env.PATH ?? '');
 
 const SESSION_ID = '44444444-4444-4444-8444-444444444444';
 const SPACE_ID = '11111111-1111-4111-8111-111111111111';
@@ -180,7 +189,7 @@ describe('SpawnService.resume — guards and orchestration', () => {
     expect(graph.statusesFor(SESSION_ID)).toHaveLength(0);
   });
 
-  it('does not kill a live PTY reused after the optimistic resume guard', async () => {
+  it.runIf(CLAUDE_BINARY !== null)('does not kill a live PTY reused after the optimistic resume guard', async () => {
     // Reproduce the race instead of returning a decorative `reused` flag from
     // a fake: the host owns a REAL, live PTY. The initial guard observes the
     // pre-race state, then the real spawnIfAbsent discovers and reuses it.
