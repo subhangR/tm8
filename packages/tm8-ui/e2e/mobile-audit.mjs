@@ -176,7 +176,22 @@ const ROUTES = [
      destination a refusal card points at is part of the phone's surface whether
      or not anyone had captured it. Their arrival is a SCOPE CHANGE against the
      earlier baseline — `basis.routes` is what makes that reconcilable. */
-  { name: 'tasks-board', path: 'k/tasks?mode=board', phone: 'screen', note: 'DEF-042 — tasks in BOARD mode' },
+  {
+    name: 'tasks-board', path: 'k/tasks?mode=board', phone: 'screen',
+    /* POSITIVE WITNESS, and this row is the reason the mechanism exists.
+       Three independent paths let this capture come back looking clean without
+       ever rendering a board: MobileShell's kind arm passes no `mode` prop at
+       all (MobileShell.tsx:289-300), a null board CONFIG degrades to list
+       (EntityView.tsx:302), and absent board DATA never renders BoardBody
+       (EntityListPanel.tsx:688). In all three you measure A LIST, report a low
+       offender count, and the number reads as "board is fine on a phone" —
+       absence measuring as health, which is the same pathology as photographing
+       a "Loading…" screen and calling it zero-defect.
+       `data-layout="board"` (EntityView.tsx:836) is the only proof a board
+       actually rendered. No witness, no verdict: the row is recorded VOID. */
+    witness: '[data-testid="entity-view"][data-layout="board"]',
+    note: 'DEF-042 — tasks in BOARD mode; VOID unless data-layout=board is present',
+  },
   { name: 'files-kind', path: 'k/files', phone: 'screen', note: "DEF-043 — the `file` kind list. Its slug is `files`, NOT `file`" },
   {
     /* The address the request actually named. `kindOfSlug('file')` is null —
@@ -236,7 +251,9 @@ const STATES = [
     name: 'tasks-detail',
     path: 'k/tasks',
     steps: [{ click: 'button.pn-tt__title' }],
-    expect: '.mobile-header__back',
+    /* `data-mode="detail"` on the EntityView root, not merely a back chevron:
+       the chevron proves SOMETHING was pushed, this proves the DETAIL rendered. */
+    expect: '[data-testid="entity-view"][data-mode="detail"]',
     note: 'Lane B — entity detail, pushed onto the phone screen stack',
   },
   {
@@ -246,7 +263,9 @@ const STATES = [
     name: 'sessions-run',
     path: 'k/sessions',
     steps: [{ click: 'button.lp__tab', text: 'In Progress' }, { click: '[data-testid="list-tile"]' }],
-    expect: '.mobile-header__back',
+    /* The run surface is only real once the session's own panel is on screen —
+       a pushed screen alone would also satisfy a back chevron. */
+    expect: '[data-testid="entity-view"][data-mode="detail"]',
     note: 'Lane C — the run / session surface',
   },
   {
@@ -678,6 +697,21 @@ for (const vp of VIEWPORTS) {
 
     const m = await page.evaluate(measureInPage, { MIN_TAP, EPS });
 
+    /*
+     * THE POSITIVE WITNESS. A capture meant to exercise a SPECIFIC state must
+     * prove that state rendered — "it did not crash" is not evidence. Where a
+     * route declares one and it is absent, the numbers describe some OTHER
+     * screen that silently stood in, so they are not reported as a threshold
+     * result at all: the row is VOID.
+     */
+    let witnessOk = true;
+    if (route.witness) {
+      witnessOk = await page.locator(route.witness).first().isVisible().catch(() => false);
+      if (!witnessOk) {
+        problems.push(`${vp.name}/${route.name}: VOID — witness ${route.witness} absent; this row measured a different screen, not ${route.name}`);
+      }
+    }
+
     /* THE REFUSAL. A row measured in the wrong shell looks exactly like a real
        row and is pure fiction — see trap 2. Record the failure instead. */
     const shellOk = m.shell === vp.expectShell;
@@ -703,13 +737,16 @@ for (const vp of VIEWPORTS) {
       expectShell: vp.expectShell,
       shellOk,
       phoneRole: route.phone,
+      witness: route.witness ?? null,
+      witnessOk,
+      void: route.witness ? !witnessOk : false,
       note: route.note,
       screenshot: shot,
       pageErrors: pageErrors.slice(0, 3),
       ...m,
     });
 
-    const flag = shellOk ? '' : '  ⚠ WRONG SHELL';
+    const flag = !shellOk ? '  ⚠ WRONG SHELL' : (route.witness && !witnessOk) ? '  ⚠ VOID — WITNESS ABSENT' : '';
     console.log(
       `${vp.name.padEnd(13)} ${route.name.padEnd(10)} overflow=${String(m.overflowCount).padStart(4)}` +
       `  worstRight=${String(m.worstRightEdge).padStart(5)}  scrollW=${String(m.scrollWidth).padStart(5)}/${m.viewportWidth}` +
@@ -754,8 +791,10 @@ for (const vp of VIEWPORTS) {
         }
       }
 
-      /* THE PROOF THE STATE OPENED. Without it this row measures the screen
-         underneath, which looks exactly like a real row and is fiction. */
+      /* THE PROOF THE STATE OPENED — a STATE's `expect` is its positive
+         witness, the same contract the ROUTES table spells out under
+         `witness`. Without it this row measures the screen underneath, which
+         looks exactly like a real row and is fiction. */
       let opened = failed === null;
       if (opened && st.expect) {
         opened = await page.locator(st.expect).first().isVisible().catch(() => false);
