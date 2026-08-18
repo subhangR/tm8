@@ -72,24 +72,38 @@ export function FleetPane({
   const ids = useMemo(() => fold.drawn.map((ref) => ref.id), [fold]);
   const reads = useFleetEntities(ids, readEntity);
   const rows = useMemo(
-    () => fleetRowsOf({ refs: fold.drawn, reads, livenessOf, streamingIds }),
-    [fold, reads, livenessOf, streamingIds],
+    () => fleetRowsOf({ refs: fold.drawn, reads, livenessOf, streamingIds, hasReader: readEntity !== undefined }),
+    [fold, reads, livenessOf, streamingIds, readEntity],
   );
   const groups = useMemo(() => groupFleetRows(rows), [rows]);
 
   const nothingYet = fold.refs.length === 0;
+  /* "not yet read" promises a read that is coming; "not read" does not. Only
+     a host with a reader may make the first promise. */
+  const unsettledWord = readEntity ? 'read' : 'readable here';
 
   return (
     <section className="fleet" aria-label="Fleet" data-testid="cockpit-fleet">
       <header className="fleet__head">
         <h2>Fleet</h2>
-        {/* The live count is the seam's, not the records'. */}
+        {/* THE SUMMARY MUST NOT OVER-CLAIM. "0 sessions" beside two rows whose
+            kind nobody has read is a lie by arithmetic: the count is over what
+            SETTLED, so an unsettled remainder has to ride along with it or the
+            header contradicts the list underneath it. The live count is the
+            seam's, never the records'. */}
         <span className="fleet__summary">
           {nothingYet
             ? 'nothing delegated yet'
-            : `${groups.sessions.length} ${groups.sessions.length === 1 ? 'session' : 'sessions'}` +
-              (groups.liveSessionCount > 0 ? ` · ${groups.liveSessionCount} live` : '') +
-              (groups.tasks.length > 0 ? ` · ${groups.tasks.length} ${groups.tasks.length === 1 ? 'task' : 'tasks'}` : '')}
+            : [
+                `${groups.sessions.length} ${groups.sessions.length === 1 ? 'session' : 'sessions'}`,
+                ...(groups.liveSessionCount > 0 ? [`${groups.liveSessionCount} live`] : []),
+                ...(groups.tasks.length > 0
+                  ? [`${groups.tasks.length} ${groups.tasks.length === 1 ? 'task' : 'tasks'}`]
+                  : []),
+                ...(groups.unsettled.length > 0
+                  ? [`${groups.unsettled.length} not yet ${unsettledWord}`]
+                  : []),
+              ].join(' · ')}
         </span>
       </header>
 
@@ -108,9 +122,15 @@ export function FleetPane({
       />
       <FleetSectionList label="Tasks" rows={groups.tasks} onOpenEntity={onOpenEntity} />
       <FleetSectionList label="Also referenced" rows={groups.other} onOpenEntity={onOpenEntity} />
-      {/* Reading, not empty. Its own section so a settling row never jumps
-          between kind sections under the viewer's cursor. */}
-      <FleetSectionList label="Reading" rows={groups.pending} onOpenEntity={onOpenEntity} />
+      {/* Its own section so a settling row never jumps between kind sections
+          under the viewer's cursor — and its LABEL tells the truth about why
+          it is unsettled. "Reading" when no read is in flight was a real bug:
+          it promised a resolution that was never coming. */}
+      <FleetSectionList
+        label={readEntity ? 'Reading' : 'Not read'}
+        rows={groups.unsettled}
+        onOpenEntity={onOpenEntity}
+      />
 
       {fold.overflow > 0 ? (
         <p className="fleet__overflow" data-testid="fleet-overflow">

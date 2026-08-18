@@ -12,7 +12,7 @@
  *
  * SECTIONS ARE KIND-DERIVED, AND KIND ARRIVES LATE. A ref's kind is usually
  * unknown until its read settles, so `section` is a function of the READ, not
- * of the fold. An unsettled ref sits in `pending` — it is NOT quietly filed
+ * of the fold. An unsettled ref sits in `unsettled` — it is NOT quietly filed
  * under "other", because a session that is still loading is not a non-session,
  * and shuffling it between sections as its read lands would move every row
  * under the viewer's cursor.
@@ -33,9 +33,11 @@ import type { FleetRef } from './fleet-model';
 import { originSentence } from './fleet-model';
 import type { FleetEntityRead } from './use-fleet-entities';
 
-/** Where a row sits. `pending` is a real section, not a waiting room — see
- *  the header note on late kinds. */
-export type FleetSection = 'sessions' | 'tasks' | 'other' | 'pending';
+/**
+ * Where a row sits. `unsettled` is a real section, not a waiting room — see
+ * the header note on late kinds.
+ */
+export type FleetSection = 'sessions' | 'tasks' | 'other' | 'unsettled';
 
 export interface FleetRow {
   id: string;
@@ -65,8 +67,16 @@ export interface FleetRow {
    *  Empty means "the server made no claim", which is why it renders nothing
    *  rather than "no PRs". */
   pullRequests: readonly LinkedPullRequestFacts[];
-  /** The read's state, so the row can be honest about what it is missing. */
-  read: FleetEntityRead['state'];
+  /**
+   * The read's state.
+   *
+   * `unread` is NOT `pending`, and conflating them was a real bug caught by
+   * looking at the pane in a browser: with no host reader at all, every row
+   * reported "Reading" forever. Nothing was reading. A row that will never be
+   * resolved and a row that is being resolved right now are different facts
+   * and the viewer can act on the difference.
+   */
+  read: FleetEntityRead['state'] | 'unread';
 }
 
 /**
@@ -90,14 +100,23 @@ export interface FleetRowInput {
   refs: readonly FleetRef[];
   reads: ReadonlyMap<string, FleetEntityRead>;
   livenessOf?: ((session: { id: string; workStatus: WorkSessionStatus | null }) => SessionLiveness) | undefined;
+  /** False ⇒ this host supplied no reader, so an unsettled row is UNREAD, not
+   *  pending. Nothing is in flight and the pane must not imply it is. */
+  hasReader?: boolean | undefined;
   /** §9.2 pool byte-activity, per id. Can only REFINE a live verdict — it is
    *  handed straight to `homeRowOf`, which enforces that. */
   streamingIds?: ReadonlySet<string> | undefined;
 }
 
-export function fleetRowsOf({ refs, reads, livenessOf, streamingIds }: FleetRowInput): readonly FleetRow[] {
+export function fleetRowsOf({
+  refs,
+  reads,
+  livenessOf,
+  streamingIds,
+  hasReader = true,
+}: FleetRowInput): readonly FleetRow[] {
   return refs.map((ref) => {
-    const read = reads.get(ref.id) ?? { state: 'pending' as const };
+    const read = reads.get(ref.id) ?? { state: hasReader ? ('pending' as const) : ('unread' as const) };
     const base = {
       id: ref.id,
       origin: ref.origin,
@@ -111,7 +130,7 @@ export function fleetRowsOf({ refs, reads, livenessOf, streamingIds }: FleetRowI
          `kind` is a hint from a blob and the read is the authority. */
       return {
         ...base,
-        section: read.state === 'failed' ? 'other' : 'pending',
+        section: read.state === 'failed' ? 'other' : 'unsettled',
         kind: ref.kind ?? null,
         title: ref.title ?? truncateEntityId(ref.id),
         titleIsPlaceholder: ref.title === undefined,
@@ -164,7 +183,7 @@ export interface FleetGroups {
   sessions: readonly FleetRow[];
   tasks: readonly FleetRow[];
   other: readonly FleetRow[];
-  pending: readonly FleetRow[];
+  unsettled: readonly FleetRow[];
   /** How many sessions the seam says are live RIGHT NOW. Never a count of
    *  'running' records — that is the claim `homeRowOf` exists to withdraw. */
   liveSessionCount: number;
@@ -178,7 +197,7 @@ export function groupFleetRows(rows: readonly FleetRow[]): FleetGroups {
     sessions,
     tasks: rows.filter((row) => row.section === 'tasks'),
     other: rows.filter((row) => row.section === 'other'),
-    pending: rows.filter((row) => row.section === 'pending'),
+    unsettled: rows.filter((row) => row.section === 'unsettled'),
     liveSessionCount: sessions.filter((row) => row.live).length,
   };
 }

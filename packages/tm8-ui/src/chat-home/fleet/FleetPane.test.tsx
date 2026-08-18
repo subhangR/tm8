@@ -126,6 +126,34 @@ describe('FleetPane — a fleet never shrinks quietly', () => {
     expect(screen.getAllByTestId('fleet-row').length).toBeGreaterThanOrEqual(2);
   });
 
+  /**
+   * FOUND BY LOOKING AT IT IN A BROWSER, not by a test I thought to write.
+   * With no host reader the pane said "READING 2" and "0 sessions" — a promise
+   * of a resolution that was never coming, beside a count that contradicted
+   * the two rows underneath it. Both are pinned now.
+   */
+  it('does not claim to be READING when no read is in flight', () => {
+    render(<FleetPane turns={[spawnTurn]} />);
+    expect(screen.queryByText('Reading')).toBeNull();
+    expect(screen.getByText('Not read')).toBeTruthy();
+  });
+
+  it('does not report "0 sessions" while rows are still unsettled', async () => {
+    render(<FleetPane turns={[spawnTurn]} />);
+    const summary = screen.getByTestId('cockpit-fleet').textContent ?? '';
+    // The count is over what SETTLED, so the remainder must ride with it.
+    expect(summary).toMatch(/not yet/);
+  });
+
+  it('says READING while a real read IS in flight', async () => {
+    /* A reader that never settles: the distinction under test is in-flight vs
+       never-coming, so the promise has to be outstanding, not resolved. */
+    const read = vi.fn(() => new Promise<EntityDetail>(() => {}));
+    render(<FleetPane turns={[spawnTurn]} readEntity={read} />);
+    await waitFor(() => expect(screen.getByText('Reading')).toBeTruthy());
+    expect(screen.queryByText('Not read')).toBeNull();
+  });
+
   it('the draw cap is reported, not swallowed', () => {
     const many = turn(
       Array.from({ length: 70 }, (_, n) => call('tm8_read', { id: id(100 + n) })).flat(),

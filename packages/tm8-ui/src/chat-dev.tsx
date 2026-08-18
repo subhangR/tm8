@@ -10,6 +10,9 @@ import './chat-home/chat-home.css';
 import { ChatHomeScreen } from './chat-home/ChatHomeScreen';
 import { createChatHomeFixturePort } from './chat-home/fixtures';
 import type { ChatModelOption } from './chat-home/types';
+import type { CockpitStage } from './routes/types';
+import './chat-home/chat-entity-graph.css';
+import './session-graph/session-graph.css';
 
 /**
  * CHAT WAITING-MARKS SCRATCH HARNESS — same spirit as loader-dev.tsx and
@@ -27,7 +30,13 @@ import type { ChatModelOption } from './chat-home/types';
  *   4. what does it actually cost, sustained, with both marks turning? Boot
  *      mounts one mark for under a second. A chat turn runs for minutes.
  *
- * Usage: /chat-dev.html   (add ?theme=dark for the dark ground)
+ * ALSO drives the Cockpit STAGES (fleet-UI lane): the harness holds `?stage=`
+ * itself, so the two panes that are not entities can be looked at in a real
+ * browser — which is the only place their layout, their status pills and the
+ * graph's actual drawing can be judged.
+ *
+ * Usage: /chat-dev.html   (add ?theme=dark for the dark ground,
+ *                          ?stage=fleet or ?stage=graph for a stage)
  */
 const MODELS: ChatModelOption[] = [
   { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
@@ -39,6 +48,9 @@ function Harness() {
   const theme = params.get('theme') === 'dark' ? 'dark' : undefined;
   const { port } = useMemo(() => createChatHomeFixturePort(), []);
   const [ready, setReady] = useState(false);
+  const [stage, setStage] = useState<CockpitStage | null>(
+    params.get('stage') === 'fleet' ? 'fleet' : params.get('stage') === 'graph' ? 'graph' : null,
+  );
 
   // The harness drives the surface into its streaming state the way a person
   // does — type, send — rather than faking a phase. A faked phase would prove
@@ -55,7 +67,14 @@ function Harness() {
       data-harness-ready={ready || undefined}
       style={{ background: 'var(--pn-paper)', height: '100vh' }}
     >
-      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} viewerName="Sam" />
+      <ChatHomeScreen
+        port={port}
+        spaceId={SPACE_ID}
+        models={MODELS}
+        viewerName="Sam"
+        stage={stage}
+        onStageChange={setStage}
+      />
     </div>
   );
 }
