@@ -117,7 +117,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       onContentSurfaceChange={(surface) => {
         setContentSurfaces((current) => ({ ...current, [entityId]: surface }));
       }}
-      chatSurface={conversationSurfaceFor(detail, entityId, {
+      conversationSurface={conversationSurfaceFor(detail, entityId, {
         seam: data.seam,
         spaceId: data.spaceId,
         connection: data.connection,

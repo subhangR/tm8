@@ -23,7 +23,6 @@ export type {
   CollectionMode,
   ContentBlockKind,
   ContentBlockRef,
-  ContentSurfaces,
   CustomKindFallback,
   EditFieldSpec,
   FilterOption,

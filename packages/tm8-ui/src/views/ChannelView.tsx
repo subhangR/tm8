@@ -258,7 +258,7 @@ export function ChannelView({
       onContentSurfaceChange={(surface) => {
         setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
       }}
-      chatSurface={conversationSurfaceFor(selectedDetail, selectedId, {
+      conversationSurface={conversationSurfaceFor(selectedDetail, selectedId, {
         seam: data.seam,
         spaceId: data.spaceId,
         connection: data.connection,

@@ -1,23 +1,26 @@
 /**
- * The conversation surface for the `chatSurface` slot, composed ONCE for every
+ * The conversation surface for the `conversationSurface` slot, composed ONCE for every
  * host that mounts an `EntityDetailPanel` — the same shape, and for the same
  * reason, as `graphSurfaceFor` and `debugSurfaceFor`.
  *
- * `EntityDetailPanel.chatSurface` is an opaque slot the panel cannot fill for
+ * `EntityDetailPanel.conversationSurface` is an opaque slot the panel cannot fill for
  * itself; each host must build the surface. EntityView and WorkspaceView each
  * hand-rolled the same archetype fork, and the three hosts that never copied
  * it (ChannelView, GraphScreen, AuxEntityPanel) shipped panels whose Chat tab
  * was the "feed host is unavailable" alert — or, for a hub, nothing at all.
  * The composition lives here and a host opts in with one call.
  *
- * PARAMETERISED BY SURFACE, not hardcoded to chat: the slot is contested by
- * three efforts (session chat, a Discussion-tab conversation surface, a
- * session Transcript surface), so WHICH surface is composed is an explicit
- * kind with its own composer below. Today two exist; a future 'transcript' or
- * 'discussion' adds a composer and a resolver arm, never a sixth hand-rolled
- * mount. The panel prop keeps its `chatSurface` name until the pending naming
- * ruling on whether 'Chat' survives on the session panel — the prop rename is
- * that ruling's, not this file's.
+ * PARAMETERISED BY SURFACE, not hardcoded to one: WHICH surface is composed is
+ * an explicit kind with its own composer below. Three exist — a channel feed,
+ * the session chat, and the session Transcript that now holds the session
+ * panel's slot; a future 'discussion' adds a composer and a resolver arm, never
+ * a sixth hand-rolled mount.
+ *
+ * The panel prop was `chatSurface` while that name was still contested. The
+ * naming ruling landed — 'Chat' retires from the session panel and survives for
+ * actual chat threads — so the prop is `conversationSurface`, named for the
+ * SLOT rather than any one occupant. That is what let the session panel repoint
+ * from chat to transcript without a single host changing.
  *
  * The default choice stays on ARCHETYPE, a registry field, never on kind
  * (§15.2): `hub` entities get their channel feed, everything else with a
