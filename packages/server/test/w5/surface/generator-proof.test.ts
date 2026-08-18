@@ -190,6 +190,9 @@ describe('W5.C generator proof', () => {
     // +1 (2026-08-13, merge): execution.terminal.start binds its body.
     // +1 (2026-08-13, forge write): tracking.pr.merge binds its body.
     // +2 (141): AuthPasswordChangeInputSchema + AuthInviteSignupInputSchema.
-    expect(ENTRIES).toHaveLength(97);
+    // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert and
+    // RequiredCommandContextSchema binds .delete; .list is a READ and binds
+    // nothing, so three new ops move this by two.
+    expect(ENTRIES).toHaveLength(99);
   });
 });
