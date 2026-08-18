@@ -592,6 +592,44 @@ button.tch-entity-chip:hover {
   margin: 0 auto auto;
 }
 
+/* THE ENTITY TRAY — the control panel's top row (Cockpit ruling 2026-08-18).
+   Chips reuse `.tch-entity-chip` (same anatomy as the transcript's touched
+   row); this container only supplies the docked-row geometry: one line by
+   default, wrapping when expanded, the Graph door pinned at the right edge. */
+.tch-tray {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-2);
+  margin: 0 4px var(--pn-space-2);
+}
+
+.tch-tray__tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: var(--pn-space-1);
+  overflow: hidden;
+}
+.tch-tray__tabs[data-expanded] { flex-wrap: wrap; overflow: visible; }
+
+.tch-tray__more,
+.tch-tray__graph {
+  flex: none;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  color: var(--pn-ink-3);
+  padding: 2px 8px;
+  font: var(--pn-fs-micro, 11px) var(--pn-mono);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tch-tray__more:hover,
+.tch-tray__graph:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+.tch-tray__more:focus-visible,
+.tch-tray__graph:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
 .tch-refusal {
   margin: 0 4px 5px;
   color: var(--pn-wait);

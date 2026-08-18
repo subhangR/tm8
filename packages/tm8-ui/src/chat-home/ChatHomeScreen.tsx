@@ -19,6 +19,7 @@ import { mergeChatTurnFrame, projectTurnParts, reconcileDetails } from './turn-m
 import { ChatEntityGraph } from './ChatEntityGraph';
 import type { ChatEntityResolver } from './EntityChip';
 import { ComposerSelect } from './ComposerSelect';
+import { EntityTray } from './EntityTray';
 import { TurnParts } from './TurnParts';
 import { composeThreadColumn } from './thread-column';
 import type {
@@ -1198,6 +1199,15 @@ export function ChatHomeScreen({
         </div>
 
         <div className="tch-composer-wrap" data-phase={phase} ref={composerWrapRef}>
+          {detail && !newThread ? (
+            <EntityTray
+              turns={detail.turns}
+              suppressEntityIds={ownMessageIds}
+              resolveEntity={resolveEntity}
+              onOpenEntity={onOpenEntity}
+              onOpenGraph={onGraphFullChange ? () => onGraphFullChange(true) : undefined}
+            />
+          ) : null}
           {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
           {refusal ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
           {phase === 'stopped-continuable' ? (
