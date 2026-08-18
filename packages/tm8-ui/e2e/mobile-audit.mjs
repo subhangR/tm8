@@ -514,6 +514,29 @@ function measureInPage({ MIN_TAP, EPS }) {
     tapTargetsInert: inert.map((t) => ({ ...describeTap(t), reason: inertOf(t.el) })).slice(0, 8),
     tapTargetsOccludedCount: occluded.length,
     tapTargetsOccluded: occluded.slice(0, 8),
+    /*
+     * THE MEASUREMENT SUBSTRATE. `.cv2-root[data-shell='mobile'] { zoom: 1 }`
+     * (mobile-chrome.css) scopes off a `zoom: 1.1` that app.css puts on
+     * `.cv2-root`. CSS zoom MULTIPLIES when nested, and this codebase already
+     * lost weeks to a terminal rendering at 1.21x behind a counter-scale that
+     * looked right in isolation; the run surface nests FOUR `.cv2-root`s, which
+     * compound to ~1.46x. A broken gate inflates every tap target ~10%, so
+     * controls cross 44px WITH NO FIX and the diff reports improvements that
+     * are pure artifact. Every value must be "1" or the row is not comparable.
+     */
+    zooms: [...document.querySelectorAll('.cv2-root')].map((el) => getComputedStyle(el).zoom),
+    /*
+     * UNIVERSAL NEGATIVE WITNESSES. Each names a screen that is NOT the one the
+     * capture asked for; any hit voids the row. Cheap, and they catch the
+     * failure mode by machine instead of by someone noticing a screenshot looks
+     * under-hydrated.
+     */
+    negatives: {
+      unrouted: !!document.querySelector('[data-testid="mobile-unrouted"]'),
+      notOnPhone: !!document.querySelector('[data-testid="mobile-not-on-phone"]'),
+      loading: [...document.querySelectorAll('.mobile-empty')].some((n) => /loading|hydrating/i.test(n.textContent || '')),
+      chatInFlight: !!document.querySelector('[data-testid="chat-detail-loading"], [data-testid="chat-thinking"]'),
+    },
     /* What the page believes about itself, so a reader can tell a real 0 from a
        0 taken off a boot error or the wrong shell. */
     shell: document.querySelector('.mobile-frame') ? 'mobile' : document.querySelector('.shell-root') ? 'desktop' : 'none',
@@ -712,6 +735,23 @@ for (const vp of VIEWPORTS) {
       }
     }
 
+    /* NEGATIVE WITNESSES. A refusal card is a legitimate SUBJECT when the row
+       is declared `phone: 'refusal'`; anywhere else it means some other screen
+       stood in. `loading` and `chatInFlight` are never legitimate. */
+    const negHits = [];
+    if (m.negatives.loading) negHits.push('mobile-empty says Loading');
+    if (m.negatives.chatInFlight) negHits.push('chat still in flight (chat-detail-loading / chat-thinking)');
+    if (route.phone !== 'refusal') {
+      if (m.negatives.unrouted) negHits.push('mobile-unrouted — the link named no screen');
+      if (m.negatives.notOnPhone) negHits.push('mobile-not-on-phone refusal card, not the surface');
+    }
+    if (negHits.length) problems.push(`${vp.name}/${route.name}: VOID — ${negHits.join('; ')}`);
+
+    /* THE SUBSTRATE. Not a threshold — an ADMISSIBILITY test. A row measured at
+       any zoom but 1 is not comparable to the baseline at all. */
+    const zoomOk = m.zooms.every((z) => z === '1' || z === 1 || z === 'normal');
+    if (!zoomOk) problems.push(`${vp.name}/${route.name}: VOID for comparison — zooms=${JSON.stringify(m.zooms)}, expected every value "1"`);
+
     /* THE REFUSAL. A row measured in the wrong shell looks exactly like a real
        row and is pure fiction — see trap 2. Record the failure instead. */
     const shellOk = m.shell === vp.expectShell;
@@ -739,14 +779,19 @@ for (const vp of VIEWPORTS) {
       phoneRole: route.phone,
       witness: route.witness ?? null,
       witnessOk,
-      void: route.witness ? !witnessOk : false,
+      negativeHits: negHits,
+      zoomOk,
+      void: (route.witness ? !witnessOk : false) || negHits.length > 0 || !zoomOk,
       note: route.note,
       screenshot: shot,
       pageErrors: pageErrors.slice(0, 3),
       ...m,
     });
 
-    const flag = !shellOk ? '  ⚠ WRONG SHELL' : (route.witness && !witnessOk) ? '  ⚠ VOID — WITNESS ABSENT' : '';
+    const flag = !shellOk ? '  ⚠ WRONG SHELL'
+      : (route.witness && !witnessOk) ? '  ⚠ VOID — WITNESS ABSENT'
+      : !zoomOk ? `  ⚠ VOID — ZOOM ${JSON.stringify(m.zooms)}`
+      : negHits.length ? `  ⚠ VOID — ${negHits[0]}` : '';
     console.log(
       `${vp.name.padEnd(13)} ${route.name.padEnd(10)} overflow=${String(m.overflowCount).padStart(4)}` +
       `  worstRight=${String(m.worstRightEdge).padStart(5)}  scrollW=${String(m.scrollWidth).padStart(5)}/${m.viewportWidth}` +
