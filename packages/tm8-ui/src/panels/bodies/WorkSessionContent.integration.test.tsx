@@ -59,3 +59,36 @@ it('mounts the host-composed conversation surface under the Transcript chip', ()
   expect(onContentSurfaceChange).toHaveBeenCalledWith('transcript');
   expect(getByText('canonical session feed')).toBeTruthy();
 });
+
+/**
+ * THE DEAD CONTROL THAT FINALLY HAS A DESTINATION.
+ *
+ * `TerminalBody` draws a "transcript ↗" chip on every session that is not live
+ * (TerminalBody.tsx:298-306), and until the Transcript surface existed no host
+ * passed `onOpenTranscript` — so it was an ENABLED button with
+ * `onClick={undefined}`, the enabled-inert control the panel's honesty rules
+ * ban everywhere else.
+ *
+ * It opens the surface by SELECTING it, which is why the assertion is on the
+ * host's surface-change callback rather than on a pane: the host owns that
+ * choice and round-trips it back as `requestedSurface`, exactly as it does for
+ * the conversation surface's own way back to the terminal.
+ */
+it('the exited session’s transcript chip selects the Transcript surface', async () => {
+  const source = fixtureDetails[sessionStale.id]!;
+  const onContentSurfaceChange = vi.fn();
+  const { findByTestId } = render(
+    <EntityDetailPanel
+      detail={source}
+      reasons={REASONS}
+      ctx={{ spaceId: FIXTURE_SPACE_ID }}
+      liveness="not-running"
+      contentSurface="terminal"
+      conversationSurface={<div>transcript surface</div>}
+      onContentSurfaceChange={onContentSurfaceChange}
+    />,
+  );
+
+  fireEvent.click(await findByTestId('transcript-chip'));
+  expect(onContentSurfaceChange).toHaveBeenCalledWith('transcript');
+});

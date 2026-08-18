@@ -1081,6 +1081,22 @@ function PanelBody(
         onSurfaceChange={props.onContentSurfaceChange}
         switchSlot={props.surfaceSlot}
         terminal={
+          /*
+           * THE "transcript ↗" CHIP BECOMES REAL HERE.
+           *
+           * `TerminalBody` has drawn that chip on every exited session since it
+           * was written, and no host ever supplied `onOpenTranscript` — an
+           * ENABLED button with `onClick={undefined}`, which is exactly the
+           * enabled-inert control this panel's honesty rules ban everywhere
+           * else. It could not be supplied before now: there was no transcript
+           * surface to open, and an exited session's own words were reachable
+           * only by digging through the Debug journal.
+           *
+           * Opening it is just selecting the surface. The host already
+           * round-trips that choice back as `requestedSurface` — the same path,
+           * in the other direction, as the conversation surface's own way back
+           * to the terminal.
+           */
           <TerminalBody
             detail={detail}
             serverBaseUrl={props.serverBaseUrl}
@@ -1094,6 +1110,9 @@ function PanelBody(
             livenessLabel={config.list.liveTreatment?.(props.liveness ?? 'unknown').label}
             livenessReason={config.list.liveTreatment?.(props.liveness ?? 'unknown').reason}
             onOpenEntity={onOpenEntity}
+            {...(props.onContentSurfaceChange
+              ? { onOpenTranscript: () => props.onContentSurfaceChange?.('transcript') }
+              : {})}
             {...(props.onResumeSession ? { onResume: props.onResumeSession } : {})}
             {...(props.resumingSession ? { resuming: props.resumingSession } : {})}
           />
