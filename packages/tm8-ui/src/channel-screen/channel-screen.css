@@ -300,7 +300,11 @@
 .cv2-root .chs-text--pending {
   margin: 0;
   font-family: var(--pn-ui);
-  font-size: 13px;
+  /* --pn-fs-sm IS 13px (tokens.css:71): this is the same rendered size, said
+     through the scale. #384 added this rule with a literal; #392's sweep and
+     its ban test were written against a base that predated it, so neither
+     side's CI ever saw the other. */
+  font-size: var(--pn-fs-sm);
   line-height: 1.55;
   color: var(--pn-ink-3);
   font-style: italic;
