@@ -15,7 +15,7 @@
  * session to alive (two-source honesty).
  *
  * The tree is built from the flat query rows by parentId; a row whose parent
- * is not in the current tier's result set roots itself (an orphan is shown,
+ * is not in the current tab's result set roots itself (an orphan is shown,
  * never silently dropped).
  *
  * DEFAULT COLLAPSED (user ruling 2026-08-17), reversing the original "the
@@ -95,10 +95,10 @@ function stateFacts(
     return { word: 'not running', dot: 'dot--ring-idle' };
   }
   if (s.kind === 'task') {
-    if (s.workStatus === 'done') return { word: 'done', dot: 'dot--solid-run' };
-    if (s.workStatus === 'blocked') return { word: 'blocked', dot: 'dot--solid-block' };
-    if (s.workStatus === 'working') return { word: 'working', dot: 'dot--ring-run' };
-    return { word: s.workStatus, dot: 'dot--ring-idle' };
+    if (s.status === 'done') return { word: 'done', dot: 'dot--solid-run' };
+    if (s.status === 'blocked') return { word: 'blocked', dot: 'dot--solid-block' };
+    if (s.status === 'working') return { word: 'working', dot: 'dot--ring-run' };
+    return { word: s.status, dot: 'dot--ring-idle' };
   }
   return { word: '', dot: 'dot--ring-idle' };
 }
@@ -121,16 +121,16 @@ const relative = (iso: string): string => {
 export function EntityTree(props: EntityTreeProps) {
   const { kind, rowsFor, selectedId } = props;
   const config = getKind(kind);
-  const tiers = config.list.lifecycle ?? null;
-  const [tierId, setTierId] = useState<string>(tiers?.[0]?.id ?? 'open');
+  const tabs = config.list.categories ?? null;
+  const [categoryTabId, setCategoryTabId] = useState<string>(tabs?.[0]?.id ?? 'to_do');
 
-  const activeTier = tiers?.find((t) => t.id === tierId) ?? tiers?.[0] ?? null;
-  const rows = rowsFor(activeTier?.filter ?? { deleted: 'exclude' });
+  const activeTab = tabs?.find((t) => t.id === categoryTabId) ?? tabs?.[0] ?? null;
+  const rows = rowsFor(activeTab?.filter ?? { deleted: 'exclude' });
   const roots = useMemo(() => buildTree(rows), [rows]);
 
   // The EXPANDED set — the viewer's own gestures, persisted per kind. It was a
   // `collapsed` set starting empty, which is default-open for every row that
-  // exists now and every row that arrives later. The tier is not part of the
+  // exists now and every row that arrives later. The tab is not part of the
   // scope on purpose: the same subtree opened under `open` should still be open
   // when it moves to `done`.
   const revealed = useMemo(() => ancestorPath(rows, selectedId), [rows, selectedId]);
@@ -223,21 +223,21 @@ export function EntityTree(props: EntityTreeProps) {
         {props.createSlot}
       </div>
 
-      {tiers ? (
-        <div className="evt-tabs" role="tablist" aria-label="Lifecycle">
-          {tiers.map((tier) => {
-            const count = rowsFor(tier.filter).length;
-            const active = tier.id === (activeTier?.id ?? '');
+      {tabs ? (
+        <div className="evt-tabs" role="tablist" aria-label="Status category">
+          {tabs.map((tab) => {
+            const count = rowsFor(tab.filter).length;
+            const active = tab.id === (activeTab?.id ?? '');
             return (
               <button
-                key={tier.id}
+                key={tab.id}
                 type="button"
                 role="tab"
                 aria-selected={active}
                 className={active ? 'evt-tab evt-tab--active' : 'evt-tab'}
-                onClick={() => setTierId(tier.id)}
+                onClick={() => setCategoryTabId(tab.id)}
               >
-                {tier.label} <span className="evt-tab__n">{count}</span>
+                {tab.label} <span className="evt-tab__n">{count}</span>
               </button>
             );
           })}
@@ -247,7 +247,7 @@ export function EntityTree(props: EntityTreeProps) {
       <div className="evt-scroll">
         {roots.length === 0 ? (
           <p className="evt-empty">
-            {`No ${config.labelPlural.toLowerCase()} here${activeTier ? ` in ${activeTier.label.toLowerCase()}` : ''}.`}
+            {`No ${config.labelPlural.toLowerCase()} here${activeTab ? ` in ${activeTab.label.toLowerCase()}` : ''}.`}
           </p>
         ) : (
           <ul className="evt-tree" role="tree">

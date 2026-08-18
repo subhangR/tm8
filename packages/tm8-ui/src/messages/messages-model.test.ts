@@ -186,7 +186,7 @@ describe('unreadOf', () => {
     //
     // `toBe(null)` rather than a falsy check on purpose: `expect(x).toBeFalsy()`
     // passes for 0 and would let the regression through.
-    const unread = unreadOf(summary({ state: { kind: 'task', workStatus: 'doing' } }));
+    const unread = unreadOf(summary({ state: { kind: 'task', status: 'doing' } }));
     expect(unread).toBe(null);
     expect(unread).not.toBe(0);
   });

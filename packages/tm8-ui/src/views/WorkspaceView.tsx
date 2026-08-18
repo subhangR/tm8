@@ -241,16 +241,16 @@ export function WorkspaceView(props: WorkspaceViewProps) {
      see `usePanelPrimaries` for why the wiring is not written inline here. */
   /* REVIEW (2/2) #6 — the reporter is a useCallback, not an inline arrow. As
      an arrow it was a fresh identity every render, so `terminate`, `forEntity`
-     and `primaries` all churned with it, and `handleSessionClose` — the
+     and `primaries` all churned with it, and `handleSessionTerminate` — the
      session tile's ✕, a stable `useCallback` before this PR — became unstable.
      Nothing is memoised on it today; this keeps it that way by choice rather
      than by luck. */
-  const notifyCloseFailed = useCallback(
+  const notifyTerminateFailed = useCallback(
     (_verb: ActionRef, _entityId: string, error: unknown) => {
       props.onNotice({
-        id: 'session-close-failed',
+        id: 'session-terminate-failed',
         tone: 'error',
-        title: 'Session could not be closed',
+        title: 'Session could not be terminated',
         body: String((error as { message?: string })?.message ?? error),
         ttlMs: 6_000,
       });
@@ -260,9 +260,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const primaries = usePanelPrimaries({
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
-    onError: notifyCloseFailed,
+    onError: notifyTerminateFailed,
   });
-  const handleSessionClose = primaries.terminate;
+  const handleSessionTerminate = primaries.terminate;
 
   /**
    * The session list's HEADER verbs (101). Same reason `primaries` is a hook:
@@ -755,7 +755,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                mounts the ✕ on session-tree anatomy rows, and a session tile
                expanded inline under a task (any panel kind) deserves the same
                close the sessions list gives it. */
-            onTerminate={handleSessionClose}
+            onTerminate={handleSessionTerminate}
             onSetState={rowLifecycle.setState}
             onArchive={rowLifecycle.archive}
             onComplete={rowLifecycle.complete}
@@ -893,7 +893,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             selectedId={engine.visible.stack[engine.visible.stack.length - 1] ?? null}
             onSelect={openEntity}
             /* Same rule as the left dock — see the comment there. */
-            onTerminate={handleSessionClose}
+            onTerminate={handleSessionTerminate}
             onSetState={rowLifecycle.setState}
             onArchive={rowLifecycle.archive}
             onComplete={rowLifecycle.complete}

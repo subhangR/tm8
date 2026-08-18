@@ -35,7 +35,7 @@ function summary(id: string, over: Partial<EntitySummary> = {}): EntitySummary {
     deletedAt: null,
     createdBy: { id: 'act-1', kind: 'member', displayName: 'me' },
     counters: { children: 0, comments: 0, reactions: 0, points: 0, messages: 0, viewerReaction: null },
-    state: { kind: 'task', workStatus: 'open', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } },
+    state: { kind: 'task', status: 'open', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } },
     badges: {},
     ...over,
   } as EntitySummary;
@@ -43,14 +43,14 @@ function summary(id: string, over: Partial<EntitySummary> = {}): EntitySummary {
 
 const done = (id: string) =>
   summary(id, {
-    state: { kind: 'task', workStatus: 'done', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } } as EntitySummary['state'],
+    state: { kind: 'task', status: 'done', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } } as EntitySummary['state'],
   });
 
 /** A task carrying a due date, or explicitly carrying none. */
 const due = (id: string, dueDate: string | null) =>
   summary(id, {
     state: {
-      kind: 'task', workStatus: 'open', priority: 'medium', axes: {}, dueDate,
+      kind: 'task', status: 'open', priority: 'medium', axes: {}, dueDate,
       assignees: [], acceptance: { total: 0, completed: 0 },
     } as EntitySummary['state'],
   });
@@ -60,8 +60,8 @@ const table = (list: EntitySummary[]): Record<EntityId, EntitySummary> =>
 
 describe('membershipOf — the three answers', () => {
   it('decides a status clause both ways', () => {
-    expect(membershipOf({ workStatus: ['open'] }, summary('a'))).toBe('in');
-    expect(membershipOf({ workStatus: ['open'] }, done('a'))).toBe('out');
+    expect(membershipOf({ status: ['open'] }, summary('a'))).toBe('in');
+    expect(membershipOf({ status: ['open'] }, done('a'))).toBe('out');
   });
 
   it('refuses to decide a clause it cannot evaluate', () => {
@@ -74,9 +74,9 @@ describe('membershipOf — the three answers', () => {
   });
 
   it('one undecidable clause makes the WHOLE filter undecidable', () => {
-    // Not "evaluate what we can and hope": a row that passes the workStatus
-    // half of `{workStatus, readyToPull}` has not passed the filter.
-    expect(membershipOf({ workStatus: ['open'], readyToPull: true }, summary('a'))).toBe('unknown');
+    // Not "evaluate what we can and hope": a row that passes the status
+    // half of `{status, readyToPull}` has not passed the filter.
+    expect(membershipOf({ status: ['open'], readyToPull: true }, summary('a'))).toBe('unknown');
   });
 
   it('treats a MISSING deleted clause as exclude, which is what the server does', () => {
@@ -91,10 +91,10 @@ describe('membershipOf — the three answers', () => {
 
   it('a NULL state axis never matches a status filter', () => {
     // The contract says so for sessionStatus and the same holds for
-    // workStatus: a doc has no work status, so it is OUT of `Open`, not
+    // status: a doc has no work status, so it is OUT of `Open`, not
     // waved through it.
     const doc = summary('d', { kind: 'doc', state: { kind: 'doc', format: 'markdown', childCount: 0 } as EntitySummary['state'] });
-    expect(membershipOf({ workStatus: ['open'] }, doc)).toBe('out');
+    expect(membershipOf({ status: ['open'] }, doc)).toBe('out');
   });
 });
 
@@ -109,7 +109,7 @@ describe('projectRows — a server-ordered read kept current by the stream', () 
 
   it('drops a row the filter now excludes', () => {
     const entities = table([done('a'), summary('b')]);
-    const out = projectRows({ ordered, entities, kind: 'task', spaceId: SPACE, filter: { workStatus: ['open'] } });
+    const out = projectRows({ ordered, entities, kind: 'task', spaceId: SPACE, filter: { status: ['open'] } });
     expect(out.map((r) => r.id)).toEqual(['b']);
   });
 
@@ -119,7 +119,7 @@ describe('projectRows — a server-ordered read kept current by the stream', () 
       summary('b'),
       summary('new', { activityAt: '2026-07-29T11:00:00.000Z' }),
     ]);
-    const out = projectRows({ ordered, entities, kind: 'task', spaceId: SPACE, filter: { workStatus: ['open'] } });
+    const out = projectRows({ ordered, entities, kind: 'task', spaceId: SPACE, filter: { status: ['open'] } });
     expect(out.map((r) => r.id)).toEqual(['new', 'a', 'b']);
   });
 

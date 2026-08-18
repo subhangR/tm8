@@ -270,8 +270,51 @@ describe('unparseable params are discarded ATOMICALLY', () => {
 
 describe('q codec v1 (SPEC-FINAL §4.2.4)', () => {
   it('round-trips the three carried members', () => {
-    const value = { v: 1 as const, filters: { workStatus: ['open' as const] }, sortBy: 'priority' as const, groupBy: 'axis:team' as const };
+    const value = { v: 1 as const, filters: { status: ['open' as const] }, sortBy: 'priority' as const, groupBy: 'axis:team' as const };
     expect(decodeQ(encodeQ(value))).toEqual(value);
+  });
+
+  /**
+   * PHASE 9 — a URL outlives the build that wrote it, so it is the one place
+   * the retired word can still ARRIVE from. `v` stays 1 because the change is
+   * to v1's VOCABULARY, not to the codec, and the decoder translates.
+   */
+  describe('a pre-rename `workStatus` link still works', () => {
+    const legacy = (payload: object) =>
+      btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    it('moves a legacy filter key onto `status`', () => {
+      expect(decodeQ(legacy({ v: 1, filters: { workStatus: ['working'] } }))).toEqual({
+        v: 1,
+        filters: { status: ['working'] },
+      });
+    });
+
+    it('accepts a legacy groupBy instead of DISCARDING THE WHOLE q', () => {
+      // The failure this prevents is not "the grouping is lost". `decodeQ`
+      // discards atomically, so an unrecognised groupBy took the user's
+      // FILTERS AND SORT down with it.
+      expect(
+        decodeQ(legacy({ v: 1, filters: { readyToPull: true }, sortBy: 'priority', groupBy: 'workStatus' })),
+      ).toEqual({ v: 1, filters: { readyToPull: true }, sortBy: 'priority', groupBy: 'status' });
+    });
+
+    it('lets an explicit `status` win when a link carries both', () => {
+      // Both spellings means a newer build wrote it; the new key is the one
+      // it meant, and the legacy key is dropped rather than merged.
+      expect(
+        decodeQ(legacy({ v: 1, filters: { workStatus: ['open'], status: ['done'] } })),
+      ).toEqual({ v: 1, filters: { status: ['done'] } });
+    });
+
+    it('never RE-EMITS the retired word — a translated link normalises itself', () => {
+      // The shim is a migration, not a second live sense: the first URL
+      // rewrite after a translated read carries only the new spelling.
+      const decoded = decodeQ(legacy({ v: 1, filters: { workStatus: ['working'] } }))!;
+      const round = JSON.parse(atob(encodeQ(decoded).replace(/-/g, '+').replace(/_/g, '/')));
+      expect(JSON.stringify(round)).not.toContain('workStatus');
+      expect(round.filters).toEqual({ status: ['working'] });
+    });
   });
 
   it('discards an unknown version atomically — never a partial read', () => {

@@ -673,7 +673,7 @@ export function entitiesPatch(deps: FacadeDeps): OperationHandler {
           input.title ?? null,
           content.description ?? null,
           content.axes ?? null,
-          content.workStatus ?? null,
+          content.status ?? null,
           content.priority ?? null,
           content.acceptanceCriteria === undefined
             ? null

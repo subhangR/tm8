@@ -93,13 +93,13 @@ function livenessFor(
 ): SessionLiveness | null {
   if (detail.kind !== 'work_session' || !livenessOf) return null;
   const status = (detail.state as { status?: WorkSessionStatus }).status ?? null;
-  return livenessOf({ id: detail.id, workStatus: status });
+  return livenessOf({ id: detail.id, status: status });
 }
 
 export interface FleetRowInput {
   refs: readonly FleetRef[];
   reads: ReadonlyMap<string, FleetEntityRead>;
-  livenessOf?: ((session: { id: string; workStatus: WorkSessionStatus | null }) => SessionLiveness) | undefined;
+  livenessOf?: ((session: { id: string; status: WorkSessionStatus | null }) => SessionLiveness) | undefined;
   /** False ⇒ this host supplied no reader, so an unsettled row is UNREAD, not
    *  pending. Nothing is in flight and the pane must not imply it is. */
   hasReader?: boolean | undefined;

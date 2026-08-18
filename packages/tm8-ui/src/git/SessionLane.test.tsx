@@ -45,7 +45,7 @@ describe('sessionLaneOf', () => {
   });
 
   it('reads nothing from a non-session state', () => {
-    expect(sessionLaneOf({ kind: 'task', workStatus: 'open' })).toBeNull();
+    expect(sessionLaneOf({ kind: 'task', status: 'open' })).toBeNull();
     expect(sessionLaneOf(null)).toBeNull();
   });
 });

@@ -27,10 +27,10 @@ import type { PillTone } from '../kit';
 
 /** The three axes `collections.query` can group tasks by. `axis:*` is out of
  * scope until custom axes get a picker. */
-export type BoardPivot = 'workStatus' | 'assignee' | 'priority';
+export type BoardPivot = 'status' | 'assignee' | 'priority';
 
 export const PIVOTS: readonly { key: BoardPivot; label: string }[] = [
-  { key: 'workStatus', label: 'Status' },
+  { key: 'status', label: 'Status' },
   { key: 'assignee', label: 'Assignee' },
   { key: 'priority', label: 'Priority' },
 ];
@@ -89,14 +89,14 @@ export function anyFilterActive(f: BoardFilterState): boolean {
 
 /**
  * The `CollectionQuery.filters` this state means. AN EMPTY ARRAY IS NO
- * CONSTRAINT (`narrow()`'s law — sending `workStatus: []` would either match
+ * CONSTRAINT (`narrow()`'s law — sending `status: []` would either match
  * nothing or be refused, and both misread "no chips pressed" as a filter), so
  * empty axes are OMITTED and an all-empty state is `undefined`: the exact
  * cache key `boardFor` uses for the unfiltered read.
  */
 export function buildFilters(f: BoardFilterState): QueryFilter | undefined {
   const out: QueryFilter = {};
-  if (f.statuses.length > 0) out.workStatus = [...f.statuses] as NonNullable<QueryFilter['workStatus']>;
+  if (f.statuses.length > 0) out.status = [...f.statuses] as NonNullable<QueryFilter['status']>;
   if (f.priorities.length > 0) out.priority = [...f.priorities] as NonNullable<QueryFilter['priority']>;
   if (f.people.length > 0) out.assigneeIds = [...f.people] as NonNullable<QueryFilter['assigneeIds']>;
   if (f.assignedBy.length > 0) out.assignedByIds = [...f.assignedBy] as NonNullable<QueryFilter['assignedByIds']>;
@@ -136,7 +136,7 @@ export function columnsFor(
     return { ...spec, total: g?.total ?? (g ? g.items.length : 0), items: g?.items ?? [] };
   };
 
-  if (pivot === 'workStatus') {
+  if (pivot === 'status') {
     const specs =
       filters.statuses.length > 0
         ? STATUS_COLUMNS.filter((s) => filters.statuses.includes(s.key))

@@ -1,51 +1,42 @@
 // @vitest-environment jsdom
 /**
- * BANDS INSIDE TIERS — a section must not be able to contradict its own label.
+ * THE CATEGORY TAB ∩ THE ARCHIVE CHIP — the composition phase 7 created, and
+ * the successor to the test that stood here.
  *
- * A task list declares BOTH partitions: lifecycle TIERS across the top (Open ·
- * Done · Archived) and SECTIONS down the body (Current · Completed). Both name
- * `workStatus`, and `rowsForBand` used to compose them by spreading the tier's
- * filter AFTER the section's — so the tier silently overwrote the section.
+ * ## What this file used to guard, and why it changed
  *
- * The result, on the DEFAULT tier of the DEFAULT list:
+ * A task list declared BOTH partitions: lifecycle TIERS across the top (Open ·
+ * Done · Archived) and SECTIONS down the body (Current · Completed). Both named
+ * `status`, and `rowsForBand` composed them by spreading the tier's filter
+ * AFTER the section's — so the tier silently overwrote the section, the
+ * Completed band was a byte-for-byte duplicate of Current under a heading
+ * promising the opposite, and a task marked done stayed in both. `narrow()`
+ * fixed that by intersecting arrays and letting only SCALARS take the later
+ * value.
  *
- *   Open tier · band "CURRENT"    → queried with the open statuses  ✓
- *   Open tier · band "COMPLETED"  → queried with the open statuses  ✗
+ * PHASE 7 DELETED THE SECTIONS. They partitioned on precisely the axis the four
+ * category tabs now partition on, and one axis gets one control. So the pair
+ * this file measures is the pair that is left, and it is the harder one:
  *
- * The Completed band was a byte-for-byte duplicate of Current, permanently,
- * under a heading promising the opposite. A user who marked a task done saw it
- * remain in both bands — the reported "the complete task flow journey" defect,
- * and the reason "done" felt like it had not worked.
+ *   · the TAB carries `category: [...]` — an ARRAY, so it intersects
+ *   · the CHIP carries `deleted: 'only' | 'include'` — a SCALAR, so it wins
  *
- * WHY NO EXISTING TEST CAUGHT IT: the suite's `rowsFor` helper is
- * `(_filter) => rows` — it ignores the filter it is handed, so every band gets
- * every row and the composition is unobservable. The helper HERE honours the
- * filter, which is the only reason any of this is measurable.
+ * That asymmetry is the whole design. Archived is ORTHOGONAL to status, so
+ * "archived AND in progress" must be askable; if `deleted` intersected like an
+ * array, the chip and the tab would contradict and the band would go empty.
+ * And it is why archived could never be a fourth TAB: a tab row is a partition
+ * of one axis, and a partition member that means "regardless of status" is not
+ * a member of that partition.
  *
- * === RED-FIRST RECORD (measured; break applied to the fixed tree, run,
- * captured, reverted) ===
- * Instrument: `npx vitest run src/panels/list-band-scope.test.tsx` from
- * `packages/tm8-ui` (banner `RUN v4.1.10 …/packages/tm8-ui`).
- *
- *   BREAK — 2026-08-04T19:35Z. Restore the old composition in `rowsForBand`
- *           (`{...filter, ...(tier?.filter ?? {})}`) and drop the disjoint
- *           section filter at the render site — i.e. HEAD.
- *     FAIL the Open tier does not draw a COMPLETED band at all
- *     FAIL a done task appears under Completed, and ONLY there
- *       both: AssertionError: expected [ 'CURRENT · 2', 'COMPLETED · 2' ]
- *             to have a length of 1 but got 2
- *     Tests  2 failed | 3 passed (5)
- *
- *   The counts in that failure ARE the bug, stated by the assertion itself:
- *   two bands, two rows each, on a fixture holding exactly two open tasks and
- *   two closed ones. "COMPLETED · 2" on the Open tier is the two OPEN tasks.
- *
- *   Restored: Tests  5 passed (5).
+ * WHY NO EXISTING TEST CAUGHT THE ORIGINAL DEFECT: the suite's `rowsFor`
+ * helper is `(_filter) => rows` — it ignores the filter it is handed, so every
+ * band gets every row and the composition is unobservable. The helper HERE
+ * honours the filter, which is the only reason any of this is measurable.
  */
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import type { EntitySummary, QueryFilter } from '@tm8/contract';
-import { FIXTURE_SPACE_ID, fixtureSummaries, taskUuidTitle } from '../fixtures';
+import type { EntitySummary, QueryFilter, StatusCategory } from '@tm8/contract';
+import { FIXTURE_SPACE_ID, fixtureSummaries } from '../fixtures';
 import { getKind, type ActionContext } from '../domain';
 import { EntityListPanel } from './index';
 
@@ -53,29 +44,38 @@ const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 
 const TASK: EntitySummary = fixtureSummaries.find((s) => s.state.kind === 'task')!;
 
-function task(id: string, title: string, workStatus: string, deleted = false): EntitySummary {
+function task(
+  id: string,
+  title: string,
+  status: string,
+  category: StatusCategory,
+  deleted = false,
+): EntitySummary {
   return {
     ...TASK,
     id: id as EntitySummary['id'],
     title,
     deletedAt: deleted ? '2026-08-04T00:00:00.000Z' : null,
-    state: { ...TASK.state, workStatus } as EntitySummary['state'],
+    category,
+    state: { ...TASK.state, status } as EntitySummary['state'],
   };
 }
 
 const ROWS: readonly EntitySummary[] = [
-  task('t-open-1', 'Open one', 'open'),
-  task('t-open-2', 'Open two', 'working'),
-  task('t-done-1', 'Ship the thing', 'done'),
-  task('t-done-2', 'Abandoned idea', 'cancelled'),
-  task('t-arch-1', 'Archived and open', 'open', true),
-  task('t-arch-2', 'Archived and done', 'done', true),
+  task('t-todo-1', 'Open one', 'open', 'to_do'),
+  task('t-prog-1', 'Open two', 'working', 'in_progress'),
+  task('t-done-1', 'Ship the thing', 'done', 'done'),
+  task('t-canc-1', 'Abandoned idea', 'cancelled', 'cancelled'),
+  task('t-arch-1', 'Archived and open', 'open', 'to_do', true),
+  task('t-arch-2', 'Archived and working', 'working', 'in_progress', true),
+  task('t-arch-3', 'Archived and done', 'done', 'done', true),
 ];
 
 /**
- * A `rowsFor` that ACTUALLY APPLIES the filter — the same two clauses the real
+ * A `rowsFor` that ACTUALLY APPLIES the filter — the same clauses the real
  * seam applies (`domain-store.membershipOf`). Without this the composition
- * under test is invisible, which is precisely how the defect survived.
+ * under test is invisible, which is precisely how the original defect
+ * survived.
  */
 function rowsFor(filter: QueryFilter): readonly EntitySummary[] {
   return ROWS.filter((row) => {
@@ -83,8 +83,10 @@ function rowsFor(filter: QueryFilter): readonly EntitySummary[] {
     if (deleted === 'exclude' && row.deletedAt !== null) return false;
     if (deleted === 'only' && row.deletedAt === null) return false;
 
-    const status = (row.state as unknown as { workStatus?: string }).workStatus;
-    if (filter.workStatus && !filter.workStatus.includes(status as never)) return false;
+    if (filter.category && !filter.category.includes(row.category as StatusCategory)) return false;
+
+    const status = (row.state as unknown as { status?: string }).status;
+    if (filter.status && !filter.status.includes(status as never)) return false;
     return true;
   });
 }
@@ -93,103 +95,152 @@ function list() {
   return render(<EntityListPanel kind="task" rowsFor={rowsFor} ctx={ctx} />);
 }
 
-/**
- * The band headings actually drawn, in document order, caret stripped.
- *
- * BOTH vocabularies, deliberately. A section with `collapsedByDefault` (the
- * task list's "Completed" is one) reduces to a single `.lp__collapsed` line
- * instead of an `.lp__eyebrow` — still a heading, still counted, still
- * reachable. Reading only the eyebrow would report a collapsed band as ABSENT
- * and turn "correctly collapsed" into a false failure.
- */
-function bands(container: HTMLElement): string[] {
-  return [...container.querySelectorAll('.lp__eyebrow, .lp__collapsed')]
-    .map((el) => (el.textContent ?? '').replace(/^[▾▸]\s*/, '').trim())
-    .filter((text) => !text.startsWith('NEEDS ATTENTION'));
-}
-
-function tier(getByRole: ReturnType<typeof list>['getByRole'], label: string) {
+function tab(getByRole: ReturnType<typeof list>['getByRole'], label: string) {
   fireEvent.click(getByRole('tab', { name: new RegExp(`^${label}`) }));
 }
 
-/** Open every collapsed band, so its rows are assertable rather than counted. */
-function expandBands(container: HTMLElement) {
-  for (const line of [...container.querySelectorAll('.lp__collapsed')]) {
-    fireEvent.click(line);
-  }
+/** Open the filter menu and pick an option by its visible label. */
+function chip(view: ReturnType<typeof list>, label: string) {
+  fireEvent.click(view.getByTestId('filter-trigger'));
+  fireEvent.click(view.getByRole('menuitemcheckbox', { name: label }));
 }
 
-describe('a section band is scoped BY its tier, never overwritten by it', () => {
-  it('the task registry really does declare both partitions', () => {
+/** The row titles the panel actually rendered. */
+function titles(container: HTMLElement): string[] {
+  return ROWS.map((row) => row.title).filter((title) =>
+    (container.textContent ?? '').includes(title),
+  );
+}
+
+describe('the category tab and the archive chip compose, never contradict', () => {
+  it('the task registry really does declare the four tabs and the archive chip', () => {
     // If either is dropped the composition below stops meaning anything, so
     // the premise is asserted rather than assumed.
     const config = getKind('task');
-    expect(config.list.sections?.map((s) => s.id)).toEqual(['current', 'completed']);
-    expect(config.list.lifecycle?.map((t) => t.id)).toEqual(['open', 'done', 'archived']);
+    expect(config.list.categories?.map((t) => t.id)).toEqual([
+      'to_do',
+      'in_progress',
+      'done',
+      'cancelled',
+    ]);
+    // …and the sections that used to fight them are gone, not merely unused.
+    expect(config.list.sections).toBeUndefined();
+    expect(config.list.filters.some((f) => f.id === 'archived')).toBe(true);
   });
 
-  it('the Open tier does not draw a COMPLETED band at all', () => {
-    // Open ∩ Completed is empty, so the honest rendering is NO heading —
-    // not "COMPLETED · 0", which would state something false about the tier.
-    const { container } = list();
-    expect(bands(container)).toHaveLength(1);
-    expect(bands(container)[0]).toMatch(/^CURRENT/);
+  it('each tab shows its OWN category and nothing else', () => {
+    const view = list();
+    const { container, getByRole } = view;
+
+    // The default tab is the first: To Do.
+    expect(titles(container)).toEqual(['Open one']);
+
+    tab(getByRole, 'In Progress');
+    expect(titles(container)).toEqual(['Open two']);
+
+    tab(getByRole, 'Done');
+    expect(titles(container)).toEqual(['Ship the thing']);
   });
 
-  it('a done task appears under Completed, and ONLY there', () => {
-    const { container, getByRole } = list();
-
-    // On Open, the done task is absent entirely.
-    expect(container.textContent).not.toContain('Ship the thing');
-    expect(container.textContent).toContain('Open one');
-
-    tier(getByRole, 'Done');
-
-    // ONE band, and it is the right one: Current ∩ Done is empty, so the
-    // "Current" heading is not drawn at all.
-    expect(bands(container)).toHaveLength(1);
-    expect(bands(container)[0]).toBe('COMPLETED · 2');
-
-    // It arrives collapsed (`collapsedByDefault`), so the count in the heading
-    // is the claim and expanding is what checks it.
-    expandBands(container);
-    expect(container.textContent).toContain('Ship the thing');
-    expect(container.textContent).toContain('Abandoned idea');
-    expect(container.textContent).not.toContain('Open one');
-  });
-
-  it('the ARCHIVED tier keeps BOTH bands — its partition still works', () => {
+  it('CANCELLED IS ITS OWN TAB — it no longer hides inside Done', () => {
     /**
-     * The regression guard on the fix. `deleted` must let the TIER win rather
-     * than intersect: the sections carry `deleted: 'exclude'` and the Archived
-     * tier carries `'only'`, so intersecting that axis would make every
-     * section disjoint and empty the one tier whose partition was already
-     * correct.
+     * The visible half of the ruling (sub-doc 7 §3.4). Before phase 7 the Done
+     * tab carried `['done','cancelled']`, so a cancelled task was counted and
+     * displayed as finished work. A cancelled task STOPPED; it did not finish,
+     * and the fourth tab is the product finally able to say so.
      */
-    const { container, getByRole } = list();
-    tier(getByRole, 'Archived');
+    const view = list();
+    const { container, getByRole } = view;
 
-    expect(bands(container)).toEqual(['CURRENT · 1', 'COMPLETED · 1']);
+    tab(getByRole, 'Done');
+    expect(container.textContent).not.toContain('Abandoned idea');
 
-    expandBands(container);
-    expect(container.textContent).toContain('Archived and open');
-    expect(container.textContent).toContain('Archived and done');
-    // …and nothing live leaks into it.
-    expect(container.textContent).not.toContain('Open one');
+    tab(getByRole, 'Cancelled');
+    expect(titles(container)).toEqual(['Abandoned idea']);
+  });
+
+  it('ARCHIVED COMPOSES WITH A CATEGORY — the question the tab row could not ask', () => {
+    /**
+     * The point of demoting archived from tab to chip. As a tab it REPLACED
+     * the category, so "the archived in-progress work" was unreachable: the
+     * Archived tab showed every archived row at every status, and the In
+     * Progress tab showed none of them.
+     */
+    const view = list();
+    const { container, getByRole } = view;
+
+    tab(getByRole, 'In Progress');
+    expect(titles(container)).toEqual(['Open two']);
+
+    chip(view, 'Archived only');
+    // The SCALAR `deleted` takes the chip's value; the ARRAY `category` still
+    // intersects. One archived in-progress row, and only it.
+    expect(titles(container)).toEqual(['Archived and working']);
+
+    // The tab still works underneath — the chip narrowed, it did not take over.
+    tab(getByRole, 'Done');
+    expect(titles(container)).toEqual(['Archived and done']);
+  });
+
+  it('“Include archived” widens rather than replaces', () => {
+    const view = list();
+    const { container, getByRole } = view;
+
+    tab(getByRole, 'To Do');
+    expect(titles(container)).toEqual(['Open one']);
+
+    chip(view, 'Include archived');
+    expect(titles(container)).toEqual(['Open one', 'Archived and open']);
+  });
+
+  it('THE OPEN TAB RESETS WHEN THE KIND CHANGES — the bug sub-doc 6 named', () => {
+    /**
+     * `tierId` was seeded ONCE from the mounting kind's first tab and
+     * `onKindChange` swapped the kind under it. The old ids overlapped between
+     * kinds — every kind had `open`, `done`, `archived` — so a stale id kept
+     * resolving to *a* tab and the panel degraded quietly instead of breaking
+     * loudly. Under the closed four the ids overlap ALWAYS, so the resolution
+     * can never fail and the silence would have been permanent: switch from
+     * Tasks-on-Cancelled to Docs and you land on Docs' Cancelled tab, having
+     * asked for neither.
+     *
+     * `to_do` is the first tab, so "reset" and "the kind's own default" are
+     * the same assertion — which is the point. The panel holds an OVERRIDE,
+     * not a value, so there is no frame in which the wrong tab is painted.
+     */
+    const view = render(<EntityListPanel kind="task" rowsFor={rowsFor} ctx={ctx} />);
+    const openTab = () =>
+      view
+        .getAllByRole('tab')
+        .find((t) => t.getAttribute('aria-selected') === 'true')
+        ?.textContent?.replace(/\s*\d+\+?$/, '');
+
+    expect(openTab()).toBe('To Do');
+    tab(view.getByRole, 'Cancelled');
+    expect(openTab()).toBe('Cancelled');
+
+    // The host answers `onKindChange` by re-rendering with a different kind.
+    view.rerender(<EntityListPanel kind="doc" rowsFor={rowsFor} ctx={ctx} />);
+    expect(openTab(), 'a new kind opens on its own first tab').toBe('To Do');
+
+    // …and switching BACK does not resurrect the old selection either: the
+    // override is cleared, not stashed per kind.
+    view.rerender(<EntityListPanel kind="task" rowsFor={rowsFor} ctx={ctx} />);
+    expect(openTab()).toBe('To Do');
   });
 
   it('an archived task is REACHABLE — the way back is not a dead end', () => {
     /**
      * Archiving is a soft-delete tombstone, so an archived task leaves every
      * live list. That is correct, and it is only survivable because the
-     * Archived tier can still show it: this is where a user meets the row they
-     * need to restore. A tier that could only put things IN would be a
+     * archive filter can still show it: this is where a user meets the row
+     * they need to restore. A control that could only put things IN would be a
      * one-way door.
      */
-    const { container, getByRole } = list();
-    expect(container.textContent).not.toContain('Archived and open');
+    const view = list();
+    expect(view.container.textContent).not.toContain('Archived and open');
 
-    tier(getByRole, 'Archived');
-    expect(container.textContent).toContain('Archived and open');
+    chip(view, 'Archived only');
+    expect(view.container.textContent).toContain('Archived and open');
   });
 });

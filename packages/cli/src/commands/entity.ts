@@ -488,18 +488,20 @@ async function entityContext(cmd: CommandContext): Promise<ExitCode> {
  */
 async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity query', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['kind', 'subtree', 'work-status', 'assignee', 'ready', 'limit', 'cursor']);
+  assertKnownOptions(cmd, ['kind', 'subtree', 'status', 'assignee', 'ready', 'limit', 'cursor']);
 
   const kinds = cmd.options.values('kind');
   const subtreeOf = cmd.options.value('subtree');
-  const workStatus = cmd.options.values('work-status');
+  /* `--status`, NOT `--work-status` (phase 9's rename table). The flag names
+     the `CollectionQuery.filters` member, and that member is `status` now. */
+  const status = cmd.options.values('status');
   const assigneeIds = cmd.options.values('assignee');
   const ready = cmd.options.bool('ready');
   const limit = cmd.options.integer('limit');
   const cursor = cmd.options.value('cursor');
 
   const filters: Record<string, unknown> = {};
-  if (workStatus.length > 0) filters.workStatus = workStatus;
+  if (status.length > 0) filters.status = status;
   if (assigneeIds.length > 0) filters.assigneeIds = assigneeIds;
   if (ready) filters.readyToPull = true;
 

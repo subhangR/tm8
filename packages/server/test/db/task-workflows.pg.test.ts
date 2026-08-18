@@ -24,7 +24,7 @@ const CODE_VOCABULARY = ['open', 'working', 'in_review', 'done'] as const;
 interface CommandEntity {
   id: string;
   version: number;
-  state: { kind: string; workStatus?: string };
+  state: { kind: string; status?: string };
   content: { kind: string; axes?: Record<string, string> };
 }
 
@@ -266,7 +266,7 @@ describe.sequential('W4-PG migration 132 task-workflow semantics', () => {
       content: { axes: { type: 'code' } },
     }));
     expect(patched.entity).toMatchObject({
-      state: { kind: 'task', workStatus: 'blocked' },
+      state: { kind: 'task', status: 'blocked' },
     });
 
     const persisted = await server.database.query<{ axes: Record<string, string>; work_status: string }>(
@@ -277,7 +277,7 @@ describe.sequential('W4-PG migration 132 task-workflow semantics', () => {
 
     const movedIn = dataOf<CommandResult>(await work(task.id, 'working', 'retype-move-in'));
     expect(movedIn.entity).toMatchObject({
-      state: { kind: 'task', workStatus: 'working' },
+      state: { kind: 'task', status: 'working' },
     });
   });
 
@@ -341,7 +341,7 @@ describe.sequential('W4-PG migration 132 task-workflow semantics', () => {
       }),
     );
     expect(completed.entity).toMatchObject({
-      state: { kind: 'task', workStatus: 'done' },
+      state: { kind: 'task', status: 'done' },
     });
   });
 
@@ -393,7 +393,7 @@ describe.sequential('W4-PG migration 132 task-workflow semantics', () => {
 
     const widened = dataOf<CommandResult>(await work(task.id, 'blocked', 'delete-after'));
     expect(widened.entity).toMatchObject({
-      state: { kind: 'task', workStatus: 'blocked' },
+      state: { kind: 'task', status: 'blocked' },
     });
   });
 });

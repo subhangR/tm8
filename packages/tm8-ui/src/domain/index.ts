@@ -31,7 +31,7 @@ export type {
   Hash,
   IconRef,
   KindConfig,
-  LifecycleTier,
+  StatusCategoryTab,
   ListConfig,
   ListPageState,
   ListRowFacts,

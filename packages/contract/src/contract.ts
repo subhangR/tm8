@@ -215,7 +215,7 @@ export interface TaskAssignment {
 }
 
 export type CoreEntityState =
-  | { kind: 'task'; workStatus: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
+  | { kind: 'task'; status: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; assignees: ActorSummary[];
       /** Additive: absent on payloads produced before assignment provenance shipped. */
       assignments?: TaskAssignment[];
@@ -542,7 +542,7 @@ export interface PullState {
   pinnedVersion: number;
   contentStale: boolean;          // pinnedVersion < entity.version
   discussionMoved: boolean;       // activity changed after the pull
-  workStatus?: string | null;
+  status?: string | null;
   pulledAt: string;
 }
 
@@ -727,10 +727,10 @@ export interface CollectionQuery {
   subtreeOf?: EntityId;
   parentId?: EntityId | null;
   filters?: {
-    workStatus?: WorkStatus[]; axes?: Record<string, string[]>; assigneeIds?: EntityId[];
+    status?: WorkStatus[]; axes?: Record<string, string[]>; assigneeIds?: EntityId[];
     /**
      * Additive (Board tab wave, 2026-08-16): tasks at any of these priorities.
-     * Same kind-narrowing semantics as `workStatus` — priority lives on the
+     * Same kind-narrowing semantics as `status` — priority lives on the
      * task arm only, so a non-task row never matches.
      */
     priority?: ('low'|'medium'|'high'|'urgent')[];
@@ -759,8 +759,8 @@ export interface CollectionQuery {
     /**
      * A22 (additive): only `work_session` rows in these statuses. While
      * present the query returns work_sessions exclusively — the same
-     * kind-narrowing semantics `workStatus` has for tasks (a NULL state axis
-     * never matches). Combining it with `workStatus` is REFUSED as
+     * kind-narrowing semantics `status` has for tasks (a NULL state axis
+     * never matches). Combining it with `status` is REFUSED as
      * `invalid_input` (schema refinement): the filters are kind-disjoint, so
      * the pair could only ever produce the always-empty set, and a confident
      * zero is worse than a refusal that names the mechanism.
@@ -786,19 +786,19 @@ export interface CollectionQuery {
     activeSince?: string;
     /**
      * Entities in any of these lifecycle buckets — the closed, kind-neutral
-     * form of `workStatus`, and the predicate the four category tabs run.
+     * form of `status`, and the predicate the four category tabs run.
      *
-     * The two filters are NOT alternatives with the same reach. `workStatus`
+     * The two filters are NOT alternatives with the same reach. `status`
      * names task-only literals, so it can only ever describe tasks; `category`
      * asks a question every kind will eventually answer, and asking it today
      * simply returns the kinds that already can. That makes it the filter a
-     * generic list may hold while `workStatus` stays the task board's.
+     * generic list may hold while `status` stays the task board's.
      *
-     * Same kind-narrowing semantics as `workStatus` and `priority`, by the
+     * Same kind-narrowing semantics as `status` and `priority`, by the
      * same mechanism: an entity with no status has a NULL category, and
      * `NULL = any(...)` is never true — so the filter's PRESENCE restricts the
      * result to entities that have a status at all. In this phase that means
-     * tasks. Combining it with `workStatus` is legal and means what it reads
+     * tasks. Combining it with `status` is legal and means what it reads
      * as (intersection), because both name the same rows.
      *
      * An ARRAY, not a scalar, so "To Do or In Progress" — the in-flight
@@ -810,7 +810,7 @@ export interface CollectionQuery {
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
-  groupBy?: 'workStatus'|'assignee'|'priority'|`axis:${string}`;
+  groupBy?: 'status'|'assignee'|'priority'|`axis:${string}`;
   sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'priority';
   cursor?: Cursor; limit?: number;
 }
@@ -1854,7 +1854,7 @@ export interface PatchTaskInput extends CommandContext {
   title?: string;
   description?: string;
   axes?: Record<string, string>;
-  workStatus?: WorkStatus;
+  status?: WorkStatus;
   priority?: 'low'|'medium'|'high'|'urgent';
   acceptanceCriteria?: AcceptanceCriterion[];
   pointsEstimate?: number | null;

@@ -92,7 +92,7 @@ async function categoryOf(id: string): Promise<string | null> {
 }
 
 /** Creates a task, and reports what that creation cost the event log. */
-async function createTask(id: string, workStatus?: string): Promise<number> {
+async function createTask(id: string, status?: string): Promise<number> {
   const before = await upserts();
   await database.transaction(async (client) => {
     await client.query('set local role tm8_graph_owner');
@@ -104,7 +104,7 @@ async function createTask(id: string, workStatus?: string): Promise<number> {
     await client.query(
       `insert into public.tasks(entity_id, title, work_status)
        values ($1, 'a task', coalesce($2, 'open'))`,
-      [id, workStatus ?? null],
+      [id, status ?? null],
     );
   });
   return (await upserts()) - before;
@@ -301,6 +301,33 @@ describe.sequential('147 — entities.status_category', () => {
     });
   }
 
+  /** The same read, but returning the PAGE rather than only its ids. */
+  async function collectPage(
+    filters: NonNullable<CollectionQuery['filters']>,
+    limit = 100,
+  ): Promise<{ ids: string[]; total: number | undefined; hasMore: boolean }> {
+    return database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const q: Querier = {
+        query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> =>
+          (await client.query(sql, [...params])).rows as R[],
+        rpc: async () => {
+          throw new Error('a collection read must not write');
+        },
+      } as Querier;
+      const result = await queryCollection(
+        q,
+        { spaceId: SPACE, filters, sort: 'position', limit },
+        IDENTITY,
+      );
+      return {
+        ids: result.page.items.map((item) => item.id),
+        total: result.page.total,
+        hasMore: result.page.nextCursor !== null,
+      };
+    });
+  }
+
   it.each(RULED)('filters real rows down to the %s task, whose category is %s', async (status) => {
     const category = RULED.find(([s]) => s === status)![1];
     const expected = RULED
@@ -334,6 +361,60 @@ describe.sequential('147 — entities.status_category', () => {
     // And the union of all four is the whole cohort, no row unreachable.
     expect(await mine({ category: ['to_do', 'in_progress', 'done', 'cancelled'] }))
       .toEqual([...cohort].sort());
+  });
+
+  /**
+   * PHASE 7 — the per-category counts are a SERVER AGGREGATE.
+   *
+   * Every count in the product used to be `rowsFor(filter).length`: the rows
+   * that happened to be LOADED. A 601-row Done tab read `50` because the first
+   * page was full, and the four tabs, the footer line and the kind-selector
+   * total all read that one number — so they could not disagree with each
+   * other, they under-counted TOGETHER, which is the failure that looks like a
+   * working feature.
+   *
+   * `Page.total` was an optional contract member the facade had never
+   * populated. It is a `count(*)` over the page's own WHERE now, and this
+   * suite is where it belongs because the predicate it counts is the indexed
+   * `status_category` one the tabs run.
+   */
+  it('answers each category with a TRUE total, not a page length', async () => {
+    for (const category of ['to_do', 'in_progress', 'done', 'cancelled'] as const) {
+      const full = await collectPage({ category: [category] });
+      expect(full.total, `${category} total`).toBe(full.ids.length);
+      expect(full.hasMore, `${category} fits in one page`).toBe(false);
+
+      // THE ASSERTION THAT MATTERS: cut the page to ONE row and the total is
+      // unchanged. This is the 601-read-as-50 case, and the only way to state
+      // it is to make the page smaller than the answer.
+      if (full.ids.length > 1) {
+        const clipped = await collectPage({ category: [category] }, 1);
+        expect(clipped.ids).toHaveLength(1);
+        expect(clipped.hasMore, 'the server still holds a cursor').toBe(true);
+        expect(clipped.total, `${category} total survives the page window`).toBe(full.total);
+      }
+    }
+  });
+
+  it('counts the QUERY, not the page — a cursor never shrinks the total', async () => {
+    // The cursor clause is excluded from the count's WHERE on purpose. A total
+    // that fell as you paged would be describing the page, and the page
+    // already describes itself through `items` and `nextCursor`.
+    const all = await collectPage({ category: ['to_do', 'in_progress'] });
+    expect(all.total).toBe(all.ids.length);
+    expect(all.total).toBeGreaterThan(1);
+
+    const firstOnly = await collectPage({ category: ['to_do', 'in_progress'] }, 1);
+    expect(firstOnly.total).toBe(all.total);
+  });
+
+  it('counts ZERO honestly for a category with no rows', async () => {
+    // Zero is a COUNTED zero, not an absent key: `undefined` means "this
+    // server never told us" and renders as the `N+` hedge, which is a
+    // different statement from "there are none".
+    const none = await collectPage({ category: ['done'], deleted: 'only' });
+    expect(none.ids).toHaveLength(0);
+    expect(none.total).toBe(0);
   });
 
   it('NARROWS BY KIND for free — a doc has no category, so it never matches', async () => {

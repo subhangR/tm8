@@ -984,7 +984,7 @@ export class PgEntityProjector implements EntityProjector {
         return {
           kind: 'task',
           // Raises rather than coercing: see WorkStatusDriftError.
-          workStatus: narrowWorkStatus(r.work_status, r.id),
+          status: narrowWorkStatus(r.work_status, r.id),
           priority: oneOf(r.priority, PRIORITIES, 'medium'),
           axes: asStringRecord(r.axes),
           dueDate: iso(r.due_date),

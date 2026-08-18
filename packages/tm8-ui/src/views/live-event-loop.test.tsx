@@ -82,7 +82,7 @@ function task(id: string, over: Partial<EntitySummary> = {}): EntitySummary {
     deletedAt: null,
     createdBy: { id: 'act-1', kind: 'member', displayName: 'me' } as EntitySummary['createdBy'],
     counters: { children: 0, comments: 0, reactions: 0, points: 0, messages: 0, viewerReaction: null },
-    state: { kind: 'task', workStatus: 'open', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } },
+    state: { kind: 'task', status: 'open', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } },
     badges: {},
     ...over,
   } as EntitySummary;
@@ -249,7 +249,7 @@ function harness(seeded: EntitySummary[]): Harness {
   };
 }
 
-const OPEN = { workStatus: ['open'], deleted: 'exclude' };
+const OPEN = { status: ['open'], deleted: 'exclude' };
 
 describe('the live event loop — an event moves the screen, alone', () => {
   it('a resync clears read claims and rehydrates the current projection', async () => {
@@ -395,7 +395,7 @@ describe('the live event loop — an event moves the screen, alone', () => {
         seq: 2,
         entity: task('ent-task-seeded', {
           version: 2,
-          state: { kind: 'task', workStatus: 'done', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } } as EntitySummary['state'],
+          state: { kind: 'task', status: 'done', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } } as EntitySummary['state'],
         }),
       } as unknown as DurableWorkspaceEvent);
     });

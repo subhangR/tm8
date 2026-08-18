@@ -132,7 +132,7 @@ describe('SessionGraphBody', () => {
   it('draws the facts the kind registry declares, not a list of its own', async () => {
     const blocked = {
       ...entity('task-1', 'task', 'Session Graph'),
-      state: { workStatus: 'blocked', priority: 'urgent' },
+      state: { status: 'blocked', priority: 'urgent' },
     } as unknown as EntitySummary;
     const seam = seamWith(async (id) =>
       id === FOCUS ? page([edge(focus, 'working_on', blocked)]) : page([]),

@@ -27,7 +27,7 @@ const PR_ID = '00000000-0000-4000-8000-000000000042' as EntityId;
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 const task: EntitySummary = {
   ...taskUuidTitle,
-  state: { ...taskUuidTitle.state, workStatus: 'working' } as EntitySummary['state'],
+  state: { ...taskUuidTitle.state, status: 'working' } as EntitySummary['state'],
 };
 const detail = {
   ...fixtureDetails[taskUuidTitle.id]!,

@@ -11,7 +11,7 @@
  *   1. `createTask` — there is no task route. `CreateTaskInput`'s kind-specific
  *      fields travel inside `content` on `POST /v2/entities` (contract.ts:603,
  *      server dispatch entities-commands-tracking.ts:882). Same for `patchTask`
- *      via `update_task_content` (…:963) — `workStatus` included.
+ *      via `update_task_content` (…:963) — `status` included.
  *   2. `editMessage` — the server answers a bare `MessageView`, not a
  *      `CommandResult`. `MessageView extends EntitySummary`, so it is lifted to
  *      `{patches: [view]}`: the authoritative patch list the optimistic journal
@@ -819,7 +819,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         content: compact({
           description: input.description,
           axes: input.axes,
-          workStatus: input.workStatus,
+          status: input.status,
           priority: input.priority,
           acceptanceCriteria: input.acceptanceCriteria,
           pointsEstimate: input.pointsEstimate,

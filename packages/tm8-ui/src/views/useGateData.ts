@@ -1612,8 +1612,8 @@ export function useGateData(options: GateOptions): GateData {
       const summary = entities[id as EntityId];
       // No row ⇒ no evidence ⇒ 'unknown'. Never optimistically 'live'.
       if (!summary) return 'unknown';
-      // The recorded status lives on `state`, NOT as a top-level `workStatus`:
-      // tasks carry `state.workStatus`, sessions carry `state.status` (seam
+      // The recorded status lives on `state`, NOT as a top-level `status`:
+      // tasks carry `state.status`, sessions carry `state.status` (seam
       // Amendment 1). Reading a top-level field that does not exist yielded
       // `null` for every row, so `statusOf` answered 'not-running' for ALL of
       // them — while the bar, which reads the seam's live set directly, said
@@ -1621,9 +1621,9 @@ export function useGateData(options: GateOptions): GateData {
       // any test. `toSessionRow` projects STRUCTURALLY ('status' in state), so
       // this stays kind-literal-free.
       const recorded = toSessionRow(summary).recordedStatus
-        ?? (summary.state as unknown as { workStatus?: string | null }).workStatus
+        ?? (summary.state as unknown as { status?: string | null }).status
         ?? null;
-      return seam.liveness.statusOf({ id: summary.id, workStatus: recorded as never });
+      return seam.liveness.statusOf({ id: summary.id, status: recorded as never });
     },
     [seam, entities],
   );

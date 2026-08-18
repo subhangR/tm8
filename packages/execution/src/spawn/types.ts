@@ -217,7 +217,7 @@ export interface TaskContext {
   title: string;
   description: string;
   priority: string;
-  workStatus: string;
+  status: string;
   acceptanceCriteria: unknown[];
   /** File entities attached directly to this task. Identity/metadata only;
    * bytes remain behind the authenticated `tm8 file download` command. */

@@ -7,6 +7,7 @@ import type {
   Hierarchy,
   Connections,
   Page,
+  StatusCategory,
 } from '@tm8/contract';
 import { ada, noor, forge, scout } from './actors';
 
@@ -66,6 +67,53 @@ function hierarchy(parent: EntitySummary | null = null, children: EntitySummary[
 
 type SummaryOver = Partial<Omit<EntitySummary, 'state' | 'kind'>> & Pick<EntitySummary, 'id' | 'kind' | 'title' | 'state'>;
 
+/**
+ * `EntitySummary.category` DERIVED FROM THE ROW'S STATUS — the fixture's
+ * mirror of what the database does for real.
+ *
+ * `entities.status_category` is maintained by a trigger off the entity's
+ * workflow state (migration 149), so on a live node EVERY row carries one and
+ * no client ever computes it. A fixture that omitted the key was therefore
+ * modelling a node that predates phase 1, and every surface keyed on the
+ * category — the four tabs, the completed strikethrough, the subtree mark —
+ * read `undefined` and rendered "no status" for a task that plainly had one.
+ * That is a fixture lying about the server, which is the one thing a fixture
+ * may not do.
+ *
+ * The mapping is the RULED one (`internal.work_status_category`, and its two
+ * judgement calls: `pulled → to_do`, `blocked → in_progress`) plus the session
+ * lifecycle's, where `failed` is `done` — a run that ended, badly, is not a run
+ * somebody cancelled.
+ *
+ * A row whose state carries no status word gets NO key, not a default:
+ * absence means "this entity has no position in a workflow", and inventing
+ * `to_do` for it would file it under a tab nobody put it in.
+ */
+const FIXTURE_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
+  // task
+  open: 'to_do',
+  pulled: 'to_do',
+  working: 'in_progress',
+  in_review: 'in_progress',
+  blocked: 'in_progress',
+  done: 'done',
+  cancelled: 'cancelled',
+  // work_session
+  spawning: 'in_progress',
+  running: 'in_progress',
+  idle: 'in_progress',
+  exited: 'done',
+  failed: 'done',
+};
+
+function categoryOf(over: SummaryOver): { category?: StatusCategory } {
+  if (over.category !== undefined) return { category: over.category };
+  const status = (over.state as unknown as { status?: unknown }).status;
+  if (typeof status !== 'string') return {};
+  const category = FIXTURE_STATUS_CATEGORY[status];
+  return category === undefined ? {} : { category };
+}
+
 function summary(over: SummaryOver): EntitySummary {
   return {
     spaceId: FIXTURE_SPACE_ID,
@@ -80,6 +128,7 @@ function summary(over: SummaryOver): EntitySummary {
     createdBy: ada,
     counters: counters(),
     badges: {},
+    ...categoryOf(over),
     ...over,
   };
 }
@@ -135,7 +184,7 @@ export const voiceLounge = summary({
  * never wrap panels apart), long excerpt, big counters, and the full
  * delivery-facet spread: three pulls covering contentStale-only,
  * discussionMoved-only, and both. Viewer = ada, whose pull has both facets
- * AND workStatus in_review → this row is the NEEDS YOU fixture.
+ * AND status in_review → this row is the NEEDS YOU fixture.
  */
 export const taskUuidTitle = summary({
   id: 'task-4f8c2a9e',
@@ -155,7 +204,7 @@ export const taskUuidTitle = summary({
   counters: counters({ likes: 41, dislikes: 3, stars: 12, points: 120, messages: 87, viewerReaction: 'star' }),
   state: {
     kind: 'task',
-    workStatus: 'in_review',
+    status: 'in_review',
     priority: 'urgent',
     axes: { area: 'ui', wave: 'w5' },
     dueDate: '2026-07-30',
@@ -176,11 +225,11 @@ export const taskUuidTitle = summary({
   badges: {
     pulls: [
       // both facets — the viewer's own pull; with in_review this is NEEDS YOU
-      { actor: ada, localId: 'wt-ada-1', pinnedVersion: 5, contentStale: true, discussionMoved: true, workStatus: 'in_review', pulledAt: T.old },
+      { actor: ada, localId: 'wt-ada-1', pinnedVersion: 5, contentStale: true, discussionMoved: true, status: 'in_review', pulledAt: T.old },
       // contentStale only
-      { actor: forge, localId: null, pinnedVersion: 6, contentStale: true, discussionMoved: false, workStatus: 'working', pulledAt: T.morning },
+      { actor: forge, localId: null, pinnedVersion: 6, contentStale: true, discussionMoved: false, status: 'working', pulledAt: T.morning },
       // discussionMoved only
-      { actor: scout, localId: null, pinnedVersion: 7, contentStale: false, discussionMoved: true, workStatus: null, pulledAt: T.staleEdge },
+      { actor: scout, localId: null, pinnedVersion: 7, contentStale: false, discussionMoved: true, status: null, pulledAt: T.staleEdge },
     ],
   },
 });
@@ -198,7 +247,7 @@ export const taskGuideLines = summary({
   counters: counters({ messages: 9, points: 12 }),
   state: {
     kind: 'task',
-    workStatus: 'working',
+    status: 'working',
     priority: 'medium',
     axes: { area: 'ui' },
     dueDate: null,
@@ -206,6 +255,38 @@ export const taskGuideLines = summary({
     acceptance: { total: 3, completed: 1 },
   },
   // workingActors is filled after sessionLive exists (LiveWork references a task summary).
+});
+
+/**
+ * THE QUEUE — a task nobody has started.
+ *
+ * Added by phase 7, and it closes a gap that had been invisible: NOT ONE task
+ * fixture carried a `to_do` status (the set was in_review, working, blocked,
+ * cancelled). While `Open` was one tab spanning to_do AND in_progress that
+ * never showed, because the three in-flight rows filled it. The four ruled
+ * tabs split that tab in half, and the half with nothing in it is the one the
+ * panel OPENS ON — so every fixture-driven tasks list rendered "No tasks here
+ * yet" over three tasks that exist.
+ *
+ * A fixture set that cannot represent unstarted work cannot exercise the
+ * default view of the most-used list in the product.
+ */
+export const taskQueued = summary({
+  id: 'task-queued',
+  kind: 'task',
+  title: 'Name the empty states',
+  excerpt: 'Every list needs a sentence for the case where the answer is nothing.',
+  parentId: channelDesign.id,
+  position: 1,
+  state: {
+    kind: 'task',
+    status: 'open',
+    priority: 'low',
+    axes: { area: 'ui' },
+    dueDate: null,
+    assignees: [],
+    acceptance: { total: 0, completed: 0 },
+  },
 });
 
 export const taskBlocked = summary({
@@ -216,7 +297,7 @@ export const taskBlocked = summary({
   position: 3,
   state: {
     kind: 'task',
-    workStatus: 'blocked',
+    status: 'blocked',
     priority: 'high',
     axes: {},
     assignees: [],
@@ -237,7 +318,7 @@ export const taskTombstone = summary({
   updatedAt: T.old,
   state: {
     kind: 'task',
-    workStatus: 'cancelled',
+    status: 'cancelled',
     priority: 'low',
     axes: {},
     assignees: [],
@@ -891,7 +972,7 @@ export const artifactPulseBoard = summary({
 
 export const fixtureSummaries: EntitySummary[] = [
   channelDesign, voiceStandup, voiceLounge,
-  taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
+  taskQueued, taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
   sessionLive, sessionStale, sessionExited, sessionFailed, sessionCredentialLogin,
   docLayoutSpec, docChapterShell, docChapterCmin, docChapterFloors, docChapterResponsive,
   messageInThread, messageAgentNullProvenance,

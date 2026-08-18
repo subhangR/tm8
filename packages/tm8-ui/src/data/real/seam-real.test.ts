@@ -115,7 +115,7 @@ describe('seam-real: openSpace', () => {
       { type: 'resume', spaceId: 'sp-1', since: 0 },
     ]);
     expect(f.calls.map((c) => c.url)).toContain('/v2/spaces/sp-1/execution/liveness');
-    expect(seam.liveness.statusOf({ id: 'ws-1', workStatus: 'running' })).toBe('live');
+    expect(seam.liveness.statusOf({ id: 'ws-1', status: 'running' })).toBe('live');
   });
 
   it('does not discard post-baseline events by rescanning history on a retry', async () => {
@@ -148,7 +148,7 @@ describe('seam-real: openSpace', () => {
     pool.last().openIt();
     await flush();
     expect(seam.getConnection()).toEqual({ phase: 'live' });
-    expect(seam.liveness.statusOf({ id: 'ws-1', workStatus: 'running' })).toBe('unknown');
+    expect(seam.liveness.statusOf({ id: 'ws-1', status: 'running' })).toBe('unknown');
   });
 
   it('rejects for a space with a RECORDED refusal rather than re-opening into silence', async () => {

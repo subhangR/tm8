@@ -539,7 +539,7 @@ describe('entity query', () => {
       'entity', 'query',
       '--kind', 'task', '--kind', 'doc',
       '--subtree', ENT,
-      '--work-status', 'working', '--work-status', 'in_review',
+      '--status', 'working', '--status', 'in_review',
       '--assignee', ACTOR,
       '--ready',
       '--limit', '10',
@@ -550,7 +550,7 @@ describe('entity query', () => {
       kinds: ['task', 'doc'],
       subtreeOf: ENT,
       filters: {
-        workStatus: ['working', 'in_review'],
+        status: ['working', 'in_review'],
         assigneeIds: [ACTOR],
         readyToPull: true,
       },

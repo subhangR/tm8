@@ -19,6 +19,7 @@ import type {
   EntityId,
   EntityKind,
   SpaceId,
+  StatusCategory,
 } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type { PillTone } from '../kit';
@@ -68,7 +69,7 @@ export type IconRef = string;
  */
 export type TileBadgeSource =
   // task
-  | 'workStatus'
+  | 'status'
   | 'priority'
   | 'assignees'
   | 'acceptance'
@@ -136,7 +137,7 @@ export interface PulseBinding {
  * kind has no status axis and renders no pill.
  */
 export type StatusSource =
-  | 'workStatus'
+  | 'status'
   | 'sessionStatus'
   | 'prState'
   | 'profileStatus'
@@ -475,32 +476,37 @@ export interface ListSection {
 }
 
 /**
- * A lifecycle TIER — the Open / Done / Archived tabs the composed T0-1 canvas
- * draws on EVERY collection kind (user-ratified 2026-07-28, D41).
+ * ONE CATEGORY TAB — the To Do · In Progress · Done · Cancelled row the panel
+ * draws on EVERY kind.
  *
- * A tier is a different axis from a `ListSection`: the tier is the lifecycle
- * band you are looking at, the sections are triage grouping WITHIN it. T0-1
- * draws both at once — tabs above, `NEEDS ATTENTION` / `IN PROGRESS` group
- * headers below — so neither supersedes the other.
+ * PHASE 7 REPLACED `LifecycleTier`. Three things changed, and each was a lie
+ * the old shape could tell:
  *
- * `filter` stays contract-shaped, and every tier is now honestly expressible:
- * `deleted: 'only'` is a real `CollectionQuery` member, and so — since phase 1 —
- * is `category`.
+ *   1. **The id is a `StatusCategory`.** It used to be
+ *      `'open' | 'done' | 'archived'` — three ids that named neither a
+ *      contract member nor each other's opposite, and whose meaning was
+ *      whatever each kind's `filter` happened to say. Now the tab IS the
+ *      category, the closed four, identical on every kind, and the filter is
+ *      the mechanical `{ category: [id] }` that follows from it.
+ *   2. **`archived` is not one of them.** Archived is `deleted_at`, an axis
+ *      ORTHOGONAL to status — an archived task still has a status, and keeps
+ *      it across an archive/restore round-trip (design invariant 2). A tab row
+ *      is a partition: putting archived in it said "archived INSTEAD OF done",
+ *      and made the archive of an in-progress task unreachable from either
+ *      tab. It is a FILTER now (`FilterRow`'s `archived` spec), so it composes
+ *      with any category rather than replacing one.
+ *   3. **`cancelled` has its own tab.** It used to ride inside Done, which
+ *      told a user that abandoned work and finished work are the same
+ *      outcome. RULED (sub-doc 7 §3.4): cancelled work becomes permanently
+ *      visible, deliberately.
  *
- * D56: the D20 client-side partition is RETIRED. `CollectionQuery.filters`
- * gained a `sessionStatus` member (contract dd41e89), so every tier now carries
- * a contract-shaped filter the seam executes untranslated — including
- * work_session, which was the only kind that ever needed the workaround.
- *
- * PHASE 5 (migration 152): `unsupported` IS GONE. It existed for the kinds the
- * contract recorded no done/closed concept for, and there are none left — every
- * kind has a workflow and every entity a status, so every tier of every kind is
- * a query that can return rows. A tier that cannot be populated is no longer a
- * state this type can represent, which is the point: the field was the honest
- * name for a hole, and the hole is filled.
+ * A tab is a different axis from a `ListSection`: the tab is the category band
+ * you are looking at, the sections are triage grouping WITHIN it. T0-1 draws
+ * both at once — tabs above, group headers below — so neither supersedes the
+ * other.
  */
-export interface LifecycleTier {
-  id: 'open' | 'done' | 'archived';
+export interface StatusCategoryTab {
+  id: StatusCategory;
   label: string;
   filter: QueryFilter;
 }
@@ -509,15 +515,16 @@ export interface ListConfig {
   /** task: current / completed. */
   sections?: readonly ListSection[];
   /**
-   * Open / Done / Archived — universal across collection kinds (D41).
+   * To Do · In Progress · Done · Cancelled — the closed four, universal across
+   * every kind (D41, and PHASE 7's four-tab ruling).
    *
-   * Counts are NOT a field here. Each tier's count is its own query's
-   * `CollectionResult.page.total`, which feeds the tab label, the footer line
-   * ("9 open · 601 done · 33 archived") and the kind-selector total from ONE
+   * Counts are NOT a field here. Each tab's count is its own query's
+   * `CollectionResult.page.total` — a SERVER AGGREGATE since phase 7 — which
+   * feeds the tab label, the footer line and the kind-selector total from ONE
    * source. A count field would be a second source that could disagree with
    * the query it claims to summarise.
    */
-  lifecycle?: readonly LifecycleTier[];
+  categories?: readonly StatusCategoryTab[];
   /** task subtree; session coordinator→worker. */
   /**
    * `messagePulse` binds the tree's hairlines to live message provenance: a
@@ -719,14 +726,50 @@ export interface StateOption {
   id: string;
   /** Route this value through a different verb than the control's default. */
   via?: ActionRef;
+  /**
+   * Which of the closed four this state belongs to — DATA, added by phase 7.
+   *
+   * The board needs it: its columns are `stateControl.options` ∩ the open
+   * CATEGORY TAB, and before the tabs became categories the intersection was
+   * computed by reading the tab's own `filter.status` array, i.e. by two
+   * different declarations of the same partition agreeing. They do not agree
+   * any more — the tab declares `{ category: [...] }` — and re-deriving it in
+   * the panel would be the seventh bucketing of statuses this program exists
+   * to retire. The option says which bucket it is in, once, beside its id.
+   *
+   * OPTIONAL: a control whose options carry no category has no per-category
+   * board partition to make, and every option shows on every tab. That is the
+   * honest fallback for a kind whose states this build cannot bucket.
+   */
+  category?: StatusCategory;
 }
 
 export interface StateControl {
   /**
    * Which `EntityState` member carries the CURRENT value. Read structurally,
    * so the panel never names a kind to find the field it is editing.
+   *
+   * PHASE 9 collapsed this union to ONE member. It used to read
+   * `'workStatus' | 'status'` — a task's position and a session's runtime
+   * liveness under two names — and the vocabulary sweep renamed the task arm
+   * to `status`, which is what it always was. Both kinds now answer the same
+   * structural read, which is the point: the panel reaches for a member, not
+   * for a kind.
    */
-  source: 'workStatus' | 'status';
+  source: 'status';
+  /**
+   * The `CollectionQuery.filters` key that asks the SERVER for rows at one of
+   * this control's option values — DATA, because `source` no longer
+   * distinguishes them. A task's settable values live on `filters.status`, a
+   * work_session's observed ones on `filters.sessionStatus`; before Phase 9
+   * the two filters were inferred from two distinct `source` names, and
+   * collapsing those names would otherwise have made a session's board read
+   * ask for a task filter it does not answer.
+   *
+   * OPTIONAL: a kind whose states are not exactly queryable simply omits it,
+   * and the board falls back to category columns and says why (`planFor`).
+   */
+  filterKey?: 'status' | 'sessionStatus';
   label: string;
   /** The verb every option dispatches through unless it declares its own `via`. */
   command: ActionRef;

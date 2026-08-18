@@ -70,7 +70,7 @@ function task(id: string, over: Partial<EntitySummary> = {}): EntitySummary {
     deletedAt: null,
     createdBy: { id: 'act-1', kind: 'member', displayName: 'me' } as EntitySummary['createdBy'],
     counters: { children: 0, comments: 0, reactions: 0, points: 0, messages: 0, viewerReaction: null },
-    state: { kind: 'task', workStatus: 'open', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } },
+    state: { kind: 'task', status: 'open', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } },
     badges: {},
     ...over,
   } as EntitySummary;

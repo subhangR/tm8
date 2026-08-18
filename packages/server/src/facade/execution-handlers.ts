@@ -476,7 +476,7 @@ export class DbGraphPort implements GraphPort {
             title: t.title,
             description: t.description,
             priority: t.priority,
-            workStatus: t.work_status,
+            status: t.work_status,
             acceptanceCriteria: Array.isArray(t.acceptance_criteria) ? t.acceptance_criteria : [],
             attachments: Array.isArray(t.attachments)
               ? t.attachments.flatMap((value) => {

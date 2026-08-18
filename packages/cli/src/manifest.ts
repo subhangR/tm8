@@ -45,7 +45,7 @@ export interface ManifestTask {
   title?: string;
   description?: string;
   priority?: string;
-  workStatus?: string;
+  status?: string;
   /**
    * The agent's definition of done. Composed into the manifest from the graph
    * but previously dropped by this reader, so an agent could not tell when its
@@ -225,7 +225,7 @@ export function parseManifest(raw: unknown): Tm8Manifest {
                 title: str(t.title),
                 description: str(t.description),
                 priority: str(t.priority),
-                workStatus: str(t.workStatus),
+                status: str(t.status),
                 // Kept RAW (`unknown[]`) rather than coerced to strings here:
                 // the graph column is free-form jsonb, and narrowing at the
                 // reader would silently discard structured criteria that a

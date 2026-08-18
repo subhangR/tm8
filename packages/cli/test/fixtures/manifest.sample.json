@@ -22,7 +22,7 @@
       "title": "Wire the CLI worker-init boot path",
       "description": "Read the manifest, compose the system prompt, and give the agent report verbs that reach the graph.",
       "priority": "high",
-      "workStatus": "working"
+      "status": "working"
     }
   ],
   "coordinator": {

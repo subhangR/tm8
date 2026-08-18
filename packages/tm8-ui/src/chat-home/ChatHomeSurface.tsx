@@ -97,8 +97,8 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
   );
   /** The seam's verdict, the ONLY authority on live (R-UI-5). */
   const livenessOf = useMemo(
-    () => (session: { id: string; workStatus: WorkSessionStatus | null }) =>
-      seam.liveness.statusOf({ id: session.id as EntityId, workStatus: session.workStatus }),
+    () => (session: { id: string; status: WorkSessionStatus | null }) =>
+      seam.liveness.statusOf({ id: session.id as EntityId, status: session.status }),
     [seam],
   );
   /** The entity graph's induced-relations read — `entities.connections`, the

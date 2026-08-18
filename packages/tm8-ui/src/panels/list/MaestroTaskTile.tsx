@@ -12,7 +12,12 @@ export interface MaestroTaskTileProps {
   selected: boolean;
   attention: boolean;
   attentionReason?: string;
+  /** `category === 'done'` — this task FINISHED. Never `deletedAt` (C2). */
   completed: boolean;
+  /** `deletedAt != null` — this task was FILED AWAY, at whatever status. A row
+      may be both; the two are orthogonal axes and read differently. The
+      session tile has carried this distinction all along. */
+  archived: boolean;
   childCount: number;
   childrenExpanded: boolean;
   onToggleChildren?: () => void;
@@ -68,6 +73,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     attention,
     attentionReason,
     completed,
+    archived,
     childCount,
     childrenExpanded,
     onToggleChildren,
@@ -91,6 +97,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
       className={[
         'pn-tt',
         completed ? 'pn-tt--completed' : '',
+        archived ? 'pn-tt--archived' : '',
         selected ? 'pn-tt--active' : '',
         attention ? 'pn-tt--attention' : '',
       ]

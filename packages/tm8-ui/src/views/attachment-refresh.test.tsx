@@ -85,7 +85,7 @@ function summary(id: string, over: Partial<EntitySummary> = {}): EntitySummary {
     counters: { children: 0, comments: 0, reactions: 0, points: 0, messages: 0, viewerReaction: null },
     state: {
       kind: 'task',
-      workStatus: 'open',
+      status: 'open',
       priority: 'medium',
       axes: {},
       assignees: [],

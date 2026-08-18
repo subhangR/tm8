@@ -1558,16 +1558,33 @@
 .cv2-root[data-theme='dark'] .lp__chip--active,
 [data-theme='dark'] .cv2-root .lp__chip--active { color: var(--pn-brand); }
 
-/* Lifecycle tabs are a segmented control, not chips: they are SHELVES a row
-   moves between by living, not filters a viewer toggles. */
+/* Category tabs are a segmented control, not chips: they are SHELVES a row
+   moves between by living, not filters a viewer toggles.
+
+   PHASE 7 MADE THIS ROW OVERFLOW, AND A SCREENSHOT IS WHAT FOUND IT. Three
+   tabs became four and the two new words are the longest in the set, so at the
+   280px side-panel floor each tab shrank and its LABEL WRAPPED INSIDE ITSELF —
+   "In / Progress 2", "To Do / 2" — while the row stayed one line tall and
+   every numeric check passed. jsdom loads no stylesheets, so no assertion in
+   this package could see it, and the row-level wrap detector could not either:
+   the tabs still shared a top edge.
+
+   `nowrap` makes a tab's words indivisible, and the row SCROLLS rather than
+   clipping when four of them cannot fit. Scrolling is the honest failure: the
+   words are ruled (To Do · In Progress · Done · Cancelled) and abbreviating
+   them here would be this file overruling the design. */
 .cv2-root .lp__tabs {
   flex: none;
   display: inline-flex;
+  max-width: 100%;
   border: 1px solid var(--pn-line-2);
   border-radius: 6px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   background: var(--pn-card);
 }
+.cv2-root .lp__tabs::-webkit-scrollbar { display: none; }
 .cv2-root .lp__tab {
   appearance: none;
   border: 0;
@@ -1575,9 +1592,13 @@
   font-family: var(--pn-mono);
   font-size: 9.5px;
   color: var(--pn-ink-3);
-  padding: 3px 9px;
+  /* 7px, not 9px: four tabs at the 280px floor, and the padding is the only
+     part of the row that is not a ruled word. */
+  padding: 3px 5px;
   cursor: pointer;
   border-left: 1px solid var(--pn-line);
+  white-space: nowrap;
+  flex: none;
 }
 .cv2-root .lp__tab:first-child { border-left: 0; }
 .cv2-root .lp__tab:hover { background: var(--pn-hover); }
@@ -2130,7 +2151,13 @@
 }
 /* No compact step-down: a session title is 12.5px at every density, so shrinking
    only this one reopened the mismatch wherever `lp--compact` is applied. */
-.cv2-root .lp__title--done { color: var(--pn-ink-3); text-decoration: line-through; }
+/* C2 — `--done` was ONE class fed by `deletedAt`, so archiving a row struck it
+   through exactly as completing it would have. Two facts, two treatments: a
+   COMPLETED row is struck through (it finished), an ARCHIVED one is only dimmed
+   (it was filed away, whatever its status). A row can be both, and then it
+   reads as both. Matches `.pn-st--archived`, which already dims sessions. */
+.cv2-root .lp__title--completed { color: var(--pn-ink-3); text-decoration: line-through; }
+.cv2-root .lp__title--archived { color: var(--pn-ink-3); opacity: 0.62; }
 .cv2-root .lp__title:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: 2px;
@@ -2444,8 +2471,14 @@
 .cv2-root[data-theme='dark'] .lp__view--active,
 [data-theme='dark'] .cv2-root .lp__view--active { color: var(--pn-brand); }
 
-/* T0-1's per-kind footer count line: "9 open · 601 done · 33 archived".
-   Counts come from the same per-tier queries as the tabs — one source. */
+/* T0-1's per-kind footer count line: "9 to do · 4 in progress · 601 done ·
+   12 cancelled". Counts come from the same per-tab queries as the tabs — one
+   source, and since phase 7 a server aggregate rather than a page length.
+
+   IT WRAPS NOW, and it has to. It was `nowrap` + ellipsis, which was fine for
+   three counts and clips the FOURTH one off every time at the 280px floor —
+   so the line always ended "· 1 cancell…" and the last number was never
+   readable. A count nobody can read is worse than a second line. */
 .cv2-root .lp__foot {
   flex: none;
   margin-top: auto;
@@ -2453,10 +2486,8 @@
   padding: 7px 10px;
   font-family: var(--pn-mono);
   font-size: 9.5px;
+  line-height: 1.5;
   color: var(--pn-ink-4);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 /* Kind-selector total, beside the kind name. */
 .cv2-root .lp__total {
@@ -3306,7 +3337,9 @@
   background: var(--pn-panel, transparent);
 }
 .cv2-root .lp__board-col--focused { border-color: var(--pn-brand); }
-.cv2-root .lp__board-col--sink { border-style: dashed; }
+/* `--sink` and `lp__board-done-link` are GONE with the §1.3 Done sink (phase
+   7): the board no longer runs under a category tab, so `done` is an ordinary
+   fetched column and needs neither a synthetic twin nor a link away to itself. */
 /* PINNED, because the board now scrolls past it. Scrolling six columns of
    cards with the labels gone off the top leaves you unable to say which
    column you are reading — the header is the only thing naming it. Sticky to
@@ -3372,19 +3405,6 @@
 @keyframes lp-board-shimmer {
   from { opacity: 0.45; }
   to { opacity: 0.9; }
-}
-.cv2-root .lp__board-done-link {
-  flex: none;
-  margin: 0;
-  padding: 6px 8px;
-  border: 0;
-  border-top: 1px solid var(--pn-line);
-  background: none;
-  font: inherit;
-  font-size: 11px;
-  color: var(--pn-brand);
-  text-align: left;
-  cursor: pointer;
 }
 .cv2-root .lp__board-reason { font-size: 12px; color: var(--pn-block); margin: 0 0 8px; }
 .cv2-root .lp__board-retry {

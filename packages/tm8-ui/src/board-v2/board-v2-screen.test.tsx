@@ -90,8 +90,12 @@ describe('the category board', () => {
        say — every fixture task carries a category, so it must be absent. */
     expect(columnKeys(view)).toEqual(CATEGORY_KEYS);
     // Cards landed where the SERVER's category says; empties say so in words.
+    // `to_do` HOLDS A CARD NOW (`taskQueued`, added with the four category
+    // tabs — the fixtures had no unstarted task at all), so the empty-column
+    // sentence is measured on `cancelled`, whose only member is archived.
     expect(column(view, 'in_progress').getByText(GUIDE)).toBeTruthy();
-    expect(column(view, 'to_do').getByText('nothing in To Do')).toBeTruthy();
+    expect(column(view, 'to_do').getByText('Name the empty states')).toBeTruthy();
+    expect(column(view, 'cancelled').getByText('nothing in Cancelled')).toBeTruthy();
     view.unmount();
   });
 

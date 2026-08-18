@@ -1257,7 +1257,7 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // been made to raise on the same value (phase 0). The two paths
         // disagreeing about a drifted status is worse than either posture, and
         // the loud one is the ruled direction: see `facade/status.ts`.
-        workStatus: narrowWorkStatus(row.work_status, row.id),
+        status: narrowWorkStatus(row.work_status, row.id),
         priority: (row.priority ?? 'medium') as 'low' | 'medium' | 'high' | 'urgent',
         axes: row.task_axes ?? {},
         dueDate: dateOnly(row.due_date),
@@ -1521,18 +1521,26 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
         contentStale: pinnedVersion > 0 && pinnedVersion < row.version,
         // The discussion moved on if the entity saw activity after the pull.
         discussionMoved: Date.parse(iso(row.activity_at)) > Date.parse(pulledAt),
-        workStatus: (pull.props.workStatus as string | null | undefined) ?? null,
+        status: (pull.props.status as string | null | undefined) ?? null,
         pulledAt,
       };
     });
   }
 
   const working = ctx.relations.workingOn.get(row.id) ?? [];
-  // The other half of the §2.3 tense rule: a terminal task is not being
-  // worked on, whatever its edges say. Past tense ("Worked on by") is a
+  // The other half of the §2.3 tense rule: an entity that has STOPPED is not
+  // being worked on, whatever its edges say. Past tense ("Worked on by") is a
   // detail-panel aggregation, never a tile badge.
-  const terminal = row.kind === 'task' && (row.work_status === 'done' || row.work_status === 'cancelled');
-  if (working.length > 0 && !terminal && ctx.related) {
+  //
+  // PHASE 9: this reads the CATEGORY, not two task status literals and a kind
+  // check. It used to be `row.kind === 'task' && work_status in (done,
+  // cancelled)`, which was three assumptions at once — that only tasks stop,
+  // that stopping is spelled by those two words, and that a custom status
+  // meaning "shipped" is still in flight. `status_category` answers all three
+  // for every kind, and `done`/`cancelled` are the closed pair that means
+  // stopped. A row with NO category has not stopped; it has no status at all.
+  const stopped = row.status_category === 'done' || row.status_category === 'cancelled';
+  if (working.length > 0 && !stopped && ctx.related) {
     const self = ctx.related.get(row.id);
     if (self) {
       badges.workingActors = working.map(

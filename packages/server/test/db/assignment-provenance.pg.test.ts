@@ -319,7 +319,7 @@ describe.sequential('task assignment provenance (129)', () => {
 
     const memberAnd = await asApp((q) => queryCollection(q, query({
       assignedByIds: [fixture.memberId],
-      workStatus: ['open'],
+      status: ['open'],
       assigneeIds: [fixture.peerId],
     }), IDENTITY));
     expect(memberAnd.page.items.map((item) => item.id)).toEqual([fixture.memberTaskId]);

@@ -35,6 +35,26 @@ beforeEach(() => {
   screenStackStore.getState().clearAll();
 });
 
+/**
+ * Open the In Progress category tab, then click the specimen task.
+ *
+ * PHASE 7 made this two steps instead of one. The list used to open on `Open`
+ * — one tab spanning `to_do` AND `in_progress` — and the four ruled tabs split
+ * it, so the panel now opens on To Do while `Session tree guide lines`
+ * (`working`) lives one tab across.
+ *
+ * The specimen stays `Session tree guide lines` because the trail assertions
+ * downstream name it; the navigation is what changed, not the subject. (The
+ * fixture set gained `taskQueued` in the same change, so the To Do tab is no
+ * longer empty — it simply does not hold THIS row.)
+ */
+async function openInProgressTask(view: { getByTestId: (id: string) => HTMLElement }) {
+  const list = await waitFor(() => view.getByTestId('tch-hosted-list'));
+  fireEvent.click(within(list).getByRole('tab', { name: /^In Progress/ }));
+  const row = await waitFor(() => within(list).getByText('Session tree guide lines'));
+  fireEvent.click(row);
+}
+
 describe('Home trails live in the URL (D1)', () => {
   it('a rail click switches the root AND the address; a tile click roots the centre trail', async () => {
     const target = createMemoryTarget(`#/s/${SPACE}/home`);
@@ -49,9 +69,7 @@ describe('Home trails live in the URL (D1)', () => {
 
     /* A tile click ROOTS the centre (R6a): the entity takes region B and the
        trail rides `p`. */
-    fireEvent.click(
-      within(view.getByTestId('tch-hosted-list')).getByText('Session tree guide lines'),
-    );
+    await openInProgressTask(view);
     await waitFor(() => view.getByTestId('tch-center-override'));
     await waitFor(() => expect(target.getHash()).toContain('p='));
 
@@ -69,10 +87,7 @@ describe('Home trails live in the URL (D1)', () => {
     const a = render(<GateApp routerTarget={first} />);
     await waitFor(() => a.getByTestId('home-page'));
     fireEvent.click(within(a.getByTestId('home-rail')).getByRole('button', { name: /^Tasks/ }));
-    await waitFor(() => a.getByTestId('tch-hosted-list'));
-    fireEvent.click(
-      within(a.getByTestId('tch-hosted-list')).getByText('Session tree guide lines'),
-    );
+    await openInProgressTask(a);
     await waitFor(() => expect(first.getHash()).toContain('p='));
     const shared = first.getHash();
     a.unmount();

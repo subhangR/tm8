@@ -1154,7 +1154,7 @@ export class W2EntitiesCommandsTrackingService {
           case 'task':
             raw = await q.rpc('update_task_content', [id, input.expectedVersion, envelope.actorId ?? null,
               input.title ?? null, content.description ?? null, content.axes ?? null,
-              content.workStatus ?? null, content.priority ?? null,
+              content.status ?? null, content.priority ?? null,
               content.acceptanceCriteria === undefined
                 ? null
                 : JSON.stringify(acceptanceCriteria(content, envelope.actorId ?? null)),

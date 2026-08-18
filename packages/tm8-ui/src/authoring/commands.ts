@@ -50,7 +50,7 @@ export interface AuthoringCommands {
    * THE GENERIC CONTENT PATCH, and it is not a duplicate of `patchTask`.
    *
    * `ops.patchTask` builds its `content` from a CLOSED list of task members
-   * (description, axes, workStatus, priority, acceptanceCriteria,
+   * (description, axes, status, priority, acceptanceCriteria,
    * pointsEstimate, dueDate — `data/real/ops.ts:394`) and drops everything
    * else on the floor. A channel's `topic` is not on that list, so routing the
    * edit dialog through `patchTask` would have sent the title, silently

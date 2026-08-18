@@ -18,7 +18,7 @@
  *
  *  - `version` and `state` are NEVER projected away. Version is optimistic
  *    concurrency — a caller who mutates from a versionless read conflicts on
- *    arrival. `state` carries workStatus and acceptance counts — the actual
+ *    arrival. `state` carries status and acceptance counts — the actual
  *    work signals — and passes through VERBATIM, including any ActorSummaries
  *    nested inside it: those are work data, not decoration.
  *  - every projected node carries `projected: true`, so a reader can always

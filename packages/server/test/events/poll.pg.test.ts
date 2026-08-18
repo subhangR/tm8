@@ -164,7 +164,7 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
     expect(upsert.entity.state.kind).toBe('task');
     if (upsert.entity.state.kind === 'task') {
       expect(upsert.entity.state.priority).toBe('high');
-      expect(upsert.entity.state.workStatus).toBe('open');
+      expect(upsert.entity.state.status).toBe('open');
     }
     expect(upsert.entity.createdBy.id).toBe(memberId);
     expect(upsert.entity.counters.messages).toBe(0);

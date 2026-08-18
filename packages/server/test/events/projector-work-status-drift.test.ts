@@ -31,7 +31,7 @@ const SUMMARY_MARKER = 't.work_status, t.priority';
  * full: `SummaryRow` is ~120 nullable columns and is not exported, and every
  * field this projection reads for a task is present below.
  */
-function taskRow(workStatus: string | null): Record<string, unknown> {
+function taskRow(status: string | null): Record<string, unknown> {
   return {
     id: TASK_ID,
     space_id: SPACE_ID,
@@ -56,7 +56,7 @@ function taskRow(workStatus: string | null): Record<string, unknown> {
     memories: 0,
     task_title: 'A task',
     task_description: null,
-    work_status: workStatus,
+    work_status: status,
     priority: 'medium',
     completion_gate: 'none',
     axes: null,
@@ -99,7 +99,7 @@ describe('projector work_status drift', () => {
       const summaries = await projector.entitySummaries(querierFor([taskRow(status)]), [TASK_ID]);
       const state = summaries.get(TASK_ID)?.state;
       expect(state?.kind).toBe('task');
-      expect((state as { workStatus?: string }).workStatus).toBe(status);
+      expect((state as { status?: string }).status).toBe(status);
     }
   });
 
@@ -107,6 +107,6 @@ describe('projector work_status drift', () => {
     const projector = new PgEntityProjector();
     const summaries = await projector.entitySummaries(querierFor([taskRow(null)]), [TASK_ID]);
     const state = summaries.get(TASK_ID)?.state;
-    expect((state as { workStatus?: string }).workStatus).toBe('open');
+    expect((state as { status?: string }).status).toBe('open');
   });
 });

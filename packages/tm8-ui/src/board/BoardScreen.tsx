@@ -8,7 +8,7 @@
  * WHAT THE PIVOT MEANS AS A WRITE, because the three groupings are three
  * DIFFERENT verbs and pretending otherwise would ship a drop that lies:
  *
- *   workStatus → `setState` (commands.work / complete via the registry's own
+ *   status → `setState` (commands.work / complete via the registry's own
  *                option routing — done goes through the gated `complete`).
  *   priority   → `setValue` (a version-guarded content patch; the version is
  *                hydrated on demand through `refetchDetail`, since a board
@@ -85,7 +85,7 @@ interface BoardScreenProps {
 export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: BoardScreenProps) {
   const lifecycle = useRowLifecycle({ data, viewerMemberId, onNotice });
 
-  const [pivot, setPivot] = useState<BoardPivot>('workStatus');
+  const [pivot, setPivot] = useState<BoardPivot>('status');
   const [filters, setFilters] = useState<BoardFilterState>(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
   /** card id → the column key it was optimistically dropped on. */
@@ -216,7 +216,7 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
     fromKey: string,
     toKey: string,
   ): Promise<SetStateOutcome> => {
-    if (pivot === 'workStatus') {
+    if (pivot === 'status') {
       if (!stateControl) return { ok: false, reason: 'Tasks have no settable state on this build.' };
       const option = stateControl.options.find((o) => o.id === toKey);
       if (!option) return { ok: false, reason: `“${toKey}” is not a settable state.` };
@@ -598,7 +598,7 @@ function CardView({
 }) {
   const state = row.state.kind === 'task' ? row.state : null;
   const priority = state ? PRIORITY_SPEC.get(state.priority) : undefined;
-  const status = state ? STATUS_SPEC.get(state.workStatus) : undefined;
+  const status = state ? STATUS_SPEC.get(state.status) : undefined;
   const cls = [
     'bd__card',
     pending ? 'bd__card--pending' : '',
@@ -629,7 +629,7 @@ function CardView({
         {/* The pivot's own axis is the COLUMN — repeating it on every card
             would be noise; the other axis stays visible. */}
         {priority && pivot !== 'priority' ? <Pill tone={priority.tone}>{priority.label}</Pill> : null}
-        {status && pivot !== 'workStatus' ? <Pill tone={status.tone}>{status.label}</Pill> : null}
+        {status && pivot !== 'status' ? <Pill tone={status.tone}>{status.label}</Pill> : null}
         {state?.dueDate ? <span className="bd__card-due">{`due ${shortDate(state.dueDate)}`}</span> : null}
         {state && state.acceptance.total > 0 ? (
           <span className="bd__card-accept">{`✓ ${state.acceptance.completed}/${state.acceptance.total}`}</span>

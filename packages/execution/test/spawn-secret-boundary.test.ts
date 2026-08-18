@@ -67,7 +67,7 @@ function poisonedContext(): SpawnContext {
         title: 'Fix claude credential connection.',
         description: POISONED_DESCRIPTION,
         priority: 'high',
-        workStatus: 'open',
+        status: 'open',
         acceptanceCriteria: [],
       },
     ],

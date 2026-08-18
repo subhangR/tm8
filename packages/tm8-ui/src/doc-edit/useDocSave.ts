@@ -25,7 +25,7 @@
  *
  * ITS RELATION TO `authoring/useTaskSave`. Same law, different command and
  * different edit vocabulary: that hook rides `patchTask`/`PatchTaskInput`
- * (workStatus, priority, acceptance criteria), this one rides `patchEntity`/
+ * (status, priority, acceptance criteria), this one rides `patchEntity`/
  * `PatchEntityInput` (title, content.body). Routing a doc body through the
  * task hook would mean sending it as `description`, which is a lie about which
  * field is being written. The DUPLICATION IS REAL AND IS NAMED IN THE HANDOVER

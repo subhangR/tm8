@@ -112,7 +112,7 @@ export interface PromptManifest {
         title?: string | undefined;
         description?: string | undefined;
         priority?: string | undefined;
-        workStatus?: string | undefined;
+        status?: string | undefined;
         acceptanceCriteria?: readonly unknown[] | undefined;
         attachments?: ReadonlyArray<{
           fileEntityId: string;
@@ -872,7 +872,7 @@ export function composePrompt(
     const body = [
       task.title ? `Title: ${task.title}` : null,
       task.priority ? `Priority: ${task.priority}` : null,
-      task.workStatus ? `Status: ${task.workStatus}` : null,
+      task.status ? `Status: ${task.status}` : null,
       task.description ? `Description:\n${task.description}` : null,
       criteria.length > 0 ? `Acceptance criteria:\n${criteria.map((item) => `- ${item}`).join('\n')}` : null,
     ].filter((line): line is string => line !== null).join('\n\n');

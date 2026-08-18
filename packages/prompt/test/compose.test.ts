@@ -22,7 +22,7 @@ const manifest: PromptManifest = {
       title: 'Wire the PTY',
       description: 'Stream bytes.',
       priority: 'high',
-      workStatus: 'open',
+      status: 'open',
       acceptanceCriteria: ['xterm renders live output', 'no poll requests'],
     },
   ],

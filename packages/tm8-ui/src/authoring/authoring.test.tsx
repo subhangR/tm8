@@ -552,7 +552,7 @@ describe('inline status', () => {
             value="open"
             options={OPTIONS}
             editable
-            onSelect={(workStatus) => void save.commitNow({ workStatus })}
+            onSelect={(status) => void save.commitNow({ status })}
           />
         </AuthoringHost>
       );
@@ -561,7 +561,7 @@ describe('inline status', () => {
     fireEvent.click(screen.getByTestId('authoring-status'));
     await act(async () => { fireEvent.click(screen.getByRole('option', { name: 'working' })); });
     expect(calls.patch).toHaveLength(1);
-    expect(calls.patch[0].input.workStatus).toBe('working');
+    expect(calls.patch[0].input.status).toBe('working');
     expect(calls.patch[0].input.expectedVersion).toBe(5);
   });
 

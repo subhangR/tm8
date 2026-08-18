@@ -160,7 +160,7 @@ describeDb('G1A loop over HTTP', () => {
         kind: string;
         title: string;
         version: number;
-        state: { kind: string; workStatus: string; acceptance: { total: number; completed: number } };
+        state: { kind: string; status: string; acceptance: { total: number; completed: number } };
         content: { kind: string; description: string };
         capabilities: { canComplete: boolean; canEdit: boolean };
       };
@@ -180,7 +180,7 @@ describeDb('G1A loop over HTTP', () => {
     expect(data.entity.kind).toBe('task');
     // The title is DERIVED server-side and is never an id (L3).
     expect(data.entity.title).toBe('Wire the loop');
-    expect(data.entity.state.workStatus).toBe('open');
+    expect(data.entity.state.status).toBe('open');
     expect(data.entity.state.acceptance).toEqual({ total: 1, completed: 0 });
     expect(data.entity.content.description).toBe('Prove the vertical slice works.');
     // `canComplete` is an AFFORDANCE, not a pre-flight check: it is true on a
@@ -252,11 +252,11 @@ describeDb('G1A loop over HTTP', () => {
     expect(bad.status).toBe(400);
   });
 
-  it('collections.query groups by workStatus server-side', async () => {
+  it('collections.query groups by status server-side', async () => {
     const { data } = await call<{ groups?: Array<{ key: string; label: string }> }>(
       'POST',
       '/v2/collections/query',
-      { spaceId, kinds: ['task'], groupBy: 'workStatus', sort: 'position' },
+      { spaceId, kinds: ['task'], groupBy: 'status', sort: 'position' },
     );
     expect(data.groups?.map((g) => g.key)).toContain('open');
   });
@@ -279,12 +279,12 @@ describeDb('G1A loop over HTTP', () => {
   });
 
   it('/commands/work moves the task and records the working_on edge', async () => {
-    const { data } = await call<{ entity: { state: { kind: string; workStatus: string }; version: number } }>(
+    const { data } = await call<{ entity: { state: { kind: string; status: string }; version: number } }>(
       'POST',
       `/v2/entities/${taskId}/commands/work`,
       { status: 'working' },
     );
-    expect(data.entity.state.workStatus).toBe('working');
+    expect(data.entity.state.status).toBe('working');
     taskVersion = data.entity.version;
   });
 
@@ -334,13 +334,13 @@ describeDb('G1A loop over HTTP', () => {
     expect(patched.data.entity.capabilities.canComplete).toBe(true);
 
     const completed = await call<{
-      entity: { state: { kind: string; workStatus: string } };
+      entity: { state: { kind: string; status: string } };
       patches: Array<{ id: string }>;
     }>('POST', `/v2/entities/${taskId}/commands/complete`, {
       expectedVersion: patched.data.entity.version,
       completerIds: [memberId],
     });
-    expect(completed.data.entity.state.workStatus).toBe('done');
+    expect(completed.data.entity.state.status).toBe('done');
     // The completer is patched too — `complete_task` writes the `completed_by`
     // edge and the point award in the same transaction.
     expect(completed.data.patches.map((p) => p.id)).toContain(memberId);

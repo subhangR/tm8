@@ -60,7 +60,7 @@ const NOW = '2026-08-18T00:00:00.000Z';
 
 /** The columns both assemblers read for a task, under each one's own names. */
 interface Fixture {
-  workStatus: string | null;
+  status: string | null;
   statusCategory: string | null;
 }
 
@@ -98,7 +98,7 @@ const assembly: AssemblyContext = {
   viewerReactions: new Map(),
 };
 
-function readPathSummary({ workStatus, statusCategory }: Fixture) {
+function readPathSummary({ status, statusCategory }: Fixture) {
   const row = {
     id: TASK,
     space_id: SPACE,
@@ -119,7 +119,7 @@ function readPathSummary({ workStatus, statusCategory }: Fixture) {
     points: 0,
     messages: 0,
     task_title: 'A task',
-    work_status: workStatus,
+    work_status: status,
     priority: 'medium',
     completion_gate: 'none',
     acceptance_criteria: [],
@@ -134,7 +134,7 @@ function readPathSummary({ workStatus, statusCategory }: Fixture) {
 /** The one marker unique to the projector's wide hydration join. */
 const SUMMARY_MARKER = 't.work_status, t.priority';
 
-async function eventPathSummary({ workStatus, statusCategory }: Fixture) {
+async function eventPathSummary({ status, statusCategory }: Fixture) {
   const row: Record<string, unknown> = {
     id: TASK,
     space_id: SPACE,
@@ -160,7 +160,7 @@ async function eventPathSummary({ workStatus, statusCategory }: Fixture) {
     memories: 0,
     task_title: 'A task',
     task_description: null,
-    work_status: workStatus,
+    work_status: status,
     priority: 'medium',
     completion_gate: 'none',
     axes: null,
@@ -258,13 +258,13 @@ describe.each(PATHS)('EntitySummary.category — $name', ({ summarise }) => {
   it.each(['to_do', 'in_progress', 'done', 'cancelled'] as StatusCategory[])(
     'projects %s from the column',
     async (category) => {
-      const summary = await summarise({ workStatus: 'open', statusCategory: category });
+      const summary = await summarise({ status: 'open', statusCategory: category });
       expect(summary.category).toBe(category);
     },
   );
 
   it('OMITS the key when the entity has no status — absence, not a default', async () => {
-    const summary = await summarise({ workStatus: 'open', statusCategory: null });
+    const summary = await summarise({ status: 'open', statusCategory: null });
     // `in`, not `=== undefined`: the contract schema is `.strict()` and an
     // explicit `category: undefined` is a different object on the wire, in
     // Object.keys, and to the event feed's structural comparisons.
@@ -273,7 +273,7 @@ describe.each(PATHS)('EntitySummary.category — $name', ({ summarise }) => {
 
   it('stays a legal EntitySummary either way', async () => {
     for (const statusCategory of ['done', null]) {
-      const summary = await summarise({ workStatus: 'open', statusCategory });
+      const summary = await summarise({ status: 'open', statusCategory });
       expect(EntitySummarySchema.safeParse(summary).success).toBe(true);
     }
   });
@@ -283,7 +283,7 @@ describe.each(PATHS)('EntitySummary.category — $name', ({ summarise }) => {
     // statuses. So unlike a status, an unknown category can never be "one we
     // have not heard of yet"; it can only be a migration that broke the
     // bargain past a DDL CHECK.
-    await expect(summarise({ workStatus: 'open', statusCategory: 'archived' }))
+    await expect(summarise({ status: 'open', statusCategory: 'archived' }))
       .rejects.toThrow(StatusCategoryDriftError);
   });
 });
@@ -297,13 +297,13 @@ describe.each(PATHS)('work_status narrowing — $name', ({ summarise }) => {
     // This is the Phase 1 decision the handoff asked for explicitly. The event
     // path already raised (phase 0); the read path cast unchecked, so a drifted
     // status reached clients as a lie about a closed union. Both are loud now.
-    await expect(summarise({ workStatus: 'needs_triage', statusCategory: 'to_do' }))
+    await expect(summarise({ status: 'needs_triage', statusCategory: 'to_do' }))
       .rejects.toThrow(WorkStatusDriftError);
   });
 
   it('still treats NULL as open — a missing detail join is not drift', async () => {
-    const summary = await summarise({ workStatus: null, statusCategory: null });
-    expect(summary.state).toMatchObject({ kind: 'task', workStatus: 'open' });
+    const summary = await summarise({ status: null, statusCategory: null });
+    expect(summary.state).toMatchObject({ kind: 'task', status: 'open' });
   });
 });
 

@@ -1,4 +1,4 @@
-import type { ActorSummary, EntitySummary } from '@tm8/contract';
+import type { ActorSummary, EntitySummary, StatusCategory } from '@tm8/contract';
 import type { TileBadgeSource } from '../../domain';
 import { actorPresentation } from '../../domain';
 import type { PillTone } from '../../kit';
@@ -71,8 +71,28 @@ const WORK_STATUS_TONE: Record<string, PillTone> = {
   blocked: 'block',
   cancelled: 'idle',
 };
-/** Hollow ring = not yet started / not alive; solid = in motion or settled. */
-const WORK_STATUS_HOLLOW = new Set(['open', 'pulled', 'cancelled']);
+/**
+ * Hollow ring = not yet started / not alive; solid = in motion or settled.
+ *
+ * PHASE 9 — DERIVED FROM THE CATEGORY, not from a hand-kept list of status
+ * words. `WORK_STATUS_HOLLOW = new Set(['open','pulled','cancelled'])` said the
+ * same thing this does, exactly (open/pulled ARE `to_do` and `cancelled` IS
+ * `cancelled`), but it said it in a vocabulary that goes stale the moment a
+ * space names its own statuses — a `Triaged` state would silently draw solid
+ * because nobody added the word here.
+ *
+ * The two hollow categories are the two that are not in motion: `to_do` has
+ * not started, `cancelled` stopped without finishing. `in_progress` and `done`
+ * are solid. A row with NO category has no status to draw a verdict about, and
+ * hollow is the honest ring for that.
+ */
+const HOLLOW_CATEGORIES: ReadonlySet<StatusCategory> = new Set<StatusCategory>([
+  'to_do',
+  'cancelled',
+]);
+
+const categoryDot = (category: StatusCategory | undefined): 'hollow' | 'solid' =>
+  category === undefined || HOLLOW_CATEGORIES.has(category) ? 'hollow' : 'solid';
 
 const SESSION_STATUS_TONE: Record<string, PillTone> = {
   spawning: 'wait',
@@ -118,14 +138,14 @@ const meta = (text: string | null): TileSlot | null => (text ? { slot: 'meta', t
 export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSlot | null {
   switch (source) {
     // -- status: the dot + word pair on line 1 ------------------------------
-    case 'workStatus': {
-      const v = str(field(row, 'workStatus'));
+    case 'status': {
+      const v = str(field(row, 'status'));
       if (!v) return null;
       return {
         slot: 'status',
         word: v.replace(/_/g, ' '),
         tone: WORK_STATUS_TONE[v] ?? 'idle',
-        dot: WORK_STATUS_HOLLOW.has(v) ? 'hollow' : 'solid',
+        dot: categoryDot(row.category),
       };
     }
     case 'sessionStatus': {
@@ -320,7 +340,7 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
  * that silently loses its anatomy.
  */
 export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSource>([
-  'workStatus', 'sessionStatus', 'prState', 'profileStatus',
+  'status', 'sessionStatus', 'prState', 'profileStatus',
   'priority', 'axes', 'entityActor', 'createdBy',
   'workingActors', 'liveWork', 'owner', 'messageAuthor',
   'assignees', 'acceptance', 'dueDate', 'blocked', 'pulls', 'restricted',

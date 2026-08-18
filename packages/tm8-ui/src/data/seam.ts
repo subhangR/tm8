@@ -1051,7 +1051,7 @@ export interface Seam {
     /** THE predicate — the only place liveness truth is computed (R-UI-5).
      *  Accepts both vocabularies (Amendment 1): tasks carry WorkStatus, work
      *  sessions carry WorkSessionStatus — 'running' lives in the latter. */
-    statusOf(session: { id: EntityId; workStatus: WorkStatus | WorkSessionStatus | null }): SessionLiveness;
+    statusOf(session: { id: EntityId; status: WorkStatus | WorkSessionStatus | null }): SessionLiveness;
   };
 }
 
