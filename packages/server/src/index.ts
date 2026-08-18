@@ -10,9 +10,6 @@
 import { pathToFileURL } from 'node:url';
 import { main } from './main.js';
 
-export const SERVER_PORT = 4610;
-export const SIDECAR_PG_PORT = 5442;
-
 export * from './http/index.js';
 export * from './facade/index.js';
 export * from './events/index.js';

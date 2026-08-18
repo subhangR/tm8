@@ -1,35 +1,24 @@
 /**
- * The uniform entity operations (02 §3.1): get, create, patch, children.
- *
- * THE DISPATCH RULE (02 §6): SQL stays fully typed per kind — there is a
- * `create_task` and a `create_document`, not a generic writer. Uniformity is an
- * API property, so THIS layer is where `entities.create` fans out to the right
- * typed RPC based on the discriminated `kind`. That means an unsupported kind
- * gets an honest refusal here rather than a generic insert that half-works.
- *
- * G1A builds `task` and `doc` only (AM-5). Every other kind answers
- * `not_implemented` naming itself — not a 400, which would say the caller was
- * wrong when in fact the server is unfinished.
+ * Shared entity-read/command-result assembly used by the W2 `entities.*` and
+ * `edges.*` service handlers (`facade/services/w2/entities-commands-tracking.ts`
+ * and friends): `buildDetail`, `toCommandResult`, and `enrichVersionConflict`.
  */
 import {
   CollabError,
-  decodeCursor,
   encodeCursor,
   type CommandResult,
   type Connections,
-  type CreateEntityInput,
   type EdgeGroup,
   type EdgeView,
   type EntityDetail,
   type EntitySummary,
   type Hierarchy,
   type Page,
-  type PatchEntityInput,
 } from '@tm8/contract';
 import type { Querier } from '../../db/types.js';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
-import { claimsFor, commandEnvelope, limitOf, requireUuidParam, type CommandEnvelope } from '../context.js';
+import { claimsFor, type CommandEnvelope } from '../context.js';
 import {
   actorOf,
   assembleSummaries,
@@ -41,20 +30,6 @@ import {
   loadActors,
   type EntityRow,
 } from '../entity-read.js';
-
-/**
- * Kinds `entities.create` routes to a typed RPC today.
- *
- * `team_member` is here because `execution.spawn` requires a `teamMemberId` —
- * a session is always somebody, and the manifest's identity block is built
- * from that row. Without it the loop cannot reach spawn at all, so the persona
- * is on the critical path even though nothing else about team_member is.
- *
- * `channel` is here because a space with no channels is not navigable, and
- * `spaces.navigation` renders the channel tree (AM-3: "open a space, see
- * tasks").
- */
-const SUPPORTED_CREATE_KINDS = new Set(['task', 'doc', 'team_member', 'channel']);
 
 /**
  * Fetch one entity for a LIVE read.
@@ -280,14 +255,6 @@ function encodeChildCursor(row: EntityRow): string {
   return encodeCursor([Number(row.position), row.id]);
 }
 
-export function entitiesGet(deps: FacadeDeps): OperationHandler {
-  return async (ctx) => {
-    const owner = await deps.owner();
-    const id = requireUuidParam(ctx, 'id');
-    return deps.db.tx(claimsFor(owner, ctx), async (q) => buildDetail(q, id, owner.identityId));
-  };
-}
-
 /**
  * Attach the CURRENT state to a `version_conflict`.
  *
@@ -348,55 +315,6 @@ export async function buildDetail(
     capabilities: entityCapabilities(row),
   };
 }
-
-// ---------------------------------------------------------------------------
-// entities.children
-// ---------------------------------------------------------------------------
-
-export function entitiesChildren(deps: FacadeDeps): OperationHandler {
-  return async (ctx) => {
-    const owner = await deps.owner();
-    const id = requireUuidParam(ctx, 'id');
-    const limit = limitOf(ctx.query.get('limit'));
-    const cursor = ctx.query.get('cursor');
-
-    return deps.db.tx(claimsFor(owner, ctx), async (q) => {
-      const params: unknown[] = [id];
-      let keyset = '';
-      if (cursor) {
-        const { k } = decodeCursor(cursor);
-        if (k.length !== 2) throw new CollabError('invalid_cursor', 'invalid cursor: expected [position, id]');
-        params.push(Number(k[0]), String(k[1]));
-        keyset = `and (e.position, e.id) > ($2::double precision, $3::uuid)`;
-      }
-
-      const rows = await q.query<EntityRow>(
-        `select ${ENTITY_COLUMNS} ${ENTITY_FROM}
-          where e.parent_id = $1 and e.deleted_at is null ${keyset}
-          order by e.position asc, e.id asc
-          limit ${limit + 1}`,
-        params,
-      );
-      const hasMore = rows.length > limit;
-      const pageRows = hasMore ? rows.slice(0, limit) : rows;
-      const items = await assembleSummaries(q, pageRows, viewerIdentity(owner.identityId));
-      const last = pageRows[pageRows.length - 1];
-      const page: Page<EntitySummary> = {
-        items,
-        nextCursor: hasMore && last ? encodeChildCursor(last) : null,
-      };
-      return page;
-    });
-  };
-}
-
-function viewerIdentity(id: string): string {
-  return id;
-}
-
-// ---------------------------------------------------------------------------
-// entities.create / entities.patch
-// ---------------------------------------------------------------------------
 
 /** The jsonb `internal.command_result` shape the write RPCs return. */
 interface RpcCommandResult {
@@ -482,236 +400,6 @@ async function toCommandResult(
           },
         }
       : {}),
-  };
-}
-
-function acceptanceCriteria(content: Record<string, unknown> | undefined): unknown[] {
-  const raw = content?.acceptanceCriteria;
-  if (!Array.isArray(raw)) return [];
-  // Criteria carry `{id, text, done}`; a client may send only `text`, so the
-  // id is minted here rather than left absent for the UI to invent later.
-  return raw.map((c, i) => {
-    const item = (typeof c === 'object' && c !== null ? c : {}) as Record<string, unknown>;
-    return {
-      id: typeof item.id === 'string' ? item.id : `ac_${i + 1}`,
-      text: typeof item.text === 'string' ? item.text : '',
-      done: item.done === true,
-      ...(typeof item.doneBy === 'string' ? { doneBy: item.doneBy } : {}),
-      ...(typeof item.doneAt === 'string' ? { doneAt: item.doneAt } : {}),
-    };
-  });
-}
-
-export function entitiesCreate(deps: FacadeDeps): OperationHandler {
-  return async (ctx) => {
-    const owner = await deps.owner();
-    const envelope = commandEnvelope(ctx);
-    const input = ctx.body as CreateEntityInput;
-
-    if (!SUPPORTED_CREATE_KINDS.has(input.kind)) {
-      // DEV-13 honesty: the contract declares this kind, this build has not
-      // implemented it. That is a 501 about the server, not a 400 about the
-      // request.
-      throw new CollabError(
-        'not_implemented',
-        `entities.create does not yet support kind '${input.kind}' on this node (G1A builds task and doc)`,
-      );
-    }
-
-    const content = (input.content ?? {}) as Record<string, unknown>;
-    const attach = input.attachTo;
-    const claims = claimsFor(owner, ctx, envelope);
-
-    return deps.db.tx(claims, async (q) => {
-      if (input.kind === 'team_member') {
-        // Every field but the name has a default in the RPC (007:1198), so a
-        // persona created with just `{spaceId, kind, title}` is well-formed,
-        // not half-formed: role/identity default to '', the jsonb blocks to
-        // '{}', and the OWNER is resolved from the caller's member row rather
-        // than accepted from the client (an agent minting its own persona
-        // would grow a new can_act_as root every spawn).
-        const raw = await q.rpc<RpcCommandResult>('create_team_member', [
-          input.spaceId,
-          input.title,
-          envelope.actorId ?? null,
-          content.role ?? '',
-          content.identity ?? '',
-          content.model ?? null,
-          content.agentTool ?? null,
-          content.mode ?? null,
-          content.permissionMode ?? null,
-          JSON.stringify(content.capabilities ?? {}),
-          JSON.stringify(content.commandPermissions ?? {}),
-          content.avatar ?? null,
-          input.parentId ?? null,
-          input.position ?? null,
-          envelope.clientMutationId ?? null,
-        ]);
-        const created = await toCommandResult(q, raw, owner.identityId);
-        return { kind: 'json' as const, status: 201, data: created };
-      }
-
-      if (input.kind === 'channel') {
-        // `create_channel` lowercases and trims the name itself (007:1069),
-        // because `channels.name` is regex-constrained and unique per space —
-        // so the title travels through as-is rather than being pre-mangled
-        // here where the two normalisations could drift apart.
-        const raw = await q.rpc<RpcCommandResult>('create_channel', [
-          input.spaceId,
-          input.title,
-          envelope.actorId ?? null,
-          content.topic ?? '',
-          input.parentId ?? null,
-          input.position ?? null,
-          envelope.clientMutationId ?? null,
-        ]);
-        const created = await toCommandResult(q, raw, owner.identityId);
-        return { kind: 'json' as const, status: 201, data: created };
-      }
-
-      const raw =
-        input.kind === 'task'
-          ? await q.rpc<RpcCommandResult>('create_task', [
-              input.spaceId,
-              input.title,
-              envelope.actorId ?? null,
-              content.description ?? '',
-              content.axes ?? {},
-              input.parentId ?? null,
-              input.position ?? null,
-              content.priority ?? 'medium',
-              JSON.stringify(acceptanceCriteria(content)),
-              content.pointsEstimate ?? null,
-              content.dueDate ?? null,
-              attach?.entityId ?? null,
-              attach?.edgeType ?? 'attached_to',
-              envelope.clientMutationId ?? null,
-            ])
-          : await q.rpc<RpcCommandResult>('create_document', [
-              input.spaceId,
-              input.title,
-              envelope.actorId ?? null,
-              content.body ?? '',
-              content.format ?? 'markdown',
-              input.parentId ?? null,
-              input.position ?? null,
-              attach?.entityId ?? null,
-              attach?.edgeType ?? 'attached_to',
-              envelope.clientMutationId ?? null,
-            ]);
-
-      await attachEdgeInto(q, raw, attach);
-      const result = await toCommandResult(q, raw, owner.identityId);
-      return { kind: 'json' as const, status: 201, data: result };
-    });
-  };
-}
-
-/**
- * Surface the edge that `attachTo` created.
- *
- * `create_task` / `create_document` call `internal.attach_on_create`, which
- * DOES create the edge — but they pass `null` as `command_result`'s edge
- * argument, so the id never comes back (007:939). The edge is real and
- * committed; only the reporting is missing, and a client that asked for an
- * atomic create-and-attach needs to see what it got. Looked up here rather
- * than patched into the RPC, which is Cygnus's file.
- */
-async function attachEdgeInto(
-  q: Querier,
-  raw: RpcCommandResult,
-  attach: CreateEntityInput['attachTo'],
-): Promise<void> {
-  const newId = raw.entity?.id;
-  if (!attach?.entityId || !newId || raw.edge) return;
-
-  const rows = await q.query<NonNullable<RpcCommandResult['edge']>>(
-    `select id, src_id, dst_id, type, props, created_by, created_at
-       from public.edges
-      where src_id = $1 and dst_id = $2 and type = $3`,
-    [newId, attach.entityId, attach.edgeType ?? 'attached_to'],
-  );
-  const row = rows[0];
-  if (row) {
-    raw.edge = row;
-    // `toCommandResult` builds the EdgeView from `patches`, so both endpoints
-    // must be in there. The RPC patches only the new entity.
-    const patches = raw.patches ?? [];
-    if (!patches.some((p) => p.id === attach.entityId)) {
-      raw.patches = [...patches, { id: attach.entityId }];
-    }
-  }
-}
-
-export function entitiesPatch(deps: FacadeDeps): OperationHandler {
-  return async (ctx) => {
-    const owner = await deps.owner();
-    const envelope = commandEnvelope(ctx);
-    const id = requireUuidParam(ctx, 'id');
-    const input = ctx.body as PatchEntityInput;
-    const content = (input.content ?? {}) as Record<string, unknown>;
-    const claims = claimsFor(owner, ctx, envelope);
-
-    const run = (): Promise<unknown> =>
-      deps.db.tx(claims, async (q) => {
-      // Dispatch on the STORED kind, not on anything the client said: a patch
-      // body has no `kind`, and trusting one would let a caller aim a task
-      // update at a document.
-      const kindRows = await q.query<{ kind: string }>(
-        `select kind from public.entities where id = $1 and deleted_at is null`,
-        [id],
-      );
-      const kind = kindRows[0]?.kind;
-      if (!kind) throw new CollabError('not_found', `no such entity: ${id}`);
-
-      let raw: RpcCommandResult;
-      if (kind === 'task') {
-        raw = await q.rpc<RpcCommandResult>('update_task_content', [
-          id,
-          input.expectedVersion,
-          envelope.actorId ?? null,
-          input.title ?? null,
-          content.description ?? null,
-          content.axes ?? null,
-          content.workStatus ?? null,
-          content.priority ?? null,
-          content.acceptanceCriteria === undefined
-            ? null
-            : JSON.stringify(acceptanceCriteria(content)),
-          content.pointsEstimate ?? null,
-          content.dueDate ?? null,
-          // An explicit `dueDate: null` means CLEAR, which `coalesce` in the
-          // RPC cannot express — hence the separate flag.
-          content.dueDate === null,
-          envelope.clientMutationId ?? null,
-        ]);
-      } else if (kind === 'doc') {
-        raw = await q.rpc<RpcCommandResult>('update_document', [
-          id,
-          input.expectedVersion,
-          envelope.actorId ?? null,
-          input.title ?? null,
-          content.body ?? null,
-          content.format ?? null,
-          envelope.clientMutationId ?? null,
-        ]);
-      } else {
-        throw new CollabError(
-          'not_implemented',
-          `entities.patch does not yet support kind '${kind}' on this node (G1A builds task and doc)`,
-        );
-      }
-
-      return toCommandResult(q, raw, owner.identityId);
-    });
-
-    try {
-      return await run();
-    } catch (err) {
-      // A stale write is told what it lost the race to, rather than being left
-      // to discover it with another request.
-      throw await enrichVersionConflict(deps, ctx, id, err);
-    }
   };
 }
 
