@@ -11,7 +11,7 @@ import { claimsFor, commandEnvelope, limitOf, MAX_LIMIT, optionalUuid } from '..
 import type { FacadeDeps } from '../../deps.js';
 import { actorOf, loadActors } from '../../entity-read.js';
 import type { HandlerRegistry } from '../../registry.js';
-import { collectionsAddItem, collectionsQuery, collectionsRemoveItem, queryCollection } from '../collections.js';
+import { collectionsAddItem, collectionsCounts, collectionsQuery, collectionsRemoveItem, queryCollection } from '../collections.js';
 import { toCommandResult, type RpcCommandResult } from '../entities.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -248,6 +248,7 @@ export function registerW2CollectionsGraphUndoHandlers(
 ): void {
   registry.registerAll({
     'collections.query': collectionsQuery(deps),
+    'collections.counts': collectionsCounts(deps),
     'collections.addItem': collectionsAddItem(deps),
     'collections.removeItem': collectionsRemoveItem(deps),
     'graph.query': graphQuery(deps),

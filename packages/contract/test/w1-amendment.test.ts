@@ -92,8 +92,11 @@ describe('W1 adopted catalog target', () => {
     // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) + .upsert
     // (POST command) + .delete (DELETE command) — the real workflow tables.
     // MEASURED per PIN RULE v3, never carried.
-    expect(OPERATIONS).toHaveLength(172);
-    expect(V1_OPERATIONS).toHaveLength(170);
+    // 172 -> 173 (icon rail open-count badges): collections.counts (POST read)
+    // — the kind x category matrix, one aggregate over the same buildWhere()
+    // the page uses. MEASURED per PIN RULE v3, never carried.
+    expect(OPERATIONS).toHaveLength(173);
+    expect(V1_OPERATIONS).toHaveLength(171);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -119,7 +122,9 @@ describe('W1 adopted catalog target', () => {
     // auth.claim.reissue, all POST commands. MEASURED.
     // 148: GET 60->61 (workflows.list), POST 79->80 (.upsert), DELETE 11->12
     // (.delete). MEASURED from the failing run.
-    }).toEqual({ GET: 61, POST: 80, PATCH: 11, DELETE: 12, PUT: 7, WS: 1 });
+    // rail counts: POST 80->81 (collections.counts). MEASURED from the
+    // failing run.
+    }).toEqual({ GET: 61, POST: 81, PATCH: 11, DELETE: 12, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
@@ -127,7 +132,8 @@ describe('W1 adopted catalog target', () => {
     // W4/132: read +1, command +2. MEASURED.
     // 141: command 101->104 (three new commands). MEASURED.
     // 148: read 64->65, command 104->106. MEASURED.
-    }).toEqual({ read: 65, command: 106, stream: 1 });
+    // rail counts: read 65->66 (collections.counts is a read). MEASURED.
+    }).toEqual({ read: 66, command: 106, stream: 1 });
   });
 });
 

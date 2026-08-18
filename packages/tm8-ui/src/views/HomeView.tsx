@@ -674,6 +674,12 @@ export function HomeView(props: HomeViewProps) {
       onSelect={setRoot}
       collapsed={railCollapsed}
       onToggleCollapsed={() => setRailCollapsed((collapsed) => !collapsed)}
+      /* The rail's OPEN badges come straight off the hook's matrix — one
+         server aggregate for every row, read at boot and refreshed on the
+         durable stream. Handed down rather than fetched here for the same
+         reason the collapse flag is: the rail is a presentation component and
+         a second reader of the same numbers is a second thing to keep true. */
+      openCountFor={data.openCountFor}
     />
   );
 

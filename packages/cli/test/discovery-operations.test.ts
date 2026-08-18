@@ -63,7 +63,8 @@ import { createOutput } from '../src/output.js';
 // public, all with `space task-workflow` commands. MEASURED.
 // 166 -> 169 (141): the three account-lifecycle ops. MEASURED.
 // 169 -> 172 (148): the three spaces.workflows ops. MEASURED.
-const EXPECTED_ROWS = 172;
+// 172 -> 173: collections.counts (POST read) — the kind x category matrix.
+const EXPECTED_ROWS = 173;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -177,7 +178,8 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // refusal — a human `cli` session is admitted by the R2 guard.
     // +3 (W4/132): the taskWorkflows three, all public. MEASURED from the run.
     // 165 -> 168 (148): all three spaces.workflows ops are public.
-    expect(histogram).toEqual({ public: 168, composite: 1, internal: 1, reserved: 2 });
+    // 168 -> 169: collections.counts is public (commandless, reachable via its noun shard).
+    expect(histogram).toEqual({ public: 169, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -194,6 +196,9 @@ describe('the CLI command projection', () => {
       // chat.threads.start is browser-composer-only by design (D1/D2): a chat
       // turn is a UI conversation, and the CLI already has message send.
       'chat.threads.start',
+      // collections.counts answers a NUMBER for a browser badge; a CLI caller
+      // who wants one runs `entity query` and counts its rows.
+      'collections.counts',
       'credentials.delete',
       'credentials.loginSessions.finish',
       'credentials.loginSessions.start',
@@ -240,8 +245,8 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the 25 commandless rows named exactly in the test above.
-    expect(counted).toBe(EXPECTED_ROWS - 25);
+    // Minus the 26 commandless rows named exactly in the test above.
+    expect(counted).toBe(EXPECTED_ROWS - 26);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {

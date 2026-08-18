@@ -81,6 +81,18 @@
  * the tier2-completion lane for dual re-consensus recording alongside the
  * three catalog rows it consumes.
  *
+ * Amendment 10 (2026-08-18, icon rail open counts): reads gain
+ * `categoryCounts` — the contract's `collections.counts`
+ * (`POST /v2/collections/counts`, catalog v1). ONE aggregate answering kind x
+ * status category, so the Home rail's open badges and the category tabs read
+ * the same numbers instead of two surfaces counting separately. It is a
+ * separate member rather than a field on `counts` because the two answer
+ * different questions: `counts` is a lifetime total plus the viewer's unseen
+ * mark, this is a FILTERED count that must run the same predicate as the list
+ * behind the badge. Contract-shaped and additive, zero caller churn. Filed by
+ * the icon-rail-counts lane for dual re-consensus recording alongside the
+ * catalog row it consumes.
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -109,6 +121,7 @@ import type {
   AttentionRequestPage,
   CollectionAddItemInput,
   CollectionQuery,
+  CollectionCounts,
   CollectionResult,
   CommandContext,
   CommandResult,
@@ -465,6 +478,22 @@ export interface Seam {
    * page length is not a total.
    */
   counts(spaceId: SpaceId): Promise<SpaceKindCounts>;
+  /**
+   * The kind x category MATRIX, for the icon rail's open-count badges.
+   *
+   * ITS OWN READ, and not a field on `counts`, for the reason `counts` itself
+   * exists apart from `query`: these are different questions. `counts` answers
+   * "how many of this kind exist, and how many have I not seen" — a lifetime
+   * total off a `security definer` RPC. This answers "how many are OPEN",
+   * which is a FILTERED question and must run the same predicate the list
+   * behind the badge runs, or the rail and the list disagree the first time
+   * anyone adds a filter.
+   *
+   * A matrix rather than a single "open" number because the category tabs want
+   * the same aggregate sliced the other way. One read serves both; a rail that
+   * fetched only its own sum would make the tabs fetch again.
+   */
+  categoryCounts(input: CollectionQuery): Promise<CollectionCounts>;
   /** Full graph hydration; durable entity/edge events keep this lens current. */
   graph(input: GraphQuery): Promise<GraphResult>;
   /**

@@ -134,6 +134,7 @@ interface Harness {
   resync: () => void;
   queryCalls: () => number;
   countsCalls: () => number;
+  categoryCountsCalls: () => number;
   visibilityCalls: () => readonly boolean[];
 }
 
@@ -148,6 +149,7 @@ function harness(seeded: EntitySummary[]): Harness {
   const resyncSubs = new Set<(spaceId: SpaceId) => void>();
   let queryCalls = 0;
   let countsCalls = 0;
+  let categoryCountsCalls = 0;
   const visibilityCalls: boolean[] = [];
 
   const seam = {
@@ -195,6 +197,28 @@ function harness(seeded: EntitySummary[]): Harness {
         out[row.kind] = cell;
       }
       return out as never;
+    },
+    /**
+     * The kind x category matrix, shaped like the node's: DOUBLY partial (a
+     * kind with no rows is absent, and so is a category with none), and a row
+     * whose category is undefined joins no bucket — the server drops a NULL
+     * `status_category` the same way.
+     *
+     * It reads `seeded` rather than a canned object so a test that changes the
+     * data changes the count, which is what makes the burst and re-read cases
+     * below measure anything.
+     */
+    async categoryCounts() {
+      categoryCountsCalls += 1;
+      const out: Record<string, Record<string, number>> = {};
+      for (const row of seeded) {
+        const category = (row as { category?: string }).category;
+        if (category === undefined) continue;
+        const bucket = out[row.kind] ?? {};
+        bucket[category] = (bucket[category] ?? 0) + 1;
+        out[row.kind] = bucket;
+      }
+      return { byKind: out } as never;
     },
     async query(input: CollectionQuery) {
       queryCalls += 1;
@@ -245,6 +269,7 @@ function harness(seeded: EntitySummary[]): Harness {
     },
     queryCalls: () => queryCalls,
     countsCalls: () => countsCalls,
+    categoryCountsCalls: () => categoryCountsCalls,
     visibilityCalls: () => visibilityCalls,
   };
 }
@@ -622,6 +647,79 @@ describe('liveness stays the seam’s verdict', () => {
 
     expect(result.current.livenessOf('ent-task-seeded')).toBe('not-running');
     expect(statusOf).toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE ICON RAIL'S OPEN BADGES, at the layer that computes them.
+ *
+ * `HomeRail.test.tsx` drives the component through a STUB accessor, which is
+ * the only way to pose the undefined/zero/positive trichotomy — but it means
+ * nothing there can catch a wrong sum. This block owns that: it is the only
+ * place `openCountFor` itself is exercised.
+ *
+ * RECORDED NEGATIVE CONTROL (measured, 2026-08-18). With the accessor summing
+ * `to_do + done` instead of `to_do + in_progress`, the whole rail suite
+ * (`HomeRail.test.tsx` + `panel-resize.test.tsx`, 21 cases) stayed GREEN — the
+ * mutant survived, which is what these cases exist to fix. With them present
+ * the same mutation reds exactly the two `openCountFor` cases below.
+ */
+describe('the rail\'s OPEN counts come off the category matrix', () => {
+  const open = (id: string) => task(id, { category: 'to_do' } as Partial<EntitySummary>);
+  const working = (id: string) =>
+    task(id, { category: 'in_progress', state: { kind: 'task', status: 'working', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } } } as Partial<EntitySummary>);
+  const finished = (id: string) =>
+    task(id, { category: 'done', state: { kind: 'task', status: 'done', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } } } as Partial<EntitySummary>);
+
+  it('sums to_do + in_progress, and NOTHING else', async () => {
+    /* Three categories seeded on purpose, with different sizes, so that every
+       wrong pairing produces a different number: to_do+in_progress is 3,
+       to_do+done is 4, in_progress+done is 3... hence the done pile is 2 and
+       the in_progress pile is 1, making 3 reachable only by the right sum. */
+    const h = harness([open('t1'), open('t2'), working('t3'), finished('t4'), finished('t5')]);
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await waitFor(() => expect(result.current.openCountFor('task')).toBeDefined());
+    expect(result.current.openCountFor('task')).toBe(3);
+  });
+
+  it('a kind with no rows is a real ZERO, while an unread matrix is undefined', async () => {
+    /* The distinction the badge is built on. A kind ABSENT from a matrix that
+       WAS read genuinely has none — the shape is partial, so absence is the
+       zero. That is different from having no matrix at all, which is the
+       `undefined` the rail draws nothing for. */
+    const h = harness([open('t1')]);
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await waitFor(() => expect(result.current.openCountFor('task')).toBeDefined());
+    expect(result.current.openCountFor('doc')).toBe(0);
+  });
+
+  it('rides the SAME debounce as the counters — one burst, one re-read of each', async () => {
+    /* Two independent trailing timers would double the request rate for one
+       burst AND let the rail's two numbers be read after different events. */
+    const h = harness([open('t1')]);
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await waitFor(() => expect(result.current.openCountFor('task')).toBeDefined());
+    const countsBefore = h.countsCalls();
+    const matrixBefore = h.categoryCountsCalls();
+
+    act(() => {
+      for (let i = 0; i < 5; i += 1) {
+        h.emit({
+          type: 'entity.upsert', spaceId: SPACE, seq: 10 + i, entity: open(`ent-burst-${i}`),
+        } as unknown as DurableWorkspaceEvent);
+      }
+    });
+    await waitFor(() => expect(h.categoryCountsCalls()).toBe(matrixBefore + 1));
+    expect(h.countsCalls()).toBe(countsBefore + 1);
   });
 });
 

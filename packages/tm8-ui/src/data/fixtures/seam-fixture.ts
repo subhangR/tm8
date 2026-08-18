@@ -47,6 +47,7 @@ import {
   type CollectionAddItemInput,
   type CollectionGroup,
   type CollectionQuery,
+  type CollectionCounts,
   type CollectionResult,
   type HomeSnapshot,
   type CommandContext,
@@ -856,8 +857,20 @@ function seedAttentionRows(summaries: ReadonlyMap<EntityId, EntitySummary>): Att
  * Migration 147/150's ruled status → category mapping, mirrored so fixture
  * summaries carry the same denormalized `category` the node projects (the
  * server derives it in a trigger on every status write; `touch` is this
- * fixture's equivalent single seam). Every other kind honestly OMITS the key —
- * "no status" is a different fact from `to_do` — until phase 5 gives them one.
+ * fixture's equivalent single seam). Every other kind OMITS the key.
+ *
+ * THAT OMISSION IS NOW STALE, AND DELIBERATELY LEFT ALONE. Phase 5 (migration
+ * 152, PR #377) gives every row a category on the node and raises if one is
+ * left NULL, so this fixture describes a graph that no longer exists, and any
+ * category-counting surface reads the fixture space as emptier than it is.
+ *
+ * The icon-rail-counts lane widened this to every kind and REVERTED it: two
+ * `board-v2-screen` tests pin the statusless-kind behaviour to docs having NO
+ * category ("a statusless kind shows its rows in the honest No-status-yet
+ * column"), so the catch-up deletes a column another surface is built to
+ * prove. It is a real fix, it is not this lane's fix, and doing it here would
+ * have meant editing another lane's assertions to make room. Whoever takes it
+ * owns those two tests in the same change.
  */
 const WORK_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
   open: 'to_do',
@@ -1940,6 +1953,33 @@ export function createFixtureSeam(): FixtureSeam {
         }
       });
       return clone({ query: input, page: pageOf(rows, input), ...groupsFor(rows, input) });
+    },
+    /**
+     * Counted THROUGH `query`, not beside it.
+     *
+     * The node's aggregate runs the identical `buildWhere()` its page runs, so
+     * a badge and the list under it are one claim. The fixture has to earn the
+     * same property, and the only way to earn it is to run the same predicate
+     * — which here means calling `query` rather than re-deriving its dozen
+     * filter arms in a second place that would drift on the first new filter.
+     *
+     * `limit: Number.MAX_SAFE_INTEGER` because a count is not a page: `pageOf`
+     * slices `[start, start + limit)`, so any finite limit would silently make
+     * this a count of the FIRST PAGE — exactly the "page length is not a
+     * total" mistake `counts` exists to avoid.
+     */
+    async categoryCounts(input: CollectionQuery): Promise<CollectionCounts> {
+      const all = await seam.query({ ...input, cursor: undefined, limit: Number.MAX_SAFE_INTEGER });
+      const byKind: CollectionCounts['byKind'] = {};
+      for (const item of all.page.items) {
+        // Absent, never zero — and a summary with no category joins no bucket,
+        // matching the server dropping a NULL `status_category` row.
+        if (item.category === undefined) continue;
+        const bucket = byKind[item.kind] ?? {};
+        bucket[item.category] = (bucket[item.category] ?? 0) + 1;
+        byKind[item.kind] = bucket;
+      }
+      return { byKind };
     },
     async graph(input: GraphQuery): Promise<GraphResult> {
       const collection = await seam.query({ ...input, limit: input.limit ?? 150 });

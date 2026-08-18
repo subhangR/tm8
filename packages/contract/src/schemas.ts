@@ -36,7 +36,7 @@ import type {
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
   AuthSessionGetResult, AuthSessionView, AuthSignupInput,
   AuthSignupResult, ChannelTab, ChatThreadSummary, ChatTurnFrame, ChatTurnUsage,
-  ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
+  ClosedPromptPolicy, CollectionAddItemInput, CollectionCounts, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
   CreateEdgeInput, CreateEntityInput, CreateSpaceInput, CreateTaskInput, CreateVoiceTokenInput,
@@ -883,6 +883,14 @@ export const CollectionResultSchema: z.ZodType<CollectionResult> = z.lazy(() => 
   page: pageOf(EntitySummarySchema),
   groups: z.array(CollectionGroupSchema).optional(),
 }).strict());
+
+// Doubly PARTIAL, and deliberately: a kind with no rows is absent, and a
+// category with no rows is absent from its kind's record. Records keyed by the
+// kind/category schemas rather than enum-keyed objects, so a custom `c:*` kind
+// is counted without a schema change — same posture as `SpaceKindCounts`.
+export const CollectionCountsSchema: z.ZodType<CollectionCounts> = z.object({
+  byKind: z.record(EntityKindSchema, z.record(StatusCategorySchema, z.number().int().nonnegative())),
+}).strict();
 
 export const GraphQuerySchema: z.ZodType<GraphQuery> = z.object({
   ...collectionQueryShape(),

@@ -826,6 +826,37 @@ export interface CollectionGroup {
    */
   total?: number;
 }
+/**
+ * POST /v2/collections/counts — ONE aggregate answering kind x category.
+ *
+ * WHY A MATRIX AND NOT A NUMBER. Two surfaces want counts off the same
+ * predicate and would otherwise grow two: the Home icon rail wants each
+ * kind's OPEN population (`to_do` + `in_progress`, summed client-side), and
+ * the category tabs want one kind's four numbers. A matrix is their union, so
+ * neither surface owns a server shape the other has to re-derive, and the
+ * rail's numbers are a projection of the tabs' rather than a second opinion.
+ *
+ * WHY NOT `spaces.counts`. That read answers total+unseen per kind from a
+ * `security definer` RPC with its own predicate; teaching it categories means
+ * a migration, and its numbers are lifetime totals rather than a filtered
+ * question. This op runs the SAME `buildWhere()` the page does, which is what
+ * makes "the rail says 12" and "the list shows 12 rows" the same claim.
+ *
+ * WHY NOT `Page.total`. A total rides a read of ONE kind, and the rail must
+ * show every kind's number BEFORE any of those lists has been fetched — the
+ * same argument `spaces.counts` makes for existing apart from paging.
+ *
+ * PARTIAL BY CONSTRUCTION, like `SpaceKindCounts`: the aggregate groups, so a
+ * kind with no rows is ABSENT rather than present with zeroes, and a category
+ * with no rows is absent from its kind's record. A consumer reads a missing
+ * key as zero. That is also what lets a custom `c:*` kind be counted with no
+ * schema change. An entity whose `status_category` is NULL is counted under
+ * no category at all; since phase 5 (migration 152) there are none.
+ */
+export interface CollectionCounts {
+  byKind: Partial<Record<EntityKind, Partial<Record<StatusCategory, number>>>>;
+}
+
 export interface GraphQuery extends CollectionQuery { focusId?: EntityId; hops?: number; edgeTypes?: string[]; mode?: 'free'|'dependency' }
 export interface GraphResult { nodes: EntitySummary[]; edges: EdgeView[]; clusters: { parentId: EntityId; childIds: EntityId[] }[];
   layout?: Record<EntityId, { x: number; y: number }> }
