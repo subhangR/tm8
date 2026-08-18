@@ -14,6 +14,13 @@ import { ThreadPane } from './ThreadPane';
 import { dayLabel as formatDay, dayStart } from '../kit/time';
 import { groupByOperation, type ChannelPostInput, type ChannelRefusal } from './feed-model';
 import { isUnresolvedFeedPage } from './chat-mutations';
+/* The refusal vocabulary's stylesheet — see the note over the same import in
+   `chat-home/ChatHomeScreen.tsx`. This surface reaches `DisabledAction` and
+   `DisabledIconControl` by deep path from FOUR files (this one, `Composer`,
+   `FeedRow`, `ThreadPane`) and so never loads `panels/index.ts`, the only
+   module that imports `honesty.css`. The phone's tap-only reason disclosure
+   lives in that file. Idempotent; imported once here, at the surface root. */
+import '../panels/honesty/honesty.css';
 import './channel-screen.css';
 
 /**
