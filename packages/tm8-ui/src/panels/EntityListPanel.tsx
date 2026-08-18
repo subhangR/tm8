@@ -889,15 +889,16 @@ function rowsForBand(
  * page the server served, so a saturated first page makes 601 read as 50. The
  * caller renders `50+` while the server still holds a cursor.
  *
- * An `unsupported` tier counts ZERO honestly: the kind has no state that can
- * land there, so the tab renders with its reason rather than being dropped.
+ * Phase 5 (migration 152) removed the `unsupported` short-circuit that used to
+ * stand here: every kind has a workflow and every entity a status, so every
+ * tier of every kind is now a query that can return rows. A zero here is a
+ * COUNTED zero rather than a declared one.
  */
 function tierCount(
   props: EntityListPanelProps,
   config: KindConfig,
   tier: LifecycleTier,
 ): { n: number; label: string } {
-  if (tier.unsupported) return { n: 0, label: '0' };
   const merged = bandFilter(tier.filter, tier, {}, config, props.ctx);
   if (merged === null) return { n: 0, label: '0' };
   const n = props.rowsFor(merged).length;
@@ -1369,12 +1370,6 @@ function TierTabs({
           aria-selected={tier.id === activeTierId}
           className={tier.id === activeTierId ? 'lp__tab lp__tab--active' : 'lp__tab'}
           onClick={() => onTier(tier.id)}
-          /* An unsupported tier still RENDERS — honestly empty, with its
-             reason reachable — rather than being dropped for some kinds and
-             not others. Hidden and empty are different states (L6), and a tab
-             that vanishes per-kind teaches nothing about why. */
-          title={tier.unsupported}
-          data-unsupported={tier.unsupported ? 'true' : undefined}
         >
           {`${tier.label} ${tierLabel(tier)}`}
         </button>

@@ -971,9 +971,13 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     }
   }
 
-  // Resolution is a per-kind rule (a task is resolved when done, a PR when
-  // merged), so it is asked of the database rather than reimplemented here
-  // where the two definitions could drift.
+  // Resolution is asked of the database rather than reimplemented here, where
+  // the two definitions could drift. Since phase 5 (migration 152) the rule is
+  // UNIVERSAL — `status_category = 'done'` for every kind, with `pull_request`
+  // overridden to the forge's merged state — so this predicate now answers for
+  // docs, sessions and the other eighteen as well as for tasks. It is the same
+  // one call it always was, which is exactly why that widening needed no edit
+  // here.
   const hardTargets = [...new Set(dependsOn.filter((d) => d.hard).map((d) => d.dst))];
   if (hardTargets.length > 0) {
     const resolved = await q.query<{ id: string; resolved: boolean }>(

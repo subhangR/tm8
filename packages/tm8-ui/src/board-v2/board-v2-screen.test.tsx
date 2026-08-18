@@ -188,11 +188,12 @@ describe('the universal kind selector', () => {
 
     const body = view.getByLabelText('Docs board');
     // Walk to the uncategorised column (index 4) and push its first card left
-    // into Cancelled: docs have no settable status, so the drop must refuse.
+    // into Cancelled: docs have a status from phase 5 (migration 152) but no
+    // settable CONTROL yet, so the drop must still refuse — with that reason.
     for (let i = 0; i < 4; i += 1) fireEvent.keyDown(body, { key: 'ArrowRight' });
     fireEvent.keyDown(body, { key: 'ArrowLeft', ctrlKey: true });
     const refusal = await waitFor(() => view.getByTestId('b2-refusal'));
-    expect(refusal.textContent).toMatch(/no settable status yet/i);
+    expect(refusal.textContent).toMatch(/no settable control yet/i);
     // And nothing moved: every doc still sits in No status yet.
     expect(column(view, 'cancelled').queryAllByTestId('b2-card')).toHaveLength(0);
     view.unmount();

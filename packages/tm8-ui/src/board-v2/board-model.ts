@@ -171,7 +171,12 @@ export function categoryDropFor(
   if (!control) {
     return {
       kind: 'refuse',
-      reason: `${kind.labelPlural} have no settable status yet — statuses for every kind arrive with the universal-status phase. Nothing moved.`,
+      // PHASE 5 (migration 152) made the first half of this true: every kind
+      // HAS a status now. What is still missing is a settable CONTROL for it —
+      // `stateControl` is wired for task and work_session only, and wiring the
+      // rest is phase 7's, along with the four tabs. The refusal is narrowed to
+      // say that rather than to promise a phase that has already shipped.
+      reason: `${kind.labelPlural} have a status but no settable control yet — moving one by hand arrives with the four-tab phase. Nothing moved.`,
     };
   }
   const options = new Map(control.options.map((o) => [o.id, o] as const));

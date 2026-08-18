@@ -233,8 +233,11 @@ function assertUuids(values: readonly string[], field: string): string[] {
 
 /**
  * The unresolved-hard-dependency predicate, shared by `readyToPull` and by the
- * blocked badge. `internal.is_resolved` decides what "resolved" means per kind
- * (a task when done, a PR when merged) — asking it here keeps one definition.
+ * blocked badge. `internal.is_resolved` decides what "resolved" means — since
+ * phase 5 (migration 152) that is `status_category = 'done'` for EVERY kind,
+ * with `pull_request` overridden to the forge's merged state. Asking it here
+ * keeps one definition, which is what let that widening reach this predicate
+ * without a line changing.
  */
 const UNBLOCKED_PREDICATE = `not exists (
   select 1 from public.edges dep
@@ -361,7 +364,15 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   }
 
   if (f.readyToPull) {
-    where.push(`t.work_status in ('open','pulled')`);
+    // Phase 5 (152): the category, not the two literals it used to enumerate.
+    // `open` and `pulled` were exactly the `to_do` literals, so this is the same
+    // set said once — and it now follows a space that renamed its states, which
+    // the literal list could not. `t.entity_id is not null` keeps the preset
+    // TASK-SHAPED: every kind carries a category from 152 onward, so dropping
+    // the literal without saying "and it is a task" would have widened
+    // "what can I pull" to every doc and channel in the space.
+    where.push(`t.entity_id is not null`);
+    where.push(`e.status_category = 'to_do'`);
     where.push(UNBLOCKED_PREDICATE);
   }
 

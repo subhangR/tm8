@@ -343,23 +343,43 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     for (const row of allKinds()) {
       const archived = row.list.lifecycle?.find((t) => t.id === 'archived');
       expect(archived?.filter).toEqual({ deleted: 'only' });
-      expect(archived?.unsupported).toBeUndefined();
     }
   });
 
-  it('D41 — a tier the contract cannot express is UNSUPPORTED with a reason, never faked', () => {
-    // Only task (workStatus) and work_session (sessionStatus, D56) can express
-    // completion. Everything else says so out loud rather than inventing one.
-    const canExpressDone = ['task', 'work_session'];
+  it('PHASE 5 — EVERY kind can express done: no tier is unsupported any more', () => {
+    // The inversion of the test that used to stand here. It asserted that only
+    // task (workStatus) and work_session (sessionStatus, D56) could express
+    // completion and that the other twenty said so out loud via `unsupported`.
+    // Migration 152 gave every kind a workflow and every entity a status, so
+    // there is no kind left that cannot answer — and `unsupported` is gone from
+    // `LifecycleTier` entirely rather than left set to undefined everywhere.
     for (const row of allKinds()) {
       const done = row.list.lifecycle?.find((t) => t.id === 'done');
-      if (canExpressDone.includes(row.kind)) {
-        expect(done?.unsupported).toBeUndefined();
-      } else {
-        expect(done?.unsupported).toBeTruthy();
-        // The tab still exists — honest-empty, never hidden (L6).
-        expect(done?.label).toBe('Done');
-      }
+      expect(done, `${row.kind} lost its done tier`).toBeTruthy();
+      expect(done?.label).toBe('Done');
+      expect(done).not.toHaveProperty('unsupported');
+      // A REAL query, not a bare `deleted: 'exclude'` standing in for one.
+      expect(Object.keys(done!.filter).length).toBeGreaterThan(1);
+    }
+  });
+
+  it('PHASE 5 — the kinds with no state axis partition by CATEGORY, contract-shaped', () => {
+    // `filters.category` shipped in phase 1 and is executed by the seam
+    // untranslated, exactly like `workStatus` and `sessionStatus` beside it.
+    // Three tiers, not four: `cancelled` rides with `done` until phase 7 gives
+    // it its own permanent tab (ruled, sub-doc 7 §3.4).
+    const stateless = allKinds().filter((row) => !['task', 'work_session'].includes(row.kind));
+    expect(stateless.length).toBeGreaterThan(15);
+    for (const row of stateless) {
+      const tiers = row.list.lifecycle ?? [];
+      expect(tiers.find((t) => t.id === 'open')?.filter).toEqual({
+        category: ['to_do', 'in_progress'],
+        deleted: 'exclude',
+      });
+      expect(tiers.find((t) => t.id === 'done')?.filter).toEqual({
+        category: ['done', 'cancelled'],
+        deleted: 'exclude',
+      });
     }
   });
 

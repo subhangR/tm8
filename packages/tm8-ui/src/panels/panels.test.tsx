@@ -505,20 +505,22 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(getByTestId('filter-trigger')).toBeTruthy();
   });
 
-  it('D41: an unsupported tier renders honestly empty with its reason, never hidden', () => {
-    // A1a measured that most kinds have no completion state the contract can
-    // express, so `done` carries `unsupported`. The tab must still render.
-    const withUnsupported = allKinds().find((k) =>
-      k.list.lifecycle?.some((t) => t.unsupported),
-    );
-    expect(withUnsupported, 'some kind should have an unsupported tier').toBeTruthy();
+  it('PHASE 5: a stateless kind renders three LIVE tabs — nothing is dimmed as unsupported', () => {
+    // What this replaced: A1a measured that most kinds had no completion state
+    // the contract could express, so `done` carried `unsupported` and its tab
+    // rendered dimmed with a reason. Migration 152 filled that hole — every
+    // kind has a workflow, every entity a status — so the tab is an ordinary
+    // one and `data-unsupported` must not appear on any kind at all.
+    const stateless = allKinds().find((k) => !['task', 'work_session'].includes(k.kind));
+    expect(stateless, 'there should be a kind with no kind-specific state axis').toBeTruthy();
     const { container, getAllByRole } = render(
-      <EntityListPanel kind={withUnsupported!.kind} rowsFor={rowsFor([])} ctx={ctx} />,
+      <EntityListPanel kind={stateless!.kind} rowsFor={rowsFor([])} ctx={ctx} />,
     );
     expect(getAllByRole('tab')).toHaveLength(3);
-    const dimmed = container.querySelector('[data-unsupported="true"]');
-    expect(dimmed, 'unsupported tab present').not.toBeNull();
-    expect(dimmed?.getAttribute('title')).toBeTruthy();
+    expect(container.querySelector('[data-unsupported]'), 'no tab may be dimmed').toBeNull();
+    for (const tab of getAllByRole('tab')) {
+      expect(tab.getAttribute('title'), 'a live tab carries no refusal reason').toBeNull();
+    }
   });
 
   it('D41: tab counts, footer line and selector total all come from the SAME per-tier query', () => {

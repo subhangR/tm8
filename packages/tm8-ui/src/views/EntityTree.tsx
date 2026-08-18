@@ -226,7 +226,7 @@ export function EntityTree(props: EntityTreeProps) {
       {tiers ? (
         <div className="evt-tabs" role="tablist" aria-label="Lifecycle">
           {tiers.map((tier) => {
-            const count = tier.unsupported ? 0 : rowsFor(tier.filter).length;
+            const count = rowsFor(tier.filter).length;
             const active = tier.id === (activeTier?.id ?? '');
             return (
               <button
@@ -235,7 +235,6 @@ export function EntityTree(props: EntityTreeProps) {
                 role="tab"
                 aria-selected={active}
                 className={active ? 'evt-tab evt-tab--active' : 'evt-tab'}
-                title={tier.unsupported}
                 onClick={() => setTierId(tier.id)}
               >
                 {tier.label} <span className="evt-tab__n">{count}</span>

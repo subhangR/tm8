@@ -2436,13 +2436,6 @@
   gap: 4px;
   padding: 0 10px 6px;
 }
-/* An unsupported tier is dimmed but PRESENT — its reason is on the control,
-   and a tab that vanished per-kind would teach nothing about why. */
-.cv2-root .lp__tab[data-unsupported='true'] {
-  opacity: 0.55;
-  cursor: help;
-}
-
 /* ---------------------------------------------------------------------------
    The inline launch flow (D44)
    ---------------------------------------------------------------------------
