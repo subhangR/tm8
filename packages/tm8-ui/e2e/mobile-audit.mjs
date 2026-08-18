@@ -911,10 +911,27 @@ if (!noShots) mkdirSync(`${outDir}/screens`, { recursive: true });
  * refused rather than recorded.
  */
 const ENGINE = process.env.AUDIT_BROWSER === 'firefox' ? 'firefox' : 'chrome';
+/*
+ * NO `firefoxUserPrefs` HERE, AND THAT IS A CORRECTION.
+ *
+ * The Gecko RDM prefs (`ui.primaryPointerCapabilities` / `ui.allPointerCapabilities`)
+ * are set at LAUNCH, so they are BROWSER-WIDE — they leak into every context,
+ * including the desktop profiles that must report a FINE pointer. Measured:
+ *
+ *   prefs + hasTouch    -> coarse TRUE   (correct for a phone)
+ *   prefs + NO hasTouch -> coarse TRUE   (WRONG — this is the desktop profile)
+ *   no prefs + hasTouch -> coarse TRUE   (correct, and sufficient)
+ *   no prefs + no touch -> coarse FALSE  (correct for a desktop)
+ *
+ * `hasTouch` on the CONTEXT is per-context and is enough on its own, so the
+ * prefs bought nothing and cost desktop fidelity: every desktop-1440 and
+ * tablet-768 row was rendered with a coarse pointer, which means any
+ * `@media (pointer: coarse)` CSS was applying on a shell that should never see
+ * it. The shell assertion still passed, because `shellFor` also requires
+ * width < 500 — so the fault was invisible in every check the run performs.
+ */
 const browser = ENGINE === 'firefox'
-  ? await firefox.launch({
-      firefoxUserPrefs: { 'ui.primaryPointerCapabilities': 0x01, 'ui.allPointerCapabilities': 0x01 },
-    })
+  ? await firefox.launch()
   : await chromium.launch({ channel: 'chrome' });
 /**
  * SETTLE — wait for the screen to EXIST, never for a fixed number of ms.
