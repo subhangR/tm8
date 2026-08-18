@@ -139,7 +139,14 @@ describe('categoryDropFor — the drop seam ladder', () => {
   it('a kind with no state control refuses WITH the phase that unlocks it', () => {
     const drop = categoryDropFor(doc, GLOBAL_DEFAULT, 'to_do');
     expect(drop.kind).toBe('refuse');
-    if (drop.kind === 'refuse') expect(drop.reason).toMatch(/no settable status yet/i);
+    // Re-worded by phase 5 (migration 152): the first half of the old copy —
+    // "no settable status yet" — stopped being true when every kind got one.
+    // What is still missing is the settable CONTROL, and the phase that unlocks
+    // it is the four-tab phase, which is what the refusal must now name.
+    if (drop.kind === 'refuse') {
+      expect(drop.reason).toMatch(/no settable control yet/i);
+      expect(drop.reason).toMatch(/four-tab phase/i);
+    }
   });
 });
 
