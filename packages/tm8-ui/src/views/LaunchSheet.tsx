@@ -20,10 +20,48 @@
  * THREE SHELL OBLIGATIONS ride with it (A1a's findings, all mandatory) — see
  * `useLaunchSheet` below for two of them; the third is that no cMin contract
  * exists, which is enforced by there being no import of it in this file.
+ *
+ * ── ON A PHONE IT IS A SHEET, AND THE DECISION IS RECORDED HERE ────────────
+ *
+ * Everything above describes a DESKTOP overlay: `position: absolute` against
+ * the view root, 420px wide, riding the panel stack. None of that is available
+ * on a 390px phone, and until this change none of it was adapted either — this
+ * file contained no reference to `MobileSheet`, `useMobileSurface` or
+ * `sheetHost`, so the phone would have drawn the desktop popover verbatim.
+ *
+ * THE CHOICE MADE, stated so the next reader does not re-open it: the phone
+ * arrangement goes through `MobileSheet`, the frame's own sheet host. The
+ * alternative — keep the bespoke `.ls` dialog and merely re-measure it at 390 —
+ * is rejected by `mobile/CONTRACT.md` §4 on two counts. First, an anchored/
+ * absolutely-placed overlay "does not survive the trip to a 390px header": the
+ * position of a phone sheet belongs to the FRAME, which is the only thing that
+ * knows where the tab bar and the keyboard inset are. Second, "seven bespoke
+ * sheets are seven chances to disagree about what dismiss means" — this would
+ * have been the eighth, with its own scrim, its own dismiss set and its own
+ * idea of how far up the screen it stops.
+ *
+ * WHAT THE PHONE BRANCH DOES NOT CHANGE. The desktop path is untouched by
+ * construction, not by care: `useMobileSurface()` returns `DESKTOP` wherever
+ * there is no phone frame, so `oneSurface` is `false` on every desktop mount
+ * and the branch below is unreachable there.
+ *
+ * TWO WITNESSES, DELIBERATELY SEPARATE. `data-testid="launch-sheet"` stays on
+ * this component's own root — it answers "did the sheet mount". `MobileSheet`
+ * contributes `data-testid="mobile-sheet"` — it answers "did it go through the
+ * phone host". They are different questions and an instrument must be able to
+ * report them as two fields; collapsing them is how "it rendered" gets read as
+ * "it rendered correctly on a phone".
+ *
+ * THE ROLE MOVES WITH THE ARRANGEMENT. `MobileSheet`'s panel already declares
+ * `role="dialog" aria-modal="true"`, so this root drops both on the phone
+ * rather than nesting a second modal dialog inside the first — one surface,
+ * one dialog, which is what a screen reader is entitled to.
  */
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { CredentialProviderName, CredentialsStatusView, EntityId } from '@tm8/contract';
 import { Avatar } from '../kit';
+import { MobileSheet, useMobileSurface } from '../mobile';
+import './launch-sheet-mobile.css';
 import {
   accessModeLabel,
   agentTool,
@@ -110,6 +148,12 @@ const CREDENTIAL_PROVIDER_LABEL: Record<CredentialProviderName, string> = {
 
 export function LaunchSheet(props: LaunchSheetProps) {
   const { teammates, projects, profiles, memories } = props;
+
+  /* THE ONE FORK. Read from the host's context and never from the window: the
+     shell decision is `(pointer: coarse) && width < 500` and `GateApp` has
+     already made it once — a second, independently-timed answer here is how two
+     shells drift apart (`mobile/surface.tsx` states this at length). */
+  const { oneSurface } = useMobileSurface();
 
   /**
    * ESC CLOSES THE SHEET — the ACTING half of the modal contract.
@@ -311,22 +355,43 @@ export function LaunchSheet(props: LaunchSheetProps) {
 
   const atCapacity = props.capacity !== undefined && props.capacity.slotsFree <= 0;
 
-  return (
-    <div className="ls" role="dialog" aria-modal="true" aria-label="Launch session" data-testid="launch-sheet">
-      <header className="ls__head">
-        <span className="ls__title">Launch session</span>
-        <span className="ls__hint">sheet on the stack · esc closes</span>
-        <div className="ls__spacer" />
-        <button
-          type="button"
-          className="ls__x"
-          disabled={launching}
-          onClick={props.onCancel}
-          aria-label="Close launch sheet"
-        >
-          ✕
-        </button>
-      </header>
+  const sheet = (
+    <div
+      className="ls"
+      data-testid="launch-sheet"
+      data-arrangement={oneSurface ? 'phone' : 'overlay'}
+      /* On the phone `MobileSheet`'s panel is already the dialog, so these
+         three would nest a second modal inside it. Spread rather than passed
+         with a falsy value: `role={undefined}` is the same attribute-absent
+         result but reads as if a role were being computed. */
+      {...(oneSurface ? {} : { role: 'dialog', 'aria-modal': true, 'aria-label': 'Launch session' })}
+    >
+      {/*
+        THE HEADER IS THE FRAME'S ON A PHONE.
+
+        `MobileSheet` draws the title, the grabber and a 44px ✕, so drawing
+        this one too would stack two title rows and two close buttons on the
+        smallest screen in the product. And the hint is not merely redundant
+        there, it is FALSE: "sheet on the stack · esc closes" names a panel
+        stack the phone does not have and a key it does not have either. The
+        shell's honesty rules do not stop at refusal cards.
+      */}
+      {oneSurface ? null : (
+        <header className="ls__head">
+          <span className="ls__title">Launch session</span>
+          <span className="ls__hint">sheet on the stack · esc closes</span>
+          <div className="ls__spacer" />
+          <button
+            type="button"
+            className="ls__x"
+            disabled={launching}
+            onClick={props.onCancel}
+            aria-label="Close launch sheet"
+          >
+            ✕
+          </button>
+        </header>
+      )}
 
       {/* FROM strip — the launch context, so provenance is visible before commit. */}
       <div className="ls__from">
@@ -953,6 +1018,32 @@ export function LaunchSheet(props: LaunchSheetProps) {
         </button>
       </footer>
     </div>
+  );
+
+  if (!oneSurface) return sheet;
+
+  return (
+    <MobileSheet
+      title="Launch session"
+      /*
+       * EVERY DISMISSAL ROUTE GOES THROUGH ONE CALLBACK — the ✕, the backdrop
+       * and Escape all arrive here — so the in-flight guard cannot be wired on
+       * one of them and forgotten on the other two.
+       *
+       * AND IT MUST BE GUARDED. The desktop sheet disables its ✕ and its Cancel
+       * while `launching`, because one spawn may be outstanding and the sheet
+       * can neither submit nor dismiss it. A backdrop tap that dropped the
+       * surface mid-spawn would leave a session starting with nothing on screen
+       * saying so — the phone would be the one shell where the outstanding
+       * transaction is dismissable.
+       */
+      onDismiss={() => {
+        if (launching) return;
+        props.onCancel();
+      }}
+    >
+      {sheet}
+    </MobileSheet>
   );
 }
 
