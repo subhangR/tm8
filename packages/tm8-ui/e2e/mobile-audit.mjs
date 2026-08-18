@@ -659,7 +659,45 @@ function measureInPage({ MIN_TAP, EPS }) {
         const r = el.getBoundingClientRect();
         return { w: Math.round(r.width), h: Math.round(r.height), text: (el.textContent || '').trim().slice(0, 40) };
       };
-      return {
+      /*
+   * CLIPPED vs SCROLLED — content that exceeds its own box, split by what the
+   * box does about it.
+   *
+   * `bleed` is `scrollWidth - clientWidth` ON THE ELEMENT ITSELF: how far its
+   * own content overruns its own padding box. It is NOT the viewport
+   * comparison — that is `overflowCount`, the threshold. Different questions; a
+   * row can fail one and pass the other.
+   *
+   *   clipped[] — overflow-x hidden|clip. Content DESTROYED, no gesture reaches
+   *               it. This is the one that matters.
+   *   hscroll[] — overflow-x auto|scroll. Reachable by scrolling, which may be
+   *               a deliberate strip or a desktop affordance nobody finds on a
+   *               phone. Reported, never failed.
+   *
+   * KNOWN FALSE-POSITIVE SHAPE, stated so nobody builds a threshold on it:
+   * `text-overflow: ellipsis` REQUIRES `overflow: hidden`, so every ellipsised
+   * label bleeds by construction — the ellipsis IS the design. Same for 1x1
+   * screen-reader spans. `clippedCount` is a POINTER TO LOOK, never a verdict;
+   * read the entries, not the number.
+   */
+  const clipped = [];
+  const hscroll = [];
+  for (const el of all) {
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+    const bleed = el.scrollWidth - el.clientWidth;
+    if (bleed <= 1) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    const ox = cs.overflowX;
+    const entry = { bleed: Math.round(bleed), box: `${Math.round(r.width)}x${Math.round(r.height)}`, path: pathOf(el), text: (el.textContent || '').trim().slice(0, 30) };
+    if (ox === 'hidden' || ox === 'clip') clipped.push(entry);
+    else if (ox === 'auto' || ox === 'scroll') hscroll.push(entry);
+  }
+  clipped.sort((a, b) => b.bleed - a.bleed);
+  hscroll.sort((a, b) => b.bleed - a.bleed);
+
+  return {
         accountMenu: pick('[data-testid="mobile-account-menu"]'),
         refusalOut: pick('[data-testid="mobile-refusal-out"]'),
         headerTitle: (document.querySelector('.mobile-header__title')?.textContent || '').trim().slice(0, 60),
@@ -685,6 +723,10 @@ function measureInPage({ MIN_TAP, EPS }) {
      * only condition under which a claim about "every finding" is admissible.
      * A non-empty entry names the array, what it holds, and what you can see.
      */
+    clippedCount: clipped.length,
+    clipped: clipped.slice(0, 10),
+    hscrollCount: hscroll.length,
+    hscroll: hscroll.slice(0, 10),
     truncatedArrays: (() => {
       const cut = {};
       const note = (name, total, shown) => { if (total > shown) cut[name] = { count: total, shown }; };
@@ -693,6 +735,8 @@ function measureInPage({ MIN_TAP, EPS }) {
       note('tapTargetsHidden', hidden.length, Math.min(hidden.length, 8));
       note('tapTargetsInert', inert.length, Math.min(inert.length, 8));
       note('tapTargetsOccluded', occluded.length, Math.min(occluded.length, 8));
+      note('clipped', clipped.length, Math.min(clipped.length, 10));
+      note('hscroll', hscroll.length, Math.min(hscroll.length, 10));
       return cut;
     })(),
     /* What the page believes about itself, so a reader can tell a real 0 from a
