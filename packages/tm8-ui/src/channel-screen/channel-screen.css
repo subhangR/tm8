@@ -291,6 +291,21 @@
   overflow-wrap: anywhere;
 }
 
+/* AN IN-FLIGHT TURN THAT HAS NOT EMITTED A PART YET.
+   Not a Markdown root, so it does not inherit `.md-root.chs-text` above — the
+   type facts it needs are repeated rather than shared, because the alternative
+   is rendering the stored body through Markdown, and that body is the claim
+   placeholder rather than anything the agent said (contract.ts:857-859).
+   Dimmed and italic so it reads as a STATUS, never as content. */
+.cv2-root .chs-text--pending {
+  margin: 0;
+  font-family: var(--pn-ui);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--pn-ink-3);
+  font-style: italic;
+}
+
 /* A message is a chat line, so its blocks sit tight and its last one adds no
    trailing gap above the delivery row. */
 .cv2-root .md-root.chs-text p,

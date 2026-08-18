@@ -2,6 +2,17 @@ import { useState } from 'react';
 import type { ActorSummary, EntityId, FeedItem, Mention, MessageView } from '@tm8/contract';
 import { Avatar, Markdown, Pill, Timestamp, type MarkdownComponents } from '../kit';
 import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
+/*
+ * FROM `chat-home/` FOR NOW, AND DELIBERATELY NOT MOVED IN THIS COMMIT.
+ * The parts renderer is a seven-file cluster (TurnParts, turn-model, wire,
+ * EntityChip, entity-refs, ExplanationToolCard, explanation-tools — roughly
+ * 1,700 lines). Lifting it into a neutral module is a pure file move with no
+ * behaviour, and bundling that with a behaviour change would make both
+ * unreviewable. It lands next, and is forced anyway when ChatHomeScreen is
+ * deleted. See docs/chat-and-messaging/UNIFIED-FEED-HOOK-DESIGN.md §7.
+ */
+import { TurnParts } from '../chat-home/TurnParts';
+import { turnPartFromMessagePart } from '../chat-home/wire';
 import {
   accessibleDateTime,
   activityPresentation,
@@ -427,6 +438,53 @@ function MessageBody({
   message: MessageView;
   onOpenEntity?: (id: EntityId) => void;
 }) {
+  /*
+   * PARTS RENDER EVERYWHERE; ONLY CHAT CAN WRITE THEM.
+   *
+   * `MessageView.parts` is on the ORDINARY message type and the shared loader
+   * attaches it (`facade/handlers/messages.ts:120-166`), which `entities.feed`
+   * reaches through `loadMessageViewsByIds`. So this surface has been HANDED
+   * parts since before it could draw them, and threw them away — the
+   * `turnInFlight` docblock (contract.ts:854-863) was written for a
+   * parts-aware surface that did not exist yet.
+   *
+   * ONE BRANCH, HERE, IS THE WHOLE CHANGE. This function is the single body
+   * seam for both columns: the feed column and the thread pane both render
+   * through `FeedRowGroup`. Parts ride on REPLIES and a channel's feed column
+   * is roots-only, so in practice this lights up in the thread pane first —
+   * but putting the branch here rather than in `ThreadPane` means a session's
+   * flat, replies-inline read gets it for free and no second renderer exists.
+   *
+   * THE TWO "TURN" CONCEPTS DO NOT COLLAPSE, and this is not the place that
+   * pretends they do. `append_chat_message_part` (migration 104:355) is the
+   * only writer and raises P0002 for any message with no `chat_turns` row, so
+   * A SESSION CAN NEVER EMIT PARTS. `parts?.length` is therefore a real
+   * discriminator, not a heuristic: present ⇒ a chat turn wrote them.
+   */
+  const parts = message.parts;
+  if (parts && parts.length > 0) {
+    return (
+      <TurnParts
+        parts={parts.map(turnPartFromMessagePart)}
+        {...(onOpenEntity ? { onOpenEntity } : {})}
+      />
+    );
+  }
+
+  /*
+   * AN IN-FLIGHT TURN WITH NO PARTS YET HAS NO CONTENT TO SHOW. The stored
+   * body is the claim placeholder ('Agent turn in progress.'), not something
+   * the agent said — contract.ts:857-859 is explicit. Drawing it as prose
+   * would put words in the agent's mouth, so say what is true instead.
+   */
+  if (message.turnInFlight) {
+    return (
+      <p className="chs-text chs-text--pending" data-testid="chs-turn-pending" aria-live="polite">
+        Working&hellip;
+      </p>
+    );
+  }
+
   const { body, mentions, attachments } = message.content;
   const { source, inlined } = chatMarkdownSource(body, mentions);
   const trailing = mentions.filter((m) => !inlined.has(mentionKey(m)));
