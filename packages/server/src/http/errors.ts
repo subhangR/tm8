@@ -127,6 +127,18 @@ function logUnexpected(err: unknown, requestId: string): void {
   console.error(`[tm8] unhandled error (requestId=${requestId}): ${detail}`);
 }
 
+/**
+ * `Retry-After` in whole seconds, or null when the error does not carry one.
+ * Read from `details.retryAfterSeconds` so the raiser owns the number — the
+ * writer has no idea what limit was tripped or when its window rolls.
+ */
+function retryAfterSecondsOf(err: unknown): number | null {
+  if (!isCollabError(err)) return null;
+  const value = (err.details as Record<string, unknown> | undefined)?.retryAfterSeconds;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) return null;
+  return value;
+}
+
 /** The one and only error writer. */
 export function sendWireError(res: ServerResponse, err: unknown, requestId: string): void {
   if (!isCollabError(err)) logUnexpected(err, requestId);
@@ -135,11 +147,18 @@ export function sendWireError(res: ServerResponse, err: unknown, requestId: stri
     res.end();
     return;
   }
-  res.writeHead(status, {
+  const headers: Record<string, string> = {
     'content-type': 'application/json; charset=utf-8',
     'x-content-type-options': 'nosniff',
     'x-tm8-request-id': requestId,
-  });
+  };
+  // A 429 without `Retry-After` tells a client to back off and refuses to say
+  // by how much, so every client invents its own answer and the well-behaved
+  // ones back off hardest. The value is carried in the error's details by
+  // whoever raised it; nothing else may set this header.
+  const retryAfter = retryAfterSecondsOf(err);
+  if (retryAfter !== null) headers['retry-after'] = String(retryAfter);
+  res.writeHead(status, headers);
   res.end(JSON.stringify(body));
 }
 
