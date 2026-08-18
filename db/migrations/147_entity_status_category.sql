@@ -143,6 +143,51 @@ comment on function internal.work_status_category(text) is
   'guessing a bucket.';
 
 -- -----------------------------------------------------------------------------
+-- Birth: the category is on the envelope BEFORE the row is captured.
+--
+-- This trigger exists to keep a promise the event log makes, and the promise is
+-- easy to break here. A task is created as TWO inserts in one transaction —
+-- `public.entities` first (the FK requires it), then `public.tasks` — and
+-- `entities_capture_event` fires on the FIRST one. So a design where only the
+-- `tasks` trigger below writes the category produces:
+--
+--     insert entities  -> entity.upsert (category NULL)
+--     insert tasks     -> update entities -> entity.upsert (category to_do)
+--
+-- Two events for one creation, on the busiest entity kind in the product, and
+-- two consumed sequence numbers. `test/events/ws-e2e.pg.test.ts` calls that out
+-- by name — "the mutation must be captured exactly once" — and it is right to:
+-- the log's value is that a mutation and an event correspond.
+--
+-- A BEFORE INSERT trigger writes the category into NEW, so the capture trigger's
+-- `to_jsonb(new)` already carries it and the creation stays ONE event.
+--
+-- It seeds the category for the DEFAULT status rather than reading the detail
+-- row, because at this point in the transaction the detail row does not exist
+-- yet. `'open'` is `tasks.work_status`'s declared default (001:519) and it is
+-- passed THROUGH the mapping function rather than written as `'to_do'`, so the
+-- ruling still lives in exactly one place. A creation that sets some other
+-- status is then corrected by the `tasks` trigger below — which costs the
+-- second event, but only in the rare case that actually needs it, instead of on
+-- every task anyone creates.
+--
+-- Explicitly `is null` guarded: a caller that supplies a category keeps it.
+-- -----------------------------------------------------------------------------
+create or replace function internal.seed_entity_status_category() returns trigger
+language plpgsql set search_path = public, internal, pg_temp as $$
+begin
+  if new.status_category is null and new.kind = 'task' then
+    new.status_category := internal.work_status_category('open');
+  end if;
+  return new;
+end
+$$;
+
+create trigger entities_seed_status_category
+before insert on public.entities
+for each row execute function internal.seed_entity_status_category();
+
+-- -----------------------------------------------------------------------------
 -- Keeping the column true.
 --
 -- A denormalized column that is only ever backfilled is a column that is a lie
@@ -161,6 +206,9 @@ comment on function internal.work_status_category(text) is
 -- posture: `open -> pulled` changes the status but NOT the category, and a
 -- zero-row UPDATE emits no `entity.upsert`. Only a real category change moves
 -- a row between tabs, and only a real category change tells the socket so.
+-- It is also what makes the INSERT arm free: the seed trigger above has already
+-- written `to_do`, so an ordinary `create_task` finds the column equal, updates
+-- nothing, and emits nothing.
 --
 -- Firing order is alphabetical among AFTER triggers on `public.tasks`:
 -- `tasks_announce_unblocked` < `tasks_category` < `tasks_snapshot_version`.
