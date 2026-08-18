@@ -172,6 +172,86 @@ const ROUTES = [
 ];
 
 /**
+ * OPENED STATES — the screens you only reach by DOING something.
+ *
+ * ROUTES above are all screen ROOTS. A baseline made only of roots has a hole
+ * exactly where two of the four target surfaces live: entity DETAIL and the
+ * launch/run surface are reached by tapping, never by an address the shell can
+ * land on. With no before-state for them, "never worse than before" is
+ * unenforceable for those lanes — there is no before.
+ *
+ * Each state is a route plus an ordered click chain, and an `expect` selector
+ * that PROVES the state was actually reached. If `expect` never appears the row
+ * is recorded as a PROBLEM rather than measured: a state that silently failed
+ * to open measures the screen underneath it, which is fiction of exactly the
+ * kind trap 2 exists to refuse.
+ *
+ * `steps` entries are tried in order; a step whose selector is absent is a
+ * failure of the state, not something to skip past quietly.
+ *
+ * ON THE TAB CLICKS: the fixture's sessions and channels lists open on a "To
+ * Do" tier that holds NO rows — the rows live under "In Progress". Landing on
+ * the empty tier and clicking nothing would have produced a perfectly clean,
+ * perfectly meaningless row.
+ */
+/*
+ * NOT A STATE, AND THAT IS THE FINDING: no `MobileSheet` proved reachable from
+ * any of these surfaces in the fixture. `.msheet-host` stays EMPTY throughout —
+ * the list filter opens `div.lp__filtermenu`, a desktop-style dropdown, and the
+ * one genuine sheet (EntityView's aux column, `entity-view-aux-sheet`) is
+ * reached only by opening a RELATED entity from inside a detail screen, for
+ * which the task detail offers no affordance here. A state that can never be
+ * reached was NOT left in this table: a permanent failure line in every run
+ * trains readers to skim the problem list, which is how a real failure gets
+ * missed. It is reported as a gap for Lane B instead.
+ */
+const STATES = [
+  {
+    name: 'tasks-detail',
+    path: 'k/tasks',
+    steps: [{ click: 'button.pn-tt__title' }],
+    expect: '.mobile-header__back',
+    note: 'Lane B — entity detail, pushed onto the phone screen stack',
+  },
+  {
+    /* Session rows are `div.pn-st[data-testid=list-tile]` — a DIV, not the
+       `button.pn-tt__title` a task row uses. `list-tile` is the one selector
+       both kinds share. */
+    name: 'sessions-run',
+    path: 'k/sessions',
+    steps: [{ click: 'button.lp__tab', text: 'In Progress' }, { click: '[data-testid="list-tile"]' }],
+    expect: '.mobile-header__back',
+    note: 'Lane C — the run / session surface',
+  },
+  {
+    /* NAMED FOR WHAT IT ACTUALLY OPENS. `filter-trigger` does NOT open a
+       MobileSheet on the phone — it opens `div.lp__filtermenu`, a dropdown, and
+       `.msheet-host` stays empty. That is worth measuring precisely because a
+       desktop-style dropdown on a phone is the kind of thing this program
+       exists to find; calling the row `-sheet` would have hidden it. */
+    name: 'tasks-filter-menu',
+    path: 'k/tasks',
+    steps: [{ click: '[data-testid="filter-trigger"]' }],
+    expect: '[data-testid="filter-menu"]',
+    note: 'the list filter surface — a dropdown menu on phone, NOT a mobile sheet',
+  },
+  {
+    name: 'sessions-launch',
+    path: 'k/sessions',
+    steps: [{ click: '[data-testid="list-quick-start"]' }],
+    expect: '.msheet__panel, [role="dialog"], .mobile-header__back',
+    note: 'Lane C — the launch affordance',
+  },
+  {
+    name: 'home-composer-focused',
+    path: 'home',
+    steps: [{ focus: '.tch-composer textarea, .tch-composer [contenteditable="true"], textarea' }],
+    expect: null,
+    note: 'Lane A — composer focused (keyboard-up proxy)',
+  },
+];
+
+/**
  * THE MINIMUM TAP TARGET, in CSS px.
  *
  * 44 is Apple's HIG figure and the one this program was briefed against. It is
@@ -278,12 +358,83 @@ function measureInPage({ MIN_TAP, EPS }) {
     const s = getComputedStyle(el);
     return s.visibility !== 'hidden' && s.pointerEvents !== 'none' && Number(s.opacity) !== 0;
   };
-  const targets = [...document.querySelectorAll(INTERACTIVE)]
+
+  /*
+   * THE VISUALLY-HIDDEN PATTERN, which the three checks above CANNOT see.
+   *
+   * The docblock on `tappable` says the 1x1 `input.tch-attach__input` behind the
+   * attach button is excluded. It was not. It survived every run and kept
+   * reporting itself as the smallest target on Home, because it is not hidden by
+   * `visibility`, `opacity` or `pointer-events` — it is hidden by the standard
+   * screen-reader-only recipe:
+   *
+   *     position:absolute; width:1px; height:1px; overflow:hidden;
+   *     clip-path: inset(50%);            (.tch-attach__input)
+   *     clip: rect(0,0,0,0);              (.chs-visually-hidden)
+   *
+   * Such an element is deliberately reachable by assistive tech and deliberately
+   * un-hittable by a thumb. Counting it makes the headline worse for a control
+   * that is fine, and NO LANE CAN EVER CLOSE IT — the fix would be to break the
+   * accessible name. That is the signature of a bad metric.
+   */
+  const visuallyHidden = (el, r) => {
+    const s = getComputedStyle(el);
+    const clipped = s.clipPath !== 'none' || (s.clip !== 'auto' && s.clip !== '');
+    return clipped && s.position === 'absolute' && r.width <= 1 && r.height <= 1;
+  };
+
+  /*
+   * INERT vs SMALL. A `disabled` control or one with `pointer-events:none` does
+   * nothing when tapped at ANY size, so failing it for being under 44px answers
+   * the wrong question. These are LEDGERED SEPARATELY rather than dropped: "a
+   * big button that does nothing" is a real defect, just not this threshold's.
+   */
+  const inertOf = (el) => {
+    const s = getComputedStyle(el);
+    if (s.pointerEvents === 'none') return 'pointer-events:none';
+    if (el.hasAttribute('disabled')) return 'disabled';
+    if (el.getAttribute('aria-disabled') === 'true') return 'aria-disabled';
+    return null;
+  };
+
+  const candidates = [...document.querySelectorAll(INTERACTIVE)]
     .map((el) => ({ el, r: el.getBoundingClientRect() }))
-    .filter(({ el, r }) => rendered(r) && tappable(el));
+    .filter(({ r }) => rendered(r));
+
+  const hidden = candidates.filter(({ el, r }) => visuallyHidden(el, r));
+  const hiddenSet = new Set(hidden.map(({ el }) => el));
+  const inert = candidates.filter(({ el }) => !hiddenSet.has(el) && inertOf(el));
+  const inertSet = new Set(inert.map(({ el }) => el));
+
+  /* The headline population: rendered, not screen-reader-only, not inert. */
+  const targets = candidates.filter(({ el }) => !hiddenSet.has(el) && !inertSet.has(el) && tappable(el));
+
+  const describeTap = ({ el, r }) => ({
+    w: Math.round(r.width), h: Math.round(r.height),
+    path: pathOf(el), text: (el.textContent || '').trim().slice(0, 30),
+  });
+
   const small = targets
     .filter(({ r }) => Math.min(r.width, r.height) < MIN_TAP)
-    .map(({ el, r }) => ({ w: Math.round(r.width), h: Math.round(r.height), path: pathOf(el), text: (el.textContent || '').trim().slice(0, 30) }));
+    .map(describeTap);
+
+  /*
+   * REAL HIT-TESTING. ">=44px" is necessary, not sufficient: an overlay or a
+   * full-width sibling can swallow the tap while the geometry looks perfect.
+   * `elementFromPoint` at the target's own centre is the only thing that knows.
+   * LEDGERED, NOT FAILED — an occluded target is a different defect from a small
+   * one, and silently excluding it would hide a real bug rather than report it.
+   */
+  const occluded = [];
+  for (const t of targets) {
+    const cx = t.r.left + t.r.width / 2;
+    const cy = t.r.top + t.r.height / 2;
+    if (cx < 0 || cy < 0 || cx > vw || cy > document.documentElement.clientHeight) continue;
+    const hit = document.elementFromPoint(cx, cy);
+    if (hit && hit !== t.el && !t.el.contains(hit) && !hit.contains(t.el)) {
+      occluded.push({ ...describeTap(t), blockedBy: pathOf(hit) });
+    }
+  }
 
   return {
     /** The reference every right edge below is compared against. */
@@ -305,6 +456,15 @@ function measureInPage({ MIN_TAP, EPS }) {
     tapTargetsTotal: targets.length,
     tapTargetsUnderMin: small.length,
     tapTargetsSmallest: small.sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h)).slice(0, 12),
+    /* Ledgered, never counted against MIN_TAP — see the predicates above. Each
+       is a separate question a reader may want to ask, and a zero here is as
+       meaningful as a zero in the headline. */
+    tapTargetsHiddenCount: hidden.length,
+    tapTargetsHidden: hidden.map(describeTap).slice(0, 8),
+    tapTargetsInertCount: inert.length,
+    tapTargetsInert: inert.map((t) => ({ ...describeTap(t), reason: inertOf(t.el) })).slice(0, 8),
+    tapTargetsOccludedCount: occluded.length,
+    tapTargetsOccluded: occluded.slice(0, 8),
     /* What the page believes about itself, so a reader can tell a real 0 from a
        0 taken off a boot error or the wrong shell. */
     shell: document.querySelector('.mobile-frame') ? 'mobile' : document.querySelector('.shell-root') ? 'desktop' : 'none',
@@ -417,6 +577,42 @@ const browser = ENGINE === 'firefox'
       firefoxUserPrefs: { 'ui.primaryPointerCapabilities': 0x01, 'ui.allPointerCapabilities': 0x01 },
     })
   : await chromium.launch({ channel: 'chrome' });
+/**
+ * SETTLE — wait for the screen to EXIST, never for a fixed number of ms.
+ *
+ * `screenFor` renders a `.mobile-empty` "Loading…" node until `data.ready`, so
+ * a fixed wait is a coin flip: too short and you photograph that node and
+ * measure a screen that never rendered — which cannot overflow and cannot have
+ * a small button, so it scores PERFECT. That exact failure produced a full set
+ * of clean-looking dead screens earlier in this program.
+ *
+ * So: wait for the pending node to be GONE and for the frame to hold real
+ * content. `networkidle` says the seam answered; it says nothing about React
+ * having committed. Fonts are awaited last because a font swap moves every text
+ * box, which is precisely what gets measured.
+ */
+async function settle(page, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const state = await page.evaluate(() => {
+      const frame = document.querySelector('.mobile-frame') || document.querySelector('.shell-root');
+      if (!frame) return { ready: false, why: 'no shell root yet' };
+      const pending = [...frame.querySelectorAll('.mobile-empty')]
+        .some((n) => /loading|hydrating/i.test(n.textContent || ''));
+      if (pending) return { ready: false, why: 'mobile-empty still says Loading' };
+      return { ready: true };
+    });
+    if (state.ready || Date.now() > deadline) {
+      if (!state.ready) return state.why;
+      break;
+    }
+    await page.waitForTimeout(250);
+  }
+  try { await page.evaluate(() => document.fonts.ready); } catch { /* older engines */ }
+  await page.waitForTimeout(300);
+  return null;
+}
+
 const rows = [];
 const problems = [];
 
@@ -448,12 +644,7 @@ for (const vp of VIEWPORTS) {
        and the only way each row is independent of the row before it. */
     await page.goto('about:blank');
     await page.goto(url, { waitUntil: 'networkidle' });
-    /* Settle. `networkidle` says the fixture seam has answered; it says nothing
-       about React having committed the screen and fonts having swapped in — and
-       a font swap moves every text box, which is exactly what we measure. */
-    await page.waitForTimeout(1200);
-    try { await page.evaluate(() => document.fonts.ready); } catch { /* older engines */ }
-    await page.waitForTimeout(300);
+    await settle(page);
 
     const m = await page.evaluate(measureInPage, { MIN_TAP, EPS });
 
@@ -495,6 +686,89 @@ for (const vp of VIEWPORTS) {
       `  taps<${MIN_TAP}=${String(m.tapTargetsUnderMin).padStart(3)}/${String(m.tapTargetsTotal).padStart(3)}  [${m.shell}]${flag}`,
     );
   }
+
+  /* ── THE OPENED STATES ────────────────────────────────────────────────────
+     Phones only. A pushed detail screen or a portalled sheet is a phone
+     arrangement; driving the same chain on desktop would exercise the panel
+     stack, which is a different lane's surface and a different set of numbers. */
+  if (vp.expectShell === 'mobile') {
+    for (const st of STATES) {
+      if (onlyRoute && st.name !== onlyRoute) continue;
+      pageErrors.length = 0;
+      const url = `${base}/mobile-audit.html#/s/${SPACE}/${st.path}`;
+      await page.goto('about:blank');
+      await page.goto(url, { waitUntil: 'networkidle' });
+      const stall = await settle(page);
+      if (stall) problems.push(`${vp.name}/${st.name}: never settled — ${stall}`);
+
+      let failed = null;
+      for (const step of st.steps) {
+        try {
+          if (step.focus) {
+            const el = page.locator(step.focus).first();
+            await el.waitFor({ state: 'visible', timeout: 8000 });
+            await el.focus();
+          } else {
+            /* `text` narrows a repeated selector to the one that matters — the
+               fixture's row-bearing tier, not the empty one it opens on. */
+            const loc = step.text
+              ? page.locator(step.click).filter({ hasText: step.text }).first()
+              : page.locator(step.click).first();
+            await loc.waitFor({ state: 'visible', timeout: 8000 });
+            await loc.click({ timeout: 8000 });
+          }
+          await page.waitForTimeout(600);
+        } catch (e) {
+          failed = `step ${JSON.stringify(step)} — ${String(e).split('\n')[0].slice(0, 120)}`;
+          break;
+        }
+      }
+
+      /* THE PROOF THE STATE OPENED. Without it this row measures the screen
+         underneath, which looks exactly like a real row and is fiction. */
+      let opened = failed === null;
+      if (opened && st.expect) {
+        opened = await page.locator(st.expect).first().isVisible().catch(() => false);
+        if (!opened) failed = `expected ${st.expect} to be visible after the chain`;
+      }
+      if (failed) problems.push(`${vp.name}/${st.name}: state NOT reached — ${failed}`);
+
+      await settle(page);
+      const m = await page.evaluate(measureInPage, { MIN_TAP, EPS });
+      const shellOk = m.shell === vp.expectShell;
+      if (!shellOk) problems.push(`${vp.name}/${st.name}: expected ${vp.expectShell} shell, got '${m.shell}'`);
+      if (pageErrors.length) problems.push(`${vp.name}/${st.name}: page error — ${pageErrors[0]}`);
+
+      let shot = null;
+      if (!noShots) {
+        shot = `screens/${vp.name}__state-${st.name}.png`;
+        await page.screenshot({ path: `${outDir}/${shot}`, fullPage: false });
+      }
+
+      rows.push({
+        viewport: vp.name,
+        route: `state:${st.name}`,
+        url: `#/s/${SPACE}/${st.path}`,
+        expectShell: vp.expectShell,
+        shellOk,
+        phoneRole: 'state',
+        stateOpened: opened,
+        stateFailure: failed,
+        note: st.note,
+        screenshot: shot,
+        pageErrors: pageErrors.slice(0, 3),
+        ...m,
+      });
+
+      console.log(
+        `${vp.name.padEnd(13)} ${('state:' + st.name).padEnd(24)} overflow=${String(m.overflowCount).padStart(4)}` +
+        `  worstRight=${String(m.worstRightEdge).padStart(5)}` +
+        `  taps<${MIN_TAP}=${String(m.tapTargetsUnderMin).padStart(3)}/${String(m.tapTargetsTotal).padStart(3)}` +
+        `  [${m.shell}]${opened ? '' : '  ⚠ STATE NOT REACHED'}`,
+      );
+    }
+  }
+
   await ctx.close();
 }
 
@@ -518,6 +792,35 @@ const report = {
   /* Which rendering engine produced these numbers. Rows from different engines
      are NOT comparable — see the ENGINE docblock. */
   engine: ENGINE,
+  /*
+   * THE BASIS, so a later run can be RECONCILED rather than naively subtracted.
+   *
+   * The route set and the census rules WILL move between before and after — a
+   * route that is a refusal card today becomes a real screen the moment one is
+   * approved, and it arrives carrying elements, some of them under 44px. Diffed
+   * blind, that improvement reads as a regression and the after-run cries wolf
+   * at exactly the work that was ordered.
+   *
+   * So both are recorded. A route present in one run and absent in the other is
+   * a SCOPE CHANGE. A census rule that differs makes the two counts
+   * incomparable outright and the run must be retaken, not reconciled.
+   */
+  basis: {
+    routes: ROUTES.map((r) => ({ name: r.name, path: r.path, phone: r.phone })),
+    states: STATES.map((r) => ({ name: r.name, path: r.path, note: r.note })),
+    viewports: VIEWPORTS.map((v) => v.name),
+    census: {
+      interactiveSelector: 'button, a[href], input, select, textarea, summary, [role=button|tab|link|menuitem|checkbox|switch], [tabindex]:not([tabindex="-1"])',
+      excluded: [
+        'not rendered (zero box / off-page)',
+        'visibility:hidden, opacity:0, pointer-events:none',
+        'visually-hidden (position:absolute + clip/clip-path + <=1px) — screen-reader-only inputs',
+        'inert: disabled / aria-disabled / pointer-events:none (ledgered separately, never failed)',
+      ],
+      ledgeredNotFailed: ['tapTargetsHidden', 'tapTargetsInert', 'tapTargetsOccluded'],
+      overflowMeasure: 'per-element getBoundingClientRect().right > innerWidth + EPS — scrollWidth is context, never proof',
+    },
+  },
   problems,
   rows,
 };
