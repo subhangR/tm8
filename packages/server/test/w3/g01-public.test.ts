@@ -79,7 +79,13 @@ describe.sequential('W3.G01 identity and Spaces through the production Server', 
       spaces: 1,
       members: 1,
       channels: 1,
-      axes: 1,
+      // 1 -> 0 (phase 6): `spaces.create` seeded a `type` axis, and that is the
+      // ONE default a new Space no longer gets. Taxonomy is the KIND now, so
+      // seeding an axis for it would hand every new Space the two-answers
+      // problem phase 6 exists to delete — and `task_axes_type_is_a_kind` would
+      // refuse the seed outright anyway. `task_axes` itself is untouched and
+      // still there for honest tags; a new Space simply starts with none.
+      axes: 0,
       menus: 1,
       settings_revision: 1,
       default_channel_id: defaultChannelId,
@@ -161,7 +167,12 @@ describe.sequential('W3.G01 identity and Spaces through the production Server', 
       menu: { schemaVersion: 1, revision: 1 },
     });
     expect(settings.members).toHaveLength(1);
-    expect(settings.taskAxes.some((axis) => axis.kind === 'default')).toBe(true);
+    // A new Space HAS no axes as of phase 6 — the seeded `type` axis was the
+    // only one, and taxonomy is the kind now. What this line pinned is that the
+    // settings projection SERVES `taskAxes`, so it still pins that: an empty
+    // array is the honest answer, and `undefined` (the projection dropping the
+    // field) would not be.
+    expect(settings.taskAxes).toEqual([]);
 
     const members = successData<Array<{ actor: { id: string }; role: string }>>(
       await harness.request('GET', `/v2/spaces/${spaceId}/members`),
