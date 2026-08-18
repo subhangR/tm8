@@ -230,6 +230,21 @@ const ROUTES = [
     name: 'voice-bare-link', path: 'e/vc-standup', phone: 'refusal',
     note: 'DEF-002 control — bare voice link MUST still refuse',
   },
+
+  /* ── LANE A cases (DEF-025/026/027/028/039) ────────────────────────────── */
+  {
+    name: 'chat-home', path: 'home', phone: 'screen',
+    witness: '[data-testid="chat-home-screen"]',
+    note: 'Lane A cases A + C — composer foot, root bar, thinking summary',
+  },
+  {
+    /* The channel SCREEN, not the channel LIST. The category partition empties
+       the tabbed list; this route opens the channel directly, so `.chv-tab` and
+       the `.chs-*` feed rows are reachable regardless of that bug. */
+    name: 'chat-channel', path: 'channel/ch-design', phone: 'screen',
+    witness: '[data-testid="channel-view"]',
+    note: 'Lane A cases B + D — chv-tab strip and the threaded feed',
+  },
 ];
 
 /**
@@ -603,6 +618,33 @@ function measureInPage({ MIN_TAP, EPS }) {
     listRows: document.querySelectorAll('[data-testid="list-tile"]').length,
     kindTotal: (document.querySelector('[data-testid="kind-total"]')?.textContent || '').trim(),
     activeTier: (document.querySelector('.lp__tab--active')?.textContent || '').trim().slice(0, 24),
+    /*
+     * LANE A's CASE WITNESSES, recorded as FACTS rather than graded. An
+     * ABSENCE acceptance ("this selector must not appear in the census") is
+     * only meaningful if the thing could have appeared at all — the DEF-016 /
+     * DEF-018 shape. So the presence of the thing itself is reported next to
+     * the census, and a case whose witness is absent is VOID, not PASS.
+     */
+    laneA: {
+      chatHomeScreen: !!document.querySelector('[data-testid="chat-home-screen"]'),
+      channelView: !!document.querySelector('[data-testid="channel-view"]'),
+      chvTabs: document.querySelectorAll('.chv-tab').length,
+      thinkingSummary: document.querySelectorAll('details.tch-thinking > summary').length,
+      threadFooterOpen: document.querySelectorAll('.chs-thread-footer__open').length,
+      feedRows: document.querySelectorAll('.chs-msg, [data-testid="channel-message"]').length,
+      /* The EntityListPanel embedded in chat-home — Lane A restores the type
+         scale across it deliberately. If it renders nothing, that boundary is
+         untested and must be reported NOT COVERED rather than verified. */
+      panelHost: (() => {
+        const host = document.querySelector('.tch-panel-host');
+        if (!host) return { present: false };
+        return {
+          present: true,
+          listRows: host.querySelectorAll('[data-testid="list-tile"]').length,
+          kindTotal: (host.querySelector('[data-testid="kind-total"]')?.textContent || '').trim(),
+        };
+      })(),
+    },
     /* Which screen a voice target actually got. A FACT, not a grade — see the
        voice-room route note. */
     voiceGuard: {
