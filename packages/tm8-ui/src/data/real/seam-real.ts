@@ -41,6 +41,7 @@ import {
   type ActivityItem,
   type AttentionRequestListQuery,
   type AttentionRequestPage,
+  type CollectionCounts,
   type CollectionQuery,
   type CollectionResult,
   type CommandResult,
@@ -314,6 +315,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     workflows: (spaceId: SpaceId): Promise<Workflow[]> => ops.workflows(spaceId),
     previewInvite: (code: string): Promise<InvitePreview> => ops.previewInvite(code),
     counts: (spaceId: SpaceId): Promise<SpaceKindCounts> => ops.counts(spaceId),
+    categoryCounts: (input: CollectionQuery): Promise<CollectionCounts> => ops.categoryCounts(input),
 
     /**
      * LLD C-4, the ONE soft-fallback in the whole seam: `not_implemented` (501)

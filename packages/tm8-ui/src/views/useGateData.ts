@@ -37,6 +37,7 @@ import type {
   EntitySummary,
   MenuConfig,
   SpaceId,
+  CollectionCounts,
   SpaceKindCounts,
   SpaceSummary,
   ProjectResource,
@@ -509,6 +510,8 @@ export interface GateData {
    * them would let an unavailable counter read as "this space is empty".
    */
   countsFor: (kind: string) => { total: number; unseen: number } | undefined;
+  /** OPEN population of a kind — `to_do` + `in_progress`; `undefined` = not read. */
+  openCountFor: (kind: string) => number | undefined;
   /** Re-read the counters now — after a local action that changed what is seen. */
   refreshCounts: () => void;
   detailOf: (id: string) => EntityDetail | undefined;
@@ -712,6 +715,12 @@ export function useGateData(options: GateOptions): GateData {
   // entities). The rail draws no number in the first case and a real zero in
   // the second, so an unavailable counter never masquerades as an empty space.
   const [kindCounts, setKindCounts] = useState<SpaceKindCounts | undefined>(undefined);
+  /**
+   * The kind x category matrix behind the rail's OPEN badges. Same
+   * undefined-vs-`{}` distinction as `kindCounts` above and for the same
+   * reason: "not read yet" and "genuinely none" must not render alike.
+   */
+  const [categoryCounts, setCategoryCounts] = useState<CollectionCounts | undefined>(undefined);
   const [executionCapacity, setExecutionCapacity] = useState<LivenessSnapshot['capacity']>();
   const [linkedProjects, setLinkedProjects] = useState<readonly ProjectResource[]>([]);
   const [spaceDefaultProfileId, setSpaceDefaultProfileId] = useState<EntityId | null>(null);
@@ -1060,7 +1069,7 @@ export function useGateData(options: GateOptions): GateData {
   const hydrate = useCallback(
     async (space: SpaceId, generation = spaceGeneration.current) => {
       const isCurrent = () => generation === spaceGeneration.current;
-      const [menuRaw, snapshot, projects, settings, identity, , counts] = await Promise.all([
+      const [menuRaw, snapshot, projects, settings, identity, , counts, matrix] = await Promise.all([
         seam.menu(space).catch((error: unknown) => {
           if (isCurrent()) setMenu(resolveMenu(undefined, error));
           return undefined;
@@ -1087,6 +1096,12 @@ export function useGateData(options: GateOptions): GateData {
         // the whole `Promise.all` down and leave the workspace stuck at
         // `ready === false` — the counters failing must never cost the boot.
         Promise.resolve().then(() => seam.counts(space)).catch(() => undefined),
+        // The rail's OPEN badges, on the same terms as the counters above:
+        // SOFT-FAILS to `undefined`, so a node that cannot serve the aggregate
+        // renders a rail with no badges rather than a workspace that refuses
+        // to open. No `kinds` filter — one space-wide read answers EVERY rail
+        // row at once, which is the whole reason the matrix is a matrix.
+        Promise.resolve().then(() => seam.categoryCounts({ spaceId: space })).catch(() => undefined),
       ]);
       if (!isCurrent()) return;
       if (menuRaw !== undefined) setMenu(resolveMenu(menuRaw as MenuConfig | null));
@@ -1108,6 +1123,7 @@ export function useGateData(options: GateOptions): GateData {
       setViewerActor(memberActors.find((member) => member.id === viewerMemberId) ?? null);
       setSpaceDefaultProfileId(settings.defaultInteractionProfileId);
       if (counts) setKindCounts(counts);
+      if (matrix) setCategoryCounts(matrix);
 
       const load = async (kind: string, limit?: number) => {
         const query = { spaceId: space, kinds: [kind], ...(limit ? { limit } : {}) } as unknown as CollectionQuery;
@@ -1365,6 +1381,7 @@ export function useGateData(options: GateOptions): GateData {
     // survive the switch, and a zero would be a claim about the new space we
     // have not read yet.
     setKindCounts(undefined);
+    setCategoryCounts(undefined);
     setLinkedProjects([]);
     setSpaceDefaultProfileId(null);
     /* No teammate-defaults map to clear any more: the per-teammate default now
@@ -1540,6 +1557,15 @@ export function useGateData(options: GateOptions): GateData {
         void Promise.resolve()
           .then(() => seam.counts(spaceId))
           .then(setKindCounts)
+          .catch(() => undefined);
+        // The rail's OPEN badges ride the SAME debounce window rather than
+        // their own: both are answers to "what changed", and two independent
+        // trailing timers would double the request rate for one burst while
+        // letting the rail's two numbers disagree about which event they were
+        // read after.
+        void Promise.resolve()
+          .then(() => seam.categoryCounts({ spaceId }))
+          .then(setCategoryCounts)
           .catch(() => undefined);
       }, COUNTS_DEBOUNCE_MS);
     });
@@ -2489,6 +2515,27 @@ export function useGateData(options: GateOptions): GateData {
     [kindCounts],
   );
 
+  /**
+   * How many entities of this kind are OPEN — `to_do` + `in_progress` under
+   * the universal status model, summed from the server's matrix.
+   *
+   * `undefined` (not `0`) until the aggregate has been read, and `undefined`
+   * forever on a node that cannot serve it, so the rail can draw NOTHING for
+   * "unknown" and a real `0` for "none open". Those are different facts and a
+   * badge that showed `0` for both would be lying half the time.
+   */
+  const openCountFor = useCallback(
+    (kind: string) => {
+      if (!categoryCounts) return undefined;
+      const bucket = categoryCounts.byKind[kind as keyof CollectionCounts['byKind']];
+      // A kind absent from the matrix has no rows at all — an honest 0, which
+      // is exactly what the partial shape means. See CollectionCounts.
+      if (!bucket) return 0;
+      return (bucket.to_do ?? 0) + (bucket.in_progress ?? 0);
+    },
+    [categoryCounts],
+  );
+
   const refreshCounts = useCallback(() => {
     if (!spaceId) return;
     void Promise.resolve()
@@ -2582,6 +2629,7 @@ export function useGateData(options: GateOptions): GateData {
       pageStateOf,
       loadMore,
       countsFor,
+      openCountFor,
       refreshCounts,
       detailOf,
       capabilitiesOf,
@@ -2603,7 +2651,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, openCountFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

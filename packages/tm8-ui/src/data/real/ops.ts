@@ -43,6 +43,7 @@ import {
   type AttentionRequestPage,
   type CollectionAddItemInput,
   type CollectionQuery,
+  type CollectionCounts,
   type CollectionResult,
   type CommandContext,
   type CommandResult,
@@ -451,6 +452,15 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     /** `cursor`/`limit` are BODY fields on this op, carried inside the query object. */
     query(input: CollectionQuery): Promise<CollectionResult> {
       return http.call<CollectionResult>('collections.query', { body: input });
+    },
+
+    /**
+     * Same body as `query` — the server ignores the paging fields — so a
+     * caller counts exactly the query it would page, with no second shape to
+     * keep in step.
+     */
+    categoryCounts(input: CollectionQuery): Promise<CollectionCounts> {
+      return http.call<CollectionCounts>('collections.counts', { body: input });
     },
 
     graph(input: GraphQuery): Promise<GraphResult> {

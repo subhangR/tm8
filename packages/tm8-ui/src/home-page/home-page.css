@@ -298,6 +298,43 @@
   white-space: nowrap;
 }
 .cv2-root .hr-rail__glyph { display: inline-flex; flex: none; }
+/* THE OPEN-COUNT BADGE. Expanded, it sits at the row's trailing edge, pushed
+   there by the label's `min-width: 0` above rather than by a margin — the
+   label must be the thing that ellipsises, never the number. */
+.cv2-root .hr-rail__badge {
+  flex: none;
+  margin-left: auto;
+  padding: 0 4px;
+  min-width: 16px;
+  border-radius: 6px;
+  background: var(--pn-active);
+  color: var(--pn-ink-3);
+  font: 9px var(--pn-mono);
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.cv2-root .hr-rail__row:hover .hr-rail__badge,
+.cv2-root .hr-rail__row[aria-current='true'] .hr-rail__badge { color: var(--pn-ink); }
+/* Collapsed the row is a COLUMN (mark over word), so `margin-left: auto` would
+   centre the badge under the word instead of trailing it. It becomes a corner
+   mark on the glyph — which is why the collapsed row is a positioning context
+   and the badge is taken out of the column flow entirely. */
+.cv2-root .hr-rail--collapsed .hr-rail__row { position: relative; }
+.cv2-root .hr-rail--collapsed .hr-rail__badge {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  margin-left: 0;
+  padding: 0 3px;
+  min-width: 13px;
+  border: 1px solid var(--pn-surface);
+  background: var(--pn-line);
+  color: var(--pn-ink);
+  font-size: 8px;
+  line-height: 12px;
+}
+
 .cv2-root .hr-rail__row:hover { color: var(--pn-ink); background: var(--pn-hover); }
 .cv2-root .hr-rail__row[aria-current='true'] {
   border-color: var(--pn-line);

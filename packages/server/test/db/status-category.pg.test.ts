@@ -26,9 +26,9 @@
  * for a writer that bypassed the catalog.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { CollectionQuery, StatusCategory } from '@tm8/contract';
+import type { CollectionCounts, CollectionQuery, StatusCategory } from '@tm8/contract';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
-import { queryCollection } from '../../src/facade/handlers/collections.js';
+import { countCollection, queryCollection } from '../../src/facade/handlers/collections.js';
 import type { Querier } from '../../src/db/types.js';
 
 /**
@@ -425,6 +425,110 @@ describe.sequential('147 — entities.status_category', () => {
       expect(await collect({ category: [category] })).not.toContain(DOC);
     }
     expect(await collect({})).toContain(DOC);
+  });
+
+  /**
+   * THE AGGREGATE, against the same rows the page just returned.
+   *
+   * `collections.counts` exists so the icon rail's open badges and the category
+   * tabs read ONE number, and its whole correctness claim is that it runs the
+   * same `buildWhere()` the page runs. That claim is only checkable HERE: a
+   * unit test over generated SQL cannot tell a count that is right from a count
+   * that is merely well-formed, and a fixture cannot tell either, because the
+   * fixture implements the predicate a second time.
+   *
+   * So every case below asserts the aggregate AGAINST `collect()` — the page —
+   * rather than against a hand-written number. A hand-written number would pin
+   * this file's seed data; agreeing with the page pins the property the feature
+   * actually rests on, and stays true when a later test adds more rows.
+   */
+  async function counts(
+    query: Omit<CollectionQuery, 'spaceId'> = {},
+  ): Promise<CollectionCounts['byKind']> {
+    return database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const q: Querier = {
+        query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> =>
+          (await client.query(sql, [...params])).rows as R[],
+        rpc: async () => {
+          throw new Error('a count must not write');
+        },
+      } as Querier;
+      return (await countCollection(q, { spaceId: SPACE, ...query })).byKind;
+    });
+  }
+
+  it('agrees with the PAGE, category by category — the badge and the list are one claim', async () => {
+    for (const category of ['to_do', 'in_progress', 'done', 'cancelled'] as const) {
+      const listed = await collect({ category: [category] });
+      const matrix = await counts({ filters: { category: [category] } });
+      const counted = Object.values(matrix).reduce(
+        (n, bucket) => n + Object.values(bucket ?? {}).reduce((m, c) => m + c, 0),
+        0,
+      );
+      expect(counted, `${category}: matrix vs page`).toBe(listed.length);
+    }
+  });
+
+  it('splits ONE read by kind AND category — which is what makes it serve two surfaces', async () => {
+    /* The rail sums a kind's row; the tabs read a category's column. Both come
+       out of this single call, and each cell must equal the page for the same
+       narrowed query — otherwise the matrix is a summary rather than an
+       answer. */
+    const matrix = await counts();
+    expect(Object.keys(matrix)).toContain('task');
+    for (const [kind, bucket] of Object.entries(matrix)) {
+      for (const [category, n] of Object.entries(bucket ?? {})) {
+        const listed = await collect({ category: [category as StatusCategory] });
+        const ofKind = await database.query<{ n: string }>(
+          `select count(*) n from public.entities
+            where space_id = $1 and kind = $2 and status_category = $3 and deleted_at is null`,
+          [SPACE, kind, category],
+        );
+        expect(n, `${kind}/${category}`).toBe(Number(ofKind[0]!.n));
+        expect(listed.length).toBeGreaterThanOrEqual(n);
+      }
+    }
+  });
+
+  it('is QUERY-scoped, not page-scoped — `limit` cannot cap a count', async () => {
+    /* The mistake the op exists to prevent, and the reason it does not take a
+       cursor: `buildWhere` never emits the cursor clause, so there is nothing
+       to strip — but `limit` still arrives in the body, and honouring it would
+       turn every badge into "how many fit on one page". */
+    const full = await counts({ filters: { category: ['to_do', 'in_progress'] } });
+    const capped = await counts({ filters: { category: ['to_do', 'in_progress'] }, limit: 1 });
+    const sum = (m: CollectionCounts['byKind']) =>
+      Object.values(m).reduce((n, b) => n + Object.values(b ?? {}).reduce((x, c) => x + c, 0), 0);
+    expect(sum(full)).toBeGreaterThan(1);
+    expect(sum(capped)).toBe(sum(full));
+  });
+
+  it('counts a row ONCE, however many detail tables it left-joins', async () => {
+    /* `count(*)` rather than `count(distinct e.id)` is only safe because
+       ENTITY_FROM cannot fan out — which the PAGE already depends on, since it
+       applies `limit` with no `distinct`. If a fanning join were ever added,
+       this is the assertion that would catch it: the matrix would exceed the
+       table. */
+    const matrix = await counts();
+    const total = Object.values(matrix).reduce(
+      (n, b) => n + Object.values(b ?? {}).reduce((x, c) => x + c, 0), 0,
+    );
+    const actual = await database.query<{ n: string }>(
+      `select count(*) n from public.entities
+        where space_id = $1 and deleted_at is null and status_category is not null`,
+      [SPACE],
+    );
+    expect(total).toBe(Number(actual[0]!.n));
+  });
+
+  it('omits a kind with no rows rather than reporting it as zero', async () => {
+    /* Partial by construction, like SpaceKindCounts: the aggregate GROUPS, so
+       absence is the zero and a consumer reads a missing key as none. A kind
+       present with `{}` would be a different, wronger shape. */
+    const matrix = await counts({ kinds: ['task'] });
+    expect(Object.keys(matrix)).toEqual(['task']);
+    expect(matrix.doc).toBeUndefined();
   });
 
   it('refuses a fifth category — the closed four are closed in the schema', async () => {
