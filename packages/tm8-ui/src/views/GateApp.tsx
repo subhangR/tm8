@@ -466,6 +466,42 @@ export function GateApp(props: GateAppProps = {}) {
   }, [nodeKey, data.spaceId]);
 
   /**
+   * STEP UP — a navigation that knows it is LEAVING somewhere, and honours R15.
+   *
+   * `navigateTo` always PUSHES, which is right for going somewhere and wrong for
+   * coming back out. The phone header's chevron means UP, and R15 says the first
+   * step up from a COLD ARRIVAL must be a REPLACE: land on a pasted link and
+   * history depth is 1, so if up pushed, the phone's own back gesture would
+   * return you to the thing you just left and trap you in a two-item loop with
+   * no exit — on the exact entry path a shared link creates.
+   *
+   * That concession already existed, but only inside the kind-screen step-up
+   * effect below, which never runs for an ENTITY target. So the chevron this
+   * enables (see `MobileShell`, the entity arm) would have re-created the very
+   * trap R15 was written to prevent. Exposed as a verb rather than duplicated in
+   * the shell, because history belongs to this module: the shell forks and the
+   * router does not.
+   *
+   * Spent ONCE, like the other consumer — after the first step up the viewer has
+   * a real history and every later navigation is an ordinary push.
+   */
+  const stepUpTo = useCallback((target: MenuTarget) => {
+    const view = routeViewOf(target);
+    if (!view) {
+      console.error('[nav] refusing a step-up target with no route', target);
+      return;
+    }
+    setUnroutableTarget(null);
+    if (data.spaceId) writeLastTarget(nodeKey, data.spaceId, target);
+    if (coldEntry.current) {
+      coldEntry.current = false;
+      navStore.setState((s) => ({ view, history: 'replace', revision: s.revision + 1 }));
+      return;
+    }
+    navStore.getState().navigate(view);
+  }, [nodeKey, data.spaceId]);
+
+  /**
    * Navigate to a destination expressed as a ROUTE rather than as a screen.
    *
    * Everything a viewer can click already holds a `MenuTarget`, but the
@@ -1566,6 +1602,7 @@ export function GateApp(props: GateAppProps = {}) {
              invariant with two spellings is an invariant with one bug. */
           viewerActor={data.viewerActor}
           spaces={data.spaces}
+          onStepUp={stepUpTo}
           onSelectSpace={(id) => {
             leaveSpaceContext();
             data.selectSpace(id);
