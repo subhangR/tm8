@@ -851,9 +851,6 @@ export interface ContentBlockRef {
   params?: Readonly<Record<string, string | number | boolean>>;
 }
 
-/** Complete work-session Content vocabulary; pin projection gates Chat. */
-export type ContentSurfaces = readonly ['terminal'] | readonly ['terminal', 'chat'];
-
 export interface PanelConfig {
   archetype: BodyArchetype;
   /** generic archetype: ordered blocks (§2.4). */
@@ -866,8 +863,6 @@ export interface PanelConfig {
    * honest sentence.
    */
   capabilityReasons?: Partial<Record<keyof EntityCapabilities, string>>;
-  /** work_session only. */
-  contentSurfaces?: ContentSurfaces;
   /**
    * Git UI wave: the subtree body mounts the git section (tracked PRs,
    * commit provenance, completion-gate honesty) when the REGISTRY says so —

@@ -480,8 +480,9 @@ function SessionContextHeader({
             withdrawUnavailableReason={withdrawUnavailableReason}
             onOpenSource={onOpenEntity}
           />
-          {/* Reserved now so the Phase-2 [ Terminal | Chat ] switch costs no
-              relayout. Its Phase-1 occupant is the toolbar drop target (§8). */}
+          {/* Reserved so the surface switch costs no relayout. It has since
+              landed in the panel bar; this seam still holds the height, and its
+              occupant is the toolbar drop target (§8). */}
           <ReservedToolbarSeam>
             <ShareDropTarget
               receiverName={receiverName}

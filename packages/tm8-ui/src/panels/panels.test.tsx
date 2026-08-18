@@ -182,9 +182,12 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
    * not by a testid on the slot, so moving the slot inside the bar stays free
    * and moving it OUT of the bar fails.
    */
-  it('mounts the terminal/chat switch inside the panel bar, not above the canvas', () => {
+  it('mounts the surface switch inside the panel bar, not above the canvas', () => {
     const detail = fixtureDetails[sessionStale.id]!;
-    const withChat = {
+    // The profile is still supplied because the panel reads other fields from
+    // it — but it no longer decides which chips exist. `chatEnabled` gates
+    // nothing since the Chat surface retired.
+    const withProfile = {
       ...detail,
       content: {
         ...detail.content,
@@ -198,7 +201,7 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
       },
     } as typeof detail;
     const { container, getByTestId } = render(
-      <EntityDetailPanel detail={withChat} reasons={REASONS} ctx={ctx} liveness="stale" />,
+      <EntityDetailPanel detail={withProfile} reasons={REASONS} ctx={ctx} liveness="stale" />,
     );
     const bar = container.querySelector('.pn-panelbar');
     const surfaceSwitch = getByTestId('work-session-surface-switch');
@@ -206,11 +209,10 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(bar!.contains(surfaceSwitch)).toBe(true);
     expect(surfaceSwitch.className).toContain('pn-surface-switch--bar');
     // Still switchable in the bar — relocating a control may not quietly cost
-    // it its behaviour. Debug and Graph are always present (neither depends on
-    // the chat pin), and the Git UI wave added the Git surface to every
-    // session panel, so a chat-enabled session shows all five.
+    // it its behaviour. All five surfaces are unconditional now: the last
+    // gated one was Chat, and the gate retired with the name.
     const tabs = [...surfaceSwitch.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
-    expect(tabs).toEqual(['Terminal', 'Chat', 'Git', 'Debug', 'Graph']);
+    expect(tabs).toEqual(['Terminal', 'Transcript', 'Git', 'Debug', 'Graph']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {

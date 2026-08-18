@@ -105,7 +105,7 @@ describe('round-trip (property)', () => {
   it('parse ∘ build is the identity on normalized routes', () => {
     const rand = lcg(20260728);
     const tabs: PanelTab[] = ['content', 'discussion', 'connections', 'activity'];
-    const surfaces: ContentSurface[] = ['terminal', 'chat'];
+    const surfaces: ContentSurface[] = ['terminal', 'transcript'];
 
     for (let iteration = 0; iteration < 250; iteration += 1) {
       const stackCount = Math.floor(rand() * 4);
@@ -158,7 +158,7 @@ describe('normalize (LLD §5.2, §6)', () => {
           stack,
           pinned,
           tabs: { [id(0)]: 'content', [id(1)]: 'activity', [id(99)]: 'discussion' },
-          contentSurface: { [id(2)]: 'chat', [id(99)]: 'terminal' },
+          contentSurface: { [id(2)]: 'transcript', [id(99)]: 'terminal' },
           session: null,
         },
       });
@@ -185,12 +185,12 @@ describe('normalize (LLD §5.2, §6)', () => {
           ...emptyPanels(),
           stack: [id(1)],
           tabs: { [id(1)]: 'activity', [id(7)]: 'discussion' },
-          contentSurface: { [id(1)]: 'chat', [id(7)]: 'terminal' },
+          contentSurface: { [id(1)]: 'transcript', [id(7)]: 'terminal' },
         },
       }),
     );
     expect(canonical.panels.tabs).toEqual({ [id(1)]: 'activity' });
-    expect(canonical.panels.contentSurface).toEqual({ [id(1)]: 'chat' });
+    expect(canonical.panels.contentSurface).toEqual({ [id(1)]: 'transcript' });
   });
 
   it('drops explicit content tabs (an omitted pair already means content)', () => {
@@ -201,18 +201,34 @@ describe('normalize (LLD §5.2, §6)', () => {
   });
 });
 
-describe('D12 — contentSurface=…:chat is preserved and round-trips', () => {
-  it('accepts, preserves and rebuilds chat unchanged', () => {
+/**
+ * D12, AS IT NOW STANDS. The original rule read "`contentSurface=…:chat` is
+ * preserved and rebuilds unchanged", and it was protecting a link authored by a
+ * NEWER client from being made lossy by an older one — `chat` was then a
+ * FUTURE token this codec did not yet present.
+ *
+ * `chat` is now a RETIRED token, which inverts the situation the rule was
+ * written for. The link is still honoured — that half of D12 is untouched and
+ * is what these assertions are mostly about — but it resolves to the surface
+ * that token now names, and the retired spelling is not written back out.
+ * Nothing is lost by that rewrite: `transcript` is exactly what `chat` meant on
+ * a session panel. Re-emitting a name the app no longer uses anywhere else is
+ * what would keep the vocabulary alive after it was ruled dead.
+ */
+describe('D12 — a retired contentSurface token still resolves', () => {
+  it('accepts chat, resolves it to transcript, and does not write it back', () => {
     const hash = `#/s/${SPACE}/workspace?p=${id(1)}&contentSurface=${id(1)}:chat`;
     const { route, dropped } = parse(hash);
+    // STILL NOT DROPPED. An old link keeps working — that is the half of D12
+    // that matters to anyone holding one.
     expect(dropped).toEqual([]);
-    expect(route!.panels.contentSurface[id(1)]).toBe('chat');
+    expect(route!.panels.contentSurface[id(1)]).toBe('transcript');
 
-    // Never rewritten out of the URL: a Phase-2 deep link authored today must
-    // not be made lossy by a Phase-1 client. Clamping is presentation-only.
+    // One-directional: accepted on the way in, never emitted on the way out.
     const rebuilt = build(normalize(route!));
-    expect(rebuilt.hash).toContain(`contentSurface=${id(1)}:chat`);
-    expect(parse(rebuilt.hash).route!.panels.contentSurface[id(1)]).toBe('chat');
+    expect(rebuilt.hash).toContain(`contentSurface=${id(1)}:transcript`);
+    expect(rebuilt.hash).not.toContain(':chat');
+    expect(parse(rebuilt.hash).route!.panels.contentSurface[id(1)]).toBe('transcript');
   });
 
   it('is DISTINCT from the atomic discard of an unparseable surface value', () => {
@@ -287,7 +303,7 @@ describe('the 2048 cap and its ordered atomic drops', () => {
         stack,
         pinned: many(3),
         tabs: Object.fromEntries(stack.map((e) => [e, 'activity' as PanelTab])),
-        contentSurface: Object.fromEntries(stack.map((e) => [e, 'chat' as ContentSurface])),
+        contentSurface: Object.fromEntries(stack.map((e) => [e, 'transcript' as ContentSurface])),
         session: null,
       },
     });
@@ -307,7 +323,7 @@ describe('the 2048 cap and its ordered atomic drops', () => {
           stack,
           pinned: many(3),
           tabs: Object.fromEntries(stack.map((e) => [e, 'activity' as PanelTab])),
-          contentSurface: Object.fromEntries(stack.map((e) => [e, 'chat' as ContentSurface])),
+          contentSurface: Object.fromEntries(stack.map((e) => [e, 'transcript' as ContentSurface])),
           session: null,
         },
       });
@@ -341,7 +357,7 @@ describe('the 2048 cap and its ordered atomic drops', () => {
         stack,
         pinned: [],
         tabs: Object.fromEntries(stack.map((e) => [e, 'activity' as PanelTab])),
-        contentSurface: Object.fromEntries(stack.map((e) => [e, 'chat' as ContentSurface])),
+        contentSurface: Object.fromEntries(stack.map((e) => [e, 'transcript' as ContentSurface])),
         session: null,
       },
     });

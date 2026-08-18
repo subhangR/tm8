@@ -53,10 +53,10 @@ function sourceFiles(dir: string): string[] {
  * REVIEW F4, and the finding was BIGGER than reported. The first version cut
  * at `text.indexOf('/>')`, which the review flagged as fragile for "a future
  * mount with children". It was already wrong TODAY: `EntityView` passes
- * `chatSurface={<LazySessionChatSurface … />}`, so the slice ended at that
+ * `conversationSurface={<LazySessionChatSurface … />}`, so the slice ended at that
  * nested element's `/>` and silently dropped every prop after it. The wiring
  * assertions passed only because `onAction` and `launch` happen to be written
- * above `chatSurface` — luck, not coverage. A guard that fails OPEN is worse
+ * above `conversationSurface` — luck, not coverage. A guard that fails OPEN is worse
  * than no guard, because it is believed.
  */
 function openingTagOf(text: string, at: number): { props: string; closed: boolean } {
@@ -123,10 +123,10 @@ describe('panel primaries are wired at every mount site', () => {
     expect(mounts.filter((m) => !m.closed).map((m) => m.file)).toEqual([]);
 
     // The regression that motivated the rewrite: EntityView passes a nested
-    // element inside `chatSurface`, and the old scan stopped there. Its props
+    // element inside `conversationSurface`, and the old scan stopped there. Its props
     // must reach the ones written AFTER it, or this guard proves nothing about
     // the tail of any mount.
-    const nested = mounts.filter((m) => m.props.includes('chatSurface='));
+    const nested = mounts.filter((m) => m.props.includes('conversationSurface='));
     expect(nested.length).toBeGreaterThan(0);
     for (const mount of nested) {
       expect(mount.props).toContain('onOpenEntity=');

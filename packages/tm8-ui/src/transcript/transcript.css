@@ -1,0 +1,217 @@
+/*
+ * THE TRANSCRIPT SURFACE — chat geometry over transcript data.
+ *
+ * The bubble block below is LIFTED from `chat-home.css` (`.tch-turn`,
+ * `.tch-turn__byline`, `.tch-user-body`) rather than imported, on the precedent
+ * set at `panels/list-root-header.css:4` when the Work tab adopted Chat Home's
+ * header. Importing `chat-home.css` for three rules would drag in a full-screen
+ * two-column grid, a sidebar, a composer and a graph pane.
+ *
+ * Visual parity with the chat UI is a direct user requirement, so the geometry
+ * is copied faithfully — with ONE deliberate correction carried across, marked
+ * below.
+ *
+ * Everything here depends only on `--pn-*` design tokens, so a token change
+ * still reaches this surface the way it reaches every other.
+ */
+
+.tr-surface {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+/* The reading column scrolls; the composer below it does not move. */
+.tr-surface__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--pn-space-4) var(--pn-space-4) var(--pn-space-2);
+}
+
+.tr-surface__foot {
+  flex: none;
+  padding: var(--pn-space-2) var(--pn-space-4) var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+}
+
+/*
+ * The composer's standing disclosure. This is not decoration: the input writes
+ * to the session's PTY, which is a different destination from every other
+ * composer in the app, and a reader who assumes otherwise is owed the
+ * correction before they type rather than after.
+ */
+.tr-surface__foot-note {
+  margin: var(--pn-space-2) 0 0;
+  color: var(--pn-ink-3);
+  font-size: 10px;
+}
+
+.tr-surface__state {
+  padding: var(--pn-space-5) var(--pn-space-4);
+  color: var(--pn-ink-3);
+  font-size: 12px;
+}
+
+/*
+ * A real button that reads as a link. It is a `<button>` and not an `<a>`
+ * because it performs an action rather than going to an address — there is no
+ * URL for "retry this read" or "switch this panel's surface".
+ */
+.tr-linkbtn {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--pn-brand-2);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.tr-linkbtn:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+/* Lifted from `.tch-send` (chat-home.css:735) so the primary action looks the
+   same in both places, keyboard ring included. */
+.tr-send {
+  margin-left: var(--pn-space-2);
+  border-color: transparent;
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
+}
+
+.tr-send:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+.tr-send:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+/* ---- turns ------------------------------------------------------------- */
+
+.tr-turns {
+  display: flex;
+  flex-direction: column;
+}
+
+.tr-turns__boundary {
+  margin: 0 0 var(--pn-space-4);
+  color: var(--pn-ink-3);
+  font-size: 10px;
+  text-align: center;
+}
+
+.tr-turn {
+  margin-bottom: var(--pn-space-6);
+}
+
+.tr-turn__byline {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--pn-space-2);
+  color: var(--pn-ink-3);
+  font-size: 10px;
+}
+
+.tr-turn__byline strong {
+  color: var(--pn-ink-2);
+  font-size: 11px;
+}
+
+.tr-turn__byline time {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+}
+
+.tr-turn__truncated {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  color: var(--pn-ink-3);
+}
+
+/*
+ * SIDEDNESS. Same mechanism as Chat Home's ruled own-right treatment: purely
+ * `justify-content`, never `row-reverse`, so DOM order — and with it screen
+ * reader and tab order — is identical on both sides.
+ *
+ * The claim is weaker than Chat Home's, deliberately. `data-input` means the
+ * entry arrived as user input, NOT that the viewer wrote it; a transcript entry
+ * has no author to compare against a viewer id.
+ *
+ * ⚠ THE BODY RULE IS FULLY QUALIFIED, and it has to be. The bubble below is
+ * `.cv2-root .md-root.tr-turn__body` — (0,3,0), raised on purpose to outrank
+ * `kit/markdown.css`. A bare `.tr-turn[data-input] .tr-turn__body` is ALSO
+ * (0,3,0), so the two tie and SOURCE ORDER decides — and the bubble, declaring
+ * `margin-left: 26px` later in this file, silently wins. The turn then never
+ * moves to the right edge. This shipped broken once between writing the rule
+ * and building the CSS; the fix is specificity, never reordering, because
+ * reordering leaves the next edit one line-move away from the same bug.
+ */
+.tr-turn[data-input='true'] .tr-turn__byline {
+  justify-content: flex-end;
+}
+
+.cv2-root .tr-turn[data-input='true'] .md-root.tr-turn__body {
+  margin-left: auto;
+}
+
+/*
+ * THE BUBBLE.
+ *
+ * ⚠ THE CORRECTION, carried across rather than copied: this selector is
+ * qualified `.cv2-root .md-root.tr-turn__body` and Chat Home's equivalent is a
+ * bare `.tch-user-body`. `kit/Markdown` always emits `md-root`, the app shell
+ * is always `.cv2-root`, and `kit/markdown.css:10` styles `.cv2-root .md-root`
+ * at specificity (0,2,0) with a serif family and a document font size. A bare
+ * (0,1,0) class loses to it, so the bubble's own `font-size` and `color` never
+ * apply. `channel-screen.css:247` already documents and solves exactly this;
+ * this follows it rather than inheriting the bug.
+ */
+.cv2-root .md-root.tr-turn__body {
+  max-width: 80%;
+  width: fit-content;
+  /* Aligns the bubble under the 20px avatar + 6px gap in the byline. */
+  margin-left: 26px;
+  padding: 8px 11px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: 13px;
+  line-height: 1.55;
+  text-wrap: pretty;
+  user-select: text;
+  /* A transcript carries pasted paths, stack traces and long tokens that no
+     word boundary will break. */
+  overflow-wrap: anywhere;
+  /* No `pre-wrap`: the body is rendered markdown, and pre-wrap over rendered
+     HTML turns inter-element whitespace into phantom gaps. `chatMarkdownSource`
+     is what preserves a lone newline. */
+}
+
+/*
+ * THE AGENT'S SIDE IS A READING COLUMN, NOT A BUBBLE — and this IS the parity
+ * choice, not a departure from it. Chat Home treats its assistant turns exactly
+ * this way (`.tch-parts`, chat-home.css): an answer is something you read, and
+ * a session agent's turn routinely runs to hundreds of lines of prose, paths
+ * and code. Boxing that produces a wall of card, which is the opposite of what
+ * the bubble geometry is for. The byline still carries the avatar and the
+ * timestamp, so the conversation reads as a conversation.
+ */
+.cv2-root .tr-turn[data-source='assistant'] .md-root.tr-turn__body {
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0;
+  padding-right: 0;
+  max-width: 70ch;
+}

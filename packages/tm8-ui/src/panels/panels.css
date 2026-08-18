@@ -693,10 +693,10 @@
   gap: 7px;
   padding: 0 8px 0 6px;
 }
-/* The portal target for the terminal/chat switch (USER RULING 2026-07-31).
-   `display: contents` so an EMPTY slot — every non-chat session — costs the
-   bar no box and no gap at all, and a filled one lets the switch's own flex
-   row be the bar's child directly. */
+/* The portal target for the work-session surface switch (USER RULING
+   2026-07-31). `display: contents` so an EMPTY slot — every entity that is not
+   a work session — costs the bar no box and no gap at all, and a filled one
+   lets the switch's own flex row be the bar's child directly. */
 .cv2-root .pn-panelbar__surface { display: contents; }
 .cv2-root .pn-tab {
   appearance: none;

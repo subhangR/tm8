@@ -254,10 +254,17 @@ export interface EntityDetailPanelProps {
   streaming?: boolean;
   needsAttention?: boolean;
   attentionDetail?: string;
-  /** Viewer-local presentation state for the two work-session Content panes. */
+  /** Viewer-local presentation state for the work-session Content panes. */
   contentSurface?: ContentSurface | null;
   viewerMemberId?: string | null;
-  chatSurface?: ReactNode;
+  /**
+   * The CONVERSATION surface — composed by the host via `conversationSurfaceFor`
+   * and mounted by two structurally different arms: the session panel's
+   * Transcript pane and a hub's feed. Named for the slot rather than its
+   * occupant, which is what let the session panel repoint from chat to
+   * transcript without touching a single host.
+   */
+  conversationSurface?: ReactNode;
   /**
    * THE DISCUSSION TAB'S CONVERSATION. Same host contract as every other
    * seam-backed surface here: the panel is presentational and cannot reach a
@@ -1074,6 +1081,22 @@ function PanelBody(
         onSurfaceChange={props.onContentSurfaceChange}
         switchSlot={props.surfaceSlot}
         terminal={
+          /*
+           * THE "transcript ↗" CHIP BECOMES REAL HERE.
+           *
+           * `TerminalBody` has drawn that chip on every exited session since it
+           * was written, and no host ever supplied `onOpenTranscript` — an
+           * ENABLED button with `onClick={undefined}`, which is exactly the
+           * enabled-inert control this panel's honesty rules ban everywhere
+           * else. It could not be supplied before now: there was no transcript
+           * surface to open, and an exited session's own words were reachable
+           * only by digging through the Debug journal.
+           *
+           * Opening it is just selecting the surface. The host already
+           * round-trips that choice back as `requestedSurface` — the same path,
+           * in the other direction, as the conversation surface's own way back
+           * to the terminal.
+           */
           <TerminalBody
             detail={detail}
             serverBaseUrl={props.serverBaseUrl}
@@ -1087,14 +1110,17 @@ function PanelBody(
             livenessLabel={config.list.liveTreatment?.(props.liveness ?? 'unknown').label}
             livenessReason={config.list.liveTreatment?.(props.liveness ?? 'unknown').reason}
             onOpenEntity={onOpenEntity}
+            {...(props.onContentSurfaceChange
+              ? { onOpenTranscript: () => props.onContentSurfaceChange?.('transcript') }
+              : {})}
             {...(props.onResumeSession ? { onResume: props.onResumeSession } : {})}
             {...(props.resumingSession ? { resuming: props.resumingSession } : {})}
           />
         }
-        chat={props.chatSurface ?? (
-          /* Surface-generic on purpose: the slot is being repointed (session
-             chat today, Transcript confirmed incoming), and this copy must
-             stay true whichever surface a host forgot to wire. */
+        transcript={props.conversationSurface ?? (
+          /* Surface-generic on purpose: the slot is composed by the host and
+             its occupant is a registry decision, so this copy must stay true
+             whichever surface a host forgot to wire. */
           <p className="pn-surface-host-missing" role="alert">
             This session&rsquo;s conversation surface is unavailable in this view.
           </p>
@@ -1200,7 +1226,7 @@ function PanelBody(
      * So when the host supplies a feed, the hub renders its front-door regions
      * AND the live feed beneath them. When it does not, HubBody is unchanged —
      * a hub kind with no feed host still gets exactly what it always got.
-     * `chatSurface` is the same prop the terminal arm consumes: one host slot
+     * `conversationSurface` is the same prop the terminal arm consumes: one host slot
      * for "the live conversation for this entity", not a second channel-shaped
      * one.
      */
@@ -1210,11 +1236,11 @@ function PanelBody(
           detail={detail}
           blocks={config.panel.blocks ?? []}
           messages={props.messages}
-          hasFeed={props.chatSurface != null}
+          hasFeed={props.conversationSurface != null}
           onOpenEntity={onOpenEntity}
         />
-        {props.chatSurface ? (
-          <div className="pn-hub-feed">{props.chatSurface}</div>
+        {props.conversationSurface ? (
+          <div className="pn-hub-feed">{props.conversationSurface}</div>
         ) : (
           /* The terminal arm's honesty, extended here: a hub without a feed
              host used to render NOTHING below the front door — a channel you

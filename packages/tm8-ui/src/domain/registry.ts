@@ -773,9 +773,6 @@ const ROWS: readonly KindConfig[] = [
         source: 'sessionStatus',
         tones: { spawning: 'wait', running: 'run', idle: 'info', exited: 'idle', failed: 'block' },
       },
-      // Availability is still pin-projected at the panel mount: the registry
-      // declares the complete work-session surface vocabulary, not permission.
-      contentSurfaces: ['terminal', 'chat'],
       // Already excluded from strip/footer via the terminal archetype arm;
       // the flag states the reason structurally: this body ends at a composer.
       composition: 'chat',

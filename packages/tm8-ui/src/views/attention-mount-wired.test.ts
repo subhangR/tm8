@@ -46,7 +46,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
  *
  * Closes on `/>` or `>` AT THE OPENING TAG'S OWN INDENTATION. Matching the
  * first `/>` at any depth would end the block early — these mounts pass whole
- * elements as props (`chatSurface={<LazySessionChatSurface … />}`), and a
+ * elements as props (`conversationSurface={<LazySessionChatSurface … />}`), and a
  * nested close truncates the block before the attribute being checked, failing
  * a host that is in fact wired correctly.
  */

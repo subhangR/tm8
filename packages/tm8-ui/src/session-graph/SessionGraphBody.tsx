@@ -1,9 +1,9 @@
 /**
- * THE GRAPH SURFACE — the fourth chip on a work session, beside Terminal, Chat
- * and Debug.
+ * THE GRAPH SURFACE — the last chip on a work session, beside Terminal,
+ * Transcript, Git and Debug.
  *
- * WHAT IT IS FOR. Terminal shows the bytes, Chat shows the conversation, Debug
- * shows what the agent was told and what it ran. None of them answers "what did
+ * WHAT IT IS FOR. Terminal shows the bytes, Transcript shows what the agent
+ * said, Debug shows what the agent was told and what it ran. None of them answers "what did
  * this session TOUCH" — which task it took, who runs it, what it created, who
  * it talked to, what it wrote. That answer already exists as edges; this
  * surface is the first place it is drawn.
