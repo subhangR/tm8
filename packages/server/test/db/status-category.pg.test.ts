@@ -25,11 +25,22 @@
  * `db/test/triggers.test.mjs`, and for the same reason: the invariant must hold
  * for a writer that bypassed the catalog.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CollectionQuery, StatusCategory } from '@tm8/contract';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 import { queryCollection } from '../../src/facade/handlers/collections.js';
 import type { Querier } from '../../src/db/types.js';
+
+/**
+ * Every test here is a round trip to Postgres, several of them more than one —
+ * `queryCollection` opens a transaction and issues a handful of statements per
+ * call. Vitest's 5s default is a budget for a pure-function test, and this file
+ * ran in 3s locally and 33s on CI's two-core runner: the same two collection
+ * tests that finished in ~60ms here timed out there. A file-level override,
+ * rather than a timeout argument on the tests that happened to fail first,
+ * because the thing that is slow is the DATABASE and that is true of all of them.
+ */
+vi.setConfig({ testTimeout: 60_000 });
 
 const MIGRATION = '147_entity_status_category.sql';
 const SPACE = '00000000-0000-4000-8000-000000000001';
