@@ -368,14 +368,27 @@ const ARCHIVED_TIER: LifecycleTier = {
   filter: { deleted: 'only' },
 };
 
-const NO_DONE_REASON =
-  'This kind has no completion state on this node — the contract records no done/closed concept for it, so nothing can honestly land here.';
-
-/** The default tiers for a kind with no state axis: open, an honest-empty done, archived. */
+/**
+ * The default tiers for a kind with no kind-specific state axis: open, done,
+ * archived — all three REAL queries.
+ *
+ * PHASE 5 (migration 152) RETIRED `NO_DONE_REASON` AND THE UNSUPPORTED TIER.
+ * The reason it carried — "the contract records no done/closed concept for this
+ * kind" — stopped being true: every kind now has a workflow, every entity a
+ * status, and `filters.category` (shipped in phase 1) is a contract member the
+ * seam executes untranslated. There is no longer anything for an honestly-empty
+ * tab to be honest about, so it is a populated one.
+ *
+ * Three tiers, not four, ON PURPOSE. `cancelled` gets its own permanent tab —
+ * that is a RULED change (sub-doc 7 §3.4) and it is PHASE 7's, along with the
+ * `LifecycleTier` → category rename. Until then `cancelled` rides with `done`
+ * exactly where it has always ridden, so this file changes what the Done tab
+ * CONTAINS without changing how many tabs there are.
+ */
 function statelessTiers(): readonly LifecycleTier[] {
   return [
-    { id: 'open', label: 'Open', filter: NOT_DELETED },
-    { id: 'done', label: 'Done', filter: NOT_DELETED, unsupported: NO_DONE_REASON },
+    { id: 'open', label: 'Open', filter: { category: ['to_do', 'in_progress'], deleted: 'exclude' } },
+    { id: 'done', label: 'Done', filter: { category: ['done', 'cancelled'], deleted: 'exclude' } },
     ARCHIVED_TIER,
   ];
 }

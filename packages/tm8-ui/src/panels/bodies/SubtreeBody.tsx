@@ -1068,13 +1068,18 @@ function statusValueOf(summary: EntitySummary): string | null {
 
 /**
  * The status values that count as DONE for a kind — read off its `done`
- * LIFECYCLE TIER, which since D56 carries a real contract-shaped filter. A
- * kind whose done tier is `unsupported` has no closed values, so none of its
- * children can be struck: the honest answer, and one nobody had to write.
+ * LIFECYCLE TIER, which since D56 carries a real contract-shaped filter.
+ *
+ * Phase 5 (migration 152) retired the `unsupported` arm this used to check
+ * first. Every kind's done tier is a real query now, and for the kinds that had
+ * none it is `category: ['done','cancelled']` — so the values this returns are
+ * the two closed CATEGORIES rather than nothing, and a child in either is
+ * struck. That is the same rule the two kinds with a state axis already ran,
+ * arriving for the other twenty.
  */
 function closedStatusValues(config: KindConfig): readonly string[] {
   const done = config.list.lifecycle?.find((tier) => tier.id === 'done');
-  if (!done || done.unsupported) return [];
+  if (!done) return [];
   const out: string[] = [];
   for (const member of Object.values(done.filter as unknown as Record<string, unknown>)) {
     if (Array.isArray(member) && member.every((v) => typeof v === 'string')) out.push(...(member as string[]));

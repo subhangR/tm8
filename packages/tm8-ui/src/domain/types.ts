@@ -483,28 +483,26 @@ export interface ListSection {
  * draws both at once — tabs above, `NEEDS ATTENTION` / `IN PROGRESS` group
  * headers below — so neither supersedes the other.
  *
- * `filter` stays contract-shaped, and `archived` is honestly expressible:
- * `deleted: 'only'` is a real `CollectionQuery` member, so the archive tier is
- * a genuine query rather than an invention. Where a kind has no state that can
- * land in a tier, `unsupported` carries the reason and the tab renders
- * HONESTLY EMPTY (L6) — never hidden, and never populated by a fabricated
- * partition.
+ * `filter` stays contract-shaped, and every tier is now honestly expressible:
+ * `deleted: 'only'` is a real `CollectionQuery` member, and so — since phase 1 —
+ * is `category`.
  *
  * D56: the D20 client-side partition is RETIRED. `CollectionQuery.filters`
  * gained a `sessionStatus` member (contract dd41e89), so every tier now carries
  * a contract-shaped filter the seam executes untranslated — including
  * work_session, which was the only kind that ever needed the workaround.
+ *
+ * PHASE 5 (migration 152): `unsupported` IS GONE. It existed for the kinds the
+ * contract recorded no done/closed concept for, and there are none left — every
+ * kind has a workflow and every entity a status, so every tier of every kind is
+ * a query that can return rows. A tier that cannot be populated is no longer a
+ * state this type can represent, which is the point: the field was the honest
+ * name for a hole, and the hole is filled.
  */
 export interface LifecycleTier {
   id: 'open' | 'done' | 'archived';
   label: string;
   filter: QueryFilter;
-  /**
-   * Set when this kind cannot populate this tier. The tab still renders — the
-   * count is honestly zero and the reason explains why, rather than the tier
-   * being silently dropped for some kinds and not others.
-   */
-  unsupported?: string;
 }
 
 export interface ListConfig {
