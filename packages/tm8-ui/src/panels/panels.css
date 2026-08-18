@@ -3412,6 +3412,22 @@
 /* The caret's room scales with the type it sits beside. */
 .cv2-root[data-shell='mobile'] .lp__statesel--live { padding-right: 26px; }
 
+/* The chip row's WIDE row-action — "Archive" on entity detail, 83x24. The
+   sixth of the unowned set, and it needs the SAME (0,4,0) treatment as the
+   selects above for the same reason: the band pins `height: 24px` at (0,3,0)
+   LATER in this file, so a three-class phone override loses the tie on source
+   order and applies nothing.
+
+   Only the `--wide` variant is grown, and only inside the chips band. The bare
+   `.lp__rowaction` in a LIST tile is a different control in a different
+   container, sized in `maestro-task-tile.css` where the cluster it belongs to
+   is un-floated — growing it from here would reach into that fix from a second
+   file and give one selector two owners. */
+.cv2-root[data-shell='mobile'] .lp__rowdetail--chips .lp__rowaction {
+  height: auto;
+  min-block-size: var(--mobile-touch-min);
+}
+
 /* ---------------------------------------------------------------------------
    The assignee picker
    ---------------------------------------------------------------------------
@@ -3435,6 +3451,15 @@
   cursor: pointer;
   min-width: 0;
 }
+/* The assignee picker's trigger, 84x24 and 95x24 on entity detail. Unfiled
+   until the complete inventory was attributed — one of the six the discarded
+   harness's 12-entry sample could not reach.
+
+   `min-block-size` only. It carries a `pn-badge--assignees` whose width is the
+   assignee faces it holds, so an inline floor would either do nothing (it is
+   already 84+) or, on a one-avatar row, pad a badge away from the name it
+   belongs to. */
+.cv2-root[data-shell='mobile'] .lp__assignbtn { min-block-size: var(--mobile-touch-min); }
 .cv2-root .lp__assignbtn:hover .pn-badge--assignees { border-color: var(--pn-ink-4); }
 .cv2-root .lp__assignbtn:focus-visible {
   outline: none;
