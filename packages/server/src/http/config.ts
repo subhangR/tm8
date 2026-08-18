@@ -15,6 +15,7 @@ import {
   CLIPBOARD_MAX_BYTES_DEFAULT,
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
+import { DEFAULT_AUTH_RATE_LIMITS, type AuthRateLimits } from './auth-rate-limit.js';
 
 export interface ServerConfig {
   /** Bind address. Loopback only — see S1 above. */
@@ -86,6 +87,13 @@ export interface ServerConfig {
    * switch, not an authorization signal supplied by an HTTP header.
    */
   readonly disableAutoOwner?: boolean;
+  /**
+   * Auth rate limits. Absent means the built-in defaults, which are what a
+   * node should run — these exist for an operator with an unusual topology
+   * (a shared NAT putting a whole office in one client bucket, say), not as a
+   * thing anyone needs to set. Setting a limit to 0 disables THAT dimension.
+   */
+  readonly authRateLimits?: Partial<AuthRateLimits>;
   /**
    * How this node admits people (`TM8_NODE_MODE`, design D4). Default `single`.
    *
@@ -456,6 +464,30 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     disableAutoOwner:
       nodeMode === 'multi'
       || envBoolean(env.TM8_DISABLE_AUTO_OWNER, 'TM8_DISABLE_AUTO_OWNER', false),
+    authRateLimits: {
+      // Non-negative, not positive: 0 is the documented "disable this
+      // dimension" value and must not be rejected as garbage.
+      maxAttemptsPerClient: envNonNegativeInt(
+        env.TM8_AUTH_MAX_ATTEMPTS,
+        'TM8_AUTH_MAX_ATTEMPTS',
+        DEFAULT_AUTH_RATE_LIMITS.maxAttemptsPerClient,
+      ),
+      attemptWindowMs: envPositiveInt(
+        env.TM8_AUTH_ATTEMPT_WINDOW_MS,
+        'TM8_AUTH_ATTEMPT_WINDOW_MS',
+        DEFAULT_AUTH_RATE_LIMITS.attemptWindowMs,
+      ),
+      maxFailuresPerPrincipal: envNonNegativeInt(
+        env.TM8_AUTH_MAX_FAILURES,
+        'TM8_AUTH_MAX_FAILURES',
+        DEFAULT_AUTH_RATE_LIMITS.maxFailuresPerPrincipal,
+      ),
+      failureWindowMs: envPositiveInt(
+        env.TM8_AUTH_FAILURE_WINDOW_MS,
+        'TM8_AUTH_FAILURE_WINDOW_MS',
+        DEFAULT_AUTH_RATE_LIMITS.failureWindowMs,
+      ),
+    },
     dbPoolMax,
     ...(livekit ? { livekit } : {}),
   };

@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 import { isIP } from 'node:net';
 
+import { FixedWindowLimiter } from './fixed-window.js';
 import { isLoopbackPeer } from './security.js';
 
 export interface WsAdmissionLimits {
@@ -22,8 +23,6 @@ export const DEFAULT_WS_ADMISSION_LIMITS: WsAdmissionLimits = {
 export type WsAdmissionRefusal = { status: 429 | 503; message: 'upgrade refused' };
 export type WsAdmissionLease = { ok: true; release(): void };
 
-type AttemptWindow = { startedAt: number; count: number };
-
 /** Stable, non-secret client bucket for the supported nginx→loopback shape. */
 export function wsClientKey(req: IncomingMessage): string {
   const peer = req.socket?.remoteAddress ?? 'unknown';
@@ -37,38 +36,28 @@ export function wsClientKey(req: IncomingMessage): string {
 
 export class WsAdmissionController {
   private readonly limits: WsAdmissionLimits;
-  private readonly now: () => number;
   private total = 0;
   private readonly clients = new Map<string, number>();
   private readonly identities = new Map<string, number>();
-  private readonly attempts = new Map<string, AttemptWindow>();
+  /**
+   * The upgrade-rate half now lives in the shared limiter (./fixed-window.ts);
+   * the counters below it are connection CAPACITY, which is a different
+   * question and stays here. Behaviour is unchanged — same fixed window, same
+   * lazy bounded eviction, same fail-closed-for-new-keys arm.
+   */
+  private readonly upgrades: FixedWindowLimiter;
 
   constructor(limits: Partial<WsAdmissionLimits> = {}, now: () => number = Date.now) {
     this.limits = { ...DEFAULT_WS_ADMISSION_LIMITS, ...limits };
-    this.now = now;
+    this.upgrades = new FixedWindowLimiter(
+      { limit: this.limits.maxUpgradeAttempts, windowMs: this.limits.upgradeWindowMs },
+      now,
+    );
   }
 
   /** Rate and coarse-capacity check before expensive auth/grant consumption. */
   preflight(clientKey: string): WsAdmissionRefusal | undefined {
-    const now = this.now();
-    const prior = this.attempts.get(clientKey);
-    if (!prior && this.attempts.size >= 10_000) {
-      for (const [key, window] of this.attempts) {
-        if (now - window.startedAt >= this.limits.upgradeWindowMs) this.attempts.delete(key);
-        if (this.attempts.size < 9_000) break;
-      }
-      // A fan-out flood must not turn the limiter itself into an unbounded
-      // memory sink. Existing buckets continue; new buckets fail closed.
-      if (this.attempts.size >= 10_000) {
-        return { status: 429, message: 'upgrade refused' };
-      }
-    }
-    const window = !prior || now - prior.startedAt >= this.limits.upgradeWindowMs
-      ? { startedAt: now, count: 0 }
-      : prior;
-    window.count += 1;
-    this.attempts.set(clientKey, window);
-    if (window.count > this.limits.maxUpgradeAttempts) {
+    if (!this.upgrades.hit(clientKey).ok) {
       return { status: 429, message: 'upgrade refused' };
     }
     if (this.total >= this.limits.maxConnections) {
