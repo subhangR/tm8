@@ -765,6 +765,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             onTerminate={handleSessionClose}
             onSetState={rowLifecycle.setState}
             onArchive={rowLifecycle.archive}
+            onComplete={rowLifecycle.complete}
             onSetValue={rowLifecycle.setValue}
             onSetAxis={rowLifecycle.setAxis}
             taskAxes={data.taskAxes}
@@ -902,6 +903,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             onTerminate={handleSessionClose}
             onSetState={rowLifecycle.setState}
             onArchive={rowLifecycle.archive}
+            onComplete={rowLifecycle.complete}
             onSetValue={rowLifecycle.setValue}
             onSetAxis={rowLifecycle.setAxis}
             taskAxes={data.taskAxes}

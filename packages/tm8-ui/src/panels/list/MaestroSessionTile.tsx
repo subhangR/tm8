@@ -80,8 +80,17 @@ export function MaestroSessionTile({
   childrenExpanded: boolean;
   onToggleChildren?: () => void;
   onSelect: () => void;
-  /** The shared row-action cluster — see `RowActionCluster`. */
-  actions?: ReactNode;
+  /**
+   * The shared row-action cluster — see `RowActionCluster`.
+   *
+   * A FUNCTION, not a node, and only on this anatomy: the ruled order is
+   * `… [run ▶] [copy] … [terminate ⏻] [chevron]`, and Copy is this tile's own
+   * affordance rather than a registry verb. Rendering it after the cluster —
+   * which is what a plain `ReactNode` slot forces — puts it to the RIGHT of
+   * Terminate and breaks the one ruling the cluster exists to hold. So the
+   * tile hands its own button DOWN and the cluster places it.
+   */
+  actions?: (own: ReactNode) => ReactNode;
   /** D67 — the shared state/archive strip, rendered inside this tile's expand. */
   detail?: ReactNode;
 }) {
@@ -141,26 +150,28 @@ export function MaestroSessionTile({
           <StatusGlyph kind={archived ? 'archived' : status} />
         </span>
         <span className="pn-st__actions lp__cluster">
-          {/* The shared cluster — Collections · Run · Archive — which this
-              anatomy had never rendered at all: its `rowActions` were declared
-              in the registry and dropped on the floor here, while a Close
-              button was hand-rolled beside them. Terminate now comes from the
-              registry (with its dedicated executor), so there is exactly one
-              of it. Copy stays: it is this anatomy's own affordance, not a
-              registry verb. */}
-          {actions}
-          <button
-            type="button"
-            className="pn-st__btn"
-            title={copied ? 'Session ID copied' : 'Copy session ID'}
-            aria-label={copied ? 'Session ID copied' : 'Copy session ID'}
-            onClick={(event) => {
-              event.stopPropagation();
-              void copySessionId();
-            }}
-          >
-            <SessionIcon name={copied ? 'check' : 'copy'} />
-          </button>
+          {/* The shared cluster, which this anatomy had never rendered at all:
+              its `rowActions` were declared in the registry and dropped on the
+              floor here, while a Close button was hand-rolled beside them.
+              Terminate now comes from the registry (with its dedicated
+              executor), so there is exactly one of it. Copy stays this
+              anatomy's own affordance — it is handed to the cluster rather
+              than drawn after it, so that it lands in the ruled position
+              BEFORE terminate. */}
+          {actions?.(
+            <button
+              type="button"
+              className="pn-st__btn"
+              title={copied ? 'Session ID copied' : 'Copy session ID'}
+              aria-label={copied ? 'Session ID copied' : 'Copy session ID'}
+              onClick={(event) => {
+                event.stopPropagation();
+                void copySessionId();
+              }}
+            >
+              <SessionIcon name={copied ? 'check' : 'copy'} />
+            </button>,
+          )}
           <button
             type="button"
             className="pn-st__btn"

@@ -595,6 +595,10 @@ export function HomeView(props: HomeViewProps) {
           onSelect={(id) => navStore.getState().openCenter(id as EntityId)}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onComplete={rowLifecycle.complete}
+          /* Same executor, same reason as `EntityView`: this list draws the
+             session row's ⏻ too, and until now nothing was behind it. */
+          onTerminate={primaries.terminate}
           onSetValue={rowLifecycle.setValue}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
@@ -607,7 +611,7 @@ export function HomeView(props: HomeViewProps) {
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, ctx, centerId, rowLifecycle, launchPort, modeFor, setModeFor],
+    [data, ctx, centerId, rowLifecycle, primaries, launchPort, modeFor, setModeFor],
   );
 
   const regions: HomeChatRegions = {

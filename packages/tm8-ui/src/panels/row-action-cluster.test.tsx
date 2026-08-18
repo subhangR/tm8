@@ -13,10 +13,10 @@
  * server refuses it and merely refused where the server has not answered yet.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { render, within } from '@testing-library/react';
+import { fireEvent, render, within } from '@testing-library/react';
 import type { EntityCapabilities, EntitySummary } from '@tm8/contract';
 import { FIXTURE_SPACE_ID, fixtureSummaries } from '../fixtures';
-import { type ActionContext } from '../domain';
+import { type ActionContext, type ActionRef } from '../domain';
 import { EntityListPanel } from './index';
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
@@ -41,7 +41,15 @@ function rowsOfKind(kind: string): EntitySummary[] {
   return fixtureSummaries.filter((row) => row.kind === kind);
 }
 
-function mount(kind: string, capabilities: EntityCapabilities | undefined) {
+function mount(
+  kind: string,
+  capabilities: EntityCapabilities | undefined,
+  handlers: {
+    onAction?: (ref: ActionRef, entityId: string) => void;
+    onComplete?: (entityId: string) => void;
+    onTerminate?: (entityId: string) => void;
+  } = {},
+) {
   return render(
     <EntityListPanel
       kind={kind}
@@ -49,9 +57,10 @@ function mount(kind: string, capabilities: EntityCapabilities | undefined) {
       ctx={ctx}
       capabilitiesOf={() => capabilities}
       livenessOf={() => 'live'}
-      onAction={vi.fn()}
+      onAction={handlers.onAction ?? vi.fn()}
       onArchive={vi.fn()}
-      onTerminate={vi.fn()}
+      onComplete={handlers.onComplete ?? vi.fn()}
+      onTerminate={handlers.onTerminate ?? vi.fn()}
       /* Collections needs BOTH to be live — the executor and the read its
          checkmarks come from. Without them it renders its not-wired refusal,
          which is honest but tells us nothing about placement. */
@@ -89,24 +98,62 @@ describe('the row action cluster is one shape across all three anatomies', () =>
     expect(cluster.className).toContain('lp__cluster');
   });
 
-  it('leads with Collections and ends with the disclosure, on every anatomy', () => {
+  /**
+   * OWNER RULING 2026-08-18 — Archive moved from the far end to the LEAD, and
+   * the tick moved in front of Run. Both used to be pinned here the other way
+   * round, and flipping the assertions with the JSX is the point of pinning
+   * them: the order is a ruling, and a ruling nobody has to restate when they
+   * change it is a ruling that drifts.
+   */
+  it('leads with Archive and ends with the disclosure, on every anatomy', () => {
     for (const kind of ['task', 'work_session', 'doc']) {
       const { container, unmount } = mount(kind, DELETABLE);
       const cluster = firstCluster(container);
       const children = [...cluster.children];
-      // Collections is not an ActionRef — it is the membership picker, so it is
-      // identified by its own wrapper rather than by `data-action`.
-      expect({ kind, first: children[0]?.className.includes('lp__assignwrap') })
-        .toEqual({ kind, first: true });
+      expect({ kind, first: children[0]?.getAttribute('data-action') })
+        .toEqual({ kind, first: 'archive' });
       unmount();
     }
   });
 
-  it('a task lists Run BEFORE Complete, and Archive after both', () => {
-    // Run leads deliberately (`applyLaunch` is additive and preserves the row's
-    // own ordering); Archive is appended by the cluster, not by `rowActions`.
+  it('puts Collections second, right after Archive', () => {
     const { container } = mount('task', DELETABLE);
-    expect(verbsIn(firstCluster(container))).toEqual(['run', 'complete', 'archive']);
+    const children = [...firstCluster(container).children];
+    // Collections is not an ActionRef — it is the membership picker, so it is
+    // identified by its own wrapper rather than by `data-action`.
+    expect(children[1]?.className.includes('lp__assignwrap')).toBe(true);
+  });
+
+  it('a task lists Archive, then Complete, then Run', () => {
+    const { container } = mount('task', DELETABLE);
+    expect(verbsIn(firstCluster(container))).toEqual(['archive', 'complete', 'run']);
+  });
+
+  /**
+   * The RULED position of Terminate: after the anatomy's own affordances, hard
+   * right, next to the disclosure. Copy is drawn by `MaestroSessionTile` and
+   * handed DOWN to the cluster precisely so this holds — rendered beside the
+   * cluster instead, it would land to Terminate's right.
+   */
+  it('places the session tile\'s Copy between the middle verbs and Terminate', () => {
+    const { container } = mount('work_session', SESSION);
+    const cluster = firstCluster(container);
+    const marks = [...cluster.children].map(
+      (el) =>
+        el.getAttribute('data-action')
+        ?? el.getAttribute('aria-label')
+        // Collections: the membership picker's wrapper span carries neither.
+        ?? (el.className.includes('lp__assignwrap') ? 'collections' : null),
+    );
+    // No `archive`: `canDelete: false` HIDES it on every session row, which is
+    // the ruling holding rather than the order breaking.
+    expect(marks).toEqual([
+      'collections',
+      'Complete',
+      'Copy session ID',
+      'terminate',
+      'Expand details',
+    ]);
   });
 });
 
@@ -144,6 +191,76 @@ describe('Archive is hidden on server truth, and ONLY on server truth', () => {
     // The cluster keeps its width: the same number of slots as when permitted.
     const { container: permitted } = mount('doc', DELETABLE);
     expect(cluster.children.length).toBe(firstCluster(permitted).children.length);
+  });
+});
+
+/**
+ * THE TICK WAS DEAD THREE WAYS and the third was the quietest: it passed its
+ * capability gate, drew live, dispatched — and landed in
+ * `useSessionStart.onAction`, a switch over `SESSION_START_ACTIONS` whose
+ * `default:` returns. Every host wires that dispatcher to `onAction`, so the
+ * verb was swallowed on all of them. It has its own prop now, exactly as
+ * Archive and Terminate do, and this is what says so.
+ */
+describe('the tick reaches a dedicated executor, never the session-start switch', () => {
+  it('dispatches through onComplete and NOT through onAction', () => {
+    const onComplete = vi.fn();
+    const onAction = vi.fn();
+    const { container } = mount('task', DELETABLE, { onComplete, onAction });
+    const tick = firstCluster(container).querySelector('[data-action="complete"]');
+    if (!tick) throw new Error('no complete control in the cluster');
+    fireEvent.click(tick);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onComplete.mock.calls[0][0]).toBe(rowsOfKind('task')[0].id);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  /**
+   * WITHOUT the executor it must refuse, not draw live. `RowAction` falls back
+   * to `props.onAction` when no dedicated handler is given — which is how the
+   * verb got swallowed in the first place — so "unwired" has to mean BOTH are
+   * absent, and then the honest not-wired refusal is what renders.
+   */
+  it('refuses with a reason when no executor is wired at all', () => {
+    const { container } = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={() => rowsOfKind('task')}
+        ctx={ctx}
+        capabilitiesOf={() => DELETABLE}
+        livenessOf={() => 'live'}
+      />,
+    );
+    const cluster = firstCluster(container);
+    expect(cluster.querySelector('button[data-action="complete"]')).toBeNull();
+    expect(within(cluster).getByLabelText('Complete')).toBeTruthy();
+  });
+
+  /**
+   * SUB-TASK 3, AND IT IS ALREADY TRUE — asserted so it stays that way. The
+   * tick used to sit in "checking permissions" forever on a COLLAPSED row:
+   * capabilities rode only `EntityDetail`, and the only thing that asked for a
+   * detail was the EXPANDED strip's effect. They ride the summary now, so a row
+   * gates honestly the moment it renders — no `onNeedDetail`, no per-row detail
+   * read behind a 100-row list.
+   */
+  it('is live on a collapsed row, with no detail read asked for', () => {
+    const onNeedDetail = vi.fn();
+    const { container } = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={() => rowsOfKind('task')}
+        ctx={ctx}
+        capabilitiesOf={() => DELETABLE}
+        livenessOf={() => 'live'}
+        onComplete={vi.fn()}
+        onNeedDetail={onNeedDetail}
+      />,
+    );
+    const cluster = firstCluster(container);
+    expect(cluster.querySelector('button[data-action="complete"]')).toBeTruthy();
+    expect(cluster.querySelectorAll('.hon-checking').length).toBe(0);
+    expect(onNeedDetail).not.toHaveBeenCalled();
   });
 });
 

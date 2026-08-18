@@ -1660,7 +1660,29 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
     canReact: live,
     canGrantPoints: live && (row.kind === 'member' || row.kind === 'team_member'),
     // Not gated on acceptance criteria — see the note above.
-    canComplete: live && row.kind === 'task' && row.work_status !== 'done',
+    //
+    // KEYED ON THE COMPLETION SURFACE, NOT ON A KIND NAME. This read
+    // `row.kind === 'task'` for as long as it has existed, which made a
+    // structural fact ("does this row have a work status to move to done")
+    // into a name check — the shape §15.2 forbids in the client and that has
+    // no better claim here. `work_status` is `public.tasks.work_status`,
+    // LEFT JOINed: it is non-null exactly for rows that carry a work-status
+    // record and null for every other kind, so this is the same set today,
+    // arrived at from the row's own surface rather than from its label.
+    //
+    // It stays in step with `complete_task` for free. That RPC selects
+    // `where kind = 'task'` and then reads `public.tasks` — so a row this
+    // grants the affordance to is a row that RPC can find, which is the
+    // property a name check only had by coincidence.
+    //
+    // NOTE: this does NOT widen completion to sessions or to any other kind.
+    // Full category-based completion is a later phase; what changes here is
+    // only what the flag is keyed on.
+    //
+    // `typeof === 'string'` rather than `!== null`: a hand-built row fixture
+    // that omits the column would slip past a null check as `undefined` and
+    // claim the affordance on a kind that has no work status at all.
+    canComplete: live && typeof row.work_status === 'string' && row.work_status !== 'done',
   };
 }
 

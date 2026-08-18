@@ -109,6 +109,29 @@ export interface RowLifecycle {
    */
   archive: (ref: ActionRef, entityId: string) => void;
   /**
+   * Bound to `EntityListPanel.onComplete` — the row cluster's TICK.
+   *
+   * ITS OWN EXECUTOR, and not `setState(id, 'done', 'complete')` reached
+   * through the dropdown, for two reasons that are both about the COLLAPSED
+   * row it fires from:
+   *
+   *   1. There is no dropdown there to reach it through. The tick is a
+   *      one-click verb in the hover cluster; `setState` is the strip's.
+   *   2. `setState`'s completion arm REFUSES an unhydrated row — it needs the
+   *      DETAIL's version and will not guess one. That is the correct rule for
+   *      the strip (whose mount already asked for the detail) and the wrong
+   *      answer here, because a collapsed row is unhydrated BY DEFINITION: its
+   *      capabilities now ride the summary, so the tick draws enabled on a row
+   *      whose detail nobody ever read. Refusing it would mean a control that
+   *      lights up correctly and then tells you to open the row instead.
+   *
+   * So this READS BEFORE WRITING when the detail is not cached — the same
+   * bargain `setAxis` makes, and for the same reason: one `entity()` round trip
+   * buys a real `expectedVersion`, and the guard still turns a racing write
+   * into a reported `version_conflict` rather than a silent overwrite.
+   */
+  complete: (entityId: string) => void;
+  /**
    * Bound to `EntityListPanel.onSetValue` — a registry `ValueControl` write.
    *
    * `label` rides along beside `source` because a failure notice is USER copy:
@@ -290,6 +313,32 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
       void settle(entityId, 'Could not restore', seam.commands.restoreEntity(id, commandContext()));
     },
     [seam, settle],
+  );
+
+  const complete = useCallback(
+    (entityId: string) => {
+      const id = entityId as EntityId;
+      /* The cached detail when there is one, one read when there is not — see
+         the interface docblock for why the strip's refuse-if-unhydrated rule
+         is the wrong answer for a collapsed row. */
+      const cached = data.detailOf(entityId);
+      const source: Promise<{ version: number }> =
+        cached !== undefined ? Promise.resolve(cached) : seam.entity(id);
+      void settle(
+        entityId,
+        'Task could not be completed',
+        source.then((detail) =>
+          seam.commands.complete(id, {
+            expectedVersion: detail.version,
+            // Attribution, exactly as `setState`'s completion arm: unknown
+            // viewer ⇒ empty, which completes the task and pays nobody rather
+            // than crediting whoever happens to be calling.
+            completerIds: viewerMemberId ? [viewerMemberId as EntityId] : [],
+          }),
+        ),
+      );
+    },
+    [data, seam, settle, viewerMemberId],
   );
 
   const setValue = useCallback(
@@ -557,5 +606,5 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
     [data, setKinds],
   );
 
-  return { setState, archive, setValue, setAxis, assign, assignable, membership, membershipSets };
+  return { setState, archive, complete, setValue, setAxis, assign, assignable, membership, membershipSets };
 }

@@ -12,8 +12,9 @@ import '../src/panels/panels.css';
 import '../src/panels/list/maestro-task-tile.css';
 
 /**
- * THE HOVER ACTION CLUSTER — Collections · Run · Archive · disclosure — across
- * all three tile anatomies, in a real browser.
+ * THE HOVER ACTION CLUSTER — `[archive] [collection] [tick] [run ▶] [copy] …
+ * [terminate ⏻] [chevron]` — across all three tile anatomies, in a real
+ * browser.
  *
  * WHY A HARNESS AND NOT THE APP. Three of the four claims this lane makes are
  * invisible to vitest, because jsdom loads no stylesheets: that the cluster is
@@ -95,6 +96,12 @@ function Column({
             onAction={(ref: ActionRef, id) => note(`${ref} → ${id.slice(0, 12)}`)}
             onArchive={(ref: ActionRef, id) => note(`${ref} → ${id.slice(0, 12)}`)}
             onTerminate={(id) => note(`terminate → ${id.slice(0, 12)}`)}
+            /* The tick's DEDICATED executor. Wired here for the same reason it
+               is wired in all three views: through `onAction` it dispatches
+               into the session-START switch and is dropped, so a harness that
+               only passed `onAction` would show a live tick that logs nothing
+               — which is exactly the defect, dressed as working. */
+            onComplete={(id) => note(`complete → ${id.slice(0, 12)}`)}
             onMembership={(id, setId, on) =>
               note(`${on ? 'add to' : 'remove from'} ${setId.slice(0, 8)} → ${id.slice(0, 8)}`)
             }

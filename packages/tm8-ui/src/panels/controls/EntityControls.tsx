@@ -150,6 +150,21 @@ export interface ControlHost {
    */
   onTerminate?: (entityId: string) => void;
   /**
+   * The tick. A dedicated prop for exactly the reason the two above are.
+   *
+   * `complete` is declared in `list.rowActions` and so reached the general
+   * `onAction`, which every host wires to `useSessionStart.onAction` — a
+   * SWITCH over `SESSION_START_ACTIONS` whose `default:` returns. So the tick
+   * passed its capability gate, drew live, dispatched, and was swallowed one
+   * frame later by a dispatcher that has never known the verb. That is the
+   * third and last of the three ways it was dead.
+   *
+   * It is NOT `onSetState(id, 'done', 'complete')` reached through the state
+   * control: the same executor, yes, but the tick is a one-click verb on a
+   * collapsed row where there is no state control to reach it through.
+   */
+  onComplete?: (entityId: string) => void;
+  /**
    * `label` rides along beside `source` because a failure notice is USER copy:
    * `source` is the wire field name, and titling a notice with it produced
    * "priority could not be changed" — lowercase mid-sentence. Both come off the
@@ -246,7 +261,8 @@ export interface ControlHost {
  * like chips, is exactly the duplication that produced the bug.
  */
 /**
- * THE hover cluster, for all three tile anatomies: Collections · Run · Archive.
+ * THE hover cluster, for all three tile anatomies:
+ * `[archive] [collection] [tick] [run ▶] [copy] … [terminate ⏻] [chevron]`.
  *
  * ## Why a component and not three registry arrays
  *
@@ -255,9 +271,9 @@ export interface ControlHost {
  * control-card grew the membership icon on different days and in different
  * ORDER, and the session tile never rendered the registry at all — its
  * `rowActions: ['complete','terminate']` had gone unrendered since it was
- * declared. Order is a design ruling ("Collections · Run · Archive, always"),
- * and a ruling that lives in three JSX literals is a ruling three files can
- * break independently. It lives here now, once.
+ * declared. Order is a design ruling, and a ruling that lives in three JSX
+ * literals is a ruling three files can break independently. It lives here now,
+ * once — see `RULED_ORDER` and `TAIL_ORDER` below.
  *
  * Deriving the cluster into `list.rowActions` instead — the `applyLaunch`
  * shape — was the other candidate, and it does not work for these two verbs:
@@ -280,6 +296,40 @@ export interface ControlHost {
  * source, and the control-card's is a `pn-tt__ind` that the CSS sizes apart).
  * Its POSITION is still fixed here, which is the part that was drifting.
  */
+/**
+ * THE RULED LEFT-TO-RIGHT ORDER of the cluster's registry verbs.
+ *
+ * OWNER RULING 2026-08-18: `[archive] [collection] [tick] [run ▶] [copy] …
+ * [terminate ⏻] [chevron]`. Archive leads — it is the verb a user reaches for
+ * on a row they have finished with, and it was buried at the far end behind
+ * two verbs that act on the row rather than retiring it. The tick precedes
+ * Run: completing is the commoner act on a task list, and Run is the one that
+ * opens a sheet.
+ *
+ * A kind's `list.rowActions` still declares WHICH verbs it has; this decides
+ * where they sit. The two are deliberately separate — the registry's array is
+ * per-kind data and the order is one cross-kind ruling, so putting the ruling
+ * in the arrays would be the same "one ruling, three literals" drift that made
+ * this component exist. A verb named in neither list keeps its declared
+ * position, between the ranked ones and the tail.
+ */
+const RULED_ORDER: readonly ActionRef[] = ['complete', 'run'];
+
+/**
+ * The verbs that sit AFTER the anatomy's own affordances, hard right.
+ *
+ * Terminate only. It is not a lifecycle verb under this model — it kills a
+ * live PTY this instant — so it is kept away from the verbs that move a row
+ * through its life, in the position a destructive control belongs in.
+ */
+const TAIL_ORDER: readonly ActionRef[] = ['terminate'];
+
+/** Rank within `RULED_ORDER`; unnamed verbs sort after all named ones, stably. */
+const rankOf = (ref: ActionRef): number => {
+  const at = RULED_ORDER.indexOf(ref);
+  return at === -1 ? RULED_ORDER.length : at;
+};
+
 export function RowActionCluster({
   row,
   props,
@@ -287,6 +337,7 @@ export function RowActionCluster({
   openFlow,
   onFlow,
   onOpenLaunch,
+  anatomyActions,
   trailing,
 }: {
   row: ControlSubject;
@@ -296,6 +347,17 @@ export function RowActionCluster({
   onFlow?: (ref: ActionRef | null) => void;
   /** The launch config's escape to the full sheet, for `flow: 'launch'` verbs. */
   onOpenLaunch?: (entityId: string) => void;
+  /**
+   * The anatomy's OWN affordances — the session tile's Copy, today — handed
+   * DOWN rather than drawn beside this cluster.
+   *
+   * They sit inside the ruled order (`… [run ▶] [copy] … [terminate ⏻] …`), so
+   * an anatomy that renders them after the cluster cannot honour it: Copy would
+   * land to the right of Terminate. This slot is what lets one component own
+   * the whole sequence while the button that knows how to copy a session id
+   * stays in the tile that knows the id.
+   */
+  anatomyActions?: ReactNode;
   /** The anatomy's own details disclosure — always last. */
   trailing?: ReactNode;
 }) {
@@ -323,34 +385,52 @@ export function RowActionCluster({
    */
   const archiveRefused = capabilities !== undefined && !capabilities.canDelete;
 
+  const declared = list.rowActions ?? [];
+  /* `sort` is stable in every engine this ships to (ES2019 requires it), which
+     is what lets an unranked verb keep its declared position. */
+  const middle = declared.filter((ref) => !TAIL_ORDER.includes(ref)).sort((a, b) => rankOf(a) - rankOf(b));
+  const tail = declared.filter((ref) => TAIL_ORDER.includes(ref));
+
+  /**
+   * The dedicated executor for a verb the general `onAction` cannot perform.
+   *
+   * THREE verbs are in this position and all three for one reason: the list's
+   * `onAction` is the session-START dispatcher (see the hosts:
+   * `onAction={sessionStart.onAction}`), a switch whose `default:` returns. A
+   * verb routed through it draws live — it passed its capability gate — and
+   * does nothing. `archive` was given its own prop first, `terminate` second,
+   * and the tick was left behind: it dispatched into that `default:` for as
+   * long as it has existed.
+   *
+   * Returning `undefined` for an unwired verb is load-bearing: `RowAction`
+   * falls back to `props.onAction`, and with neither it refuses with
+   * NOT_WIRED_REASON rather than drawing a live control.
+   */
+  const executorFor = (ref: ActionRef): ((ref: ActionRef, entityId: string) => void) | undefined => {
+    if (ref === 'terminate' && props.onTerminate) return (_ref, id) => props.onTerminate?.(id);
+    if (ref === 'complete' && props.onComplete) return (_ref, id) => props.onComplete?.(id);
+    return undefined;
+  };
+
+  const verb = (ref: ActionRef) => (
+    <RowAction
+      key={ref}
+      ref_={ref}
+      row={row}
+      props={props}
+      openFlow={openFlow}
+      onFlow={onFlow}
+      onOpenLaunch={onOpenLaunch}
+      onRun={executorFor(ref)}
+    />
+  );
+
   return (
     <>
-      {list.membership ? (
-        <RowMembershipControl row={row} props={props} control={list.membership} variant="icon" />
-      ) : null}
-      {(list.rowActions ?? []).map((ref) => (
-        <RowAction
-          key={ref}
-          ref_={ref}
-          row={row}
-          props={props}
-          openFlow={openFlow}
-          onFlow={onFlow}
-          onOpenLaunch={onOpenLaunch}
-          /* `terminate` has a dedicated host executor for the same reason
-             `archive` does — the list's `onAction` is scoped to the session-
-             START verbs (see the hosts: `onAction={sessionStart.onAction}`), so
-             dispatching terminate through it would draw a live button that
-             does nothing. This is the ONE terminate now: the session tile used
-             to hand-roll its own Close beside a registry verb that never
-             rendered, and two spellings of one verb is how they drift. */
-          onRun={
-            ref === 'terminate' && props.onTerminate
-              ? (_ref, entityId) => props.onTerminate?.(entityId)
-              : undefined
-          }
-        />
-      ))}
+      {/* ARCHIVE LEADS (owner ruling 2026-08-18). Still HIDDEN and not greyed
+          where the server refuses deletion, which is every session row — so
+          the first icon of the cluster genuinely differs between a task and a
+          session, and that is the ruling working rather than a defect. */}
       {archiveRefused ? null : (
         <RowAction
           ref_={archived ? 'restore' : 'archive'}
@@ -361,6 +441,12 @@ export function RowActionCluster({
           glyph={archived ? <RestoreIcon /> : <BinIcon />}
         />
       )}
+      {list.membership ? (
+        <RowMembershipControl row={row} props={props} control={list.membership} variant="icon" />
+      ) : null}
+      {middle.map(verb)}
+      {anatomyActions}
+      {tail.map(verb)}
       {trailing}
     </>
   );
