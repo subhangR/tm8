@@ -30,6 +30,8 @@ export interface ChannelChatSurfaceProps {
   threads?: boolean;
   /** The breadcrumb's word for this anchor — "#design-review". */
   anchorTitle?: string;
+  /** The viewer, for own-message sidedness — see ChannelScreen. */
+  viewerMemberId?: string | null;
 }
 
 export function ChannelChatSurface({
@@ -39,6 +41,7 @@ export function ChannelChatSurface({
   onOpenEntity,
   threads = false,
   anchorTitle,
+  viewerMemberId,
 }: ChannelChatSurfaceProps) {
   const feed = useChannelFeed(port, channelId);
 
@@ -54,6 +57,7 @@ export function ChannelChatSurface({
 
   return (
     <LazyChannelScreen
+      {...(viewerMemberId ? { viewerActorId: viewerMemberId } : {})}
       anchorId={channelId}
       anchorNoun="this channel"
       page={feed.page}

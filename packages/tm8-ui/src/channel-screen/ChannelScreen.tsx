@@ -51,6 +51,10 @@ export interface ChannelScreenProps {
    * would be branching on kind by another name (§15.2).
    */
   anchorNoun: string;
+  /** The viewer, for own-message sidedness (user ruling 2026-08-18): own
+   *  messages sit right in a bubble, everyone else keeps the left column.
+   *  Absent ⇒ no row claims to be the viewer's. */
+  viewerActorId?: string;
   /**
    * The feed page. `undefined` and an empty `items` array are DIFFERENT FACTS
    * and stay different: nothing read this anchor, versus a read that found
@@ -155,6 +159,7 @@ export interface ChannelScreenProps {
 export function ChannelScreen({
   anchorId,
   anchorNoun,
+  viewerActorId,
   page,
   loading = false,
   loadingEarlier = false,
@@ -455,6 +460,7 @@ export function ChannelScreen({
                     loadedMessages={loadedMessages}
                     threads={threads}
                     onOpenThread={onOpenThread}
+                    viewerActorId={viewerActorId}
                   />
                 )}
               </Fragment>
@@ -493,6 +499,7 @@ export function ChannelScreen({
         {threads && thread ? (
           <ThreadPane
             anchorId={anchorId}
+            viewerActorId={viewerActorId}
             anchorTitle={anchorTitle ?? anchorNoun}
             root={thread.root}
             replies={thread.replies}
@@ -621,6 +628,7 @@ function FeedRowGroupWithMark({
   loadedMessages,
   threads,
   onOpenThread,
+  viewerActorId,
 }: {
   mark: boolean;
   group: ReturnType<typeof groupByOperation>[number];
@@ -633,6 +641,7 @@ function FeedRowGroupWithMark({
   loadedMessages: ReadonlyMap<EntityId, MessageView>;
   threads?: boolean;
   onOpenThread?: (root: MessageView) => void;
+  viewerActorId?: string | undefined;
 }) {
   return (
     <>
@@ -641,6 +650,7 @@ function FeedRowGroupWithMark({
         group={group}
         anchorId={anchorId}
         clustered={clustered}
+        viewerActorId={viewerActorId}
         handlers={{
           onOpenEntity,
           onReply,

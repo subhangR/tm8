@@ -31,6 +31,8 @@ import type { ChannelPostInput } from './feed-model';
  */
 export interface ThreadPaneProps {
   anchorId: EntityId;
+  /** The viewer, for own-message sidedness — see ChannelScreen. */
+  viewerActorId?: string | undefined;
   /** The breadcrumb's word for where back leads — "#design-review". */
   anchorTitle: string;
   root: MessageView;
@@ -77,6 +79,7 @@ export function ThreadPane({
   mentionOptions,
   skillOptions,
   uncertainSubmission,
+  viewerActorId,
 }: ThreadPaneProps) {
   /*
    * The armed reply target — the `replyTo` path that used to live on the
@@ -138,6 +141,7 @@ export function ThreadPane({
           <FeedRowGroup
             group={{ kind: 'single', item: threadFeedItem(root) }}
             anchorId={anchorId}
+            viewerActorId={viewerActorId}
             handlers={{ ...rowHandlers, onReply: () => setReplyTo(null) }}
           />
         </ul>
@@ -184,6 +188,7 @@ export function ThreadPane({
                 key={reply.id}
                 group={{ kind: 'single', item: threadFeedItem(reply) }}
                 anchorId={anchorId}
+                viewerActorId={viewerActorId}
                 handlers={rowHandlers}
               />
             ))}
