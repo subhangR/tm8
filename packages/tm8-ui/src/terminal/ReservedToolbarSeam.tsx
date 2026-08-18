@@ -7,16 +7,14 @@ import { AlwaysDark } from './AlwaysDark';
  * A 34px row above the chrome strip that is NEARLY EMPTY in Phase 1 and
  * renders ALWAYS. Both halves of that sentence are the point:
  *
- *   · it renders always, because reserving the height now is the entire
- *     mechanism by which the Phase-2 `[ Terminal | Chat ]` switch lands
- *     "without relayout". A row that appears only once it has content would
- *     shift the terminal down the day chat ships — which is the relayout the
- *     ruling exists to prevent;
- *   · it is nearly empty, because D12 clamps Phase 1 to the terminal surface
- *     with CHAT §5.1's UNFLAVORED presentation: no switch, no "coming soon",
- *     no error copy, no empty Chat tab. A `contentSurface=…:chat` URL is
- *     preserved and round-trips untouched, and the rendering simply shows
- *     terminal — the link is honored, not lied about, when Phase 2 lands.
+ *   · it renders always, because reserving the height is the entire mechanism
+ *     by which the surface switch landed "without relayout". A row that
+ *     appears only once it has content would have shifted the terminal down
+ *     the day the switch shipped — the relayout the ruling exists to prevent;
+ *   · it is nearly empty, because the switch itself lives in the panel bar
+ *     (it portals into `.pn-panelbar__surface`), not here. This seam holds
+ *     height and hosts the toolbar drop target; it never grew a second copy
+ *     of the switch.
  *
  * So the seam takes real Phase-1 content only: the session's share-context
  * drop target (§8 names the toolbar as a drop target). It never advertises
