@@ -161,7 +161,7 @@ export interface DispatcherBootstrapControlFacts extends BootstrapControlFacts {
 
 function rosterBlock(f: DispatcherBootstrapControlFacts): string[] {
   if (f.roster === undefined) {
-    return ['  <roster loaded="false">Read the roster with `tm8 entity list --kind team_member` before choosing.</roster>'];
+    return ['  <roster loaded="false">Read the roster with `tm8 entity query --kind team_member` before choosing.</roster>'];
   }
   if (f.roster.length === 0) {
     return ['  <roster loaded="true" count="0">This space has no teammates to dispatch to. Say so; do not create one.</roster>'];
