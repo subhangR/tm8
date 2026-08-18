@@ -577,6 +577,12 @@ function measureInPage({ MIN_TAP, EPS }) {
   const tabbarTop = tabbarEl ? tabbarEl.getBoundingClientRect().top : frameBox.bottom;
   const belowFold = [];
   for (const t of targets) {
+    /* THE TAB BAR'S OWN BUTTONS ARE NOT BELOW THE TAB BAR. Every element inside
+       it trivially sits past its own top edge, so without this the check
+       reports the five nav tabs on every single screen — a constant five that
+       means nothing and would train a reader to skip the field. Caught by
+       reading the entries instead of the count, which is the whole rule. */
+    if (tabbarEl && tabbarEl.contains(t.el)) continue;
     const r = t.r;
     const underTabbar = r.bottom > tabbarTop + 0.5;
     const pastFrame = r.top > frameBox.bottom + 0.5 || r.bottom > frameBox.bottom + 0.5;
