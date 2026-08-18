@@ -232,13 +232,20 @@
 
 /* The viewer's bubble follows their byline to the right edge; everyone
    else's stays in the 26px avatar gutter. Agent parts (`tch-parts`) never
-   move — answers are a reading column, not a bubble. */
-.tch-turn[data-self='true'] .tch-user-body { margin-left: auto; }
+   move — answers are a reading column, not a bubble. `.cv2-root` qualifies
+   this rule so it stays ahead of the qualified base bubble below. */
+.cv2-root .tch-turn[data-self='true'] .tch-user-body { margin-left: auto; }
 
 .tch-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
 .tch-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
 
-.tch-user-body {
+/* The bubble is a MARKDOWN ROOT since the body render went through
+   kit/Markdown, so the panel trick applies (panels.css:947): the `.md-root`
+   qualifier is what makes the bubble's own voice outrank markdown.css's
+   `.cv2-root .md-root` serif-at-body-size default, whatever order the
+   stylesheets import in. Found by the transcript lane (D-VIS-1): a plain
+   `.tch-user-body` lost that war and typed messages came out serif. */
+.cv2-root .md-root.tch-user-body {
   max-width: 80%;
   width: fit-content;
   margin-left: 26px;
@@ -247,11 +254,14 @@
   border-radius: var(--pn-r-md);
   background: var(--pn-card);
   color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
   font-size: 13px;
   /* No pre-wrap: the body renders as markdown now (chatMarkdownSource keeps
      a lone newline a line break), and pre-wrap over rendered HTML turns
      inter-element whitespace into phantom gaps. */
 }
+.cv2-root .md-root.tch-user-body > :first-child { margin-top: 0; }
+.cv2-root .md-root.tch-user-body > :last-child { margin-bottom: 0; }
 
 .tch-parts {
   display: flex;
