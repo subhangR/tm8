@@ -35,12 +35,14 @@ export interface MessagesViewProps {
   viewerActorId?: string | undefined;
 }
 
-export function MessagesView({ seam, spaceId, onOpenEntity, now, viewerActorId }: MessagesViewProps) {
+export function MessagesView({ seam, spaceId, viewerActorId, onOpenEntity, now }: MessagesViewProps) {
   const data = useMessagesData(seam, spaceId);
   return (
     <MessagesScreen
       viewerActorId={viewerActorId}
       data={data}
+      seam={seam}
+      spaceId={spaceId}
       {...(onOpenEntity ? { onOpenEntity } : {})}
       {...(now ? { now } : {})}
     />
