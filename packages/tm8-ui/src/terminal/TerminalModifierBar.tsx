@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AlwaysDark } from './AlwaysDark';
-import { useKeyboardInset } from './useKeyboardInset';
 import {
   ESC,
   TAB,
@@ -84,9 +83,48 @@ interface BarKey {
   readonly arrow?: ArrowName;
 }
 
-const KEYS: readonly BarKey[] = [
+/**
+ * TWO ROWS, AND THE ARITHMETIC THAT FORCED THEM — DEF-010.
+ *
+ * MEASURED: at phone-390 the single key row bled 77px (`hscroll`
+ * `term-mod__keys`), the size/limits toggle sat 69px past the right edge, and
+ * `exit` was sliced by it. At 430 the toggle was still 29px over.
+ *
+ * IT WAS NEVER GOING TO FIT, and the stylesheet's claim that "at 390px the
+ * whole set fits" was simply wrong. Nine controls at the 44px floor is
+ * 9 × 44 = 396px of keys alone, before a single gap and before the bar's own
+ * padding, against 390px of viewport. The row was already over budget by
+ * construction.
+ *
+ * WHY NOT SCROLL IT — it already did. `overflow-x: auto` is what turned an
+ * impossible row into a row whose last two controls are off-screen, and one of
+ * those is `exit`, which on a phone is THE ONLY WAY OUT of terminal focus
+ * (the `⌃\`` chord it documents cannot be typed here). A control that requires
+ * discovering a horizontal scroll inside a bar to reach is, for the person who
+ * does not discover it, the same as absent.
+ *
+ * WHY NOT SHRINK THEM — `mobile/CONTRACT.md` §6: the floor is on the SMALLER
+ * side and a key that shrinks below it is a key that fails the finger it was
+ * added for. These keys exist because a phone keyboard cannot produce them; a
+ * ctrl you miss is worse than no ctrl, because you believe you sent it.
+ *
+ * SO THE SET SPLITS BY WHAT THE KEYS ARE FOR, not by what happens to fit.
+ * MODIFIERS carries ctrl / esc / tab and the two chips that are about the
+ * terminal rather than about typing into it (exit, and the column readout).
+ * ARROWS carries the four together, which is also how they read: a cluster,
+ * scanned as a shape, not four items in a queue.
+ *
+ * Budget at 390, the number this replaces the old comment's guess with:
+ *   modifiers  3×44 + 2 gaps + exit ~86 + cols ~48 + 16 padding  ≈ 294
+ *   arrows     4×44 + 3 gaps + 16 padding                        ≈ 204
+ * Both inside 390, and both still inside 320 with room.
+ */
+const MODIFIER_KEYS: readonly BarKey[] = [
   { id: 'esc', label: 'esc', aria: 'Escape', seq: ESC },
   { id: 'tab', label: 'tab', aria: 'Tab', seq: TAB },
+];
+
+const ARROW_KEYS: readonly BarKey[] = [
   { id: 'left', label: '←', aria: 'Left arrow', arrow: 'left' },
   { id: 'down', label: '↓', aria: 'Down arrow', arrow: 'down' },
   { id: 'up', label: '↑', aria: 'Up arrow', arrow: 'up' },
@@ -105,7 +143,32 @@ export function TerminalModifierBar({
   onCtrlArmedChange,
 }: TerminalModifierBarProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const keyboardInset = useKeyboardInset();
+
+  /*
+   * THE KEYBOARD LISTENER THAT USED TO BE HERE IS GONE — `mobile/CONTRACT.md`
+   * §3, and it was also a DOUBLE COUNT.
+   *
+   * This bar called `useKeyboardInset()` itself and published the result as
+   * `--term-mod-keyboard`, which `terminal.css` spent on
+   * `transform: translateY(-inset)` plus a compensating `padding-bottom`. That
+   * was correct when this bar was the only surface that knew the keyboard
+   * existed. It is not any more: `MobileFrame` now measures the inset ONCE and
+   * SHRINKS THE WHOLE FRAME by it (`calc(100dvh - var(--mobile-keyboard-inset))`),
+   * so every region inside — header, content, notices, tab bar, sheets, and
+   * this bar with them — is already above the keyboard without knowing it is
+   * there.
+   *
+   * Lifting again on top of that raises the bar by a second keyboard-height,
+   * over the terminal output it is meant to sit beneath — covering the last
+   * lines of exactly the thing you opened the terminal to read.
+   *
+   * HONESTY LABEL, because it belongs beside the code and not only in a report:
+   * this reasoning is from the frame's arithmetic, not from a photograph. The
+   * harness this program uses has no soft keyboard to emulate, so the fix is a
+   * code-seam claim and it is on the real-device checklist. What is NOT in
+   * doubt is the contract: "a lane must not wire its own keyboard listener …
+   * three surfaces with three arithmetics is three bugs."
+   */
 
   /* Push the arm down into the terminal on every change, so the latch that
      actually converts the byte and the key that shows it lit can never
@@ -156,13 +219,7 @@ export function TerminalModifierBar({
 
   return (
     <AlwaysDark>
-      <div
-        className="term-mod"
-        data-testid="terminal-modifier-bar"
-        /* The keyboard's occluded strip, as a plain px custom property. See
-           `useKeyboardInset` for why this cannot be a viewport unit. */
-        style={{ '--term-mod-keyboard': `${keyboardInset}px` } as React.CSSProperties}
-      >
+      <div className="term-mod" data-testid="terminal-modifier-bar">
         {detailsOpen ? (
           <div className="term-mod__panel" data-testid="terminal-mod-panel">
             {/*
@@ -211,7 +268,13 @@ export function TerminalModifierBar({
           </div>
         ) : null}
 
-        <div className="term-mod__keys" role="group" aria-label="Terminal modifier keys">
+        {/* ROW 1 — the modifiers, plus the two chips that are ABOUT the
+            terminal rather than input into it. */}
+        <div
+          className="term-mod__keys term-mod__keys--mods"
+          role="group"
+          aria-label="Terminal modifier keys"
+        >
           <button
             type="button"
             className={`term-mod__key term-mod__key--ctrl${ctrlArmed ? ' term-mod__key--armed' : ''}`}
@@ -227,7 +290,7 @@ export function TerminalModifierBar({
           >
             ctrl
           </button>
-          {KEYS.map((key) => (
+          {MODIFIER_KEYS.map((key) => (
             <button
               key={key.id}
               type="button"
@@ -248,6 +311,10 @@ export function TerminalModifierBar({
             chord CANNOT BE TYPED, so the chip is not documentation — it is the
             only exit. Same class as the existing chip so it is the same object
             the user already knows from the drawer.
+
+            IT STAYS ON THE FIRST ROW deliberately. It was the control the old
+            single row sliced, and the row a thumb reaches first is the row the
+            only-way-out belongs on.
           */}
           <button
             type="button"
@@ -273,6 +340,30 @@ export function TerminalModifierBar({
                 garbles rather than after. */}
             {cols ? `${cols}c` : '···'}
           </button>
+        </div>
+
+        {/* ROW 2 — the arrows, kept together. Their own group and their own
+            label, so a screen reader is told they are a cluster rather than
+            four more items appended to the modifiers. */}
+        <div
+          className="term-mod__keys term-mod__keys--arrows"
+          role="group"
+          aria-label="Terminal arrow keys"
+        >
+          {ARROW_KEYS.map((key) => (
+            <button
+              key={key.id}
+              type="button"
+              className="term-mod__key"
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => send(key)}
+              disabled={!live}
+              aria-label={key.aria}
+              data-testid={`terminal-mod-${key.id}`}
+            >
+              {key.label}
+            </button>
+          ))}
         </div>
       </div>
     </AlwaysDark>
