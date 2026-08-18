@@ -155,11 +155,22 @@ async function upserts(): Promise<number> {
   return Number(rows[0]!.n);
 }
 
-async function createTask(title: string, axes: Record<string, string> = {}): Promise<string> {
+/**
+ * PHASE 6: the second argument was an AXES map, and `'reviewfirst'` is
+ * how a task reached its workflow. It is a workflow NAME now, resolved to the
+ * kind that governs it — `create_task` grew a trailing `kind` argument, and a
+ * kind extending `task` goes through this same door with the same detail row.
+ */
+async function createTask(title: string, workflow: string | null = null): Promise<string> {
   const rows = await asApp((q) =>
     q(
-      `select public.create_task($1,$2,null,'',$3::jsonb,null,null,'medium','[]'::jsonb,null,null,null,'attached_to',$4) result`,
-      [fixture.spaceId, title, JSON.stringify(axes), cmid(`create-${title}`)],
+      `select public.create_task($1,$2,null,'','{}'::jsonb,null,null,'medium','[]'::jsonb,null,null,null,'attached_to',$3,$4) result`,
+      [
+        fixture.spaceId,
+        title,
+        cmid(`create-${title}`),
+        workflow === null ? 'task' : kindFor(workflow),
+      ],
     ),
   );
   return (rows[0]!.result as { entity: { id: string } }).entity.id;
@@ -216,20 +227,31 @@ interface StateSpec {
  * tables are what 150's doors resolve against. Phase 6 collapses them; until then
  * a test that wrote only one of them would be testing a space that cannot exist.
  */
-async function authorWorkflow(typeValue: string, states: readonly StateSpec[]): Promise<void> {
-  const vocabulary = states.map((s) => s.name);
-  await asApp((q) =>
-    q(`select public.upsert_task_workflow($1,$2,$3::text[],$4) result`, [
-      fixture.spaceId,
-      typeValue,
-      vocabulary,
-      cmid(`vocab-${typeValue}`),
-    ]),
+/**
+ * PHASE 6: this authored TWO rows — a `task_workflows` vocabulary keyed on a
+ * `type` VALUE, and the real workflow beside it — because 150 resolved a task
+ * to its workflow through the type axis. That arm is deleted, `task_workflows`
+ * is dropped whole, and the link is `entity_kinds.workflow_id` (152's arm 0).
+ * So the vocabulary row is gone and the workflow now names the KIND it governs.
+ *
+ * The kind row is written FIRST and its `workflow_id` filled in after, and both
+ * halves of that order are forced: the per-category requirement can only ask
+ * whether a workflow governs a completable kind if the kind already records that
+ * it extends `task`, and `entity_kinds_validate_workflow` (152) checks the
+ * reference on insert, so the workflow cannot be named before it exists.
+ */
+async function authorWorkflow(name: string, states: readonly StateSpec[]): Promise<void> {
+  const kind = kindFor(name);
+  await asOwner(
+    `insert into public.entity_kinds(kind,origin,space_id,base_kind)
+     values($1,'custom',$2,'task') on conflict do nothing`,
+    [kind, fixture.spaceId],
   );
   await asApp((q) =>
-    q(`select public.upsert_workflow($1,$2,'task',$3::jsonb,'[]'::jsonb,$4) result`, [
+    q(`select public.upsert_workflow($1,$2,$3,$4::jsonb,'[]'::jsonb,$5) result`, [
       fixture.spaceId,
-      typeValue,
+      name,
+      kind,
       JSON.stringify(
         states.map((s) => ({
           name: s.name,
@@ -238,9 +260,31 @@ async function authorWorkflow(typeValue: string, states: readonly StateSpec[]): 
           isInitial: s.isInitial ?? false,
         })),
       ),
-      cmid(`workflow-${typeValue}`),
+      cmid(`workflow-${name}`),
     ]),
   );
+  await asOwner(
+    `update public.entity_kinds set workflow_id = (select id from public.workflows
+                                                    where space_id = $2 and name = $3)
+      where kind = $1 and space_id = $2`,
+    [kind, fixture.spaceId, name],
+  );
+}
+
+/**
+ * The custom kind standing in for what used to be a `type` axis value. Hyphens
+ * become underscores: `entity_kinds_origin_shape` (001) pins a custom kind to
+ * `^c:[a-z0-9][a-z0-9_]{0,48}$`, and an axis VALUE was under no such rule.
+ */
+function kindFor(name: string): string {
+  return `c:${name.replace(/-/g, '_')}`;
+}
+
+async function asOwner(sql: string, params: unknown[] = []): Promise<void> {
+  await database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query(sql, params);
+  });
 }
 
 async function workflowIdFor(name: string): Promise<string> {
@@ -277,17 +321,10 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('doors-resolve-categories');
   database.apply(migrationFiles());
   fixture = await seed(database);
-  // The `type` axis has to exist before a task may carry a type value —
-  // `internal.validate_task_axes` (001) refuses an unknown axis outright. It is
-  // also the axis 132 keyed the whole workflow mechanism to, and the one phase 6
-  // turns into `c:` kinds; every typed fixture below hangs off these two values.
-  await asApp((q) =>
-    q(`select public.create_task_axis($1,'type',$2::text[],'manual',0,$3) result`, [
-      fixture.spaceId,
-      ['reviewfirst', 'nocancel'],
-      cmid('type-axis'),
-    ]),
-  );
+  // The `type` axis STOOD HERE, declaring `reviewfirst` and `nocancel` so tasks
+  // could carry them. Phase 6 turned that axis into `c:` kinds exactly as the
+  // note here predicted, and `task_axes_type_is_a_kind` now refuses the name
+  // outright. `authorWorkflow` creates each value's kind beside its workflow.
 }, 180_000);
 
 afterAll(async () => {
@@ -320,7 +357,7 @@ describe('150 door 1 — create_task resolves the workflow INITIAL state', () =>
       { name: 'cancelled', category: 'cancelled', position: 5 },
     ]);
 
-    const task = await createTask('typed', { type: 'reviewfirst' });
+    const task = await createTask('typed', 'reviewfirst');
     const status = await statusOf(task);
 
     expect(status.workflow_id).toBe(await workflowIdFor('reviewfirst'));
@@ -341,7 +378,7 @@ describe('150 door 1 — create_task resolves the workflow INITIAL state', () =>
     expect(await upserts()).toBe(beforePlain + 1);
 
     const beforeTyped = await upserts();
-    await createTask('event-cost-typed', { type: 'reviewfirst' });
+    await createTask('event-cost-typed', 'reviewfirst');
     expect(await upserts()).toBe(beforeTyped + 1);
   });
 });
@@ -369,7 +406,7 @@ describe('150 door 2 — execution_spawn resolves in_progress, and guards by CAT
    * in review forever with a session attached to it.
    */
   it('starts a task in a THIRD to_do status — which the literal list would skip', async () => {
-    const task = await createTask('spawn-review', { type: 'reviewfirst' });
+    const task = await createTask('spawn-review', 'reviewfirst');
     await setWorkState(task, 'in_review');
 
     const before = await statusOf(task);
@@ -423,7 +460,7 @@ describe('150 door 3 — complete_task resolves the DONE state', () => {
   });
 
   it('completes a typed task into ITS workflow`s done state', async () => {
-    const task = await createTask('complete-typed', { type: 'reviewfirst' });
+    const task = await createTask('complete-typed', 'reviewfirst');
     await completeTask(task);
     const status = await statusOf(task);
 
@@ -523,7 +560,7 @@ describe('150 — the per-category requirement that REPLACES the structural thre
       { name: 'working', category: 'in_progress', position: 2 },
       { name: 'done', category: 'done', position: 3 },
     ]);
-    const task = await createTask('no-cancel', { type: 'nocancel' });
+    const task = await createTask('no-cancel', 'nocancel');
 
     const denied = await refusal(() =>
       database.query(`select internal.workflow_state_for_category($1,'cancelled')`, [task]),

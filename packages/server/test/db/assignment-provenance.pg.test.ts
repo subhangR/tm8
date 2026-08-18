@@ -211,6 +211,22 @@ describe.sequential('task assignment provenance (129)', () => {
     // maintains that column from `tasks.work_status`. It touches no function
     // this suite exercises, so the position statement survives it too.
     database.apply(['147_entity_status_category.sql']);
+    // …and ONE COLUMN of 154, for the third time and the same reason: current
+    // code reads `entity_kinds.base_kind` (ENTITY_COLUMNS and queryCollection
+    // both), so `loadEntitySummariesByIds` refuses to RUN against a 129-era
+    // schema — a parse failure, before any assertion here.
+    //
+    // Unlike 135 and 147 above, 154 CANNOT be applied whole: it drops
+    // `task_workflows`, reissues the 150/151 doors and reads `public.workflows`,
+    // so it depends on 148-153 and would drag the chain's whole tail past this
+    // suite's 129 pin. This takes the column and none of the behaviour — no
+    // resolver, no trigger, no constraint, no backfill — and it is faithful
+    // rather than convenient: `base_kind` is null on every row, and a null
+    // base_kind IS the pre-154 world.
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query('alter table public.entity_kinds add column if not exists base_kind text');
+    });
   }, 180_000);
 
   afterAll(async () => {
