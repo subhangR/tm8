@@ -310,18 +310,62 @@ describe('the two-pane studio', () => {
     fireEvent.click(view.getByTestId('crf-new'));
     await waitFor(() => view.getByTestId('crf-empty'));
     /* Resolved to the composer: the fixture's threads are anchored elsewhere
-       and are not craft-mode, so this blueprint has none of its own. */
-    await waitFor(() => expect(view.getByText('New conversation')).toBeTruthy());
+       and are not craft-mode, so this blueprint has none of its own.
+
+       READ OFF THE PICKER, not the conversation header. Solo mode no longer
+       draws `.tch-conversation__head` — it restated the title the picker
+       already shows one row above — so the picker's own empty label IS the
+       "no thread selected" signal now, and it is the honest place to read it
+       from: it is the surface that names the conversation. */
+    await waitFor(() => expect(view.getByText('New craft conversation')).toBeTruthy());
 
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Draft the blueprint.' },
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
     /* The send created a thread and the chat screen selected it ITSELF. */
-    await waitFor(() => expect(view.queryByText('New conversation')).toBeNull());
+    await waitFor(() => expect(view.queryByText('New craft conversation')).toBeNull());
 
     fireEvent.click(view.getByTestId('crf-new-chat'));
-    await waitFor(() => expect(view.getByText('New conversation')).toBeTruthy());
+    await waitFor(() => expect(view.getByText('New craft conversation')).toBeTruthy());
+    view.unmount();
+  });
+
+  /*
+   * THE HEADER COLLAPSE. The studio used to stack three bands before the
+   * first message — a screen bar saying "Craft", the pane picker, and the
+   * chat's own header restating the picker's title — so the cases below pin
+   * the two that went and the one that stayed, by ROLE rather than by pixel
+   * (jsdom loads no stylesheets, the recurring law).
+   */
+  it('spends no row on a screen bar, and names the conversation exactly once', async () => {
+    const { view } = await mountStudio();
+    await waitFor(() => view.getByTestId('crf-chat-picker'));
+
+    /* The screen bar is gone entirely — not merely restyled. */
+    expect(view.container.querySelector('.crf-bar')).toBeNull();
+
+    /* And the chat pane names the open conversation ONCE. Before this, the
+       picker and `.tch-conversation__head` both printed it, one row apart.
+       Read the name OFF THE PICKER rather than hard-coding it, so the case
+       pins "said once" — the actual claim — and not whichever conversation
+       the fixture happened to resolve to. */
+    expect(view.container.querySelector('.tch-conversation__head')).toBeNull();
+    const named = view.container.querySelector('.crf-pick__title')?.textContent ?? '';
+    expect(named).not.toBe('');
+    expect(view.getAllByText(named)).toHaveLength(1);
+    view.unmount();
+  });
+
+  it('puts Orchestrate on the blueprint row, beside the graph it acts on', async () => {
+    const { view } = await mountStudio();
+    const orchestrate = await waitFor(() => view.getByTestId('crf-orchestrate'));
+
+    /* Not on a banner above both panes: it rides the CANVAS pane's header,
+       which is the row naming the very blueprint `selectedId` refers to. */
+    const head = orchestrate.closest('.crf-pane-head');
+    expect(head).not.toBeNull();
+    expect(head?.querySelector('[data-testid="crf-picker"]')).not.toBeNull();
     view.unmount();
   });
 

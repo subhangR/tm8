@@ -421,26 +421,12 @@ export function CraftScreen({
 
   return (
     <div className="crf-root" data-testid="craft-screen">
-      <header className="crf-bar">
-        <span className="crf-bar__title">Craft</span>
-        <span className="crf-bar__spacer" />
-        <button
-          type="button"
-          className="crf-bar__orchestrate"
-          data-testid="crf-orchestrate"
-          disabled={!selectedId || !activeThreadId || approving}
-          title={
-            !selectedId
-              ? 'Select a graph first.'
-              : !activeThreadId
-                ? 'Open or start a craft thread first — the approval posts into it.'
-                : 'Post the approval into the craft thread; the agent orchestrates from there.'
-          }
-          onClick={() => void approveOrchestrate()}
-        >
-          Orchestrate ▸
-        </button>
-      </header>
+      {/* NO SCREEN BAR. The old `.crf-bar` spent a full 34px row on the word
+          "Craft" — which the rail already says, since this screen is only
+          reachable from its own tab — plus one button. Orchestrate moved onto
+          the CANVAS pane's header, which is the row that names the blueprint
+          it acts on; a verb belongs beside its object, not on a banner above
+          both panes. The screen now opens straight into the split. */}
       <div className="crf-split" ref={splitRef} style={{ '--crf-chat': `${chatWidth}px`, '--crf-detail': `${detailWidth}px` } as CSSProperties}>
         <section className="crf-chat" id="crf-chat-pane" aria-label="Craft conversation">
           <CraftChatPicker
@@ -516,6 +502,26 @@ export function CraftScreen({
               onClick={() => void createGraph()}
             >
               <span aria-hidden>＋</span>
+            </button>
+            {/* ORCHESTRATE RIDES THE BLUEPRINT'S OWN ROW. It reads
+                `selectedId` — the very graph this picker names — so putting it
+                here makes the disabled reason legible from one glance at the
+                row rather than from a banner two panes wide. */}
+            <button
+              type="button"
+              className="crf-pane-head__orchestrate"
+              data-testid="crf-orchestrate"
+              disabled={!selectedId || !activeThreadId || approving}
+              title={
+                !selectedId
+                  ? 'Select a graph first.'
+                  : !activeThreadId
+                    ? 'Open or start a craft thread first — the approval posts into it.'
+                    : 'Post the approval into the craft thread; the agent orchestrates from there.'
+              }
+              onClick={() => void approveOrchestrate()}
+            >
+              Orchestrate ▸
             </button>
           </div>
           <div className="crf-canvas__body">

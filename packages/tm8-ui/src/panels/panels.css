@@ -731,6 +731,34 @@
 }
 .cv2-root .pn-body > .pn-section { padding: 0 0 10px; }
 
+/* THE BLUEPRINT BLOCK'S BOX. `.crf-viewport` inside the canvas is
+   `flex: 1; min-height: 0`, which needs a parent with a DEFINITE height —
+   dropped straight into `.pn-body`, which scrolls, it would resolve to zero
+   and draw nothing at all. So the block supplies the height the studio's pane
+   supplies there: a flex column with a real one, tall enough for the fold's
+   first rows and bounded so it never eats a panel that also has fields and
+   collections below it. `flex: none` because `.pn-body` is a flex column and
+   a growable child would fight the blocks under it. */
+.cv2-root .pn-blueprint {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  height: 320px;
+  min-height: 0;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--pn-paper);
+}
+.cv2-root .pn-blueprint__note {
+  flex: none;
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  border-top: 1px solid var(--pn-line);
+}
+
 /* THE MEASURED COLUMN (task-panel redesign, 2026-08-16). A body that opts in
    caps every child at the reading measure and centers the column; the panel
    chrome (header, tabs, controls band, footer) stays full-bleed. Opt-IN by

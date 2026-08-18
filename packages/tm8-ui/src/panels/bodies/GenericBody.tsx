@@ -15,6 +15,7 @@ import type { DownloadHref } from '../../files/FilesScreen';
 import { EmptyBody } from '../detail/PanelStates';
 import type { AuthoringCommands } from '../../authoring';
 import { LoopControls } from '../../loops/LoopControls';
+import { BlueprintBlock } from './BlueprintBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { edgesOf } from './MemorySetBlock';
 import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
@@ -145,6 +146,10 @@ function ContentBlock({
         return <LinkSummaryBlock detail={detail} />;
       case 'file-preview':
         return <FilePreviewBlock detail={detail} downloadHref={downloadHref} />;
+      /* The blueprint canvas, folded from the row itself — see its docblock
+         for why it needs nothing from the host but `onOpenEntity`. */
+      case 'blueprint':
+        return <BlueprintBlock detail={detail} onOpenEntity={onOpenEntity} />;
       case 'artifact-preview':
         /* Keyed by entity id: a panel that re-points to another artifact must
            reset the viewer's whole run state (selected revision, mint timer,

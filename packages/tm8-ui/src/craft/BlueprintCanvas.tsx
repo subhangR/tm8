@@ -9,7 +9,15 @@
  * spec/reference distinction: a SPEC card (no entity behind it) is drawn
  * dashed with a "spec" flag so intent never passes as fact, and a reference
  * card opens its real entity.
+ *
+ * THE CANVAS CARRIES ITS OWN STYLES. `craft.css` used to be imported only by
+ * `CraftScreen`, which was invisible for as long as the studio was the only
+ * mount — the detail panel's blueprint block would then have drawn a
+ * completely unstyled canvas on every screen but Craft. A component that can
+ * be mounted anywhere has to bring its own CSS; bundlers dedupe the import,
+ * so the studio pays nothing for it.
  */
+import './craft.css';
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { getKind } from '../domain';

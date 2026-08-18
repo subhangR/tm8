@@ -1233,12 +1233,22 @@ export function ChatHomeScreen({
           else onShowChat?.();
         }}
       >
-        <header className="tch-conversation__head">
-          <div className="tch-title">
-            <strong>{detail?.summary.title ?? 'New conversation'}</strong>
-            <span>{activeConfig ? `with ${activeConfig.teammateLabel}` : 'Work with your graph from one place'}</span>
-          </div>
-        </header>
+        {/* NOT IN SOLO MODE. Solo means the HOST drew the thread column as its
+            own header — Craft's `CraftChatPicker` prints this exact title one
+            row above — so rendering it again spends 57px restating what the
+            viewer just read, and the fallback line ("Work with your graph from
+            one place") is a caption for a chooser that solo does not have.
+            Full Chat Home keeps the header: there the title lives nowhere else
+            on screen, since the thread LIST names threads, not the open one.
+            The teammate is not lost — the picker's meta line carries it. */}
+        {soloConversation ? null : (
+          <header className="tch-conversation__head">
+            <div className="tch-title">
+              <strong>{detail?.summary.title ?? 'New conversation'}</strong>
+              <span>{activeConfig ? `with ${activeConfig.teammateLabel}` : 'Work with your graph from one place'}</span>
+            </div>
+          </header>
+        )}
 
         {centre != null ? (
           <section className="tch-center" aria-label="Selection" data-testid="tch-center-override">
