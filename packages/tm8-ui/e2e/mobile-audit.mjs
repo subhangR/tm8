@@ -455,7 +455,11 @@ function measureInPage({ MIN_TAP, EPS }) {
     overflowRoots: roots,
     tapTargetsTotal: targets.length,
     tapTargetsUnderMin: small.length,
-    tapTargetsSmallest: small.sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h)).slice(0, 12),
+    /* THE FULL CENSUS, not a top-12. The gate lane enumerates its selector list
+       from this file; a truncated list means it guesses the tail, and the
+       guessed part is exactly where a missed control hides. 64 is a ceiling
+       against pathology, not a summary — no phone row is near it. */
+    tapTargetsSmallest: small.sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h)).slice(0, 64),
     /* Ledgered, never counted against MIN_TAP — see the predicates above. Each
        is a separate question a reader may want to ask, and a zero here is as
        meaningful as a zero in the headline. */
