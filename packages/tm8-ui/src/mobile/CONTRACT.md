@@ -84,6 +84,31 @@ same verb, different answer. Decide by **provenance**:
 
 The underlying question that tiebreaker encodes is *does this need an address*. A sheet has none.
 
+**AND A THIRD SHAPE, WHICH IS NEITHER — found by Lane A, ruled in its favour, written here so the next
+lane neither converts it nor re-argues it:**
+
+> **A surface driven from an input it must not cover is not a sheet.** A type-ahead or filter surface
+> whose interaction model is "keep typing in the thing underneath" has no focusable parts to trap and
+> must not be made modal. Compose it against `--mobile-keyboard-inset` and keep it out of the sheet
+> host.
+
+The axis that splits these is **what the surface is solved around**, not how big it is:
+
+- `ComposerSelect` is an anchored popover solved around a **small trigger** — 220×264 hanging off one
+  of three buttons in a foot pinned to the bottom of a keyboard-shortened frame. That is the shape the
+  sheet rule was written about. Converted, correctly.
+- `.ri-popover` is **full-width over a full-width composer, with no focusable parts**. Its keyboard
+  contract is driven *from the textarea*, and the reader filters it *by continuing to type*.
+
+**`MobileSheet` is `aria-modal` with a backdrop.** Making the second one a sheet would **cover the
+composer being typed into and put focus outside the modal it claims to trap** — breaking the
+interaction it exists to serve, in exchange for a rule written about a different shape. `aria-modal`
+would also become a lie, which §8 forbids independently.
+
+The mirror case confirms the axis rather than complicating it: `LaunchSheet` — a dialog with its own
+focusable content and its own dismiss semantics — belongs *in* the sheet host. Two lanes read this
+section independently and split the cases the same way; the third should not have to derive it.
+
 **AND THE HONESTY CONSEQUENCE (a §8 item):** a sheet has no address, so while one is open the header's
 `CopyLinkControl` still copies the **underlying screen's** route. Copying a link that does not name
 what is on screen is exactly the class of lie §8 forbids. **RULED: sheet content is never the subject
@@ -141,6 +166,24 @@ Two constraints, which are **acceptance and not advice**:
 - **NO `::after` hit-area tricks.** The instrument measures `getBoundingClientRect()` **of the
   element**. A pseudo-element hit area is invisible to it and to the after-run diff: it would score
   as fixed while the thumb still missed.
+
+**A MEASUREMENT THIS CONTRACT CITED AND HAS SINCE RETRACTED — `pn-tt__status` at 44x44.**
+The gate's record cited that number as evidence the task row's state control was at bar. **It is not
+evidence of that.** `pn-tt__status` is a `<span>` WRAPPER (`MaestroTaskTile.tsx`); the actual control
+is `button.lp__statedot`, rendered *inside* it only when `EntityListPanel` passes `statusControl`
+(`list.stateControl && !treatment`). In the fixture capture `lp__statedot` was never observed at all —
+which means `statusControl` was undefined, which means **the 44x44 that was measured was a
+non-interactive wrapper, not a tap target.** The two observations are not merely consistent; each
+explains the other.
+
+Consequence for this file's own rule set, stated rather than quietly dropped: growing
+`.pn-tt__status` is still correct — it is what stops a 44px control being clipped by a 16px cell when
+one IS present — but **it must not be read as evidence that a control is at bar.** DEF-017 remains
+open on `lp__statedot`, which is its actual offender selector.
+
+And the wrapper carries `title=` when no control is passed, which is a **hover-delivered tooltip on a
+touch surface** — the same fault class as §8's `title=` rule and the ledger's DEF-032/DEF-033. Not
+this contract's file to fix; recorded here because this contract cited the element.
 
 **THE SURVIVING OFFENDER HAS AN OWNER.** `input.lp__searchinput` (332x23 at 390, 372x23 at 430) is the
 only sub-44 target left on tasks, sessions and channels, and being under 16px type it is *also* an iOS
