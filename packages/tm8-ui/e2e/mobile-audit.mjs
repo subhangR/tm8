@@ -52,7 +52,7 @@
  *    shell the viewport profile expects, and refuses to record a row that
  *    disagrees. A wrong number is worse than a missing one.
  */
-import { chromium } from '@playwright/test';
+import { chromium, firefox } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 
@@ -384,16 +384,53 @@ const { base, stop } = await startVite();
 mkdirSync(outDir, { recursive: true });
 if (!noShots) mkdirSync(`${outDir}/screens`, { recursive: true });
 
-const browser = await chromium.launch({ channel: 'chrome' });
+/**
+ * THE ENGINE — system Chrome by default, Firefox where Chrome does not exist.
+ *
+ * Trap 1 above says "do not run `playwright install` to make this go away",
+ * and that still stands: a different browser build is a different set of
+ * numbers. This does NOT relax that rule — it names the engine, records it in
+ * the report, and leaves the default exactly where it was.
+ *
+ * It exists because on some hosts there IS no system Chrome and the bundled
+ * chromium cannot run at all: nine missing system libs, and once those are
+ * staged into a userspace prefix the process still SIGSEGVs immediately after
+ * its DRM probe, with no root available to install the real packages. On such
+ * a host the choice is not "Chrome or Firefox", it is "Firefox or no
+ * measurement", and no measurement is how a program starts trusting jsdom
+ * again.
+ *
+ * WHAT A READER MUST NOT DO WITH THIS: compare a Firefox row to a Chrome row.
+ * Font metrics differ, so tap-target heights and right edges differ by a pixel
+ * or two, and a before/after diff across engines would report that noise as
+ * movement. `engine` is in the report so that comparison is refused by
+ * inspection. Before and after must be taken on the SAME engine.
+ *
+ * Firefox reports `(pointer: coarse)` truthfully under `hasTouch: true`
+ * (measured on this host, with and without the Gecko RDM prefs below), so
+ * trap 2's shell assertion keeps its teeth — a wrong-shell row is still
+ * refused rather than recorded.
+ */
+const ENGINE = process.env.AUDIT_BROWSER === 'firefox' ? 'firefox' : 'chrome';
+const browser = ENGINE === 'firefox'
+  ? await firefox.launch({
+      firefoxUserPrefs: { 'ui.primaryPointerCapabilities': 0x01, 'ui.allPointerCapabilities': 0x01 },
+    })
+  : await chromium.launch({ channel: 'chrome' });
 const rows = [];
 const problems = [];
 
 for (const vp of VIEWPORTS) {
   if (onlyViewport && vp.name !== onlyViewport) continue;
+  /* `isMobile` is a Chromium-only option — Firefox throws on it outright. It
+     drives the mobile viewport-meta emulation, NOT the pointer type, so
+     dropping it on Firefox does not weaken trap 2: `hasTouch` is what makes
+     `(pointer: coarse)` true, and the shell assertion below still refuses any
+     row that landed in the wrong shell. */
   const ctx = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
     deviceScaleFactor: vp.deviceScaleFactor,
-    isMobile: vp.isMobile,
+    ...(ENGINE === 'firefox' ? {} : { isMobile: vp.isMobile }),
     hasTouch: vp.hasTouch,
   });
   const page = await ctx.newPage();
@@ -478,6 +515,9 @@ const report = {
   minTapPx: MIN_TAP,
   epsilonPx: EPS,
   space: SPACE,
+  /* Which rendering engine produced these numbers. Rows from different engines
+     are NOT comparable — see the ENGINE docblock. */
+  engine: ENGINE,
   problems,
   rows,
 };
