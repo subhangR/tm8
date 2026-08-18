@@ -116,11 +116,32 @@
 
 /* The work-session surface switch rides INSIDE that cluster (its host is
    `display: contents`). Five chips at ~60px is ~300px of min-content, which is
-   most of a 390px line on its own, so it is given permission to break across
-   lines instead of holding the cluster's width open and pushing the verbs
-   off. */
+   most of a 390px line on its own.
+
+   ── IT TAKES A WHOLE LINE, AND THAT IS A CORRECTION FOUND BY LOOKING ──────
+
+   This first said `flex: 0 1 auto` — share the line, wrap internally if you
+   must — and the build service's AFTER shots showed what that produces at the
+   WIDER viewport. At 390 the chips fill their line and the verbs get the next
+   one. At 430 there is JUST enough room for the chips AND Terminate on one
+   line, so the expand and close icons wrap ALONE onto a third: a nearly empty
+   row carrying two small glyphs at the right edge.
+
+   MEASURED CONSEQUENCE: the bar is 115px at 390 and **137px at 430**. More
+   width bought a TALLER bar. The service flagged the inversion as unexpected
+   and declined to guess at it; the shot is what says why.
+
+   `flex: 1 1 100%` makes it deterministic instead: the switch takes a line,
+   the verb cluster takes a line, at every width. No orphan row, and the two
+   viewports stop disagreeing about the height of the same chrome.
+
+   THE GENERAL FORM, worth keeping: `justify-content: flex-end` plus `wrap`
+   orphans the tail whenever the content is ONE ITEM too wide for a line — and
+   the wider viewport is where that is most likely, not least, because it is
+   where the near-fit happens. A fix verified only at the narrow width ships
+   it. */
 .cv2-root[data-shell='mobile'] .pn-panelbar__end .pn-surface-switch--bar {
-  flex: 0 1 auto;
+  flex: 1 1 100%;
   flex-wrap: wrap;
   justify-content: flex-end;
   min-width: 0;
