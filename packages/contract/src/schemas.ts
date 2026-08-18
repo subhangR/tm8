@@ -1909,6 +1909,7 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   mentionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   attachmentIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   pokeSessionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
+  mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']).optional(),
 }).strict();
 
 export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =

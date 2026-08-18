@@ -432,6 +432,13 @@ export class W2MessagesHandoffsService {
         anchorIds = [resolved.anchorId];
         parentMessageId = resolved.parentMessageId;
       }
+      // Per-turn chat mode (154): a transaction-local setting the BEFORE INSERT
+      // trigger stamps onto messages.requested_chat_mode — so the mode reaches
+      // the enqueued chat turn without threading a param through the shared
+      // w2_post_message_batch RPC. `true` scopes it to this transaction.
+      if (input.mode) {
+        await q.query("select set_config('tm8.chat_turn_mode', $1, true)", [input.mode]);
+      }
       const result = await q.rpc<BatchRpcResult>('w2_post_message_batch', [
         anchorIds,
         input.body,
