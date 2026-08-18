@@ -48,6 +48,12 @@ const G01_OPERATIONS = [
   'spaces.taskWorkflows.list',
   'spaces.taskWorkflows.upsert',
   'spaces.taskWorkflows.delete',
+  // 148: the real workflow tables, registered by the same module for the
+  // same reason — they supersede the taskWorkflows three above, which stay
+  // read-only until phase 6.
+  'spaces.workflows.list',
+  'spaces.workflows.upsert',
+  'spaces.workflows.delete',
   'spaces.leaderboard',
   'spaces.awards',
 ] as const;

@@ -55,23 +55,26 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // Every figure READ OUT OF THE REGENERATED MANIFEST.
       // 166 -> 169 (141): auth.password.change + auth.invite.signup +
       // auth.claim.reissue, all POST/command. READ OUT OF THE REGENERATED MANIFEST.
-      total: 169,
-      v1: 167,
+      // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) +
+      // .upsert (POST command) + .delete (DELETE command). READ OUT OF THE
+      // REGENERATED MANIFEST, never delta-arithmetic.
+      total: 172,
+      v1: 170,
       reserved: 2,
-      http: 168,
+      http: 171,
       ws: 1,
-      registerableV1Http: 166,
-      methods: { GET: 60, POST: 79, PATCH: 11, DELETE: 11, PUT: 7, WS: 1 },
-      kinds: { read: 64, command: 104, stream: 1 },
-      uniqueNames: 169,
-      uniqueBindings: 169,
+      registerableV1Http: 169,
+      methods: { GET: 61, POST: 80, PATCH: 11, DELETE: 12, PUT: 7, WS: 1 },
+      kinds: { read: 65, command: 106, stream: 1 },
+      uniqueNames: 172,
+      uniqueBindings: 172,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(168); // +3 141
+    expect(manifest.routes.http).toHaveLength(171); // +3 141, +3 148
     expect(manifest.routes.ws).toEqual([{
       operation: 'events.subscribe',
       method: 'WS',
@@ -101,7 +104,10 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // measures distance from the FROZEN W1 boundary, so it rises with every
     // amendment even when the new ops ARE mounted. 130 -> 132 upstream
     // (unledgered), 132 -> 135 (W4/132): the three taskWorkflows rows.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(138); // +3 141
+    // 138 -> 141 (148). This axis measures distance from the FROZEN W1
+    // boundary, so it rises with every amendment EVEN THOUGH these three ops
+    // are mounted — W2.C01's live inventory below is where that shows up.
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(141);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -129,7 +135,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 111 -> 113 (2026-08-12): collections.addItem/removeItem.
       // 113 -> 119 (2026-08-12, Git UI landing): the six execution.git* rows.
       // 130 -> 132 upstream (unledgered); 132 -> 135 (W4/132).
-      unimplementedV1Http: 138, // +3 (141): registerableV1Http 166 minus the frozen 28
+      unimplementedV1Http: 141, // +3 (148): registerableV1Http 169 minus the frozen 28
     });
   });
 
@@ -181,7 +187,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(169); // +3 141
+    expect(manifest.help.operations).toHaveLength(172); // +3 141, +3 148
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -348,7 +354,9 @@ describe('W2.C01 current mounted registry inventory', () => {
 
     // 145 -> 147 upstream (unledgered); 147 -> 150 (2026-08-16, W4/132): the
     // three spaces.taskWorkflows handlers join the w2 identity-spaces module.
-    expect(handlers.facade).toHaveLength(153); // +3 (141): the three account-lifecycle handlers join the w2 auth module
+    // 153 -> 156 (148): the three spaces.workflows handlers join the SAME w2
+    // identity-spaces module the taskWorkflows three live in.
+    expect(handlers.facade).toHaveLength(156);
     // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
     // concurrent feature lane (not the W1 amendment set):
     //  - voice.token.create (voice-channels lane);
@@ -370,7 +378,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* facade
     // handlers (facade/services/execution-git.ts).
     // 158 -> 160 upstream (unledgered); 160 -> 163 (W4/132).
-    expect(handlers.all).toHaveLength(166); // +3 141
+    expect(handlers.all).toHaveLength(169); // +3 141, +3 148
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
       // Re-measured at 114 (spaces.members.updateRole, auth.invite.resolve).
@@ -379,7 +387,10 @@ describe('W2.C01 current mounted registry inventory', () => {
       // by CALLING readHandlerSourceInventory on this tree, never by hand.
       // Re-measured 141: the three account-lifecycle facade handlers join —
       // computed by CALLING readHandlerSourceInventory on this tree, never by hand.
-      .toBe('d3808c50b5acfb1c4eaf929ed3d24833952078c21f6377caf83e34532d240bf7');
+      // Re-measured 148: the three spaces.workflows handlers join. Read out of
+      // the FAILING RUN's Received line, which is the same thing as calling the
+      // inventory and the only version of it that cannot be typed from memory.
+      .toBe('9b5404b789f3200fc34e59908b5f436338742b0865cb02b6fa6bd94a26d0eb20');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
     // 78 -> 80 (2026-08-12): collections.addItem/removeItem bind their bodies.
@@ -392,7 +403,10 @@ describe('W2.C01 current mounted registry inventory', () => {
     // strictness is the only control on that body.
     // +2 (2026-08-16, W4/132): TaskWorkflowInputSchema binds
     // spaces.taskWorkflows.upsert; RequiredCommandContextSchema binds .delete.
-    expect(inputSchemas.bound).toHaveLength(97); // +2 141
+    // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert;
+    // RequiredCommandContextSchema binds .delete. `.list` is a READ and binds
+    // nothing, which is why three ops move this by two.
+    expect(inputSchemas.bound).toHaveLength(99);
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -413,7 +427,8 @@ describe('W2.C01 current mounted registry inventory', () => {
       ({ method, status }) => method !== 'WS' && status === 'v1',
     );
     // 160 -> 163 (W4/132): the three taskWorkflows routes, all mounted.
-    expect(registerableV1Http).toHaveLength(166); // +3 141
+    // 166 -> 169 (148): the three workflows routes, all mounted.
+    expect(registerableV1Http).toHaveLength(169);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);

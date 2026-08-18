@@ -570,6 +570,46 @@ const ROWS: Record<OperationName, Row> = {
     input: 'unbound',
     notes: ['never data loss: no task row changes; the vocabulary simply widens back'],
   },
+  'spaces.workflows.list': {
+    cmd: ['space', 'workflow', 'list'],
+    syn: 'tm8 space workflow list [<space-id>]',
+    sum: 'List this Space\'s workflows, plus the built-in default every kind falls back to',
+    authz: 'space',
+    input: 'none',
+    notes: [
+      'the built-in default workflow is always included and is listed last — it belongs to no Space and cannot be edited or deleted',
+      'a workflow with no transitions is the NORMAL case: the ruled category-level defaults apply and need no rows',
+    ],
+  },
+  'spaces.workflows.upsert': {
+    cmd: ['space', 'workflow', 'set'],
+    syn: 'tm8 space workflow set <name> --kind <kind> --state <name>:<category>[:initial][:default]... [--transition <from>-><to>]... [--space <space-id>] [--mutation-id <id>]',
+    sum: 'Create or replace a workflow — its states, and any transition overrides',
+    authz: 'space',
+    input: 'bound',
+    notes: [
+      'WHOLE-DOCUMENT: the states are stated each time, never patched, and states left out are deleted',
+      'exactly one state must be marked `initial`, and it must be in the to_do category',
+      'a transition is an OVERRIDE. Omit them all and every state keeps the ruled category defaults (any->cancelled; to_do->in_progress; in_progress->done; to_do->done; done->to_do; cancelled->to_do; and any move WITHIN a category)',
+      'naming a state as a transition target overrides the defaults for THAT state only — every other state is untouched',
+      'a state holding entities cannot be deleted; the call refuses rather than stripping the status off live work',
+    ],
+    examples: [
+      'tm8 space workflow set <name> --kind <kind> --state <state>:to_do:initial --state <state>:in_progress --state <state>:done --state <state>:cancelled',
+      'tm8 space workflow set <name> --kind <kind> --state <state>:to_do:initial --state <state>:in_progress --transition <from>-><to>',
+    ],
+  },
+  'spaces.workflows.delete': {
+    cmd: ['space', 'workflow', 'delete'],
+    syn: 'tm8 space workflow delete <workflow-id> [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: 'Delete a workflow and its states',
+    authz: 'space',
+    input: 'unbound',
+    notes: [
+      'refuses while any entity still holds one of its states — unlike a task-workflow delete, this one CAN be data loss and the FK is what stops it',
+      'the built-in default workflow belongs to no Space and is reported as not found',
+    ],
+  },
   'spaces.leaderboard': {
     cmd: ['space', 'leaderboard', 'get'],
     syn: 'tm8 space leaderboard get [<space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -2087,7 +2127,9 @@ export const CATALOG_DIGEST =
   // Re-measured 141 (+ auth.password.change, auth.invite.signup,
   // auth.claim.reissue) — read from the regenerated conformance manifest, never
   // hand-derived.
-  'sha256:69d3df5f1f02ccf9ab38c817c945d0d3ab2ec1e9c2532f3a5c187ff63ecd4e9f';
+  // Re-measured 148 (+ the three spaces.workflows rows) — read from the
+  // regenerated conformance manifest, never hand-derived.
+  'sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417';
 
 export const GRAMMAR_VERSION = '2';
 

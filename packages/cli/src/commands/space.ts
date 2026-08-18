@@ -422,6 +422,48 @@ function renderTaskWorkflows(dto: unknown): string {
   return joinLines(rows.map(renderTaskWorkflow), 'no task workflows');
 }
 
+/**
+ * `Name (kind)  [State:category ...]  +N overrides`. Categories are shown on
+ * every state because the category is the only part of a status anything
+ * outside the workflow may read — a list that showed names alone would be a
+ * list of strings nobody may branch on.
+ */
+function renderWorkflow(row: unknown): string {
+  const states = row === null || typeof row !== 'object'
+    ? []
+    : ((row as Record<string, unknown>).states as unknown[] | undefined) ?? [];
+  const transitions = row === null || typeof row !== 'object'
+    ? []
+    : ((row as Record<string, unknown>).transitions as unknown[] | undefined) ?? [];
+  const rendered = (Array.isArray(states) ? states : []).map((state) => {
+    const name = field(state, 'name') ?? '?';
+    const category = field(state, 'category') ?? '?';
+    const initial = field(state, 'isInitial') === 'true' ? '*' : '';
+    return `${name}:${category}${initial}`;
+  });
+  const overrides = Array.isArray(transitions) ? transitions.length : 0;
+  return [
+    field(row, 'id') ?? '?',
+    field(row, 'name') ?? '?',
+    field(row, 'kind') === undefined ? '(any kind)' : `(${field(row, 'kind')})`,
+    // A NULL spaceId is THE built-in default. Saying so is the difference
+    // between "why can I not delete this one" and a self-explaining list.
+    field(row, 'spaceId') === undefined ? '[built-in]' : undefined,
+    rendered.length > 0 ? `[${rendered.join(' ')}]` : undefined,
+    // Zero is the NORMAL case — the ruled category defaults apply — so it is
+    // reported as silence rather than as `+0 overrides`, which would read like
+    // a workflow that had been emptied.
+    overrides > 0 ? `+${overrides} override${overrides === 1 ? '' : 's'}` : undefined,
+  ]
+    .filter((p): p is string => p !== undefined && p !== '')
+    .join('  ');
+}
+
+function renderWorkflows(dto: unknown): string {
+  const rows = rowsOf(dto, 'workflows');
+  return joinLines(rows.map(renderWorkflow), 'no workflows');
+}
+
 function renderSettings(dto: unknown): string {
   const space = dto === null || typeof dto !== 'object' ? undefined : (dto as Record<string, unknown>).space;
   return joinLines(
@@ -856,6 +898,111 @@ async function spaceTaskWorkflowDelete(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+async function spaceWorkflowList(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('space workflow list', cmd.options.value('mutation-id'));
+  noExtraArgs('space workflow list', cmd.args, 1);
+  const spaceId = spaceFromArgOrContext(cmd, cmd.args[0]);
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.workflows.list', {
+    params: { spaceId },
+  });
+  cmd.out.data(data, renderWorkflows);
+  return EXIT_OK;
+}
+
+/**
+ * `--state <name>:<category>[:initial][:default]`.
+ *
+ * The flags are parsed here because a shell cannot express nested objects, but
+ * nothing is VALIDATED here beyond the shape the parser needs: exactly-one-
+ * initial, the closed four categories and unique positions are the DATABASE's
+ * constraints, and a second copy in the CLI would be free to drift from the
+ * rule that decides. A colon-separated triple is forwarded as-is and the
+ * server's refusal is rendered — the same posture `space task-workflow set`
+ * takes towards the structural {open, working, done} rule.
+ *
+ * A state's POSITION is its order on the command line. That is the whole
+ * reason the flag is repeatable rather than comma-joined: position decides
+ * which state is a category's default, so it must come from something the
+ * caller ordered deliberately.
+ */
+function workflowStatesFrom(cmd: CommandContext): Array<Record<string, unknown>> {
+  const raw = cmd.options.values('state');
+  if (raw.length === 0) {
+    throw new CliError('--state is required (repeat it once per state)', EXIT_USAGE, {
+      hint: '--state <name>:<category>[:initial][:default], e.g. --state Draft:to_do:initial',
+    });
+  }
+  return raw.map((spec, index) => {
+    const parts = spec.split(':');
+    const name = parts[0]?.trim();
+    const category = parts[1]?.trim();
+    if (name === undefined || name === '' || category === undefined || category === '') {
+      throw new CliError(`--state ${spec} is not <name>:<category>`, EXIT_USAGE, {
+        hint: 'categories are to_do, in_progress, done, cancelled',
+      });
+    }
+    const flags = parts.slice(2).map((f) => f.trim());
+    const state: Record<string, unknown> = { name, category, position: index + 1 };
+    if (flags.includes('initial')) state.isInitial = true;
+    if (flags.includes('default')) state.isDefault = true;
+    return state;
+  });
+}
+
+/** `--transition "From->To"`, or `"->To"` for the ANY arm. */
+function workflowTransitionsFrom(cmd: CommandContext): Array<Record<string, unknown>> {
+  return cmd.options.values('transition').map((spec) => {
+    const [from, to] = spec.split('->');
+    const target = to?.trim();
+    if (target === undefined || target === '') {
+      throw new CliError(`--transition ${spec} is not [<from>]-><to>`, EXIT_USAGE, {
+        hint: 'omit the left side to mean ANY source state, e.g. --transition "->Shipped"',
+      });
+    }
+    const source = from?.trim();
+    return source === undefined || source === ''
+      ? { to: target }
+      : { from: source, to: target };
+  });
+}
+
+async function spaceWorkflowSet(cmd: CommandContext): Promise<ExitCode> {
+  const name = requireArg('space workflow set', cmd.args[0], 'a <name>');
+  noExtraArgs('space workflow set', cmd.args, 1);
+  const spaceId = requireSpace(cmd.ctx);
+  const kind = cmd.options.value('kind');
+  const body = mutationBody(cmd);
+  body.name = name;
+  // Explicitly null rather than omitted: `kind` is a REQUIRED field that is
+  // nullable, and the strict schema would refuse the key's absence. Null here
+  // means "governs any kind", which the server then refuses for a space-scoped
+  // workflow — the built-in default is the only kindless row and it is seeded
+  // by migration, never authored.
+  body.kind = kind === undefined ? null : kind;
+  body.states = workflowStatesFrom(cmd);
+  const transitions = workflowTransitionsFrom(cmd);
+  if (transitions.length > 0) body.transitions = transitions;
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.workflows.upsert', {
+    params: { spaceId },
+    body,
+  });
+  cmd.out.data(data, renderWorkflow);
+  return EXIT_OK;
+}
+
+async function spaceWorkflowDelete(cmd: CommandContext): Promise<ExitCode> {
+  const workflowId = requireArg('space workflow delete', cmd.args[0], 'a <workflow-id>');
+  noExtraArgs('space workflow delete', cmd.args, 1);
+  requireConsent('space workflow delete', cmd);
+  const spaceId = requireSpace(cmd.ctx);
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.workflows.delete', {
+    params: { spaceId, workflowId },
+    body: mutationBody(cmd),
+  });
+  cmd.out.data(data, (dto) => field(dto, 'workflowId') ?? fallback(dto));
+  return EXIT_OK;
+}
+
 async function spaceLeaderboard(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('space leaderboard get', cmd.options.value('mutation-id'));
   noExtraArgs('space leaderboard get', cmd.args, 1);
@@ -1013,6 +1160,9 @@ export const SPACE_COMMANDS: CommandModule[] = [
   { path: ['space', 'task-workflow', 'list'], run: spaceTaskWorkflowList },
   { path: ['space', 'task-workflow', 'set'], run: spaceTaskWorkflowSet },
   { path: ['space', 'task-workflow', 'delete'], run: spaceTaskWorkflowDelete },
+  { path: ['space', 'workflow', 'list'], run: spaceWorkflowList },
+  { path: ['space', 'workflow', 'set'], run: spaceWorkflowSet },
+  { path: ['space', 'workflow', 'delete'], run: spaceWorkflowDelete },
   { path: ['space', 'leaderboard', 'get'], run: spaceLeaderboard },
   { path: ['space', 'award', 'list'], run: spaceAwardList },
   { path: ['space', 'menu', 'get'], run: spaceMenuGet },

@@ -353,24 +353,31 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 166 -> 169 (141): auth.password.change (POST command) + auth.invite.signup
   // (POST command) + auth.claim.reissue (POST command) — the three
   // account-lifecycle ops of FIRST-RUN-CLAIM-DESIGN.md §10.
-  assertEqual(names.length, 169, 'catalog total');
+  // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) + .upsert
+  // (POST command) + .delete (DELETE command). MEASURED off the catalog, not
+  // incremented.
+  assertEqual(names.length, 172, 'catalog total');
   // 157 -> 159 (114): spaces.members.updateRole (PATCH command) and
   // auth.invite.resolve (POST read — the code rides in the body, never a URL).
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
   // 164 -> 167 (141): the three account-lifecycle ops are v1.
-  assertEqual(V1_OPERATIONS.length, 167, 'v1 total');
+  // 167 -> 170 (148): the three workflows rows are v1.
+  assertEqual(V1_OPERATIONS.length, 170, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
   assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');
   // W4/132: GET 59->60, POST 75->76, DELETE 10->11; read 63->64, command 99->101.
   // 141: POST 76->79 — the three account-lifecycle ops are all POST commands.
-  assertEqual(methods, { GET: 60, POST: 79, PATCH: 11, DELETE: 11, PUT: 7, WS: 1 }, 'method accounting');
+  // 148: GET 60->61, POST 79->80, DELETE 11->12.
+  assertEqual(methods, { GET: 61, POST: 80, PATCH: 11, DELETE: 12, PUT: 7, WS: 1 }, 'method accounting');
   // 141: command 101->104 — the three account-lifecycle ops are all commands.
-  assertEqual(kinds, { read: 64, command: 104, stream: 1 }, 'kind accounting');
+  // 148: read 64->65, command 104->106.
+  assertEqual(kinds, { read: 65, command: 106, stream: 1 }, 'kind accounting');
   // W4/132: 162 -> 165, the three taskWorkflows routes.
   // 141: 165 -> 168, the three account-lifecycle routes.
-  assertEqual(router.http.length, 168, 'server router HTTP total');
+  // 148: 168 -> 171, the three workflows routes.
+  assertEqual(router.http.length, 171, 'server router HTTP total');
   assertEqual(router.ws.length, 1, 'server router WS total');
   // These four are SNAPSHOT self-checks (the frozen W1 registry boundary) and
   // never move with an amendment; A21's live handler shows up only in the

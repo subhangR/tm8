@@ -304,9 +304,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
-    expect(SURFACE).toHaveLength(166);
-    expect(rows).toHaveLength(166);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(166);
+    // 166 -> 169 (148): spaces.workflows list/upsert/delete.
+    expect(SURFACE).toHaveLength(169);
+    expect(rows).toHaveLength(169);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(169);
   });
 
   /**
@@ -639,19 +640,21 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 138
     //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 138
     //   (origin/main is still 137; this branch is the +1.)
-    // 138 -> 139 (2026-08-18): 148_pr_owning_session_space_scope.sql, the D2
-    // cross-Space nudge fix. ONE file, MEASURED on the merged tree — and worth
-    // recording WHY it is 148 and not 147, because the reason is this pin's
-    // whole failure mode: three lanes were writing migrations in parallel, the
-    // 147 prefix was reserved for this one, and #353 took it first. Renumbering
-    // was mandatory (a duplicate prefix aborts `migrationFiles()`), and it does
-    // not change the count.
-    //   ls db/migrations/*.sql | wc -l                                  -> 139
-    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql       -> 139
-    //   (origin/main is 138 at ff3370b8; this branch is the +1.)
-    // ⚠ If a sibling lane's migration merges before this one, this pin is a
-    // GUARANTEED conflict. Re-MEASURE on the merged tree; never add one.
-    expect(server.appliedMigrations.length).toBe(139);
+    // 138 -> 140 (2026-08-18): TWO migrations, from two lanes that landed in
+    // the same window.
+    //   148_pr_owning_session_space_scope.sql — the D2 cross-Space nudge fix,
+    //     already on main. Its own note records that it is 148 and not 147
+    //     because #353 took 147 first.
+    //   149_workflows.sql — the phase-2 workflow tables. It was AUTHORED as
+    //     148 and RENUMBERED to 149 on this rebase, because the lane above
+    //     merged first and a duplicate prefix aborts `migrationFiles()`.
+    // That note's warning ("if a sibling lane's migration merges before this
+    // one, this pin is a GUARANTEED conflict — re-MEASURE on the merged tree,
+    // never add one") is exactly what happened, and this is the re-measurement:
+    //   ls db/migrations/*.sql | wc -l                             -> 140
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 140
+    //   (origin/main is 139; this branch is the +1.)
+    expect(server.appliedMigrations.length).toBe(140);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -914,5 +917,10 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // gate rejection.
   'spaces.taskWorkflows.upsert',
   'spaces.update',
+  // 148: same shape one table over. The sweep's synthetic body satisfies the
+  // zod schema but not the DATABASE's exactly-one-initial-state rule, so the
+  // refusal is the RPC's, reached THROUGH the handler. Handler evidence, not
+  // a :166 gate rejection.
+  'spaces.workflows.upsert',
   'teamMembers.interactionProfile.setDefault',
 ];

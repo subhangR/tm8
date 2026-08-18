@@ -96,6 +96,7 @@ import type {
   SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
   SessionTranscriptStuck,
   ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StatusCategory, StreamAttachGrant, TaskAxis, TaskAxisInput, TaskWorkflow, TaskWorkflowInput,
+  Workflow, WorkflowInput, WorkflowState, WorkflowStateInput, WorkflowTransition, WorkflowTransitionInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingPrMergeInput, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
@@ -2044,6 +2045,37 @@ export const TaskWorkflowInputSchema: z.ZodType<TaskWorkflowInput> = z.object({
   statuses: z.array(WorkStatusSchema),
 }).strict();
 
+export const WorkflowStateInputSchema: z.ZodType<WorkflowStateInput> = z.object({
+  name: z.string().min(1),
+  category: StatusCategorySchema,
+  position: z.number().int().optional(),
+  isInitial: z.boolean().optional(),
+  isDefault: z.boolean().optional(),
+}).strict();
+
+export const WorkflowTransitionInputSchema: z.ZodType<WorkflowTransitionInput> = z.object({
+  // Absent and explicitly-null both mean ANY, and they must stay
+  // indistinguishable here: the SQL door treats a missing key and a null value
+  // identically, and a schema that admitted only one would make the two
+  // spellings disagree at the edge for no reason a caller could discover.
+  from: z.string().min(1).nullable().optional(),
+  to: z.string().min(1),
+  conditions: z.record(z.unknown()).optional(),
+}).strict();
+
+export const WorkflowInputSchema: z.ZodType<WorkflowInput> = z.object({
+  ...commandContextShape,
+  name: z.string().min(1),
+  kind: z.string().min(1).nullable(),
+  // Exactly-one-initial, the closed category set, unique names and unique
+  // positions are all the DATABASE's constraints — a second copy here would be
+  // free to drift from the rule that actually decides. What this asserts is
+  // only what the database cannot: that a workflow with no states at all never
+  // reaches it.
+  states: z.array(WorkflowStateInputSchema).min(1),
+  transitions: z.array(WorkflowTransitionInputSchema).optional(),
+}).strict();
+
 export const SavedViewInputSchema: z.ZodType<SavedViewInput> = z.object({
   ...commandContextShape,
   name: z.string().min(1),
@@ -3347,6 +3379,38 @@ export const TaskWorkflowSchema: z.ZodType<TaskWorkflow> = z.object({
   spaceId: SpaceIdSchema,
   typeValue: z.string(),
   statuses: z.array(WorkStatusSchema),
+}).strict();
+
+export const WorkflowStateSchema: z.ZodType<WorkflowState> = z.object({
+  id: z.string(),
+  workflowId: z.string(),
+  name: z.string(),
+  category: StatusCategorySchema,
+  position: z.number().int(),
+  isInitial: z.boolean(),
+  isDefault: z.boolean(),
+}).strict();
+
+export const WorkflowTransitionSchema: z.ZodType<WorkflowTransition> = z.object({
+  id: z.string(),
+  workflowId: z.string(),
+  fromStateId: z.string().nullable(),
+  toStateId: z.string(),
+  conditions: z.record(z.unknown()),
+}).strict();
+
+export const WorkflowSchema: z.ZodType<Workflow> = z.object({
+  id: z.string(),
+  // NULLABLE, and it is the design: the built-in default workflow belongs to no
+  // space. A schema that required a spaceId here would make the one row every
+  // kind falls back to unrepresentable on the wire.
+  spaceId: SpaceIdSchema.nullable(),
+  name: z.string(),
+  kind: z.string().nullable(),
+  states: z.array(WorkflowStateSchema),
+  // Empty is the NORMAL case — "the ruled category defaults apply" — never
+  // "nothing is allowed".
+  transitions: z.array(WorkflowTransitionSchema),
 }).strict();
 
 export const LeaderboardRowSchema: z.ZodType<LeaderboardRow> = z.object({

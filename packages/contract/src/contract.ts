@@ -2111,6 +2111,55 @@ export interface TaskWorkflowInput extends CommandContext {
   statuses: WorkStatus[];
 }
 
+/**
+ * POST /v2/spaces/:spaceId/workflows — upsert on (space, kind, name).
+ *
+ * WHOLE-DOCUMENT, not per-state CRUD. The invariants are about a workflow as a
+ * whole — exactly one initial state, unique positions, transitions whose
+ * endpoints are its own states — so one door makes them a property of a single
+ * statement. Per-row doors would make "delete In Review" legal only in the same
+ * transaction as whatever replaces it, and quadruple the catalog surface to buy
+ * a UI nobody has asked for.
+ *
+ * `states` REPLACES the state set. A state that entities are sitting in cannot
+ * be dropped (`entities.status_id` is ON DELETE RESTRICT) and the call refuses
+ * rather than stripping the status off live work.
+ */
+export interface WorkflowInput extends CommandContext {
+  name: string;
+  /** The kind this workflow governs. `null` is reserved for the built-in default. */
+  kind: string | null;
+  states: WorkflowStateInput[];
+  /**
+   * OVERRIDES, not rules. Omit entirely and the workflow still works: the ruled
+   * category-level defaults apply to every state. See `WorkflowTransition`.
+   */
+  transitions?: WorkflowTransitionInput[];
+}
+
+export interface WorkflowStateInput {
+  name: string;
+  category: StatusCategory;
+  /** 1-based. Defaults to array order. Ties are impossible — unique per workflow. */
+  position?: number;
+  /** EXACTLY ONE per workflow, and it must be `to_do`. Where an entity is born. */
+  isInitial?: boolean;
+  /**
+   * At most one per (workflow, category), and only a TIEBREAK: the default state
+   * of a category is the `isDefault` one, or the lowest-position one. Leaving it
+   * unset is the point — a freshly authored workflow resolves with no flags.
+   */
+  isDefault?: boolean;
+}
+
+/** Endpoints are state NAMES: a caller authoring a workflow has no ids yet. */
+export interface WorkflowTransitionInput {
+  /** Absent or `null` = ANY source state. */
+  from?: string | null;
+  to: string;
+  conditions?: Record<string, unknown>;
+}
+
 export interface SavedViewInput extends CommandContext {
   name: string;
   shareMode: 'private'|'space';
@@ -2597,6 +2646,56 @@ export interface TaskWorkflow {
   /** The `type` AXIS value this rule governs (strictly `type`, by ruling). */
   typeValue: string;
   statuses: WorkStatus[];
+}
+
+/**
+ * GET /v2/spaces/:spaceId/workflows — a named set of states and transitions.
+ *
+ * SUPERSEDES `TaskWorkflow`, which stays in place read-only until phase 6. The
+ * difference that matters: a `TaskWorkflow` is a SUBSET of seven hardcoded
+ * statuses, and a `Workflow` is an open set of user-named states each carrying
+ * one of the four closed CATEGORIES. Today the statuses are hardcoded and the
+ * subset is data; here the categories are hardcoded and the statuses are data.
+ */
+export interface Workflow {
+  id: string;
+  /** `null` for THE built-in default workflow — one global row, no space owns it. */
+  spaceId: SpaceId | null;
+  name: string;
+  /** `null` = governs any kind. Only the built-in default is allowed to say that. */
+  kind: string | null;
+  states: WorkflowState[];
+  /**
+   * OVERRIDES. Empty is the NORMAL case and means "the ruled category-level
+   * defaults apply", not "nothing is allowed" — a twelve-state workflow with an
+   * empty array here works with zero configuration, which is the entire design.
+   */
+  transitions: WorkflowTransition[];
+}
+
+export interface WorkflowState {
+  id: string;
+  workflowId: string;
+  /** OPEN and user-defined. Nothing outside a workflow may branch on it. */
+  name: string;
+  /** The closed four. The only status concept anything outside a workflow reads. */
+  category: StatusCategory;
+  position: number;
+  isInitial: boolean;
+  isDefault: boolean;
+}
+
+export interface WorkflowTransition {
+  id: string;
+  workflowId: string;
+  /** `null` = ANY source state. */
+  fromStateId: string | null;
+  toStateId: string;
+  /**
+   * Preconditions on entering the TARGET state (acceptance criteria, the
+   * `pr_merged` gate). Empty until phase 4 moves them off `complete_task`.
+   */
+  conditions: Record<string, unknown>;
 }
 
 /** GET /v2/spaces/:spaceId/leaderboard */
