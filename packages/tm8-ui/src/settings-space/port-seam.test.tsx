@@ -231,6 +231,11 @@ describe('the workflow registry round-trips through the port', () => {
     expect(await port.loadWorkflows()).toEqual([]);
   });
 
+  // \u26a0 THE CONSTRAINT THIS QUOTES IS GONE FROM THE DATABASE as of migration 151
+  // (phase 4). The rule now lives on the client only \u2014 see the note at this arm
+  // in `seam-fixture.ts`. Kept, quoting the old words, because the client rule
+  // is what stops anyone reaching 132's still-live trigger; it goes in phase 6
+  // with `task_workflows` itself.
   it('refuses a vocabulary missing a STRUCTURAL status, in the constraint\u2019s own words', async () => {
     const seam = createFixtureSeam();
     const spaceId = await firstSpaceId(seam);

@@ -254,16 +254,19 @@ describe.sequential('148 — the workflow admin doors', () => {
     expect(after.filter((w) => w.spaceId === null)).toHaveLength(1);
   });
 
-  it('leaves task_workflows completely alone — 132 is untouched by this phase', async () => {
+  it('leaves 132`s enforcement trigger alone — only the structural constraint went, in 151', async () => {
     const rows = await server.database.query<{ n: string }>(
       `select count(*) n from pg_trigger
         where tgname = 'tasks_validate_workflow' and not tgisinternal`,
     );
     expect(Number(rows[0]!.n)).toBe(1);
+    // 149 (this phase) did not touch it; 151 dropped it, on schedule, once the
+    // doors resolved categories and the completion gate moved onto the
+    // transition. `task_workflows` itself survives until phase 6.
     const constraint = await server.database.query<{ n: string }>(
       `select count(*) n from pg_constraint where conname = 'task_workflows_structural_statuses'`,
     );
-    expect(Number(constraint[0]!.n)).toBe(1);
+    expect(Number(constraint[0]!.n)).toBe(0);
   });
 
   it('revokes the definer functions from PUBLIC — the thing 138 exists to have fixed', async () => {

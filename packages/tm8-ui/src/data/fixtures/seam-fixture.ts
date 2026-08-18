@@ -2921,6 +2921,16 @@ export function createFixtureSeam(): FixtureSeam {
             'new row for relation "task_workflows" violates check constraint "task_workflows_statuses_valid"',
           );
         }
+        // ⚠ NO LONGER MIRRORS THE SERVER, DELIBERATELY. Migration 151 (phase 4)
+        // DROPPED `task_workflows_structural_statuses` — the doors resolve a
+        // state by category and the completion gate rides the →done transition,
+        // so the schema no longer needs the three. The rule survives on the
+        // client (`domain/workflows.ts` STRUCTURAL_STATUSES, rendered as
+        // always-included checkboxes in WorkflowsSection) because 132's
+        // `tasks_validate_workflow` trigger still polices the legacy column
+        // against this vocabulary until phase 6 retires `task_workflows`. This
+        // arm is the fixture standing in for that client rule, in the old
+        // constraint's words; delete it with the rule, in phase 6.
         if (!(['open', 'working', 'done'] as const).every((v) => (statuses as readonly string[]).includes(v))) {
           throw new CollabError(
             'invariant_violation',

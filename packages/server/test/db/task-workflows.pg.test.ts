@@ -120,34 +120,62 @@ describe.sequential('W4-PG migration 132 task-workflow semantics', () => {
     await server?.close();
   }, 180_000);
 
-  it('installs the status-change trigger and refuses a vocabulary missing a structural status', async () => {
-    const structure = await server.database.query<{
-      constraint_name: string;
-      trigger_name: string;
-    }>(
-      `select constraint_row.conname constraint_name, trigger_row.tgname trigger_name
-         from pg_constraint constraint_row
-         join pg_class workflow_table on workflow_table.oid = constraint_row.conrelid
-         cross join pg_trigger trigger_row
+  /**
+   * REWRITTEN BY 151 (phase 4), and the half that changed is the half 132's own
+   * header said would: "removing a member from the structural set requires each
+   * of the three write doors to FIRST grow its own guard." 150 gave them their
+   * guard (they resolve a state by category) and 151 moved the completion gate
+   * onto the →done transition, so the constraint has done its job and is gone.
+   *
+   * The TRIGGER is untouched and still asserted — `task_workflows` remains
+   * authoritative for the legacy `tasks.work_status` vocabulary until phase 6
+   * retires the `type` axis, so a vocabulary that omits `done` is now
+   * REPRESENTABLE while a typed task still cannot be moved outside it.
+   */
+  it('keeps the status-change trigger, and no longer forces a structural vocabulary', async () => {
+    const trigger = await server.database.query<{ trigger_name: string }>(
+      `select trigger_row.tgname trigger_name
+         from pg_trigger trigger_row
          join pg_class task_table on task_table.oid = trigger_row.tgrelid
-        where workflow_table.relname = 'task_workflows'
-          and constraint_row.conname = 'task_workflows_structural_statuses'
-          and task_table.relname = 'tasks'
+        where task_table.relname = 'tasks'
           and trigger_row.tgname = 'tasks_validate_workflow'
           and not trigger_row.tgisinternal`,
     );
-    expect(structure).toEqual([{
-      constraint_name: 'task_workflows_structural_statuses',
-      trigger_name: 'tasks_validate_workflow',
-    }]);
+    expect(trigger).toEqual([{ trigger_name: 'tasks_validate_workflow' }]);
 
-    await expect(server.database.query(
+    const constraint = await server.database.query<{ n: string }>(
+      `select count(*) n from pg_constraint
+        where conname = 'task_workflows_structural_statuses'`,
+    );
+    expect(Number(constraint[0]!.n)).toBe(0);
+
+    // What the drop actually unlocks: a vocabulary without `done`.
+    await server.database.query(
       `insert into public.task_workflows(space_id, type_value, statuses)
        values ($1, 'missing-done', array['open','working']::text[])`,
       [spaceId],
+    );
+    const stored = await server.database.query<{ statuses: string[] }>(
+      `select statuses from public.task_workflows where space_id = $1 and type_value = 'missing-done'`,
+      [spaceId],
+    );
+    expect(stored[0]!.statuses).toEqual(['open', 'working']);
+    // Removed again: a later case in this file asserts the space's ENTIRE
+    // task-workflow listing, and a row left behind here reads there as a
+    // regression in the list endpoint.
+    await server.database.query(
+      `delete from public.task_workflows where space_id = $1 and type_value = 'missing-done'`,
+      [spaceId],
+    );
+
+    // The trigger still polices it — the narrowing is real, not decorative.
+    await expect(server.database.query(
+      `insert into public.task_workflows(space_id, type_value, statuses)
+       values ($1, 'bad-status', array['open','nonsense']::text[])`,
+      [spaceId],
     )).rejects.toMatchObject({
       code: '23514',
-      constraint: 'task_workflows_structural_statuses',
+      constraint: 'task_workflows_statuses_valid',
     });
   });
 

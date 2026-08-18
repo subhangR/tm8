@@ -489,16 +489,32 @@ describe('150 — the per-category requirement that REPLACES the structural thre
   });
 
   /**
-   * PHASE 4, NOT THIS ONE. Sub-doc 3's ordering is explicit — doors, then the
-   * gate onto the transition, and only THEN the constraint. A green suite that
-   * had silently dropped it would hide the fact that phase 4 still has work.
+   * PIN FLIPPED BY 151, DELIBERATELY. This read "leaves
+   * task_workflows_structural_statuses in place for phase 4 to drop" while 150
+   * was the tip: sub-doc 3's ordering is doors, then the gate onto the
+   * transition, and only THEN the constraint, and a green suite that had
+   * silently dropped it would have hidden the fact that phase 4 still had work.
+   *
+   * Phase 4 has now done that work, so the pin asserts the far side of the same
+   * ordering — the constraint is gone AND the thing that replaced it is
+   * attached. Flipping it rather than deleting it keeps the ordering claim under
+   * test in both directions: a revert of 151 that left the drop behind, or a
+   * future migration that removed 150's coverage triggers, both go red here.
    */
-  it('leaves task_workflows_structural_statuses in place for phase 4 to drop', async () => {
-    const rows = await database.query<{ n: string }>(
+  it('drops task_workflows_structural_statuses in phase 4, leaving 150`s coverage triggers', async () => {
+    const constraint = await database.query<{ n: string }>(
       `select count(*) n from pg_constraint
         where conname = 'task_workflows_structural_statuses'`,
     );
-    expect(Number(rows[0]!.n)).toBe(1);
+    expect(Number(constraint[0]!.n)).toBe(0);
+
+    const triggers = await database.query<{ n: string }>(
+      `select count(*) n from pg_trigger
+        where tgname in ('workflows_assert_category_coverage',
+                         'workflow_states_assert_category_coverage')
+          and not tgisinternal`,
+    );
+    expect(Number(triggers[0]!.n)).toBe(2);
   });
 
   it('raises honestly when a workflow has no state in the asked-for category', async () => {

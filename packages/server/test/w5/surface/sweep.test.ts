@@ -663,7 +663,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // The same warning still applies verbatim: a sibling lane merging first
     // makes this line a guaranteed conflict, and the fix is to re-measure the
     // merged tree, never to add one.
-    expect(server.appliedMigrations.length).toBe(141);
+    // 141 -> 142 (2026-08-18): 151_completion_gate_on_the_transition.sql —
+    // phase 4, the completion gate moves onto the →done transition and
+    // `task_workflows_structural_statuses` is dropped. MEASURED on this branch,
+    // not derived:
+    //   ls db/migrations/*.sql | wc -l                             -> 142
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 142
+    //   (origin/main is 141; this branch is the +1.)
+    expect(server.appliedMigrations.length).toBe(142);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

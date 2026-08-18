@@ -30,6 +30,16 @@ export const WORKFLOW_AXIS = 'type';
  * must not be able to break: creation writes `open`, the spawn door writes
  * `working`, `complete_task` alone writes `done`. The narrowable set is
  * therefore exactly {pulled, in_review, blocked, cancelled}.
+ *
+ * ⚠ AS OF MIGRATION 151 (phase 4) THIS IS THE ONLY RULE LEFT. The database
+ * constraint is DROPPED: the three doors now resolve a state by category (150)
+ * and the completion gate rides the →done transition (151), so the structural
+ * three are no longer load-bearing at the schema. What still is: 132's
+ * `tasks_validate_workflow` trigger polices `tasks.work_status` against this
+ * same vocabulary, so a space that authored one without `done` would meet
+ * `workflow_forbids_status` at the complete door. Keeping the client rule until
+ * phase 6 retires `task_workflows` outright is what keeps anyone from getting
+ * there. Do not relax it ahead of that phase.
  */
 export const STRUCTURAL_STATUSES: readonly string[] = ['open', 'working', 'done'];
 
