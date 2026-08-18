@@ -139,6 +139,7 @@ import {
   type TaskAxis,
   type TaskAxisInput,
   type TaskWorkflow,
+  type Workflow,
   type TaskWorkflowInput,
   type TrackingPrMergeInput,
   type TrackingPrMergeResult,
@@ -432,6 +433,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView> {
       return http.call<SpaceSettingsView>('spaces.settings', { params: { spaceId } });
+    },
+
+    /** The category-model workflows (149): the global default + this space's. */
+    workflows(spaceId: SpaceId): Promise<Workflow[]> {
+      return http.call<Workflow[]>('spaces.workflows.list', { params: { spaceId } });
     },
 
     /**

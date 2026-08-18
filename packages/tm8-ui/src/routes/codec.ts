@@ -296,6 +296,10 @@ function parseTarget(
     case 'craft':
       /* The Craft studio (2026-08-16) — same flat whole-centre posture. */
       return { view: 'craft' };
+    case 'board-v2':
+      /* Board v2 (2026-08-18) — hyphenated segment, camel member, exactly the
+         `new-session` precedent. */
+      return { view: 'boardV2' };
     case 'new-session':
       /* Hyphenated in the URL, camel in the union: the segment is read by
          people and the member is read by TypeScript. */
@@ -387,6 +391,8 @@ function pathOf(route: Route): string {
       return `${base}/board`;
     case 'craft':
       return `${base}/craft`;
+    case 'boardV2':
+      return `${base}/board-v2`;
     case 'newSession':
       return `${base}/new-session`;
     case 'voice':

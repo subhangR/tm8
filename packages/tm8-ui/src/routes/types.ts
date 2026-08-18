@@ -99,6 +99,19 @@ export type NavView =
   /* The Craft studio (2026-08-16): whole-centre split pane, flat segment. */
   | { view: 'craft' }
   /*
+   * BOARD V2 (2026-08-18, Kind/Status/Category/Workflow program): the
+   * universal board — any entity kind, columns = the four status categories
+   * (or one kind's workflow states). Whole-centre, flat segment.
+   *
+   * ROUTE-ONLY like `newSession`, and for the same reason: a `MenuViewRef`
+   * costs a contract enum widening, a menu revision and a DB migration
+   * (`menu_view_registry`, the seeder parity pin). While v2 runs BESIDE the
+   * shipping Board its tab is appended client-side by the shell instead —
+   * when v2 replaces Board by a later decision, THAT change takes the
+   * migration and this member migrates into `MenuViewRef`.
+   */
+  | { view: 'boardV2' }
+  /*
    * NEW SESSION (2026-08-16): the create screen that mints a task from a typed
    * prompt and spawns on it. Flat segment, no parameters.
    *
