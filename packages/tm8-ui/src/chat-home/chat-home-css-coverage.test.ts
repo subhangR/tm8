@@ -47,13 +47,35 @@ function filesUnder(dir: string, test: (name: string) => boolean): string[] {
   return out;
 }
 
-/** Class names appearing in a `className=` position — string literals and
- *  template/array members alike, which is how the tray builds its own. */
+/** Dynamic class families: `className={\`prefix-${...}\`}` writes names no
+ *  literal scan can see (`tch-code__tok--keyword`, `tch-root--solo`). The
+ *  scanner records each template's literal fragments as USED (they are —
+ *  `tch-root` is on screen in every render) and keeps fragments that end at a
+ *  `${...}` boundary as PREFIXES, so the orphan check can recognise a rule
+ *  the template can reach. This is what un-pinned the five `tch-code__tok--*`
+ *  false orphans and `tch-root` itself. */
+const templatePrefixes = new Set<string>();
+
+/** Class names appearing in a `className=` position — string literals,
+ *  template/array members, and template-literal fragments alike. */
 function classesUsed(): Map<string, string> {
   const byClass = new Map<string, string>();
   const sources = filesUnder(DIR, (n) => n.endsWith('.tsx') && !n.includes('.test.'));
   for (const file of sources) {
     const text = readFileSync(file, 'utf8');
+    for (const match of text.matchAll(/className=\{`([^`]+)`/g)) {
+      const body = match[1]!;
+      const fragments = body.split(/\$\{[^}]*\}/g);
+      for (const [index, fragment] of fragments.entries()) {
+        for (const name of fragment.trim().split(/\s+/)) {
+          if (!name || !OWNED.test(name)) continue;
+          // A fragment ending at '-' is a family prefix, never a whole class.
+          if (!name.endsWith('-')) byClass.set(name, byClass.get(name) ?? file);
+          // A fragment cut off by ${...} is a family prefix, not a whole name.
+          if (index < fragments.length - 1 && fragment.endsWith(name)) templatePrefixes.add(name);
+        }
+      }
+    }
     for (const match of text.matchAll(/className=(?:"([^"]*)"|\{[^}]*\})/g)) {
       const literals = match[1] !== undefined ? [match[1]] : [...match[0].matchAll(/'([^']*)'/g)].map((m) => m[1]!);
       for (const literal of literals) {
@@ -88,6 +110,10 @@ const rel = (path: string): string => path.slice(path.lastIndexOf('/chat-home/')
 const INTENTIONALLY_UNSTYLED = new Set([
   // Groups the two stage tabs; each wears `tch-tray__chat` for its anatomy.
   'tch-tray__stage',
+  // The graph cell's own hook: `sg-cell` beside it carries the anatomy, and
+  // this name exists only to reach `--mutated` and `__flag` (cgs-line's
+  // precedent exactly).
+  'cgs-cell',
   // SVG grouping element for a relation line. Its `__labels` child is styled;
   // the group itself carries no paint (the retired canvas's `.ceg-line` was
   // the same, styled only through modifiers that died with the dialog).
@@ -111,11 +137,9 @@ const PRE_EXISTING_UNSTYLED = new Set(['tch-group', 'tch-durable']);
  * no consumer.
  */
 const PRE_EXISTING_ORPHANS = new Set([
-  'tch-root', 'tch-stop', 'tch-attach__input', 'tch-loading', 'tch-tile',
+  'tch-stop', 'tch-attach__input', 'tch-loading', 'tch-tile',
   'tch-thread__badges', 'tch-task-row', 'tch-run', 'tch-thread__glyph',
   'tch-viewonly',
-  'tch-code__tok--keyword', 'tch-code__tok--string', 'tch-code__tok--comment',
-  'tch-code__tok--number', 'tch-code__tok--name',
   'tch-session-word', 'tch-session-word--run', 'tch-session-word--wait',
   'tch-session-word--block', 'tch-session-word--idle', 'tch-session-word--info',
   'tch-session-word--brand',
@@ -137,6 +161,8 @@ describe('chat-home CSS coverage', () => {
       .filter((name) => OWNED.test(name) && !used.has(name))
       /* A modifier whose BASE class is rendered is reachable. */
       .filter((name) => ![...used].some((u) => name.startsWith(`${u}--`)))
+      /* A rule a template family can reach is not an orphan. */
+      .filter((name) => ![...templatePrefixes].some((p) => name.startsWith(p)))
       .filter((name) => !PRE_EXISTING_ORPHANS.has(name));
     expect(orphans).toEqual([]);
   });

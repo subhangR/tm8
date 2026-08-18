@@ -65,12 +65,12 @@
   padding: 7px 12px;
   background: var(--pn-wait-soft);
   border-bottom: 1px solid var(--pn-line);
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-wait);
 }
 .chs-needs-you__label {
   font-family: var(--pn-mono);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   font-weight: 600;
   flex: none;
 }
@@ -154,7 +154,7 @@
 
 .chs-gutter__time {
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
   line-height: 20px;
   white-space: nowrap;
@@ -236,7 +236,7 @@
 }
 
 .chs-byline__who {
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
   font-weight: 700;
   letter-spacing: var(--pn-track-tight);
   color: var(--pn-ink);
@@ -247,7 +247,7 @@
    without out-shouting the author's name it qualifies. */
 .chs-byline__kind {
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -260,7 +260,7 @@
 .chs-byline__time,
 .chs-byline__edited {
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
 }
 
@@ -275,7 +275,7 @@
 .cv2-root .md-root.chs-text {
   margin: 0;
   font-family: var(--pn-ui);
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
   line-height: 1.55;
   /* Full ink: the message is the primary content of this screen, and it must
      sit a clear step above its own metadata (ink-3/ink-4), which body-at-ink-2
@@ -326,14 +326,14 @@
 .cv2-root .md-root.chs-text h5,
 .cv2-root .md-root.chs-text h6 {
   font-family: var(--pn-ui);
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   line-height: 1.4;
   margin: 0.7em 0 0.3em;
   padding-bottom: 0;
   border-bottom: none;
 }
-.cv2-root .md-root.chs-text h1 { font-family: var(--pn-ui); font-size: 14px; }
+.cv2-root .md-root.chs-text h1 { font-family: var(--pn-ui); font-size: var(--pn-fs-body); }
 
 /* A canonical mention, in place in the sentence it was typed in. */
 .chs-mention-inline {
@@ -366,13 +366,13 @@
   background: var(--pn-hover);
   padding: 2px 8px;
   font-family: var(--pn-ui);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
   text-align: left;
   cursor: pointer;
 }
 
-.chs-parent__glyph { color: var(--pn-ink-4); font-size: 10px; }
+.chs-parent__glyph { color: var(--pn-ink-4); font-size: var(--pn-fs-fine); }
 .chs-parent__label { color: var(--pn-ink-4); flex: none; }
 .chs-parent__author { color: var(--pn-ink-2); font-weight: 600; flex: none; }
 
@@ -391,7 +391,7 @@
   gap: 2px 10px;
   margin: 0;
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   color: var(--pn-ink-4);
 }
 
@@ -424,7 +424,7 @@
   background: var(--pn-surface);
   padding: 2px 8px;
   color: var(--pn-ink-2);
-  font: 10px var(--pn-mono);
+  font: var(--pn-fs-fine) var(--pn-mono);
 }
 
 button.chs-session-chip { cursor: pointer; }
@@ -449,7 +449,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: transparent;
   color: var(--pn-ink-2);
   font-family: var(--pn-ui);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   cursor: pointer;
 }
 
@@ -458,7 +458,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-ref-chip { color: var(--pn-brand); }
 
-.chs-attachment__mime { color: var(--pn-ink-4); font-family: var(--pn-mono); font-size: 9px; }
+.chs-attachment__mime { color: var(--pn-ink-4); font-family: var(--pn-mono); font-size: var(--pn-fs-tick); }
 
 .chs-delivery { display: inline-flex; align-self: center; }
 
@@ -486,7 +486,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   align-items: center;
   gap: 7px;
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-fine);
 }
 
 .chs-targets__name { color: var(--pn-ink-2); }
@@ -509,7 +509,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   gap: 6px;
   margin: 0;
   padding-top: 1px;
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
 }
 
@@ -537,7 +537,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-state__from,
 .chs-state__to {
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-xs);
   padding: 0 5px;
@@ -545,7 +545,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-state__from { color: var(--pn-ink-4); }
 .chs-state__to { color: var(--pn-ink-2); }
-.chs-state__arrow { color: var(--pn-ink-4); font-size: 10px; }
+.chs-state__arrow { color: var(--pn-ink-4); font-size: var(--pn-fs-fine); }
 
 .chs-artifact {
   display: grid;
@@ -567,11 +567,11 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-xs);
   background: var(--pn-hover);
   color: var(--pn-ink-3);
-  font: 9px var(--pn-mono);
+  font: var(--pn-fs-tick) var(--pn-mono);
 }
-.chs-artifact__title { color: var(--pn-ink); font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
-.chs-artifact__excerpt { color: var(--pn-ink-3); font-size: 11px; min-width: 0; overflow-wrap: anywhere; }
-.chs-artifact__provenance { grid-column: 2; color: var(--pn-ink-4); font: 9px var(--pn-mono); }
+.chs-artifact__title { color: var(--pn-ink); font-size: var(--pn-fs-label); min-width: 0; overflow-wrap: anywhere; }
+.chs-artifact__excerpt { color: var(--pn-ink-3); font-size: var(--pn-fs-micro); min-width: 0; overflow-wrap: anywhere; }
+.chs-artifact__provenance { grid-column: 2; color: var(--pn-ink-4); font: var(--pn-fs-tick) var(--pn-mono); }
 
 /*
  * The safe card (S15). Dashed, because a dashed edge reads as "provisional"
@@ -589,14 +589,14 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-sm);
   padding: 5px 10px;
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-4);
 }
 
-.chs-unknown__label { font-family: var(--pn-ui); font-size: 11px; color: var(--pn-ink-3); }
+.chs-unknown__label { font-family: var(--pn-ui); font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
 
 .chs-unknown__variant {
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-xs);
   padding: 0 5px;
@@ -608,8 +608,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   gap: 8px;
 }
 
-.chs-group__glyph { color: var(--pn-ink-4); font-size: 11px; }
-.chs-group__text { font-size: 11px; color: var(--pn-ink-3); }
+.chs-group__glyph { color: var(--pn-ink-4); font-size: var(--pn-fs-micro); }
+.chs-group__text { font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
 
 .chs-group__rows {
   list-style: none;
@@ -620,7 +620,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   flex-direction: column;
   gap: 2px;
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-4);
 }
 
@@ -647,7 +647,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-day__label {
   flex: none;
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-fine);
   font-weight: 600;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
@@ -662,7 +662,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   gap: 8px;
   padding: 7px 0;
   font-family: var(--pn-mono);
-  font-size: 8.5px;
+  font-size: var(--pn-fs-tick);
   letter-spacing: 0.08em;
   color: var(--pn-brand);
 }
@@ -686,7 +686,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: var(--pn-surface);
   color: var(--pn-brand);
   padding: 5px 14px;
-  font: 10px var(--pn-mono);
+  font: var(--pn-fs-fine) var(--pn-mono);
   cursor: pointer;
 }
 
@@ -701,13 +701,13 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   text-align: center;
 }
 
-.chs-empty__glyph { font-size: 22px; color: var(--pn-ink-4); }
-.chs-empty__headline { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--pn-ink); }
+.chs-empty__glyph { font-size: var(--pn-fs-h2); color: var(--pn-ink-4); }
+.chs-empty__headline { margin: 0; font-size: var(--pn-fs-sm); font-weight: 600; color: var(--pn-ink); }
 
 .chs-empty__note {
   margin: 0;
   max-width: 42ch;
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   line-height: 1.55;
   color: var(--pn-ink-3);
   text-wrap: pretty;
@@ -718,7 +718,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   margin: 0;
   padding: 6px 0;
   font-family: var(--pn-mono);
-  font-size: 10.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
 }
 
@@ -748,8 +748,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 }
 
 .chs-refusal__glyph { font-size: 20px; color: var(--pn-ink-4); }
-.chs-refusal__headline { margin: 0; font-size: 13px; font-weight: 600; color: var(--pn-ink-2); }
-.chs-refusal__note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--pn-ink-3); }
+.chs-refusal__headline { margin: 0; font-size: var(--pn-fs-sm); font-weight: 600; color: var(--pn-ink-2); }
+.chs-refusal__note { margin: 0; font-size: var(--pn-fs-micro); line-height: 1.5; color: var(--pn-ink-3); }
 
 .chs-earlier {
   display: flex;
@@ -764,7 +764,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding-bottom: var(--pn-space-2);
   border-bottom: 1px solid var(--pn-line);
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   letter-spacing: 0.02em;
   color: var(--pn-ink-4);
 }
@@ -817,7 +817,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding: 3px 5px 3px 9px;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  font-size: 10.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
 }
 
@@ -863,7 +863,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding: 6px 10px;
   border-bottom: 1px solid var(--pn-line);
   color: var(--pn-ink-4);
-  font-size: 10.5px;
+  font-size: var(--pn-fs-fine);
 }
 
 /* The workspace-attach picker's own search field — unlike the `@` list, this
@@ -877,7 +877,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: var(--pn-surface);
   color: var(--pn-ink);
   font-family: var(--pn-ui);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   outline: none;
 }
 
@@ -886,7 +886,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 /* The kind tag on an attached-entity chip ("task" / "doc"). */
 .chs-attach-kind {
   font-family: var(--pn-mono);
-  font-size: 8.5px;
+  font-size: var(--pn-fs-tick);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--pn-ink-4);
@@ -943,12 +943,12 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 }
 
 .chs-mention-picker__identity { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
-.chs-mention-picker button span:last-child { color: var(--pn-ink-4); font: 9px var(--pn-mono); }
+.chs-mention-picker button span:last-child { color: var(--pn-ink-4); font: var(--pn-fs-tick) var(--pn-mono); }
 .chs-mention-picker__empty {
   margin: 0;
   padding: 10px;
   color: var(--pn-ink-4);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
 }
 
 .chs-visually-hidden {
@@ -975,7 +975,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: var(--pn-brand-2);
   color: var(--pn-card);
   font-family: var(--pn-ui);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   font-weight: 600;
   padding: 5px 9px;
   cursor: pointer;
@@ -1001,7 +1001,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border: 1px solid var(--pn-wait-soft);
   border-radius: var(--pn-r-sm);
   padding: 5px 10px;
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-wait);
 }
 
@@ -1011,7 +1011,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-sm);
   background: var(--pn-block-soft);
   color: var(--pn-block);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   line-height: 1.45;
 }
 
@@ -1024,7 +1024,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-sm);
   background: var(--pn-wait-soft);
   color: var(--pn-wait);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   line-height: 1.4;
 }
 .chs-composer__uncertain span { flex: 1; }
@@ -1050,7 +1050,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-replying__label {
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   color: var(--pn-brand);
   flex: none;
 }
@@ -1058,7 +1058,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-replying__excerpt {
   flex: 1;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -1070,7 +1070,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-composer__hint {
   margin: 0 0 0 auto;
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   color: var(--pn-ink-4);
   white-space: nowrap;
 }
@@ -1079,7 +1079,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-chip-btn {
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
   background: transparent;
   border: 1px solid var(--pn-line-2);
@@ -1098,7 +1098,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-linkbtn {
   font-family: var(--pn-mono);
-  font-size: 9px;
+  font-size: var(--pn-fs-tick);
   color: var(--pn-brand);
   background: transparent;
   border: none;
@@ -1120,7 +1120,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   color: var(--pn-ink-4);
   background: transparent;
   border: none;
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   line-height: 1;
   padding: 4px;
   border-radius: var(--pn-r-xs);
@@ -1219,7 +1219,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-thread__back { display: none; }
 .chs-thread__title {
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-fine);
   font-weight: 600;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
@@ -1233,7 +1233,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border-radius: var(--pn-r-sm);
   background: transparent;
   color: var(--pn-ink-3);
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
   line-height: 1;
   cursor: pointer;
 }
@@ -1257,7 +1257,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   gap: 10px;
   margin: var(--pn-space-2) 0 var(--pn-space-1);
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-fine);
   font-weight: 600;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
@@ -1272,7 +1272,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-thread__empty {
   margin: var(--pn-space-2) 0;
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink-3);
 }
 
@@ -1285,7 +1285,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   border: 1px solid var(--pn-block, var(--pn-line));
   border-radius: var(--pn-r-sm);
   background: var(--pn-block-soft, transparent);
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-block, inherit);
 }
 
@@ -1305,7 +1305,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: none;
   padding: 2px 8px 2px 3px;
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-brand);
   cursor: pointer;
   transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
@@ -1314,7 +1314,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   background: var(--pn-brand-soft);
   border-color: var(--pn-brand-soft);
 }
-.chs-thread-footer__glyph { font-size: 9px; color: var(--pn-brand-2); }
+.chs-thread-footer__glyph { font-size: var(--pn-fs-tick); color: var(--pn-brand-2); }
 .chs-thread-footer__count { font-weight: 700; }
 .chs-thread-footer__faces {
   display: inline-flex;
@@ -1323,7 +1323,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 }
 .chs-thread-footer__names,
 .chs-thread-footer__when { color: var(--pn-ink-3); }
-.chs-thread-footer__when { font-family: var(--pn-mono); font-size: 9.5px; }
+.chs-thread-footer__when { font-family: var(--pn-mono); font-size: var(--pn-fs-fine); }
 
 /* Below the collapse threshold an open thread REPLACES the feed — a channel
    and its thread do not fit side by side, and a 180px feed sliver beside a
@@ -1339,7 +1339,7 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
     background: none;
     padding: 4px 6px;
     font: inherit;
-    font-size: 12px;
+    font-size: var(--pn-fs-label);
     color: var(--pn-brand);
     cursor: pointer;
   }
