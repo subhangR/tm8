@@ -9,7 +9,9 @@
  * channel you cannot read or post to.
  *
  * It owns NO feed logic: `useChannelFeed` is the single implementation, shared
- * with the full-screen ChannelView.
+ * with the full-screen ChannelView — and since the unification, `useChannelFeed`
+ * is itself a thin composition over `useAnchorFeed`, the one reader every
+ * anchor kind uses.
  */
 import type { EntityId } from '@tm8/contract';
 import type { ConnectionState } from '../data/seam';
@@ -43,7 +45,7 @@ export function ChannelChatSurface({
   anchorTitle,
   viewerMemberId,
 }: ChannelChatSurfaceProps) {
-  const feed = useChannelFeed(port, channelId);
+  const feed = useChannelFeed(port, channelId, { threads });
 
   if (feed.error) {
     return (
@@ -66,6 +68,8 @@ export function ChannelChatSurface({
       refusal={feed.refusal}
       connection={connection}
       onPost={feed.post}
+      draft={feed.draft}
+      onDraftChange={feed.onDraftChange}
       mentionOptions={feed.mentionOptions}
       skillOptions={feed.skillOptions}
       attachEntityOptions={feed.attachEntityOptions}

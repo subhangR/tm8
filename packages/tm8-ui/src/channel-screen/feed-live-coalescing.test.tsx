@@ -24,6 +24,12 @@ function stubPort() {
         handlers.push(handler);
         return () => {};
       },
+      /* The union reader attaches a reconnect reload and a resync listener
+         alongside the event subscription. Both are on the real `Seam`; this
+         double predates the channel reading through it. */
+      onConnection: () => () => {},
+      onResync: () => () => {},
+      commands: { postMessage: vi.fn().mockResolvedValue({ patches: [] }) },
       query: vi.fn().mockResolvedValue({ page: { items: [], nextCursor: null } }),
       liveness: () => 'unknown',
       entity: vi.fn(),
@@ -32,7 +38,9 @@ function stubPort() {
     } as unknown as ChannelFeedPort['seam'],
     spaceId: 'sp-1' as never,
     liveIds: [],
-    postMessage: vi.fn().mockResolvedValue(undefined),
+    /* Result-bearing: the mutation journal settles a pending row against the
+       stored ids, and an `undefined` result leaves that row uncertain. */
+    postMessage: vi.fn().mockResolvedValue({ patches: [] }),
     spawn: vi.fn(),
     projects: [],
   };

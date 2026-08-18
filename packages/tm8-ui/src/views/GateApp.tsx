@@ -940,7 +940,10 @@ export function GateApp(props: GateAppProps = {}) {
   /* The graph screen's narrow port cannot build a channel feed port itself,
      so the shell builds the one adapter (same seam every other host wraps)
      and hands it down with the chat wiring. */
-  const graphChatFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
+  const graphChatFeedPort = useMemo(
+    () => channelFeedPortFromGateData(data, viewerMemberId),
+    [data, viewerMemberId],
+  );
 
   // D44/D51 launch sheet. Transient client state — never the URL (§11), so a
   // shared link cannot open someone else's half-configured spawn surface.

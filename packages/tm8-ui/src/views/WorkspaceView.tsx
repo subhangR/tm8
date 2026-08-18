@@ -227,8 +227,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
      key on it, and a fresh object each render would re-read on every keystroke
      anywhere in the workspace. */
   const channelFeedPort = useMemo(
-    () => channelFeedPortFromGateData(data),
-    [data.seam, data.spaceId, data.liveIds, data.postMessage, data.spawn, data.launch.projects],
+    () => channelFeedPortFromGateData(data, props.viewerMemberId),
+    [
+      data.seam, data.spaceId, data.liveIds, data.postMessage, data.spawn, data.launch.projects,
+      // The viewer keys the drafts and the mutation journal, so a sign-in that
+      // changes it must rebuild the port — omitting it here would hold the
+      // previous viewer's draft slot open under the new one.
+      props.viewerMemberId,
+    ],
   );
 
   /* The panel action bar's executor AND the session tile's ✕, from one hook —

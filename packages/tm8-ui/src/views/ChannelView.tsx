@@ -96,7 +96,10 @@ export function ChannelView({
      (channel-screen/useChannelFeed). This view used to own it inline; the
      2026-08-01 ruling gave channels a second host, and two copies of the @tag
      dispatch — which can SPAWN a teammate — is not a thing to keep. */
-  const feedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
+  const feedPort = useMemo(
+    () => channelFeedPortFromGateData(data, viewerMemberId),
+    [data, viewerMemberId],
+  );
   /* The entity beside the feed is a FULL panel, so its primaries are wired
      from the same two hooks the workspace uses. A session opened from a
      channel message otherwise carried the same permanently-dead Terminate. */
@@ -117,7 +120,6 @@ export function ChannelView({
         }
       : {}),
   });
-  const feed = useChannelFeed(feedPort, channelId);
   /*
    * Per-CHANNEL stack (user ruling 2026-07-31): each channel keeps its own
    * history, not one shared "channels" stack. Held outside the component
@@ -179,6 +181,11 @@ export function ChannelView({
      glyph comes from the same row (`chip.glyph`), for the same reason. */
   const kindRow = detail ? getKind(detail.kind) : null;
   const threadsEnabled = kindRow?.panel.threads === true;
+  /* Declared AFTER `threadsEnabled` because the hook consumes it: the branch
+     read is a capability of every anchor, but whether this surface offers it
+     is registry data (`panel.threads`), and the hook must not open a branch a
+     kind does not show. Unconditional, so hook order is unchanged. */
+  const feed = useChannelFeed(feedPort, channelId, { threads: threadsEnabled });
   const anchorTitle = detail
     ? `${kindRow?.chip?.glyph ?? ''}${detail.title}`
     : 'this channel';
@@ -378,6 +385,8 @@ export function ChannelView({
                   refusal={feed.refusal}
                   connection={data.connection}
                   onPost={feed.post}
+                  draft={feed.draft}
+                  onDraftChange={feed.onDraftChange}
                   mentionOptions={feed.mentionOptions}
                   skillOptions={feed.skillOptions}
                   attachEntityOptions={feed.attachEntityOptions}

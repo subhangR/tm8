@@ -349,7 +349,10 @@ export function EntityView(props: EntityViewProps) {
   const auxWidth = clampWidth(auxPref.width, EV_AUX_MIN, auxMax);
 
   /* Stable identity so the feed hook's effects do not re-run every render. */
-  const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
+  const channelFeedPort = useMemo(
+    () => channelFeedPortFromGateData(data, props.viewerMemberId),
+    [data, props.viewerMemberId],
+  );
 
   /* The list panel's Run expand, wired from the SAME source the workspace uses
      (`useLaunchPort`). Without this the expand rendered with `teammates ?? []`
