@@ -247,9 +247,9 @@ export function BlueprintCanvas({ view, ariaLabel, onOpenEntity, fresh }: Bluepr
 /** One edge of intent: the humanised relation riding the bow's apex. */
 function IntentLine({ line, fresh }: { line: BlueprintLine; fresh: boolean }) {
   return (
-    <g className={['ceg-line', ...(fresh ? ['crf-line--fresh'] : [])].join(' ')}>
+    <g className={['crf-line', ...(fresh ? ['crf-line--fresh'] : [])].join(' ')}>
       <path className="sg-link" d={`M ${line.x1} ${line.y1} Q ${line.cx} ${line.cy} ${line.x2} ${line.y2}`} />
-      <text className="sg-meta ceg-line__labels" x={line.lx} y={line.ly} textAnchor="middle">
+      <text className="sg-meta crf-line__labels" x={line.lx} y={line.ly} textAnchor="middle">
         {`${line.label} ⟶`}
         {line.note ? <tspan x={line.lx} dy={12}>{truncate(line.note, 24)}</tspan> : null}
       </text>

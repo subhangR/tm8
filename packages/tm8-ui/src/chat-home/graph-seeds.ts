@@ -35,24 +35,12 @@
  * overflow now carries its seeds and a per-kind breakdown, never silence.
  */
 import { extractEntityRefs } from './entity-refs';
+import { isWriteCall } from './write-classifier';
 import type { GraphSeed } from './induced-graph';
 import { projectTurnParts } from './turn-model';
 import type { ChatTurn } from './types';
 
 export const MAX_GRAPH_SEEDS = 64;
-
-/**
- * Verbs that name a mutation, matched against the tool name with any MCP
- * server prefix stripped (`mcp__tm8__tm8_update_entity` and
- * `tm8_update_entity` classify identically).
- */
-const WRITE_VERB =
-  /(create|update|delete|remove|patch|send|post|complete|assign|unlink|link|move|write|edit|spawn|terminate|attach|upload|cancel|start|stop|rename|archive|restore|grant|revoke|dispatch|launch|set_|_set\b)/i;
-
-function isWriteTool(name: string): boolean {
-  const bare = name.includes('__') ? name.slice(name.lastIndexOf('__') + 2) : name;
-  return WRITE_VERB.test(bare);
-}
 
 interface RawSeedRef {
   id: string;
@@ -71,7 +59,7 @@ function refsOf(turn: ChatTurn): readonly RawSeedRef[] {
   const refs: RawSeedRef[] = [];
   for (const part of projectTurnParts(turn.parts)) {
     if (part.kind !== 'tool') continue;
-    const mutated = isWriteTool(part.name);
+    const mutated = isWriteCall(part.name, part.args);
     for (const ref of extractEntityRefs(part.args, part.result)) {
       refs.push({ id: ref.id, kind: ref.kind, title: ref.title, mutated });
     }

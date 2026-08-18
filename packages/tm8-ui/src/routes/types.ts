@@ -34,6 +34,16 @@ export interface QValue {
 }
 
 /**
+ * The Cockpit stages that are NOT an entity.
+ *
+ * The Cockpit's centre berth holds one of three things: the conversation, an
+ * entity (addressed by the panel stack), or one of these. Only these need a
+ * name in the route, because the other two already have addresses.
+ */
+export type CockpitStage = 'fleet' | 'graph';
+export const COCKPIT_STAGES: ReadonlySet<CockpitStage> = new Set(['fleet', 'graph']);
+
+/**
  * The unified Home's ROOT (task 01a00932, UNIFIED-HOME-DESIGN.md D1): which
  * population its left column lists — one collection kind (by slug, the same
  * registry-validated vocabulary `origin` uses) or the chat threads, with the
@@ -46,22 +56,27 @@ export type HomeRootTarget =
       type: 'chats';
       threadId: EntityId | null;
       /**
-       * `?graph=full` — the conversation's entity graph opened fullscreen
-       * (plan 01a0094b D2). A URL rather than component state so Back closes
-       * it, a reload restores it and the view can be linked. LOSSY-TOLERANT:
-       * any value other than `full` is silently ignored at parse — a stale
-       * link must degrade to the plain conversation, never crash or notice.
+       * `?stage=` — which COCKPIT STAGE is up: the fleet this conversation
+       * orchestrates, or its entity graph. The other occupant of that berth
+       * is an entity, which is addressed by the panel stack rather than here,
+       * so this names only the stages that are not entities.
+       *
+       * A URL rather than component state, for the reason `?graph=full` was
+       * one before it: Back closes the stage, a reload restores it, and a
+       * viewer can SEND someone the fleet of a conversation. A stage nobody
+       * can link to is a stage nobody shares.
+       *
+       * LOSSY-TOLERANT, inherited verbatim from the parameter it replaces: any
+       * unrecognised value is silently ignored at parse and degrades to the
+       * plain conversation. A stale or foreign link must never crash and must
+       * never announce itself.
+       *
+       * REPLACES `graph`/`gf`. The Cockpit ruling retires the fullscreen graph
+       * dialog and the facet rail that edited `gf`, and `gf` was OPAQUE to
+       * this layer by design — carrying an unreadable parameter forward for a
+       * UI that no longer exists is how dead vocabulary outlives its feature.
        */
-      graph?: 'full' | null;
-      /**
-       * `?gf=` — the graph's serialised filter state (plan 01a0094b step 5),
-       * OPAQUE to this layer: the codec carries the string verbatim and
-       * `chat-home/graph-view.ts` owns the vocabulary, decoding leniently so
-       * a stale link's unknown members are ignored, never a crash. Kept
-       * whether or not `graph=full` is set — filters chosen fullscreen still
-       * shape the inline summary after Back closes the dialog.
-       */
-      graphFilters?: string | null;
+      stage?: CockpitStage | null;
     };
 
 /** Where the view host points. One member per WLT §2.2 route line. */

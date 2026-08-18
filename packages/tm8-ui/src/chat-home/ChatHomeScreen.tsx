@@ -16,8 +16,12 @@ import {
   type TriggerOption,
 } from '../rich-input';
 import type { ConnectionsReader } from '../session-graph/load';
+import type { CockpitStage } from '../routes/types';
 import { mergeChatTurnFrame, projectTurnParts, reconcileDetails } from './turn-model';
-import { ChatEntityGraph } from './ChatEntityGraph';
+import { CockpitGraphStage } from './fleet/CockpitGraphStage';
+import { FleetPane } from './fleet/FleetPane';
+import type { FleetEntityReader } from './fleet/use-fleet-entities';
+import type { FleetRowInput } from './fleet/fleet-rows';
 import type { ChatEntityResolver } from './EntityChip';
 import { ComposerSelect } from './ComposerSelect';
 import { EntityTray } from './EntityTray';
@@ -195,17 +199,32 @@ export interface ChatHomeScreenProps {
    */
   onSelectionChange?: ((id: EntityId | null) => void) | undefined;
   /**
-   * `?graph=full` — the entity graph's fullscreen view, route-owned (plan
-   * 01a0094b D2). The host maps the address here and `onGraphFullChange`
-   * navigates the param, so Back closes and a reload restores. Hosts
-   * without routing omit the pair and get the inline strip unchanged.
+   * WHICH NON-ENTITY COCKPIT STAGE IS UP — `?stage=`, route-owned (replacing
+   * `?graph=full`/`?gf=`). The host maps the address here and `onStageChange`
+   * navigates it, so Back leaves the stage and a reload restores it. A host
+   * without routing omits the pair and simply has no stage tabs.
+   *
+   * The PANE is rendered here rather than handed in as `centerOverride`
+   * because both stages are folds of the THREAD, and the turns live in this
+   * component. The host owns the address; this owns the drawing.
    */
-  graphFull?: boolean | undefined;
-  onGraphFullChange?: ((open: boolean) => void) | undefined;
-  /** `?gf=` — the graph's serialised filter state, route-owned like
-   *  `graphFull` and opaque at this layer (graph-view.ts decodes it). */
-  graphFilters?: string | null | undefined;
-  onGraphFiltersChange?: ((encoded: string | null) => void) | undefined;
+  stage?: CockpitStage | null | undefined;
+  onStageChange?: ((next: CockpitStage | null) => void) | undefined;
+  /**
+   * The host's `entities.get`, for the fleet's rows and the graph's late
+   * titles. Absent ⇒ both render ids honestly instead of names.
+   */
+  readEntity?: FleetEntityReader | undefined;
+  /** The seam's liveness verdict — the only thing that may call a session
+   *  live. Absent ⇒ neutral, never live. */
+  livenessOf?: FleetRowInput['livenessOf'];
+  /**
+   * Open a worker session's TRANSCRIPT view — the session panel's own surface,
+   * which this screen links to and never re-renders (there is exactly one
+   * transcript renderer and it is not here). ABSENT IS A REAL STATE: a host
+   * with nowhere to send the viewer gets no link rather than a dead one.
+   */
+  onOpenTranscript?: ((id: EntityId) => void) | undefined;
   /**
    * Region B when it is NOT the chat (D7/D8): the host's entity panel,
    * rendered in the conversation pane's place while the conversation stays
@@ -274,10 +293,11 @@ export function ChatHomeScreen({
   soloConversation = false,
   onThreadsChange,
   onSelectionChange,
-  graphFull,
-  onGraphFullChange,
-  graphFilters,
-  onGraphFiltersChange,
+  stage = null,
+  onStageChange,
+  readEntity,
+  livenessOf,
+  onOpenTranscript,
   renderRootList,
   renderRootAside,
   centerOverride,
@@ -618,38 +638,6 @@ export function ChatHomeScreen({
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
 
-  /* THE DOCK-DOWN (Cockpit ruling 2026-08-18): the centred composer of a new
-     thread travels to its bottom berth when the first send lands, instead of
-     teleporting. FLIP — the centred position is remembered while `newThread`
-     holds, and on the flip the wrap starts from the inverted delta and
-     transitions to rest. Guarded by prefers-reduced-motion: reduced means the
-     old instant swap, not a slower slide. */
-  const composerWrapRef = useRef<HTMLDivElement | null>(null);
-  const emptyComposerTopRef = useRef<number | null>(null);
-  const wasNewThreadRef = useRef(newThread);
-  useLayoutEffect(() => {
-    const wrap = composerWrapRef.current;
-    if (newThread) {
-      emptyComposerTopRef.current = wrap?.getBoundingClientRect().top ?? null;
-    } else if (wasNewThreadRef.current && wrap && emptyComposerTopRef.current !== null) {
-      const reduced = typeof window === 'undefined'
-        || typeof window.matchMedia !== 'function'
-        || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const delta = emptyComposerTopRef.current - wrap.getBoundingClientRect().top;
-      if (!reduced && delta !== 0) {
-        wrap.style.transform = `translateY(${delta}px)`;
-        wrap.style.transition = 'none';
-        // Reflow commits the inverted start before the transition plays.
-        void wrap.getBoundingClientRect();
-        wrap.style.transition = 'transform var(--pn-dur-slow, 250ms) var(--pn-ease-standard, ease)';
-        wrap.style.transform = '';
-        const settle = () => { wrap.style.transition = ''; };
-        wrap.addEventListener('transitionend', settle, { once: true });
-      }
-      emptyComposerTopRef.current = null;
-    }
-    wasNewThreadRef.current = newThread;
-  }, [newThread]);
   const selectionUnavailable =
     teammateId === ''
       ? 'No agent teammate is available in this space.'
@@ -767,7 +755,96 @@ export function ChatHomeScreen({
   /** D9 — the honest highlight: chat rows are active only while the chat
    *  OCCUPIES region B; an entity selection extinguishes them rather than
    *  fabricating an active row on a root the selection is not from. */
-  const chatOccupiesCenter = centerOverride === undefined || centerOverride === null;
+  /**
+   * REGION B'S OCCUPANT, resolved once.
+   *
+   * An entity and a stage both want this berth. THE ENTITY WINS, and the host
+   * enforces it upstream by not naming a stage while one is open — but the
+   * precedence is restated here because a component that renders both would
+   * stack two panes silently, and the failure would look like a CSS bug.
+   */
+  /* A STAGE IS VALID ON AN EMPTY THREAD. The address says "show me the fleet",
+     and a conversation that has delegated nothing has an empty fleet — which
+     both panes already say in words. Refusing to render would leave the URL
+     naming a stage while the chat is on screen, which is the one state a
+     linkable stage must not produce. Turns are taken exactly as the tray takes
+     them, so the two never disagree about what this thread contains. */
+  const stageTurns = detail && !newThread ? detail.turns : [];
+  const stagePane: ReactNode =
+    centerOverride != null
+      ? null
+      : stage === 'fleet'
+        ? (
+            <FleetPane
+              turns={stageTurns}
+              suppressEntityIds={ownMessageIds}
+              readEntity={readEntity}
+              livenessOf={livenessOf}
+              onOpenEntity={onSelectEntity ? (id) => onSelectEntity(id) : onOpenEntity}
+              {...(onOpenTranscript ? { onOpenTranscript } : {})}
+            />
+          )
+        : stage === 'graph'
+          ? (
+              <CockpitGraphStage
+                turns={stageTurns}
+                suppressEntityIds={ownMessageIds}
+                connections={connections}
+                readEntity={readEntity}
+                onOpenEntity={onSelectEntity ? (id) => onSelectEntity(id) : onOpenEntity}
+              />
+            )
+          : null;
+  const centre: ReactNode = centerOverride ?? stagePane;
+
+  /* THE DOCK-DOWN (Cockpit ruling 2026-08-18): the centred composer of a new
+     thread travels to its bottom berth when the first send lands, instead of
+     teleporting. FLIP — the centred position is remembered while the composer
+     IS centred, and on the flip the wrap starts from the inverted delta and
+     transitions to rest. Guarded by prefers-reduced-motion: reduced means the
+     old instant swap, not a slower slide.
+
+     IT KEYS ON "IS THE COMPOSER CENTRED", NOT ON `newThread` ALONE, and the
+     difference is a real bug the stages introduced. A stage occupies the
+     berth, which un-centres the composer while `newThread` is still true. The
+     old effect only re-ran on `newThread`, so it kept the position measured
+     before the stage opened; the next real flip would then animate from a
+     stale coordinate — a long spurious slide. Worse, a send made WITH a stage
+     up would flip a composer that had never moved.
+
+     So: measure whenever centred, and play only when a CENTRED composer stops
+     being centred BECAUSE the thread started. Opening or leaving a stage
+     therefore never plays it — the flip belongs to the first send, and
+     replaying it on stage exit would animate a journey the composer did not
+     make. */
+  const composerWrapRef = useRef<HTMLDivElement | null>(null);
+  const emptyComposerTopRef = useRef<number | null>(null);
+  const composerCentred = newThread && centre == null;
+  const wasCentredRef = useRef(composerCentred);
+  useLayoutEffect(() => {
+    const wrap = composerWrapRef.current;
+    if (composerCentred) {
+      emptyComposerTopRef.current = wrap?.getBoundingClientRect().top ?? null;
+    } else if (wasCentredRef.current && !newThread && wrap && emptyComposerTopRef.current !== null) {
+      const reduced = typeof window === 'undefined'
+        || typeof window.matchMedia !== 'function'
+        || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const delta = emptyComposerTopRef.current - wrap.getBoundingClientRect().top;
+      if (!reduced && delta !== 0) {
+        wrap.style.transform = `translateY(${delta}px)`;
+        wrap.style.transition = 'none';
+        // Reflow commits the inverted start before the transition plays.
+        void wrap.getBoundingClientRect();
+        wrap.style.transition = 'transform var(--pn-dur-slow, 250ms) var(--pn-ease-standard, ease)';
+        wrap.style.transform = '';
+        const settle = () => { wrap.style.transition = ''; };
+        wrap.addEventListener('transitionend', settle, { once: true });
+      }
+      emptyComposerTopRef.current = null;
+    }
+    wasCentredRef.current = composerCentred;
+  }, [newThread, composerCentred]);
+  const chatOccupiesCenter = centre === undefined || centre === null;
   /** The host's whole-root takeover: the workspace list panel, with its own
    *  search — so this screen's find box stands down for that root. */
   const hostedList = onChatsRoot ? null : (renderRootList?.(root) ?? null);
@@ -1132,7 +1209,8 @@ export function ChatHomeScreen({
       {/*
         REGION B — the selection (D5/D7), REVISED by the Cockpit ruling
         2026-08-18: the STAGE swaps, the control panel does not. When a task
-        or session is selected the host hands `centerOverride` and it renders
+        or session is selected the host hands `centerOverride`, and the Fleet
+        and Graph stages resolve here (`stage`); either renders
         in the TRANSCRIPT's place while the transcript stays MOUNTED but
         hidden (D8's reason survives — unmounting would tear down a streaming
         thread) — and the composer + entity tray keep their bottom berth, so
@@ -1144,11 +1222,15 @@ export function ChatHomeScreen({
         /* The new-conversation state centres greeting + composer as one
            invitation (ref mockup 02); an open thread pins the composer to
            the bottom. Layout only — the CSS pair reads this. */
-        data-empty={(newThread && centerOverride == null) || undefined}
+        data-empty={composerCentred || undefined}
         onKeyDown={(event) => {
-          if (event.key !== 'Escape' || centerOverride == null || event.defaultPrevented) return;
+          if (event.key !== 'Escape' || centre == null || event.defaultPrevented) return;
           event.preventDefault();
-          onShowChat?.();
+          /* Esc leaves WHATEVER holds the stage. A stage is addressed, so
+             leaving it is a navigation, not a local reset — otherwise Back
+             would still walk into a stage the viewer just dismissed. */
+          if (centerOverride == null && stage !== null) onStageChange?.(null);
+          else onShowChat?.();
         }}
       >
         <header className="tch-conversation__head">
@@ -1158,16 +1240,16 @@ export function ChatHomeScreen({
           </div>
         </header>
 
-        {centerOverride != null ? (
+        {centre != null ? (
           <section className="tch-center" aria-label="Selection" data-testid="tch-center-override">
-            {centerOverride}
+            {centre}
           </section>
         ) : null}
         <div
           className="tch-transcript"
           aria-live="polite"
-          data-hidden={centerOverride != null ? 'true' : undefined}
-          hidden={centerOverride != null || undefined}
+          data-hidden={centre != null ? 'true' : undefined}
+          hidden={centre != null || undefined}
         >
           {loadError ? (
             <div className="tch-load-error" role="alert">
@@ -1184,19 +1266,11 @@ export function ChatHomeScreen({
             </div>
           ) : detail ? (
             <>
-              {/* The entities this thread referenced and the relations they
-                  ACTUALLY hold — the conversation selects, it is not a node. */}
-              <ChatEntityGraph
-                turns={detail.turns}
-                suppressEntityIds={ownMessageIds}
-                connections={connections}
-                resolveEntity={resolveEntity}
-                onOpenEntity={onOpenEntity}
-                expanded={graphFull}
-                onExpandedChange={onGraphFullChange}
-                graphFilters={graphFilters}
-                onGraphFiltersChange={onGraphFiltersChange}
-              />
+              {/* THE GRAPH IS NOT HERE ANY MORE (Cockpit ruling 2026-08-18).
+                  It was a strip wedged above the first turn, competing with
+                  the conversation for vertical space and needing a second,
+                  fullscreen way to be big. It is a STAGE now — one drawing in
+                  region B, reached from the tray, addressed by `?stage=graph`. */}
               {detail.turns.map((turn) => (
                 <Turn
                   key={turn.messageId}
@@ -1227,7 +1301,7 @@ export function ChatHomeScreen({
         </div>
 
         <div className="tch-composer-wrap" data-phase={phase} ref={composerWrapRef}>
-          {(detail && !newThread) || centerOverride != null ? (
+          {(detail && !newThread) || centre != null ? (
             <EntityTray
               turns={detail && !newThread ? detail.turns : []}
               suppressEntityIds={ownMessageIds}
@@ -1236,7 +1310,9 @@ export function ChatHomeScreen({
                  wired selection; a host without one falls back to its plain
                  entity-open. */
               onOpenEntity={onSelectEntity ? (id) => onSelectEntity(id) : onOpenEntity}
-              onOpenGraph={onGraphFullChange ? () => onGraphFullChange(true) : undefined}
+              /* The two stages that are not entities. Absent handler ⇒ no
+                 tab, never a dead one. */
+              {...(onStageChange ? { onStage: onStageChange, activeStage: stage } : {})}
               activeEntityId={centerOverride != null ? selectedEntityId : null}
               onShowChat={onShowChat}
               chatBusy={thinking || phase === 'streaming'}

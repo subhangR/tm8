@@ -626,6 +626,17 @@ button.tch-entity-chip:hover {
 }
 .tch-tray__tabs[data-expanded] { flex-wrap: wrap; overflow: visible; }
 
+/* The pinned stage tabs, at the tray's right edge. They wear
+   `.tch-tray__chat` for their anatomy (see EntityTray) — this only groups
+   them, so the pair never splits across the tray's wrap. */
+.tch-tray__stages {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
 /* The way back — always first, active when the transcript holds the stage. */
 .tch-tray__chat {
   flex: none;
@@ -667,8 +678,7 @@ button.tch-entity-chip:hover {
   border-color: var(--pn-line-2);
 }
 
-.tch-tray__more,
-.tch-tray__graph {
+.tch-tray__more {
   flex: none;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
@@ -679,10 +689,8 @@ button.tch-entity-chip:hover {
   cursor: pointer;
   white-space: nowrap;
 }
-.tch-tray__more:hover,
-.tch-tray__graph:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
-.tch-tray__more:focus-visible,
-.tch-tray__graph:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.tch-tray__more:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+.tch-tray__more:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
 
 .tch-refusal {
   margin: 0 4px 5px;

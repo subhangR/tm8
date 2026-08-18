@@ -92,14 +92,37 @@ describe('EntityTray', () => {
     expect(view.getByText('Chat')).toBeTruthy();
   });
 
-  it('the Graph door renders only with a handler, and fires it', () => {
+  it('the stage tabs render only with a handler, and each swaps its stage', () => {
     const HAS = id(1);
     const turns = [turn(call('tm8_read_entity', { id: HAS }, { id: HAS, kind: 'task', title: 'X' }))];
     const without = render(<EntityTray turns={turns} />);
     expect(without.queryByText('Graph')).toBeNull();
-    const onOpenGraph = vi.fn();
-    const view = render(<EntityTray turns={turns} onOpenGraph={onOpenGraph} />);
+    expect(without.queryByText('Fleet')).toBeNull();
+
+    const onStage = vi.fn();
+    const view = render(<EntityTray turns={turns} onStage={onStage} />);
+    fireEvent.click(view.getByText('Fleet'));
+    expect(onStage).toHaveBeenLastCalledWith('fleet');
     fireEvent.click(view.getByText('Graph'));
-    expect(onOpenGraph).toHaveBeenCalledTimes(1);
+    expect(onStage).toHaveBeenLastCalledWith('graph');
+  });
+
+  it('clicking the ACTIVE stage leaves it — a tab is a toggle, not a trap', () => {
+    /* The stage occupies the transcript's berth, so a viewer who clicks Fleet
+       while already on Fleet means "put the conversation back". Sending
+       'fleet' again would be a no-op that reads as a dead control. */
+    const onStage = vi.fn();
+    const view = render(
+      <EntityTray turns={[turn([])]} onStage={onStage} activeStage="fleet" />,
+    );
+    fireEvent.click(view.getByText('Fleet'));
+    expect(onStage).toHaveBeenCalledWith(null);
+  });
+
+  it('a stage occupying the berth makes the Chat tab the way back', () => {
+    const view = render(
+      <EntityTray turns={[turn([])]} onShowChat={vi.fn()} onStage={vi.fn()} activeStage="graph" />,
+    );
+    expect(view.getByText('Chat')).toBeTruthy();
   });
 });

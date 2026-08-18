@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useSyncExternalStore } from 'react';
-import type { EntityId, SpaceId } from '@tm8/contract';
+import type { EntityId, SpaceId, WorkSessionStatus } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import {
   modelCatalog,
@@ -10,6 +10,11 @@ import { attachmentsPortFromSeam } from '../files/port';
 import type { TriggerOption } from '../rich-input';
 import type { ConnectionsReader } from '../session-graph/load';
 import { createChatHomePortFromSeam, type ChatHomeL2Bridge } from './real-port';
+import {
+  chatEntityRefFrom,
+  readFleetEntity,
+  type FleetEntityReader,
+} from './fleet/use-fleet-entities';
 import type { ChatEntityResolver } from './EntityChip';
 import type { ChatHomeScreenProps } from './ChatHomeScreen';
 
@@ -51,10 +56,9 @@ export interface ChatHomeSurfaceProps {
   soloConversation?: ChatHomeScreenProps['soloConversation'];
   onThreadsChange?: ChatHomeScreenProps['onThreadsChange'];
   onSelectionChange?: ChatHomeScreenProps['onSelectionChange'];
-  graphFull?: ChatHomeScreenProps['graphFull'];
-  onGraphFullChange?: ChatHomeScreenProps['onGraphFullChange'];
-  graphFilters?: ChatHomeScreenProps['graphFilters'];
-  onGraphFiltersChange?: ChatHomeScreenProps['onGraphFiltersChange'];
+  stage?: ChatHomeScreenProps['stage'];
+  onStageChange?: ChatHomeScreenProps['onStageChange'];
+  onOpenTranscript?: ChatHomeScreenProps['onOpenTranscript'];
   renderRootList?: ChatHomeScreenProps['renderRootList'];
   renderRootAside?: ChatHomeScreenProps['renderRootAside'];
   centerOverride?: ChatHomeScreenProps['centerOverride'];
@@ -77,12 +81,24 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     () => attachmentsPortFromSeam(seam, screen.spaceId).startUpload,
     [seam, screen.spaceId],
   );
-  /** Bare-id tool references resolve through the same seam every panel reads. */
+  /**
+   * ONE READ PER ENTITY, SHARED BY EVERY CONSUMER IN THE COCKPIT.
+   *
+   * The chips want `{id, kind, title}`; the fleet's rows and the graph's late
+   * titles want the whole detail. Rather than two caches over the same seam
+   * op, both are built from `readFleetEntity` — the chip resolver is now a
+   * PROJECTION of the fleet's cached read. A thread that names an entity reads
+   * it once whether the viewer opens the chips, the fleet or the graph.
+   */
+  const readEntity = useMemo<FleetEntityReader>(() => (id) => seam.entity(id), [seam]);
   const resolveEntity = useMemo<ChatEntityResolver>(
-    () => async (id) => {
-      const detail = await seam.entity(id);
-      return { id, kind: detail.kind, title: detail.title };
-    },
+    () => async (id) => chatEntityRefFrom(await readFleetEntity(id, readEntity)),
+    [readEntity],
+  );
+  /** The seam's verdict, the ONLY authority on live (R-UI-5). */
+  const livenessOf = useMemo(
+    () => (session: { id: string; workStatus: WorkSessionStatus | null }) =>
+      seam.liveness.statusOf({ id: session.id as EntityId, workStatus: session.workStatus }),
     [seam],
   );
   /** The entity graph's induced-relations read — `entities.connections`, the
@@ -104,6 +120,8 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     port,
     models,
     resolveEntity,
+    readEntity,
+    livenessOf,
     connections,
     onOpenEntity,
     attach,

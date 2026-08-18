@@ -11,15 +11,20 @@
  *
  * Overflow is a COUNT, not silence: beyond `TRAY_VISIBLE_LIMIT` a `+N more`
  * control expands the tray in place (wrap, not menu — a drop-up here would
- * fight the composer's own popovers for the same airspace). The Graph door
- * lives at the tray's right edge: the stage the tabs will one day swap is
- * today the fullscreen graph the route already owns.
+ * fight the composer's own popovers for the same airspace).
+ *
+ * THE TWO PINNED STAGES sit at the tray's right edge — Fleet and Graph, the
+ * Cockpit stages that are not entities. They are TABS like the rest, not
+ * doors to a dialog: the graph's fullscreen overlay is retired and both are
+ * ordinary occupants of region B, addressed by `?stage=`. Absent handler ⇒ no
+ * tabs, never dead ones.
  *
  * Renders NOTHING for a thread with no entities — the zero state keeps its
  * clean centred pair, and an empty tray row would be a dashboard's cladding.
  */
 import { useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
+import type { CockpitStage } from '../routes/types';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { foldGraphSeeds } from './graph-seeds';
 import type { ChatTurn } from './types';
@@ -31,7 +36,8 @@ export function EntityTray({
   suppressEntityIds,
   resolveEntity,
   onOpenEntity,
-  onOpenGraph,
+  onStage,
+  activeStage = null,
   activeEntityId = null,
   onShowChat,
   chatBusy = false,
@@ -42,8 +48,11 @@ export function EntityTray({
   /** Opening an entity tab. On the Home host this swaps the STAGE
    *  (`onSelectEntity` → centerOverride); elsewhere it opens the panel. */
   onOpenEntity?: ((id: EntityId) => void) | undefined;
-  /** The Graph door. Absent ⇒ no button — never a dead control. */
-  onOpenGraph?: (() => void) | undefined;
+  /** Swap to a non-entity stage, or back to the chat with `null`. Absent ⇒
+   *  no stage tabs — never a dead control. */
+  onStage?: ((next: CockpitStage | null) => void) | undefined;
+  /** Which stage is up, so its tab draws active and the Chat tab does not. */
+  activeStage?: CockpitStage | null | undefined;
   /** The entity currently occupying the stage — its tab draws active and the
    *  Chat tab does not. */
   activeEntityId?: string | null | undefined;
@@ -55,13 +64,16 @@ export function EntityTray({
   chatBusy?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const stageActive = activeEntityId != null;
+  const stageActive = activeEntityId != null || activeStage != null;
   const seeds = useMemo(() => {
     const { seeds: all } = foldGraphSeeds(turns, suppressEntityIds);
     return [...all.filter((s) => s.mutated), ...all.filter((s) => !s.mutated)];
   }, [turns, suppressEntityIds]);
 
-  if (seeds.length === 0 && !stageActive) return null;
+  /* The stage tabs are ALWAYS worth drawing once a thread exists: a fleet is
+     most interesting exactly when the conversation has just delegated and the
+     entity chips have not resolved yet. */
+  if (seeds.length === 0 && !stageActive && !onStage) return null;
   const visible = expanded ? seeds : seeds.slice(0, TRAY_VISIBLE_LIMIT);
   const hidden = seeds.length - visible.length;
 
@@ -115,15 +127,34 @@ export function EntityTray({
           </button>
         ) : null}
       </div>
-      {onOpenGraph ? (
-        <button
-          type="button"
-          className="tch-tray__graph"
-          title="Open the entity graph for this thread"
-          onClick={onOpenGraph}
-        >
-          <span aria-hidden>◈</span> Graph
-        </button>
+      {onStage ? (
+        <div className="tch-tray__stages">
+          <button
+            type="button"
+            /* ONE VISUAL FAMILY (visual lane's handoff note): the stage tabs
+               ARE the Chat tab's anatomy — same pill, same active treatment,
+               same focus ring — with a marker class for nothing but the
+               tests. Giving them a lookalike of their own is how two tabs in
+               one row start drifting apart. */
+            className="tch-tray__chat tch-tray__stage"
+            data-active={activeStage === 'fleet' || undefined}
+            aria-current={activeStage === 'fleet' || undefined}
+            title="The worker sessions and tasks this conversation delegated"
+            onClick={() => onStage(activeStage === 'fleet' ? null : 'fleet')}
+          >
+            <span aria-hidden>⛭</span> Fleet
+          </button>
+          <button
+            type="button"
+            className="tch-tray__chat tch-tray__stage"
+            data-active={activeStage === 'graph' || undefined}
+            aria-current={activeStage === 'graph' || undefined}
+            title="The entities this conversation named, and the relations they actually hold"
+            onClick={() => onStage(activeStage === 'graph' ? null : 'graph')}
+          >
+            <span aria-hidden>◈</span> Graph
+          </button>
+        </div>
       ) : null}
     </nav>
   );

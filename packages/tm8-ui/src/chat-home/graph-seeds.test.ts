@@ -48,6 +48,29 @@ describe('foldGraphSeeds', () => {
     expect(overflow).toBe(0);
   });
 
+  /**
+   * THE TRAY'S ORDERING DEPENDED ON THIS AND IT WAS BROKEN (D-FLEET-1).
+   *
+   * Write-ness used to be matched against the TOOL NAME, and chat writes only
+   * through two GROUP tools whose names carry no verb — so on Chat Home every
+   * mutation folded as a read, the graph's "edited here" flag never lit, and
+   * `EntityTray`'s documented "write-touched entities lead" ordering never
+   * fired. Both looked deliberate. The verb lives in `args.operation`.
+   */
+  it('D-FLEET-1: the GROUP tools classify by their operation, which is where chat’s verb lives', () => {
+    const { seeds } = foldGraphSeeds([
+      turn([
+        ...call('mcp__tm8__tm8_act', { operation: 'entities.create', body: { id: TASK } }),
+        ...call('mcp__tm8__tm8_delegate', { operation: 'execution.spawn', body: { id: id(3) } }),
+        ...call('mcp__tm8__tm8_act', { operation: 'entities.get', params: { id: DOC } }),
+      ]),
+    ]);
+    expect(seeds.find((s) => s.id === TASK)!.mutated).toBe(true);
+    expect(seeds.find((s) => s.id === id(3))!.mutated).toBe(true);
+    // A READ operation on the very same group tool stays a read.
+    expect(seeds.find((s) => s.id === DOC)!.mutated).toBe(false);
+  });
+
   it('R6: a write-shaped tool marks its refs mutated; reads and unknown verbs do not', () => {
     const { seeds } = foldGraphSeeds([
       turn([

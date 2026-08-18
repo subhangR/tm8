@@ -36,7 +36,6 @@ import { CraftChatPicker } from './CraftChatPicker';
 import { CraftEntityColumn } from './CraftEntityColumn';
 import type { CraftPanelHostProps } from './types';
 import '../session-graph/session-graph.css';
-import '../chat-home/chat-entity-graph.css';
 import './craft.css';
 
 export interface CraftScreenProps {

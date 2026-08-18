@@ -455,3 +455,11 @@
     animation: none;
   }
 }
+
+/* THE BLUEPRINT LINE'S LABELS. Lived in `chat-home/chat-entity-graph.css`
+   until the Cockpit ruling retired the induced-graph UI that file existed
+   for — Craft was borrowing a class from a screen it has nothing to do with,
+   and the borrow only held while that screen kept its stylesheet alive. */
+.crf-line__labels {
+  font-size: 10px;
+}
