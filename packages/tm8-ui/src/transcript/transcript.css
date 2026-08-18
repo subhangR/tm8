@@ -146,12 +146,21 @@
  * The claim is weaker than Chat Home's, deliberately. `data-input` means the
  * entry arrived as user input, NOT that the viewer wrote it; a transcript entry
  * has no author to compare against a viewer id.
+ *
+ * ⚠ THE BODY RULE IS FULLY QUALIFIED, and it has to be. The bubble below is
+ * `.cv2-root .md-root.tr-turn__body` — (0,3,0), raised on purpose to outrank
+ * `kit/markdown.css`. A bare `.tr-turn[data-input] .tr-turn__body` is ALSO
+ * (0,3,0), so the two tie and SOURCE ORDER decides — and the bubble, declaring
+ * `margin-left: 26px` later in this file, silently wins. The turn then never
+ * moves to the right edge. This shipped broken once between writing the rule
+ * and building the CSS; the fix is specificity, never reordering, because
+ * reordering leaves the next edit one line-move away from the same bug.
  */
 .tr-turn[data-input='true'] .tr-turn__byline {
   justify-content: flex-end;
 }
 
-.tr-turn[data-input='true'] .tr-turn__body {
+.cv2-root .tr-turn[data-input='true'] .md-root.tr-turn__body {
   margin-left: auto;
 }
 
@@ -199,7 +208,7 @@
  * the bubble geometry is for. The byline still carries the avatar and the
  * timestamp, so the conversation reads as a conversation.
  */
-.tr-turn[data-source='assistant'] .tr-turn__body {
+.cv2-root .tr-turn[data-source='assistant'] .md-root.tr-turn__body {
   background: transparent;
   border-color: transparent;
   padding-left: 0;
