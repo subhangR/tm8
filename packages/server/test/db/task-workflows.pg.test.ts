@@ -160,6 +160,13 @@ describe.sequential('W4-PG migration 132 task-workflow semantics', () => {
       [spaceId],
     );
     expect(stored[0]!.statuses).toEqual(['open', 'working']);
+    // Removed again: a later case in this file asserts the space's ENTIRE
+    // task-workflow listing, and a row left behind here reads there as a
+    // regression in the list endpoint.
+    await server.database.query(
+      `delete from public.task_workflows where space_id = $1 and type_value = 'missing-done'`,
+      [spaceId],
+    );
 
     // The trigger still polices it — the narrowing is real, not decorative.
     await expect(server.database.query(
