@@ -167,54 +167,58 @@ Two constraints, which are **acceptance and not advice**:
   element**. A pseudo-element hit area is invisible to it and to the after-run diff: it would score
   as fixed while the thumb still missed.
 
-**A MEASUREMENT THIS CONTRACT CITED AND HAS SINCE RETRACTED — `pn-tt__status` at 44x44.**
-The gate's record cited that number as evidence the task row's state control was at bar. **It is not
-evidence of that, and that much is solid.** `pn-tt__status` is a `<span>` WRAPPER
-(`MaestroTaskTile.tsx`); the actual control is `button.lp__statedot`, rendered *inside* it only when
-`EntityListPanel` passes `statusControl` (`list.stateControl && !treatment`). Either way, **what was
-measured was the wrapper.** DEF-017 remains open on `lp__statedot`, which is its actual offender
-selector.
+**A MEASUREMENT THIS CONTRACT CITED AND HAS SINCE RETRACTED — `pn-tt__status` at 44x44. SETTLED.**
+The gate's record cited that number as evidence the task row's state control was at bar. It never was
+— and it is worse than a misreading: **the figure came from an ad-hoc diagnostic probe that queried
+the class explicitly. It never came from the census, and the census would never have produced it**, a
+bare `<span>` with no role and no `tabindex` matching none of the tap selectors. **A wrapper's
+geometry was presented as a tap-target measurement.** Growing `.pn-tt__status` stays correct — it is
+what stops a 44px control being clipped by a 16px cell when one IS present — but it is not evidence
+about any control.
 
-Growing `.pn-tt__status` stays correct — it is what stops a 44px control being clipped by a 16px cell
-when one IS present. It simply must not be read as evidence that a control is at bar.
+**WHAT `statusControl` ACTUALLY RESOLVES TO — four values, settled by driving the populated tier.**
 
-**WHAT THE WRAPPER'S `title=` DOES AND DOES NOT IMPLY — three values, not two.**
-It is tempting to conclude that because `lp__statedot` was not observed in the fixture census,
-`statusControl` was undefined, and therefore the wrapper's `title=` was live and the row carried a
-touch-dead affordance. **That is a binary, and the question is three-valued.** `statusControl`
-(`EntityControls.tsx`) resolves to:
+- **(a)** `button.lp__statedot[data-testid="row-state-trigger"]` — a live control. DEF-017's subject.
+- **(b)** `DisabledIconControl`, a `hon-disabled` span — an HONEST REFUSAL, **excluded from the 44px
+  bar by ledger R2**, because there is nothing to tap.
+- **(c)** `undefined` → a plain glyph, and only here does the wrapper itself carry `title=`.
+- **(d)** `CheckingPermission` — a `hon-checking` placeholder at 16x16/22x22, rendered while the
+  entity's capabilities are still unresolved. **This is the state the fixture is actually in, on 3 of
+  3 rows.** The wrapper's own `title` is null here; the placeholder carries its own.
 
-- **(a)** `button.lp__statedot[data-testid="row-state-trigger"]` — a live control. Measure ITS rect;
-  the wrapper's is not the tap target. This is DEF-017's actual subject.
-- **(b)** `DisabledIconControl`, a `hon-disabled` span — an HONEST REFUSAL, reached when the action is
-  unavailable or `onSetState` is absent. **Excluded from the 44px bar by ledger R2**, because there is
-  nothing to tap.
-- **(c)** `undefined` → a plain glyph, **and only here** does the wrapper carry `title=` and become a
-  hover-delivered explanation on a touch surface.
+**A binary would collapse (b) into (c) and invent a defect where there is an honest refusal.** The
+four-way split is not pedantry: (b) and (d) are both "no button", for opposite reasons, and only one
+of them is ever a defect.
 
-**A binary collapses (b) into (c) and invents a defect where there is an honest refusal.** Which value
-holds on a given row is a question about fixture state, and it is measured, not reasoned.
+**THE INSTRUMENT IS CLEARED, and this matters beyond this row.** A bare
+`document.querySelectorAll('.lp__statedot')` — the loosest possible query — returns **zero** on the
+driven tier. The control is genuinely not in the DOM, so the census missed nothing. **No row-scoped
+count in this program is under-reported**: the before-run, the `78 → 6` headline and the eight
+selectors closed as genuinely fixed do not need re-checking on this account. (The census *can* match
+that selector when it exists — `before-lanes-results.json`, `entity-list-tasks`, both phone widths,
+`button.lp__statedot` in `tapWorst` at 16x16 and in `occluded` blocked by its own child `svg`.)
 
-**AND THE INSTRUMENT CAN SEE THIS SELECTOR — verified, so a tempting second inference is closed off.**
-It would be natural to read "never observed" as evidence the census cannot match `lp__statedot` at all,
-which would mean every row-scoped count in this program is suspect. It cannot be read that way:
-`before-lanes-results.json` (file `01a01678-f0a9-77a9-9b4b-af78bf16054f`) records, on
-`entity-list-tasks` at **both** phone widths, `button.lp__statedot` with
-`testid: "row-state-trigger"` — 5 entries in `tapWorst` at 16x16 and 6 in `occluded`, blocked by its
-own child `svg`. **The census has demonstrably matched this exact selector on this exact surface.** So
-a null on the current three-row fixture is a fact about WHICH OF (a)/(b)/(c) those three rows are in,
-not about the instrument's vision.
+**THREE DISTINCT REASONS A ROW-SCOPED CONTROL IS UNMEASURABLE — they need different levers, and
+calling them all "empty" is how rows close vacuously:**
+
+| reason | example | what it means |
+|---|---|---|
+| **wrong tile** | `lp__disclosure` | the control is absent from *this renderer* |
+| **category partition** | `lp__title` | its kind's rows are filtered away |
+| **capability unresolved** | `lp__statedot` | the control is present but stuck in state (d) |
+
+**DEF-017 is unmeasurable for the third reason** — not the renderer and not the partition, but because
+the seam never resolves the capability check, so the live control never replaces its placeholder.
 
 `MaestroTaskTile.tsx` does not contain the string `lp__statedot` because it receives that control as a
-**prop** — the two are NESTED, not parallel. A grep answers *"is this string in this file"* and gets
-read as *"does this renderer produce this control"*; **a control passed in as a prop is invisible to
-that question.**
+**prop** — nested, not parallel. A grep answers *"is this string in this file"* and gets read as *"does
+this renderer produce this control"*; **a control passed in as a prop is invisible to that question.**
 
-**THE HAZARD ONE LEVEL UP, which is why this block is worded this carefully:** the first draft of it
-argued from a null result produced by an instrument, as though the null were a fact about the code. It
-was a fact about the census. **An instrument cannot be the witness for its own blind spot.** When a
-conclusion rests on a null, ask what would have to be true for the null to be an ARTEFACT — and go
-measure that instead. Here, measuring it closed the question in the instrument's favour.
+**THE HAZARD ONE LEVEL UP:** an earlier draft of this block argued from a null result produced by an
+instrument as though the null were a fact about the code. **An instrument cannot be the witness for
+its own blind spot** — when a conclusion rests on a null, ask what would have to be true for the null
+to be an ARTEFACT and go measure that. Here, measuring it cleared the instrument *and* found a state
+nobody had modelled, which neither the code reading nor the null would have produced alone.
 
 **THE SURVIVING OFFENDER HAS AN OWNER.** `input.lp__searchinput` (332x23 at 390, 372x23 at 430) is the
 only sub-44 target left on tasks, sessions and channels, and being under 16px type it is *also* an iOS

@@ -97,12 +97,26 @@ describe('DEF-032 — a refused control explains itself to a FINGER, not only to
   });
 
   it('does not carry a bare title= as an interactive control’s only explanation', () => {
-    // `CheckingPermission` keeps a `title`, and that is NOT this defect: it is
-    // not interactive (no `role="button"`, not focusable) and it already
-    // carries an `aria-label` saying the same thing. The rule is about a
-    // control whose ONLY recourse is a hover tooltip.
+    // SCOPE OF THIS ASSERTION, narrowed after a measurement contradicted the
+    // comment that used to sit here. It covers INTERACTIVE controls only.
     const disabled = read('../panels/honesty/DisabledWithReason.tsx');
     expect(disabled).not.toMatch(/role="button"[\s\S]{0,200}\stitle=/);
+    //
+    // WHAT IT DOES NOT COVER, stated so the pass is not read as a clean bill.
+    // `CheckingPermission` keeps a `title`, and this file used to claim that
+    // was "NOT this defect" because the element is non-interactive and carries
+    // an `aria-label`. The aria-label half is true — a screen reader IS told.
+    // The rest was too comfortable: driving the populated tier showed EVERY
+    // task row sitting in that placeholder state, so a SIGHTED TOUCH user gets
+    // a 16x16 mark whose only explanation is a hover tooltip they cannot open.
+    // That is the DEF-032/033 fault class, and it has its own row now.
+    //
+    // Left as an observation rather than an assertion because the fix is not
+    // this contract's: the element belongs to the honesty vocabulary, and
+    // whether the state is a product defect or an artifact of a seam that never
+    // answers the capability query cannot be told from a capture — the same
+    // state would appear on a real node under a slow answer.
+    expect(disabled).toContain('CHECKING_CAPTION');
   });
 });
 
