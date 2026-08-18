@@ -667,9 +667,9 @@ describe('liveness stays the seam’s verdict', () => {
 describe('the rail\'s OPEN counts come off the category matrix', () => {
   const open = (id: string) => task(id, { category: 'to_do' } as Partial<EntitySummary>);
   const working = (id: string) =>
-    task(id, { category: 'in_progress', state: { kind: 'task', workStatus: 'working', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } } } as Partial<EntitySummary>);
+    task(id, { category: 'in_progress', state: { kind: 'task', status: 'working', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } } } as Partial<EntitySummary>);
   const finished = (id: string) =>
-    task(id, { category: 'done', state: { kind: 'task', workStatus: 'done', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } } } as Partial<EntitySummary>);
+    task(id, { category: 'done', state: { kind: 'task', status: 'done', priority: 'medium', axes: {}, assignees: [], acceptance: { total: 0, completed: 0 } } } as Partial<EntitySummary>);
 
   it('sums to_do + in_progress, and NOTHING else', async () => {
     /* Three categories seeded on purpose, with different sizes, so that every
