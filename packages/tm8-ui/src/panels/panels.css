@@ -637,6 +637,31 @@
   white-space: nowrap;
   text-decoration: none;
 }
+/* DEF-053 — the panel bar's primary verbs, 45x20 and 46x20.
+
+   "Run" and "Edit" are the PRIMARY ACTIONS OF THE SCREEN and they were two of
+   the twenty offenders on it. They went unfiled until the complete inventory
+   was read, because the discarded harness's twelve-entry sample happened to
+   include them while nobody attributed the sample.
+
+   Height only, and `padding-inline` rather than a width floor: these sit in the
+   panel bar beside each other, and a 44px inline floor on a 45px control buys
+   nothing while a width floor on the NEXT verb someone adds (a two-character
+   icon verb) would push the bar wider. The bar wraps on the phone now
+   (DEF-007/011 above), so extra height costs a row of the bar and not a
+   clipped control — which is the check CONTRACT.md §6 asks for before growing
+   anything, done rather than assumed.
+
+   Applies to `.pn-btn`, which is the base: `--primary` and `--quiet` inherit
+   the floor. That is deliberate — the row named the primaries because they are
+   what the census caught, but a quiet verb in the same bar is the same thumb. */
+.cv2-root[data-shell='mobile'] .pn-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
 .cv2-root .pn-btn:hover { background: var(--pn-hover); }
 .cv2-root .pn-btn--primary {
   color: var(--pn-brand-2);
