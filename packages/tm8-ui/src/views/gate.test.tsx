@@ -118,17 +118,7 @@ describe('THE GATE — composed T0-1 master screen', () => {
    * to be OUT of it: a Channels header surviving anywhere would mean two homes
    * for one kind.
    */
-  /**
-   * SKIPPED — stale selector, not a broken feature. `left.querySelector('.lp__kind')`
-   * returns null: the class still exists (EntityListPanel.tsx:985), but nothing
-   * in `src/` contains the string 'Left panel' any more, so the region this
-   * resolves is itself stale. Needs the current left-region label.
-   *
-   * Unrelated to the rail retirement this file was otherwise updated for, and
-   * red on main before it too — it was simply invisible, because tm8-ui had
-   * never run in CI. Tracked: task 01a01543-75b8-704d-9d77-cfb9a22e40e4.
-   */
-  it.skip('lists channels in the Entity List Panel and opens one with its live feed', async () => {
+  it('lists channels in the Entity List Panel and opens one with its live feed', async () => {
     const view = renderGate();
     const grid = await waitFor(() => view.getByTestId('workspace-grid'));
 
@@ -140,7 +130,13 @@ describe('THE GATE — composed T0-1 master screen', () => {
 
     // Channels is an offered COLLECTION in the list panel's kind switcher.
     const left = within(grid).getByLabelText('Left panel');
-    fireEvent.click(left.querySelector('.lp__kind') as HTMLElement);
+    // The kind switcher lives on the HOST's column header, not inside the
+    // panel: WorkspaceView passes `selectorSlot="host"` (WorkspaceView.tsx:727),
+    // which retires the panel's own `KindSelector` row and moves the live
+    // control up to `ListRootHeader`. `.lp__kind` still exists in
+    // EntityListPanel.tsx:985 — it is simply never rendered here, which is why
+    // the old selector read as a missing element rather than a missing feature.
+    fireEvent.click(within(left).getByLabelText('Choose which list to show'));
     fireEvent.click(within(left).getByRole('menuitem', { name: /Channels/ }));
     await waitFor(() =>
       expect(left.querySelector('[data-testid="entity-list-panel"]')?.getAttribute('data-kind'))
@@ -347,11 +343,26 @@ describe('THE GATE — composed T0-1 master screen', () => {
   // The Graph door is the screens TAB now that no rail is drawn; the screen
   // and its data path are unchanged.
   /**
-   * SKIPPED — the tab door and the screen both work: the Graph screen mounts
-   * and both lens assertions pass. Only the node count is 0, and it is the one
-   * assertion here with no `waitFor` around it, so an unawaited async render is
-   * the likely cause (jsdom's missing HTMLCanvasElement.getContext may
-   * compound it). Tracked: task 01a01543-75b8-704d-9d77-cfb9a22e40e4.
+   * SKIPPED — the door and the screen are fine; the CANVAS is empty, and I
+   * could not establish why without owning the graph data path.
+   *
+   * What is now ruled out, each measured rather than assumed:
+   *   - the tab door works — `graph-screen` mounts and both lens assertions
+   *     pass, so the toolbar has rendered;
+   *   - it is not a race — wrapping the count in `waitFor` (kept below,
+   *     because it was missing and should have been there) does not help;
+   *   - it is not the scoped default lens — clicking 'Everything', the
+   *     toolbar's own escape to the whole space, still yields nothing;
+   *   - it is not the no-op ResizeObserver this test installs — nodes come
+   *     from `model.placed` (GraphView.tsx:1004), not from a measured size.
+   *
+   * So the model itself is empty under the fixture seam. Note there is NO
+   * other test in the repo that renders a `.gv-node` — this is the only one,
+   * and it has been red on main — so there is no known-good reference to
+   * compare against, which is what makes this a graph-owner question rather
+   * than a test repair.
+   *
+   * Tracked: task 01a01543-75b8-704d-9d77-cfb9a22e40e4.
    */
   it.skip('opens Graph from the tab row with workspace data from the active seam', async () => {
     const resizeObserver = globalThis.ResizeObserver;
@@ -376,7 +387,11 @@ describe('THE GATE — composed T0-1 master screen', () => {
       // the escape to the whole space.
       expect(within(graph).getByRole('group', { name: 'Graph lens' })).toBeTruthy();
       expect(within(graph).getByRole('button', { name: 'Everything' })).toBeTruthy();
-      expect(graph.querySelectorAll('.gv-node, .gv-shelf__chips > *').length).toBeGreaterThan(0);
+      // AWAITED, unlike before — this read lands after the shell does. Kept
+      // even though it is not sufficient on its own; see the skip note.
+      await waitFor(() =>
+        expect(graph.querySelectorAll('.gv-node, .gv-shelf__chips > *').length).toBeGreaterThan(0),
+      );
     } finally {
       view.unmount();
       if (resizeObserver === undefined) delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
@@ -444,10 +459,31 @@ describe('detail screens keep what you were looking at', () => {
     within(view.getByTestId('entity-view-detail')).queryByTestId('entity-detail-panel');
 
   /**
-   * SKIPPED — and note its sibling below performs the SAME `openKind` + tile
-   * click and PASSES, so the address door added here is sound; what fails is
-   * `settled()`'s stricter wait finding a null panel. Timing rather than a
-   * broken path. (The name is also stale now — nothing switches "rail items".)
+   * STILL SKIPPED, and it is NOT a timing problem — that was my first reading
+   * and it was wrong. The root cause, now established:
+   *
+   * THE ADDRESS DOOR DEFEATS THE INVARIANT. Drilling into a tile writes
+   * `e/{id}?origin=` and pushes it (router-mount.test.tsx pins exactly that),
+   * so the open entity is PART OF THE ADDRESS. `openKind` here navigates to a
+   * bare `k/tasks`, which is an explicit address saying "this kind screen, with
+   * nothing open" — so the app correctly shows the attention inbox, and the
+   * test reads that as the selection having been lost.
+   *
+   * What this test protects is the opposite case: coming back through a door
+   * that does NOT re-address, where the selection can only come from the
+   * screen's own retained state. That was the rail, and the rail is gone.
+   *
+   * So this needs a ruling rather than a repair, and there are two candidates:
+   *   (a) return via history (leave to Home pushes; going back restores
+   *       `e/{id}`) — keeps a real remount, but leans on the router rather
+   *       than on the retained state the original bug was about;
+   *   (b) accept that the address now carries the selection, and retire this
+   *       test in favour of the router-mount coverage that already pins it —
+   *       the guarantee got stronger, not weaker, when it moved into the URL.
+   *
+   * Its sibling below still passes and still covers the per-screen isolation
+   * half, so nothing is unguarded while this is decided.
+   *
    * Tracked: task 01a01543-75b8-704d-9d77-cfb9a22e40e4.
    */
   it.skip('restores the open entity after switching rail items and back', async () => {
