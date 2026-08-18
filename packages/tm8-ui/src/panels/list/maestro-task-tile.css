@@ -382,12 +382,21 @@
    while the tasks list, the busiest of the three phone list screens, kept
    `opacity: 0` and `pointer-events: none` at rest.
 
-   That is what the `before-lanes` run measured and what its shot shows: on
-   `entity-list-tasks` at phone-390, `inertCount` 67 with `lp__rowaction`
-   Archive / Change collections / Complete / Run all at `pointer-events:none`,
-   and no cluster visible on any of the 46 rows in the capture. The two rows
-   that were fixed reported nothing, which is why one missing container looked
-   like a finished fix.
+   That is what the `before-lanes` run measured: on `entity-list-tasks` at
+   phone-390, `inertCount` 67 — a COUNT FIELD, over 46 listRows — with the
+   sampled offenders `lp__rowaction` Archive / Change collections / Complete /
+   Run all at `pointer-events:none`. The two containers that WERE fixed reported
+   nothing, which is why one missing container looked like a finished fix.
+
+   THE EVIDENCE IS STATED AT THE STRENGTH IT ACTUALLY HAS. `inert[]` is capped
+   at six entries by the instrument, so those four names are EXAMPLES and not an
+   inventory; only `inertCount` speaks for the population, and it speaks about
+   size, never about content. The shot corroborates on the ~13 rows its viewport
+   contains, which is not all 46. What makes the claim hold for every row is
+   neither the array nor the shot but THIS FILE: the `opacity: 0` rule above is
+   unconditional on `.pn-tt__actions`, and the only rules that lifted it were
+   `:hover`, `:focus-within` and `[data-details='open']`. A rule with no state
+   qualifier applies to every instance, and that is the whole population.
 
    BOTH SIGNALS, deliberately, and they are not the same question:
      - `(pointer: coarse)` is the PRODUCT rule and is the sibling rules'
