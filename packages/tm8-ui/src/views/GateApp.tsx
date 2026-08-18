@@ -40,6 +40,7 @@ import { MobileShell } from './MobileShell';
 import { PromptsOverlay } from '../prompts';
 import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
+import { BoardV2Screen } from '../board-v2';
 import { CraftScreen } from '../craft';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
@@ -124,6 +125,9 @@ const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
  * fresh spaces, not anyone's established habit.
  */
 const HOME_TARGET: MenuTarget = { type: 'view', ref: 'dashboard' };
+
+/** Board v2's client-appended tab seat — not a menu group id (see shellTabs). */
+const BOARD_V2_TAB_ID = 'board-v2';
 
 /**
  * WHAT THIS FILE ACTUALLY RENDERS FOR EACH `MenuViewRef`, written down.
@@ -1413,7 +1417,22 @@ export function GateApp(props: GateAppProps = {}) {
    * only upgrades byte-matching defaults) simply shows ITS groups as tabs.
    */
   const shellTabs = useMemo<ShellTab[]>(
-    () => data.menu.config.groups.map((group) => ({ id: group.id, label: group.label })),
+    () => {
+      const tabs: ShellTab[] = data.menu.config.groups.map((group) => ({ id: group.id, label: group.label }));
+      /* BOARD V2's CLIENT-APPENDED SEAT (Kind/Status/Category/Workflow). The
+         v2 board runs BESIDE the shipping Board until a later decision
+         replaces it, so its tab deliberately does not come from the menu
+         config — a real menu group costs a `MenuViewRef` widening plus a
+         `menu_view_registry` migration, bought now for a tab that is
+         scheduled to REPLACE another one. Appended right after the group it
+         will replace (or at the end when no board group exists), and matched
+         on the ROUTE below, the same posture as its screen mount. */
+      const boardIndex = tabs.findIndex((tab) => tab.id === 'board');
+      const v2: ShellTab = { id: BOARD_V2_TAB_ID, label: 'Board v2' };
+      if (boardIndex >= 0) tabs.splice(boardIndex + 1, 0, v2);
+      else tabs.push(v2);
+      return tabs;
+    },
     [data.menu.config],
   );
   /* Voice rooms are DYNAMIC rows with no menu item to match, so the group
@@ -1424,6 +1443,9 @@ export function GateApp(props: GateAppProps = {}) {
     [data.menu.config],
   );
   const activeGroupId = useMemo(() => {
+    /* Board v2 has no menu group — its tab is the client-appended seat, so it
+       is claimed off the ROUTE, exactly as its screen mount is. */
+    if (navView.view === 'boardV2') return BOARD_V2_TAB_ID;
     const direct = groupIdOfTarget(data.menu.config, activeTarget ?? null);
     if (direct) return direct;
     if (activeTarget?.type === 'entity' && voiceEntities.some((e) => e.id === activeTarget.ref)) {
@@ -1432,7 +1454,7 @@ export function GateApp(props: GateAppProps = {}) {
     /* No group claims the target (e.g. Inbox, whose door is the bell): no
        tab reads current, and no rail pretends to contain it. */
     return null;
-  }, [data.menu.config, activeTarget, voiceEntities, conversationGroupId]);
+  }, [navView.view, data.menu.config, activeTarget, voiceEntities, conversationGroupId]);
   const activeGroup = data.menu.config.groups.find((g) => g.id === activeGroupId) ?? null;
   /* The rail is the active tab's contents. A group that IS its own one screen
      (Graph, Settings, Files — single childless view item) draws no rail. */
@@ -1445,6 +1467,14 @@ export function GateApp(props: GateAppProps = {}) {
   );
   const openTab = useCallback(
     (id: string) => {
+      if (id === BOARD_V2_TAB_ID) {
+        /* Route-only destination — no MenuTarget exists for it, so it cannot
+           go through `navigateTo` (which would refuse a target with no
+           route). The store write IS the navigation; the router serializes
+           `#/s/{s}/board-v2` from it. */
+        navStore.getState().navigate({ view: 'boardV2' });
+        return;
+      }
       const group = data.menu.config.groups.find((g) => g.id === id);
       const target = group ? primaryTargetOfGroup(group) : null;
       if (target) navigateTo(target);
@@ -1684,6 +1714,21 @@ export function GateApp(props: GateAppProps = {}) {
                    rather than to a create screen that would re-create it. */
                 navigateTo(WORKSPACE_TARGET);
                 nav.push(sessionId);
+              }}
+            />
+          ) : data.ready && navView.view === 'boardV2' ? (
+            /* ▦▦ Board v2 (Kind/Status/Category/Workflow) — the universal
+               board: any kind, category columns. ROUTE-matched like New
+               Session (no MenuViewRef, no migration) while it runs beside
+               the shipping Board; its tab is the client-appended one in
+               `shellTabs` below. */
+            <BoardV2Screen
+              data={data}
+              viewerMemberId={viewerMemberId}
+              onNotice={notices.push}
+              onOpenEntity={(id) => {
+                navigateTo(WORKSPACE_TARGET);
+                nav.push(id as EntityId);
               }}
             />
           ) : data.ready &&

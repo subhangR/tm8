@@ -1,4 +1,4 @@
-export { BoardScreen } from './BoardScreen';
+export { BoardV2Screen } from './BoardV2Screen';
 export {
   EMPTY_FILTERS,
   PIVOTS,

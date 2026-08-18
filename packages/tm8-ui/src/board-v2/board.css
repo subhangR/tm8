@@ -11,7 +11,7 @@
    and ate the top of the screen, growing with every teammate added. Filter
    triggers are one line each, so the board keeps everything below ~44px. */
 
-.bd {
+.b2 {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -24,7 +24,7 @@
 
 /* ---- toolbar ---- */
 
-.bd__bar {
+.b2__bar {
   display: flex;
   align-items: center;
   /* Wraps only under real pressure — every control is compact enough that a
@@ -37,21 +37,21 @@
 
 /* Grouping is a different question from filtering; a hairline says so without
    spending a row on a heading. */
-.bd__sep {
+.b2__sep {
   width: 1px;
   align-self: stretch;
   margin: 0 4px;
   background: var(--pn-line);
 }
 
-.bd__pivots {
+.b2__pivots {
   display: inline-flex;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   overflow: hidden;
 }
 
-.bd__pivot {
+.b2__pivot {
   appearance: none;
   border: 0;
   background: transparent;
@@ -62,17 +62,17 @@
   cursor: pointer;
 }
 
-.bd__pivot + .bd__pivot {
+.b2__pivot + .b2__pivot {
   border-left: 1px solid var(--pn-line-2);
 }
 
-.bd__pivot[aria-pressed='true'] {
+.b2__pivot[aria-pressed='true'] {
   background: var(--pn-active);
   color: var(--pn-ink);
   font-weight: 600;
 }
 
-.bd__search {
+.b2__search {
   /* Takes the slack, so the bar reads left-to-right as controls then search
      then the escape hatch, with no dead gap in the middle. */
   flex: 1 1 140px;
@@ -88,7 +88,7 @@
   padding: 5px 10px;
 }
 
-.bd__clear {
+.b2__clear {
   appearance: none;
   border: 0;
   background: transparent;
@@ -100,7 +100,7 @@
 }
 
 /* The create control — a quiet brass primary, sat at the tail of the bar. */
-.bd__new {
+.b2__new {
   appearance: none;
   flex: none;
   border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
@@ -114,18 +114,18 @@
   padding: 5px 12px;
   white-space: nowrap;
 }
-.bd__new:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
-.bd__new--off { cursor: default; opacity: 0.55; }
-[data-theme='dark'] .bd__new { color: var(--pn-brand); }
+.b2__new:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
+.b2__new--off { cursor: default; opacity: 0.55; }
+[data-theme='dark'] .b2__new { color: var(--pn-brand); }
 
 /* ---- filter selects ---- */
 
-.bd__selwrap {
+.b2__selwrap {
   display: inline-flex;
   min-width: 0;
 }
 
-.bd__sel {
+.b2__sel {
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -142,38 +142,38 @@
   white-space: nowrap;
 }
 
-.bd__sel:hover {
+.b2__sel:hover {
   border-color: var(--pn-ink-4);
 }
 
-.bd__sel:focus-visible {
+.b2__sel:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--pn-brand-soft);
 }
 
 /* A selected axis is legible from across the room — the count of hidden cards
    is exactly what a user forgets they set. */
-.bd__sel--on {
+.b2__sel--on {
   background: var(--pn-brand-soft);
   border-color: var(--pn-brand);
   color: var(--pn-ink);
 }
 
-.bd__sel--on .bd__sel-label {
+.b2__sel--on .b2__sel-label {
   font-weight: 600;
 }
 
-.bd__sel-faces {
+.b2__sel-faces {
   display: inline-flex;
   align-items: center;
 }
 
 /* Overlapped, so three faces cost the width of about two. */
-.bd__sel-faces > * + * {
+.b2__sel-faces > * + * {
   margin-left: -5px;
 }
 
-.bd__sel-val {
+.b2__sel-val {
   max-width: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -182,20 +182,20 @@
   font-weight: 600;
 }
 
-.bd__sel-caret {
+.b2__sel-caret {
   font-size: 9px;
   line-height: 1;
   color: var(--pn-ink-4);
 }
 
-.bd__sel--on .bd__sel-caret {
+.b2__sel--on .b2__sel-caret {
   color: var(--pn-ink-3);
 }
 
 /* Coordinates are INLINE and viewport-fixed (kit/useMenuAnchor); the board bar
    is not a clipping context today, but a menu that depends on that staying
    true is one layout change from being invisible. */
-.bd__menu {
+.b2__menu {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -209,7 +209,7 @@
   box-shadow: 0 8px 20px rgb(0 0 0 / 0.18);
 }
 
-.bd__menu-search {
+.b2__menu-search {
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   background: var(--pn-surface);
@@ -221,7 +221,7 @@
   width: 100%;
 }
 
-.bd__menu-list {
+.b2__menu-list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -230,14 +230,14 @@
   gap: 1px;
 }
 
-.bd__menu-note {
+.b2__menu-note {
   margin: 6px;
   font-size: 11px;
   line-height: 1.4;
   color: var(--pn-ink-4);
 }
 
-.bd__menu-clear {
+.b2__menu-clear {
   appearance: none;
   border: 0;
   border-top: 1px solid var(--pn-line);
@@ -251,7 +251,7 @@
   cursor: pointer;
 }
 
-.bd__opt {
+.b2__opt {
   appearance: none;
   display: flex;
   align-items: center;
@@ -271,15 +271,15 @@
   cursor: pointer;
 }
 
-.bd__opt:hover {
+.b2__opt:hover {
   background: var(--pn-hover);
 }
 
-.bd__opt--on {
+.b2__opt--on {
   background: var(--pn-active);
 }
 
-.bd__opt-name {
+.b2__opt-name {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -287,7 +287,7 @@
   white-space: nowrap;
 }
 
-.bd__opt-mark {
+.b2__opt-mark {
   flex: none;
   width: 10px;
   color: var(--pn-brand);
@@ -295,7 +295,7 @@
 
 /* ---- body ---- */
 
-.bd__body {
+.b2__body {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -303,11 +303,11 @@
   outline: none;
 }
 
-.bd__body:focus-visible {
+.b2__body:focus-visible {
   box-shadow: inset 0 0 0 2px var(--pn-brand);
 }
 
-.bd__banner {
+.b2__banner {
   padding: 6px 14px;
   font-size: 11px;
   color: var(--pn-ink-3);
@@ -316,7 +316,7 @@
 }
 
 /* First-run: one line naming what the board is, above the empty columns. */
-.bd__firstrun {
+.b2__firstrun {
   padding: 10px 14px;
   font-size: 12.5px;
   line-height: 1.5;
@@ -324,14 +324,14 @@
   max-width: 620px;
 }
 
-.bd__error {
+.b2__error {
   padding: 32px 14px;
   text-align: center;
   color: var(--pn-ink-2);
   font-size: 13px;
 }
 
-.bd__retry {
+.b2__retry {
   appearance: none;
   margin-top: 10px;
   border: 1px solid var(--pn-line-2);
@@ -345,7 +345,7 @@
 }
 
 /* One scroller for the whole strip; columns keep their intrinsic width. */
-.bd__cols {
+.b2__cols {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -355,7 +355,7 @@
   overflow-y: hidden;
 }
 
-.bd__col {
+.b2__col {
   flex: 0 0 272px;
   display: flex;
   flex-direction: column;
@@ -366,11 +366,11 @@
   border-radius: 8px;
 }
 
-.bd__col--focused {
+.b2__col--focused {
   border-color: var(--pn-brand);
 }
 
-.bd__col-head {
+.b2__col-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -379,14 +379,14 @@
   border-bottom: 1px solid var(--pn-line);
 }
 
-.bd__col-count {
+.b2__col-count {
   font-size: 11px;
   color: var(--pn-ink-4);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.bd__refusal {
+.b2__refusal {
   margin: 8px 10px 0;
   padding: 6px 8px;
   font-size: 11px;
@@ -397,7 +397,7 @@
   background: color-mix(in srgb, var(--pn-block) 8%, transparent);
 }
 
-.bd__cards {
+.b2__cards {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -407,28 +407,28 @@
   padding: 10px;
 }
 
-.bd__empty {
+.b2__empty {
   margin: 4px 2px;
   font-size: 11px;
   color: var(--pn-ink-4);
   font-style: italic;
 }
 
-.bd__skeleton {
+.b2__skeleton {
   height: 58px;
   border-radius: var(--pn-r-sm);
   background: var(--pn-hover);
-  animation: bd-shimmer 1.2s ease-in-out infinite alternate;
+  animation: b2-shimmer 1.2s ease-in-out infinite alternate;
 }
 
-@keyframes bd-shimmer {
+@keyframes b2-shimmer {
   from { opacity: 0.45; }
   to { opacity: 1; }
 }
 
 /* ---- cards ---- */
 
-.bd__card {
+.b2__card {
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   background: var(--pn-surface);
@@ -437,25 +437,25 @@
   transition: border-color var(--pn-dur-base) var(--pn-ease-out), opacity var(--pn-dur-base) var(--pn-ease-out);
 }
 
-.bd__card:hover {
+.b2__card:hover {
   border-color: var(--pn-ink-4);
 }
 
-.bd__card--dragging {
+.b2__card--dragging {
   opacity: 0.45;
 }
 
-.bd__card--pending {
+.b2__card--pending {
   opacity: 0.6;
   cursor: progress;
 }
 
-.bd__card--focused {
+.b2__card--focused {
   border-color: var(--pn-brand);
   box-shadow: 0 0 0 1px var(--pn-brand);
 }
 
-.bd__card-title {
+.b2__card-title {
   appearance: none;
   display: block;
   width: 100%;
@@ -472,11 +472,11 @@
   overflow-wrap: anywhere;
 }
 
-.bd__card-title:hover {
+.b2__card-title:hover {
   color: var(--pn-brand);
 }
 
-.bd__card-meta {
+.b2__card-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -484,8 +484,8 @@
   margin-top: 6px;
 }
 
-.bd__card-due,
-.bd__card-accept {
+.b2__card-due,
+.b2__card-accept {
   font-size: 10.5px;
   color: var(--pn-ink-3);
   font-family: var(--pn-mono);

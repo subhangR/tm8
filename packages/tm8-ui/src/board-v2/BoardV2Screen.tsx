@@ -74,7 +74,7 @@ const PRIORITY_OPTIONS: readonly FilterOption[] = PRIORITY_COLUMNS.map((p) => ({
 /** An unloaded roster is not an empty space, and must not read as one. */
 const ROSTER_EMPTY = 'The people and teammates for this space have not loaded yet.';
 
-interface BoardScreenProps {
+interface BoardV2ScreenProps {
   data: GateData;
   viewerMemberId?: string | null;
   onNotice: (notice: Notice) => void;
@@ -82,7 +82,7 @@ interface BoardScreenProps {
   onOpenEntity: (id: string) => void;
 }
 
-export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: BoardScreenProps) {
+export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: BoardV2ScreenProps) {
   const lifecycle = useRowLifecycle({ data, viewerMemberId, onNotice });
 
   const [pivot, setPivot] = useState<BoardPivot>('workStatus');
@@ -321,21 +321,21 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
   const loading = snapshot === undefined;
 
   return (
-    <section className="bd" data-testid="board-screen">
+    <section className="b2" data-testid="board-v2-screen">
       {/* ONE ROW OF CHROME. Every axis is a constant-height trigger, so this
           header's height is independent of how many statuses, priorities or
           people the space has — which is the whole point: the board gets the
           rest of the screen. It wraps to a second row only when the window is
           genuinely too narrow to hold the controls. */}
-      <header className="bd__bar" data-testid="bd-filters">
-        <div className="bd__pivots" role="group" aria-label="Group by">
+      <header className="b2__bar" data-testid="b2-filters">
+        <div className="b2__pivots" role="group" aria-label="Group by">
           {PIVOTS.map((p) => (
             <button
               key={p.key}
               type="button"
-              className="bd__pivot"
+              className="b2__pivot"
               aria-pressed={pivot === p.key}
-              data-testid={`bd-pivot-${p.key}`}
+              data-testid={`b2-pivot-${p.key}`}
               onClick={() => onPivot(p.key)}
             >
               {p.label}
@@ -343,11 +343,11 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
           ))}
         </div>
 
-        <span className="bd__sep" aria-hidden />
+        <span className="b2__sep" aria-hidden />
 
         <FilterSelect
           label="Status"
-          testId="bd-filter-status"
+          testId="b2-filter-status"
           options={STATUS_OPTIONS}
           selected={filters.statuses}
           onToggle={(key) => toggle('statuses', key)}
@@ -356,7 +356,7 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
         />
         <FilterSelect
           label="Priority"
-          testId="bd-filter-priority"
+          testId="b2-filter-priority"
           options={PRIORITY_OPTIONS}
           selected={filters.priorities}
           onToggle={(key) => toggle('priorities', key)}
@@ -365,7 +365,7 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
         />
         <FilterSelect
           label="Assigned to"
-          testId="bd-filter-person"
+          testId="b2-filter-person"
           options={peopleOptions}
           selected={filters.people}
           onToggle={(id) => toggle('people', id)}
@@ -374,7 +374,7 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
         />
         <FilterSelect
           label="Assigned by"
-          testId="bd-filter-assignedby"
+          testId="b2-filter-assignedby"
           options={peopleOptions}
           selected={filters.assignedBy}
           onToggle={(id) => toggle('assignedBy', id)}
@@ -383,7 +383,7 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
         />
 
         <input
-          className="bd__search"
+          className="b2__search"
           type="search"
           placeholder="Filter by title…"
           aria-label="Filter cards by title"
@@ -393,8 +393,8 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
         {anyFilterActive(filters) ? (
           <button
             type="button"
-            className="bd__clear"
-            data-testid="bd-clear-filters"
+            className="b2__clear"
+            data-testid="b2-clear-filters"
             onClick={() => setFilters(EMPTY_FILTERS)}
           >
             Clear filters
@@ -407,15 +407,15 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
         {newTask.unavailable === null ? (
           <button
             type="button"
-            className="bd__new"
-            data-testid="bd-new-task"
+            className="b2__new"
+            data-testid="b2-new-task"
             onClick={() => void newTask.create()}
           >
             ＋ New {task.label.toLowerCase()}
           </button>
         ) : (
           <DisabledIconControl label={`New ${task.label.toLowerCase()}`} reason={newTask.unavailable}>
-            <span className="bd__new bd__new--off" data-testid="bd-new-task">
+            <span className="b2__new b2__new--off" data-testid="b2-new-task">
               ＋ New {task.label.toLowerCase()}
             </span>
           </DisabledIconControl>
@@ -423,20 +423,20 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
       </header>
 
       {snapshot?.error ? (
-        <div className="bd__error" data-testid="bd-error" role="alert">
+        <div className="b2__error" data-testid="b2-error" role="alert">
           <p>{`The board could not load: ${snapshot.error}`}</p>
           {snapshot.retry ? (
-            <button type="button" className="bd__retry" onClick={snapshot.retry}>
+            <button type="button" className="b2__retry" onClick={snapshot.retry}>
               Retry
             </button>
           ) : null}
         </div>
       ) : (
-        <div className="bd__body" role="application" aria-label="Task board" tabIndex={0} onKeyDown={onKeyDown}>
+        <div className="b2__body" role="application" aria-label="Task board" tabIndex={0} onKeyDown={onKeyDown}>
           {/* §1.4 honesty: groups are page-scoped; when a further page exists
               the board says so rather than letting columns read as complete. */}
           {!loading && snapshot?.nextCursor != null ? (
-            <div className="bd__banner" data-testid="bd-banner">
+            <div className="b2__banner" data-testid="b2-banner">
               {`Showing the ${snapshot.limit} most recently active tasks — headers carry the true totals.`}
             </div>
           ) : null}
@@ -445,13 +445,13 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
               honest drop targets but say nothing about what belongs on them. */}
           {!loading && !anyFilterActive(filters) && search.trim() === ''
             && columns.every((column) => column.items.length === 0) ? (
-            <div className="bd__firstrun" data-testid="bd-firstrun">
+            <div className="b2__firstrun" data-testid="b2-firstrun">
               Every {task.label.toLowerCase()} in this space shows up here, in a column for its
               status. There are none yet — use ＋ New {task.label.toLowerCase()} above to add the
               first.
             </div>
           ) : null}
-          <div className="bd__cols">
+          <div className="b2__cols">
             {columns.map((column, index) => {
               const shown = loading ? undefined : shownOf(column);
               return (
@@ -520,8 +520,8 @@ function ColumnView({
 
   return (
     <section
-      className={focused ? 'bd__col bd__col--focused' : 'bd__col'}
-      data-testid="bd-column"
+      className={focused ? 'b2__col b2__col--focused' : 'b2__col'}
+      data-testid="b2-column"
       data-column={column.key}
       aria-label={column.label}
       onDragOver={(event) => {
@@ -536,27 +536,27 @@ function ColumnView({
         if (drag) onDrop(drag.row, drag.from, column.key);
       }}
     >
-      <header className="bd__col-head">
+      <header className="b2__col-head">
         <Pill tone={column.tone}>{column.label}</Pill>
-        <span className="bd__col-count">{count}</span>
+        <span className="b2__col-count">{count}</span>
       </header>
 
       {refusal ? (
-        <p className="bd__refusal" role="alert" data-testid="bd-refusal">
+        <p className="b2__refusal" role="alert" data-testid="b2-refusal">
           {refusal}
         </p>
       ) : null}
 
-      <div className="bd__cards" role="list">
+      <div className="b2__cards" role="list">
         {shown === undefined ? (
           <>
-            <div className="bd__skeleton" aria-hidden data-testid="bd-skeleton" />
-            <div className="bd__skeleton" aria-hidden />
+            <div className="b2__skeleton" aria-hidden data-testid="b2-skeleton" />
+            <div className="b2__skeleton" aria-hidden />
           </>
         ) : shown.length === 0 ? (
           // §1.3: an empty column is a real answer — and the drop target that
           // makes the answer changeable.
-          <p className="bd__empty">{`nothing in ${column.label}`}</p>
+          <p className="b2__empty">{`nothing in ${column.label}`}</p>
         ) : (
           shown.map((row, index) => (
             <CardView
@@ -600,10 +600,10 @@ function CardView({
   const priority = state ? PRIORITY_SPEC.get(state.priority) : undefined;
   const status = state ? STATUS_SPEC.get(state.workStatus) : undefined;
   const cls = [
-    'bd__card',
-    pending ? 'bd__card--pending' : '',
-    row.id === draggingId ? 'bd__card--dragging' : '',
-    cardFocused ? 'bd__card--focused' : '',
+    'b2__card',
+    pending ? 'b2__card--pending' : '',
+    row.id === draggingId ? 'b2__card--dragging' : '',
+    cardFocused ? 'b2__card--focused' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -612,7 +612,7 @@ function CardView({
     <article
       role="listitem"
       className={cls}
-      data-testid="bd-card"
+      data-testid="b2-card"
       data-entity={row.id}
       draggable
       onDragStart={(event) => {
@@ -622,17 +622,17 @@ function CardView({
       }}
       onDragEnd={() => onDragStart(null)}
     >
-      <button type="button" className="bd__card-title" onClick={() => onOpen(row.id)}>
+      <button type="button" className="b2__card-title" onClick={() => onOpen(row.id)}>
         {row.title}
       </button>
-      <div className="bd__card-meta">
+      <div className="b2__card-meta">
         {/* The pivot's own axis is the COLUMN — repeating it on every card
             would be noise; the other axis stays visible. */}
         {priority && pivot !== 'priority' ? <Pill tone={priority.tone}>{priority.label}</Pill> : null}
         {status && pivot !== 'workStatus' ? <Pill tone={status.tone}>{status.label}</Pill> : null}
-        {state?.dueDate ? <span className="bd__card-due">{`due ${shortDate(state.dueDate)}`}</span> : null}
+        {state?.dueDate ? <span className="b2__card-due">{`due ${shortDate(state.dueDate)}`}</span> : null}
         {state && state.acceptance.total > 0 ? (
-          <span className="bd__card-accept">{`✓ ${state.acceptance.completed}/${state.acceptance.total}`}</span>
+          <span className="b2__card-accept">{`✓ ${state.acceptance.completed}/${state.acceptance.total}`}</span>
         ) : null}
         {state && state.assignees.length > 0 ? <AvatarStack actors={state.assignees} /> : null}
       </div>

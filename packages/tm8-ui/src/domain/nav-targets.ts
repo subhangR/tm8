@@ -240,6 +240,12 @@ export function landingOfRoute(view: NavView): Landing | null {
        */
       return { target: null, openEntity: null };
 
+    case 'boardV2':
+      /* Board v2 — route-only for the same no-migration reason as newSession.
+         `target: null`: no menu group owns it; the shell appends its tab
+         client-side and highlights it off the route directly. */
+      return { target: null, openEntity: null };
+
     case 'channels':
       /* The alias resolving to the real screen. */
       return { target: { type: 'kind', ref: CHANNEL_KIND }, openEntity: null };

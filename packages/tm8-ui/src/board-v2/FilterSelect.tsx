@@ -31,7 +31,7 @@ import { useDismissable } from '../panels/useDismissable';
 
 /** Above this many options the menu grows its own search box. */
 const SEARCH_AT = 7;
-/** `.bd__menu`'s own max-height (300, board.css) + its 4px offset. */
+/** `.b2__menu`'s own max-height (300, board.css) + its 4px offset. */
 const MENU_HEIGHT = 304;
 const MENU_WIDTH = 210;
 /** Faces on the trigger before it falls back to a bare count. */
@@ -97,10 +97,10 @@ export function FilterSelect({
           : `${chosen.length}`;
 
   return (
-    <span className="bd__selwrap" ref={boxRef}>
+    <span className="b2__selwrap" ref={boxRef}>
       <button
         type="button"
-        className={chosen.length > 0 ? 'bd__sel bd__sel--on' : 'bd__sel'}
+        className={chosen.length > 0 ? 'b2__sel b2__sel--on' : 'b2__sel'}
         data-testid={testId}
         aria-haspopup="true"
         aria-expanded={open}
@@ -114,9 +114,9 @@ export function FilterSelect({
           setOpen((v) => !v);
         }}
       >
-        <span className="bd__sel-label">{label}</span>
+        <span className="b2__sel-label">{label}</span>
         {faces.length > 0 ? (
-          <span className="bd__sel-faces" aria-hidden>
+          <span className="b2__sel-faces" aria-hidden>
             {faces.map((o) => (
               <Avatar
                 key={o.id}
@@ -129,8 +129,8 @@ export function FilterSelect({
             ))}
           </span>
         ) : null}
-        {summary ? <span className="bd__sel-val">{summary}</span> : null}
-        <span className="bd__sel-caret" aria-hidden>
+        {summary ? <span className="b2__sel-val">{summary}</span> : null}
+        <span className="b2__sel-caret" aria-hidden>
           ▾
         </span>
       </button>
@@ -139,7 +139,7 @@ export function FilterSelect({
         ? createPortal(
             <div
               ref={menuRef}
-              className="bd__menu"
+              className="b2__menu"
               style={anchor.style}
               role="group"
               aria-label={`${label} options`}
@@ -147,7 +147,7 @@ export function FilterSelect({
             >
               {options.length > SEARCH_AT ? (
                 <input
-                  className="bd__menu-search"
+                  className="b2__menu-search"
                   type="search"
                   autoFocus
                   placeholder={`Find in ${label.toLowerCase()}…`}
@@ -157,11 +157,11 @@ export function FilterSelect({
                 />
               ) : null}
 
-              <div className="bd__menu-list">
+              <div className="b2__menu-list">
                 {options.length === 0 ? (
-                  <p className="bd__menu-note">{emptyNote}</p>
+                  <p className="b2__menu-note">{emptyNote}</p>
                 ) : shown.length === 0 ? (
-                  <p className="bd__menu-note">{`Nothing here matches “${query.trim()}”.`}</p>
+                  <p className="b2__menu-note">{`Nothing here matches “${query.trim()}”.`}</p>
                 ) : (
                   shown.map((option) => {
                     const on = selected.includes(option.id);
@@ -169,7 +169,7 @@ export function FilterSelect({
                       <button
                         key={option.id}
                         type="button"
-                        className={on ? 'bd__opt bd__opt--on' : 'bd__opt'}
+                        className={on ? 'b2__opt b2__opt--on' : 'b2__opt'}
                         data-testid={`${testId}-${option.id}`}
                         aria-pressed={on}
                         onClick={() => onToggle(option.id)}
@@ -183,8 +183,8 @@ export function FilterSelect({
                             src={option.actor.avatar ?? null}
                           />
                         ) : null}
-                        <span className="bd__opt-name">{option.label}</span>
-                        <span className="bd__opt-mark" aria-hidden>
+                        <span className="b2__opt-name">{option.label}</span>
+                        <span className="b2__opt-mark" aria-hidden>
                           {on ? '✓' : ''}
                         </span>
                       </button>
@@ -196,7 +196,7 @@ export function FilterSelect({
               {chosen.length > 0 ? (
                 <button
                   type="button"
-                  className="bd__menu-clear"
+                  className="b2__menu-clear"
                   data-testid={`${testId}-clear`}
                   onClick={onClear}
                 >
