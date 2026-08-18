@@ -56,11 +56,9 @@ export interface ChatProviderToolPolicy {
  * equivalent.
  *
  * The native surface mirrors `toolPermission`: a mode states intent, not
- * permission, so every mode receives the same built-ins. `Bash` is the one
- * carve-out — it stays visible only in Plan and Build so Claude's own
- * read-only classifier can use it, and it is deliberately never pre-approved.
- * The adapter's `dontAsk` mode denies every Bash call that would otherwise
- * require interactive approval.
+ * permission, so every mode receives the SAME built-ins — `Bash` included. The
+ * old Plan/Build-only carve-out is gone; every mode now sees Bash, and the
+ * runtime's permission posture (not the tool list) governs what it may run.
  *
  * Without exactly one trusted linked project that is itself a Git checkout
  * there is nothing to clone, so the repository half is withheld from every
@@ -70,8 +68,7 @@ export function chatProviderToolPolicy(mode: ChatMode, hasProject = true): ChatP
   const projectlessTools = ['WebFetch', 'WebSearch', 'TodoWrite'];
   const availableTools = hasProject
     ? [
-        'Read', 'Glob', 'Grep',
-        ...(mode === 'plan' || mode === 'build' ? ['Bash'] : []),
+        'Read', 'Glob', 'Grep', 'Bash',
         'WebFetch', 'WebSearch', 'Edit', 'Write', 'TodoWrite',
       ]
     : projectlessTools;

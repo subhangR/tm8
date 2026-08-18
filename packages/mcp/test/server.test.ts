@@ -38,14 +38,14 @@ describe('stdio JSON-RPC server', () => {
     const listed = await server().handle({ jsonrpc: '2.0', id: 'list', method: 'tools/list' });
     const tools = (listed as { result: { tools: Array<{ name: string }> } }).result.tools;
     const names = tools.map((tool) => tool.name);
-    // Default mode is Ask, which now carries the full core surface. Only the
-    // two documented carve-outs are withheld: shell, and Explain's inline
-    // presentation tools.
+    // Default mode is Ask, which now carries the FULL surface — including the
+    // explain_* presentation tools that were once Explain's alone. The only
+    // absence is repo_bash, which was removed entirely (native Bash covers it).
     expect(names).toContain('repo_read_file');
     expect(names).toContain('repo_write');
     expect(names).toContain('tm8_act');
+    expect(names).toContain('explain_diagram');
     expect(names).not.toContain('repo_bash');
-    expect(names).not.toContain('explain_diagram');
 
     const called = await server().handle({
       jsonrpc: '2.0',
