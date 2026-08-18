@@ -516,6 +516,81 @@ function measureInPage({ MIN_TAP, EPS }) {
     }
   }
 
+      /*
+   * CLIPPED vs SCROLLED — content that exceeds its own box, split by what the
+   * box does about it.
+   *
+   * `bleed` is `scrollWidth - clientWidth` ON THE ELEMENT ITSELF: how far its
+   * own content overruns its own padding box. It is NOT the viewport
+   * comparison — that is `overflowCount`, the threshold. Different questions; a
+   * row can fail one and pass the other.
+   *
+   *   clipped[] — overflow-x hidden|clip. Content DESTROYED, no gesture reaches
+   *               it. This is the one that matters.
+   *   hscroll[] — overflow-x auto|scroll. Reachable by scrolling, which may be
+   *               a deliberate strip or a desktop affordance nobody finds on a
+   *               phone. Reported, never failed.
+   *
+   * KNOWN FALSE-POSITIVE SHAPE, stated so nobody builds a threshold on it:
+   * `text-overflow: ellipsis` REQUIRES `overflow: hidden`, so every ellipsised
+   * label bleeds by construction — the ellipsis IS the design. Same for 1x1
+   * screen-reader spans. `clippedCount` is a POINTER TO LOOK, never a verdict;
+   * read the entries, not the number.
+   */
+  const clipped = [];
+  const hscroll = [];
+  for (const el of all) {
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+    const bleed = el.scrollWidth - el.clientWidth;
+    if (bleed <= 1) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    const ox = cs.overflowX;
+    const entry = { bleed: Math.round(bleed), box: `${Math.round(r.width)}x${Math.round(r.height)}`, path: pathOf(el), text: (el.textContent || '').trim().slice(0, 30) };
+    if (ox === 'hidden' || ox === 'clip') clipped.push(entry);
+    else if (ox === 'auto' || ox === 'scroll') hscroll.push(entry);
+  }
+  clipped.sort((a, b) => b.bleed - a.bleed);
+  hscroll.sort((a, b) => b.bleed - a.bleed);
+
+  /*
+   * REACHABLE, NOT MERELY LARGE — the VERTICAL twin of "measures 44 and draws 16".
+   *
+   * `tapTargetsUnderMin` counts rects smaller than the floor. **A control that
+   * is 44x44 and sits BELOW THE FOLD passes that census exactly as well as one
+   * you can reach**, so "0 under 44" is consistent with two very different
+   * screens and the number cannot tell them apart. That is the same shape as
+   * every other trap in this program, on the one axis DEF-037 says nothing here
+   * can see.
+   *
+   * So: is the target's box inside the frame's visible content area, and is it
+   * clear of the fixed tab bar that overlays the bottom of it? Reported, NOT
+   * failed — `.mobile-frame__content` is `overflow-y: auto`, so a control below
+   * the fold is reachable by scrolling and may be perfectly intended. What is
+   * not acceptable is not KNOWING. Anything at rest below the fold is named
+   * here so a reader can decide, instead of reading a clean count and assuming.
+   */
+  const frameEl = document.querySelector('.mobile-frame') || document.documentElement;
+  const tabbarEl = document.querySelector('.mobile-frame__tabbar, .mobile-tabs');
+  const frameBox = frameEl.getBoundingClientRect();
+  const tabbarTop = tabbarEl ? tabbarEl.getBoundingClientRect().top : frameBox.bottom;
+  const belowFold = [];
+  for (const t of targets) {
+    const r = t.r;
+    const underTabbar = r.bottom > tabbarTop + 0.5;
+    const pastFrame = r.top > frameBox.bottom + 0.5 || r.bottom > frameBox.bottom + 0.5;
+    if (underTabbar || pastFrame) {
+      belowFold.push({
+        ...describeTap(t),
+        bottom: Math.round(r.bottom),
+        tabbarTop: Math.round(tabbarTop),
+        frameBottom: Math.round(frameBox.bottom),
+        why: underTabbar ? 'occluded by / below the tab bar' : 'past the frame bottom',
+      });
+    }
+  }
+
   return {
     /** The reference every right edge below is compared against. */
     viewportWidth: vw,
@@ -659,44 +734,6 @@ function measureInPage({ MIN_TAP, EPS }) {
         const r = el.getBoundingClientRect();
         return { w: Math.round(r.width), h: Math.round(r.height), text: (el.textContent || '').trim().slice(0, 40) };
       };
-      /*
-   * CLIPPED vs SCROLLED — content that exceeds its own box, split by what the
-   * box does about it.
-   *
-   * `bleed` is `scrollWidth - clientWidth` ON THE ELEMENT ITSELF: how far its
-   * own content overruns its own padding box. It is NOT the viewport
-   * comparison — that is `overflowCount`, the threshold. Different questions; a
-   * row can fail one and pass the other.
-   *
-   *   clipped[] — overflow-x hidden|clip. Content DESTROYED, no gesture reaches
-   *               it. This is the one that matters.
-   *   hscroll[] — overflow-x auto|scroll. Reachable by scrolling, which may be
-   *               a deliberate strip or a desktop affordance nobody finds on a
-   *               phone. Reported, never failed.
-   *
-   * KNOWN FALSE-POSITIVE SHAPE, stated so nobody builds a threshold on it:
-   * `text-overflow: ellipsis` REQUIRES `overflow: hidden`, so every ellipsised
-   * label bleeds by construction — the ellipsis IS the design. Same for 1x1
-   * screen-reader spans. `clippedCount` is a POINTER TO LOOK, never a verdict;
-   * read the entries, not the number.
-   */
-  const clipped = [];
-  const hscroll = [];
-  for (const el of all) {
-    const cs = getComputedStyle(el);
-    if (cs.visibility === 'hidden' || cs.display === 'none') continue;
-    const bleed = el.scrollWidth - el.clientWidth;
-    if (bleed <= 1) continue;
-    const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) continue;
-    const ox = cs.overflowX;
-    const entry = { bleed: Math.round(bleed), box: `${Math.round(r.width)}x${Math.round(r.height)}`, path: pathOf(el), text: (el.textContent || '').trim().slice(0, 30) };
-    if (ox === 'hidden' || ox === 'clip') clipped.push(entry);
-    else if (ox === 'auto' || ox === 'scroll') hscroll.push(entry);
-  }
-  clipped.sort((a, b) => b.bleed - a.bleed);
-  hscroll.sort((a, b) => b.bleed - a.bleed);
-
   return {
         accountMenu: pick('[data-testid="mobile-account-menu"]'),
         refusalOut: pick('[data-testid="mobile-refusal-out"]'),
@@ -723,6 +760,17 @@ function measureInPage({ MIN_TAP, EPS }) {
      * only condition under which a claim about "every finding" is admissible.
      * A non-empty entry names the array, what it holds, and what you can see.
      */
+    /* Vertical reachability at REST — see the belowFold docblock. A count of 0
+       is what licenses reading `tapTargetsUnderMin: 0` as "the controls are on
+       the touch floor AND on the screen". */
+    tapTargetsBelowFoldCount: belowFold.length,
+    tapTargetsBelowFold: belowFold.slice(0, 10),
+    /* Is the screen scrolled at all, and by how much — context for the above. */
+    contentScroll: (() => {
+      const c = document.querySelector('.mobile-frame__content');
+      if (!c) return null;
+      return { scrollHeight: c.scrollHeight, clientHeight: c.clientHeight, overflowBy: Math.max(0, c.scrollHeight - c.clientHeight) };
+    })(),
     clippedCount: clipped.length,
     clipped: clipped.slice(0, 10),
     hscrollCount: hscroll.length,
@@ -737,6 +785,7 @@ function measureInPage({ MIN_TAP, EPS }) {
       note('tapTargetsOccluded', occluded.length, Math.min(occluded.length, 8));
       note('clipped', clipped.length, Math.min(clipped.length, 10));
       note('hscroll', hscroll.length, Math.min(hscroll.length, 10));
+      note('tapTargetsBelowFold', belowFold.length, Math.min(belowFold.length, 10));
       return cut;
     })(),
     /* What the page believes about itself, so a reader can tell a real 0 from a
