@@ -39,6 +39,7 @@ import {
   type EntityState,
   type EntitySummary,
   type TaskAssignment,
+  type WorkStatus,
 } from '@tm8/contract';
 
 import type { Querier } from '../db/types.js';
@@ -109,6 +110,53 @@ function oneOf<T extends string>(raw: unknown, allowed: readonly T[], fallback: 
 }
 
 /**
+ * Thrown when `tasks.work_status` holds a value the contract's `WorkStatus`
+ * does not name.
+ *
+ * Deliberately fatal, for the same reason `EntityKindDriftError` is: the only
+ * way to reach it is drift between the database and the frozen contract. The
+ * column carries a DDL CHECK, so an unrecognised value means a migration has
+ * widened the set without the contract following — an operator's bug, not a
+ * runtime state.
+ *
+ * Until this existed the value went through `oneOf(..., 'open')` and an
+ * unrecognised status arrived at the client as `open`: a live task silently
+ * reported as untouched over the event feed while the read path and the
+ * database both said otherwise. That is data corruption attributed to
+ * everything except its cause, and it gets strictly worse once statuses are
+ * user-defined — a status this file has never heard of stops being impossible.
+ *
+ * NOTE for the phase that makes statuses user-defined: the fix there is to
+ * widen what this function ACCEPTS, not to restore a fallback. A fallback
+ * cannot distinguish "a status we do not know yet" from "a status that does
+ * not exist", and picking `open` for either is the bug this class replaces.
+ */
+export class WorkStatusDriftError extends Error {
+  constructor(status: string, entityId: string) {
+    super(
+      `database contains task work_status '${status}' (entity ${entityId}) which is not in the frozen contract — ` +
+        `db/migrations tasks.work_status has drifted from @tm8/contract WorkStatus`,
+    );
+    this.name = 'WorkStatusDriftError';
+  }
+}
+
+/**
+ * Narrow a raw `work_status` to the contract's `WorkStatus`, loudly.
+ *
+ * NULL keeps the `oneOf` behaviour — it is the "detail table did not join"
+ * case, and `open` is the value the migration declares for a fresh task. A
+ * non-null string outside the union is the drift case and raises.
+ */
+function workStatus(raw: unknown, entityId: string): WorkStatus {
+  if (raw === null || raw === undefined) return 'open';
+  if (typeof raw === 'string' && (WORK_STATUSES as readonly string[]).includes(raw)) {
+    return raw as WorkStatus;
+  }
+  throw new WorkStatusDriftError(String(raw), entityId);
+}
+
+/**
  * The title a deleted entity gets instead of its real one.
  *
  * Duplicated from `facade/entity-read.ts:222`, where it is module-private rather
@@ -118,7 +166,24 @@ function oneOf<T extends string>(raw: unknown, allowed: readonly T[], fallback: 
  */
 const TOMBSTONE_TITLE = 'Deleted';
 
-const WORK_STATUSES = ['open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled'] as const;
+/**
+ * `satisfies`, not a bare `as const`: this list is what `workStatus()` accepts,
+ * so a contract that adds a status while this list stands still would make the
+ * new value a fatal drift error. The `satisfies` catches a value that is NOT in
+ * the contract; the `Exhaustive` check below catches a contract value missing
+ * HERE. Together they pin the list to `WorkStatus` in both directions.
+ */
+const WORK_STATUSES = [
+  'open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled',
+] as const satisfies readonly WorkStatus[];
+
+/** Compile error if `WorkStatus` gains an arm `WORK_STATUSES` does not list. */
+type _WorkStatusesAreExhaustive = Exclude<WorkStatus, (typeof WORK_STATUSES)[number]> extends never
+  ? true
+  : ['WORK_STATUSES is missing a WorkStatus arm', Exclude<WorkStatus, (typeof WORK_STATUSES)[number]>];
+const _workStatusesAreExhaustive: _WorkStatusesAreExhaustive = true;
+void _workStatusesAreExhaustive;
+
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 const DOC_FORMATS = ['markdown', 'mermaid', 'excalidraw'] as const;
 const MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
@@ -957,7 +1022,8 @@ export class PgEntityProjector implements EntityProjector {
         ).length;
         return {
           kind: 'task',
-          workStatus: oneOf(r.work_status, WORK_STATUSES, 'open'),
+          // Raises rather than coercing: see WorkStatusDriftError.
+          workStatus: workStatus(r.work_status, r.id),
           priority: oneOf(r.priority, PRIORITIES, 'medium'),
           axes: asStringRecord(r.axes),
           dueDate: iso(r.due_date),
