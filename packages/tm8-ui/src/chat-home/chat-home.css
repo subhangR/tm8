@@ -1417,3 +1417,53 @@ button.tch-entity-chip:hover {
   min-block-size: var(--mobile-touch-min);
   padding: var(--pn-space-2) var(--pn-space-3);
 }
+
+
+/* --- the tray strip — the fourth strip, and the one I missed -------------- */
+
+/* THE BUILD SERVICE FAILED chat-home@390 ON THIS: `overflowCount` 0 -> 2,
+   `worstRightEdge` 390 -> 401, offender
+   `nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > span.tch-entity-chip`.
+   11px past a frame that is `overflow: hidden`, so clipped rather than
+   scrolled to. 430 was clean — it has the slack to absorb it — which is the
+   argument for measuring both widths made concrete: the defect exists at both
+   and MANIFESTS at one.
+
+   I wrapped `.ri-card__foot`, `.tch-picks` and `.tch-rootbar` specifically so
+   that growing a control could not trade a tap row for an overflow row. This
+   is a fourth strip of the same shape and I did not enumerate the class, I
+   fixed the three I had touched. So, enumerated now — every non-column flex
+   strip in this file that carries variable-width children:
+
+     .tch-touched, .tch-durable__entities, .tch-usage, .tch-thread__badges,
+     .tch-xgraph__legend .......... already `flex-wrap: wrap`. Safe.
+     .ri-card__foot, .tch-picks, .tch-rootbar ... wrapped by this branch.
+     .tch-tray__tabs .............. THE MISS. `overflow: hidden`, no wrap.
+     the rest (.tch-conversation__head, .tch-turn__byline, .tch-code__head,
+       .tch-asset__head, .tch-thread__meta, .tch-slots, .tch-task-row)
+       ............................ carry text that ellipsises or is fixed.
+
+   IT IS FIXED BY LETTING THE CHIP SHRINK, NOT BY WRAPPING, AND THAT IS A
+   DELIBERATE DEPARTURE FROM THE FIX I WAS OFFERED. Wrapping is the idiom I
+   used on the other three and `.tch-tray__tabs[data-expanded]` already pairs
+   `flex-wrap: wrap` with `overflow: visible`, so it would have worked. But
+   wrapping ADDS HEIGHT, and this screen is currently short of height rather
+   than of width — the composer foot is at the bottom of a column whose
+   contents already exceed the frame at 390. Trading a horizontal overflow the
+   instrument CAN see for vertical growth that per DEF-037 it CANNOT is the
+   wrong direction, and it is the trade this file has been burned by before.
+
+   Shrinking costs nothing vertically. The chain was one link short of already
+   working: `.tch-tray__tabs` and `.tch-tray__tab` both carry `min-width: 0`
+   and `.tch-entity-chip__title` already ellipsises — but the chip itself is a
+   flex item with the default `min-width: auto`, which refuses to shrink below
+   its content and so passes the overflow straight through the two ancestors
+   that were built to absorb it. */
+.cv2-root[data-shell='mobile'] .tch-tray__tabs .tch-entity-chip {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cv2-root[data-shell='mobile'] .tch-tray__tabs .tch-entity-chip__title {
+  min-width: 0;
+}
