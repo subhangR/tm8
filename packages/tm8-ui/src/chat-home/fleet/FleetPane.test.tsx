@@ -9,9 +9,10 @@
  * because a fleet you cannot trust is one you have to re-check by hand.
  */
 import { render, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EntityDetail, EntityId } from '@tm8/contract';
 import { FleetPane } from './FleetPane';
+import { resetFleetEntityCache } from './use-fleet-entities';
 import type { ChatTurn, ChatTurnPart } from '../types';
 
 const id = (n: number): string => `01a01400-00cc-7000-8000-${String(n).padStart(12, '0')}`;
@@ -60,6 +61,11 @@ const detail = (over: Record<string, unknown>): EntityDetail =>
     counters: {},
     ...over,
   }) as unknown as EntityDetail;
+
+/* The detail cache is module-level ON PURPOSE (one read per id across every
+   Cockpit consumer), so it must be cleared between tests — otherwise the first
+   test's fake detail answers for every later test that names the same id. */
+beforeEach(() => resetFleetEntityCache());
 
 const readerFor = (byId: Record<string, EntityDetail>) =>
   vi.fn(async (entityId: EntityId) => {

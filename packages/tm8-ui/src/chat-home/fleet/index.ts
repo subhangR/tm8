@@ -18,7 +18,9 @@ export {
 } from './fleet-rows';
 export {
   chatEntityRefFrom,
+  resetFleetEntityCache,
   useFleetEntities,
   type FleetEntityRead,
   type FleetEntityReader,
 } from './use-fleet-entities';
+export { CockpitGraphStage, MAX_DRAWN_STAGE, type CockpitGraphStageProps } from './CockpitGraphStage';

@@ -34,6 +34,35 @@ export type FleetEntityRead =
 
 export type FleetEntityReader = (id: EntityId) => Promise<EntityDetail>;
 
+/**
+ * MODULE-LEVEL, deliberately — the same shape `EntityChip`'s resolution cache
+ * uses, and for the same reason. The Cockpit mounts more than one consumer of
+ * these ids (the fleet pane and the Graph tab both want the entities this
+ * thread named), and a per-hook cache would make "one read per id" true within
+ * a mount and false across the surface. Failures are NOT cached, so a later
+ * render retries; the cap is a leak guard, not a policy.
+ */
+const detailCache = new Map<string, Promise<EntityDetail>>();
+const CACHE_CAP = 200;
+
+/** Test seam only. */
+export function resetFleetEntityCache(): void {
+  detailCache.clear();
+}
+
+function readCached(id: string, read: FleetEntityReader): Promise<EntityDetail> {
+  const cached = detailCache.get(id);
+  if (cached) return cached;
+  if (detailCache.size >= CACHE_CAP) {
+    const oldest = detailCache.keys().next().value;
+    if (oldest !== undefined) detailCache.delete(oldest);
+  }
+  const promise = read(id as EntityId);
+  detailCache.set(id, promise);
+  promise.catch(() => detailCache.delete(id));
+  return promise;
+}
+
 export function useFleetEntities(
   ids: readonly string[],
   read: FleetEntityReader | undefined,
@@ -56,7 +85,7 @@ export function useFleetEntities(
     for (const id of key === '' ? [] : key.split(',')) {
       if (store.current.has(id)) continue;
       store.current.set(id, { state: 'pending' });
-      read(id as EntityId).then(
+      readCached(id, read).then(
         (detail) => {
           if (!alive.current) return;
           store.current.set(id, { state: 'loaded', detail });

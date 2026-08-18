@@ -1,0 +1,59 @@
+/* THE COCKPIT GRAPH TAB. Cards speak the session-graph family's visual
+   language (sg-*, imported by the canvas); this file carries only the stage
+   chrome the family does not have. */
+
+.cgs {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px 24px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.cgs__head h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pn-ink-1);
+}
+
+.cgs__sub {
+  margin: 0;
+  max-width: 66ch;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--pn-ink-3);
+}
+
+.cgs__empty {
+  margin: 0;
+  max-width: 56ch;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--pn-ink-3);
+}
+
+/* The drawing gets the room the retired inline strip never had. It scrolls
+   inside its own box so a wide graph never scrolls the stage sideways. */
+.cgs__canvas {
+  border: 1px solid var(--pn-line);
+  border-radius: 10px;
+  background: var(--pn-surface);
+  padding: 8px;
+  overflow: auto;
+  min-height: 0;
+}
+
+.cgs__notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 72ch;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--pn-ink-3);
+}
