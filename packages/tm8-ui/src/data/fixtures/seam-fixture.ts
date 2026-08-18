@@ -1126,42 +1126,6 @@ export function createFixtureSeam(): FixtureSeam {
   let axisSeq = 0;
 
   /**
-<<<<<<< HEAD
-   * W4 — the task-workflow registry (132), MUTABLE like `taskAxes` above:
-   * one row per (space, `type` value) naming the SUBSET of statuses tasks of
-   * that type may be moved TO. Seeded empty because the node seeds none; the
-   * CRUD verbs below curate it and `spaceSettings()` clones it per read.
-   */
-  const taskWorkflows: TaskWorkflow[] = [];
-  let workflowSeq = 0;
-
-  /**
-   * 132's trigger (`internal.validate_task_workflow`), mirrored refusal for
-   * refusal so a fixture-backed status write refuses exactly like the node:
-   * fires only when the status actually CHANGES; a task with no `type` value
-   * (the trigger reads `new.axes ->> 'type'`), a type with no rule, or a
-   * space with no rules is never touched; moving FROM an illegal status is
-   * free, moving TO one refuses in the trigger's own words (23514 →
-   * invariant_violation through the node's SQLSTATE map).
-   */
-  function requireWorkflowAllows(s: EntitySummary, status: string): void {
-    if (s.state.kind !== 'task') return;
-    if (s.state.status === status) return;
-    const typeValue = (s.state.axes ?? {})['type'];
-    if (typeof typeValue !== 'string' || typeValue === '') return;
-    const rule = taskWorkflows.find((w) => w.typeValue === typeValue);
-    if (!rule) return;
-    if (!(rule.statuses as readonly string[]).includes(status)) {
-      throw new CollabError(
-        'invariant_violation',
-        `workflow for type ${typeValue} does not allow status ${status}`,
-      );
-    }
-  }
-
-  /**
-=======
->>>>>>> dca54ecd (WIP: Phase 6 — CLI + UI tranche (rescued from dead session 01a01558))
    * The node's own in-use predicate, mirrored: does any task in the space
    * carry a value under this axis NAME (`tasks.axes ? name`)? Used by
    * delete/rename/value-removal exactly as `w2_delete_task_axis` /
@@ -3043,17 +3007,11 @@ export function createFixtureSeam(): FixtureSeam {
         }
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
         requireVersion(s, input.expectedVersion);
-<<<<<<< HEAD
-        // W4 — the 132 trigger mirror: a status write outside the row's type
-        // vocabulary refuses here exactly as `public.tasks`'s trigger does.
-        if (input.status !== undefined) requireWorkflowAllows(s, input.status);
-=======
         // 132's `tasks_validate_workflow` trigger mirror STOOD HERE — a status
         // write outside the row's `type` vocabulary refused. Phase 6 (migration
         // 155) dropped `public.task_workflows`, and with it the trigger, so a
         // status write is now governed only by the workflow the row's KIND
         // resolves (152) — which the node polices, not this mirror.
->>>>>>> dca54ecd (WIP: Phase 6 — CLI + UI tranche (rescued from dead session 01a01558))
         if (input.title !== undefined) s.title = input.title;
         if (input.status !== undefined) s.state.status = input.status;
         if (input.priority !== undefined) s.state.priority = input.priority;
@@ -3153,16 +3111,9 @@ export function createFixtureSeam(): FixtureSeam {
       async work(id, input: WorkInput) {
         const s = requireSummary(id);
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
-<<<<<<< HEAD
-        // W4 — the 132 trigger mirror. `complete` next door is deliberately
-        // unguarded: `done` is structural, so no vocabulary can exclude it.
-        requireWorkflowAllows(s, input.status);
-        s.state.status = input.status;
-=======
         // 132's trigger mirror stood here too, and went with `task_workflows`
         // in phase 6 (migration 155). See the `updateTask` note above.
-        s.state.workStatus = input.status;
->>>>>>> dca54ecd (WIP: Phase 6 — CLI + UI tranche (rescued from dead session 01a01558))
+        s.state.status = input.status;
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);

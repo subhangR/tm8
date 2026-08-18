@@ -26,11 +26,6 @@ import { getKind } from '../domain';
 import type { QueryFilter } from '../domain';
 import type { PillTone } from '../kit';
 
-<<<<<<< HEAD
-/** The three axes `collections.query` can group tasks by. `axis:*` is out of
- * scope until custom axes get a picker. */
-export type BoardPivot = 'status' | 'assignee' | 'priority';
-=======
 /**
  * The axes `collections.query` can group tasks by. `axis:*` is out of scope
  * until custom axes get a picker.
@@ -41,8 +36,7 @@ export type BoardPivot = 'status' | 'assignee' | 'priority';
  * kinds that `extend` task — so grouping by kind is the pivot that carries
  * that view forward. It is READ-ONLY; see `KIND_PIVOT_IS_READ_ONLY`.
  */
-export type BoardPivot = 'workStatus' | 'assignee' | 'priority' | 'kind';
->>>>>>> dca54ecd (WIP: Phase 6 — CLI + UI tranche (rescued from dead session 01a01558))
+export type BoardPivot = 'status' | 'assignee' | 'priority' | 'kind';
 
 export const PIVOTS: readonly { key: BoardPivot; label: string }[] = [
   { key: 'status', label: 'Status' },

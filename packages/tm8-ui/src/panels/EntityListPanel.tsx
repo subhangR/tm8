@@ -2113,13 +2113,9 @@ function BoardBody({
       ? axisBoardColumns(axis, snapshot?.groups ?? [])
       : groupBy === 'assignee'
         ? assigneeBoardColumns(snapshot?.groups ?? [])
-<<<<<<< HEAD
-        : boardColumns(config, tab, snapshot?.groups ?? []);
-=======
         : groupBy === 'kind'
           ? kindBoardColumns(snapshot?.groups ?? [])
-          : boardColumns(config, tier, snapshot?.groups ?? []);
->>>>>>> dca54ecd (WIP: Phase 6 — CLI + UI tranche (rescued from dead session 01a01558))
+          : boardColumns(config, tab, snapshot?.groups ?? []);
   const groupOf = new Map((snapshot?.groups ?? []).map((g) => [g.key, g] as const));
   const itemsOf = (column: BoardColumnSpec): readonly EntitySummary[] =>
     matching(groupOf.get(column.key)?.items ?? [], query);
