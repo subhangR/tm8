@@ -260,11 +260,34 @@
    underneath a 44px child is a number that has silently stopped being true,
    and the next reader of this file would take it for the strip's real height.
 
-   NO OVERFLOW ROW IS TRADED FOR THIS ONE. `.chv-tabs` is already
-   `overflow-x: auto`, so a channel with enough tabs to exceed 390px scrolls
-   the strip rather than putting a tab past the right edge — which matters
-   because `.mobile-frame` is `overflow: hidden` and would have CLIPPED it
-   while a document-level measure still read 0 (RULE R3). */
+   ── THE OVERFLOW QUESTION, AND MY FIRST ANSWER TO IT WAS WRONG ────────────
+
+   I originally wrote here that `.chv-tabs` being `overflow-x: auto` means a
+   channel with enough tabs "scrolls the strip rather than putting a tab past
+   the right edge". **That is not true of the measure this program uses.** The
+   instrument takes `getBoundingClientRect().right > innerWidth` PER ELEMENT,
+   and a tab sitting beyond a scroll port's right edge at `scrollLeft: 0` has
+   exactly that — scrolling changes what you can SEE, not where the box IS.
+   `overflow-x: auto` prevents the ANCESTOR from being dragged wider; it makes
+   no promise at all about the child rects the census reads.
+
+   So this strip is treated for the TOUCH FLOOR and is NOT wrapped, and that is
+   a deliberate partial rather than a complete fix (ledger R17 — say which
+   members of a shape are outstanding and why):
+
+     measured today ... 3 tabs, 0 offenders at 390 and 430. It fits.
+     outstanding ...... a channel with enough tabs to exceed the width would
+                        put the overflowing tab past the right edge and the
+                        census would flag it, scroll port or not.
+
+   NOT wrapped, because wrapping a tablist turns one row of tabs into two and
+   spends the vertical room this screen is already short of; horizontal scroll
+   is the right arrangement for a tablist and the honest gap is that the metric
+   cannot see it as safe. Recorded rather than papered over.
+
+   `.mobile-frame` is `overflow: hidden`, so any such tab would be CLIPPED
+   while a document-level measure still read 0 — which is why R3 requires the
+   per-element number and why the paragraph above matters. */
 .cv2-root[data-shell='mobile'] .chv-tab {
   height: auto;
   min-block-size: var(--mobile-touch-min);
