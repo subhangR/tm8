@@ -115,14 +115,13 @@ async function post(
 
 async function postWithMode(identityId: string, body: string, mode: string): Promise<string> {
   return asIdentity(identityId, 'browser', async (client) => {
-    // 154: the send path sets a transaction-local mode; the BEFORE INSERT
-    // trigger stamps it onto messages.requested_chat_mode.
-    await client.query(`select set_config('tm8.chat_turn_mode',$1,true)`, [mode]);
+    // 154: the mode rides as the explicit ninth w2_post_message_batch argument,
+    // written to messages.requested_chat_mode.
     const row = (await client.query<{ result: { messageIds: string[] } }>(
       `select public.w2_post_message_batch(
-         $1::uuid[], $2, $3::uuid, '{}'::uuid[], '{}'::uuid[], null, null, $4
+         $1::uuid[], $2, $3::uuid, '{}'::uuid[], '{}'::uuid[], null, null, $4, $5
        ) result`,
-      [[fixture.anchorId], body, rootMessageId, `chat-post-${randomUUID()}`],
+      [[fixture.anchorId], body, rootMessageId, `chat-post-${randomUUID()}`, mode],
     )).rows[0]!;
     return row.result.messageIds[0]!;
   });
@@ -247,6 +246,10 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
       [planMsg],
     );
     expect(msg[0]!.requested_chat_mode).toBe('plan');
+    // An out-of-vocabulary mode fails LOUD (22023), like a bad body or
+    // clientMutationId — never a silent fallback to the thread default.
+    await expect(postWithMode(fixture.identityA, 'seventh mode?', 'telepathy'))
+      .rejects.toThrow(/unknown chat turn mode/);
   });
 
   it('persists ordered parts idempotently and never coerces absent cost to zero', async () => {

@@ -284,6 +284,7 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
           IDS.sourceSession,
           IDS.author,
           'batch-1',
+          null,
         ]);
         return {
           messageBatchId: 'batch-1',
@@ -837,7 +838,7 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
       if (name === 'w2_post_message_batch') {
         expect(args).toEqual([
           [IDS.anchor], 'routed answer', IDS.message, [], [],
-          IDS.sourceSession, null, 'reply-batch-1',
+          IDS.sourceSession, null, 'reply-batch-1', null,
         ]);
         return { messageBatchId: 'reply-batch-1', messageIds: [IDS.message] } as T;
       }
