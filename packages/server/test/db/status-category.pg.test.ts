@@ -26,7 +26,10 @@
  * for a writer that bypassed the catalog.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { CollectionQuery, StatusCategory } from '@tm8/contract';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
+import { queryCollection } from '../../src/facade/handlers/collections.js';
+import type { Querier } from '../../src/db/types.js';
 
 const MIGRATION = '147_entity_status_category.sql';
 const SPACE = '00000000-0000-4000-8000-000000000001';
@@ -34,8 +37,14 @@ const IDENTITY = '00000000-0000-4000-8000-00000000000f';
 /** A task that exists only to satisfy `entities.created_by`, which is an entity FK. */
 const ANCHOR = '00000000-0000-4000-8000-0000000000aa';
 
-/** The RULED mapping, as the migration's own table — asserted, not derived. */
-const RULED: ReadonlyArray<readonly [string, string]> = [
+/**
+ * The RULED mapping, as the migration's own table — asserted, not derived.
+ *
+ * The category side is typed `StatusCategory`, not `string`: these values are
+ * fed straight into `filters.category`, and an untyped table would let a typo
+ * reach the query as a category that cannot exist.
+ */
+const RULED: ReadonlyArray<readonly [string, StatusCategory]> = [
   ['open', 'to_do'],
   ['pulled', 'to_do'],
   ['working', 'in_progress'],
@@ -249,6 +258,81 @@ describe.sequential('147 — entities.status_category', () => {
     });
     expect((await upserts()) - before).toBe(0);
     expect(await categoryOf(id)).toBe('to_do');
+  });
+
+  /**
+   * The end of the wire: `filters.category` -> `buildWhere` -> real rows.
+   *
+   * Runs as the schema owner rather than `tm8_app` deliberately. RLS is not what
+   * this asserts and the owner bypasses it, so the suite does not have to seed
+   * the whole member/identity chain to ask the one question it cares about:
+   * given rows in every category, does the predicate return the right set?
+   * A test that only inspected the generated SQL (there is one, in
+   * `test/facade/status-category.test.ts`) would pass against a predicate that
+   * was syntactically perfect and semantically wrong.
+   */
+  async function collect(filters: NonNullable<CollectionQuery['filters']>): Promise<string[]> {
+    return database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const q: Querier = {
+        query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> =>
+          (await client.query(sql, [...params])).rows as R[],
+        rpc: async () => {
+          throw new Error('a collection read must not write');
+        },
+      } as Querier;
+      const result = await queryCollection(
+        q,
+        { spaceId: SPACE, filters, sort: 'position', limit: 100 },
+        IDENTITY,
+      );
+      return result.page.items.map((item) => item.id).sort();
+    });
+  }
+
+  it.each(RULED)('filters real rows down to the %s task, whose category is %s', async (status) => {
+    const category = RULED.find(([s]) => s === status)![1];
+    const expected = RULED
+      .map(([s], index) => [s, legacyId(index)] as const)
+      .filter(([s]) => RULED.find(([r]) => r === s)![1] === category)
+      .map(([, id]) => id);
+    const got = await collect({ category: [category] });
+    // Later tests create more tasks; assert containment of the pre-147 cohort
+    // plus that nothing from another category leaked in.
+    for (const id of expected) expect(got).toContain(id);
+    for (const [s, index] of RULED.map(([s], i) => [s, i] as const)) {
+      if (RULED.find(([r]) => r === s)![1] !== category) expect(got).not.toContain(legacyId(index));
+    }
+  });
+
+  it('unions the categories a caller asks for, in one query', async () => {
+    // Asserted over the PRE-147 cohort only, by intersection: earlier tests in
+    // this file create their own tasks and leave them in assorted categories,
+    // and an exact-set assertion here would be pinning their leftovers rather
+    // than this query's behaviour.
+    const cohort = new Set(RULED.map((_, index) => legacyId(index)));
+    const mine = async (filters: NonNullable<CollectionQuery['filters']>) =>
+      (await collect(filters)).filter((id) => cohort.has(id)).sort();
+
+    // The six-ways-of-saying-"in flight" problem, as ONE predicate.
+    expect(await mine({ category: ['to_do', 'in_progress'] })).toEqual(
+      [legacyId(0), legacyId(1), legacyId(2), legacyId(3), legacyId(4)].sort(),
+    );
+    expect(await mine({ category: ['done'] })).toEqual([legacyId(5)]);
+    expect(await mine({ category: ['cancelled'] })).toEqual([legacyId(6)]);
+    // And the union of all four is the whole cohort, no row unreachable.
+    expect(await mine({ category: ['to_do', 'in_progress', 'done', 'cancelled'] }))
+      .toEqual([...cohort].sort());
+  });
+
+  it('NARROWS BY KIND for free — a doc has no category, so it never matches', async () => {
+    // NULL = any(...) is never true, so the filter's presence restricts the page
+    // to entities that have a status at all. No `kinds` clause needed, and no
+    // doc silently filed under To Do.
+    for (const category of ['to_do', 'in_progress', 'done', 'cancelled'] as const) {
+      expect(await collect({ category: [category] })).not.toContain(DOC);
+    }
+    expect(await collect({})).toContain(DOC);
   });
 
   it('refuses a fifth category — the closed four are closed in the schema', async () => {
