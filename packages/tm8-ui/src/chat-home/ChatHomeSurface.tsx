@@ -128,7 +128,18 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     assetHref: seam.files.downloadHref,
   };
   return (
-    <Suspense fallback={<div className="tch-load" role="status">Loading Chat…</div>}>
+    <Suspense
+      fallback={
+        /* Skeleton rows, the one loading idiom (see chat-home.css .tch-load):
+           the 72KB screen chunk loads behind bars shaped like the transcript
+           it becomes, not behind a sentence. */
+        <div className="tch-load" role="status" aria-label="Loading Chat">
+          <div className="tch-skeleton__bar" />
+          <div className="tch-skeleton__bar" />
+          <div className="tch-skeleton__bar" />
+        </div>
+      }
+    >
       <SplitChatHomeScreen {...props} />
     </Suspense>
   );

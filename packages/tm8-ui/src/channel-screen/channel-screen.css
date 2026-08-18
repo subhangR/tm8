@@ -709,6 +709,14 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-notice { color: var(--pn-wait); }
 
+/* Scroll gutters: the shell's slim tokenized idiom (see chat-home.css's
+   twin rule and shell.css's rail scroller). */
+.chs-feed,
+.chs-thread__scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pn-line-2) transparent;
+}
+
 .chs-skeleton {
   height: 34px;
   border-radius: var(--pn-r-sm);
@@ -891,6 +899,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-mention-picker [role='listbox'] {
   display: flex;
   flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pn-line-2) transparent;
   gap: 2px;
   max-height: 238px;
   overflow-y: auto;

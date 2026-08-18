@@ -1270,9 +1270,18 @@ export function ChatHomeScreen({
             // Never render one thread's transcript under another thread's
             // selection; a matching transcript stays up through a same-thread
             // reload so fast reads cannot flicker.
-            <div className="tch-wait tch-wait--solo" role="status" data-testid="chat-detail-loading">
-              <WaitMark />
-              Reading this conversation…
+            <div
+              className="tch-load"
+              role="status"
+              aria-label="Reading this conversation"
+              data-testid="chat-detail-loading"
+            >
+              {/* Skeleton rows, the one loading idiom — the WaitMark pulse now
+                  means only "the agent is working", never "a read is in
+                  flight" (chs-skeleton's distinction, adopted). */}
+              <div className="tch-skeleton__bar" />
+              <div className="tch-skeleton__bar" />
+              <div className="tch-skeleton__bar" />
             </div>
           ) : detail ? (
             <>

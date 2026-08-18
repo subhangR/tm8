@@ -137,7 +137,35 @@
   color: var(--pn-wait);
   font-size: var(--pn-fs-fine);
 }
-.tch-load { display: grid; place-items: center; flex: 1; color: var(--pn-ink-3); }
+/* LOADING IS SKELETON ROWS — one idiom across the chat surfaces (the
+   channel's `.chs-skeleton` set the shape: static bars in the hover wash,
+   no spinner, no pulse). The bars are painted by `.tch-skeleton__bar` so
+   the Suspense fallback and the thread-detail read share one look. */
+.tch-load {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  padding: var(--pn-space-6);
+}
+.tch-skeleton__bar {
+  height: 34px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-hover);
+}
+.tch-skeleton__bar:nth-child(2) { width: 80%; }
+.tch-skeleton__bar:nth-child(3) { width: 60%; }
+
+/* The chat scrollers wear the shell's established gutter idiom (see
+   shell.css's rail scroller): a slim tokenized bar instead of the
+   platform default, which on the forced-dark stage read as foreign
+   chrome. Firefox-first properties; WebKit keeps its overlay bars. */
+.tch-thread-list,
+.tch-transcript,
+.tch-pickmenu {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pn-line-2) transparent;
+}
 
 .tch-conversation {
   display: flex;
