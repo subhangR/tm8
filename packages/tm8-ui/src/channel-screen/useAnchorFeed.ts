@@ -83,6 +83,13 @@ export interface UseAnchorFeedOptions {
   limit?: number;
   /** Branch reads + thread pane. Registry config decides, never a kind literal. */
   threads?: boolean;
+  /**
+   * A scope this surface USED to name, kept only so a draft written under the
+   * old key survives its removal. Read once, and only when the current key
+   * holds nothing. Delete the prop once no viewer can still have a draft under
+   * the old spelling.
+   */
+  legacyScope?: ChatStateKeyParts['scope'];
   focusAround?: NonNullable<EntityFeedQuery['around']> | null;
   /**
    * The write, when the host's own is more than a seam call.
@@ -146,6 +153,7 @@ export function useAnchorFeed({
   filter = 'chronological',
   limit = 50,
   threads = false,
+  legacyScope,
   focusAround = null,
   postMessage,
   store = chatStore,
@@ -161,6 +169,10 @@ export function useAnchorFeed({
     filter,
   }), [anchorId, filter, scope, viewerMemberId]);
   const keyId = chatStateKey(key);
+  const legacyKey = useMemo<ChatStateKeyParts | undefined>(
+    () => (legacyScope ? { ...key, scope: legacyScope } : undefined),
+    [key, legacyScope],
+  );
 
   /**
    * The branch lives in the controller (reads are host-sequenced) but has to
@@ -188,11 +200,12 @@ export function useAnchorFeed({
       spaceId: String(spaceId),
       limit,
       threads,
+      ...(legacyKey ? { legacyKey } : {}),
       // `keyId` is closed over from THIS controller's creation, which is what
       // makes the comparison above able to tell whose write this was.
       onThreadChange: (next) => setHeld({ keyId, thread: next }),
     }),
-    [key, keyId, limit, seam, spaceId, store, threads],
+    [key, keyId, legacyKey, limit, seam, spaceId, store, threads],
   );
 
   const mutationController = useMemo(

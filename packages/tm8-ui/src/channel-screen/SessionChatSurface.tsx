@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useStore } from 'zustand';
+import { useEffect, useMemo, useState } from 'react';
 import type { StoreApi } from 'zustand/vanilla';
 import type {
   ComposerInteractionPolicy,
@@ -8,20 +7,8 @@ import type {
 } from '@tm8/contract';
 import type { ConnectionState, Seam } from '../data/seam';
 import { ChannelScreen } from './ChannelScreen';
-import type { ChannelPostInput } from './feed-model';
-import {
-  chatStateKey,
-  chatStore,
-  createChatSessionController,
-  messageForReply,
-  type ChatStoreState,
-  type ChatSyncSeam,
-} from './chat-store';
-import {
-  chatPageWithJournal,
-  createChatMutationController,
-  reconcileChatMutationEvent,
-} from './chat-mutations';
+import { chatStore, type ChatStoreState, type ChatSyncSeam } from './chat-store';
+import { useAnchorFeed } from './useAnchorFeed';
 import { createChatAttachmentUploadTask } from './chat-attachments';
 import { loadSkillTriggerOptions, type SkillTriggerOption } from '../rich-input';
 import { discoverComposerActions } from './composer-actions';
@@ -78,81 +65,30 @@ export function SessionChatSurface({
   const actions = useMemo(() => discoverComposerActions(composerPolicy), [composerPolicy]);
   const [mentionOptions, setMentionOptions] = useState<ComposerMentionOption[] | undefined>(undefined);
   const [skillOptions, setSkillOptions] = useState<SkillTriggerOption[] | undefined>(undefined);
-  const key = useMemo(() => ({
+  /*
+   * NO SCOPE. This surface used to name `session_chat_v1`, which is exactly
+   * what the server resolves for a work_session anchor (`feed-context.ts:176`)
+   * — so naming it was the client re-deciding what the server already knew,
+   * and it is the same hardcode that made two sibling surfaces unmountable on
+   * any other kind.
+   *
+   * `legacyScope` is the cost of removing it, paid rather than ignored: the
+   * key is also the localStorage draft key, so the correct fix would have
+   * silently discarded whatever the viewer had half-written. One fallback read
+   * carries it across; a draft under the new key always wins.
+   */
+  const feed = useAnchorFeed({
+    seam,
+    anchorId: sessionId,
+    spaceId,
     viewerMemberId,
-    sessionId,
-    scope: 'session_chat_v1' as const,
     filter,
-  }), [filter, sessionId, viewerMemberId]);
-  const keyId = chatStateKey(key);
-  const controller = useMemo(
-    () => createChatSessionController({ store, seam, key, spaceId, limit: defaultLimit }),
-    [defaultLimit, key, seam, spaceId, store],
-  );
-  const mutationController = useMemo(
-    () => createChatMutationController({
-      store,
-      key,
-      spaceId,
-      postMessage: (input) => seam.commands.postMessage(input),
-      refresh: () => controller.loadNewest(),
-    }),
-    [controller, key, seam.commands, spaceId, store],
-  );
-
-  // Narrow selectors: feed rendering never subscribes to another session's
-  // entry or to the entire store.
-  const page = useStore(store, (state) => state.entries[keyId]?.page);
-  const phase = useStore(store, (state) => state.entries[keyId]?.phase ?? 'idle');
-  const error = useStore(store, (state) => state.entries[keyId]?.error ?? null);
-  const refusal = useStore(store, (state) => state.entries[keyId]?.refusal ?? null);
-  const loadingEarlier = useStore(store, (state) => state.entries[keyId]?.loadingEarlier ?? false);
-  const refreshedFromNewest = useStore(
+    limit: defaultLimit,
+    legacyScope: 'session_chat_v1',
+    focusAround,
     store,
-    (state) => state.entries[keyId]?.refreshedFromNewest ?? false,
-  );
-  const replyTo = useStore(store, (state) => {
-    const entry = state.entries[keyId];
-    return entry ? messageForReply(entry) : null;
   });
-  const replyToId = useStore(store, (state) => state.entries[keyId]?.replyToId ?? null);
-  const draft = useStore(store, (state) => {
-    const entry = state.entries[keyId];
-    if (!entry) return '';
-    return entry.replyToId
-      ? entry.drafts.replies[entry.replyToId] ?? ''
-      : entry.drafts.newMessage;
-  });
-  const mutations = useStore(store, (state) => state.entries[keyId]?.mutations);
-  const uncertainMutation = useStore(store, (state) => {
-    const entry = state.entries[keyId];
-    return Object.values(entry?.mutations ?? {}).find((mutation) =>
-      mutation.mutationState === 'uncertain' || mutation.mutationState === 'reconciling') ?? null;
-  });
-  const projectedPage = useMemo(() => {
-    const entry = store.getState().entries[keyId];
-    if (!entry) return page;
-    if (!page && Object.keys(mutations ?? {}).length === 0) return undefined;
-    return chatPageWithJournal({ ...entry, page, mutations: mutations ?? {} });
-  }, [keyId, mutations, page, store]);
 
-  useEffect(() => {
-    const detach = controller.attach();
-    if (focusAround) void controller.loadAround(focusAround);
-    else void controller.loadNewest();
-    return detach;
-  }, [controller, focusAround]);
-
-  useEffect(
-    () => seam.onEvent((event) => {
-      reconcileChatMutationEvent(store, keyId, event);
-    }),
-    [keyId, seam, store],
-  );
-
-  const post = useCallback(async (input: ChannelPostInput) => {
-    await mutationController.submit(input);
-  }, [mutationController]);
 
   useEffect(() => {
     if (!actions.canMention || !seam.query) {
@@ -212,13 +148,18 @@ export function SessionChatSurface({
     });
   }, [actions.canAttach, seam.files, sessionId, spaceId]);
 
-  if (error) {
+  if (feed.error) {
     return (
       <div className="chs-host-error" role="alert">
-        <strong>The session Chat feed could not be read.</strong>
-        <span>{error}</span>
-        <button type="button" onClick={() => void controller.loadNewest()}>
-          Retry Chat
+        {/* 'Chat' RETIRES FROM THE SESSION PANEL (Subhang's ruling): the strip
+            is Terminal | Transcript | Git | Debug | Graph, and the word
+            survives only for actual chat threads in Chat Home. This copy is
+            about a conversation that could not be read, which is true whatever
+            the surface ends up called. */}
+        <strong>This session&rsquo;s conversation could not be read.</strong>
+        <span>{feed.error}</span>
+        <button type="button" onClick={() => void feed.reload()}>
+          Retry
         </button>
       </div>
     );
@@ -229,31 +170,31 @@ export function SessionChatSurface({
       viewerActorId={viewerMemberId}
       anchorId={sessionId}
       anchorNoun="this session"
-      page={projectedPage}
-      loading={phase === 'idle' || phase === 'loading'}
-      loadingEarlier={loadingEarlier}
-      refreshedFromNewest={refreshedFromNewest}
-      refusal={refusal}
+      page={feed.page}
+      loading={feed.loading}
+      loadingEarlier={feed.loadingEarlier}
+      refreshedFromNewest={feed.refreshedFromNewest}
+      refusal={feed.refusal}
       connection={connection}
       sessionExited={sessionExited}
-      onPost={actions.canPost ? post : undefined}
-      onLoadEarlier={() => controller.loadOlder()}
+      onPost={actions.canPost ? feed.post : undefined}
+      onLoadEarlier={() => feed.loadOlder()}
       onOpenEntity={onOpenEntity}
       turnGraphs
       onSwitchToTerminal={onSwitchToTerminal}
       needsAttention={needsAttention}
       {...(attentionDetail ? { attentionDetail } : {})}
-      draft={draft}
-      onDraftChange={(body) => store.getState().setDraft(key, body, replyToId)}
+      draft={feed.draft}
+      onDraftChange={feed.setDraft}
       replyState={{
-        value: replyTo,
-        onChange: (message) => store.getState().setReplyTarget(keyId, message?.id ?? null),
+        value: feed.replyTo,
+        onChange: (message) => feed.setReplyTarget(message?.id ?? null),
       }}
-      uncertainSubmission={uncertainMutation ? {
+      uncertainSubmission={feed.uncertainMutation ? {
         message: 'Storage outcome unknown — the message may or may not exist. Reconcile the same submission before sending another.',
-        reconciling: uncertainMutation.mutationState === 'reconciling',
+        reconciling: feed.uncertainMutation.mutationState === 'reconciling',
         onReconcile: () => {
-          void mutationController.reconcile(uncertainMutation.clientMutationId).catch(() => undefined);
+          void feed.reconcile(feed.uncertainMutation!.clientMutationId).catch(() => undefined);
         },
       } : null}
       onStartAttachmentUpload={startAttachmentUpload}
