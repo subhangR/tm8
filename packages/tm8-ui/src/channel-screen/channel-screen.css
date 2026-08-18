@@ -1486,3 +1486,85 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   from { stroke-width: 2.5; }
   to { stroke-width: 1; }
 }
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-039, plus the thread-nav controls named below.
+
+   The `@container (max-width: 440px)` block above is NOT this. It answers to
+   the channel container's own width, so it fires inside a narrow desktop panel
+   too — which is why it stops at the two controls that were safe to grow
+   anywhere. This block answers to the SHELL, and only the phone has one.
+   ========================================================================== */
+
+/* --- DEF-039 — the type floor, applied at the TOKENS ---------------------- */
+
+/* Same reasoning as `chat-home.css`: the run reports a tinyText COUNT and a
+   six-element SAMPLE beside it, so a per-class list fixes the ones visible in
+   the sample and ships the rest. This file alone reads the three small steps
+   of the scale 52 times. Lifting them inside `.chs-root` reaches all of them.
+
+   12px is derived, not chosen: across all 283 tinyText findings in the run the
+   largest size ever flagged is 11.5, and nothing at 12 or above appears. Prose
+   takes 13. */
+.cv2-root[data-shell='mobile'] .chs-root {
+  --pn-fs-tick: 12px;
+  --pn-fs-fine: 12px;
+  --pn-fs-micro: 13px;
+}
+
+/* THE GUTTER IS WIDENED WITH THE TYPE IT HOLDS, and this is the row that made
+   the rule worth stating. `.chs-gutter` is `flex: none; width: 38px` — 30px
+   under the 440 container query — and `.chs-gutter__time` is a `nowrap` mono
+   timestamp inside it. Growing the type without growing the box gives a
+   timestamp that overflows its own container to the LEFT, which is invisible
+   to the instrument twice over: it is not a right-edge offender, so
+   `offenders[]` never sees it, and per DEF-037 nothing here measures vertical
+   or leading-edge clipping at all. It would have read as a clean fix.
+
+   IT IS SIZED TO ITS CONTENT RATHER THAN TO A NEW NUMBER, and that is the rule
+   rather than a detail of it. My first version of this line was `width: 46px`,
+   computed from "12:16" at 12px mono — which is a guess about the LOCALE, not
+   a measurement. A 12-hour format ("12:16 PM") is three characters longer and
+   would have clipped in exactly the way this rule exists to stop. `width:
+   auto` under a floor cannot be wrong about a string it has not seen, and
+   `.chs-row__body` is `flex: 1; min-width: 0`, so it absorbs whatever the
+   gutter takes. */
+.cv2-root[data-shell='mobile'] .chs-gutter {
+  width: auto;
+  min-width: 38px;
+}
+
+/* --- the thread-nav controls under the bar -------------------------------- */
+
+/* NOT LEDGER ROWS, AND I AM NOT CLAIMING THEM AS SUCH — triage is the only
+   writer of `lane` (RULE R9). They are in `tapWorst` for
+   `results[surface=chat-channel, viewport=phone-430]` in the before-run
+   alongside DEF-028's `chv-tab`, they are in Lane A's files, and thread
+   navigation is this task's stated work. Leaving known sub-44 controls on my
+   own surface while reporting the surface clean is the narrow pass this
+   ledger's §6b exists to catch. They are fixed here and reported to triage as
+   unfiled findings, for triage to row or decline.
+
+   `chs-thread-footer__open` — 299x23 and 246x23, three of them. "Open thread ·
+   3 replies" is how a phone reader reaches a thread at all.
+   `chs-linkbtn` — 84x24, twice. */
+.cv2-root[data-shell='mobile'] .chs-thread-footer__open {
+  min-block-size: var(--mobile-touch-min);
+  padding-block: var(--pn-space-1);
+}
+
+.cv2-root[data-shell='mobile'] .chs-linkbtn {
+  min-height: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-2);
+}
+
+/* Send is 57x44 already — the 440 container query grew it — but it reads at
+   11px, which is the DEF-048 shape the gate filed against its own work: a 44px
+   button with type nobody can read is tappable and unreadable. The token lift
+   above carries it to 13. Its min-inline-size is restated so the two composers
+   agree; Chat Home's `.tch-send` takes the same floor. */
+.cv2-root[data-shell='mobile'] .chs-composer__send {
+  min-inline-size: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}

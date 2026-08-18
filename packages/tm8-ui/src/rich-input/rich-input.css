@@ -244,3 +244,63 @@
   font: inherit;
   cursor: pointer;
 }
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-026, DEF-039.
+
+   `.ri-card` is the ONE chat box, shared by Chat Home, the channel composer
+   and the thread composer, and Lane A owns all three. Scoped to the
+   `data-shell` marker so desktop is untouched.
+   ========================================================================== */
+
+/* UNPIN THE FOOT BEFORE ANYTHING INSIDE IT GROWS. This is the trap the shell
+   contract names: `.lp__actions` was `height: 34px` + `overflow: hidden` and
+   sliced its contents through the middle of the glyphs while `overflowCount`
+   scored the screen 0 — no metric in this program can see vertical clipping
+   (DEF-037), so a foot that clipped a 44px Send would have PASSED the tap
+   census with the button cut in half.
+
+   `.ri-card__foot` is already `min-height` rather than `height`, so it grows.
+   What it does NOT do is wrap: it is a single flex line holding attach, the
+   skill sigil, three thread-setting triggers, the phase label and Send. At
+   44px each those no longer fit 390px, and a nowrap flex line resolves that by
+   COMPRESSING its children — which would have taken the width back off the
+   targets this change exists to grow, silently, and left the row measuring
+   under the bar again on the narrower viewport only.
+
+   So the row wraps, and the floor is restated at 44 so it is not a number that
+   quietly stopped being true. */
+.cv2-root[data-shell='mobile'] .ri-card__foot {
+  flex-wrap: wrap;
+  row-gap: var(--pn-space-1);
+  min-height: var(--mobile-touch-min);
+}
+
+/* DEF-039 — the composer's own literals. These name a pixel size rather than a
+   scale step, so the token lift on `.tch-root` cannot reach them, and they
+   render INSIDE the chat screens the row is counted on: the attachment chips
+   and the paste refusal sit above the field, and the skill picker's query line
+   and per-option meta sit above that. 12px is the derived floor (nothing at 12
+   or above appears in any of the run's 283 tinyText findings); the refusal is
+   prose and takes 13 for the same reason `.tch-thread-refusal` does. */
+.cv2-root[data-shell='mobile'] .ri-attachments__refusal { font-size: 13px; }
+.cv2-root[data-shell='mobile'] .ri-attachment { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .ri-attachment button { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .ri-popover__query { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .ri-popover__meta { font: 12px var(--pn-mono); }
+.cv2-root[data-shell='mobile'] .ri-popover__empty { font-size: 13px; }
+.cv2-root[data-shell='mobile'] .ri-field__hint,
+.cv2-root[data-shell='mobile'] .ri-field__why { font-size: 12px; }
+
+/* The attachment chip's remove button and the popover's rows are controls, not
+   copy. The popover rows are already 36px; on a phone they take the floor. */
+.cv2-root[data-shell='mobile'] .ri-popover button { min-height: var(--mobile-touch-min); }
+.cv2-root[data-shell='mobile'] .ri-attachment button {
+  min-width: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}
+.cv2-root[data-shell='mobile'] .ri-attachments__refusal button {
+  min-width: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}

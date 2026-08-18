@@ -241,3 +241,49 @@
   .chv-aside { min-width: 300px; }
   .chv-header__status { display: none; }
 }
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-028, DEF-039.
+   ========================================================================== */
+
+/* DEF-028 — "Feed · 20" measured 74x35. The closest miss in the ledger, nine
+   pixels short, and it is the channel screen's only navigation.
+
+   `height: 35px` IS A HARD PIN and a `min-block-size` floor alone would have
+   lost to it, so the height is released to `auto` first and the floor set
+   under it — the shell contract's "unpin the container before growing what is
+   inside it", applied to a control that pins itself.
+
+   `.chv-tabs` is `min-height: 36px`, which is a floor rather than a clip, so
+   the strip grows on its own. It is restated at 44 anyway: a 36px floor
+   underneath a 44px child is a number that has silently stopped being true,
+   and the next reader of this file would take it for the strip's real height.
+
+   NO OVERFLOW ROW IS TRADED FOR THIS ONE. `.chv-tabs` is already
+   `overflow-x: auto`, so a channel with enough tabs to exceed 390px scrolls
+   the strip rather than putting a tab past the right edge — which matters
+   because `.mobile-frame` is `overflow: hidden` and would have CLIPPED it
+   while a document-level measure still read 0 (RULE R3). */
+.cv2-root[data-shell='mobile'] .chv-tab {
+  height: auto;
+  min-block-size: var(--mobile-touch-min);
+  display: inline-flex;
+  align-items: center;
+  padding-inline: var(--pn-space-3);
+  font-size: 13px;
+}
+
+.cv2-root[data-shell='mobile'] .chv-tabs {
+  min-height: var(--mobile-touch-min);
+  align-items: stretch;
+}
+
+/* DEF-039 — the header's own small type, on the same derived 12px floor. */
+.cv2-root[data-shell='mobile'] .chv-header__status { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .chv-eyebrow { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .chv-chip {
+  font-size: 13px;
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
