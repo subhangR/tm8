@@ -174,6 +174,12 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     { prop: 'viewerMemberId', why: "the viewer's identity — absent, posts run as 'anonymous' and own-message treatments cannot work" },
     { prop: 'contentSurface', why: 'the terminal⇄conversation request — absent, the surface switch has no host memory' },
     { prop: 'onContentSurfaceChange', why: 'the way back — absent, "switch to terminal" from the surface is dead' },
+    {
+      prop: 'discussionSurface',
+      why: 'the Discussion tab\'s conversation — absent, the tab that exists on EVERY entity '
+        + 'renders the host-missing alert. This is the member most likely to be forgotten, '
+        + 'because Discussion is the one tab a host never has to think about: it is always there',
+    },
   ];
 
   it.each(hosts)('%s supplies the complete conversation-surface set at every mount', (_label, file) => {

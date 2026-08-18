@@ -263,14 +263,21 @@ export function ChannelView({
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
         },
       })}
+      discussionSurface={conversationSurfaceFor(selectedDetail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: data.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort: feedPort,
+        viewerMemberId,
+        onOpenEntity: (id) => setSelectedId(id),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      }, 'discussion')}
       messages={selectedMessages}
       connections={data.connectionsOf(selectedId)}
       linkedPullRequestsOf={data.linkedPullRequestsOf}
-      onPostMessage={(post) => data.postMessage({
-        clientMutationId: `entity-post:${selectedId}:${Date.now()}`,
-        anchorIds: [selectedId],
-        ...post,
-      })}
       mentionOptions={data.mentionOptions}
       skillOptions={data.skillOptions}
       commands={data.seam.commands}

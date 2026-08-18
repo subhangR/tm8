@@ -38,7 +38,7 @@ import {
   StalePinBanner,
   TombstoneBody,
 } from './detail/PanelStates';
-import { ActivityTab, ConnectionsTab, DiscussionTab, type DiscussionPostInput } from './detail/tabs';
+import { ActivityTab, ConnectionsTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
 import { EntityControlStrip, type ControlHost, type ControlSubject } from './controls/EntityControls';
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
@@ -227,7 +227,6 @@ export interface EntityDetailPanelProps {
    */
   onMarkMemory?: ((mark: MemoryMarkKind) => void) | null;
   /** The composer's dispatcher — absent ⇒ composer disabled-with-reason. */
-  onPostMessage?: (input: DiscussionPostInput) => Promise<void> | void;
   /**
    * THE TRIGGER SUBJECTS, for every rich input this panel mounts — the
    * Discussion composer's `@` and `/`, and the doc editor's `/`.
@@ -256,6 +255,18 @@ export interface EntityDetailPanelProps {
   contentSurface?: ContentSurface | null;
   viewerMemberId?: string | null;
   chatSurface?: ReactNode;
+  /**
+   * THE DISCUSSION TAB'S CONVERSATION. Same host contract as every other
+   * seam-backed surface here: the panel is presentational and cannot reach a
+   * feed, so the host composes it through `conversationSurfaceFor(…, 'discussion')`
+   * and hands it in. `panel-host-wiring.test.ts` asserts all five hosts do.
+   *
+   * It replaces the tab's own renderer and composer, which read `messages.list`
+   * — the `anchored` predicate ALONE, and without paging. On a session that is
+   * a strict subset of what the same conversation showed one tab over, and it
+   * was the always-visible one.
+   */
+  discussionSurface?: ReactNode;
   /** The DEBUG surface (session CLI journal). Self-fetching; host wires the seam. */
   debugSurface?: ReactNode;
   /** The GIT surface (worktree status/diff/verbs rail). Same contract as Debug. */
@@ -952,23 +963,21 @@ function PanelBody(
   const startUpload = props.attachments?.startUpload;
 
   if (tab === 'discussion') {
-    return (
-      <DiscussionTab
-        messages={props.messages ?? []}
-        provenanceHollowReason={reasons.provenanceHollow}
-        authoredFrom={props.authoredFrom}
-        canPost={detail.capabilities.canEdit || detail.capabilities.canReact}
-        onPost={props.onPostMessage}
-        onOpenEntity={onOpenEntity}
-        /* The anchor is bound HERE, exactly as it is for the reader's doc
-           editor below: a file attached to a reply is an attachment of the
-           entity being discussed, and `detail/` never learns which id that
-           is. `startUpload` was already in scope at this call and was simply
-           never forwarded — the reason paste and drop did nothing here. */
-        attach={startUpload ? (file: File) => startUpload(file, detail.id) : undefined}
-        mentionOptions={props.mentionOptions}
-        skillOptions={props.skillOptions}
-      />
+    /*
+     * ONE CONVERSATION SURFACE, host-composed. The tab's own renderer and
+     * composer are gone: they read `messages.list` (the `anchored` predicate
+     * alone) and did not page, which made the always-visible reading a strict
+     * subset of the one behind the Chat chip.
+     *
+     * NO FALLBACK RENDERER. A host that forgets this prop gets the same honest
+     * alert every other seam-backed surface uses, and `panel-host-wiring.test.ts`
+     * fails the build before it can ship. A second renderer kept "just in case"
+     * is how the two readings diverged in the first place.
+     */
+    return props.discussionSurface ?? (
+      <p className="pn-surface-host-missing" role="alert">
+        This entity&rsquo;s Discussion surface is unavailable in this view.
+      </p>
     );
   }
   if (tab === 'connections') {
