@@ -27,7 +27,7 @@ import type { EntityId } from '@tm8/contract';
 import { EntityDetailPanel, type ControlHost, type DetailReasons } from '../panels';
 import type { ContentSurface } from '../routes';
 import { channelFeedPortFromGateData } from './channel-feed-port';
-import { chatSurfaceFor } from './chatSurface';
+import { conversationSurfaceFor } from './conversationSurface';
 import type { ActionContext } from '../domain/types';
 import type { AttachmentsPort } from '../files/port';
 import type { GateData } from './useGateData';
@@ -114,7 +114,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
       onContentSurfaceChange={(surface) => {
         setContentSurfaces((current) => ({ ...current, [entityId]: surface }));
       }}
-      chatSurface={chatSurfaceFor(detail, entityId, {
+      chatSurface={conversationSurfaceFor(detail, entityId, {
         seam: data.seam,
         spaceId: data.spaceId,
         connection: data.connection,

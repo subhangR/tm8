@@ -21,7 +21,7 @@ import { EntityDetailPanel, type DetailReasons } from '../panels';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import type { GateData } from './useGateData';
 import type { ContentSurface } from '../routes';
-import { chatSurfaceFor } from './chatSurface';
+import { conversationSurfaceFor } from './conversationSurface';
 import './channel-view.css';
 import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
@@ -251,7 +251,7 @@ export function ChannelView({
       onContentSurfaceChange={(surface) => {
         setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
       }}
-      chatSurface={chatSurfaceFor(selectedDetail, selectedId, {
+      chatSurface={conversationSurfaceFor(selectedDetail, selectedId, {
         seam: data.seam,
         spaceId: data.spaceId,
         connection: data.connection,

@@ -75,7 +75,7 @@ import { useSessionStart } from './useSessionStart';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useMembershipSurface } from './membershipSurface';
 import type { ContentSurface } from '../routes';
-import { chatSurfaceFor } from './chatSurface';
+import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
 import { attentionSectionFor } from './attentionSurface';
@@ -728,11 +728,11 @@ export function EntityView(props: EntityViewProps) {
       onContentSurfaceChange={(surface) => {
         setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
       }}
-      /* The archetype fork lives in `chatSurfaceFor` now, shared by ALL five
+      /* The archetype fork lives in `conversationSurfaceFor` now, shared by ALL five
          EntityDetailPanel hosts — this host was once the one that missed it
          ("feed scope session_chat_v1 is not applicable to a channel anchor"),
          and three others repeated the miss until the fork moved out. */
-      chatSurface={chatSurfaceFor(detail, selectedId, {
+      chatSurface={conversationSurfaceFor(detail, selectedId, {
         seam: data.seam,
         spaceId: data.spaceId,
         connection: data.connection,

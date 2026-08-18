@@ -52,7 +52,7 @@ import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
 import { openEntityAndResolve } from './open-entity';
-import { chatSurfaceFor } from './chatSurface';
+import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
@@ -477,12 +477,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onContentSurfaceChange={(surface) => nav.setContentSurface?.(id, surface)}
           /*
            * ONE SLOT, TWO SURFACES, CHOSEN BY ARCHETYPE — never by kind (§15.2).
-           * The fork itself lives in `chatSurfaceFor`, shared by all five
+           * The fork itself lives in `conversationSurfaceFor`, shared by all five
            * EntityDetailPanel hosts (user ruling 2026-08-01 made a channel
            * opened from the Entity List Panel readable and postable; the shared
            * helper is what keeps the other hosts from un-learning it).
            */
-          chatSurface={chatSurfaceFor(detail, id, {
+          chatSurface={conversationSurfaceFor(detail, id, {
             seam: data.seam,
             spaceId: data.spaceId,
             connection: data.connection,

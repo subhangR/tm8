@@ -1066,8 +1066,11 @@ function PanelBody(
           />
         }
         chat={props.chatSurface ?? (
+          /* Surface-generic on purpose: the slot is being repointed (session
+             chat today, Transcript confirmed incoming), and this copy must
+             stay true whichever surface a host forgot to wire. */
           <p className="pn-surface-host-missing" role="alert">
-            Chat is enabled for this session, but its feed host is unavailable.
+            This session&rsquo;s conversation surface is unavailable in this view.
           </p>
         )}
         debug={props.debugSurface ?? (
@@ -1190,10 +1193,10 @@ function PanelBody(
           /* The terminal arm's honesty, extended here: a hub without a feed
              host used to render NOTHING below the front door — a channel you
              could neither read nor post to, with no sign anything was missing.
-             All hosts now wire the slot via `chatSurfaceFor`, so this alert is
+             All hosts now wire the slot via `conversationSurfaceFor`, so this alert is
              the tripwire for the next host that forgets. */
           <p className="pn-surface-host-missing" role="alert">
-            This channel&rsquo;s feed host is unavailable in this view.
+            This channel&rsquo;s conversation surface is unavailable in this view.
           </p>
         )}
       </>

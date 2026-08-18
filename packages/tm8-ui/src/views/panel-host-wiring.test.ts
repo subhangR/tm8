@@ -160,24 +160,29 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
-  it.each(hosts)('%s passes chatSurface at every mount', (_label, file) => {
-    for (const { block } of mounts.filter((m) => m.file === file)) {
-      expect(
-        block.includes('chatSurface'),
-        `an <EntityDetailPanel> in ${file} does not pass chatSurface, so a session's Chat tab ` +
-          'would render the "feed host is unavailable" alert and a channel would show a feed-less ' +
-          'front door — the exact three-host outage this assertion was added after',
-      ).toBe(true);
-    }
-  });
+  /**
+   * THE SURFACE SET, asserted as a set — not one prop at a time. The slot
+   * behind `chatSurface` is contested (session chat today, a Transcript
+   * surface confirmed incoming, a Discussion surface proposed), so the guard
+   * names every member a host must supply for the panel's conversation
+   * surface to work WHATEVER fills the slot. A presence check on one prop
+   * would go stale the day the slot is repointed; a missing member of this
+   * set is the same three-host outage this assertion was added after.
+   */
+  const CONVERSATION_SURFACE_SET: readonly { prop: string; why: string }[] = [
+    { prop: 'chatSurface', why: 'the slot itself — absent, the panel renders its "unavailable in this view" alert' },
+    { prop: 'viewerMemberId', why: "the viewer's identity — absent, posts run as 'anonymous' and own-message treatments cannot work" },
+    { prop: 'contentSurface', why: 'the terminal⇄conversation request — absent, the surface switch has no host memory' },
+    { prop: 'onContentSurfaceChange', why: 'the way back — absent, "switch to terminal" from the surface is dead' },
+  ];
 
-  it.each(hosts)('%s passes viewerMemberId at every mount', (_label, file) => {
+  it.each(hosts)('%s supplies the complete conversation-surface set at every mount', (_label, file) => {
     for (const { block } of mounts.filter((m) => m.file === file)) {
+      const missing = CONVERSATION_SURFACE_SET.filter(({ prop }) => !block.includes(prop));
       expect(
-        block.includes('viewerMemberId'),
-        `an <EntityDetailPanel> in ${file} does not pass viewerMemberId, so the session chat ` +
-          "would post as 'anonymous' and own-message treatments cannot work on this host",
-      ).toBe(true);
+        missing.map(({ prop, why }) => `${prop} (${why})`),
+        `an <EntityDetailPanel> in ${file} is missing part of the conversation-surface set`,
+      ).toEqual([]);
     }
   });
 
@@ -220,9 +225,10 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
       }
       if (block.includes('chatSurface')) {
         expect(
-          block.includes('chatSurfaceFor'),
-          `${file} builds chatSurface inline; use chatSurfaceFor() so the archetype fork ` +
-            '(hub → channel feed, else → session chat) can never drift per host',
+          block.includes('conversationSurfaceFor'),
+          `${file} builds chatSurface inline; use conversationSurfaceFor() so WHICH surface ` +
+            'fills the slot (channel feed, session chat, a future transcript) is decided in ' +
+            'one place and can never drift per host',
         ).toBe(true);
       }
       if (block.includes('attachments=')) {

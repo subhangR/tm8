@@ -35,7 +35,7 @@ import { taskGitSectionFor } from '../views/taskGitSection';
 import { graphSurfaceFor } from '../views/graphSurface';
 import { attachmentsFor } from '../files/port';
 import { useMembershipSurface } from '../views/membershipSurface';
-import { chatSurfaceFor } from '../views/chatSurface';
+import { conversationSurfaceFor } from '../views/conversationSurface';
 import type { ChannelFeedPort } from '../channel-screen/useChannelFeed';
 import type { ConnectionState } from '../data/seam';
 import type { ContentSurface } from '../routes';
@@ -90,7 +90,7 @@ export interface GraphScreenProps {
    * The chat slot's host wiring — a PROP for the same reason `launch` is: the
    * data port names what this screen reads, and these are the shell's ports.
    * Absent (or with no `data.seam`) the panel renders its honest
-   * "feed host is unavailable" fallback instead of a dead Chat tab.
+   * "unavailable in this view" fallback instead of a dead conversation tab.
    */
   chat?: {
     channelFeedPort: ChannelFeedPort;
@@ -224,7 +224,7 @@ export function GraphScreen(props: GraphScreenProps) {
       onContentSurfaceChange={(surface) => {
         setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
       }}
-      chatSurface={props.chat && data.seam ? chatSurfaceFor(detail, selectedId, {
+      chatSurface={props.chat && data.seam ? conversationSurfaceFor(detail, selectedId, {
         seam: data.seam,
         spaceId: data.spaceId,
         connection: props.chat.connection,
