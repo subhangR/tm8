@@ -233,8 +233,11 @@ function assertUuids(values: readonly string[], field: string): string[] {
 
 /**
  * The unresolved-hard-dependency predicate, shared by `readyToPull` and by the
- * blocked badge. `internal.is_resolved` decides what "resolved" means per kind
- * (a task when done, a PR when merged) — asking it here keeps one definition.
+ * blocked badge. `internal.is_resolved` decides what "resolved" means — since
+ * phase 5 (migration 152) that is `status_category = 'done'` for EVERY kind,
+ * with `pull_request` overridden to the forge's merged state. Asking it here
+ * keeps one definition, which is what let that widening reach this predicate
+ * without a line changing.
  */
 const UNBLOCKED_PREDICATE = `not exists (
   select 1 from public.edges dep
