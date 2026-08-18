@@ -95,65 +95,71 @@ describe('PR chips survive a bounded graph page that dropped the PR node and its
     expect(index.get(sessionLive.id)?.map((f) => f.id)).toEqual([prTransplant.id]);
   });
 
-  it('and a session on the PR\'s BRANCH resolves it, with no task path at all', async () => {
-    // The fourth pass (107) matches `headRef == checkoutBranch`, which is how a
-    // worktree lane gets its chips without anyone running `link-pr`. It reads
-    // the branch off PR NODES — so on a page that dropped the PR node it had
-    // nothing to match, the same lottery again. The badge carries `headRef`,
-    // and this asserts the pass now seeds from it.
+  it('and a session that AUTHORED the PR resolves it through created_in alone', async () => {
+    // TIER 1 on the losing side of the lottery. Every other route to the
+    // session is severed on purpose: no PR node, no `tracks` edge, no
+    // `working_on` edge, and the task's `workingActors` badge stripped. A
+    // `created_in` edge is the only thing left that can answer — and it is
+    // the one the client never read, which is the whole reported bug.
     //
-    // Every other route to the session is severed here on purpose: no PR node,
-    // no `tracks` edge, no `working_on` edge, and the task's `workingActors`
-    // badge stripped. The branch match is the ONLY thing left that can answer.
+    // The PR facts come off the edge's own ENDPOINT SNAPSHOT here, because
+    // the PR node is exactly what this page lost.
     const page = withoutTheLinkedPullRequest(await boundedGraphPage());
-    const BRANCH = 'tm8/abc12345';
     const nodes = page.nodes.map((node): EntitySummary => {
-      if (node.id === taskGuideLines.id) {
-        const { workingActors: _severed, ...badges } = node.badges;
-        return {
-          ...node,
-          badges: {
-            ...badges,
-            pullRequests: (node.badges.pullRequests ?? []).map((pr) => ({ ...pr, headRef: BRANCH })),
-          },
-        };
-      }
-      if (node.id === sessionLive.id) {
-        // `workdirMode` is load-bearing, not decoration: the pass answers only
-        // for a lane the session OWNS. See the shared-checkout case below.
-        return {
-          ...node,
-          state: {
-            ...node.state, checkoutBranch: BRANCH, workdirMode: 'worktree',
-          } as EntitySummary['state'],
-        };
-      }
-      return node;
+      if (node.id !== taskGuideLines.id) return node;
+      const { workingActors: _severed, ...badges } = node.badges;
+      return { ...node, badges };
     });
     const edges = page.edges.filter((e) => e.type !== 'working_on');
+    const createdIn = {
+      ...page.edges[0]!,
+      id: 'edge-created-in',
+      type: 'created_in' as const,
+      source: prTransplant,
+      target: sessionLive,
+    };
 
-    expect(indexLinkedPullRequests(nodes, edges).get(sessionLive.id)?.map((f) => f.id))
-      .toEqual([prTransplant.id]);
+    const index = indexLinkedPullRequests(nodes, [...edges, createdIn]);
+    expect(index.get(sessionLive.id)?.map((f) => f.id)).toEqual([prTransplant.id]);
+    expect(index.get(sessionLive.id)?.[0]).toMatchObject({ attribution: 'authored' });
 
-    // And the match is the BRANCH, not a coincidence: a session parked on a
-    // different branch inherits nothing.
-    const elsewhere = nodes.map((node): EntitySummary =>
-      node.id === sessionLive.id
-        ? { ...node, state: { ...node.state, checkoutBranch: 'main' } as EntitySummary['state'] }
-        : node);
-    expect(indexLinkedPullRequests(elsewhere, edges).get(sessionLive.id)).toBeUndefined();
+    // NEGATIVE CONTROL: without that one edge, the same page says NOTHING.
+    // This is the honest degradation D4 chose over a branch-name guess.
+    expect(indexLinkedPullRequests(nodes, edges).get(sessionLive.id)).toBeUndefined();
+  });
 
-    // THE SHARED CHECKOUT ANSWERS NOTHING. Same branch, same PR, same severed
-    // routes — only `workdirMode` differs. A `project`-mode branch names the
-    // DIRECTORY, which every session spawned into that project shares, so a
-    // match here would fan one PR across all of them. Measured 2026-08-17:
-    // eleven sessions on `tm8/01a00bbd` each drew the same four PRs.
-    for (const mode of ['project', 'scratch'] as const) {
-      const shared = nodes.map((node): EntitySummary =>
-        node.id === sessionLive.id
-          ? { ...node, state: { ...node.state, workdirMode: mode } as EntitySummary['state'] }
-          : node);
-      expect(indexLinkedPullRequests(shared, edges).get(sessionLive.id)).toBeUndefined();
+  it('a session\'s own branch fact resolves NOTHING, in any workdir mode', async () => {
+    // The deleted pass, asserted absent on the real page. Before D4 this
+    // returned the PR for `workdirMode: 'worktree'`; #350 had already
+    // narrowed it from "all modes" after eleven sessions on one shared
+    // checkout each drew the same four PRs.
+    const page = withoutTheLinkedPullRequest(await boundedGraphPage());
+    const BRANCH = 'tm8/abc12345';
+    const edges = page.edges.filter((e) => e.type !== 'working_on');
+
+    for (const mode of ['worktree', 'project', 'scratch'] as const) {
+      const nodes = page.nodes.map((node): EntitySummary => {
+        if (node.id === taskGuideLines.id) {
+          const { workingActors: _severed, ...badges } = node.badges;
+          return {
+            ...node,
+            badges: {
+              ...badges,
+              pullRequests: (node.badges.pullRequests ?? []).map((pr) => ({ ...pr, headRef: BRANCH })),
+            },
+          };
+        }
+        if (node.id === sessionLive.id) {
+          return {
+            ...node,
+            state: {
+              ...node.state, checkoutBranch: BRANCH, workdirMode: mode,
+            } as EntitySummary['state'],
+          };
+        }
+        return node;
+      });
+      expect(indexLinkedPullRequests(nodes, edges).get(sessionLive.id), mode).toBeUndefined();
     }
   });
 
@@ -170,5 +176,66 @@ describe('PR chips survive a bounded graph page that dropped the PR node and its
       expect(view.getByTestId('linked-pr').getAttribute('data-pr-number')).toBe('212');
       view.unmount();
     }
+  });
+});
+
+/**
+ * 4d — the chip has to SHOW the difference between "this session wrote this"
+ * and "a task this session touched is linked to this".
+ *
+ * Asserted on the DOM hook, not on colour: jsdom loads no stylesheets, so no
+ * vitest in this repo can see the opacity/weight the CSS actually applies.
+ * `data-pr-attribution` is the contract between the two, and pinning it here
+ * is what keeps the stylesheet's selector from silently going dead.
+ */
+describe('an inherited chip is marked as a weaker claim than an authored one', () => {
+  const facts = {
+    id: 'pr-1',
+    title: 'Ship it',
+    repository: 'acme/tm8',
+    number: 42,
+    lifecycle: 'open' as const,
+    url: null,
+    ciStatus: null,
+    mergeState: null,
+    headRef: null,
+  };
+
+  it('marks each attribution on the chip, and says which in the tooltip', () => {
+    for (const attribution of ['authored', 'tracked', 'inherited'] as const) {
+      const view = render(
+        <LinkedPullRequestChips pullRequests={[{ ...facts, attribution }]} placement="tile" />,
+      );
+      const chip = view.getByTestId('linked-pr');
+      expect(chip.getAttribute('data-pr-attribution'), attribution).toBe(attribution);
+      expect(chip.className, attribution).toContain(`pr-chips__request--${attribution}`);
+      view.unmount();
+    }
+  });
+
+  it('NEGATIVE CONTROL — authored and inherited do not render identically', () => {
+    // If the marking is ever dropped, this is the assertion that fails: the
+    // two claims would collapse into one indistinguishable chip, which is the
+    // state 4d exists to end.
+    const draw = (attribution: 'authored' | 'inherited'): string => {
+      const view = render(
+        <LinkedPullRequestChips pullRequests={[{ ...facts, attribution }]} placement="tile" />,
+      );
+      const html = view.getByTestId('linked-pr').outerHTML;
+      view.unmount();
+      return html;
+    };
+    expect(draw('authored')).not.toEqual(draw('inherited'));
+  });
+
+  it('the tooltip names the provenance, because the visual alone cannot say WHY', () => {
+    const view = render(
+      <LinkedPullRequestChips
+        pullRequests={[{ ...facts, attribution: 'inherited' }]}
+        placement="tile"
+      />,
+    );
+    expect(view.getByTestId('linked-pr').getAttribute('title'))
+      .toContain('not necessarily its own work');
   });
 });

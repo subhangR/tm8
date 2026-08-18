@@ -5,6 +5,7 @@ export {
   indexLinkedPullRequests,
   pullRequestFactsOf,
   type LinkedPullRequestFacts,
+  type PullRequestAttribution,
   type LinkedPullRequestsByEntity,
   type PullRequestChip,
   type PullRequestChipState,

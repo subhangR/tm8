@@ -53,7 +53,21 @@ export function LinkedPullRequestChips({
         // The helper stays the single chip vocabulary; the tooltip carries the
         // words the icons replaced (lifecycle, conflict, CI verdict).
         const spoken = chipsForPullRequest(pullRequest).map((c) => c.label).join(' · ');
-        const tooltip = `${pullRequest.repository} #${pullRequest.number} · ${pullRequest.title}${spoken ? ` · ${spoken}` : ''}`;
+        // An INHERITED chip is a weaker claim than an authored one and must
+        // read as one. A session inherits every PR of every task it worked on,
+        // and 155 tasks have more than one session — so without this the tile
+        // says "this session's PR" about a sibling's work. The provenance
+        // sentence goes in the tooltip because the visual difference alone
+        // cannot say WHY, and a reader who cares can hover.
+        const provenance =
+          pullRequest.attribution === 'authored' ? 'authored by this session'
+          : pullRequest.attribution === 'inherited' ? 'via a task this session worked on — not necessarily its own work'
+          : null;
+        const tooltip = [
+          `${pullRequest.repository} #${pullRequest.number} · ${pullRequest.title}`,
+          spoken,
+          provenance,
+        ].filter(Boolean).join(' · ');
         const ci =
           pullRequest.ciStatus === 'passing' ? 'ci-green'
           : pullRequest.ciStatus === 'failing' ? 'ci-red'
@@ -77,10 +91,11 @@ export function LinkedPullRequestChips({
         );
         return (
           <span
-            className="pr-chips__request"
+            className={`pr-chips__request pr-chips__request--${pullRequest.attribution}`}
             data-testid="linked-pr"
             data-pr-id={pullRequest.id}
             data-pr-number={pullRequest.number}
+            data-pr-attribution={pullRequest.attribution}
             key={pullRequest.id}
             title={tooltip}
           >

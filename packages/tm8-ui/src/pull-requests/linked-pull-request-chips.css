@@ -67,6 +67,29 @@
 }
 .cv2-root .pr-chips__ci--ci-green { color: var(--pn-run); }
 .cv2-root .pr-chips__ci--ci-red { color: var(--pn-block); }
+/* -- attribution (D4): an INHERITED chip is a weaker claim, and looks it.
+   A session inherits every PR of every task it worked on, and a task may have
+   up to 10 sessions, so this chip means "a sibling of mine may have written
+   this" — never "I did". `authored` (created_in / in_worktree) and `tracked`
+   (a task's own link) both keep the full-strength rendering.
+
+   The lifecycle HUE is untouched: it is the icon's whole vocabulary and
+   recolouring it here would make "inherited + merged" unreadable as merged.
+   The signal is weight and a dotted rule under the number instead — the
+   established "provisional" idiom, and it survives both themes because it
+   inherits `currentColor` rather than naming an ink. */
+.cv2-root .pr-chips__request--inherited {
+  opacity: 0.62;
+}
+.cv2-root .pr-chips__request--inherited .pr-chips__number {
+  font-weight: 500;
+  border-bottom: 1px dotted currentColor;
+}
+.cv2-root a.pr-chips__ref:hover .pr-chips__number,
+.cv2-root .pr-chips__request--inherited:hover {
+  opacity: 1;
+}
+
 .cv2-root .pr-chips__conflict {
   color: var(--pn-block);
   font-family: var(--pn-mono);
