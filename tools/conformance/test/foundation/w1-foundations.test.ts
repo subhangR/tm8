@@ -258,7 +258,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       status: 'finalized',
       source: 'db/migrations/015_w1_foundations.sql',
       finalized: true,
-      sha256: '9f3258054fb1a0a3cbc80928edcea87760715f2402671544bd32a232773b5ee7',
+      sha256: '9f3258054fb1a0a3cbc80928edcea87760715f2402671534bd32a232773b5ee7',
       objects: {
         tables: [
           'project_links',
@@ -359,9 +359,9 @@ describe('W2.C01 current mounted registry inventory', () => {
 
     // 145 -> 147 upstream (unledgered); 147 -> 150 (2026-08-16, W4/132): the
     // three spaces.taskWorkflows handlers join the w2 identity-spaces module.
-    // 154 -> 156 (148): the three spaces.workflows handlers join the SAME w2
+    // 153 -> 156 (148): the three spaces.workflows handlers join the SAME w2
     // identity-spaces module the taskWorkflows three live in.
-    expect(handlers.facade).toHaveLength(154);
+    expect(handlers.facade).toHaveLength(153);
     // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
     // concurrent feature lane (not the W1 amendment set):
     //  - voice.token.create (voice-channels lane);
@@ -395,7 +395,7 @@ describe('W2.C01 current mounted registry inventory', () => {
       // Re-measured 148: the three spaces.workflows handlers join. Read out of
       // the FAILING RUN's Received line, which is the same thing as calling the
       // inventory and the only version of it that cannot be typed from memory.
-      // Re-measured 154: the three spaces.taskWorkflows handlers LEAVE — the
+      // Re-measured 153: the three spaces.taskWorkflows handlers LEAVE — the
       // first time this hash has moved on a removal. Same method: read out of
       // the failing run.
       .toBe('1aeac04f101bb96ce6de44b1652677d8a0fe4a93ae4b144cb6689f4c7983c634');
