@@ -10,6 +10,9 @@ import type { Seam } from '../../data/seam';
 import { describeLaunchManifest } from '../../domain';
 import { absTime, clockTime } from '../../kit/time';
 import { DisabledAction } from '../honesty/DisabledWithReason';
+import { TranscriptTurns } from '../../transcript/TranscriptTurns';
+import { useSessionTranscript } from '../../transcript/useSessionTranscript';
+import { transcriptUnavailableReason, type TranscriptState } from '../../transcript/transcript-model';
 import './session-debug.css';
 
 /**
@@ -73,19 +76,18 @@ type LaunchState =
   | { phase: 'error'; message: string }
   | { phase: 'ready'; record: SessionLaunchRecord };
 
-/** Independent of both the others for the same reason: three reads, three fates. */
-type TranscriptState =
-  | { phase: 'loading' }
-  | { phase: 'error'; message: string }
-  | { phase: 'ready'; page: SessionTranscriptPage };
-
 export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProps) {
   const [state, setState] = useState<LoadState>({ phase: 'loading' });
   const [launch, setLaunch] = useState<LaunchState>({ phase: 'loading' });
-  const [transcript, setTranscript] = useState<TranscriptState>({ phase: 'loading' });
+  // The transcript read is SHARED with the session panel's Transcript surface —
+  // same hook, same failure behaviour, one place to fix either. It owns its own
+  // poll, so `live` reaches it as an interval rather than through the journal's
+  // timer below.
+  const { state: transcript } = useSessionTranscript(seam, sessionId, {
+    intervalMs: live ? POLL_MS : null,
+  });
   // Kept across polls so a refresh does not throw the surface back to a spinner.
   const hasLoaded = useRef(false);
-  const hasLoadedTranscript = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -101,28 +103,9 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
     }
   }, [seam, sessionId]);
 
-  const loadTranscript = useCallback(async () => {
-    try {
-      const page = await seam.transcript(sessionId);
-      hasLoadedTranscript.current = true;
-      setTranscript({ phase: 'ready', page });
-    } catch (err) {
-      if (!hasLoadedTranscript.current) {
-        setTranscript({
-          phase: 'error',
-          message: err instanceof Error ? err.message : 'Transcript read failed',
-        });
-      }
-    }
-  }, [seam, sessionId]);
-
   useEffect(() => {
     void load();
   }, [load]);
-
-  useEffect(() => {
-    void loadTranscript();
-  }, [loadTranscript]);
 
   // ONE read, no poll: a launch record is written at spawn and is immutable.
   useEffect(() => {
@@ -145,10 +128,9 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
     if (!live) return;
     const timer = setInterval(() => {
       void load();
-      void loadTranscript();
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [live, load, loadTranscript]);
+  }, [live, load]);
 
   if (state.phase === 'loading') {
     return (
@@ -545,58 +527,16 @@ function TranscriptSection({ state }: { state: TranscriptState }) {
             The transcript exists but carries no prose turns yet — the agent has only run tools.
           </p>
         ) : (
-          <div className="pn-debug__turns" data-testid="session-debug-turns">
-            {/* Oldest-first, as the server sends it: a tail read backwards is
-                unreadable, and reversing here would fight the contract. */}
-            {page.entries.map((entry, i) => (
-              <div
-                key={`${entry.at ?? 'no-time'}-${String(i)}`}
-                className="pn-debug__turn"
-                data-source={entry.source}
-              >
-                <span className="pn-debug__turn-head">
-                  {entry.source === 'assistant' ? 'agent' : 'user'}
-                  {entry.at === null ? '' : ` · ${formatTime(entry.at)}`}
-                  {entry.truncated ? ' · truncated' : ''}
-                </span>
-                <pre className="pn-debug__pre">{entry.text}</pre>
-              </div>
-            ))}
-          </div>
+          // THE SHARED RENDERER. The Transcript surface draws the same turns
+          // through this same component, so the two can never disagree about
+          // what the agent said. The tail boundary is NOT passed here: this
+          // section states it in prose already, above, alongside the stats it
+          // qualifies.
+          <TranscriptTurns entries={page.entries} testId="session-debug-turns" />
         )}
       </details>
     </section>
   );
-}
-
-function transcriptUnavailableReason(page: SessionTranscriptPage) {
-  switch (page.unavailableReason) {
-    case 'no_native_session_id':
-      return {
-        cause: 'This session’s agent transcript cannot be identified',
-        remedy: 'it was spawned before tm8 recorded the agent’s own session id — unrecoverable, not an error',
-      };
-    case 'unsupported_agent_tool':
-      return {
-        cause: 'This agent writes no transcript tm8 can read',
-        remedy: 'only Claude Code and Codex keep a native transcript; other tools leave nothing behind',
-      };
-    case 'no_transcript_file':
-      return {
-        cause: 'No transcript file exists for this session',
-        remedy: 'the agent has not written its first turn yet, or the file has since been cleaned up',
-      };
-    case 'unreadable':
-      return {
-        cause: 'The transcript file could not be read',
-        remedy: 'the file exists but the node could not open it',
-      };
-    default:
-      return {
-        cause: 'No transcript is available for this session',
-        remedy: 'the node reported no reason',
-      };
-  }
 }
 
 function DebugHeader({ page }: { page: SessionJournalPage }) {
