@@ -169,21 +169,36 @@ Two constraints, which are **acceptance and not advice**:
 
 **A MEASUREMENT THIS CONTRACT CITED AND HAS SINCE RETRACTED — `pn-tt__status` at 44x44.**
 The gate's record cited that number as evidence the task row's state control was at bar. **It is not
-evidence of that.** `pn-tt__status` is a `<span>` WRAPPER (`MaestroTaskTile.tsx`); the actual control
-is `button.lp__statedot`, rendered *inside* it only when `EntityListPanel` passes `statusControl`
-(`list.stateControl && !treatment`). In the fixture capture `lp__statedot` was never observed at all —
-which means `statusControl` was undefined, which means **the 44x44 that was measured was a
-non-interactive wrapper, not a tap target.** The two observations are not merely consistent; each
-explains the other.
+evidence of that, and that much is solid.** `pn-tt__status` is a `<span>` WRAPPER
+(`MaestroTaskTile.tsx`); the actual control is `button.lp__statedot`, rendered *inside* it only when
+`EntityListPanel` passes `statusControl` (`list.stateControl && !treatment`). Either way, **what was
+measured was the wrapper.** DEF-017 remains open on `lp__statedot`, which is its actual offender
+selector.
 
-Consequence for this file's own rule set, stated rather than quietly dropped: growing
-`.pn-tt__status` is still correct — it is what stops a 44px control being clipped by a 16px cell when
-one IS present — but **it must not be read as evidence that a control is at bar.** DEF-017 remains
-open on `lp__statedot`, which is its actual offender selector.
+Growing `.pn-tt__status` stays correct — it is what stops a 44px control being clipped by a 16px cell
+when one IS present. It simply must not be read as evidence that a control is at bar.
 
-And the wrapper carries `title=` when no control is passed, which is a **hover-delivered tooltip on a
-touch surface** — the same fault class as §8's `title=` rule and the ledger's DEF-032/DEF-033. Not
-this contract's file to fix; recorded here because this contract cited the element.
+**WHAT IS *NOT* ESTABLISHED, AND MUST NOT BE WRITTEN DOWN AS IF IT WERE.** It is tempting to conclude
+that because `lp__statedot` was never observed in the census, `statusControl` was undefined — and
+therefore that the wrapper's `title=` was live, making it a hover-delivered tooltip on a touch
+surface. **That inference assumes the census reliably matches `lp__statedot` when it is present, and
+that reliability is the open question.** Two branches survive the evidence:
+
+- **A** — `lp__statedot` genuinely absent ⇒ `statusControl` undefined ⇒ the wrapper carries `title` ⇒
+  a touch-dead affordance on that row (§8's `title=` rule, DEF-032/DEF-033's fault class).
+- **B** — `lp__statedot` PRESENT but unmatched by the census ⇒ `statusControl` WAS passed ⇒ the
+  control exists at 16x16, DEF-017 is live and sizeable, the wrapper's `title` is `undefined`, and
+  **there is no touch-dead affordance at all.** B would also mean the instrument has been silently
+  under-reporting every row-scoped selector in this program, including the ones closed as fixed.
+
+The discriminator is a `lp__statedot` node count on the *populated* tier, where 0 separates A from B
+directly. Until that runs, **the `title=` consequence is CONDITIONAL ON A and is recorded as
+conditional.**
+
+**THE HAZARD ONE LEVEL UP, which is why this block is worded this carefully:** the evidence for "the
+control is absent" was *the same census whose ability to see that control is in doubt*. An instrument
+cannot be the witness for its own blind spot. When a conclusion depends on a null result, ask what
+would have to be true for the null to be an artefact — and go and measure that instead.
 
 **THE SURVIVING OFFENDER HAS AN OWNER.** `input.lp__searchinput` (332x23 at 390, 372x23 at 430) is the
 only sub-44 target left on tasks, sessions and channels, and being under 16px type it is *also* an iOS
