@@ -267,3 +267,104 @@ And a session **cannot emit parts at all**: `append_chat_message_part`
 (migration 104:355) is the only writer and raises `P0002` for any message with
 no `chat_turns` row. The two "turn" concepts do not collapse. Render
 `parts?.length ? <Parts/> : <Markdown/>` and stay honest about which is which.
+
+---
+
+## 8. Closeout — what shipped, and the two items that did NOT, with reasons
+
+The unification is done: **one reader serves every anchor**, and parts render
+on the shared surface. Two planned items were deliberately not built. Both
+were on the plan; both had their premise change underneath them. Recording why
+here so the next lane inherits a decision rather than a mystery.
+
+### 8.1 The chat-home parts-cluster lift — DO NOT DO IT AS PLANNED
+
+The plan's step 1 said "lift `turn-model` + `wire` + `TurnParts` out of
+`chat-home/` into a shared module". `#384` renders parts on the shared surface
+by importing those from `chat-home/` and promised the lift as a follow-up.
+
+**The lift's premise was that `chat-home/` was going away** (plan step 9,
+"delete ChatHomeScreen"). §8.2 explains why that is no longer true. With the
+directory staying, the lift buys **no behaviour** and costs real risk:
+
+- The cluster is seven files, roughly **1,700 lines**.
+- Its components write **~12 owned class prefixes** across roughly **101
+  selector references** in a 1,247-line `chat-home.css`.
+- `chat-home-css-coverage.test.ts` asserts, in both directions, that every
+  `tch-`/`fleet-`/`cgs-` class a component in that directory writes has a rule
+  in that directory's CSS. **Moving components without their CSS fails it by
+  design**, and the guard also carries two declared inventories that rot.
+
+That guard exists because this exact class of mistake is *invisible*: typecheck
+passes (a className is a string), jsdom loads no stylesheets and rasterizes
+nothing, and an unstyled `<button>` reads like a styled one in a screenshot.
+Paying ~1,700 lines of churn plus a CSS extraction against a silent-failure
+tripwire, for tidiness, on a surface that just stabilised, is a bad trade.
+
+**If it is ever done**, the shape is: move the components *and* every rule for
+those twelve prefixes into the new module, give that module its own coverage
+guard with the same two-direction assertion, and port the declared-inventory
+entries with it. Do it as a pure move with **no other change in the diff**, so
+the review question is only "did anything change?".
+
+Note the dependency direction is the one real argument for it: `channel-screen/`
+is a shared surface and `chat-home/` is a feature module, so the shared surface
+depending on the feature is an inversion. That is worth fixing **when
+something else already requires touching these files** — not on its own.
+
+### 8.2 "Delete ChatHomeScreen" — it is not a deletion
+
+The decisive fact, from the autopsy map: **a chat turn is not a message, and
+the unified surface reads messages.**
+
+The unification made every surface read any anchor's *messages* through one
+reader. It was never going to give that reader *turns*. `ChatHomeScreen` still
+solely owns:
+
+1. **The turn engine** — the `port.subscribe` frame path, `mergeChatTurnFrame`
+   / `reconcileDetails`, generation-guarded thread loads, and the deliberate
+   referential-identity property that three downstream `WeakMap` caches depend
+   on. Break that identity and streaming re-walks the whole thread per frame.
+2. **A six-phase state machine** encoding the server's **claim protocol** — the
+   server writes a placeholder body when it claims a turn, and this code
+   suppresses it. Rebuild from the types and you do not discover that rule; you
+   discover it in production as *"the agent says 'Agent turn in progress.' in
+   the transcript."* (`#384` fixed exactly that symptom from the other side.)
+3. **The cockpit** — region-B precedence, `?stage=` panes, the tray, per-thread
+   drafts, the dock-down FLIP.
+4. **The write-once two-call start protocol** — ten `ChatHomePort` members, all
+   in use.
+
+So the item is either **keep the file** — it is no longer duplication, since
+`#384` shared the one thing that *was* duplicated — or **move the turn engine
+into the shared surface**, which is a project on the scale of the feed
+unification, with §7 as its spec. It is not a cleanup and should not be
+carried as one.
+
+### 8.3 Composer thread-config — buildable, blocked on one product answer
+
+Starting a chat thread from the shared composer is **coherent and worth
+building**, and more so after `#384`. The mechanism is already there:
+`onMessagesCommitted` is registered on the **generic** `messages.post`
+(`facade/index.ts:211-218`), not a chat-specific op, so a message posted from
+any surface into a chat-configured root **already wakes the orchestrator and
+already streams durably today**. With parts now rendering and the reader's
+coalesced refresh, the shared surface shows the agent's turn correctly —
+*later* than a live stream, never *wrong*, because the durable part is appended
+before the frame is published.
+
+The build is: port `ComposerSelect` ×3 (teammate, model, mode), then
+post-root-then-`startChatThread` (`StartChatThreadInput` is
+`{rootMessageId, teammateId, model, mode, clientMutationId}`).
+
+**The open question is not technical — it is where the affordance belongs.**
+"Start an AI chat thread" on every task's Discussion tab, every doc, every
+channel? That is a product decision, and picking one silently would be
+inventing product.
+
+The defensible registry-driven default, offered as a *proposal* rather than a
+decision: gate it on the anchor's `panel.composition === 'chat'`, which today
+means channel — matching how Chat Home already works, since it anchors every
+thread to a channel entity (`GateApp.tsx:1975`; `messages.post` 404s on a space
+id). That reads a registry fact rather than branching on kind, and it is off
+everywhere else by construction.
