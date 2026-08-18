@@ -28,6 +28,13 @@ function portWith(query: ChannelFeedPort['seam']['query']): ChannelFeedPort {
   const seam = {
     feed: vi.fn(async () => ({ items: [], nextCursor: null })),
     onEvent: () => () => undefined,
+    /* The real `Seam` has always had these; this double predates the feed
+       unification, when the channel hook subscribed to events ALONE and got
+       no reconnect reload and no resync. It does now, through
+       `useAnchorFeed`, so the double has to answer for them. */
+    onConnection: () => () => undefined,
+    onResync: () => () => undefined,
+    commands: { postMessage: vi.fn(async () => ({ patches: [] })) },
     query,
     liveness: { statusOf: () => 'unknown', refresh: vi.fn() },
     entity: vi.fn(async () => { throw new Error('not needed'); }),

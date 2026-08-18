@@ -402,6 +402,12 @@ describe('the host-sequenced thread read (ChannelChatSurface + useChannelFeed)',
       seam: {
         feed: vi.fn(async () => feedPage([messageItem({}, root)])),
         onEvent: vi.fn(() => () => undefined),
+        /* Present since the feed unification: the channel reads through
+           `useAnchorFeed`, which attaches a reconnect reload and a resync
+           listener alongside the event subscription. */
+        onConnection: vi.fn(() => () => undefined),
+        onResync: vi.fn(() => () => undefined),
+        commands: { postMessage: vi.fn(async () => ({ patches: [] })) },
         query: vi.fn(async () => { throw new Error('no query in this fixture'); }),
         liveness: { refresh: vi.fn(async () => ({ liveEntityIds: [] })) },
         entity: vi.fn(async () => { throw new Error('no entity in this fixture'); }),
@@ -410,7 +416,11 @@ describe('the host-sequenced thread read (ChannelChatSurface + useChannelFeed)',
       },
       spaceId: 'sp-1',
       liveIds: [],
-      postMessage: vi.fn(async () => undefined),
+      /* Result-bearing: the host's write now answers with the command result
+         so the mutation journal can settle its pending row against the stored
+         ids. A double that answers `undefined` leaves the row UNCERTAIN, and
+         an uncertain row never reaches the post-write refresh. */
+      postMessage: vi.fn(async () => ({ patches: [] })),
       spawn: vi.fn(async () => 'ws-new'),
       projects: [],
     } as unknown as ChannelFeedPort;

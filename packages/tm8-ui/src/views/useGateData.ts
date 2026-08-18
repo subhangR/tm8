@@ -24,6 +24,7 @@ import type {
   AttentionRequestMutationResult,
   CollectionQuery,
   CommandResult,
+  MessageBatchResult,
   Cursor,
   EdgeView,
   ExecutionSpawnInput,
@@ -588,7 +589,13 @@ export interface GateData {
   spawn: (input: ExecutionSpawnInput) => Promise<EntityId>;
   /** The composer's dispatcher (Surface Audit): seam postMessage, then the
       anchor's thread re-read so the echo is on screen, not implied. */
-  postMessage: (input: PostMessageInput) => Promise<void>;
+  /**
+   * RETURNS THE COMMAND RESULT, not void. The chat mutation journal settles a
+   * pending row against the stored message ids, so a write that answers
+   * nothing can only be settled by the event echo — later, and not at all if
+   * that event is missed. Callers that do not need the result ignore it.
+   */
+  postMessage: (input: PostMessageInput) => Promise<CommandResult | MessageBatchResult>;
   /** The thread for an entity, hydrated by pull(). Absent = no read ran. */
   messagesOf: (id: string) => readonly MessageView[] | undefined;
   /** Reconcile a command's authoritative detail and every summary patch. */
@@ -1878,9 +1885,7 @@ export function useGateData(options: GateOptions): GateData {
      thread re-read shows the echo. The command result plus the stream IS the
      convergence path — the same rule spawn() already follows. */
   const postMessage = useCallback(
-    async (input: PostMessageInput) => {
-      await seam.commands.postMessage(input);
-    },
+    (input: PostMessageInput) => seam.commands.postMessage(input),
     [seam],
   );
 
@@ -2338,13 +2343,14 @@ export function useGateData(options: GateOptions): GateData {
   const postAndRefresh = useCallback(
     async (input: PostMessageInput) => {
       const generation = spaceGeneration.current;
-      await postMessage(input);
+      const result = await postMessage(input);
       const anchor = input.anchorIds[0];
-      if (!anchor) return;
+      if (!anchor) return result;
       const thread = await seam.messages(anchor as never).catch(() => undefined);
       if (thread && generation === spaceGeneration.current) {
         domain.store.getState().ingestMessages(anchor, [...thread.items]);
       }
+      return result;
     },
     [postMessage, seam, domain],
   );

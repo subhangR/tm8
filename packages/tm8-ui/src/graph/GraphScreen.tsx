@@ -44,7 +44,10 @@ export interface GraphScreenData {
   spaceId: string;
   detailOf(id: string): EntityDetail | undefined;
   messagesOf(id: string): readonly MessageView[] | undefined;
-  postMessage(input: PostMessageInput): Promise<void>;
+  /* The result is IGNORED here but must be accepted: `GateData.postMessage`
+     returns the command result so a mutation journal can settle against it,
+     and a port that promises `void` cannot receive that host. */
+  postMessage(input: PostMessageInput): Promise<unknown>;
   livenessOf(id: string): SessionLiveness;
   /** Optional: without it the Debug surface renders its explained absence
    *  rather than a broken table. */

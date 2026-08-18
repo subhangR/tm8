@@ -29,10 +29,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore } from 'zustand';
 import type { StoreApi } from 'zustand/vanilla';
 import type {
+  CommandResult,
   Cursor,
   EntityFeedPage,
   EntityFeedQuery,
   EntityId,
+  MessageBatchResult,
   MessageView,
   PostMessageInput,
   SpaceId,
@@ -82,6 +84,21 @@ export interface UseAnchorFeedOptions {
   /** Branch reads + thread pane. Registry config decides, never a kind literal. */
   threads?: boolean;
   focusAround?: NonNullable<EntityFeedQuery['around']> | null;
+  /**
+   * The write, when the host's own is more than a seam call.
+   *
+   * Defaults to `seam.commands.postMessage`. A host overrides it when its
+   * post does bookkeeping the feed cannot see — `GateData.postMessage`
+   * re-reads the anchor's thread and ingests it into the domain store, which
+   * is what keeps tab counters and hub cards current. Bypassing that to talk
+   * to the seam directly would be invisible until a counter went stale.
+   *
+   * It MUST return the command result: the mutation journal settles a pending
+   * row against the stored message ids, and a write that answers `void` can
+   * only ever be settled by the event echo — later, and not at all if the
+   * event is missed.
+   */
+  postMessage?: (input: PostMessageInput) => Promise<CommandResult | MessageBatchResult>;
   /** Test/integration injection. Production uses the retained global store. */
   store?: StoreApi<ChatStoreState>;
 }
@@ -130,6 +147,7 @@ export function useAnchorFeed({
   limit = 50,
   threads = false,
   focusAround = null,
+  postMessage,
   store = chatStore,
 }: UseAnchorFeedOptions): AnchorFeed {
   const key = useMemo<ChatStateKeyParts>(() => ({
@@ -182,7 +200,7 @@ export function useAnchorFeed({
       store,
       key,
       spaceId,
-      postMessage: (input: PostMessageInput) => seam.commands.postMessage(input),
+      postMessage: (input: PostMessageInput) => (postMessage ?? seam.commands.postMessage)(input),
       /*
        * The echo is the JOURNAL, not this refresh. `chatPageWithJournal`
        * projects the pending row the moment `submit` records it, so the message
@@ -195,7 +213,7 @@ export function useAnchorFeed({
        */
       refresh: () => controller.loadNewest(),
     }),
-    [controller, key, seam.commands, spaceId, store],
+    [controller, key, postMessage, seam.commands, spaceId, store],
   );
 
   // -- narrow selectors: one conversation never subscribes to another --------

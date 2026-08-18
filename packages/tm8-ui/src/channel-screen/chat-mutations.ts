@@ -68,7 +68,19 @@ export function createChatMutationController({
       const result = await postMessage(journal.command);
       const messages = messagesFromResult(result);
       settleStored(store, keyId, journal.clientMutationId, messages);
-      await refresh();
+      /*
+       * NOT AWAITED — perceived-latency ruling of 2026-08-18. The write is
+       * DURABLE the moment it resolves, and `settleStored` above has already
+       * swapped the optimistic row for the stored one, so the viewer is
+       * looking at their message before this read starts. Awaiting it held the
+       * composer's send spinner through a full feed read whose only job was to
+       * show what the page already showed.
+       *
+       * Errors cannot be dropped on the floor by this: the read reports
+       * through the entry's own `phase`/`error`, which is where a failed feed
+       * read belongs — it is not a failure of the send.
+       */
+      void refresh();
     } catch (reason: unknown) {
       // An event echo can prove storage before the HTTP request reports its
       // own failure. Stored truth wins; the late rejection cannot regress it.

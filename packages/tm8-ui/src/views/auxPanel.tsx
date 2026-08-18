@@ -77,7 +77,10 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
   /* The feed port is a STATELESS adapter over the same GateData the host
      already handed down — not a second executor; the stateful feed lives in
      the surface, keyed on this identity, exactly as at the other mounts. */
-  const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
+  const channelFeedPort = useMemo(
+    () => channelFeedPortFromGateData(data, host.viewerMemberId),
+    [data, host.viewerMemberId],
+  );
   /* Terminal⇄chat request per subject, so the chat surface's "switch to
      terminal" is a real handler at this mount too. */
   const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface | null>>({});
