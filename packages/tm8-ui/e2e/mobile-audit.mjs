@@ -769,6 +769,16 @@ function measureInPage({ MIN_TAP, EPS }) {
     /* Vertical reachability at REST — see the belowFold docblock. A count of 0
        is what licenses reading `tapTargetsUnderMin: 0` as "the controls are on
        the touch floor AND on the screen". */
+    /*
+     * THE PAIR THAT MUST BE READ TOGETHER. `tapTargetsUnderMin: 0` alone is not
+     * "the controls are usable" — it is "the controls that exist are big
+     * enough". Reachability is the other half, and until this field existed a
+     * reader had to supply it from a screenshot, which does not scale and is
+     * unfalsifiable. tapReachable === tapCounted is what licenses the usable
+     * reading; anything less and the surface passes with controls off screen.
+     */
+    tapReachable: targets.length - belowFold.length,
+    tapCounted: targets.length,
     tapTargetsBelowFoldCount: belowFold.length,
     tapTargetsBelowFold: belowFold.slice(0, 10),
     /* Is the screen scrolled at all, and by how much — context for the above. */
