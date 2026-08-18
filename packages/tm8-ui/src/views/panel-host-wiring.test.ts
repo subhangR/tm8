@@ -160,6 +160,27 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
+  it.each(hosts)('%s passes chatSurface at every mount', (_label, file) => {
+    for (const { block } of mounts.filter((m) => m.file === file)) {
+      expect(
+        block.includes('chatSurface'),
+        `an <EntityDetailPanel> in ${file} does not pass chatSurface, so a session's Chat tab ` +
+          'would render the "feed host is unavailable" alert and a channel would show a feed-less ' +
+          'front door — the exact three-host outage this assertion was added after',
+      ).toBe(true);
+    }
+  });
+
+  it.each(hosts)('%s passes viewerMemberId at every mount', (_label, file) => {
+    for (const { block } of mounts.filter((m) => m.file === file)) {
+      expect(
+        block.includes('viewerMemberId'),
+        `an <EntityDetailPanel> in ${file} does not pass viewerMemberId, so the session chat ` +
+          "would post as 'anonymous' and own-message treatments cannot work on this host",
+      ).toBe(true);
+    }
+  });
+
   it.each(hosts)('%s passes attachments at every mount', (_label, file) => {
     for (const { block } of mounts.filter((m) => m.file === file)) {
       expect(
@@ -195,6 +216,13 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
         expect(
           block.includes('graphSurfaceFor'),
           `${file} builds graphSurface inline; use graphSurfaceFor() so every host stays identical`,
+        ).toBe(true);
+      }
+      if (block.includes('chatSurface')) {
+        expect(
+          block.includes('chatSurfaceFor'),
+          `${file} builds chatSurface inline; use chatSurfaceFor() so the archetype fork ` +
+            '(hub → channel feed, else → session chat) can never drift per host',
         ).toBe(true);
       }
       if (block.includes('attachments=')) {

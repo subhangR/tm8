@@ -1184,7 +1184,18 @@ function PanelBody(
           hasFeed={props.chatSurface != null}
           onOpenEntity={onOpenEntity}
         />
-        {props.chatSurface ? <div className="pn-hub-feed">{props.chatSurface}</div> : null}
+        {props.chatSurface ? (
+          <div className="pn-hub-feed">{props.chatSurface}</div>
+        ) : (
+          /* The terminal arm's honesty, extended here: a hub without a feed
+             host used to render NOTHING below the front door — a channel you
+             could neither read nor post to, with no sign anything was missing.
+             All hosts now wire the slot via `chatSurfaceFor`, so this alert is
+             the tripwire for the next host that forgets. */
+          <p className="pn-surface-host-missing" role="alert">
+            This channel&rsquo;s feed host is unavailable in this view.
+          </p>
+        )}
       </>
     );
   }

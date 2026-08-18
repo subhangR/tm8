@@ -20,6 +20,8 @@ import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import type { GateData } from './useGateData';
+import type { ContentSurface } from '../routes';
+import { chatSurfaceFor } from './chatSurface';
 import './channel-view.css';
 import { attentionSectionFor } from './attentionSurface';
 import { debugSurfaceFor } from './debugSurface';
@@ -65,6 +67,9 @@ export interface ChannelViewProps {
   onSpawn?(input: ExecutionSpawnInput): void | Promise<void>;
   /** Where a failed command reports. Absent ⇒ nothing to say it failed. */
   onNotice?(notice: Notice): void;
+  /** The viewer, for the session chat beside the feed — same identity every
+   *  other EntityDetailPanel host passes. */
+  viewerMemberId?: string | null;
 }
 
 type DetailMode = 'aside' | 'full';
@@ -80,8 +85,13 @@ export function ChannelView({
   reasons,
   onSpawn,
   onNotice,
+  viewerMemberId,
 }: ChannelViewProps) {
   const [activeTab, setActiveTab] = useState(FEED_KEY);
+  /* The aside's terminal⇄chat request, per entity — the same memory
+     EntityView keeps, so the chat surface's "switch to terminal" is a real
+     handler here too (no-op-handler-ban's reasoning). */
+  const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface | null>>({});
   /* ONE feed implementation, shared with the panel-hosted ChannelChatSurface
      (channel-screen/useChannelFeed). This view used to own it inline; the
      2026-08-01 ruling gave channels a second host, and two copies of the @tag
@@ -236,6 +246,23 @@ export function ChannelView({
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(selectedId)}
       livenessOf={data.livenessOf}
+      viewerMemberId={viewerMemberId}
+      contentSurface={contentSurfaces[selectedId] ?? null}
+      onContentSurfaceChange={(surface) => {
+        setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
+      }}
+      chatSurface={chatSurfaceFor(selectedDetail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: data.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort: feedPort,
+        viewerMemberId,
+        onOpenEntity: (id) => setSelectedId(id),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      })}
       messages={selectedMessages}
       connections={data.connectionsOf(selectedId)}
       linkedPullRequestsOf={data.linkedPullRequestsOf}
