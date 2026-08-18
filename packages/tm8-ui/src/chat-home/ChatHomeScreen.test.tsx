@@ -128,7 +128,9 @@ describe('Chat Home', () => {
     expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
     expect((view.getByLabelText('Chat model') as HTMLButtonElement).disabled).toBe(true);
     expect(view.getByLabelText('Chat mode').textContent).toContain('plan');
-    expect(view.getByText('pinned for this thread')).toBeTruthy();
+    // The pinned state is the disabled triggers themselves — the foot carries
+    // controls, not copy (user ruling 2026-08-18).
+    expect(view.queryByText('pinned for this thread')).toBeNull();
   });
 
   it('posts the first prompt as the root before configuring the thread', async () => {
@@ -206,7 +208,7 @@ describe('Chat Home', () => {
       expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(true);
     });
     expect(view.getByLabelText('Chat mode').textContent).toContain('explain');
-    expect(view.getByText('pinned for this thread')).toBeTruthy();
+    expect(view.queryByText('pinned for this thread')).toBeNull();
   });
 
   it('appends a streamed part by seq and settles on done', async () => {

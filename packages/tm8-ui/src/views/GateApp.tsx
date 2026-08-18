@@ -73,6 +73,7 @@ import { slugOfKind } from '../domain';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
+import { channelFeedPortFromGateData } from './channel-feed-port';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
 import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
 import { InboxView } from './InboxView';
@@ -936,6 +937,10 @@ export function GateApp(props: GateAppProps = {}) {
   // identity read that supplies the account face. Reuse its canonical member
   // id here: a second resolver/read would let the two surfaces disagree.
   const viewerMemberId = data.viewerActor?.id ?? null;
+  /* The graph screen's narrow port cannot build a channel feed port itself,
+     so the shell builds the one adapter (same seam every other host wraps)
+     and hands it down with the chat wiring. */
+  const graphChatFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
 
   // D44/D51 launch sheet. Transient client state — never the URL (§11), so a
   // shared link cannot open someone else's half-configured spawn surface.
@@ -1707,6 +1712,7 @@ export function GateApp(props: GateAppProps = {}) {
               serverBaseUrl={activeServer.routeBaseUrl}
               reasons={reasons}
               onNotice={notices.push}
+              viewerMemberId={viewerMemberId}
               /* The same verb every other screen commits, so the panel beside
                  the feed launches for real instead of refusing. */
               onSpawn={async (input) => {
@@ -1737,6 +1743,11 @@ export function GateApp(props: GateAppProps = {}) {
               nodeLimit={data.graph.limit}
               launch={graphLaunchPort}
               onNotice={notices.push}
+              chat={{
+                channelFeedPort: graphChatFeedPort,
+                connection: data.connection,
+                viewerMemberId,
+              }}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'git' ? (
             /* ⎇ Git (Git UI wave) — git elevated out of Settings: branch

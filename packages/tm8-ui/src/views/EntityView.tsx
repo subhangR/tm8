@@ -33,7 +33,7 @@
  * ESC WALKS DOWN ONE RUNG PER PRESS: aux → detail → list.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { EntityId, EntityKind, ExecutionSpawnInput, WorkSessionInteractionProfileProjection } from '@tm8/contract';
+import type { EntityId, EntityKind, ExecutionSpawnInput } from '@tm8/contract';
 import {
   EntityDetailPanel,
   EntityListPanel,
@@ -75,8 +75,7 @@ import { useSessionStart } from './useSessionStart';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useMembershipSurface } from './membershipSurface';
 import type { ContentSurface } from '../routes';
-import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
-import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
+import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
 import { attentionSectionFor } from './attentionSurface';
@@ -575,10 +574,6 @@ export function EntityView(props: EntityViewProps) {
     || messages === undefined
     || representedThreadMessageCount(messages) < detail.counters.messages
   )) props.data.pull?.(selectedId);
-  const selectedContent = detail?.content as unknown as {
-    interactionProfile?: WorkSessionInteractionProfileProjection | null;
-  } | undefined;
-  const recordedStatus = (detail?.state as unknown as { status?: string } | undefined)?.status;
 
   // The aux entity's own detail. Hydration is the same read-through the
   // centre uses — an unhydrated id renders the panel's loading state rather
@@ -733,39 +728,22 @@ export function EntityView(props: EntityViewProps) {
       onContentSurfaceChange={(surface) => {
         setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
       }}
-      /* Same archetype fork as WorkspaceView, and it belongs in BOTH hosts:
-         this one was missed when channels became a collection, so opening a
-         channel from its `k/` list handed the SESSION chat surface a channel
-         anchor and the server refused it — "feed scope session_chat_v1 is not
-         applicable to a channel anchor". The kind literal stays out of it; the
-         registry's archetype decides. */
-      chatSurface={detail && getKind(detail.kind).panel.archetype === 'hub' ? (
-        <LazyChannelChatSurface
-          port={channelFeedPort}
-          channelId={selectedId}
-          connection={data.connection}
-          onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
-          threads={getKind(detail.kind).panel.threads === true}
-          anchorTitle={`${getKind(detail.kind).chip.glyph}${detail.title}`}
-        />
-      ) : detail ? (
-        <LazySessionChatSurface
-          seam={data.seam}
-          sessionId={selectedId}
-          spaceId={data.spaceId}
-          viewerMemberId={props.viewerMemberId ?? 'anonymous'}
-          connection={data.connection}
-          sessionExited={recordedStatus === 'exited' || recordedStatus === 'failed'}
-          defaultLimit={selectedContent?.interactionProfile?.feedPolicy.pageSize}
-          composerPolicy={selectedContent?.interactionProfile?.composerPolicy}
-          needsAttention={detail ? needsAttentionOf(detail, data.livenessOf) : false}
-          attentionDetail={QUIET_SESSION_DETAIL}
-          onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
-          onSwitchToTerminal={() => {
-            setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
-          }}
-        />
-      ) : undefined}
+      /* The archetype fork lives in `conversationSurfaceFor` now, shared by ALL five
+         EntityDetailPanel hosts — this host was once the one that missed it
+         ("feed scope session_chat_v1 is not applicable to a channel anchor"),
+         and three others repeated the miss until the fork moved out. */
+      chatSurface={conversationSurfaceFor(detail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: data.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort,
+        viewerMemberId: props.viewerMemberId,
+        onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      })}
       attentionSection={detail ? attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId)) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
