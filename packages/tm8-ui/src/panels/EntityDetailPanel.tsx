@@ -58,6 +58,7 @@ import { attachedFiles } from '../files/model';
 import type { AttachmentsPort } from '../files/port';
 import type { TriggerOption } from '../rich-input';
 import { LinkedPullRequestChips, pullRequestFactsOf, type LinkedPullRequestFacts } from '../pull-requests';
+import { TransferControl } from '../transfer';
 import { MergePullRequestFlow } from './pull-requests/MergePullRequestFlow';
 
 /**
@@ -787,6 +788,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
             {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
               <SaveControls save={save} />
             ) : null}
+            {/* Cross-server transfer (user ruling 2026-08-18: panel, not tile).
+                Self-gating: renders nothing unless a remote server connection
+                is registered, so the single-server case never sees it. Kind
+                awareness lives in src/transfer, not here (§15.2). */}
+            <TransferControl detail={detail} />
             <PanelWindowControls
               onPromote={props.onPromote}
               onClose={onClose}
