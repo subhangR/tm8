@@ -263,12 +263,14 @@ const MEMBER_ROLES_NET_NEW_OPERATIONS = [
   'spaces.members.updateRole',
 ] as const;
 
-/** W4/132 (2026-08-16): per-type status vocabularies, mounted with the wave. */
-const TASK_WORKFLOW_NET_NEW_OPERATIONS = [
-  'spaces.taskWorkflows.delete',
-  'spaces.taskWorkflows.list',
-  'spaces.taskWorkflows.upsert',
-] as const;
+/*
+ * `TASK_WORKFLOW_NET_NEW_OPERATIONS` (W4/132) STOOD HERE — the three
+ * `spaces.taskWorkflows.*` routes, per-`type`-value status vocabularies mounted
+ * with that wave. Phase 6 retires them with the `type` axis they keyed on, and
+ * every count in this file that summed them corrects itself, because those
+ * counts are DERIVED from these group lengths rather than written down. The
+ * hard-coded `/health` numbers below are the exception and are re-MEASURED.
+ */
 
 /** 148 (phase 2): the real workflow tables, mounted with the wave. */
 const WORKFLOW_NET_NEW_OPERATIONS = [
@@ -352,7 +354,6 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS,
   ...CHAT_NET_NEW_OPERATIONS,
   ...MEMBER_ROLES_NET_NEW_OPERATIONS,
-  ...TASK_WORKFLOW_NET_NEW_OPERATIONS,
   ...WORKFLOW_NET_NEW_OPERATIONS,
 ].sort();
 
@@ -489,7 +490,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 123 -> 125 (2026-08-12): collections.addItem/removeItem.
     // 125 -> 131 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 139 -> 141 (118): auth.invite.resolve + spaces.members.updateRole, MEASURED
-    expect(registry.size).toBe(152); // +3 (148): the spaces.workflows handlers
+    expect(registry.size).toBe(149); // -3 (154): the spaces.taskWorkflows handlers
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -501,7 +502,6 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS.length
         + CHAT_NET_NEW_OPERATIONS.length
         + MEMBER_ROLES_NET_NEW_OPERATIONS.length
-        + TASK_WORKFLOW_NET_NEW_OPERATIONS.length
         + WORKFLOW_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
@@ -661,7 +661,10 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // their bodies (auth.claim.reissue takes no body, so it binds nothing).
     // +2 (148): .upsert binds WorkflowInputSchema, .delete binds
     // RequiredCommandContextSchema; .list is a READ and binds nothing.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(99);
+    // 99 -> 97 (154): the taskWorkflows UPSERT and DELETE input schemas leave.
+    // Two, not three — `spaces.taskWorkflows.list` was a GET and never had one,
+    // which is why this pin moves by a different amount than the route counts.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(97);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -819,8 +822,11 @@ describe.sequential('W2.I02 real production public surface', () => {
     // all mounted and all registered.
     // +3 (148): the three spaces.workflows routes, all mounted and all
     // registered. MEASURED off /health.
-    expect(health).toMatchObject({ ok: true, operations: 171, implemented: 169 });
-    expect(harness.production.server.registry.size).toBe(169);
+    // -3/-3 (154): the three spaces.taskWorkflows routes retire, and all three
+    // were mounted, so the catalog and the implemented count fall together.
+    // MEASURED off /health.
+    expect(health).toMatchObject({ ok: true, operations: 168, implemented: 166 });
+    expect(harness.production.server.registry.size).toBe(166); // -3 (154)
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -840,7 +846,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 128 -> 132: credentials.*.
     // 139 -> 141 (2026-08-12): collections.addItem/removeItem.
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(registered.size + residual.length).toBe(169); // +3 (148): the spaces.workflows handlers
+    expect(registered.size + residual.length).toBe(166); // -3 (154): the spaces.taskWorkflows handlers
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

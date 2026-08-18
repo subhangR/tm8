@@ -91,6 +91,18 @@ const KIND = {
   capabilities: { canEdit: true },
   createdBy: MEMBER_ID,
   createdAt: CREATED_AT,
+  // Phase 6: the four columns `entity_kinds` grew when kind absorbed the `type`
+  // axis. All null here on purpose — `c:incident` is a BASE-LESS custom kind,
+  // which is the shape that must keep working unchanged: it takes the
+  // `custom_entities` door, renders by the client's own registry row, and
+  // resolves its workflow the way every kind has since 152. A kind that
+  // EXTENDS task is the new shape, and it is covered against a real database in
+  // `test/db/kind-absorbs-the-type-axis.pg.test.ts` rather than against a
+  // double, because what `base_kind` changes is which SQL door runs.
+  baseKind: null,
+  label: null,
+  labelPlural: null,
+  workflowId: null,
 };
 
 type QueryHandler = (sql: string, params: readonly unknown[]) => Promise<unknown[]>;
@@ -298,8 +310,11 @@ describe('W2.G12 entity-kind/profile handlers', () => {
   it('uses the two custom-kind lifecycle RPCs and preserves strict DTOs', async () => {
     const db = new FakeDb(async () => [], async (fn, args) => {
       if (fn === 'w2_create_entity_kind') {
+        // The three trailing nulls are phase 6's create-only arguments:
+        // baseKind, label, labelPlural. `baseKind` is create-only because
+        // re-basing a kind is a data migration wearing an update's clothes.
         expect(args).toEqual([SPACE_ID, 'c:incident', 'siren', KIND.fieldSchema,
-          KIND.capabilities, null, 'cmid-kind-create']);
+          KIND.capabilities, null, 'cmid-kind-create', null, null, null]);
       } else {
         expect(fn).toBe('w2_update_entity_kind');
         expect(args).toEqual([SPACE_ID, 'c:incident', {
