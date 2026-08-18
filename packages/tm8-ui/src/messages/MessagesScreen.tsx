@@ -44,10 +44,10 @@
  * tokens throughout and no divergence is quietly absorbed.
  */
 import { useId, useMemo } from 'react';
-import type { EntityId, EntityKind } from '@tm8/contract';
+import type { EntityId, EntityKind , SpaceId } from '@tm8/contract';
 import { Eyebrow, Pill } from '../kit';
 import { KindIcon, getKind } from '../domain';
-import { ChannelScreen } from '../channel-screen/ChannelScreen';
+import { DiscussionSurface, type DiscussionSurfaceProps } from '../channel-screen/DiscussionSurface';
 import { DisabledAction, toReason } from '../panels/honesty/DisabledWithReason';
 import {
   CONVERSATIONS_UNRESOLVED_NOTE,
@@ -66,12 +66,23 @@ import type { MessagesData } from './useMessagesData';
 
 export interface MessagesScreenProps {
   data: MessagesData;
+  /**
+   * The conversation surface reads for itself, so it needs the seam, the space
+   * and the viewer. It used to be handed a page this screen's hook had already
+   * read; the read now lives with the surface that renders it, which is what
+   * removed the fourth copy of the feed logic.
+   */
+  seam: DiscussionSurfaceProps['seam'];
+  spaceId: SpaceId | string;
+  /**
+   * The viewer. ONE value with two jobs: it keys the persisted draft and the
+   * mutation journal, and it decides own-message sidedness in the feed.
+   */
+  viewerActorId?: string | null;
   /** Opens the underlying entity — Messages is a lens, never a dead end. */
   onOpenEntity?: (id: EntityId) => void;
   /** Injected for determinism; recency is a pure projection of it. */
   now?: Date;
-  /** The viewer, for own-message sidedness — see ChannelScreen. */
-  viewerActorId?: string | undefined;
 }
 
 /**
@@ -89,7 +100,14 @@ const MODE_TABS: readonly { mode: MessagesMode; label: string }[] = [
   { mode: 'all', label: 'All messages' },
 ];
 
-export function MessagesScreen({ data, onOpenEntity, now , viewerActorId }: MessagesScreenProps) {
+export function MessagesScreen({
+  data,
+  seam,
+  spaceId,
+  viewerActorId,
+  onOpenEntity,
+  now,
+}: MessagesScreenProps) {
   const clock = now ?? new Date();
   const tabsId = useId();
   const panelId = useId();
@@ -232,40 +250,43 @@ export function MessagesScreen({ data, onOpenEntity, now , viewerActorId }: Mess
               )}
             </div>
 
-            {data.feedError ? (
-              /* REPLACES the surface, never overlays it — the same law
-                 ChannelScreen applies to its own refusals. A feed drawn under
-                 an error banner is a feed the viewer will read as current. */
-              <div className="msg-feed-error" role="alert" data-testid="messages-feed-error">
-                <p className="msg-feed-error__line">{data.feedError}</p>
-                <p className="msg-note">
-                  Nothing of this conversation is shown while the read is failing — no cached
-                  excerpts, no partial history.
-                </p>
-              </div>
-            ) : (
+            {/*
+              * THE READ ERROR AND THE POST ERROR BOTH MOVED INTO THE SURFACE.
+              *
+              * This screen used to draw its own card for a failed read and its
+              * own line for a failed post, because its hook owned the feed. The
+              * surface owns it now, and it answers both better: the read error
+              * REPLACES the conversation (a feed under an error banner reads as
+              * current — the same law `ChannelScreen` applies to refusals), and
+              * a rejected post surfaces at the COMPOSER, next to the text the
+              * viewer is about to lose, rather than as a line below the fold.
+              */}
               <div className="msg-read__surface">
-                <ChannelScreen
-                  viewerActorId={viewerActorId}
+                {/*
+                  * THE SAME COMPOSITION THE DISCUSSION TAB MOUNTS. This screen
+                  * used to be handed a page its own hook had read; now it
+                  * mounts the shared surface and the surface does the reading.
+                  * That is what lets this screen stay kind-blind — the anchor
+                  * can be a channel, a task, a doc or a session, and the
+                  * SERVER resolves which reading each one gets.
+                  *
+                  * ONE VIEWER PROP, NOT TWO. Own-message sidedness arrived as
+                  * `viewerActorId` while this was in flight, and the feed's
+                  * drafts and mutation journal are keyed by the same person
+                  * under the name `viewerMemberId`. They were never two facts.
+                  * The surface takes it once and forwards it to both.
+                  */}
+                <DiscussionSurface
+                  seam={seam}
                   anchorId={selected.id}
                   anchorNoun={ANCHOR_NOUN}
                   anchorTitle={selected.title}
-                  page={data.feedPage}
-                  loading={data.feedLoading}
-                  loadingEarlier={data.loadingEarlier}
-                  onLoadEarlier={() => data.loadEarlier()}
-                  onPost={data.post}
+                  spaceId={spaceId}
+                  viewerMemberId={viewerActorId ?? 'anonymous'}
                   connection={data.connection}
                   onOpenEntity={onOpenEntity}
                 />
               </div>
-            )}
-
-            {data.postError ? (
-              <p className="msg-note msg-note--block" role="alert" data-testid="messages-post-error">
-                {data.postError}
-              </p>
-            ) : null}
           </>
         ) : (
           <NothingSelected rows={data.conversations} error={data.conversationsError} />

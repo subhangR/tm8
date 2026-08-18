@@ -83,10 +83,37 @@ export function DiscussionSurface({
       })
     : undefined;
 
+  /*
+   * A READ FAILURE IS NOT AN EMPTY CONVERSATION, and this surface shipped for
+   * one commit as though it were.
+   *
+   * `ChannelScreen` handles a REFUSAL (`forbidden`/`not_found`) by replacing
+   * itself, but a plain read error is not a refusal — it arrives as
+   * `phase: 'error'` with no page, which draws as a conversation with nothing
+   * in it. "Nobody has said anything here" and "we could not ask" are not the
+   * same fact, and only one of them is about the workspace. `SessionChatSurface`
+   * has always drawn this card; the Discussion tab now does too.
+   */
+  if (feed.error) {
+    return (
+      <div className="chs-host-error" role="alert">
+        <strong>This conversation could not be read.</strong>
+        <span>{feed.error}</span>
+        <button type="button" onClick={() => void feed.reload()}>Retry</button>
+      </div>
+    );
+  }
+
   return (
     <ChannelScreen
       anchorId={anchorId}
       anchorNoun={anchorNoun}
+      /* Own-message sidedness. The same viewer that keys the draft and the
+         journal decides which rows are theirs — one fact, two consumers, so
+         the surface forwards it rather than asking its host twice. Without
+         this the Discussion tab would be the one conversation in the app that
+         draws your own messages as someone else's. */
+      viewerActorId={viewerMemberId}
       {...(anchorTitle ? { anchorTitle } : {})}
       page={feed.page}
       loading={feed.loading}

@@ -95,6 +95,10 @@ export interface MessagesSeamPort {
   feed(id: EntityId, opts?: FeedOpts): Promise<EntityFeedPage>;
   onEvent(cb: (e: DurableWorkspaceEvent) => void): Unsubscribe;
   onConnection(cb: (s: ConnectionState) => void): Unsubscribe;
+  /* The conversation surface reloads on a resync of its own space. Present on
+     the real `Seam` all along; named here now that this screen mounts the
+     shared surface instead of feeding it a page it read itself. */
+  onResync(cb: (spaceId: string) => void): Unsubscribe;
   getConnection(): ConnectionState;
   commands: {
     postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult>;
@@ -119,21 +123,12 @@ export interface MessagesData {
   select(id: EntityId | null): void;
   selected: ConversationRow | null;
 
-  feedPage: EntityFeedPage | undefined;
-  feedLoading: boolean;
-  feedError: string | null;
-  loadingEarlier: boolean;
-  /** Pages the open thread backwards. Holds its own cursor — the screen has none. */
-  loadEarlier(): Promise<void>;
-
   allMessages: readonly MessageRow[] | null;
   allMessagesError: string | null;
   allHasMore: boolean;
   allLoadingMore: boolean;
   loadMoreAll(): void;
 
-  post(input: ChannelPostInput): Promise<void>;
-  postError: string | null;
   connection: ConnectionState;
 }
 
@@ -195,23 +190,12 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
   const [loadingMore, setLoadingMore] = useState(false);
 
   const [selectedId, setSelectedId] = useState<EntityId | null>(null);
-  const [feedPage, setFeedPage] = useState<EntityFeedPage | undefined>(undefined);
-  const [feedLoading, setFeedLoading] = useState(false);
-  const [feedError, setFeedError] = useState<string | null>(null);
-  const [loadingEarlier, setLoadingEarlier] = useState(false);
-  /**
-   * Bumped when a live message lands on the OPEN conversation, which re-runs
-   * the feed effect below. A counter rather than a boolean so two arrivals in
-   * quick succession are two re-reads, not one that swallows the second.
-   */
-  const [feedEpoch, setFeedEpoch] = useState(0);
 
   const [allMessages, setAllMessages] = useState<readonly MessageRow[] | null>(null);
   const [allMessagesError, setAllMessagesError] = useState<string | null>(null);
   const [allCursor, setAllCursor] = useState<Cursor | null>(null);
   const [allLoadingMore, setAllLoadingMore] = useState(false);
 
-  const [postError, setPostError] = useState<string | null>(null);
   const [connection, setConnection] = useState<ConnectionState>(() => seam.getConnection());
 
   /**
@@ -383,60 +367,17 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
       .finally(() => setAllLoadingMore(false));
   }, [allCursor, allLoadingMore, anchorIndex, seam, spaceId]);
 
-  // -- the open thread -------------------------------------------------------
-
-  useEffect(() => {
-    if (selectedId === null) {
-      setFeedPage(undefined);
-      setFeedError(null);
-      setFeedLoading(false);
-      return undefined;
-    }
-    let cancelled = false;
-    setFeedPage(undefined);
-    setFeedError(null);
-    setFeedLoading(true);
-    // NO `scope`: the server resolves the right reading for this anchor's kind.
-    void seam
-      .feed(selectedId)
-      .then((page) => {
-        if (cancelled) return;
-        setFeedPage(page);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setFeedError(messageOf(error));
-      })
-      .finally(() => {
-        if (!cancelled) setFeedLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // `feedEpoch` re-runs this on a live arrival — see the event handler.
-  }, [seam, selectedId, feedEpoch]);
-
-  const loadEarlier = useCallback(async (): Promise<void> => {
-    const anchorId = selectedId;
-    const from = feedPage?.nextCursor ?? null;
-    if (anchorId === null || from === null || loadingEarlier) return;
-    setLoadingEarlier(true);
-    try {
-      const older = await seam.feed(anchorId, { cursor: from });
-      // Guard against a selection change that landed while this was in flight —
-      // prepending an old page onto a DIFFERENT conversation is the worst
-      // possible outcome of a race here.
-      if (selectedRef.current !== anchorId) return;
-      setFeedPage((current) =>
-        current
-          ? { ...current, items: [...older.items, ...current.items], nextCursor: older.nextCursor }
-          : older,
-      );
-    } catch (error: unknown) {
-      setFeedError(messageOf(error));
-    } finally {
-      setLoadingEarlier(false);
-    }
-  }, [feedPage, loadingEarlier, seam, selectedId]);
+  /*
+   * THE OPEN THREAD USED TO BE READ HERE — the feed effect, `loadEarlier` and
+   * its cursor, about 120 lines. The screen now mounts `DiscussionSurface`,
+   * which reads for itself through `useAnchorFeed`, so this hook no longer
+   * owns a feed at all. It owns the conversation LIST, which is a different
+   * question and the one thing here that was never duplicated.
+   *
+   * The reading is unchanged in kind: still `entities.feed(anchorId)` with NO
+   * scope, still the server resolving per anchor kind. What changed is that
+   * one implementation of it now serves every surface instead of four.
+   */
 
   // -- live ------------------------------------------------------------------
 
@@ -451,46 +392,23 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
       setConversations((current) =>
         current === null ? current : applyMessageCreated(current, anchorId, event.message),
       );
-      // A message landing on the OPEN conversation re-reads that feed.
-      //
-      // WHY A RE-READ AND NOT AN APPEND. The first version of this synthesized
-      // a `FeedItem` from the event and pushed it onto `items`. That was wrong
-      // in a way worth recording: a feed item is a SERVER-COMPOSED DTO carrying
-      // fields the event does not have — its delivery summaries above all — so
-      // hand-building one means inventing the parts the event never carried and
-      // rendering them as though the server had said them. The scope's own
-      // predicates also decide what belongs in a feed at all, and a client
-      // append silently bypasses that decision.
-      //
-      // One extra read per message on the ONE conversation being looked at is
-      // the honest price. Anything for another anchor only moves the list row,
-      // which costs nothing.
-      if (selectedRef.current === anchorId) setFeedEpoch((n) => n + 1);
+      /*
+       * THE OPEN CONVERSATION'S RE-READ IS NO LONGER THIS HOOK'S JOB — the
+       * surface subscribes for itself, and coalesces a burst into one read
+       * where this bumped an epoch per event. Only the LIST row moves here now.
+       *
+       * THE RULE THAT PRODUCED IT STILL STANDS AND IS WORTH KEEPING WRITTEN
+       * DOWN, because it is the thing most likely to be re-attempted: the first
+       * version of this SYNTHESIZED a `FeedItem` from the event and pushed it
+       * onto `items`. A feed item is a SERVER-COMPOSED DTO carrying fields the
+       * event does not have — its delivery summaries above all — so
+       * hand-building one means inventing what the event never carried and
+       * rendering it as though the server had said it. The scope's predicates
+       * also decide what belongs in a feed at all, and a client append silently
+       * bypasses that decision. A re-read is the honest price.
+       */
     });
   }, [seam]);
-
-  // -- composing -------------------------------------------------------------
-
-  const post = useCallback(
-    async (input: ChannelPostInput): Promise<void> => {
-      setPostError(null);
-      try {
-        await seam.commands.postMessage({
-          anchorIds: input.anchorIds,
-          body: input.body,
-          parentMessageId: input.parentMessageId,
-          ...(input.mentionIds ? { mentionIds: input.mentionIds } : {}),
-          ...(input.attachmentIds ? { attachmentIds: input.attachmentIds } : {}),
-        } as PostMessageInput);
-      } catch (error: unknown) {
-        // Held and surfaced, never swallowed: the composer clears optimistically
-        // and a silent failure would look exactly like a delivered message.
-        setPostError(messageOf(error));
-        throw error;
-      }
-    },
-    [seam],
-  );
 
   const selected = useMemo(
     () => (conversations ?? []).find((row) => row.id === selectedId) ?? null,
@@ -512,18 +430,11 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
     selectedId,
     select,
     selected,
-    feedPage,
-    feedLoading,
-    feedError,
-    loadingEarlier,
-    loadEarlier,
     allMessages,
     allMessagesError,
     allHasMore: allCursor !== null,
     allLoadingMore,
     loadMoreAll,
-    post,
-    postError,
     connection,
   };
 }
