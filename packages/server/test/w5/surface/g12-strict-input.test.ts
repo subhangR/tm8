@@ -36,7 +36,7 @@
  *
  * ── WHAT STRICTNESS MEANS HERE, AND WHICH LAYER ENFORCES IT ────────────────
  * Neither operation has an `INPUT_SCHEMAS` entry — they are G12, which
- * `facade/index.ts:154` records as parsing their own request bodies. So the
+ * `facade/index.ts:155` records as parsing their own request bodies. So the
  * refusal comes from the HANDLER's `parseInput`, NOT from `server.ts:166`, and
  * this file asserts that distinction rather than assuming it.
  */

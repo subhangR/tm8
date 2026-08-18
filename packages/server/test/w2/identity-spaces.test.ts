@@ -43,14 +43,13 @@ const G01_OPERATIONS = [
   'spaces.taskAxes.create',
   'spaces.taskAxes.update',
   'spaces.taskAxes.delete',
-  // W4/132: the per-type status vocabularies, curated beside the axes they
-  // key on and registered by the same module.
-  'spaces.taskWorkflows.list',
-  'spaces.taskWorkflows.upsert',
-  'spaces.taskWorkflows.delete',
+  // The three `spaces.taskWorkflows.*` rows (W4/132) STOOD HERE — the
+  // per-`type`-value status vocabularies, curated beside the axes they keyed
+  // on. Phase 6 is the moment the note below anticipated: they are retired
+  // with the `type` axis itself, and `public.task_workflows` is dropped whole.
   // 148: the real workflow tables, registered by the same module for the
-  // same reason — they supersede the taskWorkflows three above, which stay
-  // read-only until phase 6.
+  // same reason — they SUPERSEDED the taskWorkflows three, which stayed
+  // read-only until phase 6 and are now gone.
   'spaces.workflows.list',
   'spaces.workflows.upsert',
   'spaces.workflows.delete',

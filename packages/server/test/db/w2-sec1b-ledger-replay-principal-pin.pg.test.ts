@@ -223,6 +223,16 @@ const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
   // authority. See db/migrations/150_doors_resolve_categories.sql.
   ['internal.seed_entity_status_category', '150_doors_resolve_categories.sql'],
   ['internal.sync_entity_status_category', '150_doors_resolve_categories.sql'],
+  // 153 retires the `type` axis into the KIND, and 132's per-`type_value`
+  // workflow table goes with it: a workflow now hangs off `entity_kinds`, so a
+  // table keyed by a task's type value has nothing left to key on. The table and
+  // all three of its functions are DROPPED rather than left orphaned, for the
+  // same one-authority reason as 150's pair above. See
+  // db/migrations/155_kind_absorbs_the_type_axis.sql.
+  ['public.task_workflows', '155_kind_absorbs_the_type_axis.sql'],
+  ['internal.validate_task_workflow', '155_kind_absorbs_the_type_axis.sql'],
+  ['public.upsert_task_workflow', '155_kind_absorbs_the_type_axis.sql'],
+  ['public.delete_task_workflow', '155_kind_absorbs_the_type_axis.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {

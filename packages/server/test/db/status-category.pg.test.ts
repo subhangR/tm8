@@ -170,6 +170,31 @@ describe.sequential('147 — entities.status_category', () => {
     eventsBeforeMigration = await upserts();
     database.apply([MIGRATION]);
     eventsAfterMigration = await upserts();
+
+    // …then ONE column from 155, for exactly the reason 135 and 147 are applied
+    // on top of the pinned chain elsewhere in this directory: current code
+    // selects a column a pre-155 schema does not have. `ENTITY_COLUMNS` and
+    // `queryCollection` both read `entity_kinds.base_kind`, so
+    // `loadEntitySummariesByIds` and every collection query refuse to RUN here
+    // — a parse failure, before any assertion this suite makes.
+    //
+    // 155 ITSELF CANNOT BE APPLIED, which is what makes this different from the
+    // 135/147 precedent: it drops `task_workflows`, reissues the doors 150/151
+    // wrote and reads `public.workflows`, so it depends on 148-153 and would
+    // drag the whole tail of the chain past this suite's pin — the position
+    // statement would be gone, which is the one thing this file exists to make.
+    // So this takes the COLUMN and none of the behaviour: no resolver, no
+    // trigger, no constraint, no backfill. It is verbatim the column half of
+    // 155 §1, which itself depends on nothing past `entity_kinds` (001).
+    //
+    // This is SEMANTICALLY FAITHFUL rather than a convenient lie: `base_kind`
+    // is null on every row, and null base_kind IS the pre-155 world — the
+    // subselect yields null exactly as it did before the axis was absorbed.
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query('alter table public.entity_kinds add column if not exists base_kind text');
+    });
+
   }, 180_000);
 
   afterAll(async () => {

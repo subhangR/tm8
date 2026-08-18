@@ -68,6 +68,8 @@ export {
   RESERVED_SLUGS,
   allKinds,
   collectionKinds,
+  customKinds,
+  registerCustomKinds,
   getKind,
   isReservedSlug,
   kindBySlug,
@@ -141,15 +143,15 @@ export type {
 
 export { placeholderNameFor, slugifyTitle, titleNormalizerFor } from './title-grammar';
 
-/** W4 — per-type status vocabularies (132): the one client-side statement of the rule. */
-export {
-  STRUCTURAL_STATUSES,
-  WORKFLOW_AXIS,
-  offWorkflowType,
-  workflowRefusalText,
-  workflowTypeOf,
-  workflowVocabularyOf,
-} from './workflows';
+/*
+ * `./workflows` (W4, migration 132) exported six symbols HERE — STRUCTURAL_STATUSES,
+ * WORKFLOW_AXIS, workflowTypeOf, workflowVocabularyOf, workflowRefusalText and
+ * offWorkflowType — the one client-side statement of the per-`type` status rule.
+ * The module is DELETED in phase 6: migration 155 dropped `public.task_workflows`
+ * whole (151 had already dropped its check constraint and moved the completion
+ * gate onto the →done transition), and the `type` axis it keyed on is retired
+ * into custom entity KINDS. There is no rule left for this file to state once.
+ */
 
 export {
   SHIPPED_DEFAULT_MENU,

@@ -380,10 +380,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // no verb: axes ride `spaceSettings()`. Same `.sort()`-at-the-end
       // posture as the membership four, for the same silent-duplicate reason.
       'createTaskAxis', 'updateTaskAxis', 'deleteTaskAxis',
-      // W4 (2026-08-16): the task-workflow registry's writes, over
-      // `spaces.taskWorkflows.upsert|delete` (migration 132). The READ has no
-      // verb for the same reason as axes: workflows ride `spaceSettings()`.
-      'upsertTaskWorkflow', 'deleteTaskWorkflow',
+      // W4's task-workflow writes (`upsertTaskWorkflow`/`deleteTaskWorkflow`,
+      // migration 132) STOOD HERE and are gone with phase 6 (migration 155):
+      // `public.task_workflows` was dropped whole and the catalog ops
+      // `spaces.taskWorkflows.upsert|delete` left the contract with it. The
+      // axis three above SURVIVE — only the axis NAMED `type` died, as data.
       // Amendment 10 (2026-08-13, PR188 review F1): `chat.threads.start` — the
       // write half of the chat-home bridge. Sorts between spawn and
       // startTerminal.

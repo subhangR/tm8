@@ -197,103 +197,19 @@ describe('the axis registry round-trips through the port', () => {
   });
 });
 
-/**
- * W4 — the workflow registry, round-tripped through the same real fixture
- * seam. The refusal cases are the fixture's mirrors of 132's own SQL — the
- * RPC's duplicate check, the structural check constraint, and the trigger on
- * the tasks themselves — which is what lets the component tests believe the
- * words they render.
+/*
+ * A `describe('the workflow registry round-trips through the port')` block
+ * STOOD HERE — five cases over `loadWorkflows`/`upsertWorkflow`/`deleteWorkflow`
+ * and the fixture's mirror of 132's structural-status constraint, duplicate
+ * check and `tasks_validate_workflow` trigger.
+ *
+ * Phase 6 (migration 155) retired all of it: `public.task_workflows` was
+ * dropped whole, the catalog ops `spaces.taskWorkflows.*` left the contract,
+ * and the port verbs those cases exercised no longer exist. The cases were
+ * DELETED rather than weakened because their subject is gone — a test that
+ * still passed after this change would only be asserting about the fixture.
+ *
+ * The task-AXIS cases above SURVIVE and are not affected: axes remain for
+ * honest tags (team, quarter); only the axis NAMED `type` died, as data,
+ * re-homed into custom entity kinds that `extend` task.
  */
-describe('the workflow registry round-trips through the port', () => {
-  it('reads a measured empty, then sees an upsert land and a re-upsert replace', async () => {
-    const seam = createFixtureSeam();
-    const spaceId = await firstSpaceId(seam);
-    const port = settingsPortFromSeam(seam, spaceId);
-
-    expect(await port.loadWorkflows()).toEqual([]);
-
-    const created = await port.upsertWorkflow({
-      typeValue: 'code',
-      statuses: ['open', 'working', 'in_review', 'done'] as never,
-    });
-    expect((await port.loadWorkflows()).map((w) => w.typeValue)).toEqual(['code']);
-
-    // Upsert, not create: the natural key is (space, typeValue), so the same
-    // value replaces its vocabulary in place under the same id.
-    const replaced = await port.upsertWorkflow({
-      typeValue: 'code',
-      statuses: ['open', 'working', 'done'] as never,
-    });
-    expect(replaced.id).toBe(created.id);
-    expect((await port.loadWorkflows())[0]!.statuses).toEqual(['open', 'working', 'done']);
-
-    await port.deleteWorkflow(created.id);
-    expect(await port.loadWorkflows()).toEqual([]);
-  });
-
-  // \u26a0 THE CONSTRAINT THIS QUOTES IS GONE FROM THE DATABASE as of migration 151
-  // (phase 4). The rule now lives on the client only \u2014 see the note at this arm
-  // in `seam-fixture.ts`. Kept, quoting the old words, because the client rule
-  // is what stops anyone reaching 132's still-live trigger; it goes in phase 6
-  // with `task_workflows` itself.
-  it('refuses a vocabulary missing a STRUCTURAL status, in the constraint\u2019s own words', async () => {
-    const seam = createFixtureSeam();
-    const spaceId = await firstSpaceId(seam);
-    const port = settingsPortFromSeam(seam, spaceId);
-
-    await expect(
-      port.upsertWorkflow({ typeValue: 'code', statuses: ['open', 'working'] as never }),
-    ).rejects.toThrow('violates check constraint "task_workflows_structural_statuses"');
-    // And nothing landed.
-    expect(await port.loadWorkflows()).toEqual([]);
-  });
-
-  it('refuses duplicate statuses — the RPC\u2019s own 22023', async () => {
-    const seam = createFixtureSeam();
-    const spaceId = await firstSpaceId(seam);
-    const port = settingsPortFromSeam(seam, spaceId);
-
-    await expect(
-      port.upsertWorkflow({
-        typeValue: 'code',
-        statuses: ['open', 'open', 'working', 'done'] as never,
-      }),
-    ).rejects.toThrow('workflow statuses must be unique');
-  });
-
-  it('the 132 trigger mirror: a status write outside the type vocabulary refuses; moving OUT is free', async () => {
-    const seam = createFixtureSeam();
-    const spaceId = await firstSpaceId(seam);
-    const port = settingsPortFromSeam(seam, spaceId);
-
-    // Type a real task through the ordinary content patch (the W1 write).
-    const tasks = await seam.query({ spaceId, kinds: ['task'] as never });
-    const task = tasks.page.items.find((t) => t.deletedAt == null)!;
-    const detail = await seam.entity(task.id);
-    await seam.commands.patchEntity(task.id, {
-      expectedVersion: detail.version,
-      content: { axes: { type: 'code' } },
-    });
-
-    await port.upsertWorkflow({
-      typeValue: 'code',
-      statuses: ['open', 'working', 'in_review', 'done'] as never,
-    });
-
-    // TO a forbidden status: refused in the trigger's own words, and the
-    // task keeps its stored status — refusal, never rewrite.
-    await expect(
-      seam.commands.work(task.id, { status: 'blocked' as never }),
-    ).rejects.toThrow('workflow for type code does not allow status blocked');
-
-    // TO an allowed one: lands. (Also proves moving out of any state is a
-    // per-TARGET rule, not a transition matrix.)
-    await seam.commands.work(task.id, { status: 'working' as never });
-    const after = await seam.entity(task.id);
-    expect((after.state as { status?: string }).status).toBe('working');
-
-    // An unruled type stays untouched — today's behaviour exactly.
-    const other = tasks.page.items.find((t) => t.deletedAt == null && t.id !== task.id)!;
-    await seam.commands.work(other.id, { status: 'blocked' as never });
-  });
-});

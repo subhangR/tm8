@@ -254,19 +254,29 @@ describe.sequential('148 — the workflow admin doors', () => {
     expect(after.filter((w) => w.spaceId === null)).toHaveLength(1);
   });
 
-  it('leaves 132`s enforcement trigger alone — only the structural constraint went, in 151', async () => {
+  it('has outlived 132 entirely — the trigger went with the table, in phase 6', async () => {
+    // This pinned the OPPOSITE until phase 6, and deliberately: 132's
+    // `tasks_validate_workflow` had to survive 149 and 151 untouched, so that
+    // "only the structural constraint went" was a statement with a witness. The
+    // schedule it was waiting on has now run. 155 drops `public.task_workflows`
+    // whole, and this trigger is what enforced a task's status against that
+    // table — it cannot outlive the rows it validated against.
     const rows = await server.database.query<{ n: string }>(
       `select count(*) n from pg_trigger
         where tgname = 'tasks_validate_workflow' and not tgisinternal`,
     );
-    expect(Number(rows[0]!.n)).toBe(1);
-    // 149 (this phase) did not touch it; 151 dropped it, on schedule, once the
-    // doors resolved categories and the completion gate moved onto the
-    // transition. `task_workflows` itself survives until phase 6.
+    expect(Number(rows[0]!.n)).toBe(0);
+    // Gone since 151, and still gone — the constraint half of the same story.
     const constraint = await server.database.query<{ n: string }>(
       `select count(*) n from pg_constraint where conname = 'task_workflows_structural_statuses'`,
     );
     expect(Number(constraint[0]!.n)).toBe(0);
+    // And the table itself, which is what makes both numbers permanent rather
+    // than a state the next migration could reverse.
+    const table = await server.database.query<{ n: string }>(
+      `select count(*) n from pg_class where relname = 'task_workflows' and relkind = 'r'`,
+    );
+    expect(Number(table[0]!.n)).toBe(0);
   });
 
   it('revokes the definer functions from PUBLIC — the thing 138 exists to have fixed', async () => {

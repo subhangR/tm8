@@ -35,7 +35,13 @@ import {
 
 import type { Querier } from '../../../db/types.js';
 import type { RequestContext } from '../../../http/types.js';
-import { claimsFor, commandEnvelope, limitOf, requireUuidParam } from '../../context.js';
+import {
+  claimsFor,
+  commandEnvelope,
+  limitOf,
+  requireUuidParam,
+  type CommandEnvelope,
+} from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import {
   MICROS,
@@ -855,13 +861,94 @@ function assertGenericLifecycle(kind: string, operation: string): void {
   }
 }
 
-async function kindFor(q: Querier, id: string): Promise<string> {
-  const rows = await q.query<{ kind: string }>(
-    `select kind from public.entities where id = $1 and deleted_at is null`,
+interface EntityKindRef {
+  kind: string;
+  spaceId: string;
+}
+
+async function kindRefFor(q: Querier, id: string): Promise<EntityKindRef> {
+  const rows = await q.query<{ kind: string; space_id: string }>(
+    `select kind, space_id from public.entities where id = $1 and deleted_at is null`,
     [id],
   );
-  if (!rows[0]) throw new CollabError('not_found', `no such entity: ${id}`);
-  return rows[0].kind;
+  const row = rows[0];
+  if (!row) throw new CollabError('not_found', `no such entity: ${id}`);
+  return { kind: row.kind, spaceId: row.space_id };
+}
+
+async function kindFor(q: Querier, id: string): Promise<string> {
+  return (await kindRefFor(q, id)).kind;
+}
+
+/**
+ * WHICH IRREDUCIBLE CODE RUNS FOR A `c:*` KIND (155).
+ *
+ * `entity_kinds.base_kind` is the inheritance link, and it is the ONE thing that
+ * decides which door a custom kind goes through. A kind with `base_kind = 'task'`
+ * IS a task: it carries a `public.tasks` row, so it takes `create_task` /
+ * `update_task_content` and with them a title, a workflow status, assignees and
+ * the completion gate. A base-less custom kind keeps the `custom_entities`
+ * doors, which know only a title and a `fields` blob.
+ *
+ * The database's own resolver is `internal.base_kind_of`, but `internal` hands
+ * `tm8_app` execute one function at a time (009, 019, 047, 070, 083, 148) and
+ * 155 granted no such thing, so this reads the column. That read is a
+ * unique-index probe on `entity_kinds(space_id, kind)` — a table with tens of
+ * rows — and each command resolves it at most once, which is why there is no
+ * cache here to go stale.
+ */
+async function baseKindOf(q: Querier, kind: string, spaceId: string): Promise<string> {
+  if (!kind.startsWith('c:')) return kind;
+  const rows = await q.query<{ base_kind: string | null }>(
+    `select base_kind from public.entity_kinds where kind = $1 and space_id = $2`,
+    [kind, spaceId],
+  );
+  return rows[0]?.base_kind ?? kind;
+}
+
+/**
+ * The `create_task` argument vector, shared by the `task` arm and by every
+ * custom kind that extends it. The trailing argument is 155's new fifteenth
+ * parameter — the kind being created — which the door checks against
+ * `internal.base_kind_of` before it writes the envelope, so an unrelated `c:`
+ * kind is refused there by name rather than by a detail-trigger further in.
+ */
+function createTaskArgs(
+  input: CreateEntityInput,
+  content: Record<string, unknown>,
+  envelope: CommandEnvelope,
+  kind: string,
+): unknown[] {
+  return [input.spaceId, input.title, envelope.actorId ?? null,
+    content.description ?? '', content.axes ?? {}, input.parentId ?? null, input.position ?? null,
+    content.priority ?? 'medium',
+    JSON.stringify(acceptanceCriteria(content, envelope.actorId ?? null)),
+    content.pointsEstimate ?? null, content.dueDate ?? null, input.attachTo?.entityId ?? null,
+    input.attachTo?.edgeType ?? 'attached_to', envelope.clientMutationId ?? null, kind];
+}
+
+/**
+ * The `update_task_content` argument vector, shared for the same reason as
+ * `createTaskArgs`: 155 gave the door two callers instead of one, and the arm
+ * for `c:epic` must plumb the SAME content — axes, priority, the acceptance
+ * criteria and their `done` provenance — or a task-based custom kind would be
+ * patchable in name only. The door itself needs no kind argument: it asserts
+ * through `internal.live_entity`, which 155 widened to accept a base kind.
+ */
+function updateTaskContentArgs(
+  id: string,
+  input: PatchEntityInput,
+  content: Record<string, unknown>,
+  envelope: CommandEnvelope,
+): unknown[] {
+  return [id, input.expectedVersion, envelope.actorId ?? null,
+    input.title ?? null, content.description ?? null, content.axes ?? null,
+    content.status ?? null, content.priority ?? null,
+    content.acceptanceCriteria === undefined
+      ? null
+      : JSON.stringify(acceptanceCriteria(content, envelope.actorId ?? null)),
+    content.pointsEstimate ?? null, content.dueDate ?? null, content.dueDate === null,
+    envelope.clientMutationId ?? null];
 }
 
 /**
@@ -1022,12 +1109,7 @@ export class W2EntitiesCommandsTrackingService {
       let raw: RpcCommandResult;
       switch (input.kind) {
         case 'task':
-          raw = await q.rpc('create_task', [input.spaceId, input.title, envelope.actorId ?? null,
-            content.description ?? '', content.axes ?? {}, input.parentId ?? null, input.position ?? null,
-            content.priority ?? 'medium',
-            JSON.stringify(acceptanceCriteria(content, envelope.actorId ?? null)),
-            content.pointsEstimate ?? null, content.dueDate ?? null, input.attachTo?.entityId ?? null,
-            input.attachTo?.edgeType ?? 'attached_to', envelope.clientMutationId ?? null]);
+          raw = await q.rpc('create_task', createTaskArgs(input, content, envelope, 'task'));
           break;
         case 'doc':
           raw = await q.rpc('create_document', [input.spaceId, input.title, envelope.actorId ?? null,
@@ -1121,13 +1203,22 @@ export class W2EntitiesCommandsTrackingService {
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
         }
-        default:
+        default: {
           if (!input.kind.startsWith('c:')) {
             throw new CollabError('forbidden', `entities.create is owned by the ${input.kind} lifecycle`);
+          }
+          // 155: a custom kind is not automatically a `custom_entities` row any
+          // more. If it EXTENDS task it goes through the task door, so it is
+          // born with a title, the workflow's initial state and everything the
+          // `type` axis used to only decorate.
+          if (await baseKindOf(q, input.kind, input.spaceId) === 'task') {
+            raw = await q.rpc('create_task', createTaskArgs(input, content, envelope, input.kind));
+            break;
           }
           raw = await q.rpc('create_custom_entity', [input.spaceId, input.kind, input.title,
             envelope.actorId ?? null, JSON.stringify(content.fields ?? content), input.parentId ?? null,
             input.position ?? null, envelope.clientMutationId ?? null]);
+        }
       }
       await attachInitialConnections(q, raw, input);
       return commandResult(q, raw, owner.identityId);
@@ -1142,7 +1233,7 @@ export class W2EntitiesCommandsTrackingService {
     const content = (input.content ?? {}) as Record<string, unknown>;
     try {
       return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
-        const kind = await kindFor(q, id);
+        const { kind, spaceId } = await kindRefFor(q, id);
         // `work_session` stays in RESTRICTED_LIFECYCLE_KINDS — create, move,
         // delete and restore are owned by the execution block and must keep
         // refusing. A rename is not lifecycle: it renames the LABEL a person
@@ -1152,14 +1243,7 @@ export class W2EntitiesCommandsTrackingService {
         let raw: RpcCommandResult;
         switch (kind) {
           case 'task':
-            raw = await q.rpc('update_task_content', [id, input.expectedVersion, envelope.actorId ?? null,
-              input.title ?? null, content.description ?? null, content.axes ?? null,
-              content.status ?? null, content.priority ?? null,
-              content.acceptanceCriteria === undefined
-                ? null
-                : JSON.stringify(acceptanceCriteria(content, envelope.actorId ?? null)),
-              content.pointsEstimate ?? null, content.dueDate ?? null, content.dueDate === null,
-              envelope.clientMutationId ?? null]);
+            raw = await q.rpc('update_task_content', updateTaskContentArgs(id, input, content, envelope));
             break;
           case 'doc':
             raw = await q.rpc('update_document', [id, input.expectedVersion, envelope.actorId ?? null,
@@ -1291,11 +1375,21 @@ export class W2EntitiesCommandsTrackingService {
               typeof content.preflightToken === 'string' ? content.preflightToken : null]);
             break;
           }
-          default:
+          default: {
             if (!kind.startsWith('c:')) throw new CollabError('not_implemented', `entities.patch does not support ${kind}`);
+            // 155, the create door's mirror: a kind that extends task keeps its
+            // body in `public.tasks`, so `update_custom_entity` would patch a
+            // row that does not exist. `update_task_content` asserts the kind
+            // through `internal.live_entity`, which 155 widened to accept a base
+            // kind, so this call needs no other change than being made at all.
+            if (await baseKindOf(q, kind, spaceId) === 'task') {
+              raw = await q.rpc('update_task_content', updateTaskContentArgs(id, input, content, envelope));
+              break;
+            }
             raw = await q.rpc('update_custom_entity', [id, input.expectedVersion, input.title ?? null,
               envelope.actorId ?? null, content.fields === undefined ? null : JSON.stringify(content.fields),
               envelope.clientMutationId ?? null]);
+          }
         }
         return commandResult(q, raw, owner.identityId);
       });

@@ -206,9 +206,7 @@ import type {
   SpaceSummary,
   TaskAxis,
   TaskAxisInput,
-  TaskWorkflow,
   Workflow,
-  TaskWorkflowInput,
   UpdateAttentionRequestInput,
   TrackingPrMergeInput,
   TrackingPrMergeResult,
@@ -436,10 +434,14 @@ export interface Seam {
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
   /**
    * The category-model workflows (`spaces.workflows.list`, migration 149):
-   * the ONE global default (spaceId null) plus this space's own. Distinct
-   * from `spaceSettings().taskWorkflows` — those are the LEGACY status-subset
-   * rules that phase 6 retires; these are the named state/transition sets the
-   * universal board's columns are built from.
+   * the ONE global default (spaceId null) plus this space's own — the named
+   * state/transition sets the universal board's columns are built from.
+   *
+   * These are now the ONLY workflows. The legacy per-`type` status-subset
+   * rules that used to ride `spaceSettings().taskWorkflows` are gone: phase 6
+   * (migration 155) dropped `public.task_workflows` whole and retired the
+   * `type` axis into custom entity KINDS, so there is no second workflow
+   * concept left to be confused with this one.
    */
   workflows(spaceId: SpaceId): Promise<Workflow[]>;
   /**
@@ -859,22 +861,6 @@ export interface Seam {
     createTaskAxis(spaceId: SpaceId, input: TaskAxisInput): Promise<TaskAxis>;
     updateTaskAxis(spaceId: SpaceId, axisId: string, input: TaskAxisInput): Promise<TaskAxis>;
     deleteTaskAxis(spaceId: SpaceId, axisId: string, ctx: CommandContext): Promise<{ axisId: string }>;
-    /**
-     * The task-workflow registry's writes (W4, migration 132) — the same
-     * posture as the axis three above: new seam verbs over catalog ops
-     * (`spaces.taskWorkflows.upsert|delete`), the READ rides `spaceSettings()`
-     * (`SpaceSettings.taskWorkflows`), and every rule lives in SQL and is
-     * surfaced, never copied — space-admin authorization, the duplicate-status
-     * refusal (22023), the structural {open,working,done} check (23514), and
-     * the per-status trigger refusal on the tasks themselves.
-     *
-     * `upsert` rather than create+update because the natural key is
-     * (space, typeValue) and the UI edits one row per value. Deleting a rule
-     * is never data loss: it widens the vocabulary back to the seven and no
-     * task row changes.
-     */
-    upsertTaskWorkflow(spaceId: SpaceId, input: TaskWorkflowInput): Promise<TaskWorkflow>;
-    deleteTaskWorkflow(spaceId: SpaceId, workflowId: string, ctx: CommandContext): Promise<{ workflowId: string }>;
     /**
      * Redeem a code as the CURRENT viewer. Distinct from `previewInvite` below
      * in the way that matters: this one requires you to be somebody.

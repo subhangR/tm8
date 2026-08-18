@@ -294,12 +294,21 @@ describe('§1.1 — the mode wiring', () => {
  * `status` and nothing rendered a picker — the middle of the wire. The
  * highest-risk half is drag: a drop on an axis board must write THE AXIS,
  * never a status the columns no longer show (W3/4).
+ *
+ * PHASE 6: this suite used to group by an axis NAMED `type`, and it cannot any
+ * more — `task_axes_type_is_a_kind` forbids the name outright, because the type
+ * values are KINDS now. What is under test here is unchanged and still load-
+ * bearing: the axis board survives whole, for the honest tag axes it was always
+ * for (workstream, team, quarter). Only the one axis that was secretly a
+ * taxonomy died, so the fixture is simply an honest tag axis now. Grouping by
+ * the taxonomy is `groupBy: 'kind'`, covered in the picker case below and by
+ * the KIND-column cases in `EntityListPanel`.
  * ===========================================================================
  */
-const TYPE_AXIS = {
-  id: 'axis-type',
+const TAG_AXIS = {
+  id: 'axis-workstream',
   spaceId: FIXTURE_SPACE_ID,
-  name: 'type',
+  name: 'workstream',
   axisValues: ['default', 'code', 'design', 'review', 'test'],
   kind: 'default' as const,
   position: 0,
@@ -317,7 +326,7 @@ function renderAxisBoard(opts: {
     o?: { notify?: boolean },
   ) => void | Promise<{ ok: true } | { ok: false; reason: string }>;
   onSetState?: () => void;
-  taskAxes?: readonly (typeof TYPE_AXIS)[];
+  taskAxes?: readonly (typeof TAG_AXIS)[];
 }) {
   return render(
     <EntityListPanel
@@ -325,9 +334,9 @@ function renderAxisBoard(opts: {
       rowsFor={rowsFor([])}
       ctx={ctx}
       mode="board"
-      groupBy={(opts.groupBy ?? 'axis:type') as never}
+      groupBy={(opts.groupBy ?? 'axis:workstream') as never}
       onGroupBy={(opts.onGroupBy ?? (() => undefined)) as never}
-      taskAxes={(opts.taskAxes ?? [TYPE_AXIS]) as never}
+      taskAxes={(opts.taskAxes ?? [TAG_AXIS]) as never}
       boardFor={(() => opts.snapshot) as never}
       onSetAxis={opts.onSetAxis as never}
       onSetState={opts.onSetState as never}
@@ -348,7 +357,7 @@ describe('W3 — the axis board', () => {
     // The no-value column has an honest name, and the stale value survives
     // appended rather than dropped (§1.3).
     const labels = getAllByTestId('board-column').map((col) => col.getAttribute('aria-label'));
-    expect(labels[0]).toBe('no type');
+    expect(labels[0]).toBe('no workstream');
     expect(labels).toContain('retired');
   });
 
@@ -367,7 +376,7 @@ describe('W3 — the axis board', () => {
     fireEvent.drop(target, { dataTransfer: { getData: () => row.id } });
 
     expect(onSetAxis).toHaveBeenCalledTimes(1);
-    expect(onSetAxis.mock.calls[0]!.slice(0, 4)).toEqual([row.id, 'type', 'code', 'Type']);
+    expect(onSetAxis.mock.calls[0]!.slice(0, 4)).toEqual([row.id, 'workstream', 'code', 'Workstream']);
     expect(onSetAxis.mock.calls[0]![4]).toEqual({ notify: false });
     expect(onSetState).not.toHaveBeenCalled();
   });
@@ -385,7 +394,7 @@ describe('W3 — the axis board', () => {
     const target = getAllByTestId('board-column').find((c) => c.getAttribute('data-column') === '')!;
     fireEvent.dragStart(card, { dataTransfer: { setData: () => undefined, effectAllowed: '' } });
     fireEvent.drop(target, { dataTransfer: { getData: () => row.id } });
-    expect(onSetAxis).toHaveBeenCalledWith(row.id, 'type', null, 'Type', { notify: false });
+    expect(onSetAxis).toHaveBeenCalledWith(row.id, 'workstream', null, 'Workstream', { notify: false });
   });
 
   it('a refused axis write renders INLINE at the refusing column, no toast (§1.5)', async () => {
@@ -412,16 +421,24 @@ describe('W3 — the axis board', () => {
       onGroupBy,
     });
     const picker = getByTestId('board-groupby') as HTMLSelectElement;
-    expect([...picker.options].map((o) => o.value)).toEqual(['status', 'assignee', 'axis:type']);
-    fireEvent.change(picker, { target: { value: 'axis:type' } });
-    expect(onGroupBy).toHaveBeenCalledWith('axis:type');
+    // `kind` sits between the built-ins and the space's axes as of phase 6: it
+    // is what `axis:type` used to be, promoted out of the axis list because the
+    // type values ARE kinds now. It is offered for every space, axes or none.
+    expect([...picker.options].map((o) => o.value)).toEqual([
+      'status',
+      'assignee',
+      'kind',
+      'axis:workstream',
+    ]);
+    fireEvent.change(picker, { target: { value: 'axis:workstream' } });
+    expect(onGroupBy).toHaveBeenCalledWith('axis:workstream');
   });
 
   it('an axis the space does not define refuses with the reason and keeps the picker', () => {
     const { getByTestId } = renderAxisBoard({
       snapshot: snapshot(),
       groupBy: 'axis:vanished',
-      taskAxes: [TYPE_AXIS],
+      taskAxes: [TAG_AXIS],
     });
     expect(getByTestId('board-axis-missing').textContent).toContain('no task axis named vanished');
     expect(getByTestId('board-groupby')).toBeTruthy();
@@ -466,104 +483,16 @@ describe('W3 — the axis board', () => {
   });
 });
 
-/**
- * ===========================================================================
- * W4 (2026-08-16) — the STATUS board pre-flights a drop against the space's
- * workflow registry (132). The vocabulary is already in hand — the same
- * `spaceSettings()` data the strip narrows with — so a drop the row's type
- * forbids is FORESEEABLE, and §8.5 says a foreseeable refusal is stated at
- * the refusing column WITHOUT calling the server. Same words as the strip's
- * disabled option; the database trigger remains the real gate. Axis and
- * assignee boards are untouched by construction: the pre-flight lives in the
- * status branch of `dispatchDrop` alone.
- * ===========================================================================
+/*
+ * A `describe('W4 — the status board pre-flights workflow-forbidden drops')`
+ * block STOOD HERE: two cases proving the status board refused a drop the row's
+ * `type` vocabulary forbade WITHOUT calling the server, in the strip's own
+ * words, and dispatched normally for an untyped or unruled row.
+ *
+ * Phase 6 (migration 155) dropped `public.task_workflows` and the trigger that
+ * made such a refusal foreseeable, and retired the `type` axis into custom
+ * entity KINDS. The pre-flight it asserted is gone from `EntityListPanel`, so
+ * the cases were DELETED rather than weakened — with the rule gone there is
+ * nothing left for them to be about. The AXIS board cases above SURVIVE:
+ * axes remain for honest tags, only the axis named `type` died.
  */
-describe('W4 — the status board pre-flights workflow-forbidden drops', () => {
-  const CODE_RULE = {
-    id: 'wf-code',
-    spaceId: FIXTURE_SPACE_ID,
-    typeValue: 'code',
-    statuses: ['open', 'working', 'in_review', 'done'],
-  };
-
-  const typedTask = (status: string, type: string): EntitySummary => {
-    const row = taskOf(status);
-    return { ...row, state: { ...row.state, axes: { type } } as EntitySummary['state'] };
-  };
-
-  function renderWorkflowBoard(opts: {
-    row: EntitySummary;
-    onSetState: (
-      entityId: string,
-      next: string,
-      via: string,
-      o?: { notify?: boolean },
-    ) => void | Promise<{ ok: true } | { ok: false; reason: string }>;
-  }) {
-    return render(
-      <EntityListPanel
-        kind="task"
-        rowsFor={rowsFor([])}
-        ctx={ctx}
-        mode="board"
-        taskWorkflows={[CODE_RULE] as never}
-        boardFor={(() => snapshot({ groups: groups(['open', [opts.row]]) })) as never}
-        onSetState={opts.onSetState as never}
-      />,
-    );
-  }
-
-  it('a forbidden drop refuses INLINE at the refusing column and never calls the server', async () => {
-    const onSetState = vi.fn();
-    const row = typedTask('open', 'code');
-    const { getByTestId, getAllByTestId, findByTestId } = renderWorkflowBoard({ row, onSetState });
-
-    // Mod+ArrowRight aims the open card at pulled — which `code` forbids.
-    fireEvent.keyDown(getByTestId('board-body'), { key: 'ArrowRight', metaKey: true });
-
-    // THE assertion this block exists for: the executor was never invoked.
-    expect(onSetState).not.toHaveBeenCalled();
-    const refusal = await findByTestId('board-refusal');
-    // The strip's words exactly — one sentence for one rule.
-    expect(refusal.textContent).toBe('type code does not allow pulled');
-    const pulled = getAllByTestId('board-column').find(
-      (col) => col.getAttribute('data-column') === 'pulled',
-    )!;
-    expect(within(pulled).getByTestId('board-refusal')).toBeTruthy();
-  });
-
-  it('an allowed drop, an untyped row, and an unruled type all dispatch exactly as before', () => {
-    for (const row of [
-      typedTask('open', 'design'), // no rule for design
-      taskOf('open'), // no axes at all
-    ]) {
-      const onSetState = vi.fn(async () => ({ ok: true }) as const);
-      const view = renderWorkflowBoard({ row, onSetState: onSetState as never });
-      fireEvent.keyDown(view.getByTestId('board-body'), { key: 'ArrowRight', metaKey: true });
-      expect(onSetState).toHaveBeenCalledTimes(1);
-      view.unmount();
-    }
-
-    // And a typed, RULED row moving to an ALLOWED status dispatches too:
-    // working is structural, so no vocabulary can bar it.
-    const onSetState = vi.fn(async () => ({ ok: true }) as const);
-    const row = typedTask('pulled', 'code');
-    const { getByTestId } = render(
-      <EntityListPanel
-        kind="task"
-        rowsFor={rowsFor([])}
-        ctx={ctx}
-        mode="board"
-        taskWorkflows={[CODE_RULE] as never}
-        boardFor={(() => snapshot({ groups: groups(['pulled', [row]]) })) as never}
-        onSetState={onSetState as never}
-      />,
-    );
-    // Focus starts on column 0 (open, empty here): step focus onto the pulled
-    // column first, then command the move pulled → working.
-    fireEvent.keyDown(getByTestId('board-body'), { key: 'ArrowRight' });
-    fireEvent.keyDown(getByTestId('board-body'), { key: 'ArrowRight', metaKey: true });
-    expect(onSetState).toHaveBeenCalledTimes(1);
-    expect(onSetState.mock.calls[0]![1]).toBe('working');
-  });
-});

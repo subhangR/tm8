@@ -52,8 +52,6 @@ import type {
   SpaceSummary,
   TaskAxis,
   TaskAxisInput,
-  TaskWorkflow,
-  TaskWorkflowInput,
 } from '@tm8/contract';
 import type { IdentityView, Seam } from '../data/seam';
 import { allKinds } from '../domain';
@@ -162,21 +160,12 @@ export function axisKindRefs(): string[] {
     .map((row) => row.kind);
 }
 
-/**
- * The status vocabulary the Workflows section curates, from REGISTRY DATA —
- * the axis-bearing kind's own `stateControl.options`, worded by its
- * `panel.statusPill.labels` exactly as every picker and badge words them.
- * Derived rather than typed for the same §15.2 reason as `axisKindRefs`, and
- * so the section can never offer a status the control does not.
+/*
+ * `workflowStatusVocabulary()` STOOD HERE — the status list the Workflows
+ * section offered, derived from the axis-bearing kind's own registry row.
+ * It went with that section in phase 6 (migration 155): `task_workflows` is
+ * dropped, so there is no per-`type` vocabulary to curate.
  */
-export function workflowStatusVocabulary(): Array<{ id: string; label: string }> {
-  const row = allKinds().find((r) => r.list.axisControls !== undefined);
-  const pill = row?.panel.statusPill;
-  return (row?.list.stateControl?.options ?? []).map((o) => ({
-    id: o.id,
-    label: pill?.labels?.[o.id] ?? o.id.replace(/_/g, ' '),
-  }));
-}
 
 /** The least-privileged representable role — the sane default for an invite. */
 export function defaultInviteRole(): string {
@@ -244,26 +233,6 @@ export interface SettingsPort {
   createAxis(input: Omit<TaskAxisInput, 'clientMutationId' | 'actorId'>): Promise<TaskAxis>;
   updateAxis(axisId: string, input: Omit<TaskAxisInput, 'clientMutationId' | 'actorId'>): Promise<TaskAxis>;
   deleteAxis(axisId: string): Promise<{ axisId: string }>;
-
-  /**
-   * The task-workflow registry (W4), by type value. Rides `spaces.settings`
-   * exactly as `loadAxes` does — the workflows travel on the same round trip
-   * as the axes they key on, NOT via `spaces.taskWorkflows.list`, which
-   * answers from the same rows.
-   */
-  loadWorkflows(): Promise<TaskWorkflow[]>;
-
-  /**
-   * Write / delete one type value's vocabulary. Every rule is the server's
-   * and comes back as its own words: space-admin authorization, the
-   * duplicate-status refusal, the structural {open,working,done} check
-   * constraint, and — on the tasks themselves — the 132 trigger. Upsert takes
-   * the WHOLE vocabulary because the natural key is (space, typeValue).
-   * Deleting a rule is never data loss: it widens the vocabulary back to the
-   * seven and no task row changes.
-   */
-  upsertWorkflow(input: Omit<TaskWorkflowInput, 'clientMutationId' | 'actorId'>): Promise<TaskWorkflow>;
-  deleteWorkflow(workflowId: string): Promise<{ workflowId: string }>;
 
   /**
    * The tasks carrying ANY of this axis's declared values — what makes an
@@ -373,24 +342,6 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort
     deleteAxis(axisId) {
       return seam.commands.deleteTaskAxis(spaceId, axisId, {
         clientMutationId: newMutationId('axisrm'),
-      });
-    },
-
-    async loadWorkflows() {
-      const settings = await seam.spaceSettings(spaceId);
-      return settings.taskWorkflows ?? [];
-    },
-
-    upsertWorkflow(input) {
-      return seam.commands.upsertTaskWorkflow(spaceId, {
-        ...input,
-        clientMutationId: newMutationId('workflow'),
-      });
-    },
-
-    deleteWorkflow(workflowId) {
-      return seam.commands.deleteTaskWorkflow(spaceId, workflowId, {
-        clientMutationId: newMutationId('workflowrm'),
       });
     },
 

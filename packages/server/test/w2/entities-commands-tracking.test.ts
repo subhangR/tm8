@@ -189,8 +189,15 @@ describe('W2.G02 universal entities, commands, and tracking', () => {
       kind: 'interaction_profile', title: 'owned elsewhere',
     } }))).rejects.toMatchObject({ code: 'forbidden' });
 
+    // The lookup selects `kind, space_id` as of phase 6: `base_kind` is defined
+    // PER SPACE, so resolving which door a kind goes through needs the space as
+    // well as the kind. A double that answers the old one-column shape returns
+    // no row at all, and the handler then refuses with `not_found` — the right
+    // refusal for a missing entity, but not the one under test here.
     db.queryImpl = async <R>(sql: string): Promise<R[]> => {
-      if (sql.includes('select kind from public.entities')) return [{ kind: 'project' }] as R[];
+      if (sql.includes('from public.entities')) {
+        return [{ kind: 'project', space_id: '00000000-0000-7000-8000-000000000202' }] as R[];
+      }
       return [];
     };
     await expect(handler(registry, 'entities.patch')(request('entities.patch', {

@@ -310,7 +310,7 @@ describe('W5.C interactionProfiles.activate through the composed public surface'
     // What refuses it is the HANDLER'S OWN parse:
     // `services/w2/entity-kinds-profiles.ts:283` calls
     // `parseInput(ActivateInteractionProfileInputSchema, ctx.body, …)`, which is
-    // exactly what `facade/index.ts:154` says about G12/G13 — "each parses its
+    // exactly what `facade/index.ts:155` says about G12/G13 — "each parses its
     // own request bodies, which is why none of them appear in INPUT_SCHEMAS".
     // The message is zod's own, unwrapped: 'Invalid literal value, expected true'.
     //

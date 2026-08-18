@@ -115,7 +115,7 @@ async function post(
 
 async function postWithMode(identityId: string, body: string, mode: string): Promise<string> {
   return asIdentity(identityId, 'browser', async (client) => {
-    // 154: the mode rides as the explicit ninth w2_post_message_batch argument,
+    // 155: the mode rides as the explicit ninth w2_post_message_batch argument,
     // written to messages.requested_chat_mode.
     const row = (await client.query<{ result: { messageIds: string[] } }>(
       `select public.w2_post_message_batch(

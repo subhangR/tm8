@@ -114,10 +114,21 @@ describe('§15.2 — no component knows a kind', () => {
     // tell those unions from a kind literal, so the pre-existing collisions
     // are enumerated BY FILE and the rule stays hard everywhere else — a
     // fourth file quoting 'graph' still fails here and must argue its case.
+    // 'collection' is the same shape of collision as 'graph', arriving in
+    // phase 6: it is a registered KIND *and* the `strategy` discriminant every
+    // list-shaped kind carries. `EntityListPanel`'s `isExpandableKind` asks
+    // `getKind(kind).strategy === 'collection'` — a registry-to-registry
+    // comparison against a strategy union, which teaches the component nothing
+    // about any entity kind. It reads the registry rather than branching on it,
+    // which is what §15.2 asks for; the scanner simply cannot tell the two
+    // unions apart. Phase 6 is why it appears now: the test asks PER CALL
+    // instead of precomputing a module-level Set, because `registerCustomKinds()`
+    // populates a space's own kinds long after this module is evaluated.
     const wordCollisions: ReadonlySet<string> = new Set([
       'panels/EntityListPanel.tsx → graph',
       'panels/bodies/WorkSessionContent.tsx → graph',
       'panels/detail/tabs.tsx → graph',
+      'panels/EntityListPanel.tsx → collection',
     ]);
 
     const offenders: string[] = [];

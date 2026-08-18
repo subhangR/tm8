@@ -61,7 +61,6 @@ function fakePort(): SettingsPort {
     loadMenu: async () => resolveMenu(null),
     loadInvites: async () => Promise.reject(new Error('space admin required')),
     loadAxes: async () => Promise.reject(new Error('space admin required')),
-    loadWorkflows: async () => Promise.reject(new Error('space admin required')),
     setMemberRole: async () => ({ patches: [] }) as never,
     createInvite: async () => ({}) as never,
     revokeInvite: async () => ({}) as never,
@@ -70,8 +69,6 @@ function fakePort(): SettingsPort {
     updateAxis: async () => ({}) as never,
     deleteAxis: async () => ({}) as never,
     tasksUsingAxis: async () => 0,
-    upsertWorkflow: async () => ({}) as never,
-    deleteWorkflow: async () => ({}) as never,
   } as unknown as SettingsPort;
 }
 

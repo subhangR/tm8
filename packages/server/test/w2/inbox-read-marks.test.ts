@@ -351,7 +351,7 @@ describe('W2.G08 inbox and read-mark handlers', () => {
       };
     }
 
-    /** Verbatim key set of jsonb_build_object at 003_read_model.sql:154-155. */
+    /** Verbatim key set of jsonb_build_object at 003_read_model.sql:155-155. */
     const mentionRow: NotificationRow = {
       ...PERSONAL_ROW,
       kind: 'mention',

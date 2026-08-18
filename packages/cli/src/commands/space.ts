@@ -404,24 +404,6 @@ function renderTaskAxes(dto: unknown): string {
   return joinLines(rows.map(renderTaskAxis), 'no task axes');
 }
 
-function renderTaskWorkflow(row: unknown): string {
-  const statuses = row === null || typeof row !== 'object'
-    ? []
-    : ((row as Record<string, unknown>).statuses as unknown[] | undefined) ?? [];
-  return [
-    field(row, 'id') ?? '?',
-    `type ${field(row, 'typeValue') ?? '?'}`,
-    Array.isArray(statuses) && statuses.length > 0 ? `[${statuses.map(String).join(' ')}]` : undefined,
-  ]
-    .filter((p): p is string => p !== undefined && p !== '')
-    .join('  ');
-}
-
-function renderTaskWorkflows(dto: unknown): string {
-  const rows = rowsOf(dto, 'taskWorkflows');
-  return joinLines(rows.map(renderTaskWorkflow), 'no task workflows');
-}
-
 /**
  * `Name (kind)  [State:category ...]  +N overrides`. Categories are shown on
  * every state because the category is the only part of a status anything
@@ -846,58 +828,6 @@ async function spaceTaskAxisDelete(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
-async function spaceTaskWorkflowList(cmd: CommandContext): Promise<ExitCode> {
-  refuseMutationId('space task-workflow list', cmd.options.value('mutation-id'));
-  noExtraArgs('space task-workflow list', cmd.args, 1);
-  const spaceId = spaceFromArgOrContext(cmd, cmd.args[0]);
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.taskWorkflows.list', {
-    params: { spaceId },
-  });
-  cmd.out.data(data, renderTaskWorkflows);
-  return EXIT_OK;
-}
-
-/**
- * `TaskWorkflowInput` states the WHOLE vocabulary each time (upsert on the
- * (space, type value) natural key) — same whole-shape reasoning as
- * `taskAxisBody` above. The structural {open, working, done} rule is the
- * DATABASE's constraint; refusing locally would be a second copy free to
- * drift, so an incomplete set is forwarded and the server's refusal rendered.
- */
-async function spaceTaskWorkflowSet(cmd: CommandContext): Promise<ExitCode> {
-  const typeValue = requireArg('space task-workflow set', cmd.args[0], 'a <type-value>');
-  noExtraArgs('space task-workflow set', cmd.args, 1);
-  const spaceId = requireSpace(cmd.ctx);
-  const statuses = cmd.options.values('status');
-  if (statuses.length === 0) {
-    throw new CliError('--status is required (repeat it once per allowed status)', EXIT_USAGE, {
-      hint: 'open, working, and done are always required members',
-    });
-  }
-  const body = mutationBody(cmd);
-  body.typeValue = typeValue;
-  body.statuses = statuses;
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.taskWorkflows.upsert', {
-    params: { spaceId },
-    body,
-  });
-  cmd.out.data(data, renderTaskWorkflow);
-  return EXIT_OK;
-}
-
-async function spaceTaskWorkflowDelete(cmd: CommandContext): Promise<ExitCode> {
-  const workflowId = requireArg('space task-workflow delete', cmd.args[0], 'a <workflow-id>');
-  noExtraArgs('space task-workflow delete', cmd.args, 1);
-  requireConsent('space task-workflow delete', cmd);
-  const spaceId = requireSpace(cmd.ctx);
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.taskWorkflows.delete', {
-    params: { spaceId, workflowId },
-    body: mutationBody(cmd),
-  });
-  cmd.out.data(data, (dto) => field(dto, 'workflowId') ?? fallback(dto));
-  return EXIT_OK;
-}
-
 async function spaceWorkflowList(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('space workflow list', cmd.options.value('mutation-id'));
   noExtraArgs('space workflow list', cmd.args, 1);
@@ -917,8 +847,7 @@ async function spaceWorkflowList(cmd: CommandContext): Promise<ExitCode> {
  * initial, the closed four categories and unique positions are the DATABASE's
  * constraints, and a second copy in the CLI would be free to drift from the
  * rule that decides. A colon-separated triple is forwarded as-is and the
- * server's refusal is rendered — the same posture `space task-workflow set`
- * takes towards the structural {open, working, done} rule.
+ * server's refusal is rendered.
  *
  * A state's POSITION is its order on the command line. That is the whole
  * reason the flag is repeatable rather than comma-joined: position decides
@@ -1157,9 +1086,6 @@ export const SPACE_COMMANDS: CommandModule[] = [
   { path: ['space', 'task-axis', 'create'], run: spaceTaskAxisCreate },
   { path: ['space', 'task-axis', 'update'], run: spaceTaskAxisUpdate },
   { path: ['space', 'task-axis', 'delete'], run: spaceTaskAxisDelete },
-  { path: ['space', 'task-workflow', 'list'], run: spaceTaskWorkflowList },
-  { path: ['space', 'task-workflow', 'set'], run: spaceTaskWorkflowSet },
-  { path: ['space', 'task-workflow', 'delete'], run: spaceTaskWorkflowDelete },
   { path: ['space', 'workflow', 'list'], run: spaceWorkflowList },
   { path: ['space', 'workflow', 'set'], run: spaceWorkflowSet },
   { path: ['space', 'workflow', 'delete'], run: spaceWorkflowDelete },

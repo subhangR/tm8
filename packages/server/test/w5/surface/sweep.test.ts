@@ -305,9 +305,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* rows.
     // 160 -> 163 (2026-08-16, W4/132): spaces.taskWorkflows list/upsert/delete.
     // 166 -> 169 (148): spaces.workflows list/upsert/delete.
-    expect(SURFACE).toHaveLength(169);
-    expect(rows).toHaveLength(169);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(169);
+    // 169 -> 166 (155, phase 6): spaces.taskWorkflows list/upsert/delete retire
+    // with the `type` axis they keyed on.
+    expect(SURFACE).toHaveLength(166);
+    expect(rows).toHaveLength(166);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(166);
   });
 
   /**
@@ -685,11 +687,19 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   (origin/main is 143; this branch is the +1.)
     // 144 -> 145 (2026-08-18): 154_chat_turn_mode_passthrough.sql — the
     // messages.post path stamps requested_chat_mode via a BEFORE INSERT trigger.
-    // MEASURED on this branch (main already carries 153), not derived:
-    //   ls db/migrations/*.sql | wc -l                             -> 145
-    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 145
-    //   (origin/main is 144; this branch is the +1.)
-    expect(server.appliedMigrations.length).toBe(145);
+    // This one is MAIN's, and it is why the entry below is a second step rather
+    // than a rewrite of this one.
+    // 145 -> 146 (2026-08-19): 155_kind_absorbs_the_type_axis.sql — phase 6,
+    // kind absorbs the `type` axis. Authored as 153, renumbered to 154 when main
+    // merged 153_chat_per_turn_mode.sql, and renumbered AGAIN to 155 when main
+    // merged 154_chat_turn_mode_passthrough.sql — twice, because a migration
+    // number cannot be reserved and a duplicate prefix makes main undeployable.
+    // MEASURED on this branch after rebasing onto main (which carries 154), not
+    // derived:
+    //   ls db/migrations/*.sql | wc -l                             -> 146
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 146
+    //   (origin/main is 145; this branch is the +1.)
+    expect(server.appliedMigrations.length).toBe(146);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -946,11 +956,6 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'spaces.menu.update',
   'spaces.taskAxes.create',
   'spaces.taskAxes.update',
-  // W4/132: the synthetic `statuses` array satisfies the zod schema but not
-  // the DATABASE's structural {open, working, done} constraint — the refusal
-  // is the RPC's, reached through the handler. Handler evidence, not a :166
-  // gate rejection.
-  'spaces.taskWorkflows.upsert',
   'spaces.update',
   // 148: same shape one table over. The sweep's synthetic body satisfies the
   // zod schema but not the DATABASE's exactly-one-initial-state rule, so the

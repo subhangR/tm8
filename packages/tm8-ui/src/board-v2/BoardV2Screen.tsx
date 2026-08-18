@@ -87,7 +87,16 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
   lifecycleRef.current = lifecycle;
 
   const kind = getKind(kindName);
-  const kinds = useMemo(() => collectionKinds(), []);
+  /*
+   * NOT memoized on `[]` any more (phase 6, migration 155). The kind selector's
+   * population now includes the space's OWN custom kinds, which
+   * `registerCustomKinds()` supplies at space boot — after this screen may
+   * already have mounted, and again on every space switch. An empty dep array
+   * would have frozen whatever was registered at first render, which for the
+   * first board opened in a session is nothing. The call filters ~20 registry
+   * rows; there is no memo worth the staleness.
+   */
+  const kinds = collectionKinds();
 
   /* THE WORKFLOWS READ — `spaces.workflows.list`, once per space. A failure
      is a stated downgrade (category columns keep working off `filters.

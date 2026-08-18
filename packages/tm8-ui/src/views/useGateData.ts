@@ -86,6 +86,7 @@ import {
   type LaunchTeammate,
 } from '../domain/launch';
 import { memoryEpistemics, memoryScopeOf } from '../domain/memory';
+import { registerCustomKinds } from '../domain/registry';
 import { representedThreadMessageCount } from './message-thread';
 import {
   indexLinkedPullRequests,
@@ -405,13 +406,6 @@ export interface GateData {
    */
   taskAxes: readonly import('@tm8/contract').TaskAxis[];
   /**
-   * The space's workflow registry (W4, 132), off the SAME `spaceSettings()`
-   * read — one row per `type` value naming the statuses its tasks may move
-   * to. The strip narrows its options with it and the status board
-   * pre-flights drops against it; empty means nothing narrows.
-   */
-  taskWorkflows: readonly import('@tm8/contract').TaskWorkflow[];
-  /**
    * Re-read the axis registry NOW — after Settings > Axes lands a write, so a
    * new axis appears as a W1 picker (and a W3 group-by option) without a
    * reload. Axis writes emit no workspace event (`task_axes` rows are not
@@ -694,7 +688,6 @@ export function useGateData(options: GateOptions): GateData {
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const [members, setMembers] = useState<readonly ActorSummary[]>([]);
   const [taskAxes, setTaskAxes] = useState<readonly import('@tm8/contract').TaskAxis[]>([]);
-  const [taskWorkflows, setTaskWorkflows] = useState<readonly import('@tm8/contract').TaskWorkflow[]>([]);
   const [skillOptions, setSkillOptions] = useState<readonly SkillTriggerOption[] | undefined>(
     undefined,
   );
@@ -1060,7 +1053,7 @@ export function useGateData(options: GateOptions): GateData {
   const hydrate = useCallback(
     async (space: SpaceId, generation = spaceGeneration.current) => {
       const isCurrent = () => generation === spaceGeneration.current;
-      const [menuRaw, snapshot, projects, settings, identity, , counts] = await Promise.all([
+      const [menuRaw, snapshot, projects, settings, identity, , counts, entityKinds] = await Promise.all([
         seam.menu(space).catch((error: unknown) => {
           if (isCurrent()) setMenu(resolveMenu(undefined, error));
           return undefined;
@@ -1087,6 +1080,21 @@ export function useGateData(options: GateOptions): GateData {
         // the whole `Promise.all` down and leave the workspace stuck at
         // `ready === false` — the counters failing must never cost the boot.
         Promise.resolve().then(() => seam.counts(space)).catch(() => undefined),
+        /*
+         * `entityKinds.list` — the space's CUSTOM KINDS, boot-time since phase 6
+         * (migration 155). It rides this same bounded boot read rather than a
+         * lane of its own because the answer is needed before the first list
+         * panel draws its kind selector: 155 retired the task `type` axis into
+         * custom kinds, so a space's epics and bugs ARE kinds now, and a
+         * selector that opened without them would be missing rows the space
+         * actually has.
+         *
+         * SOFT-FAILS to `[]`, like `menu` and `counts` above and unlike the
+         * reads that gate boot. Empty is the pre-155 answer exactly — every
+         * custom kind falls back to the generic `c:*` row — so a node that
+         * cannot answer this renders the old behaviour, never a refusal.
+         */
+        Promise.resolve().then(() => seam.entityKinds(space)).catch(() => []),
       ]);
       if (!isCurrent()) return;
       if (menuRaw !== undefined) setMenu(resolveMenu(menuRaw as MenuConfig | null));
@@ -1103,8 +1111,16 @@ export function useGateData(options: GateOptions): GateData {
       // Same posture as membership: a settings shape from before the axes
       // projection reads as "none defined", never as a fabricated axis.
       setTaskAxes(settings.taskAxes ?? []);
-      // W4 rides the same read with the same posture.
-      setTaskWorkflows(settings.taskWorkflows ?? []);
+      /*
+       * Hand the registry the space's kinds. WHOLESALE, and here rather than in
+       * a component, because `getKind()` is a synchronous lookup with hundreds
+       * of call sites and the purity law (§15.2) keeps every per-kind decision
+       * inside `registry/` — see `registerCustomKinds`'s own note. Registering
+       * on the boot path means the answer is in place before the first render
+       * that could ask, and a space switch replaces the set rather than merging
+       * into it, so one space's kinds can never resolve inside another.
+       */
+      registerCustomKinds(entityKinds);
       setViewerActor(memberActors.find((member) => member.id === viewerMemberId) ?? null);
       setSpaceDefaultProfileId(settings.defaultInteractionProfileId);
       if (counts) setKindCounts(counts);
@@ -1356,7 +1372,11 @@ export function useGateData(options: GateOptions): GateData {
     pendingBoards.current.clear();
     setMembers([]);
     setTaskAxes([]);
-    setTaskWorkflows([]);
+    // The registry's custom-kind overlay clears with everything else the
+    // outgoing space owned (155). Leaving it would let the previous space's
+    // epics and bugs resolve — and appear in a kind selector — inside a space
+    // that has never heard of them.
+    registerCustomKinds([]);
     setViewerActor(null);
     setMenu(resolveMenu(null));
     setLiveIds([]);
@@ -2549,10 +2569,6 @@ export function useGateData(options: GateOptions): GateData {
       .spaceSettings(spaceId)
       .then((settings) => {
         setTaskAxes(settings.taskAxes ?? []);
-        // W4 — the workflows ride the SAME round trip, so the one refresh
-        // keeps both registries current together (a workflow write from
-        // Settings reuses this exact callback).
-        setTaskWorkflows(settings.taskWorkflows ?? []);
       })
       .catch(() => undefined);
   }, [seam, spaceId]);
@@ -2565,7 +2581,6 @@ export function useGateData(options: GateOptions): GateData {
       spaces,
       members,
       taskAxes,
-      taskWorkflows,
       refreshTaskAxes,
       mentionOptions,
       skillOptions,
@@ -2603,7 +2618,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

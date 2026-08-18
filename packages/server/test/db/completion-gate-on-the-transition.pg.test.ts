@@ -147,16 +147,42 @@ interface StateSpec {
   isInitial?: boolean;
 }
 
-/** A space workflow ONLY — see the file header for why there is no vocabulary row. */
+/**
+ * A space workflow AND the kind it governs.
+ *
+ * PHASE 6: this took a `type` VALUE and let 150's type-value arm find the
+ * workflow by name. That arm is deleted and the axis with it — a `type` axis
+ * cannot even be created now, `task_axes_type_is_a_kind` refuses the name. The
+ * link is `entity_kinds.workflow_id` (152's arm 0), so every workflow here gets
+ * the custom KIND it governs, extending `task` so the gate, the criteria and
+ * every door in this file still apply to it. The workflow keeps its old name,
+ * because `stateId` looks workflows up by name and every assertion below reads
+ * the same states it always did — only the binding changed.
+ */
 async function authorWorkflow(
-  typeValue: string,
+  name: string,
   states: readonly StateSpec[],
   transitions: readonly Record<string, unknown>[] = [],
 ): Promise<void> {
+  const kind = kindFor(name);
+  // THE KIND ROW COMES FIRST, and its `workflow_id` is filled in afterwards.
+  // Both halves of that order are forced. The per-category requirement asks
+  // whether a workflow governs a COMPLETABLE kind, and it can only answer that
+  // if the kind is already on record as extending `task` — author the workflow
+  // first and a task workflow with no `done` state is accepted, which is the
+  // refusal this file's last case exists to prove. `workflow_id` cannot be set
+  // in the same statement either: `entity_kinds_validate_workflow` (152) checks
+  // the reference on insert, and the workflow does not exist yet.
+  await asOwner(
+    `insert into public.entity_kinds(kind,origin,space_id,base_kind)
+     values($1,'custom',$2,'task') on conflict do nothing`,
+    [kind, fixture.spaceId],
+  );
   await asApp((q) =>
-    q(`select public.upsert_workflow($1,$2,'task',$3::jsonb,$4::jsonb,$5) result`, [
+    q(`select public.upsert_workflow($1,$2,$3,$4::jsonb,$5::jsonb,$6) result`, [
       fixture.spaceId,
-      typeValue,
+      name,
+      kind,
       JSON.stringify(
         states.map((s) => ({
           name: s.name,
@@ -166,9 +192,29 @@ async function authorWorkflow(
         })),
       ),
       JSON.stringify(transitions),
-      cmid(`workflow-${typeValue}`),
+      cmid(`workflow-${name}`),
     ]),
   );
+  await asOwner(
+    `update public.entity_kinds set workflow_id = (select id from public.workflows
+                                                    where space_id = $2 and name = $3)
+      where kind = $1 and space_id = $2`,
+    [kind, fixture.spaceId, name],
+  );
+}
+
+/**
+ * The custom kind standing in for what used to be a `type` axis value.
+ *
+ * Hyphens become underscores because `entity_kinds_origin_shape` (001) pins a
+ * custom kind to `^c:[a-z0-9][a-z0-9_]{0,48}$`. An axis VALUE had no such rule,
+ * so `never-carried` was a legal type value and `c:never-carried` is not a legal
+ * kind — and the violation is a bare 23514 carrying no `detail`, which reads
+ * exactly like the category-coverage refusal the last case here asserts while
+ * being a completely different rule.
+ */
+function kindFor(name: string): string {
+  return `c:${name.replace(/-/g, '_')}`;
 }
 
 async function stateId(workflowName: string, state: string): Promise<string> {
@@ -181,20 +227,26 @@ async function stateId(workflowName: string, state: string): Promise<string> {
   return rows[0]!.id;
 }
 
+/**
+ * PHASE 6: the second argument was an AXES map, and passing `'shipped'`
+ * is how a task reached its workflow. It is a workflow NAME now, resolved to the
+ * kind that governs it — `create_task` grew a trailing `kind` argument, and a
+ * kind that extends `task` goes through this same door with the same detail row.
+ */
 async function createTask(
   title: string,
-  axes: Record<string, string> = {},
+  workflow: string | null = null,
   criteria: readonly Record<string, unknown>[] = [],
 ): Promise<string> {
   const rows = await asApp((q) =>
     q(
-      `select public.create_task($1,$2,null,'',$3::jsonb,null,null,'medium',$4::jsonb,null,null,null,'attached_to',$5) result`,
+      `select public.create_task($1,$2,null,'','{}'::jsonb,null,null,'medium',$3::jsonb,null,null,null,'attached_to',$4,$5) result`,
       [
         fixture.spaceId,
         title,
-        JSON.stringify(axes),
         JSON.stringify(criteria),
         cmid(`create-${title}`),
+        workflow === null ? 'task' : kindFor(workflow),
       ],
     ),
   );
@@ -253,15 +305,10 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('completion-gate-151');
   database.apply(migrationFiles());
   fixture = await seed(database);
-  // `internal.validate_task_axes` (001) refuses an unknown axis outright, and the
-  // `type` axis is what resolves a task to its workflow until phase 5.
-  await asApp((q) =>
-    q(`select public.create_task_axis($1,'type',$2::text[],'manual',0,$3) result`, [
-      fixture.spaceId,
-      ['shipped', 'twodone', 'donename', 'overridden', 'widened'],
-      cmid('type-axis'),
-    ]),
-  );
+  // The `type` axis STOOD HERE, carrying the five values this file's workflows
+  // keyed on. Phase 6 deletes it as a concept: `task_axes_type_is_a_kind` now
+  // refuses the name outright, because the values ARE kinds. `authorWorkflow`
+  // creates each one's kind beside its workflow instead.
   await authorWorkflow('shipped', [
     { name: 'Draft', category: 'to_do', position: 1, isInitial: true },
     { name: 'Building', category: 'in_progress', position: 2 },
@@ -276,7 +323,7 @@ afterAll(async () => {
 // -----------------------------------------------------------------------------
 describe('151 — a status called `Shipped` cannot walk around the acceptance-criteria gate', () => {
   it('refuses complete_task on a workflow whose done state is not called done', async () => {
-    const task = await createTask('ship-me', { type: 'shipped' }, UNCHECKED);
+    const task = await createTask('ship-me', 'shipped', UNCHECKED);
     expect((await statusOf(task)).state_name).toBe('Draft');
 
     const denied = await refusal(() => completeTask(task));
@@ -295,7 +342,7 @@ describe('151 — a status called `Shipped` cannot walk around the acceptance-cr
    * through with an unfinished checklist.
    */
   it('refuses a DIRECT status_id write into the done category — no RPC in the path', async () => {
-    const task = await createTask('direct-ship', { type: 'shipped' }, UNCHECKED);
+    const task = await createTask('direct-ship', 'shipped', UNCHECKED);
     const shipped = await stateId('shipped', 'Shipped');
 
     const denied = await refusal(() => moveStatus(task, shipped));
@@ -305,7 +352,7 @@ describe('151 — a status called `Shipped` cannot walk around the acceptance-cr
   });
 
   it('lets the same task through once the checklist is finished, and lands it in Shipped', async () => {
-    const task = await createTask('ship-when-ready', { type: 'shipped' }, UNCHECKED);
+    const task = await createTask('ship-when-ready', 'shipped', UNCHECKED);
     await asOwner(
       `update public.tasks set acceptance_criteria = $2::jsonb where entity_id = $1`,
       [task, JSON.stringify([{ id: 'c1', text: 'the thing', done: true }])],
@@ -321,7 +368,7 @@ describe('151 — a status called `Shipped` cannot walk around the acceptance-cr
   });
 
   it('keys the already-complete guard on the CATEGORY — `Shipped` is complete', async () => {
-    const task = await createTask('ship-twice', { type: 'shipped' });
+    const task = await createTask('ship-twice', 'shipped');
     await completeTask(task);
     expect((await statusOf(task)).state_name).toBe('Shipped');
 
@@ -334,7 +381,7 @@ describe('151 — a status called `Shipped` cannot walk around the acceptance-cr
 // -----------------------------------------------------------------------------
 describe('151 — 082`s pr_merged gate rides the same transition', () => {
   it('refuses a direct status_id write when the gate is on and no PR is tracked', async () => {
-    const task = await createTask('gated-direct', { type: 'shipped' });
+    const task = await createTask('gated-direct', 'shipped');
     await asOwner(`update public.tasks set completion_gate = 'pr_merged' where entity_id = $1`, [task]);
 
     const shipped = await stateId('shipped', 'Shipped');
@@ -345,7 +392,7 @@ describe('151 — 082`s pr_merged gate rides the same transition', () => {
   });
 
   it('leaves an ungated task alone — the condition reads the task`s own opt-in', async () => {
-    const task = await createTask('ungated-direct', { type: 'shipped' });
+    const task = await createTask('ungated-direct', 'shipped');
     await moveStatus(task, await stateId('shipped', 'Shipped'));
     expect((await statusOf(task)).status_category).toBe('done');
   });
@@ -360,7 +407,7 @@ describe('151 — the gate fires on ENTERING the category, not on being in it', 
       { name: 'Shipped', category: 'done', position: 3 },
       { name: 'Released', category: 'done', position: 4 },
     ]);
-    const task = await createTask('refine', { type: 'twodone' });
+    const task = await createTask('refine', 'twodone');
     await completeTask(task);
     expect((await statusOf(task)).state_name).toBe('Shipped');
 
@@ -390,7 +437,7 @@ describe('151 — a workflow_transitions row narrows ALLOWEDNESS, it does not dr
       // example. Adding it must not silently take the checklist gate with it.
       [{ from: 'Building', to: 'Shipped' }],
     );
-    const task = await createTask('override-gate', { type: 'overridden' }, UNCHECKED);
+    const task = await createTask('override-gate', 'overridden', UNCHECKED);
     await moveStatus(task, await stateId('overridden', 'Building'));
 
     const shipped = await stateId('overridden', 'Shipped');
@@ -399,7 +446,7 @@ describe('151 — a workflow_transitions row narrows ALLOWEDNESS, it does not dr
     expect(denied.reason).toBe('acceptance_criteria_incomplete');
 
     // And the row's own rule still bites: Draft may not enter Shipped at all.
-    const fromDraft = await createTask('override-arrow', { type: 'overridden' });
+    const fromDraft = await createTask('override-arrow', 'overridden');
     const arrow = await refusal(() => moveStatus(fromDraft, shipped));
     expect(arrow.reason).toBe('transition_not_allowed');
   });
@@ -414,7 +461,7 @@ describe('151 — a workflow_transitions row narrows ALLOWEDNESS, it does not dr
       ],
       [{ to: 'Shipped', conditions: { acceptanceCriteria: false } }],
     );
-    const task = await createTask('widened-gate', { type: 'widened' }, UNCHECKED);
+    const task = await createTask('widened-gate', 'widened', UNCHECKED);
 
     await moveStatus(task, await stateId('widened', 'Shipped'));
     expect((await statusOf(task)).status_category).toBe('done');
@@ -431,7 +478,7 @@ describe('151 — set_work_state refuses by CATEGORY', () => {
       { name: 'working', category: 'in_progress', position: 2 },
       { name: 'in_review', category: 'done', position: 3 },
     ]);
-    const task = await createTask('review-is-done', { type: 'donename' });
+    const task = await createTask('review-is-done', 'donename');
 
     // The control: a move that is NOT into the done category still works.
     await setWorkState(task, 'working');
@@ -475,20 +522,18 @@ describe('151 — and only then, the structural constraint', () => {
     expect(Number(triggers[0]!.n)).toBe(2);
   });
 
-  it('lets a space author a vocabulary without `done`, which was unrepresentable until now', async () => {
-    await asApp((q) =>
-      q(`select public.upsert_task_workflow($1,'no-done',$2::text[],$3) result`, [
-        fixture.spaceId,
-        ['open', 'working'],
-        cmid('vocab-no-done'),
-      ]),
-    );
-    const rows = await database.query<{ statuses: string[] }>(
-      `select statuses from public.task_workflows where space_id = $1 and type_value = 'no-done'`,
-      [fixture.spaceId],
-    );
-    expect(rows[0]!.statuses).toEqual(['open', 'working']);
-  });
+  /*
+   * A case proving a space could author a `type` vocabulary WITHOUT `done` —
+   * unrepresentable until 151 dropped `task_workflows_structural_statuses` —
+   * STOOD HERE. It cannot be re-expressed, because it read and wrote
+   * `public.task_workflows` through `upsert_task_workflow`, and phase 6 drops
+   * the table and the RPC whole. Nothing is left unproved: that the table and
+   * every one of its doors are GONE is asserted directly in
+   * `kind-absorbs-the-type-axis.pg.test.ts`, and the freedom it demonstrated —
+   * a vocabulary the old structural constraint would have refused — is exactly
+   * what the case below still exercises from the other side, by pinning the ONE
+   * requirement that replaced it.
+   */
 
   /**
    * The replacement, doing the job the constraint used to. A workflow governing

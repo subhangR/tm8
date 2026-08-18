@@ -347,7 +347,7 @@ describe('WorkspaceEventMapper', () => {
       return (event as unknown as { notification: { message?: string } }).notification;
     }
 
-    /** Verbatim key set of jsonb_build_object at 003_read_model.sql:154-155. */
+    /** Verbatim key set of jsonb_build_object at 003_read_model.sql:155-155. */
     const MENTION_PAYLOAD = {
       messageId: MESSAGE,
       anchorId: TASK,

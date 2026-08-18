@@ -39,6 +39,10 @@ interface EntityKindRow {
   origin: 'core' | 'custom';
   space_id: string | null;
   icon: string | null;
+  base_kind: 'task' | null;
+  label: string | null;
+  label_plural: string | null;
+  workflow_id: string | null;
   field_schema: unknown;
   capabilities: unknown;
   created_by: string | null;
@@ -83,6 +87,10 @@ function toEntityKind(row: EntityKindRow): EntityKindDef {
     origin: row.origin,
     spaceId: row.space_id,
     icon: row.icon,
+    baseKind: row.base_kind ?? null,
+    label: row.label ?? null,
+    labelPlural: row.label_plural ?? null,
+    workflowId: row.workflow_id ?? null,
     fieldSchema: row.field_schema,
     capabilities: row.capabilities,
     createdBy: row.created_by,
@@ -170,8 +178,8 @@ export class W2EntityKindsProfileService {
     const spaceId = requireUuidParam(ctx, 'spaceId');
     const rows = await guarded('entityKinds.list', () => this.deps.db.query<EntityKindRow>(
       claimsFor(owner, ctx),
-      `select id, kind, origin, space_id, icon, field_schema, capabilities,
-              created_by, created_at
+      `select id, kind, origin, space_id, icon, base_kind, label, label_plural,
+              workflow_id, field_schema, capabilities, created_by, created_at
          from public.entity_kinds
         where space_id = $1 or space_id is null
         order by case origin when 'core' then 0 else 1 end, kind, id`,
@@ -197,6 +205,15 @@ export class W2EntityKindsProfileService {
         input.capabilities ?? {},
         envelope.actorId ?? null,
         cmid,
+        // 155: the three trailing arguments the door grew when `kind` absorbed
+        // the `type` axis. `baseKind` is what makes `c:epic extends task` true
+        // rather than merely recorded — it selects WHICH IRREDUCIBLE CODE RUNS
+        // for entities of this kind — and it is create-only: `w2_update_entity_kind`
+        // refuses it on purpose, because re-basing a kind is a data migration
+        // wearing an update's clothes.
+        input.baseKind ?? null,
+        input.label ?? null,
+        input.labelPlural ?? null,
       ],
     ));
     return parseResult(EntityKindDefSchema, raw, 'entity-kind create result');
@@ -213,6 +230,11 @@ export class W2EntityKindsProfileService {
     if (input.fieldSchema !== undefined) patch.fieldSchema = input.fieldSchema;
     if (input.capabilities !== undefined) patch.capabilities = input.capabilities;
     if (input.allowTightening !== undefined) patch.allowTightening = input.allowTightening;
+    // 155: the display vocabulary a `type` value used to carry now lives on the
+    // kind. Patch keys are camelCase because the RPC's whitelist reads them that
+    // way; `baseKind` is deliberately absent from this list (see create).
+    if (input.label !== undefined) patch.label = input.label;
+    if (input.labelPlural !== undefined) patch.labelPlural = input.labelPlural;
     if (Object.keys(patch).length === 0) throw invalidInput('entity-kind update must change a field');
     const envelope = requestEnvelope(ctx);
     const raw = await guarded('entityKinds.update', () => this.deps.db.rpc<unknown>(

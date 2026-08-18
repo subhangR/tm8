@@ -138,9 +138,7 @@ import {
   type SpaceSummary,
   type TaskAxis,
   type TaskAxisInput,
-  type TaskWorkflow,
   type Workflow,
-  type TaskWorkflowInput,
   type TrackingPrMergeInput,
   type TrackingPrMergeResult,
   type UpdateAttentionRequestInput,
@@ -320,25 +318,6 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     deleteTaskAxis(spaceId: SpaceId, axisId: string, body: CommandContext): Promise<{ axisId: string }> {
       return http.call<{ axisId: string }>('spaces.taskAxes.delete', {
         params: { spaceId, axisId },
-        body,
-      });
-    },
-
-    /**
-     * Task-workflow writes (W4, 132) — same path rule as the axis writes
-     * above. Upsert answers the row (the natural key is (space, typeValue));
-     * delete answers `{ workflowId }` (the handler discards the RPC body).
-     */
-    upsertTaskWorkflow(spaceId: SpaceId, input: TaskWorkflowInput): Promise<TaskWorkflow> {
-      return http.call<TaskWorkflow>('spaces.taskWorkflows.upsert', {
-        params: { spaceId },
-        body: input,
-      });
-    },
-
-    deleteTaskWorkflow(spaceId: SpaceId, workflowId: string, body: CommandContext): Promise<{ workflowId: string }> {
-      return http.call<{ workflowId: string }>('spaces.taskWorkflows.delete', {
-        params: { spaceId, workflowId },
         body,
       });
     },
