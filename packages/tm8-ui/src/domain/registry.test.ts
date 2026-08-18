@@ -363,17 +363,36 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     }
   });
 
-  it('PHASE 5 — the kinds with no state axis partition by CATEGORY, contract-shaped', () => {
+  it('PHASE 5 — DONE partitions by CATEGORY; OPEN does not, so uncategorised rows are visible', () => {
     // `filters.category` shipped in phase 1 and is executed by the seam
     // untranslated, exactly like `workStatus` and `sessionStatus` beside it.
     // Three tiers, not four: `cancelled` rides with `done` until phase 7 gives
     // it its own permanent tab (ruled, sub-doc 7 §3.4).
+    //
+    // OPEN WAS CATEGORY-FILTERED AND IS NOT ANY MORE. This case previously
+    // asserted `category: ['to_do','in_progress']` on the open tier, and that
+    // assertion is REVERSED here deliberately rather than deleted, because it
+    // recorded a decision that has been formally reversed (co-coordinator
+    // ruling, option A) after it broke a user-visible surface:
+    //
+    //   phase 5's premise was "every kind has a workflow and every entity a
+    //   status, so every tier is a query that can return rows". A status clause
+    //   is NULL = any(...): an ABSENT category matches no present clause
+    //   (domain-store.ts:440). So a category-filtered Open tab rendered EMPTY
+    //   for every uncategorised entity, which is what emptied the channel list
+    //   (gate.test.tsx > "lists channels in the Entity List Panel").
+    //
+    //   And absent-category is a state this product deliberately models:
+    //   board-v2 ships an uncategorised COLUMN and cannot express it as a query
+    //   either — it narrows the base read client-side (board-model.ts:342).
+    //
+    // DONE stays category-filtered: a row with no category has not been done,
+    // so excluding it there is correct rather than lossy.
     const stateless = allKinds().filter((row) => !['task', 'work_session'].includes(row.kind));
     expect(stateless.length).toBeGreaterThan(15);
     for (const row of stateless) {
       const tiers = row.list.lifecycle ?? [];
       expect(tiers.find((t) => t.id === 'open')?.filter).toEqual({
-        category: ['to_do', 'in_progress'],
         deleted: 'exclude',
       });
       expect(tiers.find((t) => t.id === 'done')?.filter).toEqual({
