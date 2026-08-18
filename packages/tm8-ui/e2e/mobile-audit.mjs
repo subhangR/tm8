@@ -328,14 +328,44 @@ const STATES = [
     name: 'sessions-launch',
     path: 'k/sessions',
     steps: [{ click: '[data-testid="list-quick-start"]' }],
-    expect: '.msheet__panel, [role="dialog"], .mobile-header__back',
+    /*
+     * STRICT, AND IT USED TO BE A DISJUNCTION THAT INCLUDED
+     * `.mobile-header__back` — which ANY pushed screen satisfies. So this row
+     * passed by landing on the RUN surface and photographed it twice under a
+     * launch label, with complete arrays, shellOk true and every quality check
+     * in the program green. A clean result from a state that was never reached.
+     * An `expect` that accepts a weaker alternative is not a witness; it is a
+     * way for the label to do the witness's work.
+     */
+    expect: '[data-testid="launch-sheet"]',
     note: 'Lane C — the launch affordance',
   },
   {
     name: 'home-composer-focused',
     path: 'home',
     steps: [{ focus: '.tch-composer textarea, .tch-composer [contenteditable="true"], textarea' }],
+    /*
+     * TWO WITNESSES, BECAUSE THIS ROW PROXIES AN ENVIRONMENTAL CONDITION AND
+     * NOT A USER ACTION — and they answer different questions:
+     *
+     *   DID THE DRIVER ACT?    the composer is `document.activeElement`
+     *   DOES THE STATE OBTAIN? the keyboard is actually up
+     *
+     * The driver DID act — focus lands correctly — so an acted-witness alone
+     * would flip this row to `stateOpened: true` and it would still measure
+     * nothing about a keyboard. Headless Firefox has no soft keyboard, so
+     * `visualViewport` never shrinks, the inset stays 0px and `MobileFrame`
+     * never sets `data-keyboard="up"`. Certifying that would be worse than the
+     * silent nothing it replaced: the same failure one level up, wearing a tick.
+     *
+     * So the environmental half is declared and CANNOT be produced here. The
+     * row reports UNPRODUCIBLE ON THIS ENGINE rather than measured, and the
+     * keyboard-up case stays open against a real device.
+     */
     expect: null,
+    actedWitness: () => document.activeElement && document.activeElement.matches('textarea, input[type="text"], [contenteditable="true"]'),
+    stateWitness: '.mobile-frame[data-keyboard="up"]',
+    unproducibleReason: 'headless Firefox has no soft keyboard: visualViewport never shrinks, so --mobile-keyboard-inset stays 0px and data-keyboard is never set',
     note: 'Lane A — composer focused (keyboard-up proxy)',
   },
 ];
@@ -1166,6 +1196,17 @@ for (const vp of VIEWPORTS) {
          witness, the same contract the ROUTES table spells out under
          `witness`. Without it this row measures the screen underneath, which
          looks exactly like a real row and is fiction. */
+      /* An environmental state that cannot be produced on this engine is
+         reported as UNPRODUCIBLE, never as measured — see the composer row. */
+      let unproducible = null;
+      if (st.stateWitness) {
+        const obtains = await page.locator(st.stateWitness).first().isVisible().catch(() => false);
+        if (!obtains) {
+          unproducible = st.unproducibleReason || `state witness ${st.stateWitness} absent`;
+          problems.push(`${vp.name}/${st.name}: UNPRODUCIBLE ON THIS ENGINE — ${unproducible}`);
+        }
+      }
+
       let opened = failed === null;
       if (opened && st.expect) {
         opened = await page.locator(st.expect).first().isVisible().catch(() => false);
@@ -1194,6 +1235,7 @@ for (const vp of VIEWPORTS) {
         phoneRole: 'state',
         stateOpened: opened,
         stateFailure: failed,
+        stateUnproducible: unproducible,
         note: st.note,
         screenshot: shot,
         pageErrors: pageErrors.slice(0, 3),
