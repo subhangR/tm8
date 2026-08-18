@@ -3,7 +3,7 @@
  * The ONE lane line (107) — the honesty rules as unit truths:
  *   · no branch fact ⇒ NO claim (null, and the component renders nothing);
  *   · the mode badge maps workdir facts to the ruled vocabulary
- *     (project ⇒ 'shared' — the word IS the honesty);
+ *     (project ⇒ 'shared' — a link mark, not a word, now carries the honesty);
  *   · a pre-107 summary (neither field) renders nothing rather than a guess.
  */
 import { render, screen } from '@testing-library/react';
@@ -26,7 +26,7 @@ describe('sessionLaneOf', () => {
       .toEqual({ branch: 'tm8/ab12cd34', mode: 'worktree' });
   });
 
-  it("maps 'project' to 'shared' — the badge word carries the honesty", () => {
+  it("maps 'project' to the 'shared' mode fact", () => {
     expect(sessionLaneOf({ ...base, checkoutBranch: 'main', workdirMode: 'project' }))
       .toEqual({ branch: 'main', mode: 'shared' });
   });
@@ -62,9 +62,14 @@ describe('SessionLaneLine', () => {
     expect(screen.getByRole('img').getAttribute('aria-label')).toContain('worktree');
   });
 
-  it('a shared checkout names its honesty in the badge title', () => {
+  it('a shared checkout draws the link SYMBOL, never the word', () => {
     render(<SessionLaneLine lane={{ branch: 'main', mode: 'shared' }} />);
-    expect(screen.getByText('shared').getAttribute('title')).toContain('not exclusively');
+    const line = screen.getByTestId('session-lane-line');
+    // Same treatment as `worktree`: the mark replaces the toned word outright
+    // — no pill is drawn — and the symbol carries the meaning as a labelled
+    // `img`, not a hardcoded string match on rendered text.
+    expect(line.querySelector('.kit-pill')).toBeNull();
+    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('not exclusively');
   });
 
   it('renders NOTHING for null — honest absence draws no placeholder', () => {

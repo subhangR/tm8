@@ -369,6 +369,12 @@
   color: var(--pn-ink-2);
   flex: none;
 }
+/* The shared mark reads at the same volume as the worktree mark beside it —
+   one glyph, one ink, no status tone shouting over the branch name. */
+.cv2-root .pn-lane__shared-mark {
+  color: var(--pn-ink-2);
+  flex: none;
+}
 
 /* -- transcript-observed file changes (renders with OR without a worktree) -- */
 .pn-git__change-totals { display: inline-flex; gap: var(--pn-space-2); }

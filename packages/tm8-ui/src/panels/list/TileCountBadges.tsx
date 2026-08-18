@@ -1,6 +1,21 @@
 import type { EntityBadges, EntityCounters } from '@tm8/contract';
 import { KindIcon, tileCountBadgesOf } from '../../domain';
-import { AvatarStack } from '../../kit';
+import { VectorIcon } from '../../kit';
+
+/**
+ * THE PERSON MARK — a filled head-and-shoulders silhouette, the familiar
+ * Octicons `person` glyph shape (MIT) authored directly on this kit's own
+ * 16×16 grid rather than rescaled, since Octicons already ships at 16×16.
+ * The human-message badge used to draw a face-avatar stack (up to three
+ * portraits) beside its count; a tile row is not the place to recognize
+ * WHO posted, only that a human did and how many times, so one quiet glyph
+ * replaces the stack the same way `WORKTREE_MARK` replaced a word in
+ * `git/SessionLane.tsx` — same house rule, same reasoning.
+ */
+const PERSON_MARK = [
+  'M10.3 5a2.3 2.3 0 1 1 -4.6 0 2.3 2.3 0 1 1 4.6 0Z',
+  'M2 14A6 5.5 0 0 1 14 14Z',
+];
 
 /**
  * TILE COUNT BADGES (108): glyph+count for what an entity carries — docs,
@@ -61,12 +76,22 @@ export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind
   return (
     <span className="pn-st__counts" data-testid="tile-count-badges">
       {badges.map(({ badge, shown }) => {
+        const isHuman = badge.emphasis === 'human';
+        // The human badge's icon carries its own tooltip — the author names
+        // when known, so a hover answers "who" as well as "how many" without
+        // drawing a single extra pixel for it.
+        const authorNames = isHuman && humanAuthors
+          ? humanAuthors.actors.map((actor) => actor.displayName)
+          : [];
+        const authorOverflow = isHuman && humanAuthors ? Math.max(humanAuthors.total - authorNames.length, 0) : 0;
+        const personTitle = authorNames.length > 0
+          ? [...authorNames, authorOverflow > 0 ? `+${authorOverflow} more` : null].filter(Boolean).join(', ')
+          : undefined;
         const body = (
           <>
-            <KindIcon kind={badge.icon} size={12} />
-            {badge.emphasis === 'human' && humanAuthors
-              ? <AvatarStack actors={humanAuthors.actors} total={humanAuthors.total} />
-              : null}
+            {isHuman
+              ? <VectorIcon paths={PERSON_MARK} filled size={12} title={personTitle} />
+              : <KindIcon kind={badge.icon} size={12} />}
             {shown}
           </>
         );
