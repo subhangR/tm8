@@ -373,12 +373,12 @@ describe('the router sync loop', () => {
   it('mirrors the store through the SAME codec the URL is read with', () => {
     nav().push(A);
     nav().pin(B);
-    nav().setContentSurface(B, 'chat');
+    nav().setContentSurface(B, 'transcript');
     const { hash } = build(routeOf(nav()));
     const reparsed = parse(hash).route!;
     expect(reparsed.panels.stack).toEqual([A]);
     expect(reparsed.panels.pinned).toEqual([B]);
-    expect(reparsed.panels.contentSurface[B]).toBe('chat');
+    expect(reparsed.panels.contentSurface[B]).toBe('transcript');
   });
 });
 
