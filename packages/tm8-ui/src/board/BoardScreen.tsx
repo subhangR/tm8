@@ -53,6 +53,7 @@ import {
   applyMoves,
   buildFilters,
   columnsFor,
+  KIND_PIVOT_IS_READ_ONLY,
   matching,
   settledMoves,
   type BoardColumn,
@@ -223,6 +224,16 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
       return lifecycleRef.current.setState(row.id, option.id, option.via ?? stateControl.command, {
         notify: false,
       });
+    }
+    /*
+     * KIND (153) — the refusal, stated in the ONE sentence `board-model` holds.
+     * The columns below refuse the drag outright so this should be unreachable
+     * from the mouse; it is here because the KEYBOARD move path calls the same
+     * function, and a silent `return` would make Mod+Arrow on this pivot look
+     * broken rather than refused.
+     */
+    if (pivot === 'kind') {
+      return { ok: false, reason: KIND_PIVOT_IS_READ_ONLY };
     }
     if (pivot === 'priority') {
       if (!priorityControl) return { ok: false, reason: 'Tasks have no priority control on this build.' };
@@ -440,6 +451,14 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
               {`Showing the ${snapshot.limit} most recently active tasks — headers carry the true totals.`}
             </div>
           ) : null}
+          {/* 153 — the kind pivot is READ-ONLY, said up front: undraggable
+              cards with no words are indistinguishable from broken ones, which
+              is the same reason the assignee board states its own rule. */}
+          {pivot === 'kind' ? (
+            <div className="bd__banner" data-testid="bd-kind-note">
+              {KIND_PIVOT_IS_READ_ONLY}
+            </div>
+          ) : null}
           {/* WHAT THE BOARD IS, said once, only when it is genuinely empty (no
               cards anywhere and no filter hiding them) — the columns below are
               honest drop targets but say nothing about what belongs on them. */}
@@ -524,17 +543,31 @@ function ColumnView({
       data-testid="bd-column"
       data-column={column.key}
       aria-label={column.label}
-      onDragOver={(event) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        const id = event.dataTransfer.getData('text/plain');
-        const drag = dragging && dragging.row.id === id ? dragging : null;
-        onDragStart(null);
-        if (drag) onDrop(drag.row, drag.from, column.key);
-      }}
+      /* 153 — a KIND column is not a drop target at all: no `onDragOver`, so
+         the browser's own default (reject) stands and the cursor says "no"
+         before the finger lifts. Leaving the handlers on and refusing inside
+         them would show a move cursor for a move that cannot happen, which is
+         a promise the board would then have to break. See
+         `KIND_PIVOT_IS_READ_ONLY`. */
+      onDragOver={
+        pivot === 'kind'
+          ? undefined
+          : (event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'move';
+            }
+      }
+      onDrop={
+        pivot === 'kind'
+          ? undefined
+          : (event) => {
+              event.preventDefault();
+              const id = event.dataTransfer.getData('text/plain');
+              const drag = dragging && dragging.row.id === id ? dragging : null;
+              onDragStart(null);
+              if (drag) onDrop(drag.row, drag.from, column.key);
+            }
+      }
     >
       <header className="bd__col-head">
         <Pill tone={column.tone}>{column.label}</Pill>
@@ -614,13 +647,20 @@ function CardView({
       className={cls}
       data-testid="bd-card"
       data-entity={row.id}
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.setData('text/plain', row.id);
-        event.dataTransfer.effectAllowed = 'move';
-        onDragStart({ row, from: fromKey });
-      }}
-      onDragEnd={() => onDragStart(null)}
+      /* 153 — not draggable on the KIND pivot: the columns accept nothing, so
+         a card that could still be picked up would be offering a gesture with
+         no destination. */
+      draggable={pivot !== 'kind'}
+      onDragStart={
+        pivot === 'kind'
+          ? undefined
+          : (event) => {
+              event.dataTransfer.setData('text/plain', row.id);
+              event.dataTransfer.effectAllowed = 'move';
+              onDragStart({ row, from: fromKey });
+            }
+      }
+      onDragEnd={pivot === 'kind' ? undefined : () => onDragStart(null)}
     >
       <button type="button" className="bd__card-title" onClick={() => onOpen(row.id)}>
         {row.title}

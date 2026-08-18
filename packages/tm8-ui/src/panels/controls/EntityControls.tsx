@@ -49,7 +49,6 @@ import type {
   EntityKind,
   EntitySummary,
   TaskAxis,
-  TaskWorkflow,
 } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type {
@@ -66,11 +65,7 @@ import {
   KindIcon,
   REASONS,
   getKind,
-  offWorkflowType,
   resolveAction,
-  workflowRefusalText,
-  workflowTypeOf,
-  workflowVocabularyOf,
 } from '../../domain';
 import { Avatar, useMenuAnchor, type PillTone } from '../../kit';
 import {
@@ -187,16 +182,6 @@ export interface ControlHost {
    * no axis controls at all (an empty picker would fabricate a taxonomy).
    */
   taskAxes?: readonly TaskAxis[];
-  /**
-   * The space's workflow registry (W4, 132) — PER-SPACE DATA riding the same
-   * `spaceSettings()` read as `taskAxes`, hydrated by the host the same way.
-   * The state control uses it to NARROW for usability only: an option outside
-   * the row's type vocabulary renders disabled-with-reason (never hidden —
-   * "the control does not change shape"), and a CURRENT value outside it
-   * draws the derived off-workflow mark. The DATABASE trigger remains the
-   * gate; absent or empty means nothing narrows, which is today exactly.
-   */
-  taskWorkflows?: readonly TaskWorkflow[];
   onAssign?: (entityId: string, actorId: string, edgeType: string, assigned: boolean) => void;
   assignableActors?: readonly ActorSummary[];
   /**
@@ -1339,27 +1324,15 @@ export function RowStateControl({
     </span>
   );
 
-  /**
-   * W4 — the workflow NARROWING, usability only (the trigger of 132 is the
-   * gate). `vocabulary` is null when nothing narrows this row — no `type`
-   * value, no rule for it, or no workflows at all — which is today exactly.
-   * A forbidden option renders DISABLED-WITH-REASON, never hidden: the
-   * registry's own ruling is that when a workflow lands "it narrows THIS
-   * list; the control does not change shape".
+  /*
+   * W4's workflow NARROWING stood here — `vocabulary`, `barred()` and the
+   * derived `offWorkflow` mark, all keyed on the row's `type` axis value.
+   * Phase 6 (migration 153) dropped `public.task_workflows` whole and retired
+   * the `type` axis into custom entity KINDS, so there is no per-type
+   * vocabulary to narrow with and no "off workflow" state to derive: every
+   * option this control lists is offerable, and the row's KIND now decides
+   * which workflow governs it (152) — server-side, at the write.
    */
-  const vocabulary = workflowVocabularyOf(props.taskWorkflows, row.state);
-  const typeValue = workflowTypeOf(row.state);
-  const barred = (id: string): boolean =>
-    vocabulary !== null && id !== current && !vocabulary.includes(id);
-  /**
-   * OFF-WORKFLOW is a DERIVED fact (owner ruling): the CURRENT status sits
-   * outside the type's vocabulary — reachable by re-typing — and is flagged,
-   * never stored, never rewritten, never refused. The refusal FORM follows
-   * the anatomy exactly as `refuse` above: a caption under the strip's
-   * select, title text on the 16px tile mark.
-   */
-  const offType = offWorkflowType(props.taskWorkflows, row.state, current);
-  const offWords = offType === null ? null : `off workflow — ${workflowRefusalText(offType, current)}`;
 
   if (control.readOnlyReason) {
     return refuse(toReason(control.readOnlyReason), currentPill);
@@ -1400,12 +1373,12 @@ export function RowStateControl({
           /* The trigger carries the CURRENT value in its name and its tooltip,
              so a value the registry does not list — which the menu has no row
              for — is still stated rather than silently unrepresented. The
-             off-workflow fact rides the same tooltip: a 16px mark has no room
-             for a caption, so the tile's refusal form is title text. */
-          title={offWords === null ? `${word} — change state` : `${word} — change state · ${offWords}`}
+             off-workflow fact used to ride the same tooltip; it went with
+             `task_workflows` in phase 6 (153). */
+          title={`${word} — change state`}
           aria-expanded={open}
           aria-haspopup="true"
-          aria-label={offWords === null ? `${label}, currently ${word}` : `${label}, currently ${word}, ${offWords}`}
+          aria-label={`${label}, currently ${word}`}
           onClick={(e) => {
             e.stopPropagation();
             setOpen((v) => !v);
@@ -1426,7 +1399,6 @@ export function RowStateControl({
               >
                 {control.options.map((o) => {
                   const on = o.id === current;
-                  const off = barred(o.id);
                   return (
                     <button
                       key={o.id}
@@ -1436,24 +1408,13 @@ export function RowStateControl({
                       data-testid="row-state-option"
                       data-state={o.id}
                       aria-checked={on}
-                      /* W4 — disabled-with-reason, never hidden: aria-disabled
-                         (not `disabled`) so a keyboard user can still reach
-                         the row, exactly as the honesty kit's refusals do. The
-                         menu stays open on the dead click so the reason can be
-                         read.
-
-                         THE REASON IS VISIBLE NOW, not a `title`. It used to
-                         rely on a hover tooltip, which a finger cannot produce
-                         — so on touch this row was greyed out and mute. It is
-                         written into the row itself rather than disclosed,
-                         because it is one short uniform sentence and this row
-                         lives inside a popover: a disclosure nested in a menu
-                         is a second layer to dismiss for a fact that fits on
-                         the line. Matches the `<select>` spelling below. */
-                      aria-disabled={off ? 'true' : undefined}
+                      /* W4's disabled-with-reason arm stood here, greying the
+                         options outside the row's `type` vocabulary. Gone with
+                         `task_workflows` in phase 6 (153): every option this
+                         control lists is now offerable, so there is no dead
+                         click to keep the menu open for. */
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (off) return;
                         setOpen(false);
                         if (on) return;
                         // The option's own `via` wins, exactly as in the
@@ -1467,9 +1428,7 @@ export function RowStateControl({
                           both from a row, and there is no row to derive them
                           from until the value is chosen. The mark stays where
                           it is a fact: on the trigger. */}
-                      <span className="lp__assignopt-name">
-                        {off ? `${wordFor(o.id)} — not in type ${typeValue}` : wordFor(o.id)}
-                      </span>
+                      <span className="lp__assignopt-name">{wordFor(o.id)}</span>
                       <span className="lp__assignopt-mark" aria-hidden>
                         {on ? '✓' : ''}
                       </span>
@@ -1511,37 +1470,13 @@ export function RowStateControl({
       {!control.options.some((o) => o.id === current) && current !== '' ? (
         <option value={current}>{wordFor(current)}</option>
       ) : null}
-      {/* W4 — an option outside the row's type vocabulary is DISABLED with its
-          reason attached, never hidden: "the control does not change shape"
-          (the registry's own ruling), and the database trigger is the real gate
-          behind this usability narrowing.
-
-          THE REASON IS IN THE OPTION'S OWN LABEL, and it used to be in `title`.
-          `title` on an `<option>` is rendered by NO browser — not as a tooltip
-          on desktop, and certainly not in the native picker a phone opens. So
-          this was not a touch defect that happened to also be ugly: the reason
-          was unreachable on every platform, by every input, since it was
-          written. A greyed-out row the user cannot interrogate is exactly the
-          silent refusal L6 exists to forbid.
-
-          Option TEXT is the one thing every select renders, native picker
-          included, so the reason travels there. It is short and uniform by
-          construction — `workflowRefusalText` is "type X does not allow Y" and Y
-          is already this option's label — so the suffix says only the part the
-          label does not: which type is refusing. */}
       {control.options.map((o) => (
-        <option key={o.id} value={o.id} disabled={barred(o.id)}>
-          {barred(o.id) ? `${wordFor(o.id)} — not in type ${typeValue}` : wordFor(o.id)}
+        <option key={o.id} value={o.id}>
+          {wordFor(o.id)}
         </option>
       ))}
     </select>
     </span>
-    {/* W4 — the derived off-workflow mark: caption voice, honesty kit. */}
-    {offWords !== null ? (
-      <span className="hon-caption" role="note" data-testid="row-state-offworkflow">
-        {offWords}
-      </span>
-    ) : null}
     </>
   );
 }

@@ -3,7 +3,7 @@
  * — no component in this module constructs a seam (see `port.ts` for why).
  */
 import type { ReactNode } from 'react';
-import type { EntitySummary, SpaceInviteView, SpaceSummary, TaskAxis, TaskWorkflow } from '@tm8/contract';
+import type { EntitySummary, SpaceInviteView, SpaceSummary, TaskAxis } from '@tm8/contract';
 import type { IdentityView } from '../data/seam';
 import type { ResolvedMenu } from '../shell/menu-resolve';
 import type { SettingsPort } from './port';
@@ -20,7 +20,6 @@ export type SettingsSectionId =
   | 'members'
   | 'invites'
   | 'axes'
-  | 'workflows'
   | 'models'
   | 'credentials'
   | 'projects'
@@ -53,10 +52,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'members', label: 'Members & roles', heading: 'Members & roles' },
   { id: 'invites', label: 'Invites', heading: 'Invites' },
   { id: 'axes', label: 'Task axes', heading: 'Task axes' },
-  /* W4 — DIRECTLY AFTER axes, by ruling: workflows are authored beside the
-     axis whose values they key on, and reading them apart would hide that a
-     workflow row is meaningless without its `type` value existing next door. */
-  { id: 'workflows', label: 'Workflows', heading: 'Workflows' },
+  /* A `workflows` section STOOD HERE (W4, migration 132): per-`type`-value
+     status subsets, authored beside the axis whose values they keyed on.
+     Phase 6 (migration 153) dropped `public.task_workflows` whole and re-homed
+     the `type` axis into custom entity KINDS, so there is no per-type
+     vocabulary left to author. Workflows are now per-KIND (152) and are named
+     state sets, not status subsets. Task axes above SURVIVE — only the axis
+     named `type` died, as data. */
   /* Models sits with the other space-shaped configuration even though it is
      browser-local: it is where someone looking for "what can I launch with"
      will look, and the section itself states its real scope rather than
@@ -95,12 +97,6 @@ export interface SettingsData {
    * this section saying "could not be read" rather than "no axes".
    */
   axes: readonly TaskAxis[] | null;
-  /**
-   * The task-workflow registry (W4). Same posture as `axes` — the read rides
-   * the same `spaces.settings` round trip, and `null` means NOT READ, never
-   * "no workflows defined".
-   */
-  workflows: readonly TaskWorkflow[] | null;
 }
 
 export interface SettingsShellProps {

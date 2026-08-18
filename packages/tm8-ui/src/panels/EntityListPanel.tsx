@@ -40,14 +40,12 @@ import {
   toRowFacts,
   VIEWER_ACTOR,
   allKinds,
+  CUSTOM_KIND_FALLBACK,
   collectionKinds,
   countLabel,
   getKind,
   needsViewer,
   resolveAction,
-  workflowRefusalText,
-  workflowTypeOf,
-  workflowVocabularyOf,
 } from '../domain';
 import { Avatar, Timestamp, ancestorPath, useTreeDisclosure, type PillTone } from '../kit';
 import {
@@ -96,10 +94,17 @@ const SESSION_CHIP_KIND = allKinds().find((kind) => kind.list.liveTreatment != n
  * DATA, so the message tallies (whose `human-message` / `agent-message`
  * badge kinds resolve to no collection) stay counts, exactly the v1 ruling.
  */
-const EXPANDABLE_KINDS: ReadonlySet<string> = new Set(
-  collectionKinds().map((config) => config.kind),
-);
-const isExpandableKind = (kind: string): boolean => EXPANDABLE_KINDS.has(kind);
+/*
+ * ASKED PER CALL, not frozen into a module-level Set — which is what this was
+ * until phase 6 (migration 153). `registerCustomKinds()` populates the
+ * registry's custom rows at space boot, LONG after this module is evaluated,
+ * so a precomputed set could only ever hold the shipped kinds and a chip
+ * expanding into one of a space's own kinds would have been silently
+ * unexpandable. The lookup is `getKind` + two comparisons, which is cheaper
+ * than the Set membership it replaces was honest.
+ */
+const isExpandableKind = (kind: string): boolean =>
+  kind !== CUSTOM_KIND_FALLBACK && getKind(kind).kind === kind && getKind(kind).strategy === 'collection';
 const NO_LINKED: readonly EntitySummary[] = Object.freeze([]);
 
 /**
@@ -383,14 +388,6 @@ export interface EntityListPanelProps {
    * kinds whose registry declares `axisControls`; empty draws none.
    */
   taskAxes?: readonly import('@tm8/contract').TaskAxis[];
-
-  /**
-   * The space's workflow registry (W4, 132) — per-space DATA from
-   * `spaceSettings().taskWorkflows`, hydrated by the host beside `taskAxes`.
-   * The state control narrows its options with it, and the STATUS board
-   * pre-flights a drop against it; the database trigger stays the real gate.
-   */
-  taskWorkflows?: readonly import('@tm8/contract').TaskWorkflow[];
 
   /**
    * Add or remove ONE assignment on an expanded row.
@@ -1929,6 +1926,43 @@ function assigneeBoardColumns(groups: readonly CollectionGroup[]): BoardColumnSp
   return columns;
 }
 
+/**
+ * Columns for the KIND board (phase 6, migration 153).
+ *
+ * `CollectionQuery.groupBy` gained the literal `'kind'` in 153, and it is what
+ * `axis:type` used to be: a space's epics, bugs and stories were `type` axis
+ * VALUES and are now custom entity KINDS that extend task. A board that could
+ * group by the old axis and not by the new kind would have lost a view in the
+ * migration.
+ *
+ * The server's groups VERBATIM — key = the kind string — with the label taken
+ * from the registry so a `c:epic` column reads "Epic" and not `c:epic`. Nothing
+ * is synthesised: a kind with no rows in this page has no column, exactly as on
+ * the assignee board, because inventing one would be a claim about a page we
+ * did not fetch.
+ *
+ * EVERY COLUMN IS UNDROPPABLE (`option: null`, no `axisValue`), and that is a
+ * measured fact about the write doors, not a scope decision. Re-kinding an
+ * entity has no verb: `seam.commands` carries `patchEntity`, `updateTask`,
+ * `work` and `complete`, and not one of them takes a kind — `entities.kind` is
+ * written at create and never after. So a drop here could only either do
+ * nothing or silently write some OTHER dimension, and the second is the exact
+ * lie the W3/W4 board rulings exist to prevent. The board says so in its banner
+ * rather than leaving cards that refuse to move without words.
+ */
+function kindBoardColumns(groups: readonly CollectionGroup[]): BoardColumnSpec[] {
+  return groups.map((g): BoardColumnSpec => ({
+    key: g.key,
+    // `getKind` answers the registry row — a core row, a REGISTERED custom row
+    // (153), or the `c:*` fallback. `g.label` wins when the server supplied
+    // one, so a kind the client has not registered still reads as words.
+    label: g.label || getKind(g.key).labelPlural,
+    tone: 'idle',
+    option: null,
+    sink: false,
+  }));
+}
+
 function BoardBody({
   props,
   config,
@@ -2005,6 +2039,12 @@ function BoardBody({
     >
       <option value="status">by status</option>
       <option value="assignee">by assignee</option>
+      {/* 153 — `groupBy: 'kind'`. It sits directly after the two shipped
+          dimensions and BEFORE the space's axes because it is a universal
+          dimension like them, not per-space data; and it reads "by kind"
+          rather than "by type" even though it is what `axis:type` used to be,
+          because `type` is the word 153 retired. */}
+      <option value="kind">by kind</option>
       {(props.taskAxes ?? []).map((a) => (
         <option key={a.id} value={`axis:${a.name}`}>
           by {a.name}
@@ -2073,7 +2113,13 @@ function BoardBody({
       ? axisBoardColumns(axis, snapshot?.groups ?? [])
       : groupBy === 'assignee'
         ? assigneeBoardColumns(snapshot?.groups ?? [])
+<<<<<<< HEAD
         : boardColumns(config, tab, snapshot?.groups ?? []);
+=======
+        : groupBy === 'kind'
+          ? kindBoardColumns(snapshot?.groups ?? [])
+          : boardColumns(config, tier, snapshot?.groups ?? []);
+>>>>>>> dca54ecd (WIP: Phase 6 — CLI + UI tranche (rescued from dead session 01a01558))
   const groupOf = new Map((snapshot?.groups ?? []).map((g) => [g.key, g] as const));
   const itemsOf = (column: BoardColumnSpec): readonly EntitySummary[] =>
     matching(groupOf.get(column.key)?.items ?? [], query);
@@ -2113,24 +2159,15 @@ function BoardBody({
 
     if (!column.option || !stateControl || !props.onSetState) return;
 
-    /**
-     * W4 — the PRE-FLIGHT workflow refusal, at the refusing column, WITHOUT
-     * calling the server: the vocabulary is already in hand (the same
-     * `spaceSettings()` data the strip narrows with), so a drop the row's
-     * type forbids is foreseeable and §8.5 says a foreseeable refusal is
-     * stated rather than attempted. Same words as the strip's disabled
-     * option; the database trigger (132) remains the real gate for every
-     * writer that is not this board.
+    /*
+     * W4's PRE-FLIGHT workflow refusal STOOD HERE: the drop was checked against
+     * the row's `type` vocabulary before the write, so a foreseeable refusal was
+     * stated rather than attempted (§8.5). Phase 6 (migration 153) dropped
+     * `public.task_workflows` and the trigger that made it foreseeable, so there
+     * is nothing left to pre-flight — the write goes to the server and the
+     * server's own refusal is rendered beside the act, exactly as every other
+     * drop on this board already behaves.
      */
-    const vocabulary = workflowVocabularyOf(props.taskWorkflows, row.state);
-    if (vocabulary !== null && !vocabulary.includes(column.option.id)) {
-      setPendingId(null);
-      setRefusal({
-        column: column.key,
-        reason: workflowRefusalText(workflowTypeOf(row.state)!, column.option.id),
-      });
-      return;
-    }
 
     setRefusal(null);
     setPendingId(row.id);
@@ -2215,6 +2252,16 @@ function BoardBody({
         <div className="lp__board-banner" data-testid="board-assignee-note">
           Drag is off on this board — reassigning from a drop is not built; use a card&rsquo;s
           Assigned control instead.
+        </div>
+      ) : null}
+
+      {/* 153 — the kind board is READ-ONLY for the reason `kindBoardColumns`
+          records: no write door re-kinds an entity, so a drop could only lie.
+          Stated up front for the same reason as the assignee note above. */}
+      {groupBy === 'kind' ? (
+        <div className="lp__board-banner" data-testid="board-kind-note">
+          Drag is off on this board — an entity&rsquo;s kind is set when it is created and no
+          command changes it, so there is nothing a drop here could do.
         </div>
       ) : null}
 

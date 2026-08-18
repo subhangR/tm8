@@ -466,18 +466,20 @@ describe('W3 — the axis board', () => {
   });
 });
 
-/**
- * ===========================================================================
- * W4 (2026-08-16) — the STATUS board pre-flights a drop against the space's
- * workflow registry (132). The vocabulary is already in hand — the same
- * `spaceSettings()` data the strip narrows with — so a drop the row's type
- * forbids is FORESEEABLE, and §8.5 says a foreseeable refusal is stated at
- * the refusing column WITHOUT calling the server. Same words as the strip's
- * disabled option; the database trigger remains the real gate. Axis and
- * assignee boards are untouched by construction: the pre-flight lives in the
- * status branch of `dispatchDrop` alone.
- * ===========================================================================
+/*
+ * A `describe('W4 — the status board pre-flights workflow-forbidden drops')`
+ * block STOOD HERE: two cases proving the status board refused a drop the row's
+ * `type` vocabulary forbade WITHOUT calling the server, in the strip's own
+ * words, and dispatched normally for an untyped or unruled row.
+ *
+ * Phase 6 (migration 153) dropped `public.task_workflows` and the trigger that
+ * made such a refusal foreseeable, and retired the `type` axis into custom
+ * entity KINDS. The pre-flight it asserted is gone from `EntityListPanel`, so
+ * the cases were DELETED rather than weakened — with the rule gone there is
+ * nothing left for them to be about. The AXIS board cases above SURVIVE:
+ * axes remain for honest tags, only the axis named `type` died.
  */
+<<<<<<< HEAD
 describe('W4 — the status board pre-flights workflow-forbidden drops', () => {
   const CODE_RULE = {
     id: 'wf-code',
@@ -567,3 +569,5 @@ describe('W4 — the status board pre-flights workflow-forbidden drops', () => {
     expect(onSetState.mock.calls[0]![1]).toBe('working');
   });
 });
+=======
+>>>>>>> dca54ecd (WIP: Phase 6 — CLI + UI tranche (rescued from dead session 01a01558))

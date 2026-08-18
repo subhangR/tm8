@@ -22,7 +22,7 @@
  * stays as the fallback a string-only surface can print. No component changed
  * shape to receive it, exactly as promised.
  */
-import type { CoreEntityKind, EntityKind } from '@tm8/contract';
+import type { CoreEntityKind, EntityKind, EntityKindDef } from '@tm8/contract';
 import type {
   ActionRef,
   AssignControl,
@@ -1792,28 +1792,155 @@ const BY_KIND: ReadonlyMap<string, KindConfig> = new Map(KINDS.map((row) => [row
 
 const FALLBACK = BY_KIND.get(CUSTOM_KIND_FALLBACK) as KindConfig;
 
+// ---------------------------------------------------------------------------
+// Custom kinds — the REGISTERED overlay (phase 6, migration 153)
+// ---------------------------------------------------------------------------
+
+/**
+ * WHY THIS EXISTS AT ALL.
+ *
+ * Until 153 a custom kind was a name with nothing behind it: `getKind('c:epic')`
+ * missed `BY_KIND` and landed on the single `c:*` fallback, so every custom kind
+ * in every space rendered as "Item" with a ◇, and `collectionKinds()` excluded
+ * the fallback row outright, so NO custom kind appeared in any kind selector.
+ * That was defensible while a custom kind really was just a bag of fields.
+ *
+ * 153 retired the task `type` axis into custom KINDS: a space's epics, bugs and
+ * stories are now `c:` kinds with `baseKind = 'task'` (spelled **extends** in
+ * every UX surface and doc), each carrying a task detail row — assignees,
+ * acceptance criteria, points, the spawn door, the completion gate — plus its
+ * own display labels. Those are not "items". They are tasks with a name, and a
+ * client that cannot offer or label them is refusing to show data the space
+ * actually has.
+ *
+ * WHY A REGISTERED OVERLAY RATHER THAN THREADED DATA. `getKind()` is a
+ * SYNCHRONOUS pure lookup called from routes, the palette, menu validation,
+ * every tile and every panel — several hundred call sites, most of them nowhere
+ * near a React tree that could hold server state. Threading `EntityKindDef[]`
+ * to all of them is not a phase-6-sized change and would put per-kind data in
+ * the hands of every consumer, which is exactly what the purity law
+ * (§15.2 — behaviour may not branch on kind outside `registry/`) exists to
+ * prevent. So the derivation stays HERE, in one function, and the gate hands
+ * this module the space's kind list once per space.
+ *
+ * THE SAFETY PROPERTY THAT MAKES THIS HONEST: with nothing registered, every
+ * function below answers EXACTLY what it answered before 153. Registration is
+ * additive and wholesale-replacing, never merging, so a space switch cannot
+ * leave the previous space's kinds resolving.
+ */
+let CUSTOM_ROWS: readonly KindConfig[] = [];
+let CUSTOM_BY_KIND: ReadonlyMap<string, KindConfig> = new Map();
+
+/**
+ * One custom kind's row, derived from what the server actually says about it.
+ *
+ * The BASE is the whole point. `baseKind: 'task'` means "a task detail row of
+ * that shape exists for entities of this kind" — the server's own words — so
+ * the honest client answer is the TASK row's behaviour, verbatim: its state
+ * control, its lifecycle tiers, its row actions, its panel archetype, its
+ * launch wiring. Nothing about a `c:epic` differs from a task except what it is
+ * CALLED and what it is DRAWN AS, and those three fields are the only ones
+ * overridden. `baseKind: null` — a custom kind that extends nothing — keeps the
+ * `c:*` generic row it has always had, for the same reason.
+ *
+ * Labels fall back to the base row's, which reproduces today's behaviour
+ * exactly for a server that supplies none: an unlabelled generic custom kind
+ * still reads "Item"/"Items", an unlabelled task-based one reads "Task"/"Tasks".
+ *
+ * `iconArt` is NOT overridable and stays the base's drawn mark: it is SVG path
+ * data on a 16×16 grid and `EntityKindDef.icon` is a text glyph, so there is
+ * nothing to derive one from. The text `icon` — what a string-only surface
+ * prints, and what the chip shows — DOES take the server's glyph when it has
+ * one. Inventing art from a character would be the ◇ problem again in a new
+ * costume.
+ */
+function customKindRow(def: EntityKindDef): KindConfig {
+  const base = def.baseKind === 'task' ? (BY_KIND.get('task') as KindConfig) : FALLBACK;
+  const icon = def.icon != null && def.icon !== '' ? def.icon : base.icon;
+  return {
+    ...base,
+    kind: def.kind,
+    label: def.label ?? base.label,
+    labelPlural: def.labelPlural ?? base.labelPlural,
+    icon,
+    // `slugOfKind` computes `c:{name}` → `c-{name}`; the fallback row it may be
+    // cloned from carries `slug: null`, which would make the row unaddressable.
+    slug: slugOfKind(def.kind),
+    chip: { ...base.chip, glyph: icon },
+  };
+}
+
+/**
+ * Hand this module the space's `entityKinds.list`. WHOLESALE REPLACEMENT, not a
+ * merge: the argument is the complete answer for the space now in view, so a
+ * space switch (or a resync that drops a kind) cannot leave a stale row
+ * resolving. Call with `[]` to go back to pre-153 behaviour exactly.
+ *
+ * `origin: 'core'` rows are IGNORED. The server may one day serve labels for
+ * core kinds (phase 10); until it does, this registry's own rows are
+ * authoritative for them and a half-populated core row would silently outrank
+ * a hand-authored one.
+ */
+export function registerCustomKinds(defs: readonly EntityKindDef[]): void {
+  const rows = defs
+    .filter((def) => def.origin === 'custom' && def.kind.startsWith('c:'))
+    .map(customKindRow);
+  CUSTOM_ROWS = rows;
+  CUSTOM_BY_KIND = new Map(rows.map((row) => [row.kind, row]));
+}
+
+/** The registered custom rows, in the order the server listed them. */
+export function customKinds(): KindConfig[] {
+  return [...CUSTOM_ROWS];
+}
+
 /**
  * Registry lookup. Takes a plain string so unvalidated URL/server values can be
- * passed directly; a MISS falls back to the `c:*` row and never throws — that
- * is how custom kinds land on the generic archetype for free (LLD §2.3).
+ * passed directly; a MISS falls back to the `c:*` row and never throws.
+ *
+ * The custom overlay is consulted AFTER the core rows and BEFORE the fallback:
+ * a core kind can never be shadowed by a space's data, and a custom kind the
+ * space has not told us about yet still lands on the generic archetype for free
+ * (LLD §2.3) rather than throwing at whatever surface asked first.
  */
 export function getKind(kind: string): KindConfig {
-  return BY_KIND.get(kind) ?? FALLBACK;
+  return BY_KIND.get(kind) ?? CUSTOM_BY_KIND.get(kind) ?? FALLBACK;
 }
 
-/** Every row, fallback included. */
+/**
+ * Every row, fallback included — the SHIPPED rows plus whatever custom kinds
+ * are registered. The totality and uniqueness laws asserted over this in
+ * `registry.test.ts` hold either way: a custom row's slug is `c-{name}`, which
+ * no shipped slug can collide with, and no custom row can be a core kind.
+ */
 export function allKinds(): KindConfig[] {
-  return [...KINDS];
+  return [...KINDS, ...CUSTOM_ROWS];
 }
 
-/** Rows the list-panel kind selector offers: `strategy === 'collection'`. */
+/**
+ * Rows the list-panel kind selector offers: `strategy === 'collection'`.
+ *
+ * Custom kinds are here since 153 and sort AFTER the shipped kinds — a space's
+ * own kinds are the interesting ones but the shipped order is what everybody
+ * has learned, so they extend the list rather than reordering it. The `c:*`
+ * fallback is still excluded: it is a resolution target, not a kind anybody can
+ * ask to see a collection of.
+ */
 export function collectionKinds(): KindConfig[] {
-  return KINDS.filter((row) => row.strategy === 'collection' && row.kind !== CUSTOM_KIND_FALLBACK);
+  return [
+    ...KINDS.filter((row) => row.strategy === 'collection' && row.kind !== CUSTOM_KIND_FALLBACK),
+    ...CUSTOM_ROWS.filter((row) => row.strategy === 'collection'),
+  ];
 }
 
-/** Slug → row, for the `k/{slug}` route and `origin` validation. */
+/**
+ * Slug → row, for the `k/{slug}` route and `origin` validation. Registered
+ * custom rows are searched too since 153, so `k/c-epic` resolves to the epic's
+ * OWN row rather than to nothing — `kindOfSlug` below has always been able to
+ * name the kind from such a slug, and this is the other half of that answer.
+ */
 export function kindBySlug(slug: string): KindConfig | null {
-  return KINDS.find((row) => row.slug === slug) ?? null;
+  return KINDS.find((row) => row.slug === slug) ?? CUSTOM_ROWS.find((row) => row.slug === slug) ?? null;
 }
 
 /** The `c:{name}` → `c-{name}` slug for a custom kind, collision-checked by callers. */

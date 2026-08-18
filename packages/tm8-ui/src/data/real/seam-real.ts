@@ -426,8 +426,6 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       createTaskAxis: (spaceId, input) => ops.createTaskAxis(spaceId, input),
       updateTaskAxis: (spaceId, axisId, input) => ops.updateTaskAxis(spaceId, axisId, input),
       deleteTaskAxis: (spaceId, axisId, ctx) => ops.deleteTaskAxis(spaceId, axisId, ctx),
-      upsertTaskWorkflow: (spaceId, input) => ops.upsertTaskWorkflow(spaceId, input),
-      deleteTaskWorkflow: (spaceId, workflowId, ctx) => ops.deleteTaskWorkflow(spaceId, workflowId, ctx),
       redeemInvite: (input) => ops.redeemInvite(input),
       markRead: (notificationId) => ops.markRead(notificationId),
       /**

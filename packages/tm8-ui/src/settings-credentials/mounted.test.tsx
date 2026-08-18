@@ -65,16 +65,23 @@ const port: CredentialsPort = {
 };
 
 /**
- * The shell reads SEVEN things on mount (SettingsShell.tsx:67-75), and this
- * double supplied four. The three missing ones are not optional: the shell
- * calls them while BUILDING the array it hands to `Promise.allSettled`, so a
- * missing method throws a TypeError synchronously — before `allSettled` exists
- * to settle it — and the rejection escapes the effect entirely.
+ * EVERY read the shell's mount effect makes must be answered here, not just the
+ * ones this file's assertions care about — six of them today
+ * (SettingsShell.tsx:66-71). The shell calls them all while BUILDING the array
+ * it hands to `Promise.allSettled`, so a missing method throws a TypeError
+ * synchronously — before `allSettled` exists to settle it — and the rejection
+ * escapes the effect entirely.
  *
- * That produced no test failure. Every assertion in this file passed; vitest
- * merely exited non-zero on two unhandled rejections, which is invisible unless
- * something is watching the exit code. Nothing was, until packages/tm8-ui
- * joined the CI gate — this is the first thing that gate caught.
+ * When this double was last short, that produced no test failure. Every
+ * assertion in this file passed; vitest merely exited non-zero on unhandled
+ * rejections that carry no test name, which is invisible unless something is
+ * watching the exit code. Nothing was, until packages/tm8-ui joined the CI gate
+ * — this is the first thing that gate caught. A green by-name run with a
+ * non-zero exit code is the worst shape a failure can take, so cross-check this
+ * list against `SettingsShell.tsx`'s mount reads whenever either side changes.
+ *
+ * `loadWorkflows` is deliberately NOT here: phase 6 dropped
+ * `public.task_workflows` and the shell no longer reads it.
  */
 const settingsPort = {
   loadSpace: async () => null,
@@ -86,7 +93,6 @@ const settingsPort = {
   // exercising either distinction, so it should not accidentally assert one.
   loadInvites: async () => [] as never,
   loadAxes: async () => [] as never,
-  loadWorkflows: async () => [] as never,
   updateProfile: async () => ({}) as never,
 };
 
