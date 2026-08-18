@@ -130,3 +130,31 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
+
+/* ===========================================================================
+   PHONE TOUCH FLOOR — the two section-chrome verbs, both 358x30 (398 at 430).
+
+   Found by attributing the COMPLETE 20-entry `tapTargetsSmallest` inventory of
+   `state:tasks-detail` in `FINAL-before-lanes-c9da2751.json` — len == count, so
+   no sampling. They had gone unfiled because the earlier 12-entry sample from
+   the discarded harness could not reach them: six of that surface's ten unowned
+   offenders were invisible for exactly that reason, which is the capped-array
+   hazard producing MISSING ROWS rather than merely wrong numbers.
+
+   Wide and short, which is the shape the 44px bar exists for — the floor is on
+   the SMALLER side, and 358x30 fails the same thumb a 30x30 control would.
+   `min-block-size` only: both are already full-width by construction
+   (`width: 100%` and `align-self: stretch`), so an inline floor would be a
+   number that could never bind.
+
+   THE TYPE IS LEFT AT 10px DELIBERATELY. DEF-048 — "a 44px button with 9.5px
+   text is tappable and unreadable" — is a real row and no threshold in this
+   program measures it, but it is filed to shell and it is about READABILITY,
+   not about this bar. Growing the type here would fix half of somebody else's
+   row invisibly and make the after-run diff on these two impossible to
+   attribute. Flagged, not silently bundled.
+   =========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-fold__head,
+.cv2-root[data-shell='mobile'] .pn-emptytoggle {
+  min-block-size: var(--mobile-touch-min);
+}
