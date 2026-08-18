@@ -739,6 +739,29 @@ function measureInPage({ MIN_TAP, EPS }) {
       return out.slice(0, 24);
     })(),
     /*
+     * FORM CONTROLS UNDER THE 16px iOS FOCUS-ZOOM FLOOR, counted separately.
+     *
+     * `tinyText` folded two different defects into one array. Readability on
+     * text nodes and the input floor have different thresholds and different
+     * consequences — an input under 16px makes iOS zoom the WHOLE PAGE on
+     * focus, which is a navigation event, not a legibility complaint. A row
+     * written against the input floor therefore had no field to name, and
+     * `undefined === 0` is false: a grader treating the miss as a failure
+     * fails a correct fix, one treating it as absent passes an unmeasured one.
+     */
+    tinyInputs: (() => {
+      const out = [];
+      for (const el of document.querySelectorAll('input, textarea, select')) {
+        const cs = getComputedStyle(el);
+        if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        const size = parseFloat(cs.fontSize);
+        if (size < 16) out.push({ px: size, cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40), label: (el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').slice(0, 30) });
+      }
+      return { count: out.length, items: out.slice(0, 10) };
+    })(),
+    /*
      * LIST POPULATION (R14). A row-scoped defect cannot be closed on an empty
      * list: "selector absent" on zero rows is VACUOUS, not a pass — it is the
      * trap that took three of the gate's own rows. `listRows` is the count of
