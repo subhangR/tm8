@@ -95,7 +95,7 @@ import type {
   SessionFileChange, SessionFileChanges, SessionFileHunk,
   SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
   SessionTranscriptStuck,
-  ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput, TaskWorkflow, TaskWorkflowInput,
+  ResolveInviteInput, SpaceMemberRole, SpawnWorkdir, StatusCategory, StreamAttachGrant, TaskAxis, TaskAxisInput, TaskWorkflow, TaskWorkflowInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingPrMergeInput, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
@@ -202,6 +202,13 @@ export const GraphContentInputSchema = z.object({
 }).passthrough();
 
 export const WorkStatusSchema = z.enum(['open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled']);
+/**
+ * The closed four. `z.ZodType<StatusCategory>` on purpose: the annotation makes
+ * the enum and the union fail to compile the moment they disagree, which is the
+ * only guard against a fifth category entering through the schema alone.
+ */
+export const StatusCategorySchema: z.ZodType<StatusCategory> =
+  z.enum(['to_do', 'in_progress', 'done', 'cancelled']);
 export const VisibilitySchema = z.enum(['space', 'restricted']);
 export const PrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
 export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
@@ -555,6 +562,11 @@ function entitySummaryShape() {
     // a parse failure. `EntityDetail` re-declares it REQUIRED after this
     // spread, so detail keeps the stronger guarantee it always had.
     capabilities: EntityCapabilitiesSchema.optional(),
+    // Additive and OPTIONAL under the same law as `capabilities`: absent means
+    // "this entity has no status", which is the truth for every non-task kind
+    // in this phase AND the truth a pre-column node reports. See the field's
+    // docblock on `EntitySummary`.
+    category: StatusCategorySchema.optional(),
   };
 }
 
@@ -809,6 +821,13 @@ const CollectionFiltersSchema = z.object({
   // would otherwise reach Postgres as a cast error, and a window filter that
   // 500s is indistinguishable at the client from a node that is down.
   activeSince: z.string().datetime({ offset: true }).optional(),
+  // Kind-neutral lifecycle bucket. Deliberately NOT refined against
+  // `sessionStatus` the way `workStatus` and `priority` are: those two are
+  // task-only literals, so pairing them with a session filter is provably the
+  // empty set. `category` is a question a work_session will answer in a later
+  // phase, so the pair is a legitimate future query, and refusing it now would
+  // encode this phase's incompleteness as a permanent law.
+  category: z.array(StatusCategorySchema).optional(),
   deleted: z.enum(['exclude', 'only', 'include']).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no

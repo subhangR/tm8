@@ -53,6 +53,28 @@ export type EntityKind = CoreEntityKind | CustomEntityKind;
 export type WorkStatus = 'open' | 'pulled' | 'working' | 'in_review'
   | 'done' | 'blocked' | 'cancelled';
 
+/**
+ * The four lifecycle buckets every status maps to. CLOSED FOREVER.
+ *
+ * Statuses are open and (from a later phase) user-defined; a workflow may name
+ * as many as it likes. This union is the ONLY status concept anything outside
+ * a workflow may read — tabs, filters, rollups and "is it finished" all branch
+ * on the category, never on a status NAME. That asymmetry is the whole point:
+ * a space that renames `in_review` to `Awaiting Sign-off` must not break a
+ * single caller, and a space that invents `Triaging` must land somewhere the
+ * product already understands.
+ *
+ * `cancelled` is deliberately its own arm rather than a flavour of `done`.
+ * Abandoned work and finished work are the same thing only to a progress bar;
+ * to a person reading a list they are opposites, and folding them lost that.
+ *
+ * ARCHIVED IS NOT HERE, and never will be. Archival is `deletedAt` — an
+ * orthogonal axis an entity carries ACROSS a status, not a status it occupies.
+ * The existing `LifecycleTier` (`open`/`done`/`archived`) is this abstraction
+ * built wrong, mixing the two axes into one three-valued field.
+ */
+export type StatusCategory = 'to_do' | 'in_progress' | 'done' | 'cancelled';
+
 export type Visibility = 'space' | 'restricted';
 
 export interface ActorSummary {
@@ -157,6 +179,32 @@ export interface EntitySummary {
    * turning a missing affordance into a blank panel.
    */
   capabilities?: EntityCapabilities;
+  /**
+   * Which of the four lifecycle buckets this entity currently sits in —
+   * denormalized from its status onto the envelope, because this is the
+   * predicate every tab, filter and rollup reads.
+   *
+   * ## OPTIONAL, and what ABSENCE means
+   *
+   * Absent means **this entity has no status** — not "unknown", not "to do".
+   * Today only `task` rows carry one, so a doc, a channel and a commit all
+   * omit the key, and that is the honest report: they have no position in any
+   * workflow to project. A later phase gives every kind a workflow and the
+   * field becomes near-universal; until then a defaulted `'to_do'` would put
+   * twenty kinds into a bucket nobody put them in.
+   *
+   * It is also optional for the rolling-node reason `capabilities` is: a node
+   * that predates the column omits the key, and `.strict()` parsing must keep
+   * accepting that rather than turning an older server's every list read into
+   * a parse failure.
+   *
+   * ## Why it rides the SUMMARY
+   *
+   * Same ruling as `capabilities` and `badges.workingActors`: a fact that
+   * arrives WITH the row it describes has no hydration lottery. A category tab
+   * that had to wait for a detail read would be wrong on every collapsed tile.
+   */
+  category?: StatusCategory;
 }
 
 /** Provenance for one task's current `assigned_to` edge. */
@@ -736,6 +784,28 @@ export interface CollectionQuery {
      * signal that more of the window exists.
      */
     activeSince?: string;
+    /**
+     * Entities in any of these lifecycle buckets — the closed, kind-neutral
+     * form of `workStatus`, and the predicate the four category tabs run.
+     *
+     * The two filters are NOT alternatives with the same reach. `workStatus`
+     * names task-only literals, so it can only ever describe tasks; `category`
+     * asks a question every kind will eventually answer, and asking it today
+     * simply returns the kinds that already can. That makes it the filter a
+     * generic list may hold while `workStatus` stays the task board's.
+     *
+     * Same kind-narrowing semantics as `workStatus` and `priority`, by the
+     * same mechanism: an entity with no status has a NULL category, and
+     * `NULL = any(...)` is never true — so the filter's PRESENCE restricts the
+     * result to entities that have a status at all. In this phase that means
+     * tasks. Combining it with `workStatus` is legal and means what it reads
+     * as (intersection), because both name the same rows.
+     *
+     * An ARRAY, not a scalar, so "To Do or In Progress" — the in-flight
+     * question the codebase currently answers six incompatible ways — is one
+     * query rather than a client-side union of two pages.
+     */
+    category?: StatusCategory[];
     deleted?: 'exclude'|'only'|'include';
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';

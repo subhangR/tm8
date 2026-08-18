@@ -632,7 +632,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   git ls-tree --name-only origin/main db/migrations/ | grep -c sql -> 137
     // CI's own fixture agrees: "chain applied: 137 migrations
     // (001_core_graph.sql … 146_remove_wake_budget_machinery.sql)".
-    expect(server.appliedMigrations.length).toBe(137);
+    // 137 -> 138 (2026-08-18): 147_entity_status_category.sql, the phase-1
+    // category column. ONE file, and MEASURED on this tree rather than
+    // incremented — the note above is the record of what delta-arithmetic cost
+    // the last time:
+    //   ls db/migrations/*.sql | wc -l                             -> 138
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 138
+    //   (origin/main is still 137; this branch is the +1.)
+    expect(server.appliedMigrations.length).toBe(138);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

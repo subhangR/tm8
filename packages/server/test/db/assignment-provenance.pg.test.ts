@@ -201,6 +201,16 @@ describe.sequential('task assignment provenance (129)', () => {
     // detail table, entity_content arm, its own doors) and depends on nothing
     // past 091, so the position statement survives it.
     database.apply(['135_graph_kind.sql']);
+    // …and 147, for EXACTLY the reason 135 is here. 147 added
+    // `entities.status_category` to `ENTITY_COLUMNS`, so current code selects a
+    // column a 129-era schema does not have and `loadEntitySummariesByIds`
+    // refuses to run — the same failure 135 caused, with a different relation.
+    // Same safety argument, checked the same way: 147 depends on nothing past
+    // 003 (public.entities, public.tasks, and disabling `entities_capture_event`
+    // around its own backfill), and the only behaviour it adds is a trigger that
+    // maintains that column from `tasks.work_status`. It touches no function
+    // this suite exercises, so the position statement survives it too.
+    database.apply(['147_entity_status_category.sql']);
   }, 180_000);
 
   afterAll(async () => {
