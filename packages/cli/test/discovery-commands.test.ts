@@ -25,14 +25,17 @@ import { AvailabilityLedger } from '../src/discovery/availability.js';
 let server: Server;
 let baseUrl: string;
 let requests: string[] = [];
+let bodies: string[] = [];
 let stdout: string[] = [];
 let stderr: string[] = [];
 
 beforeAll(async () => {
   server = createServer((req, res) => {
     requests.push(`${req.method} ${(req.url ?? '').split('?')[0]}`);
-    req.resume();
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
     req.on('end', () => {
+      bodies.push(Buffer.concat(chunks).toString('utf8'));
       res.setHeader('content-type', 'application/json');
       res.statusCode = 200;
       res.end(JSON.stringify({ data: { kinds: [] }, requestId: 'req_test' }));
@@ -50,6 +53,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   requests = [];
+  bodies = [];
   stdout = [];
   stderr = [];
   process.env.TM8_BASE_URL = baseUrl;
@@ -142,15 +146,15 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // note; measured 148 on origin/main def6f881).
     // 148 -> 149 (2026-08-16): `task axis`, an ALIAS over entities.get +
     // entities.patch — ZERO new catalog rows. Value MEASURED on this tree.
-    // 149 -> 152 (W4/132): space task-workflow list|set|delete over the three
-    // new catalog rows.
     // 152 -> 156 (141): `auth password`, `auth invite signup`, `auth claim
     // reissue` over the three new account-lifecycle rows, plus `node mode` — an
     // ALIAS over `auth.claim.status` (which already reports the mode), ZERO new
     // catalog rows, the same sugar posture as `worktree status` over entities.get.
     // 156 -> 159 (148): space workflow list|set|delete over the three
     // spaces.workflows rows.
-    expect(COMMAND_PATHS).toHaveLength(159);
+    // 159 -> 156 (153, phase 6): space task-workflow list|set|delete leave with
+    // the three spaces.taskWorkflows rows. MEASURED.
+    expect(COMMAND_PATHS).toHaveLength(156);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);
@@ -322,6 +326,38 @@ describe('tm8 kind — a real catalog-backed command', () => {
     expect(await run(['kind', 'create', 'c:recipe', '--schema', '{"type":"object"}'])).toBe(2);
     expect(requests).toEqual([]);
     expect(err()).toMatch(/ARRAY/);
+  });
+
+  it('`--extends task` reaches the body as `baseKind`, and needs no field schema', async () => {
+    expect(await run(['kind', 'create', 'c:bug', '--extends', 'task', '--label', 'Bug', '--label-plural', 'Bugs'])).toBe(0);
+    expect(requests).toEqual(['POST /v2/spaces/spc_test/entity-kinds']);
+    expect(JSON.parse(bodies[0]!)).toMatchObject({
+      kind: 'c:bug',
+      baseKind: 'task',
+      label: 'Bug',
+      labelPlural: 'Bugs',
+      // A kind that extends `task` carries a task detail row, never a
+      // custom-fields row — the empty array is the CLI's, not the caller's.
+      fieldSchema: [],
+    });
+  });
+
+  it('a base outside the closed set is refused locally, before any request', async () => {
+    expect(await run(['kind', 'create', 'c:bug', '--extends', 'doc'])).toBe(2);
+    expect(requests).toEqual([]);
+    expect(err()).toMatch(/servable base kind/);
+  });
+
+  it('kind update REFUSES --extends, and says why re-basing is not an update', async () => {
+    expect(await run(['kind', 'update', 'c:recipe', '--extends', 'task'])).toBe(2);
+    expect(requests).toEqual([]);
+    expect(err()).toMatch(/detail rows/);
+  });
+
+  it('kind update sends the labels, and a label alone is enough to change', async () => {
+    expect(await run(['kind', 'update', 'c:recipe', '--label', 'Recipe', '--label-plural', 'Recipes'])).toBe(0);
+    expect(requests).toEqual(['PATCH /v2/spaces/spc_test/entity-kinds/c%3Arecipe']);
+    expect(JSON.parse(bodies[0]!)).toMatchObject({ label: 'Recipe', labelPlural: 'Recipes' });
   });
 
   it('kind update requires something to change', async () => {

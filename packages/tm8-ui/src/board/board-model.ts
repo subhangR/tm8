@@ -22,18 +22,46 @@
  * the same case, so a column header and a card pill cannot disagree.
  */
 import type { CollectionGroup, EntitySummary } from '@tm8/contract';
+import { getKind } from '../domain';
 import type { QueryFilter } from '../domain';
 import type { PillTone } from '../kit';
 
-/** The three axes `collections.query` can group tasks by. `axis:*` is out of
- * scope until custom axes get a picker. */
-export type BoardPivot = 'workStatus' | 'assignee' | 'priority';
+/**
+ * The axes `collections.query` can group tasks by. `axis:*` is out of scope
+ * until custom axes get a picker.
+ *
+ * `kind` joined in phase 6 (migration 153), when `CollectionQuery.groupBy`
+ * gained the literal: it is what `axis:type` used to be. 153 retired the task
+ * `type` axis into custom entity KINDS — a space's epics and bugs are `c:`
+ * kinds that `extend` task — so grouping by kind is the pivot that carries
+ * that view forward. It is READ-ONLY; see `KIND_PIVOT_IS_READ_ONLY`.
+ */
+export type BoardPivot = 'workStatus' | 'assignee' | 'priority' | 'kind';
 
 export const PIVOTS: readonly { key: BoardPivot; label: string }[] = [
   { key: 'workStatus', label: 'Status' },
   { key: 'assignee', label: 'Assignee' },
   { key: 'priority', label: 'Priority' },
+  { key: 'kind', label: 'Kind' },
 ];
+
+/**
+ * WHY A KIND COLUMN IS NOT A DROP TARGET, in one place so the screen and its
+ * tests quote the same sentence.
+ *
+ * This is a MEASURED fact about the write doors, not a scope decision. The
+ * screen's `performMove` dispatches one of exactly three verbs — the state
+ * control's command for `workStatus`, `setValue` on `priority`, `assign` for
+ * `assignee` — and there is no fourth: no seam command takes a kind.
+ * `entities.kind` is written by the create door and never after, on the server
+ * as well as here. So a drop onto a kind column could only do nothing at all,
+ * or silently write some OTHER dimension while the columns said kind — and the
+ * second is precisely the lie the W3/W4 board rulings exist to prevent. The
+ * columns therefore refuse the drag outright and the board says why, rather
+ * than accepting a gesture that goes nowhere.
+ */
+export const KIND_PIVOT_IS_READ_ONLY =
+  'Drag is off on this board — an entity’s kind is set when it is created and no command changes it, so there is nothing a drop here could do.';
 
 export interface ColumnSpec {
   key: string;
@@ -150,6 +178,28 @@ export function columnsFor(
         ? PRIORITY_COLUMNS.filter((s) => filters.priorities.includes(s.key))
         : PRIORITY_COLUMNS;
     return specs.map(of);
+  }
+
+  /*
+   * KIND (153): the server's groups VERBATIM, in its order, with no canonical
+   * skeleton. There cannot be one — the column vocabulary is the space's own
+   * registered kinds plus whatever core kinds the query touched, which is data,
+   * not a reading order this module could author. Nothing is synthesised for a
+   * kind with no rows in the page, exactly as on the assignee board below:
+   * inventing a column would be a claim about a page we did not fetch.
+   *
+   * The LABEL prefers the server's, then the registry's plural — so a `c:epic`
+   * column reads "Epics" once its space's kinds are registered, and reads the
+   * raw key never.
+   */
+  if (pivot === 'kind') {
+    return (groups ?? []).map((g) => ({
+      key: g.key,
+      label: g.label || getKind(g.key).labelPlural,
+      tone: 'idle' as const,
+      total: g.total ?? g.items.length,
+      items: g.items,
+    }));
   }
 
   const names = new Map(roster.map((r) => [r.id, r.label] as const));

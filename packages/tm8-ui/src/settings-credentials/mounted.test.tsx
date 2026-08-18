@@ -64,11 +64,27 @@ const port: CredentialsPort = {
   }),
 };
 
+/**
+ * EVERY read `SettingsShell`'s mount effect makes must be answered here, not
+ * just the ones this file's assertions care about. The shell builds its
+ * `Promise.allSettled` ARRAY by calling all of them — so a missing method
+ * throws SYNCHRONOUSLY while the array is being built, before `allSettled`
+ * exists to settle it, and the rejection escapes the effect entirely as an
+ * unhandled rejection that carries no test name. That reads as a green
+ * by-name run with a non-zero exit code, which is the worst shape a failure
+ * can take. Cross-check this list against `SettingsShell.tsx`'s mount reads
+ * whenever either side changes.
+ *
+ * `loadWorkflows` is deliberately NOT here: phase 6 (migration 153) dropped
+ * `public.task_workflows` and the shell no longer reads it.
+ */
 const settingsPort = {
   loadSpace: async () => null,
   loadMembers: async () => [],
   loadIdentity: async () => ({ memberId: 'm-1', displayName: 'Ada', avatar: null, role: 'owner' }) as never,
   loadMenu: async () => ({ menu: null, source: 'default', error: null }) as never,
+  loadInvites: async () => [],
+  loadAxes: async () => [],
   updateProfile: async () => ({}) as never,
 };
 

@@ -540,36 +540,6 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'unbound',
   },
-  'spaces.taskWorkflows.list': {
-    cmd: ['space', 'task-workflow', 'list'],
-    syn: 'tm8 space task-workflow list [<space-id>]',
-    sum: 'List the per-type status vocabularies this Space enforces',
-    authz: 'space',
-    input: 'none',
-    notes: [
-      'a type value with no row keeps the full seven-status vocabulary; open, working, and done are structural in every row',
-    ],
-  },
-  'spaces.taskWorkflows.upsert': {
-    cmd: ['space', 'task-workflow', 'set'],
-    syn: 'tm8 space task-workflow set <type-value> [--space <space-id>] --status <status>... [--mutation-id <id>]',
-    sum: 'Create or replace the status vocabulary for one `type` axis value',
-    authz: 'space',
-    input: 'bound',
-    notes: [
-      'upsert on (space, type value) — the whole vocabulary is stated each time, never patched',
-      'open, working, and done are required members (schema constraint); the narrowable set is pulled|in_review|blocked|cancelled',
-    ],
-    examples: ['tm8 space task-workflow set <type-value> --status open --status working --status in_review --status done'],
-  },
-  'spaces.taskWorkflows.delete': {
-    cmd: ['space', 'task-workflow', 'delete'],
-    syn: 'tm8 space task-workflow delete <workflow-id> [--space <space-id>] --yes [--mutation-id <id>]',
-    sum: 'Remove a per-type vocabulary — the type returns to all seven statuses',
-    authz: 'space',
-    input: 'unbound',
-    notes: ['never data loss: no task row changes; the vocabulary simply widens back'],
-  },
   'spaces.workflows.list': {
     cmd: ['space', 'workflow', 'list'],
     syn: 'tm8 space workflow list [<space-id>]',
@@ -606,7 +576,7 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'unbound',
     notes: [
-      'refuses while any entity still holds one of its states — unlike a task-workflow delete, this one CAN be data loss and the FK is what stops it',
+      'refuses while any entity still holds one of its states — this CAN be data loss and the FK is what stops it',
       'the built-in default workflow belongs to no Space and is reported as not found',
     ],
   },
@@ -1703,22 +1673,29 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entityKinds.create': {
     cmd: ['kind', 'create'],
-    syn: 'tm8 kind create <c:name> [--space <space-id>] --schema <json-source> [--icon <value|none>] [--capabilities <json-source>] [--mutation-id <id>]',
+    syn: 'tm8 kind create <c:name> [--space <space-id>] [--extends <task>] [--schema <json-source>] [--label <text>] [--label-plural <text>] [--icon <value|none>] [--capabilities <json-source>] [--mutation-id <id>]',
     sum: 'Register a custom entity kind in the `c:` namespace',
     authz: 'space',
     input: 'bound',
-    tags: ['schema', 'custom', 'define'],
-    notes: ['custom kinds are scalar-only and always live under the literal `c:` prefix'],
+    tags: ['schema', 'custom', 'define', 'extends'],
+    notes: [
+      'custom kinds are scalar-only and always live under the literal `c:` prefix',
+      '`--extends task` gives the kind assignees, acceptance criteria, points, the spawn door and the completion gate; `task` is the only base servable today',
+      'a kind that extends `task` carries no field schema, so `--schema` is omitted there',
+      '--schema is otherwise required',
+    ],
+    examples: ['tm8 kind create c:bug --extends task --label Bug --label-plural Bugs'],
   },
   'entityKinds.update': {
     cmd: ['kind', 'update'],
-    syn: 'tm8 kind update <c:name> [--space <space-id>] [--schema <json-source>] [--icon <value|none>] [--capabilities <json-source>] [--allow-tightening] [--yes] [--mutation-id <id>]',
-    sum: 'Change a custom entity kind schema, icon, or capabilities',
+    syn: 'tm8 kind update <c:name> [--space <space-id>] [--schema <json-source>] [--label <text>] [--label-plural <text>] [--icon <value|none>] [--capabilities <json-source>] [--allow-tightening] [--yes] [--mutation-id <id>]',
+    sum: 'Change a custom entity kind schema, labels, icon, or capabilities',
     authz: 'space',
     input: 'bound',
     tags: ['schema', 'custom', 'migrate'],
     notes: [
       'a tightening change can invalidate existing rows, so it requires `--allow-tightening`',
+      'what a kind extends is set at creation and cannot be changed here: re-basing would change which detail rows existing entities are supposed to have',
       'there is deliberately no custom-kind delete command',
     ],
   },
@@ -2129,7 +2106,9 @@ export const CATALOG_DIGEST =
   // hand-derived.
   // Re-measured 148 (+ the three spaces.workflows rows) — read from the
   // regenerated conformance manifest, never hand-derived.
-  'sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417';
+  // Re-measured 153 (− the three spaces.taskWorkflows rows) — RECOMPUTED from
+  // `JSON.stringify(OPERATIONS)` off this tree's contract build.
+  'sha256:5150aae8016ab6944583fda0c5cdcaaca19694c00beadea18ff835bc290e4f22';
 
 export const GRAMMAR_VERSION = '2';
 
