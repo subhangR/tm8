@@ -178,5 +178,5 @@ export {
  * shell composes from `domain/`, and this is the one place the two navigation
  * vocabularies are joined.
  */
-export { VIEW_REF_ROUTE, landingOfRoute, navViewOfName, routeViewOf } from './nav-targets';
+export { CHANNEL_KIND, VIEW_REF_ROUTE, landingOfRoute, navViewOfName, routeViewOf } from './nav-targets';
 export type { Landing } from './nav-targets';

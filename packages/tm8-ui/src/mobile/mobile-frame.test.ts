@@ -44,8 +44,35 @@ describe('§3.6 — the two structural facts that exist nowhere else in this cod
     // as the bar is showing — which is most of the time — and the bottom tab
     // bar ends up underneath it. This is the single most common way a mobile
     // web shell is wrong, and it is invisible on a desktop browser.
-    expect(css).toMatch(/height:\s*100dvh/);
+    //
+    // `100dvh` NO LONGER STANDS ALONE and this assertion was widened rather
+    // than weakened. The shell contract subtracts the measured soft-keyboard
+    // inset from the frame's height, because on iOS the keyboard OVERLAYS the
+    // layout viewport and `dvh` does not account for it — so a frame at exactly
+    // `100dvh` puts its own tab bar under the keyboard. The property being
+    // pinned here is unchanged: the height is derived from `dvh` and `100vh`
+    // appears nowhere. What it may be composed WITH is not this test's subject.
+    expect(css).toMatch(/height:\s*[^;]*100dvh/);
     expect(css).not.toMatch(/\b100vh\b/);
+  });
+
+  it('subtracts the soft-keyboard inset, which `dvh` cannot see', () => {
+    // The half of the viewport story `dvh` does not tell. There is no media
+    // query for "a keyboard is up" and `env()` has no keyboard inset; the only
+    // thing in the platform that knows is `visualViewport`, which is JS. So the
+    // frame composes against a custom property the component publishes, and it
+    // is declared with a `0px` default here so the stylesheet is correct on its
+    // own before anything has been measured.
+    expect(css).toMatch(/--mobile-keyboard-inset:\s*0px/);
+    expect(css).toMatch(/height:\s*calc\(100dvh\s*-\s*var\(--mobile-keyboard-inset/);
+    expect(frame).toContain('useKeyboardInset');
+  });
+
+  it('names the touch floor once, as a token, rather than repeating 44px', () => {
+    // The shell contract's tap-target floor. The phone override block needs
+    // this number roughly a dozen times, and a dozen hand-typed literals is a
+    // dozen chances for one of them to quietly become 40.
+    expect(css).toMatch(/--mobile-touch-min:\s*44px/);
   });
 
   it('reserves the safe area on every edge, so nothing sits under a notch or a home indicator', () => {

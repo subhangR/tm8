@@ -150,10 +150,16 @@
   justify-content: center;
 }
 
+/* DEF-040 — 11px (`--pn-fs-micro`) was the eyebrow size this treatment uses on
+   the desktop, where it sits in dense chrome a metre from nobody's face. On a
+   phone held at arm's length it was one of only two pieces of text in the
+   entire shell header, and the run's `tinyText` census flagged it on every
+   capture at both widths. `--pn-fs-sm` keeps the eyebrow TREATMENT — mono,
+   uppercase, mega-tracked — and stops it being the smallest type on screen. */
 .mobile-header__space {
   font-family: var(--pn-mono);
   font-weight: 600;
-  font-size: var(--pn-fs-micro);
+  font-size: var(--pn-fs-sm);
   line-height: 1.25;
   text-transform: uppercase;
   letter-spacing: var(--pn-track-mega);
@@ -222,7 +228,9 @@
 
   font-family: var(--pn-ui);
   font-weight: 500;
-  font-size: var(--pn-fs-micro);
+  /* DEF-040, second half. Copy link is one of only a handful of controls the
+     shell chrome offers, and it was set in the smallest size the scale has. */
+  font-size: var(--pn-fs-sm);
   letter-spacing: var(--pn-track-tight);
   color: var(--pn-ink-2);
   white-space: nowrap;
@@ -495,4 +503,238 @@
   .mobile-tabs__tab[aria-current='page'] .mobile-tabs__icon {
     transform: none;
   }
+}
+
+/* ==========================================================================
+   THE ACCOUNT AFFORDANCE — DEF-003
+
+   The header's fourth control, and the first one on this shell that is not
+   about the screen you are on. It is an avatar button because that is where
+   every phone app puts "you", and because the header has room for a square and
+   not for a name — `auth-accountmenu`'s trigger carries the display name, which
+   is right in a desktop top bar and is most of a 390px header here.
+
+   The SHEET it opens is styled below rather than by reusing `auth-menu`: that
+   is an anchored popover's chrome, and this is a bottom sheet. Same verbs, same
+   seam, different arrangement — the shell fork, applied to one more surface.
+   ========================================================================== */
+
+.mobile-header__account {
+  flex: 0 0 auto;
+  /* Square, at the floor. The avatar inside is small; the TARGET is what has to
+     be thumb-sized, and those are different numbers — the same rule
+     `.msheet__close` states for the sheet's own exit. */
+  inline-size: var(--mobile-touch-min);
+  block-size: var(--mobile-touch-min);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: var(--pn-r-pill);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mobile-header__account:active {
+  background: var(--pn-active);
+}
+
+/* --- the sheet body ------------------------------------------------------ */
+
+.macct {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-4);
+  padding: var(--pn-space-4);
+}
+
+.macct__id {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+}
+
+.macct__idtext {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.macct__name {
+  font-family: var(--pn-ui);
+  font-weight: 600;
+  font-size: var(--pn-fs-body);
+  color: var(--pn-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macct__handle {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macct__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+
+.macct__grouphead {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-weight: 600;
+  font-size: var(--pn-fs-sm);
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+}
+
+.macct__seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--pn-space-1);
+  padding: 3px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+}
+
+.macct__segopt {
+  min-block-size: var(--mobile-touch-min);
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: none;
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-weight: 500;
+  font-size: var(--pn-fs-body);
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.macct__segopt--on {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+
+.macct__spaces {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Every row in this sheet is a full-width target at the floor. `min-block-size`
+   and real padding, never a fixed height: these rows carry a second explanatory
+   line (sign-out's scope note), and a fixed height would slice it exactly the
+   way `.lp__actions` was being sliced. */
+.macct__row {
+  inline-size: 100%;
+  min-block-size: var(--mobile-touch-min);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--pn-space-2) var(--pn-space-3);
+
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: none;
+  border-radius: var(--pn-r-sm);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.macct__row:active {
+  background: var(--pn-active);
+}
+
+.macct__row[aria-current='true'] {
+  background: var(--pn-hover);
+}
+
+.macct__rowlabel {
+  font-family: var(--pn-ui);
+  font-weight: 500;
+  font-size: var(--pn-fs-body);
+  color: var(--pn-ink);
+}
+
+.macct__rowmark {
+  position: absolute;
+  inset-inline-end: var(--pn-space-3);
+  color: var(--pn-brand-2);
+}
+
+.macct__row[aria-current='true'] {
+  position: relative;
+}
+
+.macct__rownote {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+.macct__group--last {
+  border-top: 1px solid var(--pn-line);
+  padding-top: var(--pn-space-3);
+}
+
+/* ==========================================================================
+   THE WAY OUT OF A REFUSAL — DEF-043
+
+   The refusal card keeps refusing. This is the affordance BESIDE the refusal,
+   not instead of it: the card still names the arrangement that has no phone
+   layout, and then offers the working alternative. Silently aliasing the route
+   would make the card a lie, which is the defect one row over (DEF-012).
+   ========================================================================== */
+
+.mobile-empty__out {
+  /* The floor, and a real one: this is the only control on the screen. */
+  min-block-size: var(--mobile-touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--pn-space-4);
+  margin-block-start: var(--pn-space-2);
+
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+
+  font-family: var(--pn-ui);
+  font-weight: 500;
+  font-size: var(--pn-fs-body);
+  color: var(--pn-ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mobile-empty__out:active {
+  background: var(--pn-active);
 }

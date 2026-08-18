@@ -31,11 +31,37 @@ describe('§4.4 — shellFor: coarse pointer AND narrow', () => {
     expect(shellFor({ pointer: 'coarse', width: MOBILE_MAX_WIDTH })).toBe('desktop');
   });
 
-  it('the threshold is a named constant, so re-measuring it is a one-line change', () => {
-    // §4.4 calls the ~500 a placeholder until reference capture. This pins that
-    // the value is reachable and that both sides of it are covered above,
-    // rather than pinning the provisional number as if it were ruled.
-    expect(MOBILE_MAX_WIDTH).toBeGreaterThan(0);
+  /**
+   * DEF-041 — THE CUT IS RULED, SO IT IS ASSERTED.
+   *
+   * This used to assert only `> 0`, deliberately, because §4.4 called the 500 a
+   * placeholder and pinning a provisional number as if it were ruled would have
+   * been a lie in a test file. The shell contract ruled it (2026-08-18), so the
+   * number is now pinned and moving it is a deliberate act with a failing test
+   * attached — which is the property the three lanes are building on.
+   */
+  it('DEF-041 — the ruled cut is 500, and moving it is a contract change', () => {
+    expect(MOBILE_MAX_WIDTH).toBe(500);
+  });
+
+  it('DEF-041 — a coarse-pointer TABLET keeps the desktop shell, knowingly', () => {
+    // The recorded consequence of the ruling, asserted so it cannot drift into
+    // being true by accident and then be "fixed" by someone reading the
+    // baseline's tablet overflow rows as an undiscovered bug. tablet-768 is a
+    // KNOWN, RECORDED failure; the cure is a tablet ARRANGEMENT, not a shell
+    // reassignment. See the block over MOBILE_MAX_WIDTH and CONTRACT.md §1.
+    expect(shellFor({ pointer: 'coarse', width: 768 })).toBe('desktop');
+    expect(shellFor({ pointer: 'coarse', width: 1024 })).toBe('desktop');
+    // And the escape hatch a tablet user has is the override, not a new cut.
+    expect(shellFor({ pointer: 'coarse', width: 768, override: 'mobile' })).toBe('mobile');
+  });
+
+  it('DEF-041 — both measured phone widths are inside the cut', () => {
+    // 390 and 430 are the two viewports the build service asserts thresholds
+    // at. If a future cut stopped covering either, every number this program
+    // measured would be describing a shell the device no longer gets.
+    expect(shellFor({ pointer: 'coarse', width: 390 })).toBe('mobile');
+    expect(shellFor({ pointer: 'coarse', width: 430 })).toBe('mobile');
   });
 
   describe('the override wins outright — that is what an override is', () => {

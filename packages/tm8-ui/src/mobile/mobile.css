@@ -35,12 +35,49 @@
   --mobile-tabbar-min: 49px;
 
   /*
+   * THE TOUCH FLOOR, AS ONE NAMED NUMBER (shell contract, DEF-013…020).
+   *
+   * The two floors above have been right since the frame landed, and they were
+   * right by carrying the same literal twice. The phone override block in
+   * `mobile-screens.css` needs that number roughly a dozen more times, and a
+   * dozen hand-typed `44px`s is a dozen chances for one of them to become 40
+   * in a hurry and for the instrument to catch it three lanes later.
+   *
+   * IT IS THE FLOOR ON THE SMALLER SIDE, always. A control 120 wide and 22 tall
+   * fails the same thumb the census is measuring — `mobile-header__back` says
+   * this in its own comment and this is the same rule named once.
+   *
+   * WHAT IT IS NOT: a licence for `button { min-height: var(--mobile-touch-min) }`.
+   * A blanket rule inflates the desktop-shared dense components that render
+   * inside sheets and re-triggers the fixed-height clipping class of bug that
+   * `.lp__actions` documents at length. Per-class overrides only — that
+   * constraint is part of the ledger's acceptance, not advice. See CONTRACT.md §6.
+   */
+  --mobile-touch-min: 44px;
+
+  /*
+   * HOW MUCH OF THE FRAME THE SOFT KEYBOARD IS SITTING ON. Published by
+   * `MobileFrame` from `useKeyboardInset`; declared here with a `0px` default so
+   * this stylesheet is correct on its own, before any JS has measured anything,
+   * and so a `calc()` against it can never resolve to an invalid length.
+   */
+  --mobile-keyboard-inset: 0px;
+
+  /*
    * `100dvh`, NOT `100vh`. On iOS Safari `100vh` is the height the viewport
    * has with the URL bar HIDDEN, so a `100vh` shell is taller than the screen
    * whenever the bar is showing — which is most of the time — and the tab bar
    * ends up underneath it.
+   *
+   * MINUS THE KEYBOARD, which `dvh` does NOT account for and no media query can
+   * see: on iOS the keyboard overlays the layout viewport rather than resizing
+   * it, so a frame sized at exactly `100dvh` puts its own tab bar — and any
+   * bottom-anchored composer — underneath the keyboard. Subtracting the
+   * measured inset makes the frame exactly the part of the screen that is still
+   * visible, which every region below then inherits without knowing why. See
+   * the block over `useKeyboardInset()` in `MobileFrame.tsx`.
    */
-  height: 100dvh;
+  height: calc(100dvh - var(--mobile-keyboard-inset, 0px));
   display: grid;
   grid-template-rows: auto 1fr auto;
   overflow: hidden;
@@ -76,6 +113,24 @@
   padding-bottom: var(--mobile-safe-bottom);
   border-top: 1px solid var(--pn-line);
   background: var(--pn-surface);
+}
+
+/*
+ * THE HOME-INDICATOR INSET IS FOR THE HOME INDICATOR, and while the keyboard is
+ * up there is no home indicator to clear — the keyboard is drawn over it. Left
+ * applied, the bar reserves ~34px of blank paper directly above the keyboard on
+ * every notched device, on the one screen state where vertical room is
+ * scarcest. Zeroed by the same measured number the frame's height uses, so
+ * there is one fact about the keyboard and two consumers of it, not two facts.
+ */
+ * A MARKER ATTRIBUTE, not a selector that reads the inline style. `MobileFrame`
+ * stamps `data-keyboard="up"` from the same measurement — an attribute is
+ * greppable, testable without a layout engine, and cannot quietly stop matching
+ * the way a `[style*=…]` substring match would the first time the number is
+ * formatted differently.
+ */
+.mobile-frame[data-keyboard='up'] .mobile-frame__tabbar {
+  padding-bottom: 0;
 }
 
 /*
