@@ -82,6 +82,27 @@
 .cv2-root .sb-grid__link:hover {
   color: var(--pn-brand-2);
 }
+/* DEF-052 — the grid cell's link, 52x18 on the baseline of record.
+
+   It is the control that opens a related entity from inside a detail body, so
+   it is a navigation, not a label — and it is the one on this surface a reader
+   is most likely to reach for after reading the row it sits in.
+
+   `min-block-size` and NOT `min-inline-size`: these sit in a two-column grid of
+   label/value pairs, and a 44px floor on the WIDTH would stretch a two-letter
+   value's hit box across its neighbour's column. Height is the axis that is
+   short here — 18px against a 44px bar — and it is the axis a thumb misses on.
+
+   ROUTED, NOT TAKEN. Filed by triage as DEF-052 after I found it unowned in the
+   complete 20-entry inventory of this surface and offered to take it. The row
+   carries `345x18` from the discarded harness; the baseline of record says
+   52x18. Same defect, same fix, and the number in the row is from the file we
+   no longer diff against. */
+.cv2-root[data-shell='mobile'] .sb-grid__link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--mobile-touch-min);
+}
 /* L62 priority tag: mono 10px/600, `rgba(162,156,142,.16)`, r4, 1px 5px. */
 .cv2-root .sb-tag {
   font-family: var(--pn-mono);
