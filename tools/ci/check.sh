@@ -168,6 +168,22 @@ TEST_PACKAGES=(
   packages/server
   packages/execution
   packages/cli
+  # packages/tm8-ui was ABSENT here until 2026-08-18, and had been since the
+  # package was created. The gate typechecked it (above) and never ran a line
+  # of its ~3,800 tests across 281 files — so every UI test in this repo was,
+  # in effect, a local-only test.
+  #
+  # What that cost, concretely: `gate.test.tsx` sat red on main for the whole
+  # life of the railless-Home design because its assertions still demanded a
+  # menu rail the shell had deliberately stopped drawing, and nothing was
+  # watching. A CI guard added to protect five panel hosts from drifting
+  # (`views/panel-host-wiring.test.ts`) was likewise never executed by CI.
+  #
+  # It is also the only isolated machine this repo has. Local full-suite runs
+  # on a shared dev box are not a substitute: measured at load average 139 on
+  # 8 cores, the same commit produced anywhere from 6 to 94 failures, because
+  # every test with a timeout loses that race eventually.
+  packages/tm8-ui
   tools/conformance
 )
 for pkg in "${TEST_PACKAGES[@]}"; do

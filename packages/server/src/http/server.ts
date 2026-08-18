@@ -35,6 +35,7 @@ import type { Duplex } from 'node:stream';
 import { BASE_PATH, CONTRACT_VERSION, envelope } from '@tm8/contract';
 import type { ZodTypeAny } from 'zod';
 import { HandlerRegistry, INPUT_SCHEMAS } from '../facade/index.js';
+import { AuthRateLimiter } from './auth-rate-limit.js';
 import { readJsonBody } from './body.js';
 import type { ServerConfig } from './config.js';
 import { fail, notImplemented, sendWireError } from './errors.js';
@@ -49,6 +50,7 @@ import {
   checkUpgradeTransport,
 } from './security.js';
 import type { StaticHandler } from './static.js';
+import { wsClientKey } from './ws-admission.js';
 import type { RemoteServerProxy } from './remote-proxy.js';
 import type { W2FileUploadRoute } from './w2-file-upload.js';
 import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
@@ -134,6 +136,14 @@ export interface FacadeServerOptions {
       nextRunAt: string | null;
     }>;
   } | undefined;
+
+  /**
+   * Overrides the auth rate limiter. Present so tests can inject a fake clock;
+   * production leaves it absent and gets one built from `config`. Pass `null`
+   * to run with no auth limiting at all — the escape hatch for a conformance
+   * harness that legitimately floods `auth.login`.
+   */
+  readonly authRateLimiter?: AuthRateLimiter | null;
 }
 
 export interface FacadeServer {
@@ -149,6 +159,12 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
   const { config, registry, staticHandler, upgrades } = opts;
   const router = opts.router ?? new Router();
   const resolveIdentity = opts.identityResolver ?? autoOwnerResolver;
+  // `undefined` means "build the default"; `null` means "explicitly none".
+  // Defaulting to ON is the point: a limiter you have to remember to enable is
+  // one that is off on every node whose operator never read this file.
+  const authRateLimiter = opts.authRateLimiter === undefined
+    ? new AuthRateLimiter(config.authRateLimits ?? {})
+    : opts.authRateLimiter;
 
   const http = createServer((req, res) => {
     void handle(req, res).catch((err: unknown) => {
@@ -327,6 +343,13 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       const match = router.match(method, pathname);
       if (!match) throw fail('not_found', `no operation bound to ${method} ${pathname}`);
 
+      // BEFORE identity resolution, deliberately. Resolution reaches Postgres
+      // (`resolveBearerIdentity`) and, for the exchange operations, can run
+      // TWICE — so a flood that is going to be refused anyway must be refused
+      // before it can spend a connection. It is after routing because the
+      // limiter only guards the auth operations and needs `opName` to know.
+      authRateLimiter?.check(match.opName, wsClientKey(req), body);
+
       let identity: Awaited<ReturnType<typeof resolveIdentity>>;
       try {
         identity = await resolveIdentity(req.headers, {
@@ -389,7 +412,19 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         path: pathname,
       };
 
-      const result = await handler(ctx);
+      // The outcome, not just the attempt, feeds the per-principal failure
+      // counter — see auth-rate-limit.ts for why counting attempts there would
+      // be a lockout weapon rather than a defence. Any throw counts as a
+      // failure: `invalid_credentials` is the one that matters, and the others
+      // (a refused signup, a dead invite) are equally not-a-success.
+      let result: HandlerResult | unknown;
+      try {
+        result = await handler(ctx);
+      } catch (err) {
+        authRateLimiter?.recordOutcome(match.opName, body, true);
+        throw err;
+      }
+      authRateLimiter?.recordOutcome(match.opName, body, false);
       writeResult(res, requestId, result);
     } catch (err) {
       sendWireError(res, err, requestId);

@@ -27,7 +27,7 @@
 // is the tail of "task") matching while `"sk-ant-…"` (preceded by a quote,
 // a space, or a `=`) still does. Whoever changes one side must change both.
 export const SECRET_TOKEN_SOURCE =
-  '(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abpr]-[A-Za-z0-9-]{10,})';
+  '(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abpr]-[A-Za-z0-9-]{10,}|tm8[sacr]_[A-Za-z0-9_-]{20,})';
 
 const LEFT_BOUNDARY_SOURCE = '(^|[^A-Za-z0-9_-])';
 
