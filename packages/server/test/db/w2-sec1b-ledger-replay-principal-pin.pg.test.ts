@@ -214,6 +214,15 @@ const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
   ['internal.validate_wake_budget', '146_remove_wake_budget_machinery.sql'],
   ['public.reset_session_wake_budget_for_member_reply', '146_remove_wake_budget_machinery.sql'],
   ['internal.w1_refresh_wake_budget_cleanup_eligibility', '146_remove_wake_budget_machinery.sql'],
+  // 147's two TRANSITIONAL status_category writers. 147's own header says phase 3's
+  // doors are what replace them, and 150 is that phase: the birth seed becomes
+  // `internal.seed_entity_initial_status` (writes `status_id`, lets 149's trigger
+  // derive the category) and the maintenance trigger becomes
+  // `internal.bridge_task_status_to_state`. Both old functions are DROPPED rather
+  // than left orphaned, so that `entities.status_category` has exactly one
+  // authority. See db/migrations/150_doors_resolve_categories.sql.
+  ['internal.seed_entity_status_category', '150_doors_resolve_categories.sql'],
+  ['internal.sync_entity_status_category', '150_doors_resolve_categories.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {

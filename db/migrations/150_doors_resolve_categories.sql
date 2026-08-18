@@ -204,12 +204,12 @@ create or replace function internal.workflow_state_for_category(
 declare
   e public.entities;
   type_value text;
-  workflow_id uuid;
-  state_id uuid;
+  wf_id uuid;
+  resolved_state uuid;
 begin
   select * into e from public.entities where id = p_entity_id;
   if e.id is null then
-    raise exception 'entity % not found' using errcode = 'P0002';
+    raise exception 'entity % not found', p_entity_id using errcode = 'P0002';
   end if;
 
   -- The `type` axis is a TASK concept and this function is not. Every other kind
@@ -219,8 +219,8 @@ begin
       from public.tasks t where t.entity_id = p_entity_id;
   end if;
 
-  workflow_id := internal.workflow_for_entity(e.space_id, e.kind, type_value);
-  if workflow_id is null then
+  wf_id := internal.workflow_for_entity(e.space_id, e.kind, type_value);
+  if wf_id is null then
     raise exception 'no workflow governs entity %', p_entity_id
       using errcode = '23514',
             detail = json_build_object(
@@ -230,18 +230,18 @@ begin
             )::text;
   end if;
 
-  state_id := internal.find_workflow_state_for_category(workflow_id, p_category);
-  if state_id is null then
-    raise exception 'workflow % has no % state', workflow_id, p_category
+  resolved_state := internal.find_workflow_state_for_category(wf_id, p_category);
+  if resolved_state is null then
+    raise exception 'workflow % has no % state', wf_id, p_category
       using errcode = '23514',
             detail = json_build_object(
               'reason', 'workflow_missing_category',
-              'workflowId', workflow_id,
+              'workflowId', wf_id,
               'category', p_category,
               'entityId', p_entity_id
             )::text;
   end if;
-  return state_id;
+  return resolved_state;
 end
 $$;
 
@@ -322,8 +322,8 @@ create or replace function internal.workflow_state_for_work_status(
 declare
   e public.entities;
   type_value text;
-  workflow_id uuid;
-  state_id uuid;
+  wf_id uuid;
+  resolved_state uuid;
 begin
   select * into e from public.entities where id = p_entity_id;
   if e.id is null then return null; end if;
@@ -331,15 +331,15 @@ begin
   select nullif(btrim(coalesce(t.axes ->> 'type', '')), '') into type_value
     from public.tasks t where t.entity_id = p_entity_id;
 
-  workflow_id := internal.workflow_for_entity(e.space_id, e.kind, type_value);
-  if workflow_id is null then return null; end if;
+  wf_id := internal.workflow_for_entity(e.space_id, e.kind, type_value);
+  if wf_id is null then return null; end if;
 
-  select s.id into state_id from public.workflow_states s
-   where s.workflow_id = workflow_id and s.name = p_work_status;
-  if state_id is not null then return state_id; end if;
+  select s.id into resolved_state from public.workflow_states s
+   where s.workflow_id = wf_id and s.name = p_work_status;
+  if resolved_state is not null then return resolved_state; end if;
 
   return internal.find_workflow_state_for_category(
-    workflow_id, internal.work_status_category(p_work_status));
+    wf_id, internal.work_status_category(p_work_status));
 end
 $$;
 
@@ -378,12 +378,12 @@ drop function internal.seed_entity_status_category();
 create or replace function internal.seed_entity_initial_status() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
 declare
-  state_id uuid;
+  resolved_state uuid;
 begin
   if new.status_id is null and new.status_category is null and new.kind = 'task' then
-    state_id := internal.workflow_initial_state(new.space_id, new.kind, null);
-    if state_id is not null then
-      new.status_id := state_id;
+    resolved_state := internal.workflow_initial_state(new.space_id, new.kind, null);
+    if resolved_state is not null then
+      new.status_id := resolved_state;
     else
       -- Unreachable: the built-in default workflow is seeded by 149 and 149's
       -- deferred trigger makes "exactly one initial state" an invariant of every
@@ -428,13 +428,13 @@ drop function internal.sync_entity_status_category();
 create or replace function internal.bridge_task_status_to_state() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
 declare
-  state_id uuid := internal.workflow_state_for_work_status(new.entity_id, new.work_status);
+  resolved_state uuid := internal.workflow_state_for_work_status(new.entity_id, new.work_status);
 begin
-  if state_id is not null then
+  if resolved_state is not null then
     update public.entities
-       set status_id = state_id
+       set status_id = resolved_state
      where id = new.entity_id
-       and status_id is distinct from state_id;
+       and status_id is distinct from resolved_state;
     return new;
   end if;
 
@@ -501,7 +501,7 @@ declare
   workflow_kind text;
   required text[];
   missing text[];
-  category text;
+  required_category text;
 begin
   if tg_table_name = 'workflows' then
     target := case when tg_op = 'DELETE' then old.id else new.id end;
@@ -518,12 +518,12 @@ begin
                    then array['to_do', 'in_progress', 'done']
                    else array['to_do'] end;
   missing := '{}'::text[];
-  foreach category in array required loop
+  foreach required_category in array required loop
     if not exists (
       select 1 from public.workflow_states s
-       where s.workflow_id = target and s.category = category
+       where s.workflow_id = target and s.category = required_category
     ) then
-      missing := missing || category;
+      missing := missing || required_category;
     end if;
   end loop;
 
@@ -696,7 +696,19 @@ $$;
 -- LAST statement executed, and the two edge inserts sit immediately above.
 -- RETURNING INTO on a zero-row UPDATE leaves FOUND false and the variable NULL,
 -- which is the behaviour the gate wants.
+--
+-- ⚠ `reset role`, AND IT IS NOT COSMETIC. Unlike `create_task` (036) and
+-- `complete_task` (082), NONE of the five migrations that have written this
+-- function (043, 048, 111, 129, 131) issues `set role tm8_graph_owner` — so
+-- `public.execution_spawn` is owned by the APPLIER, not by the schema owner, and
+-- the `revoke`/`grant` pair below fails with "must be owner of function
+-- execution_spawn" under the role this file otherwise runs as. (Measured, not
+-- assumed: that is exactly how this file first failed.) Reproducing 131's
+-- posture is the fix; changing the owner here is not, because it would silently
+-- move a function five other migrations expect to own.
 -- -----------------------------------------------------------------------------
+reset role;
+
 create or replace function public.execution_spawn(
   p_space_id uuid, p_team_member_id uuid, p_task_ids uuid[] default '{}'::uuid[],
   p_project_id uuid default null, p_workdir_mode text default 'project',
@@ -838,6 +850,8 @@ grant execute on function public.execution_spawn(
   uuid, uuid, uuid[], uuid, text, text, text, text, text, text, text, text,
   boolean, integer, uuid, text, uuid
 ) to tm8_app;
+
+set role tm8_graph_owner;
 
 -- -----------------------------------------------------------------------------
 -- DOOR 3 — `complete_task`. 082's body verbatim except the status write.
