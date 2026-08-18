@@ -1,5 +1,5 @@
 -- =============================================================================
--- 148  WORKFLOWS: states, transitions, and the category-level default rules.
+-- 149  WORKFLOWS: states, transitions, and the category-level default rules.
 --
 -- Phase 2 of "Kind, Status, Category, Workflow". 147 put `status_category` on
 -- the envelope and left `status_id` pointing at nothing — deliberately, because

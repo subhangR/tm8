@@ -80,7 +80,7 @@ describe.sequential('148 — the workflow admin doors', () => {
   beforeAll(async () => {
     server = await startSurfaceServer('w148_workflow_rpc');
     expect(server.appliedMigrations).toEqual(FULL_MIGRATION_CHAIN);
-    expect(server.appliedMigrations).toContain('148_workflows.sql');
+    expect(server.appliedMigrations).toContain('149_workflows.sql');
 
     const created = dataOf<{ space: { id: string } }>(
       await server.request('POST', '/v2/spaces', {

@@ -42,7 +42,7 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
  */
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 180_000 });
 
-const MIGRATION = '148_workflows.sql';
+const MIGRATION = '149_workflows.sql';
 const SPACE = '00000000-0000-4000-8000-000000000001';
 const IDENTITY = '00000000-0000-4000-8000-00000000000f';
 const ANCHOR = '00000000-0000-4000-8000-0000000000aa';
