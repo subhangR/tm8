@@ -1767,7 +1767,7 @@ export function createFixtureSeam(): FixtureSeam {
      *
      * It used to ALSO answer this space's own workflows, migrated on the fly
      * from the mutable `taskWorkflows` registry the way 149 migrated them.
-     * Phase 6 (migration 154) dropped `public.task_workflows` whole, so there
+     * Phase 6 (migration 155) dropped `public.task_workflows` whole, so there
      * is nothing left to migrate and the fixture answers what a fresh space
      * answers: the global default alone. A space that authors its own named
      * workflow gets it from `spaces.workflows.*`, which this fixture does not
@@ -1984,7 +1984,7 @@ export function createFixtureSeam(): FixtureSeam {
           type: typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'bool' : 'text',
         }));
         /*
-         * 154's four new members, answered the way a real node answers them
+         * 155's four new members, answered the way a real node answers them
          * for a kind this fixture INFERRED from entity rows rather than from a
          * `entity_kinds` table it does not have.
          *
@@ -1992,7 +1992,7 @@ export function createFixtureSeam(): FixtureSeam {
          * discovered by seeing `c:ritual` entities carries no `extends` link
          * and no authored display name, and null means "the client's own
          * registry row is authoritative" — which lands it on the generic
-         * fallback exactly as it did before 154. Fabricating `baseKind: 'task'`
+         * fallback exactly as it did before 155. Fabricating `baseKind: 'task'`
          * would let a task-based custom kind look wired here while nothing in
          * the fixture's data actually carries a task detail row.
          */
@@ -2002,7 +2002,7 @@ export function createFixtureSeam(): FixtureSeam {
           icon: null, fieldSchema, capabilities: {}, createdBy: null, createdAt: FIXTURE_NOW,
           baseKind: null,
           // The one thing the fixture CAN say honestly: the kind's own name,
-          // title-cased. Before 154 the client had nowhere to get this from and
+          // title-cased. Before 155 the client had nowhere to get this from and
           // every custom kind read "Item".
           label: name.charAt(0).toUpperCase() + name.slice(1),
           labelPlural: `${name.charAt(0).toUpperCase() + name.slice(1)}s`,
@@ -3050,7 +3050,7 @@ export function createFixtureSeam(): FixtureSeam {
 =======
         // 132's `tasks_validate_workflow` trigger mirror STOOD HERE — a status
         // write outside the row's `type` vocabulary refused. Phase 6 (migration
-        // 154) dropped `public.task_workflows`, and with it the trigger, so a
+        // 155) dropped `public.task_workflows`, and with it the trigger, so a
         // status write is now governed only by the workflow the row's KIND
         // resolves (152) — which the node polices, not this mirror.
 >>>>>>> dca54ecd (WIP: Phase 6 — CLI + UI tranche (rescued from dead session 01a01558))
@@ -3160,7 +3160,7 @@ export function createFixtureSeam(): FixtureSeam {
         s.state.status = input.status;
 =======
         // 132's trigger mirror stood here too, and went with `task_workflows`
-        // in phase 6 (migration 154). See the `updateTask` note above.
+        // in phase 6 (migration 155). See the `updateTask` note above.
         s.state.workStatus = input.status;
 >>>>>>> dca54ecd (WIP: Phase 6 — CLI + UI tranche (rescued from dead session 01a01558))
         touch(s);

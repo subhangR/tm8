@@ -203,7 +203,7 @@ describe('the axis registry round-trips through the port', () => {
  * and the fixture's mirror of 132's structural-status constraint, duplicate
  * check and `tasks_validate_workflow` trigger.
  *
- * Phase 6 (migration 154) retired all of it: `public.task_workflows` was
+ * Phase 6 (migration 155) retired all of it: `public.task_workflows` was
  * dropped whole, the catalog ops `spaces.taskWorkflows.*` left the contract,
  * and the port verbs those cases exercised no longer exist. The cases were
  * DELETED rather than weakened because their subject is gone — a test that

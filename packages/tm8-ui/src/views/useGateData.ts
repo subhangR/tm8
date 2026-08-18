@@ -1082,15 +1082,15 @@ export function useGateData(options: GateOptions): GateData {
         Promise.resolve().then(() => seam.counts(space)).catch(() => undefined),
         /*
          * `entityKinds.list` — the space's CUSTOM KINDS, boot-time since phase 6
-         * (migration 154). It rides this same bounded boot read rather than a
+         * (migration 155). It rides this same bounded boot read rather than a
          * lane of its own because the answer is needed before the first list
-         * panel draws its kind selector: 154 retired the task `type` axis into
+         * panel draws its kind selector: 155 retired the task `type` axis into
          * custom kinds, so a space's epics and bugs ARE kinds now, and a
          * selector that opened without them would be missing rows the space
          * actually has.
          *
          * SOFT-FAILS to `[]`, like `menu` and `counts` above and unlike the
-         * reads that gate boot. Empty is the pre-154 answer exactly — every
+         * reads that gate boot. Empty is the pre-155 answer exactly — every
          * custom kind falls back to the generic `c:*` row — so a node that
          * cannot answer this renders the old behaviour, never a refusal.
          */
@@ -1373,7 +1373,7 @@ export function useGateData(options: GateOptions): GateData {
     setMembers([]);
     setTaskAxes([]);
     // The registry's custom-kind overlay clears with everything else the
-    // outgoing space owned (154). Leaving it would let the previous space's
+    // outgoing space owned (155). Leaving it would let the previous space's
     // epics and bugs resolve — and appear in a kind selector — inside a space
     // that has never heard of them.
     registerCustomKinds([]);

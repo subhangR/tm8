@@ -193,7 +193,7 @@ describe('W5.C generator proof', () => {
     // +2 (148): WorkflowInputSchema binds spaces.workflows.upsert and
     // RequiredCommandContextSchema binds .delete; .list is a READ and binds
     // nothing, so three new ops move this by two.
-    // -2 (154): the taskWorkflows upsert + delete bodies UNBIND with the
+    // -2 (155): the taskWorkflows upsert + delete bodies UNBIND with the
     // operations. Two, not three, for the mirror of the reason above: .list was
     // a READ and bound nothing, so three retiring ops move this by two.
     expect(ENTRIES).toHaveLength(97);

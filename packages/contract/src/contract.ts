@@ -811,7 +811,7 @@ export interface CollectionQuery {
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /**
    * `priority` added 2026-08-16 (Board tab wave); `kind` added by phase 6
-   * (154) — same additive posture as the rest of the union.
+   * (155) — same additive posture as the rest of the union.
    *
    * `kind` is what `axis:type` used to be. Grouping a board by epic/bug/story
    * was grouping by a TAG; those values are kinds now, so the grouping is over
@@ -2641,7 +2641,7 @@ export interface TaskAxis {
 /**
  * GET /v2/spaces/:spaceId/workflows — a named set of states and transitions.
  *
- * REPLACED `TaskWorkflow`, retired by phase 6 (migration 154) with the `type`
+ * REPLACED `TaskWorkflow`, retired by phase 6 (migration 155) with the `type`
  * axis it was keyed on. The difference that mattered: a `TaskWorkflow` was a
  * SUBSET of seven hardcoded statuses keyed on a TAG VALUE, and a `Workflow` is
  * an open set of user-named states each carrying one of the four closed
@@ -4534,7 +4534,7 @@ export interface EntityKindDef {
   /** Which universal capabilities are surfaced (all default on). */
   capabilities: Record<string, boolean>;
   /**
-   * The `extends` link (154). NOT decoration: it names which irreducible code
+   * The `extends` link (155). NOT decoration: it names which irreducible code
    * runs for entities of this kind. A kind with `baseKind: 'task'` carries a
    * task detail row and inherits assignees, acceptance criteria, points, the
    * spawn door and the completion gate. `null` for every core kind and for a
@@ -4544,9 +4544,9 @@ export interface EntityKindDef {
    */
   baseKind: 'task' | null;
   /**
-   * Display labels (154). `null` means the client's own registry row is
+   * Display labels (155). `null` means the client's own registry row is
    * authoritative, which is the answer for every core kind until phase 10
-   * serves them. Before 154 a custom kind had no label at all and every one of
+   * serves them. Before 155 a custom kind had no label at all and every one of
    * them rendered as "Item".
    */
   label: string | null;

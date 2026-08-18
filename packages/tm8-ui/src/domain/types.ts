@@ -1011,11 +1011,11 @@ export interface EditFieldSpec {
 
 export interface KindConfig {
   /**
-   * `CustomEntityKind` is admissible since phase 6 (migration 154). Before it,
+   * `CustomEntityKind` is admissible since phase 6 (migration 155). Before it,
    * a row was either one of the sixteen core kinds or the single `c:*`
    * fallback, and EVERY custom kind resolved to that one fallback row — which
    * is why a space's epics, bugs and stories all rendered as "Item" with a ◇.
-   * 154 made a custom kind a first-class thing (it can `extend` task and it
+   * 155 made a custom kind a first-class thing (it can `extend` task and it
    * carries its own labels), so `registerCustomKinds()` derives one REAL row
    * per custom kind from the server's `entityKinds.list` and those rows carry
    * their own `c:{name}` here. The `c:*` fallback stays for a kind nothing has

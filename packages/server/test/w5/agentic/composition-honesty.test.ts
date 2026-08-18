@@ -152,7 +152,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
   // wave: serverConnections, artifacts, attention, voice et al). Mechanical
   // denominator moves only — the two-world presence semantics this file
   // measures are untouched.
-  it('CONTROL — the denominator is the unconditional v1 HTTP rows, by exact count and exact membership (-3 154)', () => {
+  it('CONTROL — the denominator is the unconditional v1 HTTP rows, by exact count and exact membership (-3 155)', () => {
     // 118 -> 122 (2026-08-02): the four auth.* rows (Identity v2 Stage 1).
     // 122 -> 123 (2026-08-02): execution.launch.
     // The 123 literal was ALREADY red at 124 when this lane arrived; 125 adds
@@ -168,7 +168,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // 159 -> 162 (2026-08-16, 141): auth.password.change, auth.invite.signup,
     // auth.claim.reissue — the three account-lifecycle ops (§10).
     // 162 -> 165 (148): the three spaces.workflows rows are unconditional.
-    // 165 -> 162 (154, phase 6): the three spaces.taskWorkflows rows retire.
+    // 165 -> 162 (155, phase 6): the three spaces.taskWorkflows rows retire.
     expect(REGISTERABLE).toHaveLength(162);
     expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(162);
     expect(REGISTERABLE).toContain(PRESENCE_GATED);

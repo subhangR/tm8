@@ -356,7 +356,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) + .upsert
   // (POST command) + .delete (DELETE command). MEASURED off the catalog, not
   // incremented.
-  // 172 -> 169 (154, phase 6): the three taskWorkflows rows retire with the
+  // 172 -> 169 (155, phase 6): the three taskWorkflows rows retire with the
   // `type` axis they were keyed on — the first REMOVAL this accounting has
   // recorded. MEASURED off the catalog.
   assertEqual(names.length, 169, 'catalog total');
@@ -365,7 +365,7 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 161 -> 164 (W4/132): the three taskWorkflows rows are v1.
   // 164 -> 167 (141): the three account-lifecycle ops are v1.
   // 167 -> 170 (148): the three workflows rows are v1.
-  // 154: 170 -> 167, the three taskWorkflows rows.
+  // 155: 170 -> 167, the three taskWorkflows rows.
   assertEqual(V1_OPERATIONS.length, 167, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
@@ -374,16 +374,16 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // W4/132: GET 59->60, POST 75->76, DELETE 10->11; read 63->64, command 99->101.
   // 141: POST 76->79 — the three account-lifecycle ops are all POST commands.
   // 148: GET 60->61, POST 79->80, DELETE 11->12.
-  // 154: GET 61->60, POST 80->79, DELETE 12->11.
+  // 155: GET 61->60, POST 80->79, DELETE 12->11.
   assertEqual(methods, { GET: 60, POST: 79, PATCH: 11, DELETE: 11, PUT: 7, WS: 1 }, 'method accounting');
   // 141: command 101->104 — the three account-lifecycle ops are all commands.
   // 148: read 64->65, command 104->106.
-  // 154: read 65->64, command 106->104.
+  // 155: read 65->64, command 106->104.
   assertEqual(kinds, { read: 64, command: 104, stream: 1 }, 'kind accounting');
   // W4/132: 162 -> 165, the three taskWorkflows routes.
   // 141: 165 -> 168, the three account-lifecycle routes.
   // 148: 168 -> 171, the three workflows routes.
-  // 154: 171 -> 168, the three taskWorkflows routes.
+  // 155: 171 -> 168, the three taskWorkflows routes.
   assertEqual(router.http.length, 168, 'server router HTTP total');
   assertEqual(router.ws.length, 1, 'server router WS total');
   // These four are SNAPSHOT self-checks (the frozen W1 registry boundary) and

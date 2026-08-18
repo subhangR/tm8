@@ -58,7 +58,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 169 -> 172 (148, phase 2): spaces.workflows.list (GET read) +
       // .upsert (POST command) + .delete (DELETE command). READ OUT OF THE
       // REGENERATED MANIFEST, never delta-arithmetic.
-      // 172 -> 169 (154, phase 6): the FIRST removal this pin has ever
+      // 172 -> 169 (155, phase 6): the FIRST removal this pin has ever
       // recorded. spaces.taskWorkflows.list (GET read) + .upsert (POST
       // command) + .delete (DELETE command) retire with the `type` axis they
       // were keyed on — 148's `spaces.workflows.*` replaced them. READ OUT OF
@@ -79,7 +79,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(168); // +3 141, +3 148, -3 154
+    expect(manifest.routes.http).toHaveLength(168); // +3 141, +3 148, -3 155
     expect(manifest.routes.ws).toEqual([{
       operation: 'events.subscribe',
       method: 'WS',
@@ -140,7 +140,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 111 -> 113 (2026-08-12): collections.addItem/removeItem.
       // 113 -> 119 (2026-08-12, Git UI landing): the six execution.git* rows.
       // 130 -> 132 upstream (unledgered); 132 -> 135 (W4/132).
-      unimplementedV1Http: 138, // -3 (154): registerableV1Http 166 minus the frozen 28
+      unimplementedV1Http: 138, // -3 (155): registerableV1Http 166 minus the frozen 28
     });
   });
 
@@ -192,7 +192,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(169); // +3 141, +3 148, -3 154
+    expect(manifest.help.operations).toHaveLength(169); // +3 141, +3 148, -3 155
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -383,7 +383,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 141 -> 147 (2026-08-12, Git UI landing): the six execution.git* facade
     // handlers (facade/services/execution-git.ts).
     // 158 -> 160 upstream (unledgered); 160 -> 163 (W4/132).
-    expect(handlers.all).toHaveLength(166); // +3 141, +3 148, -3 154
+    expect(handlers.all).toHaveLength(166); // +3 141, +3 148, -3 155
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
       // Re-measured at 114 (spaces.members.updateRole, auth.invite.resolve).
@@ -436,7 +436,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     );
     // 160 -> 163 (W4/132): the three taskWorkflows routes, all mounted.
     // 166 -> 169 (148): the three workflows routes, all mounted.
-    // 169 -> 166 (154): the three taskWorkflows routes retire.
+    // 169 -> 166 (155): the three taskWorkflows routes retire.
     expect(registerableV1Http).toHaveLength(166);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.

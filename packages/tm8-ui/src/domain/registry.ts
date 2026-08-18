@@ -1793,19 +1793,19 @@ const BY_KIND: ReadonlyMap<string, KindConfig> = new Map(KINDS.map((row) => [row
 const FALLBACK = BY_KIND.get(CUSTOM_KIND_FALLBACK) as KindConfig;
 
 // ---------------------------------------------------------------------------
-// Custom kinds — the REGISTERED overlay (phase 6, migration 154)
+// Custom kinds — the REGISTERED overlay (phase 6, migration 155)
 // ---------------------------------------------------------------------------
 
 /**
  * WHY THIS EXISTS AT ALL.
  *
- * Until 154 a custom kind was a name with nothing behind it: `getKind('c:epic')`
+ * Until 155 a custom kind was a name with nothing behind it: `getKind('c:epic')`
  * missed `BY_KIND` and landed on the single `c:*` fallback, so every custom kind
  * in every space rendered as "Item" with a ◇, and `collectionKinds()` excluded
  * the fallback row outright, so NO custom kind appeared in any kind selector.
  * That was defensible while a custom kind really was just a bag of fields.
  *
- * 154 retired the task `type` axis into custom KINDS: a space's epics, bugs and
+ * 155 retired the task `type` axis into custom KINDS: a space's epics, bugs and
  * stories are now `c:` kinds with `baseKind = 'task'` (spelled **extends** in
  * every UX surface and doc), each carrying a task detail row — assignees,
  * acceptance criteria, points, the spawn door, the completion gate — plus its
@@ -1824,7 +1824,7 @@ const FALLBACK = BY_KIND.get(CUSTOM_KIND_FALLBACK) as KindConfig;
  * this module the space's kind list once per space.
  *
  * THE SAFETY PROPERTY THAT MAKES THIS HONEST: with nothing registered, every
- * function below answers EXACTLY what it answered before 154. Registration is
+ * function below answers EXACTLY what it answered before 155. Registration is
  * additive and wholesale-replacing, never merging, so a space switch cannot
  * leave the previous space's kinds resolving.
  */
@@ -1874,7 +1874,7 @@ function customKindRow(def: EntityKindDef): KindConfig {
  * Hand this module the space's `entityKinds.list`. WHOLESALE REPLACEMENT, not a
  * merge: the argument is the complete answer for the space now in view, so a
  * space switch (or a resync that drops a kind) cannot leave a stale row
- * resolving. Call with `[]` to go back to pre-154 behaviour exactly.
+ * resolving. Call with `[]` to go back to pre-155 behaviour exactly.
  *
  * `origin: 'core'` rows are IGNORED. The server may one day serve labels for
  * core kinds (phase 10); until it does, this registry's own rows are
@@ -1920,7 +1920,7 @@ export function allKinds(): KindConfig[] {
 /**
  * Rows the list-panel kind selector offers: `strategy === 'collection'`.
  *
- * Custom kinds are here since 154 and sort AFTER the shipped kinds — a space's
+ * Custom kinds are here since 155 and sort AFTER the shipped kinds — a space's
  * own kinds are the interesting ones but the shipped order is what everybody
  * has learned, so they extend the list rather than reordering it. The `c:*`
  * fallback is still excluded: it is a resolution target, not a kind anybody can
@@ -1935,7 +1935,7 @@ export function collectionKinds(): KindConfig[] {
 
 /**
  * Slug → row, for the `k/{slug}` route and `origin` validation. Registered
- * custom rows are searched too since 154, so `k/c-epic` resolves to the epic's
+ * custom rows are searched too since 155, so `k/c-epic` resolves to the epic's
  * OWN row rather than to nothing — `kindOfSlug` below has always been able to
  * name the kind from such a slug, and this is the other half of that answer.
  */

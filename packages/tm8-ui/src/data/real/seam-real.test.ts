@@ -381,7 +381,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // posture as the membership four, for the same silent-duplicate reason.
       'createTaskAxis', 'updateTaskAxis', 'deleteTaskAxis',
       // W4's task-workflow writes (`upsertTaskWorkflow`/`deleteTaskWorkflow`,
-      // migration 132) STOOD HERE and are gone with phase 6 (migration 154):
+      // migration 132) STOOD HERE and are gone with phase 6 (migration 155):
       // `public.task_workflows` was dropped whole and the catalog ops
       // `spaces.taskWorkflows.upsert|delete` left the contract with it. The
       // axis three above SURVIVE — only the axis NAMED `type` died, as data.

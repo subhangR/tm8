@@ -258,7 +258,7 @@ describe.sequential('148 — the workflow admin doors', () => {
     // This pinned the OPPOSITE until phase 6, and deliberately: 132's
     // `tasks_validate_workflow` had to survive 149 and 151 untouched, so that
     // "only the structural constraint went" was a statement with a witness. The
-    // schedule it was waiting on has now run. 154 drops `public.task_workflows`
+    // schedule it was waiting on has now run. 155 drops `public.task_workflows`
     // whole, and this trigger is what enforced a task's status against that
     // table — it cannot outlive the rows it validated against.
     const rows = await server.database.query<{ n: string }>(

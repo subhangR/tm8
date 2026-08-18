@@ -33,7 +33,7 @@ import {
 // Re-derived 2026-08-09 after execution.transcript + projects.branches.list.
 // Re-derived 2026-08-09 at the dispatcher merge — the catalog is now 138 rows.
 // 2026-08-12: moved with the catalog (collections.addItem/removeItem, 142 -> 144 rows).
-const CATALOG_DIGEST = 'sha256:5150aae8016ab6944583fda0c5cdcaaca19694c00beadea18ff835bc290e4f22'; // re-derived 154 (spaces.taskWorkflows retire)
+const CATALOG_DIGEST = 'sha256:5150aae8016ab6944583fda0c5cdcaaca19694c00beadea18ff835bc290e4f22'; // re-derived 155 (spaces.taskWorkflows retire)
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -106,7 +106,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // onboarding read landed without moving it); 128 adds execution.transcript.
     // 129 adds projects.branches.list.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows.
-    expect(root.catalog.total).toBe(169); // +3 141, +3 148, -3 154
+    expect(root.catalog.total).toBe(169); // +3 141, +3 148, -3 155
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

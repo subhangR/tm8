@@ -258,7 +258,7 @@ describe('the node this suite measured', () => {
     // 155 -> 156 (2026-08-13, MEASURED off /health on main): one route joined
     // between the 2026-08-12 155-pin and the git-track re-measure.
         // 156 -> 157 (2026-08-13, forge write): the tracking.pr.merge route.
-    expect(health.operations).toBe(168) /* 171→168 154: spaces.taskWorkflows.* retired — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* */ /* 157→158 2026-08-13: #188 chat route */;
+    expect(health.operations).toBe(168) /* 171→168 155: spaces.taskWorkflows.* retired — ROUTES, not catalog rows */ /* 168→171 148: spaces.workflows.* */ /* 157→158 2026-08-13: #188 chat route */;
     // `implemented` is `registry.size` — REGISTERED, never "behaviourally
     // implemented". It is reported, never re-labelled.
     expect(health.implemented).toBeGreaterThan(0);

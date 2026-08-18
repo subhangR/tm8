@@ -178,7 +178,7 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 152 -> 156 (141): auth password + auth invite signup + auth claim reissue,
     // plus the node mode alias — none of which moves the catalog count.
     // 156 -> 159 (148): space workflow list|set|delete.
-    // 159 -> 156 (154, phase 6): space task-workflow list|set|delete are gone
+    // 159 -> 156 (155, phase 6): space task-workflow list|set|delete are gone
     // with their catalog rows. MEASURED.
     expect(COMMAND_PATHS).toHaveLength(156);
   });

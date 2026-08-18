@@ -75,15 +75,15 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // 131 -> 135: credentials.*; all four are mounted.
     // 144 -> 150 (2026-08-12, Git UI landing): the six execution.git* rows,
     // all mounted.
-    // 172 -> 169 (154, phase 6): spaces.taskWorkflows.* retire with the axis.
+    // 172 -> 169 (155, phase 6): spaces.taskWorkflows.* retire with the axis.
     expect(OPERATIONS).toHaveLength(169);
     expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(168);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
-      operations: 168, // -3 154: the spaces.taskWorkflows routes retire
-      implemented: 166, // -3 154: all three were mounted
+      operations: 168, // -3 155: the spaces.taskWorkflows routes retire
+      implemented: 166, // -3 155: all three were mounted
     });
   });
 
@@ -124,7 +124,7 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // The four credentials.* rows bring the mounted set to 132.
     // 141: +3 (auth.password.change, auth.invite.signup, auth.claim.reissue),
     // all mounted and none answering 501 — 163 -> 166.
-    // 169 -> 166 (154): the three taskWorkflows rows were all mounted.
+    // 169 -> 166 (155): the three taskWorkflows rows were all mounted.
     expect(implemented).toHaveLength(166);
   });
 

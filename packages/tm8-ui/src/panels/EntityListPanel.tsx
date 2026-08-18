@@ -96,7 +96,7 @@ const SESSION_CHIP_KIND = allKinds().find((kind) => kind.list.liveTreatment != n
  */
 /*
  * ASKED PER CALL, not frozen into a module-level Set — which is what this was
- * until phase 6 (migration 154). `registerCustomKinds()` populates the
+ * until phase 6 (migration 155). `registerCustomKinds()` populates the
  * registry's custom rows at space boot, LONG after this module is evaluated,
  * so a precomputed set could only ever hold the shipped kinds and a chip
  * expanding into one of a space's own kinds would have been silently
@@ -1927,9 +1927,9 @@ function assigneeBoardColumns(groups: readonly CollectionGroup[]): BoardColumnSp
 }
 
 /**
- * Columns for the KIND board (phase 6, migration 154).
+ * Columns for the KIND board (phase 6, migration 155).
  *
- * `CollectionQuery.groupBy` gained the literal `'kind'` in 154, and it is what
+ * `CollectionQuery.groupBy` gained the literal `'kind'` in 155, and it is what
  * `axis:type` used to be: a space's epics, bugs and stories were `type` axis
  * VALUES and are now custom entity KINDS that extend task. A board that could
  * group by the old axis and not by the new kind would have lost a view in the
@@ -1954,7 +1954,7 @@ function kindBoardColumns(groups: readonly CollectionGroup[]): BoardColumnSpec[]
   return groups.map((g): BoardColumnSpec => ({
     key: g.key,
     // `getKind` answers the registry row — a core row, a REGISTERED custom row
-    // (154), or the `c:*` fallback. `g.label` wins when the server supplied
+    // (155), or the `c:*` fallback. `g.label` wins when the server supplied
     // one, so a kind the client has not registered still reads as words.
     label: g.label || getKind(g.key).labelPlural,
     tone: 'idle',
@@ -2039,11 +2039,11 @@ function BoardBody({
     >
       <option value="status">by status</option>
       <option value="assignee">by assignee</option>
-      {/* 154 — `groupBy: 'kind'`. It sits directly after the two shipped
+      {/* 155 — `groupBy: 'kind'`. It sits directly after the two shipped
           dimensions and BEFORE the space's axes because it is a universal
           dimension like them, not per-space data; and it reads "by kind"
           rather than "by type" even though it is what `axis:type` used to be,
-          because `type` is the word 154 retired. */}
+          because `type` is the word 155 retired. */}
       <option value="kind">by kind</option>
       {(props.taskAxes ?? []).map((a) => (
         <option key={a.id} value={`axis:${a.name}`}>
@@ -2162,7 +2162,7 @@ function BoardBody({
     /*
      * W4's PRE-FLIGHT workflow refusal STOOD HERE: the drop was checked against
      * the row's `type` vocabulary before the write, so a foreseeable refusal was
-     * stated rather than attempted (§8.5). Phase 6 (migration 154) dropped
+     * stated rather than attempted (§8.5). Phase 6 (migration 155) dropped
      * `public.task_workflows` and the trigger that made it foreseeable, so there
      * is nothing left to pre-flight — the write goes to the server and the
      * server's own refusal is rendered beside the act, exactly as every other
@@ -2255,7 +2255,7 @@ function BoardBody({
         </div>
       ) : null}
 
-      {/* 154 — the kind board is READ-ONLY for the reason `kindBoardColumns`
+      {/* 155 — the kind board is READ-ONLY for the reason `kindBoardColumns`
           records: no write door re-kinds an entity, so a drop could only lie.
           Stated up front for the same reason as the assignee note above. */}
       {groupBy === 'kind' ? (

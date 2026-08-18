@@ -1327,7 +1327,7 @@ export function RowStateControl({
   /*
    * W4's workflow NARROWING stood here — `vocabulary`, `barred()` and the
    * derived `offWorkflow` mark, all keyed on the row's `type` axis value.
-   * Phase 6 (migration 154) dropped `public.task_workflows` whole and retired
+   * Phase 6 (migration 155) dropped `public.task_workflows` whole and retired
    * the `type` axis into custom entity KINDS, so there is no per-type
    * vocabulary to narrow with and no "off workflow" state to derive: every
    * option this control lists is offerable, and the row's KIND now decides
@@ -1374,7 +1374,7 @@ export function RowStateControl({
              so a value the registry does not list — which the menu has no row
              for — is still stated rather than silently unrepresented. The
              off-workflow fact used to ride the same tooltip; it went with
-             `task_workflows` in phase 6 (154). */
+             `task_workflows` in phase 6 (155). */
           title={`${word} — change state`}
           aria-expanded={open}
           aria-haspopup="true"
@@ -1410,7 +1410,7 @@ export function RowStateControl({
                       aria-checked={on}
                       /* W4's disabled-with-reason arm stood here, greying the
                          options outside the row's `type` vocabulary. Gone with
-                         `task_workflows` in phase 6 (154): every option this
+                         `task_workflows` in phase 6 (155): every option this
                          control lists is now offerable, so there is no dead
                          click to keep the menu open for. */
                       onClick={(e) => {

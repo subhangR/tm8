@@ -60,7 +60,7 @@ import {
 import './governance.css';
 
 export interface ProjectsTrustScreenProps {
-  /** "space · atelier" (oracle L154). */
+  /** "space · atelier" (oracle L155). */
   spaceLabel: string;
   projects: LoadState<readonly EntitySummary[]>;
   /** Facts no seam read supplies. Absent ⇒ every one renders hollow. */

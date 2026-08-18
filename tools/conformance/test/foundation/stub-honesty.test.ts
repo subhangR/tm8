@@ -25,7 +25,7 @@ describe('W1 stub route and honesty oracle', () => {
   it('recognizes every HTTP catalog binding as 501, never 404', async () => {
     const http = OPERATIONS.filter(({ method }) => method !== 'WS');
     // 162 -> 165 (W4/132): the three spaces.taskWorkflows routes.
-    expect(http).toHaveLength(168); // +3 141, +3 148, -3 154 (taskWorkflows retired)
+    expect(http).toHaveLength(168); // +3 141, +3 148, -3 155 (taskWorkflows retired)
 
     for (const operation of http) {
       const response = await fetch(new URL(fixturePath(operation.path), baseUrl), {

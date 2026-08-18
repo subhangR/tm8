@@ -226,7 +226,7 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
       });
     }
     /*
-     * KIND (154) — the refusal, stated in the ONE sentence `board-model` holds.
+     * KIND (155) — the refusal, stated in the ONE sentence `board-model` holds.
      * The columns below refuse the drag outright so this should be unreachable
      * from the mouse; it is here because the KEYBOARD move path calls the same
      * function, and a silent `return` would make Mod+Arrow on this pivot look
@@ -451,7 +451,7 @@ export function BoardScreen({ data, viewerMemberId, onNotice, onOpenEntity }: Bo
               {`Showing the ${snapshot.limit} most recently active tasks — headers carry the true totals.`}
             </div>
           ) : null}
-          {/* 154 — the kind pivot is READ-ONLY, said up front: undraggable
+          {/* 155 — the kind pivot is READ-ONLY, said up front: undraggable
               cards with no words are indistinguishable from broken ones, which
               is the same reason the assignee board states its own rule. */}
           {pivot === 'kind' ? (
@@ -543,7 +543,7 @@ function ColumnView({
       data-testid="bd-column"
       data-column={column.key}
       aria-label={column.label}
-      /* 154 — a KIND column is not a drop target at all: no `onDragOver`, so
+      /* 155 — a KIND column is not a drop target at all: no `onDragOver`, so
          the browser's own default (reject) stands and the cursor says "no"
          before the finger lifts. Leaving the handlers on and refusing inside
          them would show a move cursor for a move that cannot happen, which is
@@ -647,7 +647,7 @@ function CardView({
       className={cls}
       data-testid="bd-card"
       data-entity={row.id}
-      /* 154 — not draggable on the KIND pivot: the columns accept nothing, so
+      /* 155 — not draggable on the KIND pivot: the columns accept nothing, so
          a card that could still be picked up would be offering a gesture with
          no destination. */
       draggable={pivot !== 'kind'}

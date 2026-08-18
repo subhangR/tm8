@@ -321,7 +321,7 @@ describe('every row binds its path from the catalog', () => {
       checked++;
     }
     // Vacuity guard: a loop that silently iterates zero rows passes everything.
-    expect(checked).toBe(27); // +3 (148): workflow list|set|delete; -3 (154): task-workflow list|set|delete
+    expect(checked).toBe(27); // +3 (148): workflow list|set|delete; -3 (155): task-workflow list|set|delete
     expect(ROWS).toHaveLength(27);
   });
 });
@@ -337,7 +337,7 @@ describe('mutation identity (§7.4)', () => {
       expect(seen, path.join(' ')).toHaveLength(0);
       checked++;
     }
-    expect(checked).toBe(12); // +1 (118): `space invite resolve`; -1 (154): task-workflow list
+    expect(checked).toBe(12); // +1 (118): `space invite resolve`; -1 (155): task-workflow list
   });
 
   it('a mutation generates a UUIDv7 when --mutation-id is omitted', async () => {

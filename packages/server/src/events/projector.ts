@@ -200,7 +200,7 @@ interface SummaryRow {
   /** Link counters (108); optional keeps pre-108 row fixtures source-compatible. */
   docs?: number | null;
   memories?: number | null;
-  /** 154: `entity_kinds.base_kind`. See `behaviourKind` below and its read-path twin. */
+  /** 155: `entity_kinds.base_kind`. See `behaviourKind` below and its read-path twin. */
   base_kind?: string | null;
   task_title: string | null;
   task_description: string | null;
@@ -323,7 +323,7 @@ select
   -- omitting it here would make a live status change move a row on refresh but
   -- not on the socket, which reads as a caching bug for a week.
   e.status_category,
-  -- 154. MIRRORS entity-read's ENTITY_COLUMNS twin, and for the same reason
+  -- 155. MIRRORS entity-read's ENTITY_COLUMNS twin, and for the same reason
   -- the category is here: an entity whose kind EXTENDS task carries a
   -- public.tasks detail row, and the event path must assemble it as a task or
   -- an epic would arrive over the socket with an empty custom-kind state and a
@@ -859,7 +859,7 @@ export class PgEntityProjector implements EntityProjector {
    * the gap by patching only one implementation is worse than the gap.
    */
   /**
-   * WHICH CODE RUNS for this row — 154's `internal.base_kind_of` on the event
+   * WHICH CODE RUNS for this row — 155's `internal.base_kind_of` on the event
    * path, and the exact twin of entity-read's `behaviourKindOf`. `r.kind` is
    * identity (label, icon, what a board groups by); this is behaviour (which
    * detail table holds the body, which state shape the client gets).
@@ -996,7 +996,7 @@ export class PgEntityProjector implements EntityProjector {
     unreadCounts: ReadonlyMap<string, number>,
     containsCounts: ReadonlyMap<string, number>,
   ): EntityState {
-    // 154: the BEHAVIOUR kind, exactly as the read path's twin does. A `c:epic`
+    // 155: the BEHAVIOUR kind, exactly as the read path's twin does. A `c:epic`
     // takes the task arm and its `state.kind` is `'task'`, while the summary's
     // own `kind` stays `c:epic`. The custom-kind `default` arm below is now
     // reached only by a BASE-LESS custom kind — which is why its drift check
@@ -1145,7 +1145,7 @@ export class PgEntityProjector implements EntityProjector {
         };
       case 'spell':
       case 'skill': {
-        // 154: the switch is on the BEHAVIOUR kind now, so TypeScript no longer
+        // 155: the switch is on the BEHAVIOUR kind now, so TypeScript no longer
         // narrows `r.kind` here. `base_kind` is constrained to 'task', so this
         // arm is reachable only when `r.kind` IS the literal — re-derive it
         // rather than cast, so the day another base becomes legal this stops

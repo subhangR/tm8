@@ -88,7 +88,7 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
 
   const kind = getKind(kindName);
   /*
-   * NOT memoized on `[]` any more (phase 6, migration 154). The kind selector's
+   * NOT memoized on `[]` any more (phase 6, migration 155). The kind selector's
    * population now includes the space's OWN custom kinds, which
    * `registerCustomKinds()` supplies at space boot — after this screen may
    * already have mounted, and again on every space switch. An empty dep array
