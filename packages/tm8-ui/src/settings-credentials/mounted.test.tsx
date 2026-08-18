@@ -67,6 +67,18 @@ const port: CredentialsPort = {
 const settingsPort = {
   loadSpace: async () => null,
   loadMembers: async () => [],
+  /*
+   * `SettingsShell` calls `port.loadInvites()` unconditionally on mount
+   * (SettingsShell.tsx:72 and :138). Without it this stub raised
+   * `TypeError: port.loadInvites is not a function` as an UNHANDLED REJECTION —
+   * which fails the whole vitest run (exit 1) while every test still reports
+   * as passing, and carries no test name for a by-name failure diff to catch.
+   *
+   * `as never` on the mount below is what hid it from tsc: the cast tells the
+   * compiler to stop checking this object against CredentialsPort/SettingsPort,
+   * so a missing method is invisible until it is CALLED at runtime.
+   */
+  loadInvites: async () => [],
   loadIdentity: async () => ({ memberId: 'm-1', displayName: 'Ada', avatar: null, role: 'owner' }) as never,
   loadMenu: async () => ({ menu: null, source: 'default', error: null }) as never,
   updateProfile: async () => ({}) as never,
