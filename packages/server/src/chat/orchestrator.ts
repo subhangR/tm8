@@ -6,6 +6,7 @@ import {
   type MessageView,
 } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../db/types.js';
+import { chatModeLine } from './compose.js';
 import type { ChatTurnPublisher } from './publisher.js';
 import type {
   AgentRuntime,
@@ -167,15 +168,17 @@ function attachmentLines(turn: ClaimedTurn): string[] {
 }
 
 function promptFor(turn: ClaimedTurn): string {
+  // The mode line leads every turn — it is the per-turn selector the mode-
+  // neutral system prompt defers to, and turn.chatMode is the effective mode
+  // (the turn's own override, else the thread default; resolved in SQL).
+  const mode = chatModeLine(turn.chatMode);
   const speaker = turn.requestedByDisplayName ? sanitizeSpeakerName(turn.requestedByDisplayName) : '';
   const memberId = turn.requestedByMemberId;
   const files = attachmentLines(turn);
-  if (!speaker && !memberId) {
-    return files.length > 0 ? `${files.join('\n')}\n${turn.body}` : turn.body;
-  }
-  const label = speaker ? `"${speaker}"` : 'unnamed member';
-  const from = `[from ${label}${memberId ? ` · member ${memberId}` : ''}]`;
-  return [from, ...files, turn.body].join('\n');
+  const from = (speaker || memberId)
+    ? [`[from ${speaker ? `"${speaker}"` : 'unnamed member'}${memberId ? ` · member ${memberId}` : ''}]`]
+    : [];
+  return [mode, ...from, ...files, turn.body].join('\n');
 }
 
 /**

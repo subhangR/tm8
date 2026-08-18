@@ -8,6 +8,7 @@ import type { ChatMode } from '@tm8/contract';
 import type { Db } from '../../src/db/types.js';
 import {
   chatAllowedTools,
+  chatModeLine,
   chatProviderToolPolicy,
   chatSystemPrompt,
   createChatLaunchConfigResolver,
@@ -96,26 +97,36 @@ describe('chat launch composition', () => {
     }
   });
 
-  it('puts the stored mode and its authority in the system prompt', () => {
-    expect(chatSystemPrompt(launch('ask'), true)).toContain('ASK answers the question');
-    expect(chatSystemPrompt(launch('ask'), true)).toContain('Every mode carries the full tool surface');
-    expect(chatSystemPrompt(launch('ask'), true)).toContain('Having a tool is not a reason to use it');
-    expect(chatSystemPrompt(launch('explain'), true)).toContain('explain_diagram for Mermaid');
-    expect(chatSystemPrompt(launch('explain'), true)).toContain('basis="persisted"');
-    expect(chatSystemPrompt(launch('plan'), true)).toContain('Approve → dispatch');
-    expect(chatSystemPrompt(launch('build'), true)).toContain('edits are real writes');
-    expect(chatSystemPrompt(launch('orchestrate'), true)).toContain('ORCHESTRATE coordinates');
-    // Craft P1: the blueprint norms ride the prompt — style, never permission.
-    expect(chatSystemPrompt(launch('craft'), true)).toContain('CRAFT sketches a blueprint');
-    expect(chatSystemPrompt(launch('craft'), true)).toContain('Materialize nothing until approval lands in this thread');
-    expect(chatSystemPrompt(launch('craft'), true)).toContain('One guarded patch per turn');
-    // A variant may no longer deny a capability the mode now has. Both
-    // phrasings the old prompt used are banned outright.
+  it('is mode-INDEPENDENT: one prompt for every mode, carrying the guide to all', () => {
+    // The launched prompt no longer depends on the thread's mode — a per-turn
+    // [mode: X] line selects which guidance applies, which is what lets a mode
+    // switch cost no relaunch.
+    const base = chatSystemPrompt(launch('ask'), true);
     for (const mode of MODES) {
-      const prompt = chatSystemPrompt(launch(mode), true);
-      expect([mode, /it may not|it has no|Do not mutate anything/.test(prompt)])
-        .toEqual([mode, false]);
+      expect([mode, chatSystemPrompt(launch(mode), true)]).toEqual([mode, base]);
     }
+    // The shared rules and the per-turn mode mechanism.
+    expect(base).toContain('every mode carries the full tool surface');
+    expect(base).toContain('[mode: <name>]');
+    expect(base).toContain('Having a tool is not a reason to use it');
+    // Every mode's guidance is present, in every prompt.
+    expect(base).toContain('ASK answers the question');
+    expect(base).toContain('explain_diagram for Mermaid');
+    expect(base).toContain('basis="persisted"');
+    expect(base).toContain('Approve → dispatch');
+    expect(base).toContain('edits are real writes');
+    expect(base).toContain('ORCHESTRATE coordinates');
+    expect(base).toContain('CRAFT sketches a blueprint');
+    expect(base).toContain('Materialize nothing until approval lands in this thread');
+    expect(base).toContain('One guarded patch per turn');
+    // No variant denies a capability the mode now has.
+    expect(/it may not|it has no|Do not mutate anything/.test(base)).toBe(false);
+  });
+
+  it('names the per-turn mode with chatModeLine', () => {
+    expect(chatModeLine('plan')).toBe('[mode: plan]');
+    expect(chatModeLine('ask')).toBe('[mode: ask]');
+    expect(chatModeLine('craft')).toBe('[mode: craft]');
   });
 
   it('provisions one persistent isolated Git clone per thread without mutating or running hooks in the source', async () => {
