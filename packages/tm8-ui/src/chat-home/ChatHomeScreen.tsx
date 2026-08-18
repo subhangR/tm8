@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
 import { Avatar, RibbonMark, Timestamp } from '../kit';
@@ -597,6 +597,39 @@ export function ChatHomeScreen({
       : null;
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
+
+  /* THE DOCK-DOWN (Cockpit ruling 2026-08-18): the centred composer of a new
+     thread travels to its bottom berth when the first send lands, instead of
+     teleporting. FLIP — the centred position is remembered while `newThread`
+     holds, and on the flip the wrap starts from the inverted delta and
+     transitions to rest. Guarded by prefers-reduced-motion: reduced means the
+     old instant swap, not a slower slide. */
+  const composerWrapRef = useRef<HTMLDivElement | null>(null);
+  const emptyComposerTopRef = useRef<number | null>(null);
+  const wasNewThreadRef = useRef(newThread);
+  useLayoutEffect(() => {
+    const wrap = composerWrapRef.current;
+    if (newThread) {
+      emptyComposerTopRef.current = wrap?.getBoundingClientRect().top ?? null;
+    } else if (wasNewThreadRef.current && wrap && emptyComposerTopRef.current !== null) {
+      const reduced = typeof window === 'undefined'
+        || typeof window.matchMedia !== 'function'
+        || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const delta = emptyComposerTopRef.current - wrap.getBoundingClientRect().top;
+      if (!reduced && delta !== 0) {
+        wrap.style.transform = `translateY(${delta}px)`;
+        wrap.style.transition = 'none';
+        // Reflow commits the inverted start before the transition plays.
+        void wrap.getBoundingClientRect();
+        wrap.style.transition = 'transform var(--pn-dur-slow, 250ms) var(--pn-ease-standard, ease)';
+        wrap.style.transform = '';
+        const settle = () => { wrap.style.transition = ''; };
+        wrap.addEventListener('transitionend', settle, { once: true });
+      }
+      emptyComposerTopRef.current = null;
+    }
+    wasNewThreadRef.current = newThread;
+  }, [newThread]);
   const selectionUnavailable =
     teammateId === ''
       ? 'No agent teammate is available in this space.'
@@ -1164,7 +1197,7 @@ export function ChatHomeScreen({
           )}
         </div>
 
-        <div className="tch-composer-wrap" data-phase={phase}>
+        <div className="tch-composer-wrap" data-phase={phase} ref={composerWrapRef}>
           {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
           {refusal ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
           {phase === 'stopped-continuable' ? (
