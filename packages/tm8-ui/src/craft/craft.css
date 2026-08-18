@@ -15,42 +15,9 @@
   background: var(--pn-paper);
 }
 
-/* -- top bar: picker + new + orchestrate ---------------------------------- */
-.crf-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--pn-line);
-  flex: 0 0 auto;
-}
-
-.crf-bar__title {
-  font-weight: 600;
-  color: var(--pn-ink-1);
-}
-
-.crf-bar__orchestrate {
-  background: var(--pn-card);
-  color: var(--pn-ink-1);
-  border: 1px solid var(--pn-line);
-  border-radius: 6px;
-  padding: 4px 10px;
-  cursor: pointer;
-}
-
-.crf-bar__orchestrate:hover:not(:disabled) {
-  border-color: var(--pn-ink-3);
-}
-
-.crf-bar__orchestrate:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.crf-bar__spacer {
-  flex: 1;
-}
+/* NO `.crf-bar`. The screen-wide bar is gone: it cost 34px to print "Craft",
+   which the rail tab already says, and to hold one button that now rides the
+   blueprint pane's own header. The studio opens straight into the split. */
 
 /* -- the split: TWO columns, the divider between them draggable ----------- */
 .crf-split {
@@ -120,15 +87,21 @@
   padding: 12px;
 }
 
-/* -- the pane headers: each names the pane beneath it --------------------- */
+/* -- the pane headers: each names the pane beneath it ---------------------
+   ONE ROW, AND IT IS THE ONLY ROW. 44px → 30px, which is deliberately the
+   same 30px as the detail panel's `.pn-panelbar`: region C sits directly
+   beside these two panes, so an unequal header height reads as a misaligned
+   screen rather than as three different surfaces. Everything the studio needs
+   above a pane — the name, the ＋, and (on the canvas) Orchestrate — fits on
+   it, so nothing below is pushed down twice. */
 .crf-pane-head {
   position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
-  min-height: 44px;
-  padding: 6px 10px;
+  height: 30px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--pn-line);
 }
 
@@ -141,7 +114,7 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 4px 8px;
+  padding: 1px 6px;
   font: inherit;
   color: var(--pn-ink-1);
   text-align: left;
@@ -211,6 +184,30 @@
 .crf-pane-head__plus:hover {
   border-color: var(--pn-ink-3);
   color: var(--pn-ink-1);
+}
+
+/* Orchestrate — the studio's one committing verb, on the row that names the
+   blueprint it commits. Sized off `.crf-pane-head__plus` so the two controls
+   read as one cluster inside a 30px row. */
+.crf-pane-head__orchestrate {
+  flex: none;
+  background: var(--pn-card);
+  color: var(--pn-ink-1);
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font: inherit;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.crf-pane-head__orchestrate:hover:not(:disabled) {
+  border-color: var(--pn-ink-3);
+}
+
+.crf-pane-head__orchestrate:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* -- the conversation popover -------------------------------------------- */

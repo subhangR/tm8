@@ -784,6 +784,12 @@ export type ContentBlockKind =
   | 'fields'
   | 'link-summary'
   | 'file-preview'
+  // The blueprint canvas — a `graph` row's vertices AND edges drawn from the
+  // ONE content object it stores (R1), so the picture is a pure fold of the
+  // row and needs no seam, no per-node reads and no host wiring. Craft's
+  // studio is where you EDIT a blueprint; this block is where every other
+  // surface can SEE it, so a graph stops rendering two different ways.
+  | 'blueprint'
   // Artifact viewer: the artifact kind's rendered bundle, in-block. The iframe
   // SHIPS here and autoruns when the detail opens (owner ruling 2026-08-16,
   // superseding the earlier click-gate); the sandbox posture is unchanged —

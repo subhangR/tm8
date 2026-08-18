@@ -731,6 +731,51 @@
 }
 .cv2-root .pn-body > .pn-section { padding: 0 0 10px; }
 
+/* THE BLUEPRINT BLOCK'S BOX. `.crf-viewport` inside the canvas is
+   `flex: 1; min-height: 0`, which needs a parent with a DEFINITE height —
+   dropped straight into `.pn-body`, which scrolls, it would resolve to zero
+   and draw nothing at all. So the block supplies the height the studio's pane
+   supplies there. `flex: none` because `.pn-body` is a flex column and a
+   growable child would fight the blocks under it.
+
+   THE HEIGHT IS THE FOLD'S OWN SHAPE. `--pn-bp-aspect` comes from
+   `view.bounds` — what is actually drawn — so the box cannot disagree with
+   its contents the way a constant did: a 4-node graph used to draw 36px tall
+   inside a fixed 320px box, ~90% of it empty. `clamp` keeps a very flat fold
+   from becoming a hairline and a very tall one from eating a panel that also
+   has fields and collections below it. */
+.cv2-root .pn-blueprint {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: var(--pn-bp-aspect, 3 / 1);
+  height: auto;
+  min-height: 120px;
+  max-height: 380px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  /* Sideways, never down: the canvas owns its own vertical extent. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--pn-paper);
+}
+/* THE LEGIBILITY FLOOR. Below `--pn-bp-floor` the fit-by-width scale drops
+   past readability — measured 4px titles against 23.1px body text at the
+   panel's 320px minimum — so the drawing holds its size and the block scrolls
+   instead. Reachability is preserved either way (the canvas ships pan, zoom
+   and fit); this only decides what the DEFAULT view is worth looking at. */
+.cv2-root .pn-blueprint > .crf-viewport {
+  min-width: var(--pn-bp-floor, 0);
+}
+.cv2-root .pn-blueprint__note {
+  flex: none;
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  border-top: 1px solid var(--pn-line);
+}
+
 /* THE MEASURED COLUMN (task-panel redesign, 2026-08-16). A body that opts in
    caps every child at the reading measure and centers the column; the panel
    chrome (header, tabs, controls band, footer) stays full-bleed. Opt-IN by

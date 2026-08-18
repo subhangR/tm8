@@ -1479,13 +1479,25 @@ const ROWS: readonly KindConfig[] = [
       tile: { badges: [{ source: 'messages' }] },
     }),
     /*
-     * GENERIC: the CANVAS is the graph's real body and it lives on the Craft
-     * screen, not in the side panel. The panel's job here is the envelope —
-     * type, size, containers — plus the door to the studio.
+     * GENERIC, WITH THE CANVAS FIRST — this reverses the P1 ruling that the
+     * canvas "lives on the Craft screen, not in the side panel".
+     *
+     * That ruling was made for a real reason, but the reason was the HEADER,
+     * not the canvas: the studio's pane header cost one row and the panel's
+     * cost three, so nobody would spend a Craft column on panel chrome. With
+     * the studio's header and the panel bar both at 30px the objection is
+     * gone, and what remains is the plain fact that a graph was rendering two
+     * different ways — a picture in Craft, a fields list everywhere else.
+     *
+     * It is CHEAP because R1 made it cheap: one row holds the vertices AND
+     * the edges, so `blueprintView` is a pure fold of `detail.content` with
+     * no seam, no per-node connections read and no host prop to wire through
+     * five mount sites. The block is READ-ONLY; Craft remains the place a
+     * blueprint is edited, and `edit` is still the door.
      */
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'fields', label: 'GRAPH' }, COLLECTIONS_BLOCK],
+      blocks: [{ block: 'blueprint' }, { block: 'fields', label: 'GRAPH' }, COLLECTIONS_BLOCK],
       /* §15.1: declared fields must be reachable — edit is the door. */
       primaries: ['edit'],
     },
