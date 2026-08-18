@@ -157,29 +157,128 @@ export class WorktreeManager {
     return { repoRoot: real };
   }
 
-  /**
-   * §4.3 — base ref resolution. The symbolic ref (default: HEAD's branch) is
-   * provenance; the RESOLVED OID is what gets stored and later checked out, so
-   * a ref that moves between resolution and `git worktree add` cannot silently
-   * change what was checked out.
-   */
-  async resolveBaseRef(repoRoot: string, baseRef?: string): Promise<{ ref: string; oid: string }> {
-    let ref = baseRef;
-    if (ref === undefined || ref === '') {
-      const head = await runGit(['-C', repoRoot, 'symbolic-ref', '--short', '-q', 'HEAD'], this.gitOpts());
-      ref = head.code === 0 && head.stdout.trim().length > 0 ? head.stdout.trim() : 'HEAD';
-    }
-    if (ref !== 'HEAD') assertSafeRefName(ref);
-    const resolved = await runGit(['-C', repoRoot, 'rev-parse', '--verify', `${ref}^{commit}`], this.gitOpts());
-    if (resolved.code !== 0) {
-      throw new WorktreeError(
-        `base ref not found: ${ref}`,
-        'invalid_input', 'base_ref_not_found', { stderr: resolved.stderr.trim() },
-      );
-    }
+  /** `git rev-parse --verify <ref>^{commit}` — null oid means "no such commit". */
+  private async revParseCommit(
+    repoRoot: string,
+    ref: string,
+  ): Promise<{ oid: string | null; stderr: string }> {
+    const resolved = await runGit(
+      ['-C', repoRoot, 'rev-parse', '--verify', `${ref}^{commit}`],
+      this.gitOpts(),
+    );
+    if (resolved.code !== 0) return { oid: null, stderr: resolved.stderr.trim() };
     const oid = resolved.stdout.trim();
     assertCommitOid(oid);
-    return { ref, oid };
+    return { oid, stderr: '' };
+  }
+
+  /**
+   * §4.3, invariant I3 — the candidate list for an ABSENT base ref, in
+   * preference order. Every entry is a plausible spelling of "the project's
+   * DEFAULT branch"; the caller takes the first that resolves.
+   *
+   * `origin/HEAD` is the authoritative answer when it exists, but it is written
+   * by `clone`, not by `fetch`, so a remote added after the fact has none — its
+   * absence is a normal path here, never an error. `git ls-remote --symref` is
+   * deliberately NOT probed as a second source: it is a NETWORK round trip in
+   * the spawn hot path, so it would buy a new failure mode — spawn fails
+   * because the network is down — for an answer the remote-tracking refs below
+   * already give offline. (This function is NOT under the per-project lock;
+   * provisioning takes that lock at step 4, after base ref resolution at step 2.
+   * The reason to skip the probe is the network, not contention.)
+   *
+   * The remote-tracking ref is preferred over its LOCAL twin at every tier. The
+   * base a lane wants is what `main` will be when its work merges, and
+   * `origin/main` is that; local `main` on a shared checkout is an artifact of
+   * whoever last pulled — measured 3 commits behind on the machine this was
+   * written on. Remote-tracking refs are written by `fetch`, so reading one
+   * costs no network. The local branch still follows as a fallback, which is
+   * what covers a repository with no remote or one never fetched.
+   *
+   * The case this deliberately loses: a local `main` AHEAD of `origin/main`
+   * with unpushed commits is not used as the base. For a lane that will open a
+   * pull request against the remote, dropping commits the remote has never seen
+   * is the correct answer, not a bug to be fixed back.
+   */
+  private async defaultBaseRefCandidates(repoRoot: string): Promise<string[]> {
+    const candidates: string[] = [];
+    const push = (ref: string | undefined): void => {
+      if (ref === undefined || ref.length === 0) return;
+      // Server-derived, but a repository is free to carry a branch name this
+      // codebase refuses to pass to git. Skip such a candidate rather than
+      // fail provisioning on it.
+      try {
+        assertSafeRefName(ref);
+      } catch {
+        return;
+      }
+      if (!candidates.includes(ref)) candidates.push(ref);
+    };
+
+    const originHead = await runGit(
+      ['-C', repoRoot, 'symbolic-ref', '--short', '-q', 'refs/remotes/origin/HEAD'],
+      this.gitOpts(),
+    );
+    if (originHead.code === 0) {
+      const remoteRef = originHead.stdout.trim(); // e.g. `origin/main`
+      push(remoteRef);
+      push(remoteRef.startsWith('origin/') ? remoteRef.slice('origin/'.length) : remoteRef);
+    }
+    push('origin/main');
+    push('main');
+    push('origin/master');
+    push('master');
+
+    // Last: the branch HEAD is parked on. Before this function existed that was
+    // the FIRST and only answer, which is how 36 of 68 measured lanes were
+    // based on another lane's in-flight branch.
+    const head = await runGit(['-C', repoRoot, 'symbolic-ref', '--short', '-q', 'HEAD'], this.gitOpts());
+    if (head.code === 0) push(head.stdout.trim());
+
+    return candidates;
+  }
+
+  /**
+   * §4.3 — base ref resolution. The symbolic ref is provenance; the RESOLVED
+   * OID is what gets stored and later checked out, so a ref that moves between
+   * resolution and `git worktree add` cannot silently change what was checked
+   * out.
+   *
+   * An EXPLICITLY requested ref is honoured verbatim, and a missing one is
+   * still `base_ref_not_found` — no fallback. With NO ref requested the answer
+   * is the project's DEFAULT branch (invariant I3), never whatever branch the
+   * working directory happens to be parked on: for a shared checkout that is
+   * the last session's in-flight work.
+   */
+  async resolveBaseRef(repoRoot: string, baseRef?: string): Promise<{ ref: string; oid: string }> {
+    if (baseRef !== undefined && baseRef !== '') {
+      assertSafeRefName(baseRef);
+      const { oid, stderr } = await this.revParseCommit(repoRoot, baseRef);
+      if (oid === null) {
+        throw new WorktreeError(
+          `base ref not found: ${baseRef}`,
+          'invalid_input', 'base_ref_not_found', { stderr },
+        );
+      }
+      return { ref: baseRef, oid };
+    }
+
+    for (const ref of await this.defaultBaseRefCandidates(repoRoot)) {
+      const { oid } = await this.revParseCommit(repoRoot, ref);
+      if (oid !== null) return { ref, oid };
+    }
+
+    // Nothing symbolic resolved — a detached HEAD, or a repository whose
+    // branches are all named something this code refuses. Resolve HEAD itself,
+    // exactly as before, so a legitimate repository still provisions.
+    const { oid, stderr } = await this.revParseCommit(repoRoot, 'HEAD');
+    if (oid === null) {
+      throw new WorktreeError(
+        'base ref not found: HEAD',
+        'invalid_input', 'base_ref_not_found', { stderr },
+      );
+    }
+    return { ref: 'HEAD', oid };
   }
 
   /**
