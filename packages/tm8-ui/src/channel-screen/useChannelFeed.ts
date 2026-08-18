@@ -293,13 +293,42 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
     void reload();
   }, [channelId, reload]);
 
-  // Keep an open channel current when another client posts into it.
-  useEffect(
-    () => seam.onEvent((event) => {
-      if ('anchorId' in event && event.anchorId === channelId) void reload();
-    }),
-    [channelId, seam, reload],
-  );
+  /**
+   * Keep an open channel current when another client posts into it —
+   * COALESCED, not per event (the chat-store's ruling, applied here: a busy
+   * channel used to issue a full newest-page feed read PER EVENT, so the
+   * busier the conversation, the harder its own surface hammered the node).
+   * Trailing-edge debounce with a max-wait, so a continuous stream still
+   * refreshes on a bounded cadence instead of starving until it pauses.
+   * FeedItems are never synthesised client-side — the item is a
+   * server-composed DTO with fields no event carries (delivery summaries),
+   * and scope predicates decide feed membership (UNIFIED-MESSAGES-VIEW §3,
+   * tried and reverted); the read stays the only writer of `page`.
+   */
+  useEffect(() => {
+    const DEBOUNCE_MS = 300;
+    const MAX_WAIT_MS = 1_500;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let deadline: number | null = null;
+    const fire = () => {
+      timer = null;
+      deadline = null;
+      void reload();
+    };
+    const schedule = () => {
+      const at = Date.now();
+      if (deadline === null) deadline = at + MAX_WAIT_MS;
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(fire, Math.min(DEBOUNCE_MS, Math.max(0, deadline - at)));
+    };
+    const off = seam.onEvent((event) => {
+      if ('anchorId' in event && event.anchorId === channelId) schedule();
+    });
+    return () => {
+      off();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [channelId, seam, reload]);
 
   const loadEarlier = useCallback(async (cursor: Cursor) => {
     setLoadingEarlier(true);
@@ -365,7 +394,14 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
         attachmentIds: input.attachmentIds,
       });
     }
-    await reload();
+    /* The write above is DURABLE when it resolves; the echo rides the same
+       read every other client uses. Deliberately not awaited (perceived-
+       latency ruling 2026-08-18): the composer clears on COMMIT, not on the
+       repaint round-trip — awaiting the reload here held the send spinner
+       through a full feed read whose only job was to show what was already
+       stored. Immediate, not debounced: your own message must not wait out
+       another client's coalescing window. */
+    void reload();
   }, [channelId, seam, spaceId, projects, spawn, postMessage, reload, readMentionOptions]);
 
   const openThread = useCallback((root: MessageView) => {
