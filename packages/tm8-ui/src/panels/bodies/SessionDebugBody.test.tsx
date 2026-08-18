@@ -310,7 +310,10 @@ describe('the agent transcript section', () => {
   it('renders the agent’s own turns, oldest-first as the server sends them', async () => {
     render(<SessionDebugBody seam={seamWith(page())} sessionId={SESSION} live={false} />);
     const turns = await screen.findByTestId('session-debug-turns');
-    const texts = [...turns.querySelectorAll('.pn-debug__turn')].map((n) => n.textContent ?? '');
+    // `.tr-turn`, not `.pn-debug__turn`: the turns render through the SHARED
+    // TranscriptTurns component that the session panel's Transcript surface
+    // also mounts, so the two cannot disagree about what the agent said.
+    const texts = [...turns.querySelectorAll('.tr-turn')].map((n) => n.textContent ?? '');
     expect(texts).toHaveLength(2);
     expect(texts[0]).toMatch(/Fix the resize race/);
     expect(texts[1]).toMatch(/Reading the PTY resize path/);

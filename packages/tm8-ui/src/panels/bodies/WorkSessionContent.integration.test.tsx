@@ -13,7 +13,11 @@ const REASONS: DetailReasons = {
   withdrawUnavailable: 'Withdrawal is unavailable.',
 };
 
-it('mounts Chat under the same Content body only when the safe pinned projection enables it', () => {
+// The host composes the conversation surface and hands it in through ONE slot;
+// the panel mounts it under the Transcript chip. This is the seam
+// `conversationSurfaceFor` fills for all five hosts — the assertion is that the
+// panel does not build the surface itself and does not gate it on the pin.
+it('mounts the host-composed conversation surface under the Transcript chip', () => {
   const source = fixtureDetails[sessionStale.id]!;
   const detail = {
     ...source,
@@ -51,7 +55,7 @@ it('mounts Chat under the same Content body only when the safe pinned projection
   );
 
   expect(getByRole('tablist', { name: /work session surface/i })).toBeTruthy();
-  fireEvent.click(getByRole('tab', { name: 'Chat' }));
-  expect(onContentSurfaceChange).toHaveBeenCalledWith('chat');
+  fireEvent.click(getByRole('tab', { name: 'Transcript' }));
+  expect(onContentSurfaceChange).toHaveBeenCalledWith('transcript');
   expect(getByText('canonical session feed')).toBeTruthy();
 });
