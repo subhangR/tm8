@@ -49,6 +49,7 @@ import { chatStore } from '../channel-screen/chat-store';
 import { resetChatEntityResolutionCache } from '../chat-home/EntityChip';
 import { clearLastPlace } from '../views/last-place';
 import { clearLaunchCache, nodeKeyOf } from '../data/launch-cache';
+import { clearLaunchRecents } from '../data/launch-recents';
 import { readActiveServerId, routeBaseUrlFor } from '../servers/server-key';
 
 /**
@@ -136,6 +137,11 @@ export function endSession(end: SessionEnd, opts: SessionResetOptions = {}): voi
   const nodeKey = activeNodeKey();
   clearLastPlace(nodeKey);
   clearLaunchCache(nodeKey);
+  /* Keyed by node and space, never by account — the same gap the cache above
+     has, so it owes the same sweep. Left behind it would rank the next
+     viewer's teammate picker by the previous viewer's launches, which names
+     who they work as. */
+  clearLaunchRecents(nodeKey);
   const address = opts.address === undefined ? browserAddress() : opts.address;
   address?.setHash(UNADDRESSED_HASH, { replace: true });
 }
