@@ -1271,10 +1271,8 @@ export function ChatHomeScreen({
                   disabled={pinned}
                   emptyNote="No model is available from the launch catalog."
                 />
-                {pinned ? <span className="tch-pinned">pinned for this thread</span> : null}
               </span>
               <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
-              <span className="tch-hint">Enter to send · Shift+Enter for a new line</span>
               {phase === 'streaming' ? (
                 /* The agent-running state lives ON the send button: a loader
                    that is also Stop. Enter still queues a send — the server

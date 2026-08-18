@@ -222,12 +222,18 @@
   font-size: 10px;
 }
 
-/* Byline sidedness: the viewer's identity block sits left, everyone else's
-   right — avatar, name, mode chip and timestamp travel as ONE unit. Purely
-   visual: `justify-content`, never `row-reverse`, so DOM order (and with it
-   screen-reader and tab order) is identical on both sides. Bodies
-   (`tch-user-body`, `tch-parts`) are siblings and do not move. */
-.tch-turn[data-self='false'] .tch-turn__byline { justify-content: flex-end; }
+/* Byline sidedness (user ruling 2026-08-18): the VIEWER's identity block sits
+   RIGHT, everyone else's — other humans, agents, and with them the thinking
+   pulse that follows an agent turn — stays LEFT. Avatar, name, mode chip and
+   timestamp travel as ONE unit. Purely visual: `justify-content`, never
+   `row-reverse`, so DOM order (and with it screen-reader and tab order) is
+   identical on both sides. */
+.tch-turn[data-self='true'] .tch-turn__byline { justify-content: flex-end; }
+
+/* The viewer's bubble follows their byline to the right edge; everyone
+   else's stays in the 26px avatar gutter. Agent parts (`tch-parts`) never
+   move — answers are a reading column, not a bubble. */
+.tch-turn[data-self='true'] .tch-user-body { margin-left: auto; }
 
 .tch-turn__byline strong { color: var(--pn-ink-2); font-size: 11px; }
 .tch-turn__byline time { font-family: var(--pn-mono); font-size: 8.5px; }
@@ -565,15 +571,12 @@ button.tch-entity-chip:hover {
      block is .ri-host (position: relative), not this ancestor. */
   container-type: inline-size;
 }
-/* The foot sheds copy before it sheds controls: the keyboard tip goes first,
-   then the phase word and the pinned note. Losing a label beats the three
-   thread-setting triggers or Send wrapping onto a second line. */
-@container (max-width: 620px) {
-  .tch-hint { display: none; }
-}
+/* The foot sheds copy before it sheds controls: the phase word goes first.
+   Losing a label beats the three thread-setting triggers or Send wrapping
+   onto a second line. (The keyboard tip and the pinned note are gone for
+   good — user ruling 2026-08-18: the foot carries controls, not copy.) */
 @container (max-width: 480px) {
-  .tch-phase,
-  .tch-pinned { display: none; }
+  .tch-phase { display: none; }
 }
 
 /* THE EMPTY STATE CENTRES THE PAIR (ref mockup 02-home-empty): greeting and
@@ -636,8 +639,7 @@ button.tch-entity-chip:hover {
   white-space: nowrap;
 }
 
-.tch-phase { color: var(--pn-wait); font: 9px var(--pn-mono); }
-.tch-hint { margin-left: auto; color: var(--pn-ink-4); font: 8.5px var(--pn-mono); }
+.tch-phase { margin-left: auto; color: var(--pn-wait); font: 9px var(--pn-mono); }
 
 .tch-send,
 .tch-stop { margin-left: var(--pn-space-2); }
@@ -1082,7 +1084,8 @@ button.tch-entity-chip:hover {
 }
 /* Pinned, not broken: the thread's write-once facts stay READABLE when they
    can no longer be edited, so a configured thread still says what it runs as.
-   The `pinned for this thread` note beside them is the reason. */
+   The hidden caret is the whole signal now — a still trigger reads as a
+   label, a caret promises a menu. */
 .tch-pick__trigger:disabled { cursor: default; opacity: 0.75; }
 .tch-pick__trigger:disabled .tch-pick__caret { visibility: hidden; }
 .tch-pick__value {
@@ -1091,15 +1094,6 @@ button.tch-entity-chip:hover {
   white-space: nowrap;
 }
 .tch-pick__caret { color: var(--pn-ink-4); font-size: 9px; }
-
-.tch-pinned {
-  color: var(--pn-info);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-pill);
-  padding: 2px 6px;
-  font: 8.5px var(--pn-mono);
-  white-space: nowrap;
-}
 
 /* Portalled by `useMenuAnchor` — positioned inline, sized here. */
 .tch-pickmenu {
