@@ -248,7 +248,9 @@
   background: var(--pn-card);
   color: var(--pn-ink-2);
   font-size: 13px;
-  white-space: pre-wrap;
+  /* No pre-wrap: the body renders as markdown now (chatMarkdownSource keeps
+     a lone newline a line break), and pre-wrap over rendered HTML turns
+     inter-element whitespace into phantom gaps. */
 }
 
 .tch-parts {
@@ -268,6 +270,7 @@
 }
 
 .tch-thinking summary { cursor: pointer; font: 9.5px var(--pn-mono); }
+.tch-thinking__text { white-space: pre-wrap; }
 .tch-thinking p { margin: 5px 0 0; padding-left: 10px; border-left: 2px solid var(--pn-line-2); }
 .tch-answer { font-size: 13px; }
 

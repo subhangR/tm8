@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMode, EntityId, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, type HomeRoot } from '../domain';
-import { Avatar, RibbonMark, Timestamp } from '../kit';
+import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
+import { chatMarkdownSource } from '../channel-screen/feed-model';
 import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
 import { ChooseFilesControl } from '../files/ChooseFilesControl';
 import type { FileUploadTask } from '../files/upload';
@@ -1554,7 +1555,18 @@ function Turn({
         <span className="tch-mode-chip" title={`This answer ran in ${mode} mode`}>{mode}</span>
         <Timestamp at={turn.createdAt} />
       </header>
-      {bodyIsContent && turn.body ? <div className="tch-user-body">{turn.body}</div> : null}
+      {bodyIsContent && turn.body ? (
+        /* A typed message is MARKDOWN, exactly as the channel feed already
+           treats every author — `**bold**` must not print its asterisks here
+           while rendering bold one surface over. Same preparation the feed
+           uses (empty mention list): a lone newline stays a line break, a
+           fenced block keeps its bytes. */
+        <Markdown
+          source={chatMarkdownSource(turn.body, []).source}
+          className="tch-user-body"
+          testId="chat-user-body"
+        />
+      ) : null}
       <TurnParts
         parts={turn.parts}
         onOpenEntity={onOpenEntity}

@@ -79,7 +79,9 @@ export function TurnParts({
           return (
             <details className="tch-thinking" key={part.seq}>
               <summary>Thinking</summary>
-              <p>{part.text}</p>
+              {/* pre-wrap, not markdown: reasoning is quoted verbatim, and its
+                  line breaks are the only structure it reliably has. */}
+              <p className="tch-thinking__text">{part.text}</p>
             </details>
           );
         }
