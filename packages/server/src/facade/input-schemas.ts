@@ -238,6 +238,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
 
   // collections / graph / placements
   'collections.query': CollectionQuerySchema,
+  // The counts op takes the query it would PAGE, minus the window: same
+  // schema, so a filter can never be legal on one and rejected by the other.
+  'collections.counts': CollectionQuerySchema,
   'collections.addItem': CollectionAddItemInputSchema,
   // The removed member travels in the path (:id/:entityId); the body carries
   // only the command envelope.

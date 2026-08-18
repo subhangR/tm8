@@ -119,6 +119,7 @@ export const OPERATIONS = [
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },
+  { name: 'collections.counts',      method: 'POST',   path: '/v2/collections/counts',                      kind: 'read',    status: 'v1' },
   { name: 'collections.addItem',     method: 'POST',   path: '/v2/collections/:id/items',                   kind: 'command', status: 'v1' },
   { name: 'collections.removeItem',  method: 'DELETE', path: '/v2/collections/:id/items/:entityId',         kind: 'command', status: 'v1' },
   { name: 'graph.query',             method: 'POST',   path: '/v2/graph/query',                             kind: 'read',    status: 'v1' },

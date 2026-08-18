@@ -992,6 +992,18 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
     examples: ['tm8 entity query --kind task --assignee <actor-id> --status working'],
   },
+  'collections.counts': {
+    cmd: null,
+    sum: 'Count entities matching a query, grouped by kind and status category — one aggregate, no rows returned',
+    authz: 'space',
+    input: 'bound',
+    reason: 'browser_rail_and_tabs_only',
+    tags: ['count', 'aggregate', 'badge', 'open', 'category', 'rail', 'tabs'],
+    notes: [
+      'takes the same body as `collections.query` — the paging fields are ignored, so a caller counts exactly the query it would page',
+      'a CLI caller who wants a number today runs `entity query` and counts its rows; this row exists so the aggregate is discoverable rather than a private browser door',
+    ],
+  },
   'collections.addItem': {
     cmd: ['collection', 'add'],
     syn: 'tm8 collection add <collection-id> <entity-id> [--position <number>] [--mutation-id <id>]',
@@ -2136,7 +2148,9 @@ export const CATALOG_DIGEST =
   // hand-derived.
   // Re-measured 148 (+ the three spaces.workflows rows) — read from the
   // regenerated conformance manifest, never hand-derived.
-  'sha256:c8fd7a114bc214045e099cb7b48f645b74469c2a2f4f1219963096e141985417';
+  // Re-measured for collections.counts (icon rail open-count badges) —
+  // RECOMPUTED from `JSON.stringify(OPERATIONS)`, never adjusted.
+  'sha256:62282ba4a3b87eee2c42d20ca45b55b94541ae343e5105dc3c05f14b2d4fbf48';
 
 export const GRAMMAR_VERSION = '2';
 

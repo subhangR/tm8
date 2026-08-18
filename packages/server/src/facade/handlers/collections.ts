@@ -26,10 +26,12 @@ import {
   encodeCursor,
   type CollectionGroup,
   type CollectionAddItemInput,
+  type CollectionCounts,
   type CollectionQuery,
   type CollectionResult,
   type EntitySummary,
   type Page,
+  type StatusCategory,
 } from '@tm8/contract';
 import type { Querier } from '../../db/types.js';
 import type { OperationHandler } from '../../http/types.js';
@@ -729,6 +731,70 @@ async function groupTotals(
     values,
   );
   return new Map(rows.map((r) => [r.key, Number(r.total)]));
+}
+
+/**
+ * `collections.counts` — the kind x category matrix, in ONE aggregate.
+ *
+ * THE SAME PREDICATE AS THE PAGE. It runs `buildWhere()` — the identical
+ * function `queryCollection` uses — so a rail badge reading "12" and the list
+ * that opens under it are the same claim, not two implementations that agree
+ * until someone adds a filter to one of them. Paging fields are meaningless
+ * here and are ignored rather than rejected: the caller hands over the query
+ * it would page, minus the window.
+ *
+ * NO CURSOR CLAUSE. `buildWhere` never emits one (`queryCollection` appends it
+ * afterwards), so there is nothing to strip — the count is query-scoped by
+ * construction rather than by remembering to slice params, which is the bug
+ * `groupTotals` has to guard against with `baseParamCount`.
+ *
+ * `count(*)`, NOT `count(distinct e.id)`. `ENTITY_FROM` joins detail tables on
+ * their primary key (`x.entity_id = e.id`) and the one lateral is `limit 1`,
+ * so it cannot fan out — which the page query already depends on, since it
+ * applies `limit` with no `distinct` and would otherwise return duplicate
+ * rows. `buildWhere` adds only scalar comparisons and `exists(...)`, neither
+ * of which multiplies rows. `groupTotals` needs the `distinct` because IT
+ * adds a fanning `left join edges` for the assignee key; nothing here does.
+ *
+ * VISIBILITY IS RLS'S, exactly as it is for the page. This runs inside the
+ * same claims transaction over the same tables, so a count can only include
+ * rows the corresponding list would show. That is why this does not need
+ * `spaces.counts`'s `security definer` re-check: that RPC needs one because it
+ * bypasses RLS; this one never leaves it.
+ */
+export async function countCollection(q: Querier, query: CollectionQuery): Promise<CollectionCounts> {
+  const p = new Params();
+  const where = buildWhere(query, p);
+
+  const rows = await q.query<{ kind: string; category: string | null; total: number }>(
+    `select e.kind as kind, e.status_category as category, count(*)::int as total
+     ${ENTITY_FROM}
+      where ${where.join('\n        and ')}
+      group by 1, 2`,
+    p.values,
+  );
+
+  const byKind: CollectionCounts['byKind'] = {};
+  for (const row of rows) {
+    // A NULL category belongs to no bucket. Post-152 the graph has none (the
+    // migration asserts it), so this is a structural guard, not a live case:
+    // dropping the row is right either way, because inventing a fifth key
+    // would put a number on a tab that does not exist.
+    if (row.category === null) continue;
+    const kind = row.kind as keyof CollectionCounts['byKind'];
+    const bucket = byKind[kind] ?? {};
+    bucket[row.category as StatusCategory] = Number(row.total);
+    byKind[kind] = bucket;
+  }
+  return { byKind };
+}
+
+export function collectionsCounts(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const owner = await deps.owner();
+    const query = ctx.body as CollectionQuery;
+    return deps.db.tx(claimsFor(owner, ctx), (q) => countCollection(q, query));
+  };
 }
 
 export function collectionsQuery(deps: FacadeDeps): OperationHandler {
