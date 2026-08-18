@@ -31,6 +31,8 @@ import {
   type TaskAxis,
   type TaskAxisInput,
   type TaskWorkflow,
+  type StatusCategory,
+  type Workflow,
   type TaskWorkflowInput,
   type UpdateMemberRoleInput,
   bindPath,
@@ -850,10 +852,36 @@ function seedAttentionRows(summaries: ReadonlyMap<EntityId, EntitySummary>): Att
   return rows;
 }
 
+/**
+ * Migration 147/150's ruled workStatus → category mapping, mirrored so fixture
+ * summaries carry the same denormalized `category` the node projects (the
+ * server derives it in a trigger on every status write; `touch` is this
+ * fixture's equivalent single seam). Every other kind honestly OMITS the key —
+ * "no status" is a different fact from `to_do` — until phase 5 gives them one.
+ */
+const WORK_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
+  open: 'to_do',
+  pulled: 'to_do',
+  working: 'in_progress',
+  in_review: 'in_progress',
+  blocked: 'in_progress',
+  done: 'done',
+  cancelled: 'cancelled',
+};
+
+function stampCategory(s: EntitySummary): void {
+  if (s.state.kind !== 'task') return;
+  const category = WORK_STATUS_CATEGORY[s.state.workStatus];
+  if (category) s.category = category;
+}
+
 export function createFixtureSeam(): FixtureSeam {
   // -- in-memory state (isolated clone of the FE dataset) --------------------
   const summaries = new Map<EntityId, EntitySummary>(
-    clone(fixtureSummaries).map((s) => [s.id, s]),
+    clone(fixtureSummaries).map((s) => {
+      stampCategory(s);
+      return [s.id, s];
+    }),
   );
   const extras = new Map<EntityId, DetailExtras>(
     Object.values(clone(fixtureDetails)).map((d) => [
@@ -1335,6 +1363,7 @@ export function createFixtureSeam(): FixtureSeam {
     const at = tick();
     s.updatedAt = at;
     s.activityAt = at;
+    stampCategory(s);
   }
 
   function pageOf<T>(all: T[], opts?: PageOpts): Page<T> {
@@ -1733,6 +1762,60 @@ export function createFixtureSeam(): FixtureSeam {
       });
     },
     /**
+     * `spaces.workflows.list` (migration 149), mirrored: ONE global default —
+     * spaceId null, four display-named states each carrying its category, To
+     * Do initial — plus this space's own workflows migrated from the mutable
+     * `taskWorkflows` exactly as 149 migrates them: name = the type value,
+     * kind 'task', states named by the RAW status literals (that equality is
+     * phase 6's join key), categories per the ruled mapping, first state
+     * initial. Zero transition rows — empty means "the ruled category-level
+     * defaults apply", which is the normal case.
+     */
+    async workflows(_spaceId): Promise<Workflow[]> {
+      const globalDefault: Workflow = {
+        id: 'wf-global-default',
+        spaceId: null,
+        name: 'Default',
+        kind: null,
+        states: (
+          [
+            ['To Do', 'to_do'],
+            ['In Progress', 'in_progress'],
+            ['Done', 'done'],
+            ['Cancelled', 'cancelled'],
+          ] as const
+        ).map(([name, category], i) => ({
+          id: `wfs-default-${category}`,
+          workflowId: 'wf-global-default',
+          name,
+          category,
+          position: i,
+          isInitial: i === 0,
+          isDefault: i === 0,
+        })),
+        transitions: [],
+      };
+      const migrated: Workflow[] = [...taskWorkflows]
+        .sort((a, b) => a.typeValue.localeCompare(b.typeValue))
+        .map((w) => ({
+          id: `wf-${w.id}`,
+          spaceId: w.spaceId,
+          name: w.typeValue,
+          kind: 'task',
+          states: w.statuses.map((status, i) => ({
+            id: `wfs-${w.id}-${status}`,
+            workflowId: `wf-${w.id}`,
+            name: status,
+            category: WORK_STATUS_CATEGORY[status] ?? 'to_do',
+            position: i,
+            isInitial: i === 0,
+            isDefault: false,
+          })),
+          transitions: [],
+        }));
+      return [globalDefault, ...migrated];
+    },
+    /**
      * Amendment 11 mirror. Answers WITHOUT consulting the viewer, exactly like
      * the node's claim-free RPC, and reproduces its disclosure rule rather
      * than a friendlier one: an unresolvable code returns `{status:'unknown'}`
@@ -1798,6 +1881,10 @@ export function createFixtureSeam(): FixtureSeam {
            `length > 0` (collections.ts), so `priority: []` must not read as
            "match nothing" here while the node reads it as "unfiltered". */
         if (f?.workStatus?.length && !(s.state.kind === 'task' && f.workStatus.includes(s.state.workStatus))) return false;
+        /* Phase 1's category predicate (PR #353): NULL never matches, so the
+           filter's PRESENCE restricts to entities that have a status at all —
+           `NULL = any(...)` server semantics, mirrored. */
+        if (f?.category?.length && !(s.category !== undefined && f.category.includes(s.category))) return false;
         if (f?.priority?.length && !(s.state.kind === 'task' && f.priority.includes(s.state.priority))) return false;
         if (f?.sessionStatus?.length && !(s.state.kind === 'work_session'
           && f.sessionStatus.includes(s.state.status))) return false;

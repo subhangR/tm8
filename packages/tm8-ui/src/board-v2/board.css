@@ -491,3 +491,22 @@
   font-family: var(--pn-mono);
   white-space: nowrap;
 }
+
+/* -- v2 additions ---------------------------------------------------------- */
+
+/* The category band a workflow-state column sits under: a small overline in
+   the column head, so the state name stays the loud fact. */
+.b2__col-band {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+/* A standalone toggle rendered disabled-with-reason (the workflow-columns
+   control while workflows have not loaded or cannot be drawn exactly). */
+.b2__pivot--off {
+  opacity: 0.55;
+  cursor: default;
+}

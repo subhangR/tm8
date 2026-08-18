@@ -1,155 +1,267 @@
 /**
- * The Board tab's pure model — the column law, the filter law and the
- * optimistic overlay, provable as plain data with no React mounted.
+ * Board v2's pure model — the plan law (categories by default, workflow
+ * states only when exact), the drop seam's resolution ladder, the filter law
+ * and the endpointed optimistic overlay, provable as plain data.
  */
 import { describe, expect, it } from 'vitest';
-import type { CollectionGroup, EntitySummary } from '@tm8/contract';
+import type { EntitySummary, StatusCategory, Workflow } from '@tm8/contract';
+import { getKind } from '../domain';
 import {
+  CATEGORY_SPECS,
   EMPTY_FILTERS,
-  PRIORITY_COLUMNS,
-  STATUS_COLUMNS,
+  UNCATEGORISED_KEY,
   applyMoves,
   buildFilters,
-  columnsFor,
+  categoryDropFor,
+  columnFilter,
   matching,
+  planFor,
+  resolveWorkflow,
   settledMoves,
-  type BoardFilterState,
+  uncategorised,
+  type BoardColumn,
+  type ColumnPlan,
+  type Move,
 } from './board-model';
 
-const row = (id: string, title = id): EntitySummary => ({ id, title }) as unknown as EntitySummary;
+const task = getKind('task');
+const doc = getKind('doc');
 
-const group = (key: string, items: EntitySummary[], over: Partial<CollectionGroup> = {}): CollectionGroup =>
-  ({ key, label: key, items, ...over }) as CollectionGroup;
+const row = (id: string, over: Partial<EntitySummary> = {}): EntitySummary =>
+  ({ id, title: id, ...over }) as unknown as EntitySummary;
 
-describe('buildFilters — narrow()\'s law', () => {
-  it('OMITS empty axes and answers undefined for the all-empty state', () => {
-    /* `workStatus: []` would either match nothing or be refused — both
-       misread "no chips pressed" as a constraint. And `undefined` is the
-       exact cache key `boardFor` uses for the unfiltered read, so the
-       untouched board and the just-cleared board share one snapshot. */
-    expect(buildFilters(EMPTY_FILTERS)).toBeUndefined();
-    expect(buildFilters({ statuses: ['open'], priorities: [], people: [], assignedBy: [] })).toEqual({
-      workStatus: ['open'],
+/** A workflow literal, tersely. */
+const wf = (
+  id: string,
+  kind: string | null,
+  states: [name: string, category: StatusCategory, opts?: { isDefault?: boolean; isInitial?: boolean }][],
+  name = id,
+): Workflow => ({
+  id,
+  spaceId: kind === null ? null : 'sp-1',
+  name,
+  kind,
+  states: states.map(([stateName, category, opts], i) => ({
+    id: `${id}:${stateName}`,
+    workflowId: id,
+    name: stateName,
+    category,
+    position: i,
+    isInitial: opts?.isInitial ?? i === 0,
+    isDefault: opts?.isDefault ?? false,
+  })),
+  transitions: [],
+});
+
+/** Migration 149's global default, as the fixture seam also mirrors it. */
+const GLOBAL_DEFAULT = wf(
+  'wf-global',
+  null,
+  [
+    ['To Do', 'to_do', { isDefault: true }],
+    ['In Progress', 'in_progress'],
+    ['Done', 'done'],
+    ['Cancelled', 'cancelled'],
+  ],
+  'Default',
+);
+
+/** A migrated per-type task workflow: states named BY the status literals. */
+const MIGRATED = wf('wf-epic', 'task', [
+  ['open', 'to_do'],
+  ['working', 'in_progress'],
+  ['in_review', 'in_progress'],
+  ['done', 'done'],
+]);
+
+describe('resolveWorkflow — the pre-phase-5 resolution', () => {
+  it('exactly one kind-bound workflow wins; none or several fall to the global default', () => {
+    expect(resolveWorkflow(task, [GLOBAL_DEFAULT, MIGRATED])?.id).toBe('wf-epic');
+    expect(resolveWorkflow(task, [GLOBAL_DEFAULT])?.id).toBe('wf-global');
+    // Two per-type workflows: no single one IS "the task workflow" — picking
+    // a favourite would draw a board half the space's tasks do not live on.
+    const second = wf('wf-bug', 'task', [['open', 'to_do']]);
+    expect(resolveWorkflow(task, [GLOBAL_DEFAULT, MIGRATED, second])?.id).toBe('wf-global');
+    expect(resolveWorkflow(task, undefined)).toBeUndefined();
+  });
+});
+
+describe('planFor — category columns are the default and every one is a real read', () => {
+  it('emits the closed four in reading order plus the uncategorised column', () => {
+    const plan = planFor(task, GLOBAL_DEFAULT, false);
+    expect(plan.mode).toBe('category');
+    expect(plan.columns.map((c) => c.key)).toEqual([
+      ...CATEGORY_SPECS.map((s) => s.key),
+      UNCATEGORISED_KEY,
+    ]);
+    // Each category column carries ITS server predicate…
+    expect(plan.columns[0]?.filter).toEqual({ category: ['to_do'] });
+    // …and the uncategorised column carries NONE: its rows are the base
+    // read's, narrowed on the server-computed category being absent — the
+    // one fact `filters.category` structurally cannot return.
+    expect(plan.columns[4]?.filter).toBeNull();
+  });
+
+  it('the uncategorised column never accepts a drop — absence is not a state', () => {
+    const plan = planFor(task, GLOBAL_DEFAULT, false);
+    const un = plan.columns.find((c) => c.key === UNCATEGORISED_KEY)!;
+    expect(un.drop.kind).toBe('refuse');
+  });
+});
+
+describe('categoryDropFor — the drop seam ladder', () => {
+  it('a workflow state naming a settable option wins (the migrated-workflow path)', () => {
+    // in_progress has TWO states; `working` sits first, so it is the target.
+    expect(categoryDropFor(task, MIGRATED, 'in_progress')).toEqual({
+      kind: 'set-state',
+      optionId: 'working',
     });
-    expect(buildFilters({ statuses: [], priorities: ['high'], people: ['m-1'], assignedBy: [] })).toEqual({
-      priority: ['high'],
+    // done routes via the gated complete, exactly as the registry declares.
+    expect(categoryDropFor(task, MIGRATED, 'done')).toEqual({
+      kind: 'set-state',
+      optionId: 'done',
+      via: 'complete',
+    });
+  });
+
+  it('the display-named global default falls back to the transitional category defaults', () => {
+    // "To Do" is nobody's settable status; the bridge answers `open`.
+    expect(categoryDropFor(task, GLOBAL_DEFAULT, 'to_do')).toEqual({
+      kind: 'set-state',
+      optionId: 'open',
+    });
+    expect(categoryDropFor(task, GLOBAL_DEFAULT, 'cancelled')).toEqual({
+      kind: 'set-state',
+      optionId: 'cancelled',
+    });
+  });
+
+  it('a kind with no state control refuses WITH the phase that unlocks it', () => {
+    const drop = categoryDropFor(doc, GLOBAL_DEFAULT, 'to_do');
+    expect(drop.kind).toBe('refuse');
+    if (drop.kind === 'refuse') expect(drop.reason).toMatch(/no settable status yet/i);
+  });
+});
+
+describe('planFor — workflow columns only when EVERY state is exactly queryable', () => {
+  it('migrated task workflow: per-state columns read by the status axis, banded by category', () => {
+    const plan = planFor(task, MIGRATED, true);
+    expect(plan.mode).toBe('workflow');
+    expect(plan.workflowName).toBe('wf-epic');
+    expect(plan.columns.map((c) => c.label)).toEqual(['open', 'working', 'in_review', 'done']);
+    expect(plan.columns[1]?.filter).toEqual({ workStatus: ['working'] });
+    expect(plan.columns.map((c) => c.category)).toEqual(['to_do', 'in_progress', 'in_progress', 'done']);
+  });
+
+  it('the global default is exact for ANY kind: one state per category means the category read IS the state read', () => {
+    const plan = planFor(doc, GLOBAL_DEFAULT, true);
+    expect(plan.mode).toBe('workflow');
+    expect(plan.columns.map((c) => c.label)).toEqual(['To Do', 'In Progress', 'Done', 'Cancelled']);
+    expect(plan.columns[0]?.filter).toEqual({ category: ['to_do'] });
+    // …but a DOC still cannot move: the drop seam refuses per column.
+    expect(plan.columns[0]?.drop.kind).toBe('refuse');
+  });
+
+  it('one inexact state downgrades the WHOLE board, with the reason recorded', () => {
+    // Two doc states share in_progress and neither is a settable doc option:
+    // no read can isolate either, so approximating is refused wholesale.
+    const inexact = wf('wf-x', 'doc', [
+      ['Drafting', 'in_progress'],
+      ['Reviewing', 'in_progress'],
+    ]);
+    const plan = planFor(doc, inexact, true);
+    expect(plan.mode).toBe('category');
+    expect(plan.workflowUnavailable).toMatch(/cannot be read exactly/i);
+  });
+});
+
+describe('buildFilters — narrow()\'s law plus the archived ruling', () => {
+  it('OMITS empty axes and answers undefined for the all-empty state', () => {
+    expect(buildFilters(EMPTY_FILTERS)).toBeUndefined();
+    expect(buildFilters({ people: ['m-1'], assignedBy: [], archived: false })).toEqual({
       assigneeIds: ['m-1'],
     });
-    // The provenance axis is its own question — who HANDED OUT the work,
-    // not who holds it — and it emits the server's assignedByIds arm.
-    expect(buildFilters({ statuses: [], priorities: [], people: [], assignedBy: ['m-ada'] })).toEqual({
+    expect(buildFilters({ people: [], assignedBy: ['m-ada'], archived: false })).toEqual({
       assignedByIds: ['m-ada'],
     });
   });
-});
 
-describe('columnsFor — the column law per pivot', () => {
-  it('status: the FULL canonical skeleton, empty columns included', () => {
-    /* §1.3 — an empty column is a real answer and the drop target that makes
-       it changeable; a groups-keyed board would hide every state the page
-       happened not to contain. */
-    const cols = columnsFor('workStatus', [group('working', [row('t1')])], EMPTY_FILTERS, []);
-    expect(cols.map((c) => c.key)).toEqual(STATUS_COLUMNS.map((s) => s.key));
-    expect(cols.find((c) => c.key === 'working')?.items).toHaveLength(1);
-    expect(cols.find((c) => c.key === 'blocked')?.items).toHaveLength(0);
-  });
-
-  it('status: narrows to the selected chips — an excluded column must not stay a drop target', () => {
-    const filters: BoardFilterState = { statuses: ['open', 'done'], priorities: [], people: [], assignedBy: [] };
-    const cols = columnsFor('workStatus', [], filters, []);
-    expect(cols.map((c) => c.key)).toEqual(['open', 'done']);
-  });
-
-  it('priority: descending urgency, the triage reading order', () => {
-    const cols = columnsFor('priority', undefined, EMPTY_FILTERS, []);
-    expect(cols.map((c) => c.key)).toEqual(PRIORITY_COLUMNS.map((p) => p.key));
-  });
-
-  it('carries the server\'s TRUE total beside the page-scoped items', () => {
-    const cols = columnsFor(
-      'workStatus',
-      [group('open', [row('t1')], { total: 12 })],
-      EMPTY_FILTERS,
-      [],
-    );
-    const open = cols.find((c) => c.key === 'open')!;
-    expect(open.items).toHaveLength(1);
-    expect(open.total).toBe(12);
-  });
-
-  it('assignee: Unassigned first, then the server\'s groups by label', () => {
-    const groups = [
-      group('m-zed', [row('t1')], { label: 'Zed' }),
-      group('', [row('t2')], { label: 'Unassigned' }),
-      group('m-ada', [row('t3')], { label: 'Ada' }),
-    ];
-    const cols = columnsFor('assignee', groups, EMPTY_FILTERS, []);
-    expect(cols.map((c) => c.label)).toEqual(['Unassigned', 'Ada', 'Zed']);
-  });
-
-  it('assignee under a people filter: exactly the chosen columns, empties synthesized from the roster', () => {
-    /* A person with no tasks still shows their real, empty column — absence
-       of a column would read as "not filterable", not "no tasks". */
-    const filters: BoardFilterState = { statuses: [], priorities: [], people: ['m-ada', 'm-idle'], assignedBy: [] };
-    const cols = columnsFor('assignee', [group('m-ada', [row('t1')], { label: 'Ada' })], filters, [
-      { id: 'm-ada', label: 'Ada' },
-      { id: 'm-idle', label: 'Idle' },
-    ]);
-    expect(cols.map((c) => c.key)).toEqual(['m-ada', 'm-idle']);
-    expect(cols[1]!.label).toBe('Idle');
-    expect(cols[1]!.items).toHaveLength(0);
-  });
-
-  it('assignee Unassigned total is null before the first read — unknown is never drawn as zero', () => {
-    const cols = columnsFor('assignee', undefined, EMPTY_FILTERS, []);
-    expect(cols[0]!.label).toBe('Unassigned');
-    expect(cols[0]!.total).toBeNull();
+  it('archived is a FILTER (`deleted: only`), composing with every column', () => {
+    expect(buildFilters({ people: [], assignedBy: [], archived: true })).toEqual({ deleted: 'only' });
+    const col: ColumnPlan = {
+      key: 'to_do',
+      label: 'To Do',
+      tone: 'idle',
+      category: 'to_do',
+      filter: { category: ['to_do'] },
+      drop: { kind: 'refuse', reason: 'x' },
+    };
+    expect(columnFilter({ deleted: 'only' }, col)).toEqual({ deleted: 'only', category: ['to_do'] });
   });
 });
 
-describe('applyMoves / settledMoves — the optimistic overlay', () => {
-  const columns = () =>
-    columnsFor(
-      'workStatus',
-      [group('open', [row('t1'), row('t2')], { total: 2 }), group('working', [row('t3')], { total: 1 })],
-      EMPTY_FILTERS,
-      [],
-    );
-
-  it('moves the card to the head of its target and the true totals move WITH it', () => {
-    const moved = applyMoves(columns(), new Map([['t1', 'working']]));
-    const open = moved.find((c) => c.key === 'open')!;
-    const working = moved.find((c) => c.key === 'working')!;
-    expect(open.items.map((i) => i.id)).toEqual(['t2']);
-    expect(open.total).toBe(1);
-    expect(working.items.map((i) => i.id)).toEqual(['t1', 't3']);
-    expect(working.total).toBe(2);
-  });
-
-  it('settles a move once the RAW read already agrees, and only that one', () => {
-    const fresh = columnsFor(
-      'workStatus',
-      [group('open', [row('t2')]), group('working', [row('t1'), row('t3')])],
-      EMPTY_FILTERS,
-      [],
-    );
-    const moves = new Map([
-      ['t1', 'working'], // the read reflects it — safe to forget
-      ['t2', 'done'], // still in flight — must survive the prune
-    ]);
-    expect(settledMoves(fresh, moves)).toEqual(['t1']);
-  });
-
-  it('a settled-and-forgotten overlay leaves the columns byte-identical', () => {
-    const base = columns();
-    expect(applyMoves(base, new Map())).toEqual([...base]);
+describe('uncategorised — the server-computed absence', () => {
+  it('keeps exactly the rows whose summary carries NO category', () => {
+    const rows = [row('a', { category: 'to_do' } as Partial<EntitySummary>), row('b'), row('c')];
+    expect(uncategorised(rows).map((r) => r.id)).toEqual(['b', 'c']);
   });
 });
 
-describe('matching — the title search is display-only', () => {
-  it('narrows case-insensitively and an empty query narrows nothing', () => {
-    const items = [row('t1', 'Wire the palette'), row('t2', 'Guide lines')];
-    expect(matching(items, 'guide').map((i) => i.id)).toEqual(['t2']);
-    expect(matching(items, '  ')).toHaveLength(2);
+// ---------------------------------------------------------------------------
+// The endpointed overlay
+// ---------------------------------------------------------------------------
+
+const plans: Record<string, ColumnPlan> = Object.fromEntries(
+  ['a', 'b', 'c'].map((key) => [
+    key,
+    { key, label: key, tone: 'idle', category: null, filter: null, drop: { kind: 'refuse', reason: '' } },
+  ]),
+);
+const col = (key: string, items: EntitySummary[] | undefined): BoardColumn => ({
+  plan: plans[key]!,
+  items,
+  hasMore: false,
+});
+const moved = (entries: [string, Move][]) => new Map(entries);
+
+describe('applyMoves — the optimistic overlay', () => {
+  it('renders a dropped card at the head of its target and removes it from the source', () => {
+    const columns = [col('a', [row('t1'), row('t2')]), col('b', [row('t3')])];
+    const out = applyMoves(columns, moved([['t1', { to: 'b', from: 'a' }]]));
+    expect(out[0]?.items?.map((i) => i.id)).toEqual(['t2']);
+    expect(out[1]?.items?.map((i) => i.id)).toEqual(['t1', 't3']);
+  });
+
+  it('leaves a loading column alone rather than inventing its contents', () => {
+    const columns = [col('a', [row('t1')]), col('b', undefined)];
+    const out = applyMoves(columns, moved([['t1', { to: 'b', from: 'a' }]]));
+    expect(out[1]?.items).toBeUndefined();
+  });
+});
+
+describe('settledMoves — the fresh read answers', () => {
+  it('settles when the card shows up in its TARGET column', () => {
+    const columns = [col('a', []), col('b', [row('t1')])];
+    expect(settledMoves(columns, moved([['t1', { to: 'b', from: 'a' }]]))).toEqual(['t1']);
+  });
+
+  it('keeps claiming while the card still sits only in its SOURCE (the write has not landed)', () => {
+    const columns = [col('a', [row('t1')]), col('b', [])];
+    expect(settledMoves(columns, moved([['t1', { to: 'b', from: 'a' }]]))).toEqual([]);
+  });
+
+  it('settles when the server landed the card SOMEWHERE ELSE — truth beats the claim', () => {
+    // The write succeeded but a trigger derived a different landing column;
+    // pinning the optimistic claim would contradict every fresh read forever.
+    const columns = [col('a', []), col('b', []), col('c', [row('t1')])];
+    expect(settledMoves(columns, moved([['t1', { to: 'b', from: 'a' }]]))).toEqual(['t1']);
+  });
+});
+
+describe('matching — display-only title narrowing', () => {
+  it('narrows case-insensitively and treats blank as no filter', () => {
+    const rows = [row('t1', { title: 'Wire palette' } as Partial<EntitySummary>), row('t2', { title: 'Guide' } as Partial<EntitySummary>)];
+    expect(matching(rows, '  ')).toHaveLength(2);
+    expect(matching(rows, 'wire').map((r) => r.id)).toEqual(['t1']);
   });
 });

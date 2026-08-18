@@ -207,6 +207,7 @@ import type {
   TaskAxis,
   TaskAxisInput,
   TaskWorkflow,
+  Workflow,
   TaskWorkflowInput,
   UpdateAttentionRequestInput,
   TrackingPrMergeInput,
@@ -433,6 +434,14 @@ export interface Seam {
   menu(spaceId: SpaceId): Promise<MenuConfig | null>;
   /** Launch-default provenance and other member-authorized space settings. */
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
+  /**
+   * The category-model workflows (`spaces.workflows.list`, migration 149):
+   * the ONE global default (spaceId null) plus this space's own. Distinct
+   * from `spaceSettings().taskWorkflows` — those are the LEGACY status-subset
+   * rules that phase 6 retires; these are the named state/transition sets the
+   * universal board's columns are built from.
+   */
+  workflows(spaceId: SpaceId): Promise<Workflow[]>;
   /**
    * Amendment 11 — the one read on this seam that answers BEFORE the caller is
    * anybody (migration 118, `spaces.invites.preview`).

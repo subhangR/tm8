@@ -1,75 +1,57 @@
 /**
- * THE BOARD TAB — the task kanban as a full-bleed screen (`#/s/{s}/board`),
- * distinct from the rail-hosted `BoardBody` inside `EntityListPanel`: that one
- * is a MODE of a 320px list, this one owns the viewport and adds what a rail
- * board cannot carry — switchable grouping, cross-axis filters, and true
- * cross-column drag with an optimistic overlay.
+ * BOARD V2 — the universal board as a full-bleed screen (`#/s/{s}/board-v2`),
+ * built on the Kind/Status/Category/Workflow model. Structure and honesty
+ * rules inherited from Board v1 (optimistic-with-a-confession drops, empty
+ * columns as real answers, refusals rendered inline at the refusing column);
+ * what is NEW is universality:
  *
- * WHAT THE PIVOT MEANS AS A WRITE, because the three groupings are three
- * DIFFERENT verbs and pretending otherwise would ship a drop that lies:
+ *   · a KIND SELECTOR drives the whole board — population `collectionKinds()`,
+ *     behaviour resolved per kind from the registry config and the space's
+ *     workflows, never from a kind name;
+ *   · columns are the FOUR CATEGORIES (each a real `filters.category` read),
+ *     with a 'No status yet' column for rows the category reads structurally
+ *     cannot return — server truth (`summary.category` absent), never a
+ *     client-invented bucket;
+ *   · WORKFLOW COLUMNS when the selected kind's workflow can be drawn exactly
+ *     (see `planFor`), states grouped under category bands;
+ *   · ARCHIVED IS A FILTER (`filters.deleted`), never a column;
+ *   · a drop resolves through the plan's drop seam; where a kind cannot move
+ *     yet, the drop REFUSES VISIBLY with the phase that unlocks it.
  *
- *   workStatus → `setState` (commands.work / complete via the registry's own
- *                option routing — done goes through the gated `complete`).
- *   priority   → `setValue` (a version-guarded content patch; the version is
- *                hydrated on demand through `refetchDetail`, since a board
- *                card has never been opened).
- *   assignee   → `assign` twice: ADD the target's edge, then REMOVE the
- *                source's — in that order, so a failure strands the card as
- *                over-assigned (visible, correctable) rather than orphaned.
- *                Dropping on Unassigned is a bare removal.
- *
- * OPTIMISTIC WITH A CONFESSION (§1.5): the card moves at drop time via
- * `applyMoves`; a fresh server read that agrees settles the move
- * (`settledMoves`), a refusal rolls it back and renders the reason INLINE at
- * the refusing column — no toasts, and the card visibly snaps home.
- *
- * ASYNC WRITES READ THROUGH REFS. `data.detailOf` and the lifecycle executor
- * are render-time snapshots; a write that awaited a hydration poll would
- * otherwise consult the stale render it started in and refuse against a
- * version that has long since arrived.
- *
- * The verbs, vocabularies and edge type all come off the task registry entry
- * (`stateControl` / `valueControls` / `assignControl`) — this file names the
- * KIND (legal here; the §15.2 guard fences `panels/`, not `board/`) but never
- * respells a vocabulary the registry already owns.
+ * ASYNC WRITES READ THROUGH REFS, exactly as v1: the lifecycle executor is a
+ * render-time snapshot, and a write must not consult the stale render it
+ * started in.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ActorSummary, EntitySummary } from '@tm8/contract';
-import { getKind } from '../domain';
+import type { ActorSummary, EntitySummary, SpaceId, Workflow } from '@tm8/contract';
+import { collectionKinds, getKind } from '../domain';
 import type { SetStateOutcome } from '../domain';
 import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
-import { DisabledIconControl } from '../panels';
+import { DisabledIconControl, toReason } from '../panels';
 import { AvatarStack, Pill, shortDate } from '../kit';
 import type { Notice } from '../shell/notices';
 import type { GateData } from '../views/useGateData';
 import { useRowLifecycle } from '../views/useRowLifecycle';
 import {
   EMPTY_FILTERS,
-  PIVOTS,
-  PRIORITY_COLUMNS,
-  STATUS_COLUMNS,
+  UNCATEGORISED_KEY,
   anyFilterActive,
   applyMoves,
   buildFilters,
-  columnsFor,
+  columnFilter,
   matching,
+  planFor,
+  resolveWorkflow,
   settledMoves,
+  uncategorised,
   type BoardColumn,
   type BoardFilterState,
-  type BoardPivot,
+  type ColumnPlan,
+  type Move,
 } from './board-model';
 import { FilterSelect, type FilterOption } from './FilterSelect';
 import './board.css';
-
-/** How long a priority drop will wait for the version to hydrate. */
-const DETAIL_POLL_TRIES = 20;
-const DETAIL_POLL_MS = 100;
-
-/* The closed vocabularies as menu options — the SAME specs the columns are
-   built from, so a filter can never offer a state no column would draw. */
-const STATUS_OPTIONS: readonly FilterOption[] = STATUS_COLUMNS.map((s) => ({ id: s.key, label: s.label }));
-const PRIORITY_OPTIONS: readonly FilterOption[] = PRIORITY_COLUMNS.map((p) => ({ id: p.key, label: p.label }));
 
 /** An unloaded roster is not an empty space, and must not read as one. */
 const ROSTER_EMPTY = 'The people and teammates for this space have not loaded yet.';
@@ -85,35 +67,61 @@ interface BoardV2ScreenProps {
 export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: BoardV2ScreenProps) {
   const lifecycle = useRowLifecycle({ data, viewerMemberId, onNotice });
 
-  const [pivot, setPivot] = useState<BoardPivot>('workStatus');
+  /* The selected KIND. Default is the kind the program's phases have already
+     given real categories — found via the registry, and the same default the
+     v1 board served. */
+  const [kindName, setKindName] = useState<string>('task');
   const [filters, setFilters] = useState<BoardFilterState>(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
-  /** card id → the column key it was optimistically dropped on. */
-  const [moves, setMoves] = useState<ReadonlyMap<string, string>>(new Map());
+  const [useWorkflowCols, setUseWorkflowCols] = useState(false);
+  /** card id → both endpoints of its optimistic move. */
+  const [moves, setMoves] = useState<ReadonlyMap<string, Move>>(new Map());
   const [refusal, setRefusal] = useState<{ column: string; reason: string } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
-  /** The card in flight + the column it left, so a drop needs no cache walk. */
   const [dragging, setDragging] = useState<{ row: EntitySummary; from: string } | null>(null);
   /** §8.1 roving focus: column index + card index within it. */
   const [focus, setFocus] = useState<{ col: number; row: number }>({ col: 0, row: 0 });
 
   // Render-time snapshots made async-safe (see the module docblock).
-  const dataRef = useRef(data);
-  dataRef.current = data;
   const lifecycleRef = useRef(lifecycle);
   lifecycleRef.current = lifecycle;
 
-  const task = getKind('task');
+  const kind = getKind(kindName);
+  const kinds = useMemo(() => collectionKinds(), []);
 
-  /* THE CREATE CONTROL the board was shipped without: seven columns of drop
-     targets and no way to add a card read as a working board that silently
-     refused every new task. `useNewTask` makes one immediately (placeholder
-     title, focused on open) — the same flow the docks use — and a null
-     `unavailable` renders it disabled-with-reason rather than hidden. */
-  const newTask = useNewTask({
+  /* THE WORKFLOWS READ — `spaces.workflows.list`, once per space. A failure
+     is a stated downgrade (category columns keep working off `filters.
+     category` alone), never a blank board. */
+  const [workflows, setWorkflows] = useState<
+    { list?: Workflow[]; error?: string } | undefined
+  >(undefined);
+  useEffect(() => {
+    if (!data.ready || !data.spaceId) return;
+    let alive = true;
+    setWorkflows(undefined);
+    data.seam
+      .workflows(data.spaceId as SpaceId)
+      .then((list) => {
+        if (alive) setWorkflows({ list });
+      })
+      .catch((error: unknown) => {
+        if (alive) setWorkflows({ error: String((error as { message?: string })?.message ?? error) });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [data.ready, data.spaceId, data.seam]);
+
+  const workflow = resolveWorkflow(kind, workflows?.list);
+  const plan = useMemo(
+    () => planFor(kind, workflow, useWorkflowCols),
+    [kind, workflow, useWorkflowCols],
+  );
+
+  const newEntity = useNewTask({
     spaceId: data.spaceId,
-    kind: task.kind,
-    placeholderTitle: placeholderNameFor(task, placeholderTitleFor(task.label)),
+    kind: kind.kind,
+    placeholderTitle: placeholderNameFor(kind, placeholderTitleFor(kind.label)),
     commands: data.seam.commands,
     onCreated: (id, result) => {
       data.reconcileCommand(result);
@@ -121,15 +129,10 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
     },
   });
 
-  const stateControl = task.list.stateControl;
-  const priorityControl = task.list.valueControls?.find((c) => c.source === 'priority');
-  const assignControl = task.list.assignControl;
+  const stateControl = kind.list.stateControl;
+  const assignControl = kind.list.assignControl;
 
-  /**
-   * The people axis: everyone assignable, with the real avatar wherever the
-   * space loaded one — `useRowLifecycle.assignable` already unions the member
-   * projection with the registry's roster kinds, so the board only dedups.
-   */
+  /** The people axis (only offered when the kind is assignable at all). */
   const roster = useMemo(() => {
     const seen = new Set<string>();
     const out: ActorSummary[] = [];
@@ -140,29 +143,36 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
     }
     return out;
   }, [lifecycle.assignable]);
-  const rosterSpecs = useMemo(
-    () => roster.map((actor) => ({ id: actor.id as string, label: actor.displayName })),
-    [roster],
-  );
-  /**
-   * The people options, built ONCE and handed to both people axes. "Who holds
-   * this" and "who handed it out" are different questions over the same
-   * population, so they must never drift into two different populations.
-   */
   const peopleOptions = useMemo<FilterOption[]>(
     () => roster.map((actor) => ({ id: actor.id as string, label: actor.displayName, actor })),
     [roster],
   );
-
-  const filter = useMemo(() => buildFilters(filters), [filters]);
-  const snapshot = data.boardFor('task')(filter, pivot);
-
-  const rawColumns = useMemo(
-    () => columnsFor(pivot, snapshot?.groups, filters, rosterSpecs),
-    [pivot, snapshot?.groups, filters, rosterSpecs],
+  const kindOptions = useMemo<FilterOption[]>(
+    () => kinds.map((row) => ({ id: row.kind, label: row.labelPlural })),
+    [kinds],
   );
 
-  // A fresh read that agrees with the overlay settles it (§ board-model).
+  const base = useMemo(() => buildFilters(filters), [filters]);
+
+  /* EVERY COLUMN IS A REAL READ. `rowsFor` caches per (kind, filter) and the
+     durable stream keeps each key current; `pageStateOf` distinguishes "in
+     flight" from "empty" so a loading column shimmers instead of claiming
+     emptiness. The uncategorised column narrows the BASE read on the
+     server-computed `category` being absent. */
+  const rowsOf = data.rowsFor(kind.kind);
+  const pageOf = data.pageStateOf(kind.kind);
+  const rawColumns: BoardColumn[] = plan.columns.map((col) => {
+    const filter = columnFilter(base, col);
+    const rows = col.filter === null ? uncategorised(rowsOf(filter)) : rowsOf(filter);
+    const page = pageOf(filter);
+    return {
+      plan: col,
+      items: page.loading && rows.length === 0 ? undefined : rows,
+      hasMore: page.hasMore,
+    };
+  });
+
+  // A fresh read that answers the overlay settles it (§ board-model).
   useEffect(() => {
     if (moves.size === 0) return;
     const settled = settledMoves(rawColumns, moves);
@@ -172,92 +182,63 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
       for (const id of settled) next.delete(id);
       return next;
     });
-  }, [rawColumns, moves]);
+  });
 
   const columns = useMemo(() => applyMoves(rawColumns, moves), [rawColumns, moves]);
-  const shownOf = (column: BoardColumn): readonly EntitySummary[] => matching(column.items, search);
+  /* 'No status yet' renders only when it has something to say: it is not a
+     drop target, so unlike the category columns an empty one answers no
+     question and would spend a column of width claiming one. */
+  const shownColumns = columns.filter(
+    (c) => c.plan.key !== UNCATEGORISED_KEY || (c.items?.length ?? 0) > 0,
+  );
+  const shownOf = (column: BoardColumn): readonly EntitySummary[] =>
+    matching(column.items ?? [], search);
 
-  const onPivot = (next: BoardPivot): void => {
-    if (next === pivot) return;
-    setPivot(next);
-    // The overlay's keys are the OLD pivot's vocabulary — meaningless now.
+  const onKind = (next: string): void => {
+    if (next === kindName) return;
+    setKindName(next);
+    // The overlay's keys are the OLD kind's rows — meaningless now.
     setMoves(new Map());
     setRefusal(null);
     setFocus({ col: 0, row: 0 });
   };
 
-  const toggle = (axis: keyof BoardFilterState, key: string): void => {
+  const toggle = (axis: 'people' | 'assignedBy', key: string): void => {
     setFilters((prior) => {
       const list = prior[axis];
       const next = list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
       return { ...prior, [axis]: next };
     });
   };
-
-  const clearAxis = (axis: keyof BoardFilterState): void => {
+  const clearAxis = (axis: 'people' | 'assignedBy'): void => {
     setFilters((prior) => ({ ...prior, [axis]: [] }));
   };
 
-  /** Waits for the card's detail to hydrate; the priority patch needs its version. */
-  const ensureVersion = async (id: string): Promise<number | undefined> => {
-    const have = dataRef.current.detailOf(id)?.version;
-    if (have !== undefined) return have;
-    dataRef.current.refetchDetail(id);
-    for (let attempt = 0; attempt < DETAIL_POLL_TRIES; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, DETAIL_POLL_MS));
-      const version = dataRef.current.detailOf(id)?.version;
-      if (version !== undefined) return version;
+  const performMove = async (row: EntitySummary, plan: ColumnPlan): Promise<SetStateOutcome> => {
+    if (plan.drop.kind === 'refuse') return { ok: false, reason: plan.drop.reason };
+    if (!stateControl) {
+      return { ok: false, reason: `${kind.labelPlural} have no settable state on this build.` };
     }
-    return undefined;
+    return lifecycleRef.current.setState(
+      row.id,
+      plan.drop.optionId,
+      plan.drop.via ?? stateControl.command,
+      { notify: false },
+    );
   };
 
-  const performMove = async (
-    row: EntitySummary,
-    fromKey: string,
-    toKey: string,
-  ): Promise<SetStateOutcome> => {
-    if (pivot === 'workStatus') {
-      if (!stateControl) return { ok: false, reason: 'Tasks have no settable state on this build.' };
-      const option = stateControl.options.find((o) => o.id === toKey);
-      if (!option) return { ok: false, reason: `“${toKey}” is not a settable state.` };
-      return lifecycleRef.current.setState(row.id, option.id, option.via ?? stateControl.command, {
-        notify: false,
-      });
-    }
-    if (pivot === 'priority') {
-      if (!priorityControl) return { ok: false, reason: 'Tasks have no priority control on this build.' };
-      const version = await ensureVersion(row.id);
-      if (version === undefined) {
-        return {
-          ok: false,
-          reason:
-            'Its current version could not be loaded, and changing priority without one could overwrite an edit you have not seen. Open the task, then try again.',
-        };
-      }
-      return lifecycleRef.current.setValue(row.id, priorityControl.source, toKey, priorityControl.label, {
-        notify: false,
-      });
-    }
-    if (!assignControl) return { ok: false, reason: 'Tasks are not assignable on this build.' };
-    if (toKey === '') {
-      if (fromKey === '') return { ok: true };
-      return lifecycleRef.current.assign(row.id, fromKey, assignControl.edgeType, false, { notify: false });
-    }
-    // ADD before REMOVE: a failure between the two leaves the card visibly
-    // over-assigned instead of assigned to nobody the user chose.
-    const added = await lifecycleRef.current.assign(row.id, toKey, assignControl.edgeType, true, {
-      notify: false,
-    });
-    if (!added.ok || fromKey === '') return added;
-    return lifecycleRef.current.assign(row.id, fromKey, assignControl.edgeType, false, { notify: false });
-  };
-
-  const dispatchDrop = (row: EntitySummary, fromKey: string, toKey: string): void => {
-    if (toKey === fromKey) return;
+  const dispatchDrop = (row: EntitySummary, fromKey: string, target: ColumnPlan): void => {
+    if (target.key === fromKey) return;
     setRefusal(null);
+    /* A refusing column refuses BEFORE the overlay claims anything — the card
+       never moves, and the reason renders where the drop happened. */
+    if (target.drop.kind === 'refuse') {
+      setRefusal({ column: target.key, reason: target.drop.reason });
+      return;
+    }
     setPendingId(row.id);
-    setMoves((prior) => new Map(prior).set(row.id, toKey));
-    void performMove(row, fromKey, toKey).then((outcome) => {
+    setMoves((prior) => new Map(prior).set(row.id, { to: target.key, from: fromKey }));
+    void performMove(row, target).then((outcome) => {
       setPendingId((prior) => (prior === row.id ? null : prior));
       if (!outcome.ok) {
         // Roll the overlay back and confess at the column that refused (§1.5).
@@ -266,7 +247,7 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
           next.delete(row.id);
           return next;
         });
-        setRefusal({ column: toKey, reason: outcome.reason });
+        setRefusal({ column: target.key, reason: outcome.reason });
       }
     });
   };
@@ -275,18 +256,18 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
   // through the SAME dispatch a drop uses.
   const onKeyDown = (event: React.KeyboardEvent): void => {
     const mod = event.metaKey || event.ctrlKey;
-    const colCount = columns.length;
+    const colCount = shownColumns.length;
     if (colCount === 0) return;
     const col = Math.min(focus.col, colCount - 1);
-    const rows = shownOf(columns[col]!);
+    const rows = shownOf(shownColumns[col]!);
     const row = Math.min(focus.row, Math.max(0, rows.length - 1));
     const focused = rows[row];
 
     const move = (delta: number): void => {
       if (!focused) return;
-      const target = columns[col + delta];
+      const target = shownColumns[col + delta];
       if (!target) return;
-      dispatchDrop(focused, columns[col]!.key, target.key);
+      dispatchDrop(focused, shownColumns[col]!.plan.key, target.plan);
     };
 
     switch (event.key) {
@@ -318,69 +299,88 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
     event.stopPropagation();
   };
 
-  const loading = snapshot === undefined;
+  const loading = shownColumns.every((c) => c.items === undefined);
+  const workflowToggleReason =
+    plan.workflowUnavailable
+    ?? workflows?.error
+    ?? (workflow === undefined ? 'This space’s workflows have not loaded yet.' : null);
 
   return (
     <section className="b2" data-testid="board-v2-screen">
-      {/* ONE ROW OF CHROME. Every axis is a constant-height trigger, so this
-          header's height is independent of how many statuses, priorities or
-          people the space has — which is the whole point: the board gets the
-          rest of the screen. It wraps to a second row only when the window is
-          genuinely too narrow to hold the controls. */}
       <header className="b2__bar" data-testid="b2-filters">
-        <div className="b2__pivots" role="group" aria-label="Group by">
-          {PIVOTS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              className="b2__pivot"
-              aria-pressed={pivot === p.key}
-              data-testid={`b2-pivot-${p.key}`}
-              onClick={() => onPivot(p.key)}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        {/* THE KIND SELECTOR — what makes this board universal. Radio
+            semantics on the shared dropdown: choosing a kind replaces the
+            previous choice. */}
+        <FilterSelect
+          label={kind.labelPlural}
+          testId="b2-kind"
+          options={kindOptions}
+          selected={[kind.kind]}
+          onToggle={onKind}
+          onClear={() => onKind('task')}
+          emptyNote="This build declares no collection kinds."
+        />
+
+        {/* WORKFLOW COLUMNS toggle — offered whenever a workflow resolves;
+            disabled WITH THE REASON when its states cannot be drawn exactly. */}
+        {workflowToggleReason === null ? (
+          <button
+            type="button"
+            className="b2__pivot"
+            aria-pressed={plan.mode === 'workflow'}
+            data-testid="b2-workflow-toggle"
+            onClick={() => setUseWorkflowCols((v) => !v)}
+          >
+            {plan.mode === 'workflow' ? `Workflow: ${plan.workflowName}` : 'Workflow columns'}
+          </button>
+        ) : (
+          <DisabledIconControl label="Workflow columns" reason={toReason(workflowToggleReason)}>
+            <span className="b2__pivot b2__pivot--off" data-testid="b2-workflow-toggle">
+              Workflow columns
+            </span>
+          </DisabledIconControl>
+        )}
 
         <span className="b2__sep" aria-hidden />
 
-        <FilterSelect
-          label="Status"
-          testId="b2-filter-status"
-          options={STATUS_OPTIONS}
-          selected={filters.statuses}
-          onToggle={(key) => toggle('statuses', key)}
-          onClear={() => clearAxis('statuses')}
-          emptyNote="This build declares no task states."
-        />
-        <FilterSelect
-          label="Priority"
-          testId="b2-filter-priority"
-          options={PRIORITY_OPTIONS}
-          selected={filters.priorities}
-          onToggle={(key) => toggle('priorities', key)}
-          onClear={() => clearAxis('priorities')}
-          emptyNote="This build declares no priorities."
-        />
-        <FilterSelect
-          label="Assigned to"
-          testId="b2-filter-person"
-          options={peopleOptions}
-          selected={filters.people}
-          onToggle={(id) => toggle('people', id)}
-          onClear={() => clearAxis('people')}
-          emptyNote={ROSTER_EMPTY}
-        />
-        <FilterSelect
-          label="Assigned by"
-          testId="b2-filter-assignedby"
-          options={peopleOptions}
-          selected={filters.assignedBy}
-          onToggle={(id) => toggle('assignedBy', id)}
-          onClear={() => clearAxis('assignedBy')}
-          emptyNote={ROSTER_EMPTY}
-        />
+        {/* The people axes exist only for kinds the registry says are
+            assignable — a filter over an axis the kind cannot carry would be
+            a control that always answers nothing. */}
+        {assignControl ? (
+          <>
+            <FilterSelect
+              label="Assigned to"
+              testId="b2-filter-person"
+              options={peopleOptions}
+              selected={filters.people}
+              onToggle={(id) => toggle('people', id)}
+              onClear={() => clearAxis('people')}
+              emptyNote={ROSTER_EMPTY}
+            />
+            <FilterSelect
+              label="Assigned by"
+              testId="b2-filter-assignedby"
+              options={peopleOptions}
+              selected={filters.assignedBy}
+              onToggle={(id) => toggle('assignedBy', id)}
+              onClear={() => clearAxis('assignedBy')}
+              emptyNote={ROSTER_EMPTY}
+            />
+          </>
+        ) : null}
+
+        {/* ARCHIVED IS A FILTER, NEVER A COLUMN (the ruling, verbatim): the
+            toggle swaps the whole board onto the archived rows, composing
+            with every column rather than replacing one. */}
+        <button
+          type="button"
+          className="b2__pivot"
+          aria-pressed={filters.archived}
+          data-testid="b2-filter-archived"
+          onClick={() => setFilters((prior) => ({ ...prior, archived: !prior.archived }))}
+        >
+          Archived
+        </button>
 
         <input
           className="b2__search"
@@ -401,90 +401,74 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
           </button>
         ) : null}
 
-        {/* THE create control (§1.3): an empty board is a real answer, but a
-            board with no way to add a card is a dead end. `＋ New task` sits at
-            the end of the one chrome row so it never competes with a card. */}
-        {newTask.unavailable === null ? (
+        {newEntity.unavailable === null ? (
           <button
             type="button"
             className="b2__new"
             data-testid="b2-new-task"
-            onClick={() => void newTask.create()}
+            onClick={() => void newEntity.create()}
           >
-            ＋ New {task.label.toLowerCase()}
+            ＋ New {kind.label.toLowerCase()}
           </button>
         ) : (
-          <DisabledIconControl label={`New ${task.label.toLowerCase()}`} reason={newTask.unavailable}>
+          <DisabledIconControl label={`New ${kind.label.toLowerCase()}`} reason={newEntity.unavailable}>
             <span className="b2__new b2__new--off" data-testid="b2-new-task">
-              ＋ New {task.label.toLowerCase()}
+              ＋ New {kind.label.toLowerCase()}
             </span>
           </DisabledIconControl>
         )}
       </header>
 
-      {snapshot?.error ? (
-        <div className="b2__error" data-testid="b2-error" role="alert">
-          <p>{`The board could not load: ${snapshot.error}`}</p>
-          {snapshot.retry ? (
-            <button type="button" className="b2__retry" onClick={snapshot.retry}>
-              Retry
-            </button>
-          ) : null}
-        </div>
-      ) : (
-        <div className="b2__body" role="application" aria-label="Task board" tabIndex={0} onKeyDown={onKeyDown}>
-          {/* §1.4 honesty: groups are page-scoped; when a further page exists
-              the board says so rather than letting columns read as complete. */}
-          {!loading && snapshot?.nextCursor != null ? (
-            <div className="b2__banner" data-testid="b2-banner">
-              {`Showing the ${snapshot.limit} most recently active tasks — headers carry the true totals.`}
-            </div>
-          ) : null}
-          {/* WHAT THE BOARD IS, said once, only when it is genuinely empty (no
-              cards anywhere and no filter hiding them) — the columns below are
-              honest drop targets but say nothing about what belongs on them. */}
-          {!loading && !anyFilterActive(filters) && search.trim() === ''
-            && columns.every((column) => column.items.length === 0) ? (
-            <div className="b2__firstrun" data-testid="b2-firstrun">
-              Every {task.label.toLowerCase()} in this space shows up here, in a column for its
-              status. There are none yet — use ＋ New {task.label.toLowerCase()} above to add the
-              first.
-            </div>
-          ) : null}
-          <div className="b2__cols">
-            {columns.map((column, index) => {
-              const shown = loading ? undefined : shownOf(column);
-              return (
-                <ColumnView
-                  key={column.key || 'unassigned'}
-                  column={column}
-                  shown={shown}
-                  pivot={pivot}
-                  focused={index === Math.min(focus.col, columns.length - 1)}
-                  focusRow={focus.row}
-                  refusal={refusal?.column === column.key ? refusal.reason : null}
-                  pendingId={pendingId}
-                  dragging={dragging}
-                  onDragStart={setDragging}
-                  onDrop={dispatchDrop}
-                  onOpen={onOpenEntity}
-                />
-              );
-            })}
+      <div
+        className="b2__body"
+        role="application"
+        aria-label={`${kind.labelPlural} board`}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+      >
+        {/* WHAT THE BOARD IS, said once, only when it is genuinely empty. */}
+        {!loading && !anyFilterActive(filters) && search.trim() === ''
+          && shownColumns.every((column) => (column.items?.length ?? 0) === 0) ? (
+          <div className="b2__firstrun" data-testid="b2-firstrun">
+            Every {kind.label.toLowerCase()} in this space shows up here, in a column for where
+            it stands. There are none yet — use ＋ New {kind.label.toLowerCase()} above to add
+            the first.
           </div>
+        ) : null}
+        <div className="b2__cols">
+          {shownColumns.map((column, index) => (
+            <ColumnView
+              key={column.plan.key}
+              column={column}
+              shown={column.items === undefined ? undefined : shownOf(column)}
+              band={plan.mode === 'workflow' ? column.plan.category : null}
+              focused={index === Math.min(focus.col, shownColumns.length - 1)}
+              focusRow={focus.row}
+              refusal={refusal?.column === column.plan.key ? refusal.reason : null}
+              pendingId={pendingId}
+              dragging={dragging}
+              onDragStart={setDragging}
+              onDrop={dispatchDrop}
+              onOpen={onOpenEntity}
+            />
+          ))}
         </div>
-      )}
+      </div>
     </section>
   );
 }
 
-const STATUS_SPEC = new Map(STATUS_COLUMNS.map((s) => [s.key, s] as const));
-const PRIORITY_SPEC = new Map(PRIORITY_COLUMNS.map((p) => [p.key, p] as const));
+const BAND_LABELS: Readonly<Record<string, string>> = {
+  to_do: 'To Do',
+  in_progress: 'In Progress',
+  done: 'Done',
+  cancelled: 'Cancelled',
+};
 
 function ColumnView({
   column,
   shown,
-  pivot,
+  band,
   focused,
   focusRow,
   refusal,
@@ -497,33 +481,27 @@ function ColumnView({
   column: BoardColumn;
   /** `undefined` ⇒ loading: header renders, body shimmers (§8.2). */
   shown: readonly EntitySummary[] | undefined;
-  pivot: BoardPivot;
+  /** The category band a workflow-state column sits under, or null. */
+  band: string | null;
   focused: boolean;
   focusRow: number;
   refusal: string | null;
   pendingId: string | null;
   dragging: { row: EntitySummary; from: string } | null;
   onDragStart: (d: { row: EntitySummary; from: string } | null) => void;
-  onDrop: (row: EntitySummary, fromKey: string, toKey: string) => void;
+  onDrop: (row: EntitySummary, fromKey: string, target: ColumnPlan) => void;
   onOpen: (id: string) => void;
 }) {
-  // "3 of 12" when the page under-represents the group; a bare number when it
-  // does not; "n shown" only when no true total exists (loading fixture rows).
-  const count =
-    shown === undefined
-      ? '…'
-      : column.total === null
-        ? `${shown.length} shown`
-        : column.total === shown.length
-          ? `${column.total}`
-          : `${shown.length} of ${column.total}`;
+  // Page-scoped counts hedge with `+` when another page exists — a bare
+  // number would claim a total this screen never read.
+  const count = shown === undefined ? '…' : column.hasMore ? `${shown.length}+` : `${shown.length}`;
 
   return (
     <section
       className={focused ? 'b2__col b2__col--focused' : 'b2__col'}
       data-testid="b2-column"
-      data-column={column.key}
-      aria-label={column.label}
+      data-column={column.plan.key}
+      aria-label={column.plan.label}
       onDragOver={(event) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
@@ -533,11 +511,16 @@ function ColumnView({
         const id = event.dataTransfer.getData('text/plain');
         const drag = dragging && dragging.row.id === id ? dragging : null;
         onDragStart(null);
-        if (drag) onDrop(drag.row, drag.from, column.key);
+        if (drag) onDrop(drag.row, drag.from, column.plan);
       }}
     >
       <header className="b2__col-head">
-        <Pill tone={column.tone}>{column.label}</Pill>
+        {band !== null ? (
+          <span className="b2__col-band" data-testid="b2-col-band">
+            {BAND_LABELS[band] ?? band}
+          </span>
+        ) : null}
+        <Pill tone={column.plan.tone}>{column.plan.label}</Pill>
         <span className="b2__col-count">{count}</span>
       </header>
 
@@ -554,16 +537,15 @@ function ColumnView({
             <div className="b2__skeleton" aria-hidden />
           </>
         ) : shown.length === 0 ? (
-          // §1.3: an empty column is a real answer — and the drop target that
-          // makes the answer changeable.
-          <p className="b2__empty">{`nothing in ${column.label}`}</p>
+          // §1.3: an empty column is a real answer — and (where the plan
+          // allows) the drop target that makes the answer changeable.
+          <p className="b2__empty">{`nothing in ${column.plan.label}`}</p>
         ) : (
           shown.map((row, index) => (
             <CardView
               key={row.id}
               row={row}
-              pivot={pivot}
-              fromKey={column.key}
+              fromKey={column.plan.key}
               pending={row.id === pendingId}
               draggingId={dragging?.row.id ?? null}
               cardFocused={focused && index === focusRow}
@@ -579,7 +561,6 @@ function ColumnView({
 
 function CardView({
   row,
-  pivot,
   fromKey,
   pending,
   draggingId,
@@ -588,7 +569,6 @@ function CardView({
   onOpen,
 }: {
   row: EntitySummary;
-  pivot: BoardPivot;
   fromKey: string;
   pending: boolean;
   draggingId: string | null;
@@ -596,9 +576,14 @@ function CardView({
   onDragStart: (d: { row: EntitySummary; from: string } | null) => void;
   onOpen: (id: string) => void;
 }) {
-  const state = row.state.kind === 'task' ? row.state : null;
-  const priority = state ? PRIORITY_SPEC.get(state.priority) : undefined;
-  const status = state ? STATUS_SPEC.get(state.workStatus) : undefined;
+  /* Meta renders STRUCTURALLY off the summary's state — fields that exist,
+     drawn; fields the kind does not carry, absent. No kind is named. */
+  const state = row.state as Partial<{
+    priority: string;
+    dueDate: string | null;
+    assignees: ActorSummary[];
+    acceptance: { total: number; completed: number };
+  }>;
   const cls = [
     'b2__card',
     pending ? 'b2__card--pending' : '',
@@ -626,15 +611,12 @@ function CardView({
         {row.title}
       </button>
       <div className="b2__card-meta">
-        {/* The pivot's own axis is the COLUMN — repeating it on every card
-            would be noise; the other axis stays visible. */}
-        {priority && pivot !== 'priority' ? <Pill tone={priority.tone}>{priority.label}</Pill> : null}
-        {status && pivot !== 'workStatus' ? <Pill tone={status.tone}>{status.label}</Pill> : null}
-        {state?.dueDate ? <span className="b2__card-due">{`due ${shortDate(state.dueDate)}`}</span> : null}
-        {state && state.acceptance.total > 0 ? (
+        {typeof state.priority === 'string' ? <Pill tone="idle">{state.priority}</Pill> : null}
+        {state.dueDate ? <span className="b2__card-due">{`due ${shortDate(state.dueDate)}`}</span> : null}
+        {state.acceptance && state.acceptance.total > 0 ? (
           <span className="b2__card-accept">{`✓ ${state.acceptance.completed}/${state.acceptance.total}`}</span>
         ) : null}
-        {state && state.assignees.length > 0 ? <AvatarStack actors={state.assignees} /> : null}
+        {state.assignees && state.assignees.length > 0 ? <AvatarStack actors={state.assignees} /> : null}
       </div>
     </article>
   );

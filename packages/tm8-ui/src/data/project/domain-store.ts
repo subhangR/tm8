@@ -408,7 +408,7 @@ export function createDomainStore(
 export type Membership = 'in' | 'out' | 'unknown';
 
 /** The filter clauses this module can decide. Everything else ⇒ 'unknown'. */
-const DECIDABLE_CLAUSES = new Set(['deleted', 'workStatus', 'sessionStatus']);
+const DECIDABLE_CLAUSES = new Set(['deleted', 'workStatus', 'sessionStatus', 'category']);
 
 export function membershipOf(filter: unknown, summary: EntitySummary): Membership {
   const clauses: Record<string, unknown> =
@@ -428,6 +428,10 @@ export function membershipOf(filter: unknown, summary: EntitySummary): Membershi
   const state = summary.state as unknown as Record<string, unknown>;
   if (!matchesAxis(clauses.workStatus, state.workStatus)) return 'out';
   if (!matchesAxis(clauses.sessionStatus, state.status)) return 'out';
+  /* Phase 1's envelope fact (PR #353): `category` rides the SUMMARY, so the
+     clause is decidable here exactly like the status axes — an absent
+     category never matches a present clause (`NULL = any(...)` semantics). */
+  if (!matchesAxis(clauses.category, summary.category)) return 'out';
 
   return 'in';
 }

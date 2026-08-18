@@ -71,6 +71,7 @@ import {
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
+  type Workflow,
   type SpaceSummary,
 } from '@tm8/contract';
 import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
@@ -310,6 +311,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     identity: (): Promise<IdentityView> => ops.identity(),
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
+    workflows: (spaceId: SpaceId): Promise<Workflow[]> => ops.workflows(spaceId),
     previewInvite: (code: string): Promise<InvitePreview> => ops.previewInvite(code),
     counts: (spaceId: SpaceId): Promise<SpaceKindCounts> => ops.counts(spaceId),
 
