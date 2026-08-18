@@ -39,6 +39,7 @@ import './shell/palette.css';
 import './graph/graph.css';
 import './servers/server.css';
 import './transfer/transfer.css';
+import './join/join.css';
 import { REAL_SEAM_STORAGE_KEY } from './views/realSeamFlag';
 import { GateApp } from './views/GateApp';
 
