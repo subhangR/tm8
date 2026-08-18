@@ -83,6 +83,29 @@ describe('region B has exactly one occupant', () => {
   });
 });
 
+describe('the dock-down flip (visual lane handoff note)', () => {
+  /**
+   * `data-empty` centres the greeting + composer as one invitation on an empty
+   * thread. It used to key on `centerOverride == null`; a stage arrives by a
+   * different route, so if that predicate had not been re-pointed a stage
+   * would have rendered UNDER a centred composer. The note asked for this path
+   * to be tested rather than assumed, which is the right instinct: it is a
+   * layout attribute, and jsdom will happily agree it is present while the
+   * page looks wrong.
+   */
+  it('a stage occupying the berth un-centres the composer', async () => {
+    const { container } = mount({ stage: 'fleet', onStageChange: vi.fn() });
+    await screen.findByTestId('cockpit-fleet');
+    expect(container.querySelector('.tch-conversation')?.getAttribute('data-empty')).toBeNull();
+  });
+
+  it('and a host entity does the same, as it always did', async () => {
+    const { container } = mount({ centerOverride: <div data-testid="host-entity-panel" /> });
+    await screen.findByTestId('host-entity-panel');
+    expect(container.querySelector('.tch-conversation')?.getAttribute('data-empty')).toBeNull();
+  });
+});
+
 describe('the way back is always on screen', () => {
   it('Esc leaves a stage by NAVIGATING, not by resetting local state', async () => {
     /* A stage is addressed. Clearing it locally would leave the URL pointing

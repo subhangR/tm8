@@ -131,7 +131,12 @@ export function EntityTray({
         <div className="tch-tray__stages">
           <button
             type="button"
-            className="tch-tray__stage"
+            /* ONE VISUAL FAMILY (visual lane's handoff note): the stage tabs
+               ARE the Chat tab's anatomy — same pill, same active treatment,
+               same focus ring — with a marker class for nothing but the
+               tests. Giving them a lookalike of their own is how two tabs in
+               one row start drifting apart. */
+            className="tch-tray__chat tch-tray__stage"
             data-active={activeStage === 'fleet' || undefined}
             aria-current={activeStage === 'fleet' || undefined}
             title="The worker sessions and tasks this conversation delegated"
@@ -141,7 +146,7 @@ export function EntityTray({
           </button>
           <button
             type="button"
-            className="tch-tray__stage"
+            className="tch-tray__chat tch-tray__stage"
             data-active={activeStage === 'graph' || undefined}
             aria-current={activeStage === 'graph' || undefined}
             title="The entities this conversation named, and the relations they actually hold"

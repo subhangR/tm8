@@ -49,6 +49,7 @@
  * it is testable without a host and cheap to re-run under streaming.
  */
 import { extractEntityRefs } from '../entity-refs';
+import { bareToolName, isWriteCall, operationOf } from '../write-classifier';
 import { projectTurnParts } from '../turn-model';
 import type { ChatTurn } from '../types';
 
@@ -105,57 +106,13 @@ const DELEGATE_LIFECYCLE: Readonly<Record<string, FleetLifecycleVerb>> = {
   'execution.terminate': 'terminated',
 };
 
-/**
- * Verbs that name a mutation — the SAME vocabulary the graph's seed fold uses
- * (`graph-seeds.ts`), so a seed the graph calls mutated and the fleet calls
- * read can never disagree.
- *
- * BUT IT IS MATCHED AGAINST THE OPERATION FIRST, AND THAT IS A FIX, NOT A
- * STYLE CHOICE. `graph-seeds.ts` matches this regex against the TOOL NAME
- * only, and chat's entire write path is two GROUP tools — `tm8_act` and
- * `tm8_delegate` — whose names contain no verb at all ("act" and "delegate"
- * are both absent from the list; "dispatch" is in it, but the tool is not
- * called `tm8_dispatch`). So on Chat Home every graph mutation the agent makes
- * currently folds as a READ, and the induced graph's "edited here" marker is
- * dead on the one surface it was built for. Verified against the shipped
- * `foldGraphSeeds`, not inferred.
- *
- * The group schema puts the real verb in `args.operation` (`entities.create`,
- * `execution.spawn`, …), so that is what gets classified when it is there. The
- * tool name remains the fallback for direct tools (`Edit`, `Bash`, the
- * `tm8_*` direct set), whose names DO carry their verb.
- */
-const WRITE_VERB =
-  /(create|update|delete|remove|patch|send|post|complete|assign|unlink|link|move|write|edit|spawn|terminate|attach|upload|cancel|start|stop|rename|archive|restore|grant|revoke|dispatch|launch|set_|_set\b)/i;
-
-/** Strip any MCP server prefix: `mcp__tm8__tm8_delegate` → `tm8_delegate`. */
-function bareToolName(name: string): string {
-  return name.includes('__') ? name.slice(name.lastIndexOf('__') + 2) : name;
-}
-
-/** An unrecognised verb counts as a READ, in both branches: a false "edited
- *  here" is a lie about authorship, while a false "read" is an understatement
- *  the row survives. */
-function isWriteCall(name: string, operation: string | null): boolean {
-  if (operation !== null) return WRITE_VERB.test(operation);
-  return WRITE_VERB.test(bareToolName(name));
-}
+/* Write-ness and the group tools' `operation` both come from the SHARED
+   classifier — see `write-classifier.ts`. It is shared rather than copied
+   because the graph, the tray and this fold all ask the same question about
+   the same thread, and two implementations that agree today drift tomorrow. */
 
 function isDelegateTool(name: string): boolean {
   return bareToolName(name) === 'tm8_delegate';
-}
-
-/**
- * The `operation` a group tool was called with. The MCP group schema puts it
- * at the top level of args (`{operation, params, query, body}`), but a call
- * that never settled has `args: undefined` and a malformed one can have
- * anything at all — so this reads defensively and returns null rather than
- * throwing a render away.
- */
-function operationOf(args: unknown): string | null {
-  if (typeof args !== 'object' || args === null) return null;
-  const operation = (args as { operation?: unknown }).operation;
-  return typeof operation === 'string' ? operation : null;
 }
 
 export interface FleetFold {
@@ -190,7 +147,7 @@ function refsOfTurn(turn: ChatTurn): readonly FleetRef[] {
   for (const part of projectTurnParts(turn.parts)) {
     if (part.kind !== 'tool') continue;
     const operation = operationOf(part.args);
-    const mutated = isWriteCall(part.name, operation);
+    const mutated = isWriteCall(part.name, part.args);
 
     if (isDelegateTool(part.name)) {
       const produces = operation ? DELEGATE_PRODUCES[operation] : undefined;
