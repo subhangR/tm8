@@ -59,7 +59,7 @@ describe('chat launch composition', () => {
       // (dontAsk → bypassPermissions) is a separate slice.
       expect([mode, chatProviderToolPolicy(mode).availableTools]).toEqual([mode, [
         'Read', 'Glob', 'Grep', 'Bash',
-        'WebFetch', 'WebSearch', 'Edit', 'Write', 'TodoWrite',
+        'WebFetch', 'WebSearch', 'Edit', 'Write', 'TodoWrite', 'Skill',
       ]]);
       expect(chatAllowedTools(mode)).not.toContain('Bash');
       expect(chatAllowedTools(mode)).not.toContain('Write(/**)');
@@ -90,7 +90,7 @@ describe('chat launch composition', () => {
   it('withholds only the repository half when no trusted project is linked', () => {
     for (const mode of MODES) {
       expect([mode, chatProviderToolPolicy(mode, false).availableTools])
-        .toEqual([mode, ['WebFetch', 'WebSearch', 'TodoWrite']]);
+        .toEqual([mode, ['WebFetch', 'WebSearch', 'TodoWrite', 'Skill']]);
       expect(chatProviderToolPolicy(mode, false).allowedTools).not.toContain('Read(/**)');
       expect(chatProviderToolPolicy(mode, false).allowedTools).not.toContain('Edit(/**)');
     }
@@ -173,7 +173,7 @@ describe('chat launch composition', () => {
     };
     expect(config.mcpServers.tm8.env.TM8_CHAT_PROJECT_ROOT).toBeUndefined();
     expect(resolved.systemPrompt).toContain('does not have exactly one trusted linked project');
-    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch', 'TodoWrite']);
+    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch', 'TodoWrite', 'Skill']);
     expect(resolved.allowedTools).not.toContain('Read(/**)');
   });
 
@@ -195,7 +195,7 @@ describe('chat launch composition', () => {
       mcpServers: { tm8: { env: Record<string, string> } };
     };
     expect(config.mcpServers.tm8.env.TM8_CHAT_PROJECT_ROOT).toBeUndefined();
-    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch', 'TodoWrite']);
+    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch', 'TodoWrite', 'Skill']);
     expect(resolved.systemPrompt).toContain('is a Git checkout');
   });
 
@@ -206,7 +206,7 @@ describe('chat launch composition', () => {
     });
     const resolved = await resolver(launch('ask'));
     expect(resolved.cwd).toBeUndefined();
-    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch', 'TodoWrite']);
+    expect(resolved.availableTools).toEqual(['WebFetch', 'WebSearch', 'TodoWrite', 'Skill']);
   });
 
   it('refuses repository provisioning for an untrusted linked project', async () => {

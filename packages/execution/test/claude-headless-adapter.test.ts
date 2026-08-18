@@ -127,6 +127,28 @@ describe('ClaudeHeadlessAdapter', () => {
     expect(recorded.marker).toBe('per-thread');
   });
 
+  it('loads a curated skills plugin dir and enables slash commands when configured', async () => {
+    const argvFile = join(root, 'skills-argv.json');
+    const runtime = adapter({ pluginDir: '/opt/tm8/skills' });
+    await runtime.startThread(input({ env: { TM8_FAKE_ARGV_FILE: argvFile } }));
+    const recorded = JSON.parse(await readFile(argvFile, 'utf8')) as { args: string[] };
+    // The plugin dir is passed, and the slash-command surface it resolves
+    // through is NOT disabled.
+    const pluginIdx = recorded.args.indexOf('--plugin-dir');
+    expect(pluginIdx).toBeGreaterThanOrEqual(0);
+    expect(recorded.args[pluginIdx + 1]).toBe('/opt/tm8/skills');
+    expect(recorded.args).not.toContain('--disable-slash-commands');
+  });
+
+  it('keeps slash commands disabled when no skills plugin dir is configured', async () => {
+    const argvFile = join(root, 'no-skills-argv.json');
+    const runtime = adapter();
+    await runtime.startThread(input({ env: { TM8_FAKE_ARGV_FILE: argvFile } }));
+    const recorded = JSON.parse(await readFile(argvFile, 'utf8')) as { args: string[] };
+    expect(recorded.args).toContain('--disable-slash-commands');
+    expect(recorded.args).not.toContain('--plugin-dir');
+  });
+
   it('explicitly disallows Claude built-ins when the visible native set is empty', async () => {
     const argvFile = join(root, 'orchestrate-argv.json');
     const runtime = adapter();

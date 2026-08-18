@@ -30,7 +30,7 @@ const MAX_STDERR_CHARS = 16_384;
 const CLAUDE_BUILTIN_TOOLS = [
   'Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'WebFetch', 'WebSearch',
   'NotebookEdit', 'TodoWrite', 'Task', 'TaskOutput', 'AskUserQuestion',
-  'EnterPlanMode', 'ExitPlanMode', 'Skill',
+  'EnterPlanMode', 'ExitPlanMode',
 ] as const;
 
 type JsonObject = Record<string, unknown>;
@@ -72,6 +72,15 @@ export interface ClaudeHeadlessAdapterOptions {
   bootSettlementMs?: number;
   closeGraceMs?: number;
   onThreadExit?: (event: AgentThreadExit) => void | Promise<void>;
+  /**
+   * A node-level Claude Code plugin directory holding the tm8-curated skills.
+   * When set, the runtime loads it with `--plugin-dir` and ENABLES the slash-
+   * command surface (which is what `Skill` resolves through). When absent,
+   * `--disable-slash-commands` stays on and the `Skill` tool, though offered,
+   * finds nothing — so chat behaves exactly as before a dir is configured.
+   * NOT a settings source: this does not re-enable project hooks/permissions.
+   */
+  pluginDir?: string;
 }
 
 /**
@@ -90,6 +99,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
   private readonly bootSettlementMs: number;
   private readonly closeGraceMs: number;
   private readonly onThreadExit: ClaudeHeadlessAdapterOptions['onThreadExit'];
+  private readonly pluginDir: string | undefined;
   private readonly threads = new Map<string, ThreadState>();
   /**
    * Same-process consistency hints for R8. The orchestrator's durable binding
@@ -106,6 +116,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     this.bootSettlementMs = options.bootSettlementMs ?? DEFAULT_BOOT_SETTLEMENT_MS;
     this.closeGraceMs = options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
     this.onThreadExit = options.onThreadExit;
+    this.pluginDir = options.pluginDir?.trim() || undefined;
     if (this.bootSettlementMs < 0 || !Number.isFinite(this.bootSettlementMs)) {
       throw new AgentRuntimeError('bootSettlementMs must be a finite non-negative number', 'invalid_input');
     }
@@ -375,7 +386,11 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       input.model,
       '--setting-sources',
       '',
-      '--disable-slash-commands',
+      // A curated plugin dir enables skills via the slash-command surface;
+      // without one, that surface stays disabled (unchanged prior behaviour).
+      ...(this.pluginDir
+        ? ['--plugin-dir', this.pluginDir]
+        : ['--disable-slash-commands']),
       '--mcp-config',
       input.mcpConfigPath,
       '--strict-mcp-config',
