@@ -492,11 +492,20 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             onOpenEntity: openEntity,
             onSwitchToTerminal: () => nav.setContentSurface?.(id, 'terminal'),
           })}
+          discussionSurface={conversationSurfaceFor(detail, id, {
+            seam: data.seam,
+            spaceId: data.spaceId,
+            connection: data.connection,
+            livenessOf: data.livenessOf,
+            channelFeedPort,
+            viewerMemberId: props.viewerMemberId,
+            onOpenEntity: openEntity,
+            onSwitchToTerminal: () => nav.setContentSurface?.(id, 'terminal'),
+          }, 'discussion')}
           messages={messages}
           connections={data.connectionsOf(id)}
           linkedPullRequests={data.linkedPullRequestsOf?.(id) ?? []}
           linkedPullRequestsOf={data.linkedPullRequestsOf}
-          onPostMessage={(post) => data.postMessage({ clientMutationId: `post:${id}:${Date.now()}`, anchorIds: [id], ...post })}
           mentionOptions={data.mentionOptions}
           skillOptions={data.skillOptions}
           onResumeSession={() => handleSessionResume(id)}

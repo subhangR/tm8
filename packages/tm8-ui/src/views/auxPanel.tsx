@@ -126,6 +126,18 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose }: AuxEnt
           setContentSurfaces((current) => ({ ...current, [entityId]: 'terminal' }));
         },
       })}
+      discussionSurface={conversationSurfaceFor(detail, entityId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: data.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort,
+        viewerMemberId: host.viewerMemberId,
+        onOpenEntity: (id) => onOpenEntity(id),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [entityId]: 'terminal' }));
+        },
+      }, 'discussion')}
       messages={data.messagesOf(entityId)}
       connections={data.connectionsOf(entityId)}
       linkedPullRequests={data.linkedPullRequestsOf?.(entityId) ?? []}

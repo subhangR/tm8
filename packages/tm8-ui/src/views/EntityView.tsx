@@ -44,7 +44,7 @@ import {
 } from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
-import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
+import { ConnectionsTab } from '../panels/detail/tabs';
 import type { ActionContext, ActionRef, CollectionMode, GroupByKey } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
@@ -744,6 +744,18 @@ export function EntityView(props: EntityViewProps) {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
         },
       })}
+      discussionSurface={conversationSurfaceFor(detail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: data.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort,
+        viewerMemberId: props.viewerMemberId,
+        onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      }, 'discussion')}
       attentionSection={detail ? attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId)) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
@@ -764,7 +776,6 @@ export function EntityView(props: EntityViewProps) {
          field added to `DiscussionPostInput` cannot be silently dropped by
          this adapter — which is exactly how `mentionIds` went unsent for as
          long as it did. */
-      onPostMessage={(post) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], ...post })}
       mentionOptions={data.mentionOptions}
       skillOptions={data.skillOptions}
       /* GAP-2 (data-wiring handover): the save path — inline title + Save +
@@ -1103,23 +1114,33 @@ export function EntityView(props: EntityViewProps) {
                 onClose={() => setAux(null)}
               />
             ) : detail && aux.tab === 'discussion' ? (
-              <DiscussionTab
-                messages={messages ?? []}
-                provenanceHollowReason={reasons.provenanceHollow}
-                canPost={detail.capabilities.canEdit || detail.capabilities.canReact}
-                onPost={(post) => data.postMessage({
-                  clientMutationId: `post:${selectedId}:${Date.now()}`,
-                  anchorIds: [selectedId as EntityId],
-                  ...post,
-                })}
-                /* The aux column is the SAME composer as the panel's, so it
-                   gets the same subjects; the attach port is deliberately not
-                   forwarded here — this column is a bounded read of another
-                   entity's thread, and `attachments` is bound to the panel's
-                   own anchor above. Absent ⇒ the attach control says so. */
-                mentionOptions={data.mentionOptions}
-                skillOptions={data.skillOptions}
-              />
+              /*
+               * THE SIXTH CONVERSATION MOUNT, and the one no guard could see:
+               * it renders a tab body directly rather than through
+               * `EntityDetailPanel`, so `panel-host-wiring.test.ts` never
+               * scanned it. It drew the tab's own renderer over `messages.list`
+               * while the panel one column over drew `entities.feed` — the same
+               * conversation, two readings, on one screen.
+               *
+               * Now the same composition as everywhere else, on `selectedId` —
+               * this arm is the `{sort:'tab'}` variant, which HAS no id of its
+               * own: it is the selected entity's discussion, moved out of the
+               * tab strip so it can sit beside the document rather than
+               * replace it. (`AuxTarget`'s two sorts exist precisely because a
+               * tab has no entity to point at.)
+               */
+              conversationSurfaceFor(detail, selectedId as EntityId, {
+                seam: data.seam,
+                spaceId: data.spaceId,
+                connection: data.connection,
+                livenessOf: data.livenessOf,
+                channelFeedPort,
+                viewerMemberId: props.viewerMemberId,
+                onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+                onSwitchToTerminal: () => {
+                  setContentSurfaces((current) => ({ ...current, [selectedId as EntityId]: 'terminal' }));
+                },
+              }, 'discussion')
             ) : detail && aux.tab === 'connections' ? (
               <ConnectionsTab
                 detail={detail}

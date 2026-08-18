@@ -236,6 +236,18 @@ export function GraphScreen(props: GraphScreenProps) {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
         },
       }) : undefined}
+      discussionSurface={props.chat && data.seam ? conversationSurfaceFor(detail, selectedId, {
+        seam: data.seam,
+        spaceId: data.spaceId,
+        connection: props.chat.connection,
+        livenessOf: data.livenessOf,
+        channelFeedPort: props.chat.channelFeedPort,
+        viewerMemberId: props.chat.viewerMemberId,
+        onOpenEntity: (id) => setSelectedId(id),
+        onSwitchToTerminal: () => {
+          setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
+        },
+      }, 'discussion') : undefined}
       messages={messages}
       // The executor the other three panel hosts pass. Without it every
       // title-editable kind selected here dresses its title as locked and
@@ -247,11 +259,6 @@ export function GraphScreen(props: GraphScreenProps) {
          import upward for the option data, so `@` and `/` stay plain text
          here — but a reply's attachments and mentions still reach the wire
          when the composer manages to stage any. */
-      onPostMessage={(post) => data.postMessage({
-        clientMutationId: `graph-post:${selectedId}:${Date.now()}`,
-        anchorIds: [selectedId],
-        ...post,
-      })}
       streaming={data.activity[selectedId] ?? false}
       /* Reading sideways from the aside re-aims the SAME aside — the graph
          stays put, exactly like a node click. */

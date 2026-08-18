@@ -29,13 +29,14 @@ import { getKind } from '../domain';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
+import { DiscussionSurface } from '../channel-screen/DiscussionSurface';
 import type { SessionChatSeam } from '../channel-screen/SessionChatSurface';
 import type { ChannelFeedPort } from '../channel-screen/useChannelFeed';
 import type { ConnectionState, SessionLiveness } from '../data/seam';
 
-/** The surfaces this slot can compose. Open by design — 'transcript' and
- *  'discussion' are expected entrants; each gets its own composer. */
-export type ConversationSurfaceKind = 'channel-feed' | 'session-chat';
+/** The surfaces this slot can compose. Open by design — 'transcript' is the
+ *  remaining expected entrant; each gets its own composer. */
+export type ConversationSurfaceKind = 'channel-feed' | 'session-chat' | 'discussion';
 
 /**
  * What a host must already own to fill the slot. Every member is something the
@@ -110,6 +111,44 @@ export function sessionChatSurfaceFor(
   );
 }
 
+/**
+ * THE DISCUSSION TAB'S CONVERSATION — one surface, over `entities.feed` with NO
+ * SCOPE, on the tab every entity already has.
+ *
+ * `anchorNoun` and `anchorTitle` are the only per-kind values here, and both
+ * come from REGISTRY DATA rather than a kind branch. The feed itself is
+ * kind-blind: the server resolves the reading from the anchor's kind
+ * (`feed-context.ts:176`), which is exactly why this composes once for a task,
+ * a doc, a channel and a session alike.
+ *
+ * `panel.threads` decides whether the branch pane is OFFERED. The capability
+ * exists on every anchor; `registry.ts:894-901` rules that a session keeps its
+ * flat, replies-inline read while a channel takes threads.
+ */
+export function discussionSurfaceFor(
+  detail: EntityDetail,
+  entityId: EntityId,
+  host: ConversationSurfaceHost,
+): ReactNode {
+  const kindRow = getKind(detail.kind);
+  return (
+    <DiscussionSurface
+      // The branch read rides the channel feed port's seam, the one slice of a
+      // host's bundle that already carries `messages`.
+      seam={{ ...host.seam, messages: host.channelFeedPort.seam.messages }}
+      anchorId={entityId}
+      anchorNoun={`this ${kindRow.label.toLowerCase()}`}
+      anchorTitle={`${kindRow.chip.glyph}${detail.title}`}
+      spaceId={host.spaceId}
+      viewerMemberId={host.viewerMemberId ?? 'anonymous'}
+      connection={host.connection}
+      threads={kindRow.panel.threads === true}
+      canPost={detail.capabilities.canEdit || detail.capabilities.canReact}
+      onOpenEntity={host.onOpenEntity}
+    />
+  );
+}
+
 export function conversationSurfaceFor(
   detail: EntityDetail | null | undefined,
   entityId: EntityId,
@@ -122,5 +161,7 @@ export function conversationSurfaceFor(
       return channelFeedSurfaceFor(detail, entityId, host);
     case 'session-chat':
       return sessionChatSurfaceFor(detail, entityId, host);
+    case 'discussion':
+      return discussionSurfaceFor(detail, entityId, host);
   }
 }

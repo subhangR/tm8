@@ -13,6 +13,7 @@ import { segmentTurnGraphs, type TurnSegment } from './live-graph-model';
 import { ThreadPane } from './ThreadPane';
 import { dayLabel as formatDay, dayStart } from '../kit/time';
 import { groupByOperation, type ChannelPostInput, type ChannelRefusal } from './feed-model';
+import { isUnresolvedFeedPage } from './chat-mutations';
 import './channel-screen.css';
 
 /**
@@ -747,6 +748,12 @@ function EmptyFeed({ onSwitchToTerminal }: { onSwitchToTerminal?: () => void }) 
  */
 function Provenance({ page }: { page?: EntityFeedPage }) {
   if (!page) return null;
+  /* The local shell that carries an optimistic item before the first read has
+     resolved (`chat-mutations.ts` `chatPageWithJournal`). It has no server
+     answer to report, and printing the scope the CLIENT asked for under a line
+     whose whole contract is "the server's answer outranks the request" would be
+     the one dishonest thing this line can say. */
+  if (isUnresolvedFeedPage(page)) return null;
   const n = page.items.length;
   return (
     <p className="chs-provenance" data-testid="chs-provenance">
