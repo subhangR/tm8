@@ -22,46 +22,23 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import {
+  selectorsTargeting,
+  specificity,
+  specificityRank,
+  weakOverridesOf,
+} from '../kit/css-specificity';
 
 const CSS = readFileSync(fileURLToPath(new URL('./transcript.css', import.meta.url)), 'utf8');
 /** Comments explain the rules and sometimes name what the rules must NOT do,
  *  so anything asserting on declarations reads this instead. */
 const RULES = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
 
-/**
- * Specificity as (ids, classes, elements). Enough for this stylesheet, which
- * uses only classes, attribute selectors and descendant combinators — it is
- * deliberately not a general CSS parser, and a selector shape it cannot read is
- * a test failure rather than a silent zero.
- */
-function specificity(selector: string): [number, number, number] {
-  const ids = (selector.match(/#[\w-]+/g) ?? []).length;
-  const classes =
-    (selector.match(/\.[\w-]+/g) ?? []).length + (selector.match(/\[[^\]]+\]/g) ?? []).length;
-  const elements = (selector.match(/(^|[\s>+~])[a-z]+[\s.[:]/g) ?? []).length;
-  return [ids, classes, elements];
-}
-
-function rank(s: [number, number, number]): number {
-  return s[0] * 10_000 + s[1] * 100 + s[2];
-}
-
-/** Every selector in the file that sets a property on the turn body. */
-function selectorsTargeting(className: string): string[] {
-  const out: string[] = [];
-  for (const match of CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
-    const selector = match[1]!.replace(/\/\*[\s\S]*?\*\//g, '').trim();
-    if (selector.length === 0 || selector.startsWith('@')) continue;
-    if (selector.includes(className)) out.push(selector);
-  }
-  return out;
-}
-
 describe('the transcript stylesheet cascade', () => {
   const BASE = '.cv2-root .md-root.tr-turn__body';
 
   it('reads the base bubble rule at the specificity it needs', () => {
-    const selectors = selectorsTargeting('tr-turn__body');
+    const selectors = selectorsTargeting(CSS, 'tr-turn__body');
     expect(selectors).toContain(BASE);
     // (0,3,0) — .cv2-root + .md-root + .tr-turn__body.
     expect(specificity(BASE)).toEqual([0, 3, 0]);
@@ -73,19 +50,16 @@ describe('the transcript stylesheet cascade', () => {
    * nobody moves a rule.
    */
   it('makes every bubble override STRICTLY more specific than the base rule', () => {
-    const base = rank(specificity(BASE));
-    const overrides = selectorsTargeting('tr-turn__body').filter((s) => s !== BASE);
+    // Not vacuous: there ARE overrides to check.
+    expect(
+      selectorsTargeting(CSS, 'tr-turn__body').filter((s) => s !== BASE).length,
+    ).toBeGreaterThan(0);
 
-    // The overrides exist at all — an empty list would make this test vacuous.
-    expect(overrides.length).toBeGreaterThan(0);
-
-    for (const selector of overrides) {
-      expect(
-        rank(specificity(selector)),
-        `"${selector}" is not strictly more specific than the base bubble rule, so which one `
-          + 'wins depends on source order. Qualify the selector; do not move it.',
-      ).toBeGreaterThan(base);
-    }
+    expect(
+      weakOverridesOf(CSS, BASE, 'tr-turn__body'),
+      'these selectors do not strictly outrank the base bubble rule, so which one wins '
+        + 'depends on source order. Qualify the selector; do not move it.',
+    ).toEqual([]);
   });
 
   /**
@@ -94,7 +68,8 @@ describe('the transcript stylesheet cascade', () => {
    * at document size — applies to every turn body unless this rule outranks it.
    */
   it('outranks the shared markdown defaults it renders inside', () => {
-    expect(rank(specificity(BASE))).toBeGreaterThan(rank(specificity('.cv2-root .md-root')));
+    expect(specificityRank(specificity(BASE)))
+      .toBeGreaterThan(specificityRank(specificity('.cv2-root .md-root')));
   });
 
   // Sidedness is presentation only: `justify-content`, never `row-reverse`, so
