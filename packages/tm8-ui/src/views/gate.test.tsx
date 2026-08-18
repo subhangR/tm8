@@ -343,28 +343,32 @@ describe('THE GATE — composed T0-1 master screen', () => {
   // The Graph door is the screens TAB now that no rail is drawn; the screen
   // and its data path are unchanged.
   /**
-   * SKIPPED — the door and the screen are fine; the CANVAS is empty, and I
-   * could not establish why without owning the graph data path.
+   * THE CANVAS OPENS ON A 24-HOUR WINDOW, AND THE FIXTURES ARE OLDER THAN THAT.
    *
-   * What is now ruled out, each measured rather than assumed:
-   *   - the tab door works — `graph-screen` mounts and both lens assertions
-   *     pass, so the toolbar has rendered;
-   *   - it is not a race — wrapping the count in `waitFor` (kept below,
-   *     because it was missing and should have been there) does not help;
-   *   - it is not the scoped default lens — clicking 'Everything', the
-   *     toolbar's own escape to the whole space, still yields nothing;
-   *   - it is not the no-op ResizeObserver this test installs — nodes come
-   *     from `model.placed` (GraphView.tsx:1004), not from a measured size.
+   * This is why the test was red, and it is a latent time bomb rather than a
+   * graph defect — it could only ever have passed on the day it was written:
    *
-   * So the model itself is empty under the fixture seam. Note there is NO
-   * other test in the repo that renders a `.gv-node` — this is the only one,
-   * and it has been red on main — so there is no known-good reference to
-   * compare against, which is what makes this a graph-owner question rather
-   * than a test repair.
+   *   · `DEFAULT_WINDOW` is `'24h'` (graph/model.ts:81);
+   *   · `loadGraph` turns that into `activeSince = Date.now() - 24h` using WALL
+   *     TIME (useGateData.ts:963) — the browser's clock, not the fixture's;
+   *   · every fixture entity is stamped `FIXTURE_NOW`, a FROZEN
+   *     '2026-07-28T12:00:00.000Z' (fixtures/entities.ts:33);
+   *   · and the fixture query drops anything older than the filter —
+   *     `if (f?.activeSince && s.activityAt < f.activeSince) return false;`
+   *     (seam-fixture.ts:1906).
    *
-   * Tracked: task 01a01543-75b8-704d-9d77-cfb9a22e40e4.
+   * So from the second day of this fixture's life onward, every node is
+   * filtered out before the canvas ever sees it, and the screen honestly
+   * renders nothing. Note this is NOT the lens: 'Everything' seeds relevance,
+   * and clicking it changes nothing here — the WINDOW is a separate control
+   * ('Graph time window', GraphView.tsx:712), which is the one that was
+   * excluding the data.
+   *
+   * The test now stands in 'All time' — "every entity this session has loaded,
+   * however old", which is exactly the affordance for data this age. That also
+   * makes it time-independent: it will not rot again as the fixture recedes.
    */
-  it.skip('opens Graph from the tab row with workspace data from the active seam', async () => {
+  it('opens Graph from the tab row with workspace data from the active seam', async () => {
     const resizeObserver = globalThis.ResizeObserver;
     globalThis.ResizeObserver = class {
       observe() {}
@@ -387,8 +391,14 @@ describe('THE GATE — composed T0-1 master screen', () => {
       // the escape to the whole space.
       expect(within(graph).getByRole('group', { name: 'Graph lens' })).toBeTruthy();
       expect(within(graph).getByRole('button', { name: 'Everything' })).toBeTruthy();
-      // AWAITED, unlike before — this read lands after the shell does. Kept
-      // even though it is not sufficient on its own; see the skip note.
+      // Widen past the 24h default before asserting on the space's entities —
+      // see the docblock. This is the window control, not the lens.
+      fireEvent.click(
+        within(within(graph).getByRole('group', { name: 'Graph time window' }))
+          .getByRole('button', { name: 'All time' }),
+      );
+      // AWAITED: widening the window is a fresh read, so the frame right after
+      // the click is still the empty one.
       await waitFor(() =>
         expect(graph.querySelectorAll('.gv-node, .gv-shelf__chips > *').length).toBeGreaterThan(0),
       );
