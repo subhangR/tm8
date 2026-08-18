@@ -29,6 +29,16 @@ function startChatThread(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationH
     const input = ctx.body as StartChatThreadInput;
     const model = launchModel(input.model);
     if (!model) throw new CollabError('invalid_input', `unsupported chat model: ${input.model}`);
+    // Refuse a non-claude-code model HERE, at the human-gated thread start,
+    // rather than letting the thread commit and fail only on its first turn
+    // (the resolver's identical guard at createChatLaunchConfigResolver). chat
+    // v1 runs claude-code models only.
+    if (model.agentTool !== 'claude-code') {
+      throw new CollabError(
+        'invalid_input',
+        `chat v1 runs claude-code models only; '${input.model}' launches via ${model.agentTool}`,
+      );
+    }
     const owner = await facade.owner();
     const requestClaims = claimsFor(owner, ctx);
     const requesterIdentityId = requestClaims.identityId;
