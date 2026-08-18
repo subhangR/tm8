@@ -113,6 +113,20 @@ async function post(
   });
 }
 
+async function postWithMode(identityId: string, body: string, mode: string): Promise<string> {
+  return asIdentity(identityId, 'browser', async (client) => {
+    // 154: the mode rides as the explicit ninth w2_post_message_batch argument,
+    // written to messages.requested_chat_mode.
+    const row = (await client.query<{ result: { messageIds: string[] } }>(
+      `select public.w2_post_message_batch(
+         $1::uuid[], $2, $3::uuid, '{}'::uuid[], '{}'::uuid[], null, null, $4, $5
+       ) result`,
+      [[fixture.anchorId], body, rootMessageId, `chat-post-${randomUUID()}`, mode],
+    )).rows[0]!;
+    return row.result.messageIds[0]!;
+  });
+}
+
 async function configure(identityId: string, authKind: 'browser' | 'agent', mutationId: string) {
   return asIdentity(identityId, authKind, async (client) => (
     await client.query<{ result: Record<string, unknown> }>(
@@ -212,6 +226,30 @@ describe.sequential('TM8 Chat storage and trigger rules', () => {
     expect(visibleReplies.map((row) => row.entity_id)).toEqual(
       expect.arrayContaining([authorReplyId, otherReplyId, agentReplyId]),
     );
+  });
+
+  it('stamps the per-turn mode from the send onto chat_turns.mode, else leaves it null', async () => {
+    const planMsg = await postWithMode(fixture.identityA, 'do it in plan mode', 'plan');
+    const defaultMsg = await post(fixture.identityA, 'no mode named', rootMessageId);
+    const rows = await database.query<{ user_message_id: string; mode: string | null }>(
+      `select user_message_id::text, mode from public.chat_turns where user_message_id = any($1::uuid[])`,
+      [[planMsg, defaultMsg]],
+    );
+    const byId = new Map(rows.map((row) => [row.user_message_id, row.mode]));
+    // A named mode reaches the turn; an unnamed send stays null (→ the thread
+    // default resolves at claim time).
+    expect(byId.get(planMsg)).toBe('plan');
+    expect(byId.get(defaultMsg)).toBeNull();
+    // And the carrier is on the message row itself.
+    const msg = await database.query<{ requested_chat_mode: string | null }>(
+      `select requested_chat_mode from public.messages where entity_id=$1`,
+      [planMsg],
+    );
+    expect(msg[0]!.requested_chat_mode).toBe('plan');
+    // An out-of-vocabulary mode fails LOUD (22023), like a bad body or
+    // clientMutationId — never a silent fallback to the thread default.
+    await expect(postWithMode(fixture.identityA, 'seventh mode?', 'telepathy'))
+      .rejects.toThrow(/unknown chat turn mode/);
   });
 
   it('persists ordered parts idempotently and never coerces absent cost to zero', async () => {

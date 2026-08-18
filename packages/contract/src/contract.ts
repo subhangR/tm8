@@ -1983,6 +1983,12 @@ export interface PostMessageInput extends CommandContext {
    * session reads and answers the thread it was tagged into.
    */
   pokeSessionIds?: EntityId[];
+  /**
+   * Optional per-turn chat mode chosen at send time. Only meaningful when the
+   * post targets a chat thread; the Server stamps it onto the message so the
+   * enqueued chat turn runs under it (else the thread's default mode applies).
+   */
+  mode?: ChatMode;
 }
 
 /** Accepted only at the versioned input migration boundary. */

@@ -441,6 +441,10 @@ export class W2MessagesHandoffsService {
         sourceWorkSessionId,
         input.actorId ?? null,
         input.clientMutationId,
+        // Per-turn chat mode (154): rides as an explicit RPC argument, written
+        // to messages.requested_chat_mode; only meaningful for a chat-thread
+        // anchor, ignored otherwise.
+        input.mode ?? null,
       ]);
       // FOUR target classes come back from here, not one: the anchor when it
       // IS a work_session (072), the session being answered (076), the caller's
