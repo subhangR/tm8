@@ -405,6 +405,12 @@ const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   // action must not have two names), so its `all` reaches the wire only from
   // the UI seam — there is no CLI flag to collide with.
   all: '`session git commit --all`, the CLI-local spelling of execution.gitCommit body.all (2026-08-12)',
+  // 148: WorkflowStateInputSchema's two flags live INSIDE a repeated --state,
+  // one element per state, so they cannot be top-level booleans — `--is-initial`
+  // could not say WHICH state it meant. The spelling is a colon suffix on the
+  // element: `--state Draft:to_do:initial`, `--state Building:in_progress:default`.
+  isInitial: '`--state <name>:<category>:initial`, a per-element suffix — a top-level --is-initial could not name which state it meant (2026-08-18)',
+  isDefault: '`--state <name>:<category>:default`, the same per-element suffix (2026-08-18)',
 };
 
 describe('CLASS SWEEP: every boolean the frozen input schemas accept is expressible', () => {

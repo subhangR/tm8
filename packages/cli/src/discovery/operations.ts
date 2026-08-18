@@ -595,8 +595,8 @@ const ROWS: Record<OperationName, Row> = {
       'a state holding entities cannot be deleted; the call refuses rather than stripping the status off live work',
     ],
     examples: [
-      'tm8 space workflow set "Epic flow" --kind c:epic --state Draft:to_do:initial --state Committed:in_progress --state Shipped:done --state Dropped:cancelled',
-      'tm8 space workflow set "Epic flow" --kind c:epic --state Draft:to_do:initial --state "In Review":in_progress --state Blocked:in_progress --state Shipped:done --transition "In Review->Blocked"',
+      'tm8 space workflow set <name> --kind <kind> --state <state>:to_do:initial --state <state>:in_progress --state <state>:done --state <state>:cancelled',
+      'tm8 space workflow set <name> --kind <kind> --state <state>:to_do:initial --state <state>:in_progress --transition <from>-><to>',
     ],
   },
   'spaces.workflows.delete': {
