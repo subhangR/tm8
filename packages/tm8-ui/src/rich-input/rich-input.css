@@ -338,3 +338,31 @@
 .cv2-root[data-shell='mobile'] .ri-popover [role='listbox'] {
   max-height: min(238px, calc((100dvh - var(--mobile-keyboard-inset, 0px)) * 0.4));
 }
+
+
+/* The refused-attach control. `DisabledIconControl` renders `.hon-disabled`
+   rather than `.tch-attach`, so it is a SECOND control in the same composer
+   slot and the `.tch-attach` floor does not reach it — it is sized to 26px by
+   the `.ri-card__foot .hon-disabled` rule in `channel-screen.css`.
+
+   IT LIVES HERE RATHER THAN IN `chat-home.css` FOR A LOADING REASON, not a
+   filing one. `chat-home.css` is imported by `ChatHomeScreen` and so is only
+   in the document once the lazy chat home has mounted; the channel screen
+   draws the same composer foot and imports `channel-screen.css` instead. A
+   phone rule for a SHARED composer control written in either of those applies
+   on one of the two surfaces and is silently absent on the other — which
+   presents as the same component measuring differently on two screens, with
+   nothing in the CSS to suggest why. `rich-input/index.ts` imports this file,
+   so it is present wherever a composer is.
+
+   IT IS GROWN AT ALL, which is a deliberate reading of ledger RULE R2 rather
+   than a contradiction of it. R2 excludes disabled controls from the 44px bar
+   because there is nothing to tap, and growing a dead control only produces a
+   bigger dead control. This one is not dead: it carries a REASON the reader is
+   meant to be able to open (the `useReasonDisclosure` seam DEF-032 is about),
+   so a finger does have somewhere to land and the thing it lands on should be
+   findable by it. */
+.cv2-root[data-shell='mobile'] .ri-card__foot .hon-disabled {
+  min-width: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}

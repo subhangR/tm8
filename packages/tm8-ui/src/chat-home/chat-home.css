@@ -1317,20 +1317,19 @@ button.tch-entity-chip:hover {
    would (correctly) reject a px literal added here. Their floor is in that
    file, beside the rules it overrides. */
 
-/* The refused-attach control. `DisabledIconControl` renders `.hon-disabled`
-   rather than `.tch-attach`, so it is a SECOND control in the same slot and
-   the rule above does not reach it — it is sized to 26px by the
-   `.ri-card__foot .hon-disabled` rule in `channel-screen.css`.
+/* The refused-attach control (`DisabledIconControl` renders `.hon-disabled`,
+   not `.tch-attach`, so it is a SECOND control in the same slot and the rule
+   above does not reach it) IS grown — but the rule lives in `rich-input.css`
+   and NOT here, which is a loading fact rather than a filing preference.
 
-   It IS grown, and that is a deliberate reading of ledger RULE R2 rather than
-   a contradiction of it. R2 excludes disabled controls from the bar because
-   there is nothing to tap. This one is not inert: it carries a REASON the
-   reader is meant to open (DEF-032's `useReasonDisclosure` seam), so a finger
-   does have somewhere to land and the thing it lands on should be findable. */
-.cv2-root[data-shell='mobile'] .ri-card__foot .hon-disabled {
-  min-width: var(--mobile-touch-min);
-  min-height: var(--mobile-touch-min);
-}
+   `chat-home.css` is imported by `ChatHomeScreen` and is therefore only in the
+   document once the LAZY chat home has mounted. The same composer foot renders
+   on the channel screen, which imports `channel-screen.css` and never this
+   file — so a phone rule for a shared composer control, written here, would
+   apply on one of the two surfaces that draw it and be absent on the other,
+   with nothing to show for it but a number that differed between two screens
+   running the same component. `rich-input.css` is imported by
+   `rich-input/index.ts`, so it is present wherever a composer is. */
 
 /* --- DEF-025 — the "Thinking" disclosure inside a turn (332x13) ----------- */
 
