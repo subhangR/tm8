@@ -2,10 +2,19 @@ server {
   listen 80;
   listen [::]:80;
   server_name tm8.sh;
+
+  access_log /var/log/nginx/tm8-public-access.log tm8_noargs;
+
+  location ^~ /.well-known/acme-challenge/ {
+    root /var/www/tm8-acme;
+    default_type text/plain;
+    try_files $uri =404;
+  }
+
   # Drop query arguments at the insecure boundary. tm8 credentials never
   # belong in URLs, and an accidental argument must not be reflected into a
   # Location header or carried onto the TLS endpoint.
-  return 308 https://tm8.sh$uri;
+  location / { return 308 https://tm8.sh$uri; }
 }
 
 server {
@@ -24,9 +33,9 @@ server {
 
   server_tokens off;
   add_header Strict-Transport-Security "max-age=31536000" always;
-  access_log /var/log/nginx/tm8-access.log tm8_noargs;
-  error_log  /var/log/nginx/tm8-error.log warn;
-  client_max_body_size 8m;
+  access_log /var/log/nginx/tm8-public-access.log tm8_noargs;
+  error_log  /var/log/nginx/tm8-public-error.log warn;
+  client_max_body_size 64m;
 
   # Event and PTY sockets share this catalog path. The application performs
   # exact Origin/Host checks, cookie authentication, and one-shot PTY grant
@@ -54,13 +63,23 @@ server {
     proxy_send_timeout 75m;
   }
 
-  location / {
+  location = /favicon.ico { access_log off; return 204; }
+
+  location = /index.html {
+    add_header Cache-Control "no-store, must-revalidate" always;
     proxy_pass http://127.0.0.1:17777;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_request_buffering off;
+    include snippets/tm8-proxy-api.conf;
+  }
+
+  location /assets/ {
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    proxy_pass http://127.0.0.1:17777;
+    include snippets/tm8-proxy-api.conf;
+  }
+
+  location / {
+    add_header Cache-Control "no-store, must-revalidate" always;
+    proxy_pass http://127.0.0.1:17777;
+    include snippets/tm8-proxy-api.conf;
   }
 }
