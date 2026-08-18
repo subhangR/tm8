@@ -97,10 +97,23 @@ describe('D67 — every list style reaches the state control', () => {
        * on `.lp__rowdetail-label` measured the LAYOUT and called it the
        * ruling; the ruling is that the control is reachable in every style.
        * These names are carried identically by the live control and by every
-       * refusal, so a kind that draws the honest "no state to set" still
-       * passes and a kind that draws nothing still fails.
+       * refusal, so a kind that HAS a state and draws nothing still fails.
+       *
+       * AMENDED 2026-08-18 — "every" NOW MEANS "every kind that has a state".
+       * D67's ruling (2026-08-02) was that a state must be settable from every
+       * list STYLE; read as "every KIND" it also promised a slot to the 14
+       * kinds that have no state, which is what drew a dead `no state` badge
+       * on every expanded doc, file, PR and memory row. The user's 2026-08-18
+       * ruling — "just taking up height in most places" — removes that slot.
+       * The style-reachability half of D67 is untouched and still walked here:
+       * task and work_session must draw their control in every anatomy.
        */
-      expect(within(strip).getAllByLabelText(/^Change state/).length).toBeGreaterThan(0);
+      if (getKind(kind).list.stateControl) {
+        expect(within(strip).getAllByLabelText(/^Change state/).length).toBeGreaterThan(0);
+      } else {
+        expect(within(strip).queryAllByLabelText(/^Change state/)).toHaveLength(0);
+        expect(strip.querySelector('.lp__statesel--absent')).toBeNull();
+      }
       // `Restore` because an already-archived fixture row draws the inverse
       // verb — the tombstone control, not one specific direction of it.
       expect(within(strip).getAllByLabelText(/^(Archive|Restore)$/).length).toBeGreaterThan(0);
@@ -305,15 +318,27 @@ describe('the collapsed tile writes state through the same control', () => {
   });
 });
 
-describe('D67 — the four refusals stay distinct', () => {
-  it('a kind with no state field says so, and draws no picker', () => {
+describe('D67 — the three refusals stay distinct', () => {
+  /**
+   * WAS "a kind with no state field says so, and draws no picker", which
+   * pinned a `.lp__statesel--absent` badge reading "no state" in the strip.
+   * USER RULING 2026-08-18 removes it: 14 of 19 kinds drew that badge on every
+   * expanded row, and it disclosed the absence of a concept the user never
+   * reached for. The other three refusals below are unchanged — each of those
+   * IS a thing someone tried to do.
+   */
+  it('a kind with no state field draws no state slot at all', () => {
     // doc carries no state member in the contract's EntityState union.
     mount('doc', { onSetState: vi.fn() });
     const strip = expandFirstRow();
     expect(within(strip).queryByTestId('row-state-select')).toBeNull();
-    // Scoped to the strip's own pill: the collapsed row above it also carries
-    // a "no status" badge, and a loose text match would pass on that instead.
-    expect(strip.querySelector('.lp__statesel--absent')?.textContent).toBe('no state');
+    expect(strip.querySelector('.lp__statesel--absent')).toBeNull();
+    // Scoped to the strip: the ROW above it keeps whatever status mark its
+    // anatomy draws, which is where the disclosure now lives alone rather
+    // than twice. Nothing in the strip claims a state exists or is refused.
+    expect(within(strip).queryAllByLabelText(/^Change state/)).toHaveLength(0);
+    // ...and the strip is still there, carrying the rest of its controls.
+    expect(within(strip).getAllByLabelText(/^(Archive|Restore)$/).length).toBeGreaterThan(0);
   });
 
   it('a session shows its state read-only, because the node observes it', () => {

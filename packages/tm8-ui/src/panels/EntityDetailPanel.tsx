@@ -40,7 +40,9 @@ import {
 } from './detail/PanelStates';
 import { ActivityTab, ConnectionsTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
-import { EntityControlStrip, type ControlHost, type ControlSubject } from './controls/EntityControls';
+import {
+  EntityControlStrip, stripHasLiveControl, type ControlHost, type ControlSubject,
+} from './controls/EntityControls';
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
 import { SubtreeBody } from './bodies/SubtreeBody';
@@ -635,12 +637,21 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * live verb is restore — which `TombstoneBody` owns below. Rendering the
    * strip here too would put two restore controls in one panel, which is the
    * duplication D67 removed from the tile.
+   *
+   * AND NOT WHERE NOTHING IS WIRED — USER RULING 2026-08-18. `controlsFor` asks
+   * the REGISTRY what this kind has; `stripHasLiveControl` asks THIS HOST what
+   * it can actually perform, and the band needs both. Two mounts below pass no
+   * `controls` prop at all (`ChannelView`, `GraphScreen`), so every control in
+   * the fallback host rendered not-wired and the band spent 37px on four
+   * refusals. The gate only ever NARROWS: a band that renders today renders
+   * only where at least one of its controls can be used.
    */
+  const controlHost = props.controls ?? { kind: detail.kind, ctx: props.ctx };
   const strip =
-    controlsFor(config) && !isTombstone ? (
+    controlsFor(config) && stripHasLiveControl(controlHost, config) && !isTombstone ? (
       <EntityControlStrip
         row={subjectOf(detail)}
-        props={props.controls ?? { kind: detail.kind, ctx: props.ctx }}
+        props={controlHost}
         config={config}
         variant="chips"
       />
