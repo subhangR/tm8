@@ -29,6 +29,7 @@ DECISIONS **D74**.
 | chat entity-chip cache | `chat-home/EntityChip.tsx` (module `Map`) | entity id → kind/title, up to 200 | cleared on BOTH ends |
 | last place | `views/last-place.ts` → `tm8.last-place.v1.{node}` | last space **and last target, which can be `{type:'entity', ref:<id>}`** | `clearLastPlace(node)` on EXPLICIT sign-out only (D74) |
 | launch-source cache | `data/launch-cache.ts` → `tm8.launch-sources.v1.{node}.{space}` | up to 400 `team_member` / `interaction_profile` rows | `clearLaunchCache(node)` on EXPLICIT sign-out only (D74) |
+| launch recents | `data/launch-recents.ts` → `tm8.launch-recents.v1.{node}.{space}` | up to 50 `team_member` **ids**, in the order this viewer last launched them | `clearLaunchRecents(node)` on EXPLICIT sign-out only |
 | the address | the browser hash | names a space and often an entity | blanked to `UNADDRESSED_HASH` on EXPLICIT sign-out only (D74) |
 
 Two of these are worse than the reported bug in one respect: `last-place` and

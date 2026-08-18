@@ -68,6 +68,7 @@ import {
   readLaunchCache,
   writeLaunchCache,
 } from '../data/launch-cache';
+import { readLaunchRecents, rememberLaunchPick } from '../data/launch-recents';
 import { DEFAULT_WINDOW, windowSpec } from '../graph/model';
 import { readLastSpace, writeLastSpace } from './last-place';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
@@ -77,6 +78,7 @@ import { useMessagePulses, type MessagePulse } from '../panels/list/useMessagePu
 import type { BoardSnapshot } from '../panels';
 import {
   CORE_CHAT_LAUNCH_PRESENTATION,
+  orderTeammatesByRecency,
   type LaunchCapacity,
   type LaunchMemory,
   type LaunchProfile,
@@ -713,6 +715,24 @@ export function useGateData(options: GateOptions): GateData {
   const [executionCapacity, setExecutionCapacity] = useState<LivenessSnapshot['capacity']>();
   const [linkedProjects, setLinkedProjects] = useState<readonly ProjectResource[]>([]);
   const [spaceDefaultProfileId, setSpaceDefaultProfileId] = useState<EntityId | null>(null);
+  /**
+   * The teammates this browser has actually launched in this space, most recent
+   * first. React STATE rather than a read inside the launch memo, because the
+   * memo has to re-run when a spawn appends to it — a `readLaunchRecents` call
+   * in there would be invisible to the dependency array and the roster would
+   * not reorder until the next space switch.
+   *
+   * Seeded per space in the space-open effect below, beside the launch cache it
+   * is keyed like. `[]` until then, which orders the roster alphabetically —
+   * the correct answer for a viewer who has not launched anything here yet.
+   */
+  const [launchRecents, setLaunchRecents] = useState<readonly string[]>([]);
+  /**
+   * The same value, readable from `spawn` without making it depend on it. See
+   * the record site for why that dependency would be expensive and why the
+   * write cannot live inside a `setLaunchRecents` updater.
+   */
+  const launchRecentsRef = useRef<readonly string[]>([]);
   /**
    * THE GRAPH READ'S ANSWER, KEPT — which it previously was not.
    *
@@ -1363,6 +1383,15 @@ export function useGateData(options: GateOptions): GateData {
     // replaces all of it with the server's answer moments later; until then a
     // populated picker beats an empty one, and a stale option refuses at spawn
     // with the node's own reason rather than silently doing the wrong thing.
+    /* The roster ORDER, re-read for the same reason the option set is: recents
+       are keyed per space, so carrying the previous space's order across would
+       rank this space's picker by launches that did not happen in it. Set
+       unconditionally — an empty answer must CLEAR the outgoing space's order,
+       not leave it standing. */
+    const recents = readLaunchRecents(nodeKeyOf(options.serverBaseUrl), spaceId);
+    launchRecentsRef.current = recents;
+    setLaunchRecents(recents);
+
     const seeded = readLaunchCache(nodeKeyOf(options.serverBaseUrl), spaceId);
     if (seeded) {
       // Remembered so hydrate can tombstone whichever of them the server no
@@ -1738,6 +1767,38 @@ export function useGateData(options: GateOptions): GateData {
       if (result.entity) domain.store.getState().ingestDetail(result.entity);
       domain.store.getState().reconcile(input.clientMutationId);
 
+      /* RECORD THE PICK — the one place every launch surface passes through, so
+         the sheet, the quick config and New Session all feed one order without
+         any of them knowing this exists.
+
+         AFTER the await, deliberately. A refused spawn is not a launch, and
+         moving a persona to the top of the roster for a session that never
+         started would leave the picker recommending whatever failed most
+         recently.
+
+         AGAINST `input.spaceId`, not the active one. Every caller today builds
+         the input from `data.spaceId` so the two agree, but the input is what
+         the node was actually told, and keying off the hook's space would write
+         this space's ids under another space's key the moment that stops being
+         true. The in-memory order is only usable as the base when the spawn IS
+         into the active space; otherwise the stored list for that space is.
+
+         Read through a REF, and written outside any state updater: a React
+         updater must be pure, and `rememberLaunchPick` touches localStorage —
+         StrictMode double-invokes updaters in dev. Taking the base from a ref
+         also keeps `spawn` from depending on the state it writes, which would
+         re-create it after every launch and invalidate every memo below it. */
+      if (input.teamMemberId) {
+        const nodeKey = nodeKeyOf(options.serverBaseUrl);
+        const active = input.spaceId === spaceId;
+        const base = active ? launchRecentsRef.current : readLaunchRecents(nodeKey, input.spaceId);
+        const next = rememberLaunchPick(nodeKey, input.spaceId, input.teamMemberId, base);
+        if (active) {
+          launchRecentsRef.current = next;
+          setLaunchRecents(next);
+        }
+      }
+
       const sessionId = result.entity?.id
         ?? result.patches.find((patch) => patch.state.kind === 'work_session')?.id;
       if (!sessionId) {
@@ -1764,7 +1825,7 @@ export function useGateData(options: GateOptions): GateData {
       // neither path needs a browser refresh or a post-command full hydrate.
       return sessionId;
     },
-    [seam, domain, refetchDetail],
+    [seam, domain, refetchDetail, spaceId, options.serverBaseUrl],
   );
 
   const launch = useMemo<GateData['launch']>(() => {
@@ -1862,13 +1923,19 @@ export function useGateData(options: GateOptions): GateData {
         }
       : undefined;
     return {
-      teammates,
+      /* ORDERED HERE, at the one place the roster is derived, so every launch
+         surface inherits it: the sheet's radiogroup, the quick config's select
+         behind every Run, and New Session — which has no picker at all and
+         takes `teammates[0]` as the teammate. Sorting in the surfaces instead
+         would be three call sites that can drift, and would leave whichever one
+         nobody remembered on the old insertion order. */
+      teammates: orderTeammatesByRecency(teammates, launchRecents),
       projects,
       profiles,
       ...(memories ? { memories } : {}),
       ...(capacity ? { capacity } : {}),
     };
-  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, rows]);
+  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, rows, launchRecents]);
 
   /* Surface Audit 2026-07-29: the composer rendered ENABLED and wired to
      nothing — inviting an action it could not perform, the worst honesty

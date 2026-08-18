@@ -349,6 +349,60 @@ export interface LaunchTeammate {
   liveSessions?: number | null;
 }
 
+/**
+ * THE ROSTER ORDER — recently launched first, then everyone else by name.
+ *
+ * The roster had no ordering rule at all. `data.launch` derives it from
+ * `Object.values(entities)`, which is the domain store's key-insertion order:
+ * the localStorage seed, then hydrate's answer, then live events. That is a
+ * by-product, not a sort, and it changes shape between boots — so the picker
+ * offered the same people in a different order every time, and `teammates[0]`
+ * (the seeded default in both pickers, and the ONLY choice in New Session)
+ * was whoever happened to land first.
+ *
+ * TWO BANDS, and the second one matters as much as the first. Recents answer
+ * "the person I keep launching"; the alphabetical tail answers "the person I
+ * launched once, three weeks ago". Ranking recents alone would leave that tail
+ * in insertion order — still arbitrary, still reshuffling — so a viewer with an
+ * empty history would see no improvement at all. Alphabetical is the tail rule
+ * because it is the one a reader can PREDICT: you can aim for a name before the
+ * list has finished rendering.
+ *
+ * `numeric` collation, so "Worker 2" precedes "Worker 10" rather than trailing
+ * it — seeded rosters are numbered, and a plain lexical sort gets that backwards.
+ *
+ * TOTAL, not merely consistent: equal ranks fall through to name and then to
+ * id, and ids are unique, so no two rows ever compare equal. An ordering with
+ * ties would let the engine's sort leave them in — you guessed it — insertion
+ * order, reintroducing the instability at the exact rows most likely to collide.
+ *
+ * PURE, and it copies. The input is a memo's output feeding React; sorting it
+ * in place would mutate a value other consumers already hold.
+ */
+export function orderTeammatesByRecency<T extends { id: string; name: string }>(
+  teammates: readonly T[],
+  recentIds: readonly string[],
+): readonly T[] {
+  // A Map, not `indexOf` inside the comparator: that would be O(n·m·log n) over
+  // a list this sits in front of on every render.
+  const rank = new Map<string, number>();
+  recentIds.forEach((id, index) => {
+    // FIRST occurrence wins, matching the store's own dedupe rule, so a
+    // hand-edited or double-written list cannot rank one id twice.
+    if (!rank.has(id)) rank.set(id, index);
+  });
+  const byName = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+  // An id that is in no recents list ranks after every id that is.
+  const rankOf = (t: T): number => rank.get(t.id) ?? Number.MAX_SAFE_INTEGER;
+  return [...teammates].sort((a, b) => {
+    const byRank = rankOf(a) - rankOf(b);
+    if (byRank !== 0) return byRank;
+    const named = byName.compare(a.name, b.name);
+    if (named !== 0) return named;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
+
 export interface LaunchProject {
   id: string;
   name: string;
