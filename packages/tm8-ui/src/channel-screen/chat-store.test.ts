@@ -2,13 +2,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DurableWorkspaceEvent, EntityFeedPage, FeedItem } from '@tm8/contract';
 import {
   chatStateKey,
-  createChatSessionController,
   createChatStore,
   draftStorageKey,
   readDraft,
   writeDraft,
   type ChatSyncSeam,
 } from './chat-store';
+/*
+ * REPOINTED, NOT RETIRED. `createChatSessionController` is gone — the union
+ * reader supersedes it — but everything it guaranteed is still a guarantee, so
+ * these assertions moved to its replacement rather than being deleted with it.
+ * They pass unchanged, which is the useful fact: the union did not quietly
+ * drop a behaviour the session chat depended on.
+ */
+import { createAnchorFeedController } from './anchor-feed-controller';
 
 const SESSION = '01900000-0000-7000-8000-000000000201';
 const SPACE = '01900000-0000-7000-8000-000000000202';
@@ -137,7 +144,7 @@ describe('Chat state identity and durable drafts', () => {
   });
 });
 
-describe('Chat feed synchronization controller', () => {
+describe('Chat feed synchronization controller (now createAnchorFeedController)', () => {
   beforeEach(() => vi.restoreAllMocks());
 
   it('loads newest, presents chronologically, and deduplicates by typed feed identity', async () => {
@@ -148,7 +155,7 @@ describe('Chat feed synchronization controller', () => {
       item('same', '2026-07-30T00:02:00.000Z', 'activity'),
       item('same', '2026-07-30T00:01:00.000Z', 'message'),
     ], 'older'));
-    const controller = createChatSessionController({ store, seam: h.seam, key: parts, spaceId: SPACE, limit: 25 });
+    const controller = createAnchorFeedController({ store, seam: h.seam, key: parts, spaceId: SPACE, limit: 25 });
 
     await controller.loadNewest();
     const entry = store.getState().entries[chatStateKey(parts)]!;
@@ -173,7 +180,7 @@ describe('Chat feed synchronization controller', () => {
         item('m2', '2026-07-30T00:02:00.000Z'),
         item('m1', '2026-07-30T00:01:00.000Z'),
       ], 'c-older'));
-    const controller = createChatSessionController({ store, seam: h.seam, key: parts, spaceId: SPACE, limit: 2 });
+    const controller = createAnchorFeedController({ store, seam: h.seam, key: parts, spaceId: SPACE, limit: 2 });
     await controller.loadNewest();
     await controller.loadOlder();
 
@@ -189,7 +196,7 @@ describe('Chat feed synchronization controller', () => {
     const h = seamHarness();
     const store = createChatStore({ storage: memoryStorage() });
     h.feed.mockResolvedValue(page([item('m2', '2026-07-30T00:02:00.000Z')], 'newer', 'older'));
-    const controller = createChatSessionController({ store, seam: h.seam, key: parts, spaceId: SPACE, limit: 21 });
+    const controller = createAnchorFeedController({ store, seam: h.seam, key: parts, spaceId: SPACE, limit: 21 });
     await controller.loadAround('message:m2');
 
     expect(h.feed).toHaveBeenCalledWith(SESSION, {
@@ -206,7 +213,7 @@ describe('Chat feed synchronization controller', () => {
     const old = deferred<EntityFeedPage>();
     const fresh = deferred<EntityFeedPage>();
     h.feed.mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
-    const controller = createChatSessionController({ store, seam: h.seam, key: parts, spaceId: SPACE });
+    const controller = createAnchorFeedController({ store, seam: h.seam, key: parts, spaceId: SPACE });
     const first = controller.loadNewest();
     const second = controller.loadNewest();
     fresh.resolve(page([item('fresh', '2026-07-30T00:02:00.000Z')]));
@@ -228,7 +235,7 @@ describe('Chat feed synchronization controller', () => {
     const h = seamHarness();
     const store = createChatStore({ storage: memoryStorage() });
     h.feed.mockResolvedValue(page([]));
-    const controller = createChatSessionController({ store, seam: h.seam, key: parts, spaceId: SPACE });
+    const controller = createAnchorFeedController({ store, seam: h.seam, key: parts, spaceId: SPACE });
     const detach = controller.attach();
     await controller.loadNewest();
 
@@ -255,7 +262,7 @@ describe('Chat feed synchronization controller', () => {
       .mockResolvedValueOnce(page([item('m2', '2026-07-30T00:02:00.000Z')], 'expired'))
       .mockRejectedValueOnce(Object.assign(new Error('expired cursor'), { code: 'invalid_cursor' }))
       .mockResolvedValueOnce(page([item('m3', '2026-07-30T00:03:00.000Z')], null));
-    const controller = createChatSessionController({ store, seam: h.seam, key: parts, spaceId: SPACE });
+    const controller = createAnchorFeedController({ store, seam: h.seam, key: parts, spaceId: SPACE });
     await controller.loadNewest();
     await controller.loadOlder();
 

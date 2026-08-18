@@ -93,6 +93,9 @@ export interface AnchorFeedControllerOptions {
    * `panel.threads`. The capability is universal; the offer is not.
    */
   threads?: boolean;
+  /** A previous spelling of this key, read once to carry a draft across a
+   *  scope removal. See `ChatStoreState.ensure`. */
+  legacyKey?: ChatStateKeyParts;
   onThreadChange?: (thread: AnchorFeedThread | null) => void;
 }
 
@@ -115,11 +118,12 @@ export function createAnchorFeedController({
   spaceId,
   limit = 50,
   threads = false,
+  legacyKey,
   onThreadChange,
 }: AnchorFeedControllerOptions): AnchorFeedController {
   const id = chatStateKey(key);
   const anchorId = key.sessionId as EntityId;
-  store.getState().ensure(key);
+  store.getState().ensure(key, legacyKey);
 
   let generation = 0;
   let disposed = false;

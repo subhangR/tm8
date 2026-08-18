@@ -74,7 +74,7 @@ const identityProps = {
 };
 
 describe('SessionChatSurface production adapter', () => {
-  it('hydrates only the canonical session_chat_v1 feed and posts through messages.post', async () => {
+  it('sends NO scope and lets the server resolve it, and posts through messages.post', async () => {
     const h = harness();
     render(
       <SessionChatSurface
@@ -88,11 +88,23 @@ describe('SessionChatSurface production adapter', () => {
       />,
     );
 
+    /*
+     * THIS ASSERTION WAS INVERTED, DELIBERATELY. It used to require
+     * `scope: 'session_chat_v1'`, which is precisely what the server resolves
+     * for a work_session anchor (`feed-context.ts:176`) — so the client was
+     * re-deciding what the server already knew, and the same hardcode in two
+     * sibling surfaces is what made them unmountable on any other kind.
+     *
+     * The requirement is now the absence: the property must not be present at
+     * all, not merely undefined. A keyset cursor is fingerprinted over its
+     * scope, so a later read that spelled it differently would have its cursor
+     * rejected — one spelling, on every read, is the whole rule.
+     */
     await waitFor(() => expect(h.feed).toHaveBeenCalledWith(SESSION_ID, {
-      scope: 'session_chat_v1',
       order: 'newest',
       limit: 37,
     }));
+    expect('scope' in (h.feed.mock.calls[0]![1] ?? {})).toBe(false);
     fireEvent.change(screen.getByRole('textbox', { name: /message this session/i }), {
       target: { value: 'A provider-neutral message' },
     });

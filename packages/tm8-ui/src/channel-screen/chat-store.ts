@@ -1,15 +1,12 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type {
-  DurableWorkspaceEvent,
   EntityFeedPage,
   EntityFeedQuery,
   EntityId,
-  FeedItem,
   FeedScope,
   MessageView,
-  SpaceId,
 } from '@tm8/contract';
-import type { ConnectionState, Seam, Unsubscribe } from '../data/seam';
+import type { Seam } from '../data/seam';
 import type { ChannelRefusal } from './feed-model';
 
 const DRAFT_VERSION = 1;
@@ -80,7 +77,17 @@ export interface ChatEntry {
 
 export interface ChatStoreState {
   entries: Record<string, ChatEntry>;
-  ensure(key: ChatStateKeyParts): void;
+  /**
+   * `legacy` is a PREVIOUS spelling of this same conversation's key, read only
+   * when the current one holds no draft.
+   *
+   * Dropping a hardcoded scope changes the key — and the key is also the
+   * localStorage draft key, so the correct fix silently discards whatever the
+   * viewer had half-written. One fallback read carries it across. It is not a
+   * merge: a draft under the current key always wins, so this can only ever
+   * recover text that would otherwise be lost.
+   */
+  ensure(key: ChatStateKeyParts, legacy?: ChatStateKeyParts): void;
   patch(key: string, update: Partial<ChatEntry> | ((current: ChatEntry) => ChatEntry)): void;
   setDraft(key: ChatStateKeyParts, body: string, replyToId?: EntityId | null): void;
   setReplyTarget(key: string, replyToId: EntityId | null): void;
@@ -177,13 +184,17 @@ export function createChatStore(options: ChatStoreOptions = {}): StoreApi<ChatSt
   const now = options.now ?? (() => new Date().toISOString());
   return createStore<ChatStoreState>((set, get) => ({
     entries: {},
-    ensure(key) {
+    ensure(key, legacy) {
       const id = chatStateKey(key);
       if (get().entries[id]) return;
+      const own = readDraft(storage, key);
+      const drafts = legacy && !own.newMessage && Object.keys(own.replies).length === 0
+        ? readDraft(storage, legacy)
+        : own;
       set((state) => ({
         entries: {
           ...state.entries,
-          [id]: emptyEntry(key, readDraft(storage, key)),
+          [id]: emptyEntry(key, drafts),
         },
       }));
     },
@@ -225,235 +236,23 @@ export function createChatStore(options: ChatStoreOptions = {}): StoreApi<ChatSt
 
 export const chatStore = createChatStore();
 
-export interface ChatSessionControllerOptions {
-  store: StoreApi<ChatStoreState>;
-  seam: ChatSyncSeam;
-  key: ChatStateKeyParts;
-  spaceId: SpaceId | string;
-  limit?: number;
-}
-
-export interface ChatSessionController {
-  loadNewest(refreshedFromNewest?: boolean): Promise<void>;
-  loadOlder(): Promise<void>;
-  loadNewer(): Promise<void>;
-  loadAround(around: NonNullable<EntityFeedQuery['around']>): Promise<void>;
-  attach(): Unsubscribe;
-  dispose(): void;
-}
-
-export function createChatSessionController({
-  store,
-  seam,
-  key,
-  spaceId,
-  limit = 50,
-}: ChatSessionControllerOptions): ChatSessionController {
-  const id = chatStateKey(key);
-  store.getState().ensure(key);
-  let generation = 0;
-  let disposed = false;
-  let lastConnectionPhase: ConnectionState['phase'] | null = null;
-
-  const current = () => store.getState().entries[id]!;
-  const patch = (update: Partial<ChatEntry> | ((entry: ChatEntry) => ChatEntry)) => {
-    if (!disposed) store.getState().patch(id, update);
-  };
-  const begin = (): number => {
-    const token = ++generation;
-    return token;
-  };
-  const accepts = (token: number): boolean => !disposed && generation === token;
-
-  const loadNewest = async (refreshedFromNewest = false): Promise<void> => {
-    const token = begin();
-    patch({ phase: current().page ? current().phase : 'loading', error: null, refusal: null });
-    try {
-      const response = await seam.feed(key.sessionId as EntityId, {
-        scope: key.scope,
-        order: 'newest',
-        limit,
-      });
-      if (!accepts(token)) return;
-      const page = chronologicalPage(response);
-      patch({
-        page,
-        phase: 'ready',
-        error: null,
-        refusal: null,
-        olderCursor: response.nextCursor,
-        newerCursor: null,
-        refreshedFromNewest,
-        focusedItemId: null,
-      });
-    } catch (reason: unknown) {
-      if (!accepts(token)) return;
-      const refusal = refusalFrom(reason);
-      patch(refusal
-        ? { phase: 'refused', refusal, error: null }
-        : { phase: 'error', error: errorMessage(reason), refusal: null });
-    }
-  };
-
-  const loadOlder = async (): Promise<void> => {
-    const cursor = current().olderCursor;
-    if (!cursor || current().loadingEarlier) return;
-    const token = begin();
-    patch({ loadingEarlier: true });
-    try {
-      const response = await seam.feed(key.sessionId as EntityId, {
-        scope: key.scope,
-        order: current().focusedItemId ? 'oldest' : 'newest',
-        cursor,
-        limit,
-      });
-      if (!accepts(token)) return;
-      patch((entry) => ({
-        ...entry,
-        page: mergePages(response, entry.page),
-        olderCursor: response.nextCursor,
-        loadingEarlier: false,
-      }));
-    } catch (reason: unknown) {
-      if (!accepts(token)) return;
-      if (errorCode(reason) === 'invalid_cursor') {
-        patch({ loadingEarlier: false });
-        await loadNewest(true);
-        return;
-      }
-      patch({ loadingEarlier: false, error: errorMessage(reason), phase: 'error' });
-    }
-  };
-
-  const loadNewer = async (): Promise<void> => {
-    const cursor = current().newerCursor;
-    if (!cursor || current().loadingNewer) return;
-    const token = begin();
-    patch({ loadingNewer: true });
-    try {
-      const response = await seam.feed(key.sessionId as EntityId, {
-        scope: key.scope,
-        order: 'oldest',
-        cursor,
-        limit,
-      });
-      if (!accepts(token)) return;
-      patch((entry) => ({
-        ...entry,
-        page: mergePages(entry.page, response),
-        newerCursor: response.nextCursor,
-        loadingNewer: false,
-      }));
-    } catch (reason: unknown) {
-      if (!accepts(token)) return;
-      if (errorCode(reason) === 'invalid_cursor') {
-        patch({ loadingNewer: false });
-        await loadNewest(true);
-        return;
-      }
-      patch({ loadingNewer: false, error: errorMessage(reason), phase: 'error' });
-    }
-  };
-
-  const loadAround = async (
-    around: NonNullable<EntityFeedQuery['around']>,
-  ): Promise<void> => {
-    const token = begin();
-    patch({ phase: current().page ? current().phase : 'loading', error: null, refusal: null });
-    try {
-      const response = await seam.feed(key.sessionId as EntityId, {
-        scope: key.scope,
-        order: 'oldest',
-        around,
-        limit,
-      });
-      if (!accepts(token)) return;
-      patch({
-        page: chronologicalPage(response),
-        phase: 'ready',
-        error: null,
-        refusal: null,
-        olderCursor: response.previousCursor ?? null,
-        newerCursor: response.nextCursor,
-        focusedItemId: around,
-        refreshedFromNewest: false,
-      });
-    } catch (reason: unknown) {
-      if (!accepts(token)) return;
-      const refusal = refusalFrom(reason);
-      patch(refusal
-        ? { phase: 'refused', refusal, error: null }
-        : { phase: 'error', error: errorMessage(reason), refusal: null });
-    }
-  };
-
-  /**
-   * Event-driven refreshes are COALESCED, not issued per event.
-   *
-   * A streaming session emits a durable event per frame-worth of activity, and
-   * this used to call `loadNewest()` for each one — a full newest-page feed
-   * read PER EVENT, i.e. the busier the agent, the harder its own chat surface
-   * hammered the node (and each call bumps `generation`, so an in-flight
-   * pagination merge was cancelled by every keystroke of agent output).
-   * Trailing-edge debounce, with a max-wait so a CONTINUOUS stream still
-   * refreshes on a bounded cadence rather than starving until it pauses.
-   */
-  const REFRESH_DEBOUNCE_MS = 300;
-  const REFRESH_MAX_WAIT_MS = 1_500;
-  let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-  let refreshDeadline: number | null = null;
-  const clearRefresh = () => {
-    if (refreshTimer !== null) clearTimeout(refreshTimer);
-    refreshTimer = null;
-    refreshDeadline = null;
-  };
-  const scheduleRefresh = () => {
-    if (disposed) return;
-    const at = Date.now();
-    if (refreshDeadline === null) refreshDeadline = at + REFRESH_MAX_WAIT_MS;
-    if (refreshTimer !== null) clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => {
-      refreshTimer = null;
-      refreshDeadline = null;
-      void loadNewest();
-    }, Math.min(REFRESH_DEBOUNCE_MS, Math.max(0, refreshDeadline - at)));
-  };
-
-  const attach = (): Unsubscribe => {
-    const offEvent = seam.onEvent((event) => {
-      if (eventTouchesSession(event, key.sessionId as EntityId)) scheduleRefresh();
-    });
-    const offConnection = seam.onConnection((connection) => {
-      const previous = lastConnectionPhase;
-      lastConnectionPhase = connection.phase;
-      if (connection.phase === 'live' && previous !== null && previous !== 'live') {
-        void loadNewest();
-      }
-    });
-    const offResync = seam.onResync((resyncedSpaceId) => {
-      if (resyncedSpaceId === spaceId) void loadNewest(true);
-    });
-    return () => {
-      clearRefresh();
-      offEvent();
-      offConnection();
-      offResync();
-    };
-  };
-
-  return {
-    loadNewest,
-    loadOlder,
-    loadNewer,
-    loadAround,
-    attach,
-    dispose() {
-      disposed = true;
-      generation += 1;
-      clearRefresh();
-    },
-  };
-}
+/*
+ * `createChatSessionController`, ITS OPTIONS TYPE, AND ITS FEED HELPERS LIVED
+ * HERE — `chronologicalPage`, `mergePages`, `dedupe`, `chronological`,
+ * `eventTouchesSession`, `refusalFrom` and the error/refusal copy.
+ *
+ * They read a work_session with a hardcoded `session_chat_v1`, and they were
+ * the best of the three readers this codebase had — generation-guarded reads,
+ * a coalesced refresh, a reconnect reload, `onResync`, bidirectional paging
+ * and `loadAround`. None of that is lost: it is the foundation of
+ * `anchor-feed-controller.ts`, which does the same things for ANY anchor kind
+ * and no longer names a scope the server already resolves. The tests that
+ * guaranteed this behaviour were repointed at the replacement rather than
+ * deleted, and they pass unchanged.
+ *
+ * What remains in this file is the part that was never duplicated and is still
+ * exactly right: the keyed store, the persisted drafts and the reply target.
+ */
 
 export function messageForReply(entry: ChatEntry): MessageView | null {
   if (!entry.replyToId) return null;
@@ -482,76 +281,13 @@ function emptyEntry(key: ChatStateKeyParts, drafts: ChatDrafts): ChatEntry {
   };
 }
 
-function chronologicalPage(page: EntityFeedPage): EntityFeedPage {
-  return { ...page, items: chronological(dedupe(page.items)) };
-}
 
-function mergePages(
-  left: EntityFeedPage | undefined,
-  right: EntityFeedPage | undefined,
-): EntityFeedPage | undefined {
-  if (!left) return right ? chronologicalPage(right) : undefined;
-  if (!right) return chronologicalPage(left);
-  return {
-    ...left,
-    ...right,
-    resolvedScope: right.resolvedScope,
-    predicates: right.predicates,
-    items: chronological(dedupe([...left.items, ...right.items])),
-  };
-}
 
-function dedupe(items: readonly FeedItem[]): FeedItem[] {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const key = `${item.itemKind}:${item.itemId}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
 
-function chronological(items: readonly FeedItem[]): FeedItem[] {
-  return [...items].sort((a, b) =>
-    a.createdAt.localeCompare(b.createdAt) || a.itemId.localeCompare(b.itemId));
-}
 
-function eventTouchesSession(event: DurableWorkspaceEvent, sessionId: EntityId): boolean {
-  if ('anchorId' in event && event.anchorId === sessionId) return true;
-  if (event.type === 'activity.created') {
-    return event.activity.entityId === sessionId || event.activity.workSessionId === sessionId;
-  }
-  if (event.type === 'message.attachments.updated') {
-    return event.message.state.anchorId === sessionId;
-  }
-  if (event.type === 'message.delivery_reserved' || event.type === 'message.delivery_settled') {
-    return event.delivery.targetWorkSessionId === sessionId;
-  }
-  return false;
-}
 
-function refusalFrom(error: unknown): ChannelRefusal | null {
-  const code = errorCode(error);
-  if (code !== 'forbidden' && code !== 'not_found') return null;
-  return {
-    kind: code,
-    message: error instanceof Error && error.message
-      ? error.message
-      : code === 'forbidden'
-      ? 'You no longer have access to this session’s Chat.'
-      : 'This work session no longer exists.',
-  };
-}
 
-function errorCode(error: unknown): string | null {
-  return isRecord(error) && typeof error.code === 'string' ? error.code : null;
-}
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : 'The session Chat feed could not be read.';
-}
 
 function browserStorage(): Storage | null {
   if (typeof window === 'undefined') return null;
