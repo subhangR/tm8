@@ -309,10 +309,23 @@ export function AttachmentStrip({
    * A designed empty, not an accidental one. With nothing attached AND no way
    * to attach, the strip renders NOTHING — an empty tile row under every
    * entity in the workspace would be chrome claiming a feature that is not
-   * wired here. With a path present, the ＋ tile alone IS the empty state:
-   * it is the invitation, so it needs no "no attachments" prose.
+   * wired here.
+   *
+   * THE EMPTY STATE IS NOW SILENT TOO (owner ruling 2026-08-18). The ＋ tile
+   * used to be the empty state's whole invitation, which meant ~140px of
+   * dashed box under every entity that has never had a file — read off an
+   * artifact panel, that is a third of the viewport spent on an offer nobody
+   * made. Attaching keeps its path: DROP, on the host marked
+   * `data-attachment-drophost` (the detail panel marks itself, so it is every
+   * kind, not only the ones with a description block).
+   *
+   * `idle` HIDES rather than unmounts, and that distinction is load-bearing:
+   * the drop listeners hang off `rootRef.current.closest(...)`, so a strip
+   * that returned null here would take the only remaining way to attach down
+   * with it. The root stays in the DOM, `display:none`, holding the wiring.
    */
   if (files.length === 0 && pending.length === 0 && !startUpload && !projectFolder) return null;
+  const idle = files.length === 0 && pending.length === 0;
 
   const openUpload = () => {
     setMenuOpen(false);
@@ -329,8 +342,9 @@ export function AttachmentStrip({
 
   return (
     <div
-      className="fn-tiles"
+      className={idle ? 'fn-tiles fn-tiles--idle' : 'fn-tiles'}
       data-testid="attachment-strip"
+      data-idle={idle ? 'true' : undefined}
       data-count={files.length}
       ref={rootRef}
       onKeyDown={(event) => {
@@ -378,7 +392,12 @@ export function AttachmentStrip({
         </div>
       ))}
 
-      {startUpload || projectFolder ? (
+      {/* The ＋ is gated on `idle`, not merely hidden by `.fn-tiles--idle`:
+          jsdom loads no stylesheets, so a button left in the tree "but hidden
+          by CSS" is a button every test still finds and clicks — a green suite
+          asserting an affordance no browser renders. Not rendering it is the
+          only version of this rule the tests can actually see. */}
+      {!idle && (startUpload || projectFolder) ? (
         <span className="fn-plus" ref={menuRef} onBlur={(event) => {
           const wrap = menuRef.current;
           if (wrap && event.relatedTarget instanceof Node && wrap.contains(event.relatedTarget)) return;

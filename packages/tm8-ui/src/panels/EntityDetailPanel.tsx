@@ -689,6 +689,15 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       data-testid="entity-detail-panel"
       data-host={host}
       data-archetype={config.panel.archetype}
+      /* THE PANEL IS THE FALLBACK DROP TARGET (2026-08-18). With the empty ＋
+         tile gone, drop is the attach path — and the only body that had marked
+         itself a drophost was `subtree`, so every other kind would have had no
+         path at all. Marking the panel gives all of them one; a body with a
+         better-placed target (the task description block) still wins, because
+         the strip binds to its CLOSEST marked ancestor, not to this one. The
+         listeners only exist where the strip mounts, so terminal and chat
+         panels — which never mount it — stay inert. */
+      data-attachment-drophost=""
       /* A labelled region: panels are landmarks, and a screen-reader user
          moving between three pinned columns needs them named. */
       aria-label={`${config.label}: ${detail.title}`}
