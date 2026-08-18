@@ -65,6 +65,33 @@ describe('EntityTray', () => {
     expect(view.getAllByTestId('chat-entity-chip')).toHaveLength(TRAY_VISIBLE_LIMIT + 3);
   });
 
+  it('the Chat tab is the way back: first, active with the stage empty, pulsing when the thread works off-stage', () => {
+    const HAS = id(7);
+    const turns = [turn(call('tm8_read_entity', { id: HAS }, { id: HAS, kind: 'task', title: 'X' }))];
+    const onShowChat = vi.fn();
+    // Stage empty: chat tab active, no pulse.
+    const idle = render(<EntityTray turns={turns} onShowChat={onShowChat} />);
+    const chatTab = idle.getByText('Chat').closest('button')!;
+    expect(chatTab.hasAttribute('data-active')).toBe(true);
+    expect(idle.container.querySelector('.tch-tray__pulse')).toBeNull();
+    idle.unmount();
+    // Stage occupied + thread busy: entity tab active, chat tab pulses, click returns.
+    const busy = render(
+      <EntityTray turns={turns} onShowChat={onShowChat} activeEntityId={HAS} chatBusy />,
+    );
+    const busyChat = busy.getByText('Chat').closest('button')!;
+    expect(busyChat.hasAttribute('data-active')).toBe(false);
+    expect(busy.container.querySelector('.tch-tray__pulse')).not.toBeNull();
+    expect(busy.container.querySelector('.tch-tray__tab[data-active]')).not.toBeNull();
+    fireEvent.click(busyChat);
+    expect(onShowChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('with the stage occupied and no seeds, the tray still offers the way back', () => {
+    const view = render(<EntityTray turns={[turn([])]} onShowChat={vi.fn()} activeEntityId={id(9)} />);
+    expect(view.getByText('Chat')).toBeTruthy();
+  });
+
   it('the Graph door renders only with a handler, and fires it', () => {
     const HAS = id(1);
     const turns = [turn(call('tm8_read_entity', { id: HAS }, { id: HAS, kind: 'task', title: 'X' }))];

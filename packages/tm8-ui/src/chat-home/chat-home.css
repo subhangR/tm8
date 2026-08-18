@@ -616,6 +616,47 @@ button.tch-entity-chip:hover {
 }
 .tch-tray__tabs[data-expanded] { flex-wrap: wrap; overflow: visible; }
 
+/* The way back — always first, active when the transcript holds the stage. */
+.tch-tray__chat {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  color: var(--pn-ink-3);
+  padding: 2px 8px;
+  font: var(--pn-fs-micro, 11px) var(--pn-mono);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tch-tray__chat[data-active] {
+  background: var(--pn-active);
+  border-color: var(--pn-line-2);
+  color: var(--pn-ink);
+}
+.tch-tray__chat:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+.tch-tray__chat:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+.tch-tray__pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-run);
+  animation: tch-tray-pulse 1.1s var(--pn-ease-standard) infinite alternate;
+}
+@keyframes tch-tray-pulse { from { opacity: 0.35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .tch-tray__pulse { animation: none; }
+}
+
+.tch-tray__tab { display: inline-flex; min-width: 0; }
+.tch-tray__tab[data-active] .tch-entity-chip {
+  background: var(--pn-active);
+  border-color: var(--pn-line-2);
+}
+
 .tch-tray__more,
 .tch-tray__graph {
   flex: none;
@@ -988,14 +1029,20 @@ button.tch-entity-chip:hover {
    conversation's grid cell; the conversation itself stays MOUNTED but
    display:none (D8) — the attribute selector outranks the pane's own
    display:flex, which the bare `hidden` attribute would not. */
+/* The STAGE (Cockpit ruling 2026-08-18): the selection renders in the
+   transcript's berth INSIDE the conversation column, so the composer and the
+   entity tray keep the bottom. It takes the transcript's flex share; the
+   hidden transcript keeps its mount (D8's reason) but no box. */
 .tch-center {
   display: flex;
+  flex: 1;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background: var(--pn-paper);
 }
 .tch-center > * { flex: 1; min-width: 0; min-height: 0; }
-.tch-conversation[data-hidden] { display: none; }
+.tch-transcript[data-hidden] { display: none; }
 
 .tch-find {
   flex: none;

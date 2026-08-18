@@ -1130,27 +1130,26 @@ export function ChatHomeScreen({
       )}
 
       {/*
-        REGION B — the selection (D5/D7). The conversation pane is B's CHAT
-        occupant; when a task or session is selected the host hands
-        `centerOverride` and this pane goes display:none while staying
-        MOUNTED (D8) — unmounting it would tear down a streaming thread.
-        There is still no working-set tab strip above it: the left column is
-        the only selector.
+        REGION B — the selection (D5/D7), REVISED by the Cockpit ruling
+        2026-08-18: the STAGE swaps, the control panel does not. When a task
+        or session is selected the host hands `centerOverride` and it renders
+        in the TRANSCRIPT's place while the transcript stays MOUNTED but
+        hidden (D8's reason survives — unmounting would tear down a streaming
+        thread) — and the composer + entity tray keep their bottom berth, so
+        the way back (the tray's Chat tab, Esc) is always on screen.
       */}
-      {centerOverride != null ? (
-        <section className="tch-center" aria-label="Selection" data-testid="tch-center-override">
-          {centerOverride}
-        </section>
-      ) : null}
       <section
         className="tch-conversation"
         aria-label="Conversation"
-        data-hidden={centerOverride != null ? 'true' : undefined}
-        hidden={centerOverride != null || undefined}
         /* The new-conversation state centres greeting + composer as one
            invitation (ref mockup 02); an open thread pins the composer to
            the bottom. Layout only — the CSS pair reads this. */
-        data-empty={newThread || undefined}
+        data-empty={(newThread && centerOverride == null) || undefined}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape' || centerOverride == null || event.defaultPrevented) return;
+          event.preventDefault();
+          onShowChat?.();
+        }}
       >
         <header className="tch-conversation__head">
           <div className="tch-title">
@@ -1159,7 +1158,17 @@ export function ChatHomeScreen({
           </div>
         </header>
 
-        <div className="tch-transcript" aria-live="polite">
+        {centerOverride != null ? (
+          <section className="tch-center" aria-label="Selection" data-testid="tch-center-override">
+            {centerOverride}
+          </section>
+        ) : null}
+        <div
+          className="tch-transcript"
+          aria-live="polite"
+          data-hidden={centerOverride != null ? 'true' : undefined}
+          hidden={centerOverride != null || undefined}
+        >
           {loadError ? (
             <div className="tch-load-error" role="alert">
               <strong>Chat could not be read.</strong>
@@ -1218,13 +1227,19 @@ export function ChatHomeScreen({
         </div>
 
         <div className="tch-composer-wrap" data-phase={phase} ref={composerWrapRef}>
-          {detail && !newThread ? (
+          {(detail && !newThread) || centerOverride != null ? (
             <EntityTray
-              turns={detail.turns}
+              turns={detail && !newThread ? detail.turns : []}
               suppressEntityIds={ownMessageIds}
               resolveEntity={resolveEntity}
-              onOpenEntity={onOpenEntity}
+              /* On this host an entity tab swaps the STAGE when the host
+                 wired selection; a host without one falls back to its plain
+                 entity-open. */
+              onOpenEntity={onSelectEntity ? (id) => onSelectEntity(id) : onOpenEntity}
               onOpenGraph={onGraphFullChange ? () => onGraphFullChange(true) : undefined}
+              activeEntityId={centerOverride != null ? selectedEntityId : null}
+              onShowChat={onShowChat}
+              chatBusy={thinking || phase === 'streaming'}
             />
           ) : null}
           {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
