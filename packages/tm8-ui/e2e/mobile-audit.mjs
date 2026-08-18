@@ -169,6 +169,32 @@ const ROUTES = [
   { name: 'board', path: 'board', phone: 'refusal', note: '' },
   { name: 'craft', path: 'craft', phone: 'refusal', note: '' },
   { name: 'settings', path: 'settings', phone: 'refusal', note: '' },
+
+  /* ── AFFORDANCE DESTINATIONS (shell-contract request, DEF-042/043/035) ────
+     Real shareable addresses that no run had ever opened at phone width. They
+     are added to the ROUTE SET rather than measured off to one side, because a
+     destination a refusal card points at is part of the phone's surface whether
+     or not anyone had captured it. Their arrival is a SCOPE CHANGE against the
+     earlier baseline — `basis.routes` is what makes that reconcilable. */
+  { name: 'tasks-board', path: 'k/tasks?mode=board', phone: 'screen', note: 'DEF-042 — tasks in BOARD mode' },
+  { name: 'files-kind', path: 'k/files', phone: 'screen', note: "DEF-043 — the `file` kind list. Its slug is `files`, NOT `file`" },
+  {
+    /* The address the request actually named. `kindOfSlug('file')` is null —
+       the registry slug for kind `file` is `files` (registry.ts:1204) — so
+       `landingOfRoute` returns null and this is the unrouted card. Captured
+       because a card that points somewhere must point at a slug that RESOLVES,
+       and this documents what a viewer following the wrong one gets. */
+    name: 'file-kind-badslug', path: 'k/file', phone: 'refusal',
+    note: 'the `k/file` address as named in the request — slug does not resolve',
+  },
+  {
+    /* DEF-035. `MobileShell`'s `entity` branch renders ChannelView for ANY
+       entity target, and `nav-targets.ts` emits entity targets for voice rooms
+       as well as channels. This is the address that proves what a phone does
+       with one. `vc-standup` is the OCCUPIED room (participantCount 3). */
+    name: 'voice-room', path: 'voice/vc-standup', phone: 'screen',
+    note: 'DEF-035 — voice room target; entity branch renders ChannelView for any kind',
+  },
 ];
 
 /**
