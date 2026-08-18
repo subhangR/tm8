@@ -20,6 +20,15 @@ const MODELS: ChatModelOption[] = [
   { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
 ];
 
+/** A space with NO conversations: the screen's genuine new-thread state, which
+ *  is where the composer is centred and therefore the only place the
+ *  dock-down FLIP can be wrong. Passing `routeThreadId: null` to the ordinary
+ *  fixture is not enough — it auto-selects the thread that exists. */
+function mountEmpty(over: Partial<Parameters<typeof ChatHomeScreen>[0]> = {}) {
+  const { port } = createChatHomeFixturePort([]);
+  return render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} {...over} />);
+}
+
 function mount(over: Partial<Parameters<typeof ChatHomeScreen>[0]> = {}) {
   const { port } = createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD]);
   return render(
@@ -97,6 +106,50 @@ describe('the dock-down flip (visual lane handoff note)', () => {
     const { container } = mount({ stage: 'fleet', onStageChange: vi.fn() });
     await screen.findByTestId('cockpit-fleet');
     expect(container.querySelector('.tch-conversation')?.getAttribute('data-empty')).toBeNull();
+  });
+
+  /**
+   * VISUAL LANE'S LAST ASK, and the reason it was worth asking: the empty
+   * thread is the ONLY state where the composer is centred, so it is the only
+   * state the dock-down FLIP can be wrong in — and it is reachable by URL
+   * (`/home/chat?stage=fleet` with no thread), not just by clicking.
+   */
+  it('a stage on an EMPTY thread renders, and suppresses the centred composer', async () => {
+    const { container } = mountEmpty({ stage: 'fleet', onStageChange: vi.fn() });
+    // The pane renders with no thread at all and says so in words.
+    await screen.findByTestId('cockpit-fleet');
+    expect(screen.getByText(/has not delegated anything yet/)).toBeTruthy();
+    // …and the composer is NOT centred underneath it.
+    expect(container.querySelector('.tch-conversation')?.getAttribute('data-empty')).toBeNull();
+  });
+
+  it('leaving a stage on an empty thread re-centres it, WITHOUT replaying the flip', async () => {
+    /* The FLIP belongs to the first send. Replaying it on stage exit would
+       animate a journey the composer never made. It is guarded by keying the
+       effect on "is the composer centred" and playing only when a centred
+       composer stops being centred BECAUSE the thread started — so a stage
+       coming and going leaves no transform behind. */
+    const { port } = createChatHomeFixturePort([]);
+    const screenWith = (stage: 'fleet' | null) => (
+      <ChatHomeScreen
+        port={port}
+        spaceId={SPACE_ID}
+        models={MODELS}
+        stage={stage}
+        onStageChange={vi.fn()}
+      />
+    );
+    const { container, rerender } = render(screenWith('fleet'));
+    await screen.findByTestId('cockpit-fleet');
+    const wrap = container.querySelector('.tch-composer-wrap') as HTMLElement;
+
+    rerender(screenWith(null));
+    await waitFor(() =>
+      expect(container.querySelector('.tch-conversation')?.getAttribute('data-empty')).toBe('true'),
+    );
+    // No inverted start was committed, so nothing is mid-journey.
+    expect(wrap.style.transform).toBe('');
+    expect(wrap.style.transition).toBe('');
   });
 
   it('and a host entity does the same, as it always did', async () => {

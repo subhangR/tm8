@@ -638,38 +638,6 @@ export function ChatHomeScreen({
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
 
-  /* THE DOCK-DOWN (Cockpit ruling 2026-08-18): the centred composer of a new
-     thread travels to its bottom berth when the first send lands, instead of
-     teleporting. FLIP — the centred position is remembered while `newThread`
-     holds, and on the flip the wrap starts from the inverted delta and
-     transitions to rest. Guarded by prefers-reduced-motion: reduced means the
-     old instant swap, not a slower slide. */
-  const composerWrapRef = useRef<HTMLDivElement | null>(null);
-  const emptyComposerTopRef = useRef<number | null>(null);
-  const wasNewThreadRef = useRef(newThread);
-  useLayoutEffect(() => {
-    const wrap = composerWrapRef.current;
-    if (newThread) {
-      emptyComposerTopRef.current = wrap?.getBoundingClientRect().top ?? null;
-    } else if (wasNewThreadRef.current && wrap && emptyComposerTopRef.current !== null) {
-      const reduced = typeof window === 'undefined'
-        || typeof window.matchMedia !== 'function'
-        || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const delta = emptyComposerTopRef.current - wrap.getBoundingClientRect().top;
-      if (!reduced && delta !== 0) {
-        wrap.style.transform = `translateY(${delta}px)`;
-        wrap.style.transition = 'none';
-        // Reflow commits the inverted start before the transition plays.
-        void wrap.getBoundingClientRect();
-        wrap.style.transition = 'transform var(--pn-dur-slow, 250ms) var(--pn-ease-standard, ease)';
-        wrap.style.transform = '';
-        const settle = () => { wrap.style.transition = ''; };
-        wrap.addEventListener('transitionend', settle, { once: true });
-      }
-      emptyComposerTopRef.current = null;
-    }
-    wasNewThreadRef.current = newThread;
-  }, [newThread]);
   const selectionUnavailable =
     teammateId === ''
       ? 'No agent teammate is available in this space.'
@@ -795,13 +763,20 @@ export function ChatHomeScreen({
    * precedence is restated here because a component that renders both would
    * stack two panes silently, and the failure would look like a CSS bug.
    */
+  /* A STAGE IS VALID ON AN EMPTY THREAD. The address says "show me the fleet",
+     and a conversation that has delegated nothing has an empty fleet — which
+     both panes already say in words. Refusing to render would leave the URL
+     naming a stage while the chat is on screen, which is the one state a
+     linkable stage must not produce. Turns are taken exactly as the tray takes
+     them, so the two never disagree about what this thread contains. */
+  const stageTurns = detail && !newThread ? detail.turns : [];
   const stagePane: ReactNode =
-    centerOverride != null || detail === null
+    centerOverride != null
       ? null
       : stage === 'fleet'
         ? (
             <FleetPane
-              turns={detail.turns}
+              turns={stageTurns}
               suppressEntityIds={ownMessageIds}
               readEntity={readEntity}
               livenessOf={livenessOf}
@@ -812,7 +787,7 @@ export function ChatHomeScreen({
         : stage === 'graph'
           ? (
               <CockpitGraphStage
-                turns={detail.turns}
+                turns={stageTurns}
                 suppressEntityIds={ownMessageIds}
                 connections={connections}
                 readEntity={readEntity}
@@ -821,6 +796,54 @@ export function ChatHomeScreen({
             )
           : null;
   const centre: ReactNode = centerOverride ?? stagePane;
+
+  /* THE DOCK-DOWN (Cockpit ruling 2026-08-18): the centred composer of a new
+     thread travels to its bottom berth when the first send lands, instead of
+     teleporting. FLIP — the centred position is remembered while the composer
+     IS centred, and on the flip the wrap starts from the inverted delta and
+     transitions to rest. Guarded by prefers-reduced-motion: reduced means the
+     old instant swap, not a slower slide.
+
+     IT KEYS ON "IS THE COMPOSER CENTRED", NOT ON `newThread` ALONE, and the
+     difference is a real bug the stages introduced. A stage occupies the
+     berth, which un-centres the composer while `newThread` is still true. The
+     old effect only re-ran on `newThread`, so it kept the position measured
+     before the stage opened; the next real flip would then animate from a
+     stale coordinate — a long spurious slide. Worse, a send made WITH a stage
+     up would flip a composer that had never moved.
+
+     So: measure whenever centred, and play only when a CENTRED composer stops
+     being centred BECAUSE the thread started. Opening or leaving a stage
+     therefore never plays it — the flip belongs to the first send, and
+     replaying it on stage exit would animate a journey the composer did not
+     make. */
+  const composerWrapRef = useRef<HTMLDivElement | null>(null);
+  const emptyComposerTopRef = useRef<number | null>(null);
+  const composerCentred = newThread && centre == null;
+  const wasCentredRef = useRef(composerCentred);
+  useLayoutEffect(() => {
+    const wrap = composerWrapRef.current;
+    if (composerCentred) {
+      emptyComposerTopRef.current = wrap?.getBoundingClientRect().top ?? null;
+    } else if (wasCentredRef.current && !newThread && wrap && emptyComposerTopRef.current !== null) {
+      const reduced = typeof window === 'undefined'
+        || typeof window.matchMedia !== 'function'
+        || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const delta = emptyComposerTopRef.current - wrap.getBoundingClientRect().top;
+      if (!reduced && delta !== 0) {
+        wrap.style.transform = `translateY(${delta}px)`;
+        wrap.style.transition = 'none';
+        // Reflow commits the inverted start before the transition plays.
+        void wrap.getBoundingClientRect();
+        wrap.style.transition = 'transform var(--pn-dur-slow, 250ms) var(--pn-ease-standard, ease)';
+        wrap.style.transform = '';
+        const settle = () => { wrap.style.transition = ''; };
+        wrap.addEventListener('transitionend', settle, { once: true });
+      }
+      emptyComposerTopRef.current = null;
+    }
+    wasCentredRef.current = composerCentred;
+  }, [newThread, composerCentred]);
   const chatOccupiesCenter = centre === undefined || centre === null;
   /** The host's whole-root takeover: the workspace list panel, with its own
    *  search — so this screen's find box stands down for that root. */
@@ -1199,7 +1222,7 @@ export function ChatHomeScreen({
         /* The new-conversation state centres greeting + composer as one
            invitation (ref mockup 02); an open thread pins the composer to
            the bottom. Layout only — the CSS pair reads this. */
-        data-empty={(newThread && centre == null) || undefined}
+        data-empty={composerCentred || undefined}
         onKeyDown={(event) => {
           if (event.key !== 'Escape' || centre == null || event.defaultPrevented) return;
           event.preventDefault();
