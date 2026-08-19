@@ -317,6 +317,78 @@
   padding-block: calc((var(--mobile-touch-min) - 1.3em) / 2);
 }
 
+/* --- 7e′. THE TASK TITLE — WRAPPED TO ITS OWN LINE, AND ELLIPSISED INSIDE
+       A BOX WITH ROOM FOR THE WHOLE STRING. Two defects, one row. ---------- */
+
+/* MEASURED on the live node, Tasks at 390x844 dpr3, 43 rows: heights were
+   `104 x17 · 121 x4 · 129 x1 · 152 x18 · 169 x3` (mean 130.8, TWO rows visible
+   in the 398.8px list), and 15 of 43 titles carried a `…`.
+
+   ── ONE. THE TITLE WAS LINE-BROKEN BEFORE IT WAS EVER SHRUNK ──────────────
+
+   `.pn-tt__title` is `flex: 1 1 auto` — basis `auto`, so its flex basis is its
+   OWN CONTENT WIDTH, and a real title measures 425-464px. DEF-036 made
+   `.pn-tt__main` `flex-wrap: wrap` so the action cluster could take its own
+   line. In a WRAPPING flex container, line-breaking runs against the
+   hypothetical main size — BEFORE flex-shrink. So a 425px title beside the
+   44px status in 359px of room is put on the NEXT LINE, and only then shrunk
+   to fit it. `min-width: 0` permits shrinking; it does not prevent wrapping.
+
+   That is the entire cause of the 152px row — the one that reads as a bare
+   status circle floating alone above a gap, which is how it was reported. The
+   desktop container is `nowrap`, so this never happened there; jsdom has no
+   layout, so nothing in this repo could see it.
+
+   `flex-basis: 0` is the whole fix, and it is measured: `152 -> 104`,
+   `169 -> 121`, mean row `130.8 -> 107.3`, titles on their own line `18 -> 0`,
+   rows fully visible `2 -> 3`. No band moves; only the wrap.
+
+   ── TWO. THE SECOND LINE OF TITLE IS FREE ─────────────────────────────────
+
+   7e above makes this box 44px tall to hold ONE 16.25px line — 27.75px of it
+   is dead space. TWO lines is 32.5px, still under the touch floor, so the
+   second line costs ZERO row height. With the basis fixed the title band is
+   308px wide, and two lines of it is 616px against a worst case of 464.
+   Measured: titles still truncated `15 -> 1`, row heights unchanged.
+
+   ── WHY THIS NEEDS THE SPAN, AND WHY 7e'S WARNING DOES NOT FORBID IT ──────
+
+   7e says `padding-block` AND NOT `display: flex`, because `text-overflow`
+   does not apply to a flex container. That is true and it is why this rule
+   does not use `text-overflow` at all: a two-line clamp is
+   `-webkit-line-clamp`, which needs `display: -webkit-box` on the element
+   holding the TEXT — a different mechanism, with its own ellipsis.
+
+   THE CLAMP AND THE PADDING MUST NOT SHARE AN ELEMENT, and finding that out
+   cost a rewrite. `overflow: hidden` clips at the PADDING box, not the content
+   box. Clamped on the padded button, a title needing a third line drew that
+   line INTO the 5.75px of bottom padding and was sliced horizontally through
+   the letterforms — section 4's defect exactly. Every rect measured clean
+   (box 44, content 32.5), `overflowCount` scored 0 and the tap census passed
+   it; it was visible ONLY by opening the capture. So the button becomes a
+   flex centring box with NO padding, and `.pn-tt__titleText` carries the
+   clamp, where there is no padding to bleed into. Verified live: button 44px,
+   text 16px (one line) or 33px (two), zero bleed by rect AND by eye, and the
+   6 genuinely-three-line titles ellipsise honestly.
+
+   `.lp__title` is deliberately NOT in this rule. It is the other tile tree,
+   its container does not wrap, and it has no span to clamp — it keeps 7e. */
+.cv2-root[data-shell='mobile'] .pn-tt__title {
+  flex-basis: 0;
+  display: flex;
+  align-items: center;
+  padding-block: 0;
+  white-space: normal;
+}
+
+.cv2-root[data-shell='mobile'] .pn-tt__titleText {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-width: 0;
+  overflow: hidden;
+}
+
 /* --- 7f. DEF-017 — the row state dot (16x16) ----------------------------- */
 
 /* THE COLUMN GROWS WITH THE CONTROL, and that is the load-bearing half.
@@ -398,6 +470,33 @@
   min-inline-size: var(--mobile-touch-min);
   min-block-size: var(--mobile-touch-min);
   padding-inline: var(--pn-space-3);
+}
+
+
+/* ==========================================================================
+   8. THE CENSUS IS RENDERED THREE TIMES, AND THE PHONE PAYS FOR THE THIRD
+
+   The same four numbers reach the screen by three routes, all from one source:
+   `.lp__total` in the root bar ("657"), the four lifecycle TABS
+   ("To Do 266 / In Progress 105 / Done 273 / Cancelled 13"), and `.lp__foot`,
+   which spells them out again verbatim — "266 to do · 105 in progress ·
+   273 done · 13 cancelled" — 50px BELOW the tabs that already say them.
+
+   Measured at 390x844: `.lp__foot` is 29.3px, and it is PERMANENT. Scrolling
+   `.lp__body` to 1200 left it exactly where it was: the bands are static in a
+   fixed frame and the list is its own scroller, so this is 29.3px of a 398.8px
+   list surrendered on every frame to restate what is legible, unscrolled,
+   two thumb-widths higher.
+
+   On a desktop the footer is a status line at the bottom of a tall column and
+   it costs nothing anybody notices. On a phone it is 7% of the list.
+
+   HIDDEN, NOT DELETED, AND ONLY HERE. Nothing is removed from the tree and no
+   other shell changes: the count still has two renderings on the phone and all
+   three on the desktop, so this is the one route with no reader left to lose.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .lp__foot {
+  display: none;
 }
 
 
