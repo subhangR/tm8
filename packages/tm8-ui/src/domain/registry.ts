@@ -816,34 +816,42 @@ const ROWS: readonly KindConfig[] = [
       // the earlier ruling's premise no longer holds.
       inlineEdit: { title: true },
       /**
-       * TERMINATE, AND NOTHING ELSE — the tick is gone (2026-08-19).
+      /**
+       * THE TICK IS BACK, AND NOW IT IS A REAL VERB — USER RULING 2026-08-19:
+       * "we need the tick mark there, tick marks the session done, but does not
+       * close it … i want to mark sessions done, but not close them to revisit
+       * later, this is through the tick mark."
        *
-       * `complete` had been declared here since the array existed and could
-       * never have worked. Three independent things refuse it, and removing any
-       * one of them would still leave the other two:
+       * #423 removed `complete` from this array, and the removal was right for
+       * the reasons it gave: the server refused the affordance, the door
+       * selected `where kind = 'task'`, and there was nothing for it to write.
+       * All three were true. NONE of them was a statement that the verb is
+       * meaningless for a session — they were a statement that nobody had
+       * built it. Migration 156 and the session arm of `entities.commands.
+       * complete` build it, so the ruling that removed it ("a refused control
+       * is not a control") no longer applies: it is not refused.
        *
-       *   1. The SERVER refuses the affordance. `capabilitiesOf` computes
-       *      `canComplete` from `tasks.work_status`, which is NULL for a
-       *      session, so the tick rendered permanently disabled-with-reason on
-       *      every session row in the product.
-       *   2. The DOOR refuses the write. `complete` reaches
-       *      `seam.commands.complete` -> `public.complete_task`, which selects
-       *      `where kind = 'task'`. A session cannot be found by it.
-       *   3. There is nothing for it to WRITE. A session's status is OBSERVED —
-       *      `SESSION_STATE_CONTROL.readOnlyReason` says so, and the node
-       *      reports it from the process. `done` for a session means `exited`,
-       *      and the verb that produces `exited` is Terminate, which is already
-       *      in this cluster.
+       * WHAT IT MEANS HERE, and why it is not Terminate wearing a tick. The two
+       * verbs answer different questions and now sit side by side saying so:
        *
-       * So the ruling that removed `quickCreate` a few lines up applies
-       * verbatim — "a refused control is not a control" — and this is the same
-       * defect class it was ruled on. What made the row LOOK broken rather than
-       * merely refused is separate and is fixed in migration 155: a terminated
-       * session now actually reaches the `done` category, so the tick's job
-       * ("get this off the To Do tab") is done by the lifecycle rather than by
-       * a button that was never able to do it.
+       *   terminate  ends the PROCESS. Destructive, irreversible, and the row
+       *              lands in Done because it genuinely finished.
+       *   complete   ends the ROW'S CLAIM ON YOUR ATTENTION. The process keeps
+       *              running, the terminal keeps streaming, and the session
+       *              files itself under Done so you can come back to it.
+       *
+       * A session's STATUS remains observed — `SESSION_STATE_CONTROL.
+       * readOnlyReason` still holds and this writes nothing to it. What the
+       * tick authors is the ENVELOPE's category, which is a different column
+       * and a different question: the node says what the process is doing, the
+       * user says whether they are done with it.
+       *
+       * IT IS A TOGGLE (ruled 2026-08-19 over the one-way alternative): ticking
+       * a done session reopens it and the category goes back to following the
+       * process. `expectedVersion` is what makes a toggling command safe — a
+       * double submit is a version conflict, not a silent flip back.
        */
-      rowActions: ['terminate'],
+      rowActions: ['complete', 'terminate'],
       stateControl: SESSION_STATE_CONTROL,
     }),
     panel: {

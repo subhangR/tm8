@@ -1702,14 +1702,29 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
     // grants the affordance to is a row that RPC can find, which is the
     // property a name check only had by coincidence.
     //
-    // NOTE: this does NOT widen completion to sessions or to any other kind.
-    // Full category-based completion is a later phase; what changes here is
-    // only what the flag is keyed on.
+    // THE LATER PHASE THIS NOTE PROMISED IS HERE, FOR SESSIONS ONLY. This read
+    // "does NOT widen completion to sessions or to any other kind"; the second
+    // arm widens it to exactly one, because exactly one grew a door (migration
+    // 156, `public.set_session_done`) — user ruling 2026-08-19: "i want to mark
+    // sessions done, but not close them to revisit later".
+    //
+    // The arms are deliberately NOT unified into a single `status_category`
+    // test, which would read cleaner and would be wrong: it would grant the
+    // affordance to every doc, file and member in the space, none of which has
+    // a completion door to reach. A flag is a promise that a door will answer.
+    //
+    // NO `!== 'done'` ON THE SESSION ARM, unlike the task arm beside it. The
+    // session tick is a TOGGLE — ticking a done session reopens it — so the
+    // affordance is exactly as available in one direction as the other. The
+    // task arm keeps its check because `complete_task` has no inverse.
     //
     // `typeof === 'string'` rather than `!== null`: a hand-built row fixture
     // that omits the column would slip past a null check as `undefined` and
     // claim the affordance on a kind that has no work status at all.
-    canComplete: live && typeof row.work_status === 'string' && row.work_status !== 'done',
+    canComplete:
+      live &&
+      ((typeof row.work_status === 'string' && row.work_status !== 'done') ||
+        row.kind === 'work_session'),
   };
 }
 

@@ -139,6 +139,11 @@ function subjectOf(detail: EntityDetail): ControlSubject {
     kind: detail.kind,
     state: detail.state,
     deletedAt: detail.deletedAt,
+    /* Which tab this row is under. `terminate` refuses itself on a row that
+       has already ended, and the LIST hosts get this for free because they
+       pass an `EntitySummary` straight through — this hand-built subject is
+       the one place that has to say it. */
+    category: detail.category,
   };
 }
 
@@ -758,6 +763,12 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 kind: ctx.kind ?? detail.kind,
                 capabilities: ctx.capabilities ?? detail.capabilities,
                 liveness: ctx.liveness ?? props.liveness,
+                /* Same fill-from-the-detail rule as the three above. Terminate
+                   refuses itself on a row that has already ended, and without
+                   this the panel's copy of the verb would be the one place that
+                   could not see that — offering Terminate on a finished
+                   session while the row cluster correctly refuses it. */
+                category: ctx.category ?? detail.category,
               }}
               onAction={props.onAction}
               wiredActions={props.wiredActions}

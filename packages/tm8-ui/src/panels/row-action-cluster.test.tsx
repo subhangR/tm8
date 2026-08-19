@@ -148,13 +148,19 @@ describe('the row action cluster is one shape across all three anatomies', () =>
     // No `archive`: `canDelete: false` HIDES it on every session row, which is
     // the ruling holding rather than the order breaking.
     //
-    // No `Complete` either, since 2026-08-19, and for a different reason worth
-    // keeping apart from Archive's: Archive is hidden by SERVER TRUTH per row,
-    // while the tick is gone from the kind's `rowActions` entirely — the node
-    // has no door that could complete a session, so the verb was never the
-    // kind's to declare. See `registry.test.ts` case 5c.
+    // `Complete` IS here, and its position is the point of this test. It ranks
+    // as a middle verb, so it lands BEFORE the anatomy's own Copy — which is
+    // the whole reason the tile hands its Copy down to this component rather
+    // than drawing it alongside (see `RowActionCluster.anatomyActions`). A tile
+    // that rendered Copy itself would put it left of the tick.
+    //
+    // It left this list on 2026-08-19 and came back the same day: #423 removed
+    // it because the node had no door that could complete a session, and
+    // migration 156 built one (user ruling — mark a session done WITHOUT
+    // closing it). See `registry.test.ts` case 5c.
     expect(marks).toEqual([
       'collections',
+      'Complete',
       'Copy session ID',
       'terminate',
       'Expand details',

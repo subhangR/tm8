@@ -48,6 +48,7 @@ import type {
   EntityCapabilities,
   EntityKind,
   EntitySummary,
+  StatusCategory,
   TaskAxis,
   TaskWorkflow,
 } from '@tm8/contract';
@@ -99,6 +100,21 @@ export interface ControlSubject {
   state: unknown;
   /** The tombstone bit every kind carries. Flips archive ⇄ restore. */
   deletedAt?: string | null;
+  /**
+   * WHICH TAB THIS ROW IS UNDER — `EntitySummary.category`, which arrives with
+   * the row and is what the four tabs partition on.
+   *
+   * Here so a verb can refuse itself on a row that has already reached its
+   * end, without asking the seam a second question. `terminate` is the case:
+   * it used to be gated on a `live` LIVENESS verdict, which refused it on
+   * every stale or unknown session — rows that are exactly the ones a user
+   * needs to be able to retire (user report 2026-08-19).
+   *
+   * Optional and structural: every `EntitySummary` already carries it, so the
+   * list hosts needed no change; only `subjectOf` in EntityDetailPanel, which
+   * builds a subject by hand, had to start passing it.
+   */
+  category?: StatusCategory;
 }
 
 /**
@@ -1608,6 +1624,9 @@ export function RowAction({
     kind: row.kind,
     capabilities: props.capabilitiesOf?.(row.id) ?? null,
     liveness: props.livenessOf?.(row.id),
+    /* The row's OWN tab, so a verb can refuse itself on a finished row without
+       a second seam question. See `ControlSubject.category`. */
+    ...(row.category ? { category: row.category } : {}),
   };
 
   /**
