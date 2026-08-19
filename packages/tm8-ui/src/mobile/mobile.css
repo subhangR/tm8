@@ -108,7 +108,31 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/*
+ * `box-sizing: border-box` IS LOAD-BEARING AND IT IS NOT COSMETIC.
+ *
+ * `--mobile-tabbar-min` is named as the tab bar's minimum HEIGHT. Under the
+ * default `content-box` it is the minimum height of the CONTENT BOX, so the
+ * rendered bar is 49 + this rule's 1px border + the inset — measured at 50px
+ * with no inset and 84px with a forced 34px one. That 1px difference is exactly
+ * the gap between what the token is called and what it does.
+ *
+ * `.mobile-frame__notices` BELOW OFFSETS ITSELF BY THAT TOKEN, so while the two
+ * disagreed the notice's bottom edge sat 1px INSIDE the tab bar on every phone.
+ * With `border-box` the token equals the rendered height and that offset is
+ * exact BY CONSTRUCTION rather than by anyone remembering the border exists.
+ * The consumer was written against the NAME and the name was right; the box
+ * model was what made it wrong.
+ *
+ * WHAT THIS DOES NOT FIX, so nobody reads it as closing the class: the token is
+ * still a FLOOR being used as a HEIGHT. If the bar's content ever exceeds 49px
+ * — a wrapped label, a larger icon, anyone flooring `.mobile-tabs__tab` at the
+ * touch minimum, which CONTRACT.md §6 invites — the notices overlap by the
+ * excess and nothing in this file reports it. That half is the census's
+ * `tabbarVsToken.excess`, which is 1 today and must read 0 after this change.
+ */
 .mobile-frame__tabbar {
+  box-sizing: border-box;
   min-height: var(--mobile-tabbar-min);
   padding-bottom: var(--mobile-safe-bottom);
   border-top: 1px solid var(--pn-line);
@@ -137,6 +161,16 @@
  * Notices sit ABOVE the tab bar and inside the bottom inset (§7.3). A screen
  * cannot place these for itself because a screen does not know where the tab
  * bar is — which is exactly why this is a frame region.
+ *
+ * THIS OFFSET DERIVES FROM `--mobile-tabbar-min` AND IS CORRECT ONLY WHILE THAT
+ * TOKEN EQUALS THE TAB BAR'S RENDERED HEIGHT. That is why the rule above
+ * carries `box-sizing: border-box` — without it the token excluded the bar's
+ * 1px border and this edge sat inside the bar. Do not remove it, and do not
+ * add padding or a border to the tab bar without checking this line: the
+ * dependency runs in both directions and only these two comments record it.
+ *
+ * It also assumes the bar's CONTENT stays under the token. It is a floor, not
+ * a height, and this offset cannot see the difference — see the note above.
  */
 .mobile-frame__notices {
   position: absolute;

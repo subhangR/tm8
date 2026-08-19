@@ -476,3 +476,45 @@ describe('the contract is written down, because the lanes are gated on it', () =
     expect(contract).toMatch(/known,\s+recorded\s+failure/i);
   });
 });
+
+describe('the tab bar\'s token means its RENDERED height (mobile.css)', () => {
+  /*
+   * `--mobile-tabbar-min` is named as the tab bar's minimum HEIGHT, and
+   * `.mobile-frame__notices` offsets itself by it. Under the default
+   * `content-box` the token is the minimum height of the CONTENT BOX, so the
+   * rendered bar was 49 + a 1px border + the inset — measured at 50px, and the
+   * notice's bottom edge sat 1px INSIDE the bar on every phone.
+   *
+   * `box-sizing: border-box` makes the token equal the rendered height, so the
+   * offset is exact by construction. THIS ASSERTION EXISTS BECAUSE THE FIX IS
+   * ONE DECLARATION THAT LOOKS REMOVABLE: nothing in the tab bar's own
+   * appearance depends on it, and the consumer that does is 50 lines away.
+   *
+   * IT PINS THE FIX, NOT THE CLASS. The token is still a FLOOR used as a
+   * HEIGHT: content taller than 49px reopens the overlap and no source check
+   * can see that. That half is the census's `tabbarVsToken.excess` — 1 before
+   * this change, 0 after, and >1 if content ever outgrows the floor.
+   */
+  it('.mobile-frame__tabbar is border-box, because the notices offset assumes it', () => {
+    const css = read('./mobile.css');
+    const rule = css.match(/\.mobile-frame__tabbar\s*\{([^}]*)\}/);
+    expect(rule, '.mobile-frame__tabbar rule not found').toBeTruthy();
+    expect(rule![1]).toMatch(/box-sizing:\s*border-box/);
+  });
+
+  it('the notices offset still derives from the same token', () => {
+    // The pairing is the point. If this offset is ever rewritten to a literal,
+    // the assertion above is guarding a dependency that no longer exists and
+    // should be deleted with it rather than left as decoration.
+    const css = read('./mobile.css');
+    const notices = css.match(/\.mobile-frame__notices\s*\{([^}]*)\}/);
+    expect(notices, '.mobile-frame__notices rule not found').toBeTruthy();
+    // BOUNDED ON THE DECLARATION, NOT ON PARENS. The first spelling of this
+    // was /calc\([^)]*--mobile-tabbar-min/, which stops dead at the `)` closing
+    // `var(--mobile-safe-bottom)` and can never reach the token it looks for —
+    // a nested-delimiter blind spot, and the same shape that hid every
+    // nested-call assertion from a testing-library audit earlier tonight.
+    // `[^;]*` runs to the end of the declaration and crosses both `var()`s.
+    expect(notices![1]).toMatch(/bottom:[^;]*--mobile-tabbar-min/);
+  });
+});
