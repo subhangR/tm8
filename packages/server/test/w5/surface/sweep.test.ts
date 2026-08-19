@@ -711,7 +711,16 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 148
     //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 148
     //   (origin/main is 147; this branch is the +1.)
-    expect(server.appliedMigrations.length).toBe(148);
+    // 148 -> 149 (2026-08-19): 159_flatten_rls_predicates.sql — the two nested
+    // RLS predicates stop calling `internal.is_space_member`. Numbered 159 and
+    // not 157: that gap is STILL held by the same unlanded in-flight branch the
+    // row above records, so file number and file count remain one apart and the
+    // number here must not be inferred from either. MEASURED on this branch,
+    // freshly branched from origin/main at bed6f249, not derived by adding one:
+    //   ls db/migrations/*.sql | wc -l                             -> 149
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 149
+    //   (origin/main is 148; this branch is the +1.)
+    expect(server.appliedMigrations.length).toBe(149);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
