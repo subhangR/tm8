@@ -20,12 +20,11 @@
   min-width: 0;
   margin: var(--pn-space-2) var(--pn-space-3) 0;
 }
-/* The tablist takes the slack and the switcher takes its natural width: the
-   kind label already ellipsizes (`.tch-rootcell__label`), so a long plural
-   like "Work sessions" shortens itself rather than pushing the switcher out
-   of the 280px column. */
+/* The tablist takes the slack and any aside takes its natural width: the kind
+   label already ellipsizes (`.tch-rootcell__label`), so a long plural like
+   "Work sessions" shortens itself rather than pushing the aside out of the
+   280px column. */
 .tch-rootbar > .tch-roots { flex: 1; min-width: 0; }
-.tch-rootbar > .lp__views { flex: none; }
 
 .tch-roots {
   display: flex;
@@ -138,8 +137,9 @@
    and it is the benign half of it.
 
    The bar is ALREADY 44 tall on this phone, so this costs no vertical room:
-   `.tch-rootbar` also holds `.lp__views`, which the shell contract's §7b grew
-   to the same floor before any lane started. */
+   it was grown to that floor by the view switcher (`.lp__views`) that used to
+   sit beside these cells, and the floor stayed when the switcher was removed
+   on 2026-08-19. */
 .cv2-root[data-shell='mobile'] .tch-rootcell__label,
 .cv2-root[data-shell='mobile'] .tch-rootcell__plus,
 .cv2-root[data-shell='mobile'] .tch-rootcell__caret {

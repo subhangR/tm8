@@ -48,8 +48,6 @@ export interface ListRootHeaderProps {
   /** Which option reads as current. Not always `cell.kind`: Home parks the last kind here while sitting on Chats. */
   currentKind?: string | undefined;
   onPickKind: (kind: string) => void;
-  /** The hosted list's layout switcher, pinned right. Outside the tablist by construction — see below. */
-  aside?: ReactNode;
 }
 
 /**
@@ -186,7 +184,6 @@ export function ListRootHeader(props: ListRootHeaderProps) {
           </div>
         ) : null}
       </div>
-      {props.aside}
     </div>
   );
 }

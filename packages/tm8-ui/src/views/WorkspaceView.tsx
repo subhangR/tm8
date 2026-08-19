@@ -19,7 +19,6 @@ import {
   EntityDetailPanel,
   EntityListPanel,
   ListRootHeader,
-  ListViewSwitcher,
   type DetailReasons,
 } from '../panels';
 import { useRowLifecycle } from './useRowLifecycle';
@@ -125,36 +124,23 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   );
 
   /**
-   * THE LAYOUT MODE OF EACH SIDE PANEL, held here rather than left to the
-   * panel's own local state — because the WORKSPACE has to know. A board is
-   * ~236px per column and the side tracks default to 240/319, so a board in a
-   * side panel is one column wide and useless; in board mode the panel spans
-   * the whole grid instead (`boardSide` below). The panel cannot arrange that
-   * for itself: it does not own the grid.
+   * THE LAYOUT MODE OF EACH SIDE PANEL, resolved here rather than left to the
+   * panel — because the WORKSPACE has to know. A board is ~236px per column
+   * and the side tracks default to 240/319, so a board in a side panel is one
+   * column wide and useless; in board mode the panel spans the whole grid
+   * instead (`boardSide` below). The panel cannot arrange that for itself: it
+   * does not own the grid.
    *
-   * Uncontrolled from the panel's point of view is not an option here for the
-   * same reason it was not in EntityView — two copies of the mode disagree the
-   * moment one of them changes.
+   * It is the kind's registry default and nothing else now that the view
+   * switcher is gone (2026-08-19): no control on this screen writes a mode, so
+   * a piece of state behind it could only ever hold the value it was seeded
+   * with. `board` still reaches here for a kind that DEFAULTS to one, which is
+   * why `boardSide` below is still a live branch rather than a constant null.
    */
-  const [leftMode, setLeftMode] = useState<CollectionMode>(() => getKind(leftKind).defaultMode);
-  const [rightMode, setRightMode] = useState<CollectionMode>(() => getKind(rightKind).defaultMode);
+  const layoutFor = useCallback((kind: string): CollectionMode => getKind(kind).defaultMode, []);
 
-  /**
-   * A mode the CURRENT kind hides is not a mode. Swapping a boarded panel to a
-   * kind with no board (`hiddenModes`) would otherwise leave the switcher
-   * claiming 'board' while the body drew a list — and, worse, leave the panel
-   * spanning the grid with a list in it. Derived rather than reset by an
-   * effect, so there is no frame in which the two disagree.
-   */
-  const effectiveMode = useCallback((kind: string, mode: CollectionMode): CollectionMode => {
-    const config = getKind(kind);
-    return config.hiddenModes.includes(mode) || config.list.board == null
-      ? config.defaultMode
-      : mode;
-  }, []);
-
-  const leftLayout = effectiveMode(leftKind, leftMode);
-  const rightLayout = effectiveMode(rightKind, rightMode);
+  const leftLayout = layoutFor(leftKind);
+  const rightLayout = layoutFor(rightKind);
   /* Left wins if both are somehow boarded — one panel can own the grid. */
   const boardSide = leftLayout === 'board' ? 'left' : rightLayout === 'board' ? 'right' : null;
 
@@ -673,13 +659,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         }))}
         currentKind={config.kind}
         onPickKind={(kind) => onKindChange?.(kind)}
-        aside={
-          <ListViewSwitcher
-            config={config}
-            mode={isLeft ? leftLayout : rightLayout}
-            onMode={isLeft ? setLeftMode : setRightMode}
-          />
-        }
       />
     );
   };
@@ -735,7 +714,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             loadMore={data.loadMore(leftKind)}
             boardFor={data.boardFor(leftKind) as never}
             mode={leftLayout}
-            onMode={setLeftMode}
             members={data.members}
             ctx={ctx}
             /* A boarded panel owns the whole grid, so it is not compact any
@@ -879,7 +857,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             loadMore={data.loadMore(rightKind)}
             boardFor={data.boardFor(rightKind) as never}
             mode={rightLayout}
-            onMode={setRightMode}
             members={data.members}
             ctx={ctx}
             compact={boardSide === 'right' ? false : rightCompact}

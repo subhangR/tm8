@@ -202,12 +202,16 @@ export interface EntityListPanelProps {
 
   /**
    * Doc 06 §1.1 — the mode-wiring fix. The ROUTE holds the layout mode and the
-   * shell passes it down; local state remains only the uncontrolled fallback
-   * for hosts that do not route it. Without this pair the codec parsed
-   * `?mode=` and the value died before reaching the panel.
+   * shell passes it down; absent, the kind's registry default applies. Without
+   * this the codec parsed `?mode=` and the value died before reaching the
+   * panel.
+   *
+   * READ-ONLY as of the switcher removal (2026-08-19): the panel no longer
+   * offers an in-header control that writes it back, so there is no `onMode`
+   * counterpart. `?mode=board` still renders a board — the address is now the
+   * only way to ask for one.
    */
   mode?: CollectionMode;
-  onMode?: (mode: CollectionMode) => void;
 
   /**
    * WHO DRAWS THE KIND CELL — `'panel'` (the default, and every surface that
@@ -222,15 +226,8 @@ export interface EntityListPanelProps {
    * arrived with the host, and nothing in either component could see the
    * duplicate because each is correct alone.
    *
-   * `'host'` suppresses the selector ROW, not the controls: the host is
-   * expected to render `<ListViewSwitcher>` in its own header and to pass the
-   * `mode`/`onMode` pair back, so the switcher keeps working from up there.
-   * The kind MENU needs no relocation — the host's caret already is one.
-   *
-   * This is a slot, not a `hideHeader` boolean, because the honest failure of
-   * a boolean is a panel with no way to change layout at all. Naming the
-   * OWNER makes "who renders the switcher" a question the call site must
-   * answer.
+   * `'host'` suppresses the selector ROW. The kind MENU needs no relocation —
+   * the host's caret already is one.
    */
   selectorSlot?: 'panel' | 'host';
 
@@ -495,12 +492,11 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const [selectedPeople, setSelectedPeople] = useState<readonly string[]>([]);
   const [sortKey, setSortKey] = useState(list.sort.find((s) => s.default)?.key ?? list.sort[0]?.key);
   const [query, setQuery] = useState('');
-  // §1.1: route-held when the host passes the pair; local only as the
-  // uncontrolled fallback. `props.mode` null-ish means "the route says
-  // nothing", which falls through to local state, which seeds from registry.
-  const [localMode, setLocalMode] = useState<CollectionMode>(config.defaultMode);
-  const mode = props.mode ?? localMode;
-  const setMode = props.onMode ?? setLocalMode;
+  // §1.1: route-held when the host passes it. `props.mode` null-ish means "the
+  // route says nothing", which reads the registry default. There is no local
+  // state behind it any more — with the switcher gone nothing inside the panel
+  // can change the mode, so a second copy of it could only drift.
+  const mode = props.mode ?? config.defaultMode;
   /* W3 — same §1.1 shape for the board's grouping: route-held when the host
      passes the pair, local fallback otherwise, seeded from the registry
      DEFAULT (`board.groupBy` stays the seed, no longer the pin). */
@@ -588,9 +584,9 @@ export function EntityListPanel(props: EntityListPanelProps) {
       aria-label={config.labelPlural}
     >
       {/* The host's own kind cell replaces this row when it declares one —
-          see `selectorSlot`. The row is not merely hidden: its two live
-          controls (the kind menu, the view switcher) exist up there instead,
-          which is why the prop names an owner rather than reading `hideHeader`. */}
+          see `selectorSlot`. The row is not merely hidden: its live control
+          (the kind menu) exists up there instead, which is why the prop names
+          an owner rather than reading `hideHeader`. */}
       {props.selectorSlot === 'host' ? null : (
         <KindSelector
           config={config}
@@ -601,8 +597,6 @@ export function EntityListPanel(props: EntityListPanelProps) {
           }
           liveCount={liveCountFor(props, config)}
           onKindChange={props.onKindChange}
-          mode={mode}
-          onMode={setMode}
         />
       )}
 
@@ -1022,8 +1016,6 @@ function KindSelector({
   total,
   liveCount,
   onKindChange,
-  mode,
-  onMode,
 }: {
   config: KindConfig;
   /**
@@ -1037,8 +1029,6 @@ function KindSelector({
   total?: string;
   liveCount: string | null;
   onKindChange?: (kind: string) => void;
-  mode: CollectionMode;
-  onMode: (mode: CollectionMode) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -1065,7 +1055,6 @@ function KindSelector({
           {liveCount}
         </span>
       ) : null}
-      <ViewSwitcher config={config} mode={mode} onMode={onMode} />
       {open ? (
         <ul className="lp__kindmenu" role="menu">
           {/* Only `strategy: 'collection'` kinds can BE a list: channel is a
@@ -1090,99 +1079,6 @@ function KindSelector({
         </ul>
       ) : null}
     </div>
-  );
-}
-
-/**
- * THE VIEW SWITCHER — one control everywhere (C5), positions from registry DATA.
- *
- * `hiddenModes` hides by config; `graph` is NEVER a member of it, because R7
- * requires graph VISIBLE-labelled-unclickable rather than absent — hidden and
- * disabled are different states and only one of them teaches the user the
- * feature exists.
- *
- * In A1 only `list` has a body. The other positions render
- * disabled-with-reason rather than switching to a blank region: a switcher
- * that moves you to nothing is worse than one that says why it cannot yet.
- * The layout bodies are A2 (LLD §3.3); this control is the gate deliverable.
- */
-/**
- * T0-1's own switcher set, verbatim from the canvas support code:
- *   views = [['≡','List'], ['⑂','Tree'], ['▥','Board'], ['◉','Graph']]
- * FOUR positions, not the registry's six modes — feed and gallery are
- * CollectionView layouts (k/{slug}, A2) and the composed workspace canvas
- * does not offer them in a side panel. Per-kind visibility still comes from
- * `hiddenModes`, so a kind may show fewer; none may show more.
- */
-const SWITCHER_MODES: readonly CollectionMode[] = ['list', 'tree', 'board', 'graph'];
-const MODE_GLYPH: Record<CollectionMode, string> = {
-  list: '≡',
-  tree: '⑂',
-  board: '▥',
-  graph: '◉',
-  feed: '≡',
-  gallery: '▩',
-};
-
-/**
- * EXPORTED so a host that owns the header row (`selectorSlot: 'host'`) renders
- * the SAME control rather than a lookalike. C5 says one switcher everywhere;
- * a host reimplementing four buttons would be a second one, and the first
- * thing it would lose is the visible-but-refused position for unbuilt layouts,
- * which is the whole point of the control.
- */
-export function ListViewSwitcher(props: {
-  config: KindConfig;
-  mode: CollectionMode;
-  onMode: (mode: CollectionMode) => void;
-}) {
-  return <ViewSwitcher {...props} />;
-}
-
-function ViewSwitcher({
-  config,
-  mode,
-  onMode,
-}: {
-  config: KindConfig;
-  mode: CollectionMode;
-  onMode: (mode: CollectionMode) => void;
-}) {
-  const positions = SWITCHER_MODES.filter((m) => !config.hiddenModes.includes(m));
-  if (positions.length <= 1) return null;
-  return (
-    <span className="lp__views" role="group" aria-label="Layout" data-testid="view-switcher">
-      {positions.map((m) => {
-        // A2: board is built for kinds that DECLARE one. A kind without a
-        // `board` registry row keeps its position honestly disabled — the
-        // declaration is data, so a kind gains a board by registry entry.
-        const built = m === 'list' || (m === 'board' && config.list.board !== undefined);
-        const reason =
-          m === 'graph'
-            ? 'Graph view isn’t available yet.'
-            : m === 'board'
-              ? `${config.labelPlural} have no board: this kind declares no board grouping in the registry.`
-              : `The ${m} layout arrives with A2 — the switcher position is real, the body is not built yet.`;
-        if (!built) {
-          return (
-            <DisabledIconControl key={m} label={`${m} layout`} glyph={MODE_GLYPH[m]} reason={toReason(reason)} />
-          );
-        }
-        return (
-          <button
-            key={m}
-            type="button"
-            className={m === mode ? 'lp__view lp__view--active' : 'lp__view'}
-            aria-pressed={m === mode}
-            aria-label={`${m} layout`}
-            title={`${m} layout`}
-            onClick={() => onMode(m)}
-          >
-            {MODE_GLYPH[m]}
-          </button>
-        );
-      })}
-    </span>
   );
 }
 

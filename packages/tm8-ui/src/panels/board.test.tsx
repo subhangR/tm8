@@ -234,14 +234,23 @@ describe('§1.5 / §8.1 — a move is a command, one grammar for pointer and key
 });
 
 describe('§1.6 — which kinds get a board', () => {
-  it('task declares a board; the switcher position is LIVE', () => {
-    const { getByTestId } = render(
-      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
+  it('task declares a board, and it is reached by ADDRESS — there is no switcher', () => {
+    // The switcher was removed from every entity list (2026-08-19). The board
+    // did not go with it: `mode` is route state, so `?mode=board` still draws
+    // one. This is the pair worth pinning — the control is gone AND the layout
+    // behind it still renders.
+    expect(getKind('task').list.board).toBeDefined();
+    const { queryByTestId, getByTestId } = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={rowsFor([])}
+        ctx={ctx}
+        mode="board"
+        boardFor={(() => snapshot()) as never}
+      />,
     );
-    const sw = getByTestId('view-switcher');
-    // Two live positions now — list and board; tree and graph stay disabled.
-    expect(sw.querySelectorAll('.lp__view')).toHaveLength(2);
-    expect(sw.querySelectorAll('[data-testid="disabled-with-reason"]')).toHaveLength(2);
+    expect(queryByTestId('view-switcher')).toBeNull();
+    expect(getByTestId('board-body')).toBeTruthy();
   });
 
   it('work_session hides board entirely — a sessions board would render one dishonest column', () => {
@@ -267,20 +276,21 @@ describe('§1.1 — the mode wiring', () => {
     expect(getByTestId('board-body')).toBeTruthy();
   });
 
-  it('the switcher reports through onMode instead of trapping the change locally', () => {
-    const onMode = vi.fn();
-    const { getByTestId } = render(
+  it('a controlled `mode` of list draws the list, even where a board is available', () => {
+    // The other half of the wiring, and the one that survived the switcher's
+    // removal: the host's value decides, and nothing inside the panel can
+    // overrule it — there is no longer any control that could.
+    const { queryByTestId, getAllByTestId } = render(
       <EntityListPanel
         kind="task"
-        rowsFor={rowsFor([])}
+        rowsFor={rowsFor([taskOf('open')])}
         ctx={ctx}
         mode="list"
-        onMode={onMode}
         boardFor={(() => snapshot()) as never}
       />,
     );
-    fireEvent.click(within(getByTestId('view-switcher')).getByLabelText('board layout'));
-    expect(onMode).toHaveBeenCalledWith('board');
+    expect(queryByTestId('board-body')).toBeNull();
+    expect(getAllByTestId('list-tile').length).toBeGreaterThan(0);
   });
 });
 

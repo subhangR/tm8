@@ -1208,20 +1208,20 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(empty).toMatch(/clear the search/i);
   });
 
-  it('R5 #3: the view switcher shows every non-hidden position; unbuilt ones are disabled-with-reason', () => {
-    const { getByTestId } = render(
+  it('R5 #3 RETIRED: no view switcher on the header — the layout is not a per-list choice', () => {
+    // The four-position switcher (List / Tree / Board / Graph) was removed
+    // from every entity list on owner instruction (2026-08-19). This asserts
+    // its ABSENCE rather than deleting the case, because "the control is
+    // gone" is the requirement now and a silent reintroduction is exactly
+    // what a deleted test would not catch.
+    const { queryByTestId, container } = render(
       <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
     );
-    // T0-1's switcher is FOUR positions — List, Tree, Board, Graph — not the
-    // registry's six modes; feed and gallery are CollectionView layouts the
-    // composed workspace canvas does not offer in a side panel.
-    const sw = getByTestId('view-switcher');
-    const controls = sw.querySelectorAll('button, [role="button"]');
-    expect(controls).toHaveLength(4);
-    // A2: list AND board are live for task (the registry declares `board`);
-    // tree and graph stay visible-and-disabled with their reasons.
-    expect(sw.querySelectorAll('.lp__view')).toHaveLength(2);
-    expect(sw.querySelectorAll('[data-testid="disabled-with-reason"]')).toHaveLength(2);
+    expect(queryByTestId('view-switcher')).toBeNull();
+    expect(container.querySelectorAll('.lp__view')).toHaveLength(0);
+    // And the header row it used to sit on is still drawn — the switcher went,
+    // the kind cell did not.
+    expect(container.querySelector('.lp__kind')).not.toBeNull();
   });
 
   it('R7: graph is never HIDDEN — visible, labelled, unclickable', () => {

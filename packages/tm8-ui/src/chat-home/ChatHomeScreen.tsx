@@ -153,21 +153,6 @@ export interface ChatHomeScreenProps {
    */
   renderRootList?: ((root: HomeRoot) => ReactNode) | undefined;
   /**
-   * The hosted list's LAYOUT SWITCHER, drawn on the root header's own line.
-   *
-   * The hosted panel used to draw its own header directly beneath this one,
-   * which restated the kind — `[Chats ＋][◫ Tasks ＋ ▾]` above `◫ Tasks ▾` —
-   * and cost a whole row to say a word this row already says. The panel now
-   * yields that row (`selectorSlot: 'host'`) and hands its switcher up here,
-   * so the control survives at full size while the duplicate label does not.
-   *
-   * Called with the root so the host can answer per kind: which layouts a
-   * kind offers is registry data, and a kind that offers one gets no switcher.
-   * Absent, or null for this root ⇒ the header is the tablist alone, which is
-   * exactly the Chats case.
-   */
-  renderRootAside?: ((root: HomeRoot) => ReactNode) | undefined;
-  /**
    * The conversation the ADDRESS names (`/home/chat/{id}`, task 01a00932
    * D1). Adopted when it differs from the current selection — back/forward
    * and shared links land on the right thread. `null` means the address is
@@ -321,7 +306,6 @@ export function ChatHomeScreen({
   livenessOf,
   onOpenTranscript,
   renderRootList,
-  renderRootAside,
   centerOverride,
   slots,
   viewerName,
@@ -1080,9 +1064,8 @@ export function ChatHomeScreen({
             picking a kind from the menu never creates (R5). Labels only, no
             counts (D16).
 
-            THE HOSTED LIST'S LAYOUT SWITCHER RIDES THIS LINE (`renderRootAside`),
-            which is what retires the panel's own header row: that row restated
-            this one's kind and spent 34.9px doing it.
+            THE PANEL'S OWN HEADER ROW IS RETIRED BY THIS LINE: that row
+            restated this one's kind and spent 34.9px doing it.
 
             THE BAR ITSELF NOW LIVES IN `panels/ListRootHeader` (task 01a0102f):
             the Work tab's two columns draw this same header, so it stopped
@@ -1117,7 +1100,6 @@ export function ChatHomeScreen({
           options={rootKindOptions}
           currentKind={root}
           onPickKind={setRoot}
-          aside={onChatsRoot ? null : renderRootAside?.(root)}
         />
         {onChatsRoot ? (
           <input

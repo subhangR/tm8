@@ -215,8 +215,12 @@ describe('DEF-013…020 — the shared touch floor is a token, and it is not a b
     // guessed: DEF-013 lp__view, 014 lp__tab, 015 lp__chip, 016 the row title
     // on both trees, 017 lp__statedot, 018 lp__disclosure, 019 the selector
     // actions, 020 ibx-chip.
+    //
+    // DEF-013 (`lp__view`) is ABSENT from this list, not forgotten: the view
+    // switcher was removed from every entity list (2026-08-19), so the class
+    // no longer renders and a rule sizing it would be dead CSS. An offender
+    // that no longer exists is fixed in the only way that cannot regress.
     for (const cls of [
-      'lp__view',
       'lp__tab',
       'lp__chip',
       'pn-tt__title',

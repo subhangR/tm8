@@ -2100,15 +2100,14 @@ export function GateApp(props: GateAppProps = {}) {
               reasons={reasons}
               onNotice={notices.push}
               onKindChange={(next) => navigateTo({ type: 'kind', ref: next })}
-              /* §1.1 — the shell HOLDS the layout mode, so the switcher's
-                 choice survives re-renders of this ternary and a kind switch
-                 resets it honestly (a new target has no mode yet). It rides on
-                 the target, so remembering the target remembers the layout. */
+              /* §1.1 — the shell HOLDS the layout mode, so it survives
+                 re-renders of this ternary and a kind switch resets it
+                 honestly (a new target has no mode yet). It rides on the
+                 target, so remembering the target remembers the layout.
+                 READ-ONLY since the view switcher was removed (2026-08-19):
+                 a mode now enters only from a `?mode=` address or a menu
+                 target that carries one. */
               {...(activeTarget.mode !== undefined ? { mode: activeTarget.mode } : {})}
-              onMode={(m) => {
-                if (activeTarget.type !== 'kind') return;
-                navigateTo({ ...activeTarget, mode: m });
-              }}
               /* W3 — the board's grouping rides the target exactly as `mode`
                  does, so a grouped board survives reload and its URL is the
                  board someone else opens. */
@@ -2228,7 +2227,6 @@ export function GateApp(props: GateAppProps = {}) {
                      a session is created by RUNNING a task, whose Run lives
                      on the hosted tile itself. */
                   renderRootList={regions.renderRootList}
-                  renderRootAside={regions.renderRootAside}
                   root={regions.root}
                   onRoot={regions.onRoot}
                   kindCell={regions.kindCell}

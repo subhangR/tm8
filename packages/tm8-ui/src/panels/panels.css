@@ -2684,33 +2684,6 @@
   color: var(--pn-ink-4);
 }
 
-/* --- view switcher -------------------------------------------------------- */
-/* One control everywhere (C5). Unbuilt positions are disabled-with-reason,
-   never hidden — hidden and disabled are different states, and only one of
-   them teaches that the feature exists (R7). */
-.cv2-root .lp__views {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-.cv2-root .lp__view {
-  appearance: none;
-  border: 0;
-  background: none;
-  font-family: inherit;
-  font-size: 11px;
-  color: var(--pn-ink-3);
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: var(--pn-r-xs);
-  line-height: 1;
-}
-.cv2-root .lp__view:hover { background: var(--pn-hover); }
-.cv2-root .lp__view--active { color: var(--pn-brand-2); background: var(--pn-brand-soft); }
-.cv2-root[data-theme='dark'] .lp__view--active,
-[data-theme='dark'] .cv2-root .lp__view--active { color: var(--pn-brand); }
-
 /* T0-1's per-kind footer count line: "9 to do · 4 in progress · 601 done ·
    12 cancelled". Counts come from the same per-tab queries as the tabs — one
    source, and since phase 7 a server aggregate rather than a page length.

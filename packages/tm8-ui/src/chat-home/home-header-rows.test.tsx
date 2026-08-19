@@ -7,7 +7,9 @@
  * tiers and filters. The second row restated the first — same glyph, same
  * word, and BOTH carets opening a kind menu over one selection — and spent a
  * whole row doing it. The panel now yields that row to the host
- * (`selectorSlot: 'host'`) and hands its view switcher up to the header line.
+ * (`selectorSlot: 'host'`). It used to hand its view switcher up to the header
+ * line in exchange; that switcher was removed from every entity list on
+ * 2026-08-19, so the header line is now the tablist and the ＋ alone.
  *
  * WHAT THIS FILE CAN AND CANNOT PROVE. jsdom has no layout engine, so nothing
  * here can count a ROW: `getBoundingClientRect` returns zeros and two controls
@@ -17,18 +19,15 @@
  * chrome at the 280px column the grid actually produces).
  *
  * What jsdom CAN prove is everything about identity and wiring, which is where
- * this change could go quietly wrong: that the duplicate is gone, that the
- * switcher survived rather than being deleted with the row it lived in, that
- * it still drives the list body from its new home, and that it did not get
- * nested inside the tablist on the way up.
+ * this change could go quietly wrong: that the duplicate is gone, that no
+ * switcher came back on either row, and that the layout the host asks for
+ * still reaches the list body now that no control writes it.
  */
-import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, within } from '@testing-library/react';
-import type { ActionContext, CollectionMode } from '../domain';
-import { getKind } from '../domain';
+import { render, within } from '@testing-library/react';
+import type { ActionContext } from '../domain';
 import { FIXTURE_SPACE_ID, fixtureSummaries } from '../fixtures';
-import { EntityListPanel, ListViewSwitcher } from '../panels';
+import { EntityListPanel } from '../panels';
 import { ChatHomeScreen, type ChatHomeScreenProps } from './ChatHomeScreen';
 import type { ListRootOption } from '../panels/ListRootHeader';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
@@ -83,81 +82,52 @@ describe('Home header rows', () => {
     expect(standalone.container.querySelector('.lp__selector')).toBeTruthy();
   });
 
-  it('the switcher MOVED, it was not deleted: it renders on the header line with every position', () => {
-    const view = renderHome({
-      renderRootList: () => <div data-testid="hosted-panel" />,
-      renderRootAside: (root) =>
-        root === 'chats' ? null : (
-          <ListViewSwitcher config={getKind(root)} mode="list" onMode={() => {}} />
-        ),
-    });
+  it('no switcher on the header line either — it was removed, not relocated again', () => {
+    // It DID live here: the panel yielded its header row and handed the
+    // control up (task 01a00932). Both halves are gone now, so the assertion
+    // is absence on the bar itself rather than absence somewhere in the tree —
+    // this is the exact element a reintroduction would land in.
+    const view = renderHome({ renderRootList: () => <div data-testid="hosted-panel" /> });
     const bar = view.container.querySelector('.tch-rootbar');
     expect(bar).toBeTruthy();
-    const switcher = within(bar as HTMLElement).getByTestId('view-switcher');
-    // All four registry positions survive the move, including the ones that
-    // are visible-but-refused — that refusal is the control's whole point (C5),
-    // and a host-rolled lookalike is exactly what would lose it.
-    expect(switcher.children).toHaveLength(4);
+    expect(within(bar as HTMLElement).queryByTestId('view-switcher')).toBeNull();
+    expect(view.queryByTestId('view-switcher')).toBeNull();
   });
 
-  it('the switcher sits BESIDE the tablist, never inside it — a layout is not a root', () => {
-    const view = renderHome({
-      renderRootList: () => <div data-testid="hosted-panel" />,
-      renderRootAside: () => <ListViewSwitcher config={getKind('task')} mode="list" onMode={() => {}} />,
-    });
+  it('the tablist is roots and nothing else — a layout was never a root', () => {
+    const view = renderHome({ renderRootList: () => <div data-testid="hosted-panel" /> });
     const tablist = view.getByRole('tablist', { name: 'Home roots' });
-    // Nesting it would make `role="tablist"` a lie: every child of a tablist
-    // is announced as a tab, and four layout buttons are not four roots.
+    // The hazard the switcher used to carry: every child of a tablist is
+    // announced as a tab, and four layout buttons are not four roots. Pinned
+    // after the removal too, because the bar is still where a future control
+    // would be tempted to land.
     expect(tablist.querySelector('[data-testid="view-switcher"]')).toBeNull();
     expect(view.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Chats', 'Tasks']);
   });
 
-  it('Chats gets no switcher — it hosts no list, so there is no layout to switch', () => {
-    const view = renderHome({
-      root: 'chats',
-      renderRootAside: (root) =>
-        root === 'chats' ? null : (
-          <ListViewSwitcher config={getKind(root)} mode="list" onMode={() => {}} />
-        ),
-    });
-    expect(view.queryByTestId('view-switcher')).toBeNull();
-  });
+  it('the host still decides the layout — the mode prop reaches the body without a control', () => {
+    /* WHAT SURVIVED THE REMOVAL. `mode` is route state (`?mode=board`), so it
+       still has to cross the seam into the panel; only the control that WROTE
+       it is gone. Asserted on the BODY, which is the only thing that can show
+       the value arrived. */
+    const listed = render(
+      <EntityListPanel kind="task" rowsFor={() => tasks} ctx={ctx} selectorSlot="host" compact />,
+    );
+    expect(listed.container.querySelector('.lp__body .lp__board')).toBeNull();
+    expect(listed.queryByTestId('view-switcher')).toBeNull();
 
-  it('the relocated switcher still drives the body — the lifted mode pair is wired', () => {
-    /* THE REGRESSION THIS GUARDS. The panel's mode used to be its own local
-       state, which worked because the switcher was inside it. Now the control
-       is in the header and the body is in the column, so the value has to be
-       lifted — and a lift that only reaches the switcher leaves four buttons
-       that highlight themselves and change nothing. Driving the header control
-       and asserting the BODY moved is the only thing that separates those. */
-    function Host() {
-      const [mode, setMode] = useState<CollectionMode>('list');
-      return (
-        <>
-          <ListViewSwitcher config={getKind('task')} mode={mode} onMode={setMode} />
-          <EntityListPanel
-            kind="task"
-            rowsFor={() => tasks}
-            ctx={ctx}
-            selectorSlot="host"
-            mode={mode}
-            onMode={setMode}
-            boardFor={() => undefined}
-            compact
-          />
-        </>
-      );
-    }
-    const view = render(<Host />);
-    expect(view.container.querySelector('.lp__body .lp__board')).toBeNull();
-
-    fireEvent.click(view.getByRole('button', { name: /board/i }));
-
-    /* Asserted on the BODY, not on the switcher's own highlight. The switcher
-       is driven by this host's state directly, so `.lp__view--active` would
-       read `▥` even if the panel ignored the `mode` prop entirely — that
-       assertion cannot fail for the reason the test exists. The board body
-       can only appear if the value crossed the seam. */
-    expect(view.container.querySelector('.lp__body .lp__board')).toBeTruthy();
+    const boarded = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={() => tasks}
+        ctx={ctx}
+        selectorSlot="host"
+        mode="board"
+        boardFor={() => ({ groups: [], nextCursor: null, limit: 50 }) as never}
+        compact
+      />,
+    );
+    expect(boarded.container.querySelector('.lp__body .lp__board')).toBeTruthy();
+    expect(boarded.queryByTestId('view-switcher')).toBeNull();
   });
 });
