@@ -32,6 +32,7 @@ import { useCallback, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { EntityId } from '@tm8/contract';
 import { Avatar, useMenuAnchor } from '../kit';
+import { MobileSheet, useMobileSurface } from '../mobile';
 import { useDismissable } from '../panels/useDismissable';
 
 /** `.tch-pickmenu`'s own max-height (260, chat-home.css) + its 4px offset. */
@@ -77,8 +78,36 @@ export function ComposerSelect({
   const boxRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
-  useDismissable(open, [boxRef, menuRef], close);
-  const anchor = useMenuAnchor(open, boxRef, menuRef, close, MENU_HEIGHT, MENU_WIDTH);
+  const { oneSurface } = useMobileSurface();
+  /*
+   * OFF ON THE PHONE, AND THIS ONE IS NOT AN OPTIMISATION — IT IS THE BUG.
+   *
+   * `useDismissable` closes on a `pointerdown` outside every MOUNTED ref. On
+   * the phone the anchored menu is not rendered, so `menuRef.current` is null
+   * and "outside" collapses to "outside the trigger" — and the sheet is
+   * portalled into the frame's sheet host, which is outside the trigger by
+   * construction. So a tap on an option fires `pointerdown` → dismiss →
+   * `open: false` → the sheet unmounts, and the `click` that would have
+   * selected the option never lands on anything.
+   *
+   * The failure is a control that renders, highlights, accepts the press and
+   * does nothing — the exact shape the shell contract's honesty rule names
+   * ("absent handler ⇒ absent control, never a live-looking one that swallows
+   * the press"), arrived at from the opposite direction. It is also invisible
+   * to every instrument here: the row measures 44px, the census passes, and no
+   * screenshot can show that a tap did not take.
+   *
+   * `MobileSheet` already owns all three dismissal routes on the phone — the
+   * ✕, the backdrop and Escape — so this is not dropping a behaviour, it is
+   * declining to run a second one that fights it.
+   */
+  useDismissable(open && !oneSurface, [boxRef, menuRef], close);
+  /* NOT CALLED ON THE PHONE. `useMenuAnchor` measures the trigger and solves a
+     fixed position for a 220x264 box; on the phone the menu is a sheet, whose
+     position is the frame's. Passing `false` keeps the hook's rule-of-hooks
+     shape while leaving it inert, rather than computing a rectangle nothing
+     reads. */
+  const anchor = useMenuAnchor(open && !oneSurface, boxRef, menuRef, close, MENU_HEIGHT, MENU_WIDTH);
 
   const selectedIndex = options.findIndex((option) => option.id === value);
   const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined;
@@ -89,6 +118,54 @@ export function ComposerSelect({
     onChange(option.id);
     close();
   };
+
+  /*
+   * THE ROWS, ONCE. The desktop draws them in a portalled anchored menu and the
+   * phone draws them in a sheet, and those are two POSITIONS for one list —
+   * writing the list twice is how the two arrangements start disagreeing about
+   * which option is selected or what a row announces.
+   */
+  const rows = options.length === 0 ? (
+    <p className="tch-pickmenu__note" role="status">{emptyNote}</p>
+  ) : (
+    <div role="listbox" id={menuId} aria-label={`${label} options`}>
+      {options.map((option, index) => (
+        <button
+          key={option.id}
+          type="button"
+          role="option"
+          id={`${menuId}-opt-${index}`}
+          className="tch-pickmenu__opt"
+          data-testid={`${testId}-${option.id}`}
+          data-active={index === activeIndex || undefined}
+          aria-selected={option.id === value}
+          /* Hover moves the highlight so the mouse and the arrow
+             keys never disagree about which row Enter would take. */
+          onMouseEnter={() => setActive(index)}
+          onClick={() => choose(option)}
+        >
+          {option.actor ? (
+            <Avatar
+              actorId={option.actor.id}
+              provenance="agent"
+              label={option.label}
+              size={15}
+              src={option.actor.avatar ?? null}
+            />
+          ) : null}
+          <span className="tch-pickmenu__text">
+            <span className="tch-pickmenu__name">{option.label}</span>
+            {option.hint ? (
+              <span className="tch-pickmenu__hint">{option.hint}</span>
+            ) : null}
+          </span>
+          <span className="tch-pickmenu__mark" aria-hidden>
+            {option.id === value ? '✓' : ''}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <span className="tch-pick" ref={boxRef}>
@@ -146,7 +223,39 @@ export function ComposerSelect({
         <span className="tch-pick__caret" aria-hidden>▾</span>
       </button>
 
-      {open && anchor
+      {/*
+        THE PHONE TAKES A SHEET, AND THE SHELL CONTRACT §4 IS WHY — not taste.
+
+        This is an ANCHORED POPOVER ON A SMALL TRIGGER, which is the exact case
+        the contract names as not surviving the trip to a 390px phone (it is
+        the same reason the account menu is a sheet rather than
+        `auth/AccountMenu` dropped into the header). `useMenuAnchor` solves a
+        220x264 box against the room left around a trigger that is one of THREE
+        sitting in a composer foot pinned to the bottom of the frame — and with
+        the soft keyboard up that frame is a few hundred pixels tall, so the
+        drop-up it resolves to has nowhere to resolve INTO.
+
+        A sheet has no such problem: it is positioned by the frame, which is the
+        only thing that knows where the tab bar and the keyboard inset are, and
+        this component composes against that rather than measuring anything
+        itself. Per contract §3 a lane must not wire its own `visualViewport`
+        listener, and this does not — it wires no measurement at all.
+
+        SHEET AND NOT A PUSHED SCREEN: picking a teammate is temporary and over
+        your place. Pushing it would put a thread setting in the back stack, so
+        backing out of it would walk the screen stack instead of returning the
+        writer to the message they were composing.
+
+        `MobileSheet` renders null off the phone, and `oneSurface` is false
+        there by construction, so the desktop branch below is untouched.
+      */}
+      {open && oneSurface ? (
+        <MobileSheet title={label} onDismiss={close} testId={`${testId}-sheet`}>
+          <div className="tch-picksheet">{rows}</div>
+        </MobileSheet>
+      ) : null}
+
+      {open && !oneSurface && anchor
         ? createPortal(
             <div
               ref={menuRef}
@@ -154,47 +263,7 @@ export function ComposerSelect({
               style={anchor.style}
               data-testid={`${testId}-menu`}
             >
-              {options.length === 0 ? (
-                <p className="tch-pickmenu__note" role="status">{emptyNote}</p>
-              ) : (
-                <div role="listbox" id={menuId} aria-label={`${label} options`}>
-                  {options.map((option, index) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      role="option"
-                      id={`${menuId}-opt-${index}`}
-                      className="tch-pickmenu__opt"
-                      data-testid={`${testId}-${option.id}`}
-                      data-active={index === activeIndex || undefined}
-                      aria-selected={option.id === value}
-                      /* Hover moves the highlight so the mouse and the arrow
-                         keys never disagree about which row Enter would take. */
-                      onMouseEnter={() => setActive(index)}
-                      onClick={() => choose(option)}
-                    >
-                      {option.actor ? (
-                        <Avatar
-                          actorId={option.actor.id}
-                          provenance="agent"
-                          label={option.label}
-                          size={15}
-                          src={option.actor.avatar ?? null}
-                        />
-                      ) : null}
-                      <span className="tch-pickmenu__text">
-                        <span className="tch-pickmenu__name">{option.label}</span>
-                        {option.hint ? (
-                          <span className="tch-pickmenu__hint">{option.hint}</span>
-                        ) : null}
-                      </span>
-                      <span className="tch-pickmenu__mark" aria-hidden>
-                        {option.id === value ? '✓' : ''}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
+              {rows}
             </div>,
             anchor.host,
           )

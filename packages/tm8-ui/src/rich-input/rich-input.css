@@ -244,3 +244,125 @@
   font: inherit;
   cursor: pointer;
 }
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-026, DEF-039.
+
+   `.ri-card` is the ONE chat box, shared by Chat Home, the channel composer
+   and the thread composer, and Lane A owns all three. Scoped to the
+   `data-shell` marker so desktop is untouched.
+   ========================================================================== */
+
+/* UNPIN THE FOOT BEFORE ANYTHING INSIDE IT GROWS. This is the trap the shell
+   contract names: `.lp__actions` was `height: 34px` + `overflow: hidden` and
+   sliced its contents through the middle of the glyphs while `overflowCount`
+   scored the screen 0 — no metric in this program can see vertical clipping
+   (DEF-037), so a foot that clipped a 44px Send would have PASSED the tap
+   census with the button cut in half.
+
+   `.ri-card__foot` is already `min-height` rather than `height`, so it grows.
+   What it does NOT do is wrap: it is a single flex line holding attach, the
+   skill sigil, three thread-setting triggers, the phase label and Send. At
+   44px each those no longer fit 390px, and a nowrap flex line resolves that by
+   COMPRESSING its children — which would have taken the width back off the
+   targets this change exists to grow, silently, and left the row measuring
+   under the bar again on the narrower viewport only.
+
+   So the row wraps, and the floor is restated at 44 so it is not a number that
+   quietly stopped being true. */
+.cv2-root[data-shell='mobile'] .ri-card__foot {
+  flex-wrap: wrap;
+  row-gap: var(--pn-space-1);
+  min-height: var(--mobile-touch-min);
+}
+
+/* DEF-039 — the composer's own literals. These name a pixel size rather than a
+   scale step, so the token lift on `.tch-root` cannot reach them, and they
+   render INSIDE the chat screens the row is counted on: the attachment chips
+   and the paste refusal sit above the field, and the skill picker's query line
+   and per-option meta sit above that. 12px is the derived floor (nothing at 12
+   or above appears in any of the run's 283 tinyText findings); the refusal is
+   prose and takes 13 for the same reason `.tch-thread-refusal` does. */
+.cv2-root[data-shell='mobile'] .ri-attachments__refusal { font-size: 13px; }
+.cv2-root[data-shell='mobile'] .ri-attachment { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .ri-attachment button { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .ri-popover__query { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .ri-popover__meta { font: 12px var(--pn-mono); }
+.cv2-root[data-shell='mobile'] .ri-popover__empty { font-size: 13px; }
+.cv2-root[data-shell='mobile'] .ri-field__hint,
+.cv2-root[data-shell='mobile'] .ri-field__why { font-size: 12px; }
+
+/* The attachment chip's remove button and the popover's rows are controls, not
+   copy. The popover rows are already 36px; on a phone they take the floor. */
+.cv2-root[data-shell='mobile'] .ri-popover button { min-height: var(--mobile-touch-min); }
+.cv2-root[data-shell='mobile'] .ri-attachment button {
+  min-width: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}
+.cv2-root[data-shell='mobile'] .ri-attachments__refusal button {
+  min-width: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}
+
+
+/* --- the trigger popover, with the keyboard up --------------------------- */
+
+/* THE SLASH / MENTION PICKER IS NOT CONVERTED TO A SHEET, AND THAT IS A
+   DELIBERATE READING OF THE CONTRACT RATHER THAN AN OMISSION. Contract §4
+   names anchored popovers as the thing a sheet replaces — specifically the
+   ones that "do not survive the trip to a 390px HEADER", which is why the
+   account menu is a sheet. That is a menu hanging off a small trigger, and
+   `ComposerSelect`'s three thread-setting menus ARE that case and have been
+   moved (see the docblock at its render).
+
+   This one is a different animal: it is full-width, anchored above a
+   full-width composer, and it is driven ENTIRELY BY THE TEXTAREA — the hook's
+   keyboard contract gives it no focusable parts, and the reader filters it by
+   continuing to type. A `MobileSheet` is `aria-modal` with a backdrop over the
+   screen that opened it, so making this one a sheet would cover the composer
+   the reader is typing into and put focus outside the modal it claims to trap
+   — it would break the interaction it exists to serve, in exchange for a rule
+   written about a different shape. Raised with the coordinator rather than
+   decided quietly, and NOT forked: the sheet rule is applied where the
+   contract's own words put it.
+
+   What it DOES need is to stop being taller than the room it has. The frame is
+   `calc(100dvh - var(--mobile-keyboard-inset))`, so with the keyboard up it is
+   a few hundred pixels tall, and a 238px list above a composer would not fit.
+   Composed against the PUBLISHED TOKEN — no second `visualViewport` listener,
+   per contract §3, and no measurement in this file at all. The 0.4 is the
+   share of the frame the list may take: the composer with 44px controls plus
+   the header is most of the rest, and a picker that took half would leave the
+   writer unable to see the line being completed. */
+.cv2-root[data-shell='mobile'] .ri-popover [role='listbox'] {
+  max-height: min(238px, calc((100dvh - var(--mobile-keyboard-inset, 0px)) * 0.4));
+}
+
+
+/* The refused-attach control. `DisabledIconControl` renders `.hon-disabled`
+   rather than `.tch-attach`, so it is a SECOND control in the same composer
+   slot and the `.tch-attach` floor does not reach it — it is sized to 26px by
+   the `.ri-card__foot .hon-disabled` rule in `channel-screen.css`.
+
+   IT LIVES HERE RATHER THAN IN `chat-home.css` FOR A LOADING REASON, not a
+   filing one. `chat-home.css` is imported by `ChatHomeScreen` and so is only
+   in the document once the lazy chat home has mounted; the channel screen
+   draws the same composer foot and imports `channel-screen.css` instead. A
+   phone rule for a SHARED composer control written in either of those applies
+   on one of the two surfaces and is silently absent on the other — which
+   presents as the same component measuring differently on two screens, with
+   nothing in the CSS to suggest why. `rich-input/index.ts` imports this file,
+   so it is present wherever a composer is.
+
+   IT IS GROWN AT ALL, which is a deliberate reading of ledger RULE R2 rather
+   than a contradiction of it. R2 excludes disabled controls from the 44px bar
+   because there is nothing to tap, and growing a dead control only produces a
+   bigger dead control. This one is not dead: it carries a REASON the reader is
+   meant to be able to open (the `useReasonDisclosure` seam DEF-032 is about),
+   so a finger does have somewhere to land and the thing it lands on should be
+   findable by it. */
+.cv2-root[data-shell='mobile'] .ri-card__foot .hon-disabled {
+  min-width: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}

@@ -35,6 +35,26 @@ import type {
   ChatThreadSummary,
   ChatTurnFrame,
 } from './types';
+/* THE REFUSAL VOCABULARY'S STYLESHEET, IMPORTED WHERE ITS COMPONENTS ARE USED.
+   This screen renders `DisabledIconControl` (the refused attach) but reached it
+   by DEEP PATH — `../panels/honesty/DisabledWithReason` — which pulls the
+   component and not `panels/index.ts`, the only module that imports
+   `honesty.css`. So the markup arrived without its vocabulary.
+
+   It matters most on the phone, and that is what makes it a defect rather than
+   an untidiness: `honesty.css` is where the TAP-ONLY disclosure lives
+   (`.mobile-frame .hon-disabled[data-reason-open='true'] > .hon-tip`, plus the
+   rules that suppress `:hover` there because it STICKS after a tap on iOS).
+   Without the file, `useReasonDisclosure`'s tap toggle sets a `data-` attribute
+   nothing styles, and `.hon-tip` has no `visibility: hidden` to be revealed
+   FROM — so the reason is either permanently on screen or permanently
+   unreachable, and which one is not a question the component can answer.
+
+   Following the idiom `files/index.ts`, `auth/index.ts` and
+   `settings-space/index.ts` already state in their own words: import another
+   lane's stylesheet, never edit it. CSS imports are idempotent, so this is safe
+   wherever the file is already present. */
+import '../panels/honesty/honesty.css';
 import './chat-home.css';
 
 export interface ChatHomeScreenProps {

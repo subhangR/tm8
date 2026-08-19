@@ -241,3 +241,72 @@
   .chv-aside { min-width: 300px; }
   .chv-header__status { display: none; }
 }
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-028, DEF-039.
+   ========================================================================== */
+
+/* DEF-028 — "Feed · 20" measured 74x35. The closest miss in the ledger, nine
+   pixels short, and it is the channel screen's only navigation.
+
+   `height: 35px` IS A HARD PIN and a `min-block-size` floor alone would have
+   lost to it, so the height is released to `auto` first and the floor set
+   under it — the shell contract's "unpin the container before growing what is
+   inside it", applied to a control that pins itself.
+
+   `.chv-tabs` is `min-height: 36px`, which is a floor rather than a clip, so
+   the strip grows on its own. It is restated at 44 anyway: a 36px floor
+   underneath a 44px child is a number that has silently stopped being true,
+   and the next reader of this file would take it for the strip's real height.
+
+   ── THE OVERFLOW QUESTION, AND MY FIRST ANSWER TO IT WAS WRONG ────────────
+
+   I originally wrote here that `.chv-tabs` being `overflow-x: auto` means a
+   channel with enough tabs "scrolls the strip rather than putting a tab past
+   the right edge". **That is not true of the measure this program uses.** The
+   instrument takes `getBoundingClientRect().right > innerWidth` PER ELEMENT,
+   and a tab sitting beyond a scroll port's right edge at `scrollLeft: 0` has
+   exactly that — scrolling changes what you can SEE, not where the box IS.
+   `overflow-x: auto` prevents the ANCESTOR from being dragged wider; it makes
+   no promise at all about the child rects the census reads.
+
+   So this strip is treated for the TOUCH FLOOR and is NOT wrapped, and that is
+   a deliberate partial rather than a complete fix (ledger R17 — say which
+   members of a shape are outstanding and why):
+
+     measured today ... 3 tabs, 0 offenders at 390 and 430. It fits.
+     outstanding ...... a channel with enough tabs to exceed the width would
+                        put the overflowing tab past the right edge and the
+                        census would flag it, scroll port or not.
+
+   NOT wrapped, because wrapping a tablist turns one row of tabs into two and
+   spends the vertical room this screen is already short of; horizontal scroll
+   is the right arrangement for a tablist and the honest gap is that the metric
+   cannot see it as safe. Recorded rather than papered over.
+
+   `.mobile-frame` is `overflow: hidden`, so any such tab would be CLIPPED
+   while a document-level measure still read 0 — which is why R3 requires the
+   per-element number and why the paragraph above matters. */
+.cv2-root[data-shell='mobile'] .chv-tab {
+  height: auto;
+  min-block-size: var(--mobile-touch-min);
+  display: inline-flex;
+  align-items: center;
+  padding-inline: var(--pn-space-3);
+  font-size: 13px;
+}
+
+.cv2-root[data-shell='mobile'] .chv-tabs {
+  min-height: var(--mobile-touch-min);
+  align-items: stretch;
+}
+
+/* DEF-039 — the header's own small type, on the same derived 12px floor. */
+.cv2-root[data-shell='mobile'] .chv-header__status { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .chv-eyebrow { font-size: 12px; }
+.cv2-root[data-shell='mobile'] .chv-chip {
+  font-size: 13px;
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}

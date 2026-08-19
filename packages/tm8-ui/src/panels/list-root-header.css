@@ -115,3 +115,64 @@
 }
 .tch-rootopt:hover { background: var(--pn-hover); color: var(--pn-ink); }
 .tch-rootopt--current { background: var(--pn-active); color: var(--pn-ink); }
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-027, DEF-039.
+
+   OWNERSHIP EXCEPTION, and it is recorded in the ledger's map rather than
+   discovered here as a merge conflict: this file lives in `src/panels/`, which
+   is Lane B's directory, but every class in it is `tch-` — Lane A's chat
+   namespace — and nothing outside the chat root bar draws them. Lane A owns
+   this file and `ListRootHeader.tsx` for this program. Lane B does not edit
+   either. Confirmed by the coordinator.
+   ========================================================================== */
+
+/* "Chats" measured 41x22 and the new-chat ＋ 23x22 — and the ＋ is the entry
+   point to the product's core action.
+
+   NO CONTAINER TO UNPIN, CHECKED RATHER THAN ASSUMED: `.tch-roots` is
+   `padding: 2px` with a 1px border and no height, and `.tch-rootcell` is
+   `align-items: stretch` with none either, so the strip takes the height of
+   whatever these cells become. This is the case the shell's §7a warns about
+   and it is the benign half of it.
+
+   The bar is ALREADY 44 tall on this phone, so this costs no vertical room:
+   `.tch-rootbar` also holds `.lp__views`, which the shell contract's §7b grew
+   to the same floor before any lane started. */
+.cv2-root[data-shell='mobile'] .tch-rootcell__label,
+.cv2-root[data-shell='mobile'] .tch-rootcell__plus,
+.cv2-root[data-shell='mobile'] .tch-rootcell__caret {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  justify-content: center;
+  /* DEF-039: this label is one of the 11px text nodes counted on chat-home. */
+  font-size: 13px;
+}
+
+/* The kind cell's label is `flex: 1` and ellipsises a long plural; a
+   `min-inline-size` floor on it would fight that, so it keeps the floor on the
+   BLOCK axis only. It is wide by construction — the row it shares is the whole
+   bar — and the ledger's bar is the smaller side. */
+.cv2-root[data-shell='mobile'] .tch-rootcell--kind .tch-rootcell__label {
+  min-inline-size: 0;
+  justify-content: flex-start;
+}
+
+/* THE BAR WRAPS. At 390 the strip can hold [Chats ＋] and [◫ Kind ＋ ▾] and
+   the layout switcher, and at 44px each that is six controls across 366px of
+   content width. Chat Home draws only the Chats cell (the run measured no
+   caret there), so it fits — but the Work tab draws the kind cell too and this
+   is the same bar. Wrapping is what keeps the sixth control on the screen
+   instead of past the right edge, where `.mobile-frame`'s `overflow: hidden`
+   would destroy it while a document-level measure read 0 (ledger RULE R3). */
+.cv2-root[data-shell='mobile'] .tch-rootbar {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+/* The kind menu's rows are controls. */
+.cv2-root[data-shell='mobile'] .tch-rootopt {
+  min-block-size: var(--mobile-touch-min);
+  font-size: 13px;
+}

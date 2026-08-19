@@ -1245,3 +1245,225 @@ button.tch-entity-chip:hover {
   line-height: 1.35;
 }
 .tch-pickmenu__mark { color: var(--pn-brand); font-size: var(--pn-fs-fine); }
+
+
+/* ==========================================================================
+   THE PHONE — LANE A. DEF-025, DEF-026, DEF-039.
+
+   Scoped to `.cv2-root[data-shell='mobile']`, the marker `GateApp` and
+   `MobileFrame` stamp. It is a SHARED contract (37 uses in mobile-screens.css,
+   24 in terminal.css, plus the zoom gate), so it is matched here exactly as
+   those files match it and is not re-shaped. If a rule below appears not to
+   apply, check the marker before rewriting the rule — CONTRACT.md §7.
+
+   `src/mobile/*.css` is GATE-OWNED and is not touched. These are `tch-`
+   classes in Lane A's own stylesheet, restated under a narrower selector
+   exactly as the shell's own §7 restates `panels.css` — the desktop values
+   above are untouched.
+
+   THE TWO CONSTRAINTS FROM THE CONTRACT, WHICH ARE ACCEPTANCE NOT ADVICE:
+   every rule names its class (no blanket `button` floor), and every target
+   grows by real padding and real `min-block-size` (no `::after` hit areas —
+   the instrument measures `getBoundingClientRect()` OF THE ELEMENT and would
+   score a pseudo-element trick as fixed while the thumb still missed).
+
+   AND THE THIRD: the container is unpinned BEFORE anything inside it grows.
+   `.ri-card__foot` is done in `rich-input.css`; `.tch-attach`'s own
+   `width`/`height` pins are overridden rather than padded around.
+   ========================================================================== */
+
+/* --- DEF-039 — the type floor, applied at the TOKENS ---------------------- */
+
+/* 16 text nodes at 11px, and the run reported only the first 6 of them. A
+   per-class list would therefore have been a list of the ones I could SEE, and
+   the ten I could not would have shipped — `tinyTextCount` is a count, and the
+   array beside it is a sample. Lifting the three small steps of the type scale
+   inside this screen reaches all sixteen without naming any.
+
+   12px IS THE FLOOR AND IT IS DERIVED, NOT CHOSEN: across all 283 tinyText
+   findings in `before-lanes-results.json` the largest size ever flagged is
+   11.5 and no element at 12 or above appears, so the instrument's cut is below
+   12. Prose and refusal copy goes to 13 rather than sitting on the line —
+   DEF-039's own note is that `.tch-thread-refusal` is an HONESTY message, and
+   an honesty message the reader cannot read is not honest. A floor is not a
+   reading size.
+
+   Desktop is untouched: this sets the variables on the phone's `.tch-root`
+   only, so every consumer of them inside this screen lifts together and no
+   consumer outside it moves at all. */
+.cv2-root[data-shell='mobile'] .tch-root {
+  --pn-fs-tick: 12px;
+  --pn-fs-fine: 12px;
+  --pn-fs-micro: 13px;
+}
+
+/* THE LIFT STOPS AT THE HOSTED LIST, AND THAT BOUNDARY IS THE POINT.
+   `.tch-panel-host` is `EntityListPanel` — the shell's and Lane B's surface,
+   embedded in mine. The shell's `mobile-screens.css` §7 has already grown
+   every `lp__` control on this phone and the build service has already
+   measured those numbers clean. Inheriting a bigger type scale into it would
+   move controls the shell has verified, on a screen the shell does not own,
+   and any overflow it caused would land in another lane's rows. The scale is
+   restored to the package default across that boundary. */
+.cv2-root[data-shell='mobile'] .tch-root .tch-panel-host {
+  --pn-fs-tick: 9px;
+  --pn-fs-fine: 10px;
+  --pn-fs-micro: 11px;
+}
+
+/* `.tch-rootopt` and the root bar's cells are NOT lifted from here even though
+   they render on this screen: they are `list-root-header.css`'s, that file
+   owns their sizes, and this one is under the `type-scale-ban` guard which
+   would (correctly) reject a px literal added here. Their floor is in that
+   file, beside the rules it overrides. */
+
+/* The refused-attach control (`DisabledIconControl` renders `.hon-disabled`,
+   not `.tch-attach`, so it is a SECOND control in the same slot and the rule
+   above does not reach it) IS grown — but the rule lives in `rich-input.css`
+   and NOT here, which is a loading fact rather than a filing preference.
+
+   `chat-home.css` is imported by `ChatHomeScreen` and is therefore only in the
+   document once the LAZY chat home has mounted. The same composer foot renders
+   on the channel screen, which imports `channel-screen.css` and never this
+   file — so a phone rule for a shared composer control, written here, would
+   apply on one of the two surfaces that draw it and be absent on the other,
+   with nothing to show for it but a number that differed between two screens
+   running the same component. `rich-input.css` is imported by
+   `rich-input/index.ts`, so it is present wherever a composer is. */
+
+/* --- DEF-025 — the "Thinking" disclosure inside a turn (332x13) ----------- */
+
+/* `padding-block` AND NOT `display: flex`. A `<summary>` is `display:
+   list-item` and that is what draws its disclosure triangle; making it a flex
+   container removes the marker in Chromium and Safari, so the control would
+   have measured 44 and lost the one glyph that says it opens. The padding
+   grows the box and leaves the marker exactly where it was.
+
+   `.tch-thinking` is deliberately NOT part of the `.tch-wait` rule set (see
+   the comment over `.tch-wait`): the two once shared a class and `.tch-wait`'s
+   `display: flex` laid this disclosure's summary and body side by side when a
+   reader opened it. This rule is its own and is not folded into that block. */
+.cv2-root[data-shell='mobile'] .tch-thinking > summary {
+  min-block-size: var(--mobile-touch-min);
+  padding-block: calc((var(--mobile-touch-min) - 1.3em) / 2);
+  padding-inline: var(--pn-space-1);
+}
+
+/* --- DEF-026 — every composer control was under the bar ------------------- */
+
+/* Attach was `width: 24px; height: 24px` — a hard pin on both axes, so a
+   `min-*` floor alone would have lost to it. Both are restated. */
+.cv2-root[data-shell='mobile'] .tch-attach {
+  width: var(--mobile-touch-min);
+  height: var(--mobile-touch-min);
+}
+
+/* The three thread-setting triggers (mode / teammate / model), 24px tall.
+   `max-width` stays at 150px: these ellipsise their value, and the row this
+   defect is about is the HEIGHT. Widening them as well would put the foot's
+   natural width past 390 and trade a tap-target row for an overflow one. */
+.cv2-root[data-shell='mobile'] .tch-pick__trigger {
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-2);
+}
+
+/* SEND — 57x29, and the primary action of the primary screen. `.tch-stop`
+   carries the same footprint by construction and moves with it. */
+.cv2-root[data-shell='mobile'] .tch-send,
+.cv2-root[data-shell='mobile'] .tch-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+/* The picks wrap among themselves once they are 44 tall, so three triggers
+   that no longer fit one line stack instead of compressing to their
+   ellipsis. */
+.cv2-root[data-shell='mobile'] .tch-picks {
+  flex-wrap: wrap;
+  row-gap: var(--pn-space-1);
+}
+
+
+/* --- the thread-setting sheet (shell contract §4) ------------------------- */
+
+/* `ComposerSelect` draws its options in a `MobileSheet` on the phone instead
+   of the portalled anchored menu — see the docblock at its render for why the
+   contract requires that. The sheet supplies the panel, the title and the
+   dismiss; this supplies only the list inside it, so the rules below are the
+   ones `.tch-pickmenu` was contributing and NOT its geometry (the max-height,
+   the border and the shadow all belong to the sheet now, and restating them
+   here would draw a card inside a card).
+
+   NOT scoped to the shell marker, and that is deliberate rather than an
+   oversight: `.tch-picksheet` is only ever rendered inside `MobileSheet`,
+   which returns null wherever `sheetHost` is null — so this class cannot
+   appear off the phone and a `[data-shell='mobile']` prefix would be a guard
+   against a state that cannot occur, of the kind this codebase treats as
+   noise rather than safety. */
+.tch-picksheet {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The rows take the touch floor. They are the whole point of the sheet — a
+   thread setting the writer came here to change — and at 390px they have the
+   full width, so the floor is the block axis. */
+.tch-picksheet .tch-pickmenu__opt {
+  min-block-size: var(--mobile-touch-min);
+  padding: var(--pn-space-2) var(--pn-space-3);
+}
+
+
+/* --- the tray strip — the fourth strip, and the one I missed -------------- */
+
+/* THE BUILD SERVICE FAILED chat-home@390 ON THIS: `overflowCount` 0 -> 2,
+   `worstRightEdge` 390 -> 401, offender
+   `nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > span.tch-entity-chip`.
+   11px past a frame that is `overflow: hidden`, so clipped rather than
+   scrolled to. 430 was clean — it has the slack to absorb it — which is the
+   argument for measuring both widths made concrete: the defect exists at both
+   and MANIFESTS at one.
+
+   I wrapped `.ri-card__foot`, `.tch-picks` and `.tch-rootbar` specifically so
+   that growing a control could not trade a tap row for an overflow row. This
+   is a fourth strip of the same shape and I did not enumerate the class, I
+   fixed the three I had touched. So, enumerated now — every non-column flex
+   strip in this file that carries variable-width children:
+
+     .tch-touched, .tch-durable__entities, .tch-usage, .tch-thread__badges,
+     .tch-xgraph__legend .......... already `flex-wrap: wrap`. Safe.
+     .ri-card__foot, .tch-picks, .tch-rootbar ... wrapped by this branch.
+     .tch-tray__tabs .............. THE MISS. `overflow: hidden`, no wrap.
+     the rest (.tch-conversation__head, .tch-turn__byline, .tch-code__head,
+       .tch-asset__head, .tch-thread__meta, .tch-slots, .tch-task-row)
+       ............................ carry text that ellipsises or is fixed.
+
+   IT IS FIXED BY LETTING THE CHIP SHRINK, NOT BY WRAPPING, AND THAT IS A
+   DELIBERATE DEPARTURE FROM THE FIX I WAS OFFERED. Wrapping is the idiom I
+   used on the other three and `.tch-tray__tabs[data-expanded]` already pairs
+   `flex-wrap: wrap` with `overflow: visible`, so it would have worked. But
+   wrapping ADDS HEIGHT, and this screen is currently short of height rather
+   than of width — the composer foot is at the bottom of a column whose
+   contents already exceed the frame at 390. Trading a horizontal overflow the
+   instrument CAN see for vertical growth that per DEF-037 it CANNOT is the
+   wrong direction, and it is the trade this file has been burned by before.
+
+   Shrinking costs nothing vertically. The chain was one link short of already
+   working: `.tch-tray__tabs` and `.tch-tray__tab` both carry `min-width: 0`
+   and `.tch-entity-chip__title` already ellipsises — but the chip itself is a
+   flex item with the default `min-width: auto`, which refuses to shrink below
+   its content and so passes the overflow straight through the two ancestors
+   that were built to absorb it. */
+.cv2-root[data-shell='mobile'] .tch-tray__tabs .tch-entity-chip {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cv2-root[data-shell='mobile'] .tch-tray__tabs .tch-entity-chip__title {
+  min-width: 0;
+}
