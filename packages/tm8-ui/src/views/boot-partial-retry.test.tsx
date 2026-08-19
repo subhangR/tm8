@@ -53,7 +53,7 @@
  * is issued twice. A test that only asserted `ready === true` would pass on the
  * defect — it always did reach ready, just a re-boot later.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { CollabError } from '@tm8/contract';
 import type { CollectionQuery, DurableWorkspaceEvent, EntitySummary, SpaceId } from '@tm8/contract';
@@ -403,6 +403,64 @@ describe('after first paint: the deferred reads recover without disturbing the w
     expect(h.c.liveness).toBe(1);
     expect(h.c.counts).toBe(1);
   }, RETRY_TIMEOUT);
+});
+
+describe('after first paint: the budget is finite, and exhaustion is recoverable', () => {
+  /* THE LITERAL TRANSITION — budget exhausted, then recovered — on FAKE TIMERS.
+     Draining `READ_MAX_ATTEMPTS` costs 60s of wall clock on the 1s→15s ladder
+     (1+2+4+8+15+15+15), which is the whole reason the sibling test above reaches
+     the recovery path with a single failure instead. A real minute-long test
+     would also be actively harmful in THIS suite: its known failure family under
+     CPU contention is timeouts, so a slow timing-sensitive test would be the
+     thing blamed on whoever next runs it on a busy box.
+
+     `sleepUntil` is `setTimeout`-backed, so faking the clock drains the whole
+     ladder in milliseconds. `advanceTimersByTimeAsync` is the variant that flushes
+     microtasks between timers, which is what lets the promise chain inside
+     `retryBootRead` make progress. `waitFor` is deliberately NOT used here — it
+     schedules its own timers and would be racing the clock we are driving. */
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  /** Advance the faked clock, flushing promises, inside React's act(). */
+  const advance = async (ms: number) => {
+    await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  };
+
+  it('stops after READ_MAX_ATTEMPTS, then recovers on the next resync', async () => {
+    // Fails exactly as many times as the budget allows, then answers.
+    const h = harness({ failProjects: 8 });
+    const { result } = render(h.seam);
+
+    // Boot itself waits on no timer; flushing microtasks is enough to open.
+    await advance(0);
+    expect(result.current.ready).toBe(true);
+
+    /* Drain the ladder. 60s is the exact sum; 90s proves it STOPS rather than
+       merely that it had not finished — an unbounded loop would keep counting. */
+    await advance(90_000);
+    expect(h.c.projects).toBe(8);
+    expect(result.current.launch.projects).toEqual([]);
+
+    // Exhausted, and staying exhausted: nothing in that closure retries again.
+    await advance(300_000);
+    expect(h.c.projects).toBe(8);
+
+    /* The failure stayed SILENT throughout — the workspace was open the whole
+       time, and painting a boot error over it would be the dishonest surface. */
+    expect(result.current.bootError).toBeNull();
+    expect(result.current.ready).toBe(true);
+
+    /* THE RECOVERY. `onResync` bumps `bootRevision`, which re-runs the whole of
+       `hydrate` — deferred half included, on a fresh budget. A resync is produced
+       by exactly the class of outage that exhausts the budget in the first place,
+       so this trigger is not one the user has to know to reach for. */
+    act(() => { h.fireResync(); });
+    await advance(0);
+
+    expect(h.c.projects).toBe(9);
+    expect(result.current.launch.projects.map((p) => p.id)).toEqual(['proj-1']);
+  });
 });
 
 /* Not a behaviour of the hook, but the claim the fix rests on: recovery is
