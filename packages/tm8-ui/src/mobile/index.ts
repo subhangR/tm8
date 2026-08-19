@@ -78,3 +78,6 @@ export type { MobileSurface, MobileSurfaceProviderProps } from './surface';
 
 export { MobileSheet } from './MobileSheet';
 export type { MobileSheetProps } from './MobileSheet';
+
+export { EntityFab } from './EntityFab';
+export type { EntityFabItem, EntityFabProps } from './EntityFab';
