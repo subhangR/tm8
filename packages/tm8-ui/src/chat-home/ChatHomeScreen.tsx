@@ -1262,8 +1262,17 @@ export function ChatHomeScreen({
             one place") is a caption for a chooser that solo does not have.
             Full Chat Home keeps the header: there the title lives nowhere else
             on screen, since the thread LIST names threads, not the open one.
-            The teammate is not lost — the picker's meta line carries it. */}
-        {soloConversation ? null : (
+            The teammate is not lost — the picker's meta line carries it.
+
+            NOT WHILE SOMETHING ELSE HOLDS THE STAGE EITHER (user report
+            2026-08-19, task 01a017d3). The header names the CONVERSATION, and
+            with an entity panel or a stage in region B the conversation is not
+            what is on screen — so `New conversation · Work with your graph from
+            one place` sat above a running terminal, captioning a surface it has
+            nothing to do with. It is the chat's chrome; it belongs to the chat.
+            (The rest of the chat's chrome around region B — the tray and the
+            composer — is a separate open ruling on the same task.) */}
+        {soloConversation || centre != null ? null : (
           <header className="tch-conversation__head">
             <div className="tch-title">
               <strong>{detail?.summary.title ?? 'New conversation'}</strong>
@@ -1332,7 +1341,35 @@ export function ChatHomeScreen({
           )}
         </div>
 
-        <div className="tch-composer-wrap" data-phase={phase} ref={composerWrapRef}>
+        {/* THE BOTTOM BERTH IS THE CHAT'S, NOT REGION B'S (user report
+            2026-08-19, task 01a017d3). While an entity panel or a stage holds
+            region B, this wrap carries the TRAY ONLY — the way back — and the
+            composer stands down with the header. Reasons, in order:
+
+            it was WRAPPING THE PANEL. Head above, tray + composer below, a
+            running terminal squeezed in what was left. The composer is the
+            chat's instrument; addressed to the open thread, captioned `Reply
+            in this thread…`, it promises to send somewhere that is not what
+            you are looking at.
+
+            it was SPENDING THE HEIGHT. ~200px of it — and the surface under it
+            is a terminal, where vertical space is the entire point.
+
+            it was NARROWER THAN THE PANEL. The wrap is `min(760px, 100% - 32px)`
+            centred, so the tray sat inset from a full-bleed panel — two
+            different widths stacked, reading as two unrelated surfaces.
+
+            THE TRAY STAYS. The 2026-08-18 Cockpit ruling kept this berth for
+            the way back (the tray's ⌂ Chat tab, Esc), and that reason survives
+            the composer: one row of tabs, ~36px, is the one-click return to
+            the thread. `data-chrome='tray'` lets it go full-bleed, since with
+            the composer gone the 760px reading measure has nothing to measure. */}
+        <div
+          className="tch-composer-wrap"
+          data-phase={phase}
+          data-chrome={centre != null ? 'tray' : undefined}
+          ref={composerWrapRef}
+        >
           {(detail && !newThread) || centre != null ? (
             <EntityTray
               turns={detail && !newThread ? detail.turns : []}
@@ -1350,163 +1387,171 @@ export function ChatHomeScreen({
               chatBusy={thinking || phase === 'streaming'}
             />
           ) : null}
-          {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
-          {refusal ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
-          {phase === 'stopped-continuable' ? (
-            <p className="tch-continuable" role="status">
-              Turn stopped · this thread is continuable. Send another message to resume.
-            </p>
-          ) : null}
-          <ComposerCard
-            className="tch-composer"
-            above={<AttachmentChips attachments={attachments} testId="tch-attachments" />}
-            field={<>
-              <textarea
-                ref={composer}
-                value={draft}
-                aria-label="Message the chat agent"
-                aria-describedby={refusal ? 'tch-compose-refusal' : undefined}
-                disabled={busy}
-                placeholder={
-                  newThread ? 'Ask anything about this space…' : 'Reply in this thread…'
-                }
-                rows={2}
-                {...rich.areaProps}
-              />
-              <TriggerPopover
-                popover={rich.popover}
-                label="Available skills"
-                renderOption={(option) => (
-                  <>
-                    <span className="ri-popover__name">{`/${option.display}`}</span>
-                    {option.meta ? <span className="ri-popover__meta">{option.meta}</span> : null}
-                  </>
+          {/* The composer stands down while region B is not the chat (see the
+              berth note above). Its errors, its refusal and its stopped-turn
+              notice go with it: they are reports on THIS thread's last send,
+              and a send is not reachable from here. */}
+          {centre != null ? null : (
+            <>
+            {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
+            {refusal ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
+            {phase === 'stopped-continuable' ? (
+              <p className="tch-continuable" role="status">
+                Turn stopped · this thread is continuable. Send another message to resume.
+              </p>
+            ) : null}
+            <ComposerCard
+              className="tch-composer"
+              above={<AttachmentChips attachments={attachments} testId="tch-attachments" />}
+              field={<>
+                <textarea
+                  ref={composer}
+                  value={draft}
+                  aria-label="Message the chat agent"
+                  aria-describedby={refusal ? 'tch-compose-refusal' : undefined}
+                  disabled={busy}
+                  placeholder={
+                    newThread ? 'Ask anything about this space…' : 'Reply in this thread…'
+                  }
+                  rows={2}
+                  {...rich.areaProps}
+                />
+                <TriggerPopover
+                  popover={rich.popover}
+                  label="Available skills"
+                  renderOption={(option) => (
+                    <>
+                      <span className="ri-popover__name">{`/${option.display}`}</span>
+                      {option.meta ? <span className="ri-popover__meta">{option.meta}</span> : null}
+                    </>
+                  )}
+                  emptyText="No matching skills"
+                  testId="tch-skill-picker"
+                />
+              </>}
+              foot={<>
+                {attach ? (
+                  <ChooseFilesControl
+                    label="Attach a file"
+                    title="attach a file — or drop or paste one into the message"
+                    className="tch-attach"
+                    inputClassName="tch-attach__input"
+                    onChoose={attachments.addFiles}
+                  />
+                ) : (
+                  <DisabledIconControl
+                    label="Attach a file"
+                    glyph="＋"
+                    reason={{
+                      cause: 'Uploading isn’t wired on this surface',
+                      remedy: 'this chat was mounted without an attachment port',
+                    }}
+                  />
                 )}
-                emptyText="No matching skills"
-                testId="tch-skill-picker"
-              />
-            </>}
-            foot={<>
-              {attach ? (
-                <ChooseFilesControl
-                  label="Attach a file"
-                  title="attach a file — or drop or paste one into the message"
-                  className="tch-attach"
-                  inputClassName="tch-attach__input"
-                  onChoose={attachments.addFiles}
-                />
-              ) : (
-                <DisabledIconControl
-                  label="Attach a file"
-                  glyph="＋"
-                  reason={{
-                    cause: 'Uploading isn’t wired on this surface',
-                    remedy: 'this chat was mounted without an attachment port',
-                  }}
-                />
-              )}
-              {skillOptions ? (
-                <button
-                  type="button"
-                  className="tch-attach"
-                  aria-label="Reference a skill"
-                  title="reference a skill — the agent reads it and decides; nothing runs by itself"
-                  aria-haspopup="listbox"
-                  aria-expanded={rich.popover !== null}
-                  onClick={() => {
-                    // The button and the typed sigil must land in the SAME
-                    // state, or the picker has two behaviours and only one of
-                    // them filters.
-                    if (rich.popover) rich.popover.close();
-                    else rich.openTrigger('/');
-                  }}
-                >
-                  <span aria-hidden>/</span>
-                </button>
-              ) : null}
-              {/* The thread's configuration lives HERE and nowhere else. NO
-                  `auto` teammate on purpose: there is no routing pipeline that
-                  could honour it, and an option that promises routing nobody
-                  built is exactly the fabrication this surface refuses. */}
-              <span className="tch-picks">
-                <ComposerSelect
-                  label="Chat mode"
-                  testId="tch-mode"
-                  options={MODE_OPTIONS}
-                  value={shownMode}
-                  onChange={(id) => setChatMode(id as ChatMode)}
-                  disabled={pinned || pinnedMode !== undefined}
-                  emptyNote="No chat mode is available."
-                />
-                <ComposerSelect
-                  label="Chat teammate"
-                  testId="tch-teammate"
-                  options={teammateOptions}
-                  value={shownTeammateId}
-                  onChange={(id) => setTeammateId(id as EntityId)}
-                  disabled={pinned}
-                  emptyNote="No agent teammate is available in this space."
-                />
-                <ComposerSelect
-                  label="Chat model"
-                  testId="tch-model"
-                  options={modelOptions}
-                  value={shownModelId}
-                  onChange={setModelId}
-                  disabled={pinned}
-                  emptyNote="No model is available from the launch catalog."
-                />
-              </span>
-              <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
-              {phase === 'streaming' ? (
-                /* The agent-running state lives ON the send button: a loader
-                   that is also Stop. Enter still queues a send — the server
-                   accepts turns while one runs — so only the button changes
-                   role mid-turn, not the composer.
-                   Unavailable ≠ invisible: with no interrupt operation on
-                   this node the loader stays, disabled with its reason, so a
-                   running turn never looks unstoppable by design. */
-                port.interrupt ? (
+                {skillOptions ? (
                   <button
                     type="button"
-                    className="tch-send tch-send--working"
-                    data-testid="tch-send-working"
-                    aria-label="Agent is working — stop this turn"
-                    title="Agent is working — click to stop this turn"
-                    onClick={() => void interrupt()}
+                    className="tch-attach"
+                    aria-label="Reference a skill"
+                    title="reference a skill — the agent reads it and decides; nothing runs by itself"
+                    aria-haspopup="listbox"
+                    aria-expanded={rich.popover !== null}
+                    onClick={() => {
+                      // The button and the typed sigil must land in the SAME
+                      // state, or the picker has two behaviours and only one of
+                      // them filters.
+                      if (rich.popover) rich.popover.close();
+                      else rich.openTrigger('/');
+                    }}
                   >
-                    <SendMark /> Stop
+                    <span aria-hidden>/</span>
                   </button>
+                ) : null}
+                {/* The thread's configuration lives HERE and nowhere else. NO
+                    `auto` teammate on purpose: there is no routing pipeline that
+                    could honour it, and an option that promises routing nobody
+                    built is exactly the fabrication this surface refuses. */}
+                <span className="tch-picks">
+                  <ComposerSelect
+                    label="Chat mode"
+                    testId="tch-mode"
+                    options={MODE_OPTIONS}
+                    value={shownMode}
+                    onChange={(id) => setChatMode(id as ChatMode)}
+                    disabled={pinned || pinnedMode !== undefined}
+                    emptyNote="No chat mode is available."
+                  />
+                  <ComposerSelect
+                    label="Chat teammate"
+                    testId="tch-teammate"
+                    options={teammateOptions}
+                    value={shownTeammateId}
+                    onChange={(id) => setTeammateId(id as EntityId)}
+                    disabled={pinned}
+                    emptyNote="No agent teammate is available in this space."
+                  />
+                  <ComposerSelect
+                    label="Chat model"
+                    testId="tch-model"
+                    options={modelOptions}
+                    value={shownModelId}
+                    onChange={setModelId}
+                    disabled={pinned}
+                    emptyNote="No model is available from the launch catalog."
+                  />
+                </span>
+                <span className="tch-phase" role="status">{phaseLabel(phase)}</span>
+                {phase === 'streaming' ? (
+                  /* The agent-running state lives ON the send button: a loader
+                     that is also Stop. Enter still queues a send — the server
+                     accepts turns while one runs — so only the button changes
+                     role mid-turn, not the composer.
+                     Unavailable ≠ invisible: with no interrupt operation on
+                     this node the loader stays, disabled with its reason, so a
+                     running turn never looks unstoppable by design. */
+                  port.interrupt ? (
+                    <button
+                      type="button"
+                      className="tch-send tch-send--working"
+                      data-testid="tch-send-working"
+                      aria-label="Agent is working — stop this turn"
+                      title="Agent is working — click to stop this turn"
+                      onClick={() => void interrupt()}
+                    >
+                      <SendMark /> Stop
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="tch-send tch-send--working"
+                      data-testid="tch-send-working"
+                      aria-disabled="true"
+                      aria-label="Agent is working"
+                      title="Agent is working — no chat interrupt operation is exposed on this node; the turn ends on its own"
+                    >
+                      <SendMark /> Working
+                    </button>
+                  )
                 ) : (
                   <button
                     type="button"
-                    className="tch-send tch-send--working"
-                    data-testid="tch-send-working"
-                    aria-disabled="true"
-                    aria-label="Agent is working"
-                    title="Agent is working — no chat interrupt operation is exposed on this node; the turn ends on its own"
+                    className="tch-send"
+                    aria-disabled={sendDisabled}
+                    onClick={() => void send()}
+                    title={
+                      refusal
+                      ?? (attachments.blocked
+                        ? 'One or more attachments are not ready — wait for uploads to finish, retry failures, or remove them before sending.'
+                        : undefined)
+                    }
                   >
-                    <SendMark /> Working
+                    Send <span aria-hidden>↑</span>
                   </button>
-                )
-              ) : (
-                <button
-                  type="button"
-                  className="tch-send"
-                  aria-disabled={sendDisabled}
-                  onClick={() => void send()}
-                  title={
-                    refusal
-                    ?? (attachments.blocked
-                      ? 'One or more attachments are not ready — wait for uploads to finish, retry failures, or remove them before sending.'
-                      : undefined)
-                  }
-                >
-                  Send <span aria-hidden>↑</span>
-                </button>
-              )}
-            </>}
-          />
+                )}
+              </>}
+            />
+            </>
+          )}
         </div>
       </section>
     </main>
