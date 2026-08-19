@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BoardV2Screen } from '../src/board-v2/BoardV2Screen';
 import { createFixtureSeam } from '../src/data/fixtures/seam-fixture';
+import type { DetailReasons } from '../src/panels';
 import { useGateData } from '../src/views/useGateData';
 import '../src/styles/tokens.css';
 import '../src/styles/canvas-extra.css';
@@ -21,6 +22,16 @@ import '../src/panels/panels.css';
  * Mounts the shipping component over the fixture seam under the shipping
  * stylesheet — not a mock of either.
  */
+/** The panel's refusal copy — the shell's, verbatim, so the harness's panel
+    reads exactly like the shipping one. */
+const REASONS: DetailReasons = {
+  presenceHollow: 'Presence isn’t measured yet.',
+  versionHistory: 'Version history isn’t available yet.',
+  provenanceHollow: 'Provenance isn’t recorded yet.',
+  shareUnavailable: 'Sharing into a session isn’t available yet.',
+  withdrawUnavailable: 'Withdrawing a handoff isn’t available yet.',
+};
+
 function Harness() {
   const seam = useMemo(() => createFixtureSeam(), []);
   const data = useGateData({ leftKind: 'task', rightKind: 'task', seam });
@@ -35,7 +46,7 @@ function Harness() {
         data={data}
         viewerMemberId="ada"
         onNotice={() => undefined}
-        onOpenEntity={() => undefined}
+        reasons={REASONS}
       />
     </div>
   );

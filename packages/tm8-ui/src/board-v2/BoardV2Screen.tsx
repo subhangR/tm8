@@ -18,21 +18,30 @@
  *   · a drop resolves through the plan's drop seam; where a kind cannot move
  *     yet, the drop REFUSES VISIBLY with the phase that unlocks it.
  *
+ * A CARD OPENS ITS ENTITY HERE, not somewhere else. Pressing a card used to
+ * navigate to the workspace, which unmounted the board and took the kind, the
+ * filters, the search and the scroll position with it — the user asked a
+ * question of the board and reading one answer destroyed the question. The
+ * detail now opens as the app's ONE panel (`BoardEntityColumn` →
+ * `AuxEntityPanel`) OVER the last column, at that column's width, so the board
+ * is still there when it closes.
+ *
  * ASYNC WRITES READ THROUGH REFS, exactly as v1: the lifecycle executor is a
  * render-time snapshot, and a write must not consult the stale render it
  * started in.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ActorSummary, EntitySummary, SpaceId, Workflow } from '@tm8/contract';
+import type { ActorSummary, EntityId, EntitySummary, SpaceId, Workflow } from '@tm8/contract';
 import { collectionKinds, getKind } from '../domain';
 import type { SetStateOutcome } from '../domain';
 import { placeholderTitleFor, useNewTask } from '../authoring';
 import { placeholderNameFor } from '../domain/title-grammar';
-import { DisabledIconControl, toReason } from '../panels';
+import { DisabledIconControl, toReason, type DetailReasons } from '../panels';
 import { AvatarStack, Pill, shortDate } from '../kit';
 import type { Notice } from '../shell/notices';
 import type { GateData } from '../views/useGateData';
 import { useRowLifecycle } from '../views/useRowLifecycle';
+import { BoardEntityColumn } from './BoardEntityColumn';
 import {
   EMPTY_FILTERS,
   UNCATEGORISED_KEY,
@@ -57,14 +66,21 @@ import './board.css';
 const ROSTER_EMPTY = 'The people and teammates for this space have not loaded yet.';
 
 interface BoardV2ScreenProps {
-  data: GateData;
+  data: GateData & { pull?: (id: string) => void };
   viewerMemberId?: string | null;
   onNotice: (notice: Notice) => void;
-  /** The workspace handoff — a card is a door, and its detail lives there. */
-  onOpenEntity: (id: string) => void;
+  /** The panel's refusal copy — the same bundle every other panel host takes. */
+  reasons: DetailReasons;
+  serverBaseUrl?: string | undefined;
 }
 
-export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: BoardV2ScreenProps) {
+export function BoardV2Screen({
+  data,
+  viewerMemberId,
+  onNotice,
+  reasons,
+  serverBaseUrl,
+}: BoardV2ScreenProps) {
   const lifecycle = useRowLifecycle({ data, viewerMemberId, onNotice });
 
   /* The selected KIND. Default is the kind the program's phases have already
@@ -81,6 +97,8 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
   const [dragging, setDragging] = useState<{ row: EntitySummary; from: string } | null>(null);
   /** §8.1 roving focus: column index + card index within it. */
   const [focus, setFocus] = useState<{ col: number; row: number }>({ col: 0, row: 0 });
+  /** The card whose entity the panel is showing, or null for none. */
+  const [openId, setOpenId] = useState<EntityId | null>(null);
 
   // Render-time snapshots made async-safe (see the module docblock).
   const lifecycleRef = useRef(lifecycle);
@@ -125,12 +143,32 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
     commands: data.seam.commands,
     onCreated: (id, result) => {
       data.reconcileCommand(result);
-      onOpenEntity(id);
+      openEntity(id as EntityId);
     },
   });
 
   const stateControl = kind.list.stateControl;
   const assignControl = kind.list.assignControl;
+
+  /* One door for every route in: a card press, Enter on the focused card, a
+     freshly created entity, and a drill sideways from inside the panel all
+     REPLACE the panel's subject rather than opening a second surface. */
+  const openEntity = (id: EntityId): void => setOpenId(id);
+
+  /* Esc closes the panel — at the DOCUMENT, because the focus may well be
+     inside the panel rather than on the board's own key handler, and only when
+     the event arrives unclaimed so a menu or a composer inside the panel gets
+     it first. */
+  useEffect(() => {
+    if (openId === null) return undefined;
+    const onEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      setOpenId(null);
+    };
+    document.addEventListener('keydown', onEscape);
+    return () => document.removeEventListener('keydown', onEscape);
+  }, [openId]);
 
   /** The people axis (only offered when the kind is assignable at all). */
   const roster = useMemo(() => {
@@ -290,7 +328,7 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
         setFocus({ col, row: Math.max(0, row - 1) });
         break;
       case 'Enter':
-        if (focused) onOpenEntity(focused.id);
+        if (focused) openEntity(focused.id as EntityId);
         break;
       default:
         return;
@@ -435,23 +473,45 @@ export function BoardV2Screen({ data, viewerMemberId, onNotice, onOpenEntity }: 
             the first.
           </div>
         ) : null}
-        <div className="b2__cols">
-          {shownColumns.map((column, index) => (
-            <ColumnView
-              key={column.plan.key}
-              column={column}
-              shown={column.items === undefined ? undefined : shownOf(column)}
-              band={plan.mode === 'workflow' ? column.plan.category : null}
-              focused={index === Math.min(focus.col, shownColumns.length - 1)}
-              focusRow={focus.row}
-              refusal={refusal?.column === column.plan.key ? refusal.reason : null}
-              pendingId={pendingId}
-              dragging={dragging}
-              onDragStart={setDragging}
-              onDrop={dispatchDrop}
-              onOpen={onOpenEntity}
-            />
-          ))}
+        {/* The stage publishes the column COUNT so the panel can derive one
+            column's width in CSS — see `.b2__panel`. */}
+        <div
+          className="b2__stage"
+          style={{ ['--b2-cols' as string]: String(Math.max(1, shownColumns.length)) }}
+        >
+          <div className="b2__cols">
+            {shownColumns.map((column, index) => (
+              <ColumnView
+                key={column.plan.key}
+                column={column}
+                shown={column.items === undefined ? undefined : shownOf(column)}
+                band={plan.mode === 'workflow' ? column.plan.category : null}
+                focused={index === Math.min(focus.col, shownColumns.length - 1)}
+                focusRow={focus.row}
+                refusal={refusal?.column === column.plan.key ? refusal.reason : null}
+                pendingId={pendingId}
+                dragging={dragging}
+                onDragStart={setDragging}
+                onDrop={dispatchDrop}
+                onOpen={(id) => openEntity(id as EntityId)}
+              />
+            ))}
+          </div>
+          {openId !== null ? (
+            <aside className="b2__panel" aria-label="Entity details" data-testid="b2-entity-panel">
+              <BoardEntityColumn
+                data={data}
+                reasons={reasons}
+                serverBaseUrl={serverBaseUrl}
+                viewerMemberId={viewerMemberId}
+                onNotice={onNotice}
+                rowLifecycle={lifecycle}
+                entityId={openId}
+                onOpenEntity={openEntity}
+                onClose={() => setOpenId(null)}
+              />
+            </aside>
+          ) : null}
         </div>
       </div>
     </section>
