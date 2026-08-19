@@ -85,7 +85,15 @@ describe('LaunchSheet on a phone', () => {
 
   it('does not stack a second dialog inside the frame’s', () => {
     const { host } = phone();
-    const sheet = host.querySelector('[data-testid="launch-sheet"]') as HTMLElement;
+    const sheet = host.querySelector('[data-testid="launch-sheet"]');
+
+    /* ASSERTED, NOT CAST. This used to be `as HTMLElement`, which made the whole
+       case fail by THROWING on a null deref rather than by reporting which claim
+       broke: under a revert that stops the sheet reaching the host, the reader
+       got `Cannot read properties of null` instead of "the sheet is not in the
+       host". A test that crashes tells you it is unhappy; it does not tell you
+       what it measured. */
+    expect(sheet).not.toBeNull();
 
     /* `MobileSheet`'s panel already declares role=dialog + aria-modal. This root
        drops both on the phone: one surface, one dialog, which is what a screen
@@ -94,8 +102,14 @@ describe('LaunchSheet on a phone', () => {
        SCOPED TO THIS HOST, not to the document. A document-wide count would be
        measuring every other case's leftovers as much as this one's, and would
        pass or fail on test ORDER — the kind of assertion that is green until
-       somebody adds a case above it. */
-    expect(sheet.getAttribute('role')).toBeNull();
+       somebody adds a case above it.
+
+       AND THE LENGTH ASSERTION IS THIS CASE'S ONLY POSITIVE COMPANION — the two
+       `toBeNull()`s above it would both pass on an EMPTY host. It is here
+       because a document-wide count would have been order-dependent, not because
+       I was guarding vacuity; it does the second job by accident and the audit
+       that found that is in `lane-c-checkers.tgz`. */
+    expect(sheet!.getAttribute('role')).toBeNull();
     expect(sheet.getAttribute('aria-modal')).toBeNull();
     expect(host.querySelectorAll('[role="dialog"]')).toHaveLength(1);
   });

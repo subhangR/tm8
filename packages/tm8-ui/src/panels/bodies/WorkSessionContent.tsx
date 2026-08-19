@@ -375,10 +375,37 @@ export function WorkSessionContent({
           ONE control rather than three: three separate refusals would be three
           things a thumb can find and none of them can perform, which is the
           furniture this program keeps removing. `DisabledIconControl` is the
-          app-wide honesty form, so it carries its reason — and per RULE R2 a
-          disabled element is correctly excluded from the 44px tap bar, because
-          there is nothing to tap and a size assertion on it would be
-          meaningless.
+          app-wide honesty form, so it carries its reason.
+
+          ── AND IT IS A REAL TAP TARGET. THIS COMMENT USED TO SAY IT IS NOT. ──
+          The removed clause read: "per RULE R2 a disabled element is correctly
+          excluded from the 44px tap bar, because there is nothing to tap and a
+          size assertion on it would be meaningless." The second half is false
+          BECAUSE the first half is true:
+
+            DisabledWithReason.tsx:67-79   role="button" · tabIndex={0}
+                                           {...tip.triggerProps}
+            useReasonDisclosure.ts:65      triggerProps = { onClick: toggle, … }
+
+          THE TAP IS HOW THE REASON OPENS. It is not hover-driven, so it works on
+          a coarse pointer — which is why this component was chosen — and it is
+          the ONLY route to learning why Git, Debug and Graph are gone.
+
+          MEASURED, Case A `c7c09a38`: 116 x 22. Under the floor, and invisible
+          to every census by construction: `aria-disabled` puts it in
+          `tapTargetsInert`, which no headline reads. The better-behaved the
+          refusal, the more invisible its geometry.
+
+          R2 IS NOT WRONG AND IS NOT BEING ARGUED WITH. A disabled control has
+          nothing to PERFORM. What this one has is a DISCLOSURE, and that is a
+          different question the rule was never asked.
+
+          NOT SIZED HERE: `hon-disabled--tooltip` paints nothing at rest
+          (`kit.css` — `border: 0`, `background: transparent`), so a 44px floor
+          would produce an invisible 44px target over a 22px visible one. It is
+          a member of the affordance class escalated against the dated ruling in
+          `panels.css:54-60`, and one lane must not restyle a shared honesty
+          primitive while that is open.
         */}
         <span className="pn-surface-switch__refused" data-testid="work-session-surface-refused-marker">
           <DisabledIconControl

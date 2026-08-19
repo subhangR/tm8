@@ -75,9 +75,28 @@
    shorter; it does not change anything below. */
 
 /* --- 1. UNPIN THE ROW ----------------------------------------------------
-   Before anything inside it is allowed to take its floor. `min-height` rather
-   than a bare `height: auto` so a panel with an empty end cluster keeps the
-   30px strip it has today and no other kind's chrome shifts. */
+   Before anything inside it is allowed to take its floor. The base rule is
+   `height: 30px` (`panels.css`), and CONTRACT.md §6 requires unpinning a
+   fixed-height container before growing anything inside it.
+
+   ── THE `min-height` BELOW IS DEAD TODAY, AND ITS ORIGINAL REASON WAS WRONG ──
+   This comment used to say the floor was here "so a panel with an empty end
+   cluster keeps the 30px strip it has today". THAT CASE IS ALREADY COVERED
+   FIFTEEN LINES DOWN: `.pn-tabs` gets `flex: 1 1 100%` and its own
+   `min-height: 30px`, and `chrome.tsx:519` renders `.pn-tabs` UNCONDITIONALLY —
+   no condition, always populated from `PANEL_TABS`. Only `.pn-panelbar__end` is
+   conditional. So the row's content is 30 + 8px `padding-block` = 38px before
+   this floor is ever consulted, and IT CANNOT BIND.
+
+   I wrote both declarations in one commit and justified this one with a case
+   the other already handled. Recorded rather than deleted, because it is a real
+   fallback the moment anyone removes the child's floor — the same disposition
+   this codebase applies to `mobile.css:112`, whose parent floor is likewise
+   unreachable while `.mobile-tabs__tab` carries the same token.
+
+   YOU CANNOT TELL WHETHER A FLOOR BINDS BY READING THE FLOOR. It depends on
+   what else sizes the box, and that is as invisible at fifteen lines as it is
+   across two files. */
 .cv2-root[data-shell='mobile'] .pn-panelbar {
   height: auto;
   min-height: 30px;
@@ -139,7 +158,28 @@
    orphans the tail whenever the content is ONE ITEM too wide for a line — and
    the wider viewport is where that is most likely, not least, because it is
    where the near-fit happens. A fix verified only at the narrow width ships
-   it. */
+   it.
+
+   ── THIS RULE IS DEAD ON THIS BRANCH AND LIVE ON MAIN. KEPT, NOT DELETED. ──
+   I wrote it in `978f3e82` (DEF-001, merged via #412) when the switch still rode
+   the panel bar on a phone. Three commits later, in `099c3a03`, I made it stop:
+
+     WorkSessionContent.tsx  ridesPanelBar = switchSlot !== null && !oneSurface
+     -> on a phone `oneSurface` is true, so `--bar` is never applied and this
+        rule cannot match. MEASURED, Case A `c7c09a38`: panelSurfaceSlot 1 with
+        bar false — the slot DID render and the clause declined it anyway.
+
+   ON `origin/main` THE DECLINE DOES NOT EXIST. There the class is
+   `switchSlot ? '…--bar' : '…'` with no `oneSurface` term, so `--bar` renders
+   whenever the slot mounts, `panels.css:81` gives those chips 22px, and this
+   rule lays them out. The 22px is REACHABLE on the shipping phone today, and
+   `099c3a03` — written for the transcript work, not for this — is what makes it
+   unreachable. Merging this branch closes that.
+
+   So: same file, same text, two trees, opposite liveness. Kept because deleting
+   it would remove the phone arrangement from the only tree where it still runs,
+   and because it goes live again the day anything passes a slot on a phone
+   without the decline. */
 .cv2-root[data-shell='mobile'] .pn-panelbar__end .pn-surface-switch--bar {
   flex: 1 1 100%;
   flex-wrap: wrap;

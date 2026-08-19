@@ -729,10 +729,29 @@
  * frame applies the bottom inset to the TAB BAR, which sits below this bar, so
  * the home indicator was never this element's to clear.
  *
- * HONESTY LABEL: this harness has no soft keyboard to emulate, so the removal
- * is a code-seam claim from the frame's arithmetic and NOT a photographed fix.
- * It is on the real-device checklist. The contract obligation is not in doubt;
- * the pixel result is unphotographed.
+ * THAT PREMISE IS VERIFIED, AND IT WAS ASSERTED BEFORE IT WAS CHECKED. If the
+ * phone's pushed detail screen dropped the tab bar, nothing below this element
+ * would carry the inset and on a notched device the modifier bar — the only way
+ * to send Esc or Ctrl there — would sit under the home indicator. Checked:
+ * `MobileShell.tsx:405` builds `tabBar` as a plain const with no condition,
+ * `:431` passes it to a single `MobileFrame`, `MobileFrame.tsx:128` renders it,
+ * and `mobile.css` gives `.mobile-frame__tabbar` the `--mobile-safe-bottom`
+ * padding. One frame, tab bar always present, every screen including a pushed
+ * detail. FALSIFIER: any change that makes the tab bar conditional — a
+ * full-screen push, an immersive mode, a keyboard state that drops it — silently
+ * removes this element's inset. Today `data-keyboard='up'` zeroes the bar's
+ * PADDING, not the bar.
+ *
+ * HONESTY LABEL, AND IT COVERS BOTH REMOVALS. This harness has no soft keyboard
+ * to emulate, so the double-lift removal is a code-seam claim from the frame's
+ * arithmetic and NOT a photographed fix. THE SAFE-AREA REMOVAL IS UNPHOTOGRAPHED
+ * FOR A DIFFERENT REASON: `env(safe-area-inset-bottom)` resolves to 0px headless,
+ * so a capture with this removal and one without are byte-identical. No
+ * instrument in this program can distinguish "the inset is correctly carried by
+ * the tab bar" from "the inset is gone and nobody noticed".
+ * Both are on the real-device checklist. The contract obligation is not in doubt;
+ * both pixel results are unphotographed, and the label originally named only the
+ * first — the two removals were made in one edit and justified in one docblock.
  */
 .cv2-root[data-shell='mobile'] .term-mod {
   position: sticky;

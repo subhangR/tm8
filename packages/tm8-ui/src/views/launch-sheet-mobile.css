@@ -108,6 +108,45 @@
   min-width: 0;
 }
 
+/* --- The box model, before anything below adds padding -------------------
+   MEASURED, Case B, `c7c09a38`: eight `.ls__row--inert` roots ending 10px past
+   the frame — `worstRightEdge` 400 of 390 AND 440 of 430. IDENTICAL AT BOTH
+   WIDTHS, which is the signature: a squeeze scales with the viewport, a
+   box-model excess does not. `.mobile-frame` is `overflow: hidden`, so those
+   10px are CLIPPED, not scrolled to.
+
+   THE CAUSE IS THREE ELEMENTS SHARING ONE SHAPE. Each is declared `width: 100%`
+   in `shell.css` and each is given horizontal padding below:
+
+     .ls__row     shell.css:1430  width:100% · padding 7px 10px  -> here 12px  ( 20 -> 24)
+     .ls__select  shell.css       width:100% · padding …30px…10px -> here 34/12 ( 40 -> 46)
+     .ls__search  shell.css       width:100% · padding 6px 10px  -> here 12px  ( 20 -> 24)
+
+   `box-sizing` is NOT `border-box` by default in this app — `maestro-task-tile.css`
+   says so in its own words at :181, having already cost someone a 29px floor
+   that measured 41px. So `width: 100%` PLUS padding is over-wide BY THE PADDING,
+   and raising the padding for a touch target widened the excess.
+
+   ── WHY THIS IS NOT THE `box-sizing` CHANGE THAT WAS WITHDRAWN TONIGHT ─────
+   That one was on `.mobile-frame__tabbar`, a container SIZED BY ITS CHILDREN:
+   both box models give the same used height, so it could not bind and was
+   measured inert before it shipped. These three carry an EXPLICIT `width: 100%`,
+   where `box-sizing` changes the used width by definition. Same property,
+   opposite situation.
+
+   ── WHAT A GREEN RE-CAPTURE WILL AND WILL NOT COVER ───────────────────────
+   Only `.ls__row` has a before-number. `.ls__select` and `.ls__search` render
+   only with a picker open, a state no capture in this program has produced —
+   they are FIXED BY DERIVATION AND UNVERIFIED BY MEASUREMENT. `overflowCount`
+   returning 0 proves `.ls__row` and says nothing about the other two, and the
+   row must not be read as covering them. They are here because fixing only the
+   flagged member is how the other two would have survived a green result. */
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__row,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__select,
+.cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__search {
+  box-sizing: border-box;
+}
+
 /* --- Rows ----------------------------------------------------------------
    The teammate, project, profile and memory rows are the sheet's primary
    targets: choosing one IS configuring the launch. They measure ~40px tall on
@@ -152,6 +191,22 @@
   font-size: 16px;
 }
 
+/* THE 34px IS THE CHEVRON'S CLEARANCE AND IT IS DERIVED FROM A FILE THIS ONE
+   DOES NOT OVERRIDE. `shell.css:1462` draws the arrow as a `background`
+   shorthand and reserves space for it with `padding-right: 30px`; the 34 here
+   is that 30 plus the 4px this rule's larger text needs to stop the label
+   running under the glyph.
+
+   BOTH ENDS OR IT DOES NOT COUNT — and this end is the one that changed. If
+   anyone alters that SVG's width or its `right` offset in `shell.css`, this
+   number goes stale SILENTLY: the select still measures 44px, still passes
+   every tap and overflow field this program has, and the text simply runs under
+   the chevron. A READABILITY DEFECT WITH NO METRIC, on a control enlarged
+   specifically for readability.
+
+   It was the only derived number in these three files with no arithmetic
+   written down, which is exactly why my own comment-keyed sweep could not see
+   it: a predicate built from what you remember documenting cannot surprise you. */
 .cv2-root[data-shell='mobile'] .ls[data-arrangement='phone'] .ls__select {
   padding: 10px 34px 10px 12px;
   margin-top: 8px;
