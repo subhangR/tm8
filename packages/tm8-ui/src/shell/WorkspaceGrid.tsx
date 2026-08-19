@@ -13,7 +13,7 @@
  * capture by measurement**. A hard-coded `@media (max-width: 1280px)` would be
  * asserting a constant the spec says must be measured.
  */
-import { useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import {
   GRID_GAP,
   LEFT_PANEL_MIN,
@@ -29,7 +29,6 @@ export interface WorkspaceGridProps {
   right: ReactNode;
   leftLabel?: string;
   rightLabel?: string;
-  onMovePanel?(from: WorkspacePanelSide, to: WorkspacePanelSide): void;
   onResizePanel?(side: WorkspacePanelSide, width: number): void;
   onResetPanelWidth?(side: WorkspacePanelSide): void;
   /** Measured by the caller's ResizeObserver; drives the demotion loop. */
@@ -51,8 +50,6 @@ export interface WorkspaceGridProps {
 
 export type WorkspacePanelSide = 'left' | 'right';
 
-const PANEL_DRAG_TYPE = 'application/x-tm8-workspace-panel';
-
 export function WorkspaceGrid({
   layout,
   left,
@@ -60,15 +57,12 @@ export function WorkspaceGrid({
   right,
   leftLabel = 'Left',
   rightLabel = 'Right',
-  onMovePanel,
   onResizePanel,
   onResetPanelWidth,
   centerRef,
   boardSide = null,
 }: WorkspaceGridProps) {
   const stacked = layout.stackMode !== 'columns';
-  const [dragging, setDragging] = useState<WorkspacePanelSide | null>(null);
-  const [dragOver, setDragOver] = useState<WorkspacePanelSide | null>(null);
 
   const style = {
     // Floors are handed to CSS as values, never re-typed into the stylesheet,
@@ -82,95 +76,17 @@ export function WorkspaceGrid({
     '--ws-panel-col': `${PANEL_COL_MIN}px`,
   } as React.CSSProperties;
 
-  const labelFor = (side: WorkspacePanelSide): string =>
-    side === 'left' ? leftLabel : rightLabel;
-
-  const beginPanelDrag = (side: WorkspacePanelSide, event: DragEvent<HTMLButtonElement>) => {
-    if (!onMovePanel) return;
-    setDragging(side);
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData(PANEL_DRAG_TYPE, side);
-    event.dataTransfer.setData('text/plain', side);
-  };
-
-  const dropPanel = (to: WorkspacePanelSide, event: DragEvent<HTMLElement>) => {
-    if (!onMovePanel) return;
-    event.preventDefault();
-    const transferred = event.dataTransfer.getData(PANEL_DRAG_TYPE);
-    const from = transferred === 'left' || transferred === 'right' ? transferred : dragging;
-    setDragging(null);
-    setDragOver(null);
-    if (from && from !== to) onMovePanel(from, to);
-  };
-
-  const movePanelByKeyboard = (
-    from: WorkspacePanelSide,
-    event: KeyboardEvent<HTMLButtonElement>,
-  ) => {
-    if (!onMovePanel) return;
-    const to = from === 'left' ? 'right' : 'left';
-    const movesTowardTarget =
-      event.key === 'Enter' ||
-      event.key === ' ' ||
-      (from === 'left' && event.key === 'ArrowRight') ||
-      (from === 'right' && event.key === 'ArrowLeft');
-    if (!movesTowardTarget) return;
-    event.preventDefault();
-    onMovePanel(from, to);
-  };
-
-  const sidePanel = (side: WorkspacePanelSide, content: ReactNode) => {
-    const target = side === 'left' ? 'right' : 'left';
-    return (
-      <section
-        id={`workspace-panel-${side}`}
-        className={[
-          'shell-ws__side',
-          `shell-ws__side--${side}`,
-          dragOver === side && dragging !== side ? 'shell-ws__side--drop' : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
-        aria-label={`${side === 'left' ? 'Left' : 'Right'} panel`}
-        data-dock={side}
-        data-stacked={stacked || undefined}
-        onDragEnter={(event) => {
-          if (!dragging || dragging === side) return;
-          event.preventDefault();
-          setDragOver(side);
-        }}
-        onDragOver={(event) => {
-          if (!dragging || dragging === side) return;
-          event.preventDefault();
-          event.dataTransfer.dropEffect = 'move';
-        }}
-        onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOver(null);
-        }}
-        onDrop={(event) => dropPanel(side, event)}
-      >
-        {onMovePanel ? (
-          <button
-            type="button"
-            className="shell-ws__dock-grip"
-            draggable
-            aria-label={`Drag ${labelFor(side)} panel; press Enter to move to ${target}`}
-            title={`Drag to the ${target} side · Enter also moves it`}
-            data-dragging={dragging === side || undefined}
-            onDragStart={(event) => beginPanelDrag(side, event)}
-            onDragEnd={() => {
-              setDragging(null);
-              setDragOver(null);
-            }}
-            onKeyDown={(event) => movePanelByKeyboard(side, event)}
-          >
-            <span aria-hidden>⠿</span>
-          </button>
-        ) : null}
-        <div className="shell-ws__side-content">{content}</div>
-      </section>
-    );
-  };
+  const sidePanel = (side: WorkspacePanelSide, content: ReactNode) => (
+    <section
+      id={`workspace-panel-${side}`}
+      className={`shell-ws__side shell-ws__side--${side}`}
+      aria-label={`${side === 'left' ? 'Left' : 'Right'} panel`}
+      data-dock={side}
+      data-stacked={stacked || undefined}
+    >
+      <div className="shell-ws__side-content">{content}</div>
+    </section>
+  );
 
   const leftResizeMax = layout.left + Math.max(0, layout.center - layout.centerMin);
   const rightResizeMax = layout.right + Math.max(0, layout.center - layout.centerMin);

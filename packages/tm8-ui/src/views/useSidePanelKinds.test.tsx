@@ -30,12 +30,13 @@ const options = {
 };
 
 describe('useSidePanelKinds workspace layout persistence', () => {
-  it('moves panel kind and width together, then restores them', async () => {
+  it('persists each dock’s kind and width together, then restores them', async () => {
     const first = renderHook(() => useSidePanelKinds(options));
 
-    act(() => first.result.current.resizePanel('left', 300));
-    act(() => first.result.current.resizePanel('right', 420));
-    act(() => first.result.current.movePanel('left', 'right'));
+    act(() => first.result.current.setLeftKind('work_session'));
+    act(() => first.result.current.setRightKind('task'));
+    act(() => first.result.current.resizePanel('left', 420));
+    act(() => first.result.current.resizePanel('right', 300));
 
     expect(first.result.current.leftKind).toBe('work_session');
     expect(first.result.current.leftWidth).toBe(420);

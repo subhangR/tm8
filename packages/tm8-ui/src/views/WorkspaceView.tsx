@@ -84,7 +84,6 @@ export interface WorkspaceViewProps {
   onRightKindChange?(kind: string): void;
   leftWidth?: number;
   rightWidth?: number;
-  onMoveSidePanel?(from: WorkspacePanelSide, to: WorkspacePanelSide): void;
   onResizeSidePanel?(side: WorkspacePanelSide, width: number): void;
   onResetSidePanelWidth?(side: WorkspacePanelSide): void;
   /** D44/D51 — the launch sheet's subject, or null when closed. */
@@ -732,7 +731,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       boardSide={boardSide}
       leftLabel={leftConfig.label}
       rightLabel={rightConfig.label}
-      onMovePanel={props.onMoveSidePanel}
       onResizePanel={props.onResizeSidePanel}
       onResetPanelWidth={props.onResetSidePanelWidth}
       left={

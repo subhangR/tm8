@@ -2350,7 +2350,6 @@ export function GateApp(props: GateAppProps = {}) {
               rightWidth={kinds.rightWidth}
               onLeftKindChange={kinds.setLeftKind}
               onRightKindChange={kinds.setRightKind}
-              onMoveSidePanel={kinds.movePanel}
               onResizeSidePanel={kinds.resizePanel}
               onResetSidePanelWidth={kinds.resetPanelWidth}
               onLaunchOpen={(id) => launch.open(id)}
