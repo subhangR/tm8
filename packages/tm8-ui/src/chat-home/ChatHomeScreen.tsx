@@ -1316,7 +1316,14 @@ export function ChatHomeScreen({
             </>
           ) : (
             <div className="tch-welcome">
-              <span className="tch-welcome__mark" aria-hidden>⌁</span>
+              {/* THE BRAND, NOT A BOLT. This slot held a `⌁` glyph in a bordered
+                  card — a placeholder that read as a status icon on the one
+                  screen that is the product's front door. The Möbius ribbon is
+                  tm8's mark (`kit/RibbonMark`, the same drawing the wordmark,
+                  the boot loader and the send button use), so the empty canvas
+                  now names the app rather than decorating it. Not animated: the
+                  turn is reserved for wait states — see `RibbonMark`'s docblock. */}
+              <RibbonMark className="tch-welcome__mark" animated={false} />
               <h1>{greetingLine(viewerName)}</h1>
               <p>New conversation — pick a mode and a teammate, or just type. The agent uses graph tools and keeps every turn in the thread.</p>
             </div>
