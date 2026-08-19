@@ -30,11 +30,19 @@ export {
 } from './controls/EntityControls';
 export {
   EntityDetailPanel,
+  countConnections,
   type DetailReasons,
   type EntityDetailPanelProps,
   type MergePrSources,
 } from './EntityDetailPanel';
-export { PANEL_TABS, type PanelHost, type PanelTab } from './detail/chrome';
+export {
+  PANEL_TABS,
+  panelActionContext,
+  panelMenuItems,
+  type PanelHost,
+  type PanelMenuItem,
+  type PanelTab,
+} from './detail/chrome';
 export {
   EmptyBody,
   ErrorBody,

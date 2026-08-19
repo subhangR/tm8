@@ -1581,7 +1581,10 @@ function PanelBody(
   );
 }
 
-function countConnections(detail: EntityDetail, connections?: Connections): number {
+/** Exported for the phone's action menu, which must show the SAME number the
+    tab strip shows on a desktop — two derivations of one count is how the two
+    surfaces start disagreeing about the same entity. */
+export function countConnections(detail: EntityDetail, connections?: Connections): number {
   const groups = [
     ...(connections?.outgoing ?? detail.connections.outgoing),
     ...(connections?.incoming ?? detail.connections.incoming),
