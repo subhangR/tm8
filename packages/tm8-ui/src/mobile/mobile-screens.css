@@ -707,6 +707,50 @@
   animation: msheet-rise var(--pn-dur-base) var(--pn-ease-out);
 }
 
+/* THE VARIANT THAT GIVES UP THE STRIP, for the surfaces that carry a composer.
+   `MobileSheet.size` explains WHEN a host should ask for it; this is what it
+   costs.
+
+   IT INHERITS THE KEYBOARD SHRINK RATHER THAN RE-DERIVING IT, and the chain is
+   worth stating because `100%` is only correct if every link holds: the frame
+   is `calc(100dvh - var(--mobile-keyboard-inset))` and `position: relative`
+   (`mobile.css:95`), `.mobile-frame__sheet` is `inset: 0` against it
+   (`mobile.css:184`), and `.msheet` is `inset: 0` again against that. So this
+   100% is 100% of the part of the screen the keyboard is NOT sitting on,
+   already measured, with no second copy of the arithmetic to fall out of step.
+   `100dvh` here instead would have been the whole screen — and the composer
+   would have gone under the keyboard on precisely the surface this variant
+   exists to serve.
+
+   The top border and radius go with the strip. They drew this surface's edge
+   against the screen behind it; at full height there is no screen visible
+   behind it to draw an edge against, and a rounded corner sitting on the
+   frame's own top edge reads as a rendering fault rather than as a lifted
+   surface. The grabber, the title and the ✕ are what still say "sheet". */
+.msheet__panel[data-size='full'] {
+  height: 100%;
+  max-height: 100%;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* THE HOME-INDICATOR INSET IS FOR THE HOME INDICATOR, and while the keyboard is
+   up there is no home indicator to clear — the keyboard is drawn over it. This
+   is the same fact `.mobile-frame__tabbar` already zeroes for itself
+   (`mobile.css:147`), stated at the other surface that pads against the same
+   token. Left standing it is ~34px of blank paper between a composer's foot row
+   and the keyboard, on the one screen state where vertical room is scarcest —
+   and it is the full-height sheet, which has just spent the strip to buy that
+   room, that pays for it most visibly.
+
+   Keyed off `data-keyboard`, the marker attribute, NOT off the inline custom
+   property: a `[style*=…]` substring match would stop matching the first time
+   the number was formatted differently, and would do it silently. */
+.mobile-frame[data-keyboard='up'] .msheet__panel {
+  padding-bottom: 0;
+}
+
 .msheet__head {
   flex: none;
   position: relative;

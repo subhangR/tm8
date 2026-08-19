@@ -65,11 +65,32 @@ export interface MobileSheetProps {
 
   readonly children: ReactNode;
 
+  /**
+   * HOW MUCH OF THE FRAME THE SHEET TAKES.
+   *
+   * `'default'` is the 72%/88% sheet described above: it stops short of the top
+   * so a strip of the screen underneath stays visible, and that strip is what
+   * says "this is over your place, not instead of it".
+   *
+   * `'full'` gives that strip up, and only a surface that needs the room should
+   * ask for it. The case it exists for is a COMPOSER: the frame is already
+   * `100dvh` minus the measured keyboard inset, so with the keyboard up an 88%
+   * sheet is 88% of what is left — a composer, its foot row and two visible
+   * messages. A surface with nothing to type into has no such pressure and
+   * should keep the strip.
+   *
+   * It reaches the stylesheet as an ATTRIBUTE on the panel rather than as an
+   * inline height, so the sizes stay beside each other in one rule and a test
+   * can read the choice back without a layout engine — jsdom loads no
+   * stylesheets, so the attribute is the only part of this a vitest can see.
+   */
+  readonly size?: 'default' | 'full';
+
   /** Marks the sheet element, so a test can find one host's sheet specifically. */
   readonly testId?: string;
 }
 
-export function MobileSheet({ title, onDismiss, children, testId }: MobileSheetProps) {
+export function MobileSheet({ title, onDismiss, children, size = 'default', testId }: MobileSheetProps) {
   const { sheetHost } = useMobileSurface();
 
   /*
@@ -132,7 +153,13 @@ export function MobileSheet({ title, onDismiss, children, testId }: MobileSheetP
       {/* `aria-modal` is a CLAIM, and it is true here: the backdrop covers the
           frame, including the tab bar, so nothing behind it is reachable by a
           tap. It would be a lie on a sheet that stopped short of the chrome. */}
-      <div className="msheet__panel" role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}>
+      <div
+        className="msheet__panel"
+        data-size={size}
+        role="dialog"
+        aria-modal="true"
+        aria-label={typeof title === 'string' ? title : undefined}
+      >
         <div className="msheet__head">
           {/* The grabber is decorative — it is the affordance that says "this
               slides", drawn for the eye. The ✕ beside it is the real control,
