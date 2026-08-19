@@ -44,6 +44,7 @@ import { ProjectGitScreen } from '../git/ProjectGitScreen';
 import { BoardScreen } from '../board';
 import { BoardV2Screen } from '../board-v2';
 import { CraftScreen } from '../craft';
+import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
@@ -1821,6 +1822,9 @@ export function GateApp(props: GateAppProps = {}) {
              tab it replaces was retired in the same change. */
           onGoHome={() => navigateTo(HOME_TARGET)}
           onOpenInbox={() => navigateTo({ type: 'view', ref: 'inbox' })}
+          /* Help's door. A bar control rather than an eighth tab — see
+             `SpaceTabBar`'s `onOpenHelp` for the ruling. */
+          onOpenHelp={() => navigateTo({ type: 'view', ref: 'help' })}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
           onOpenPrompts={() => setPromptsOpen(true)}
@@ -2082,6 +2086,31 @@ export function GateApp(props: GateAppProps = {}) {
                   ttlMs: 6000,
                 })
               }
+            />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'help' ? (
+            /* ? Help (2026-08-19) — the curated shelf of Help artifacts and a
+               reader for one of them. The SET comes from the graph (a `tm8
+               Help` collection and its ordered `contains` edges), never from
+               ids written down here: publishing a Help page is a graph write,
+               not a release. The page itself is drawn by the SAME detail-panel
+               path Craft's region C uses, so no entity component is added. */
+            <HelpScreen
+              seam={data.seam}
+              spaceId={data.spaceId as SpaceId}
+              panelHost={{
+                data,
+                reasons,
+                serverBaseUrl: activeServer.routeBaseUrl,
+                viewerMemberId,
+                onNotice: (text) =>
+                  notices.push({
+                    id: `hlp:${Date.now()}`,
+                    tone: 'info',
+                    title: 'Help',
+                    body: text,
+                    ttlMs: 6000,
+                  }),
+              }}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'inbox' ? (
             /* ◹ Inbox — the finished screen that was never mounted. Nothing

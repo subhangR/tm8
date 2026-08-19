@@ -1,0 +1,240 @@
+/* HELP — the shelf and the reader. Tokens only; no raw hex (§14). */
+
+/* `flex: 1` as well as `height: 100%`, because the screen is mounted in both
+   kinds of parent: a block content area (the gate's view slot) and a flex row
+   (the shell, and the phone frame). Height alone leaves it at its content
+   width inside a flex parent, which parks the shelf in the left third of the
+   window and leaves a dead band down the right — the same trap `.crf-root`
+   documents. */
+.hlp-root {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+
+/* The phone is ONE column, and it is a column: the reader stacks its own head
+   above its body. */
+.hlp-root--stacked {
+  flex-direction: column;
+}
+
+/* -- the contents ---------------------------------------------------------- */
+
+/* SIZED, while the reader takes the remainder. Only one of the two can own the
+   width or the drag would have to move both; the reader keeping the rest is
+   what makes a Help page grow when the window does. */
+.hlp-contents {
+  flex: 0 0 var(--hlp-contents, 300px);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--pn-surface);
+  border-right: 1px solid var(--pn-line);
+}
+
+/* On the phone the contents ARE the screen, so they take everything. The rule
+   is scoped to the stacked root rather than written as a media query: the shell
+   already knows which device it is. */
+.hlp-root--stacked > .hlp-contents__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--pn-surface);
+}
+
+.hlp-contents__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 12px 24px;
+}
+
+.hlp-contents__head {
+  margin: 0 0 10px;
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.hlp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hlp-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  /* The 44px floor is the touch target, and it is a MINIMUM rather than a
+     height: a two-line title must grow the row, not clip it. */
+  min-block-size: 44px;
+  padding: 9px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--pn-ink-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hlp-row:hover {
+  background: var(--pn-card);
+}
+
+/* The active row is marked by GROUND, not by a left bar: a bar would shift the
+   text of one row out of alignment with its neighbours. */
+.hlp-row--active {
+  background: var(--pn-card);
+  color: var(--pn-ink-1);
+}
+
+/* Keyboard focus only. A tap NEVER matches `:focus-visible`, so a pressed row
+   on a phone does not keep a ring after the finger leaves. */
+.hlp-row:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* The ordinal carries the curation: these pages build on each other. Tabular
+   figures so 1 and 4 occupy the same width and the titles stay in one column. */
+.hlp-row__n {
+  flex: 0 0 auto;
+  min-width: 14px;
+  padding-top: 1px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+}
+
+.hlp-row__mark {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--pn-ink-3);
+}
+
+.hlp-row--active .hlp-row__mark {
+  color: var(--pn-brand);
+}
+
+.hlp-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hlp-row__title {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.hlp-row--active .hlp-row__title {
+  font-weight: 600;
+}
+
+/* Two lines of excerpt, then an ellipsis — enough to tell two pages apart,
+   short enough that the contents stay a list rather than becoming prose. */
+.hlp-row__excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--pn-ink-3);
+}
+
+/* -- the reader ------------------------------------------------------------ */
+
+.hlp-reader {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The stacked head exists only on the phone, where the shelf is not on screen
+   beside the page and the reader owes a way back to it. */
+.hlp-reader__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.hlp-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* Square 44px: this is the phone's only way out of a page. */
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hlp-back:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+.hlp-reader__title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pn-ink-1);
+}
+
+.hlp-reader__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.hlp-reader__body > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.hlp-empty {
+  margin: 0;
+  padding: 24px 20px;
+  max-width: 48ch;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--pn-ink-3);
+}
+
+.hlp-empty code {
+  font-size: 12px;
+  color: var(--pn-ink-2);
+}

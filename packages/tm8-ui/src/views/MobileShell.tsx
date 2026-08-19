@@ -52,6 +52,7 @@ import { ChannelView } from './ChannelView';
 import { InboxView } from './InboxView';
 import { openEntityOnPhone } from './openEntityOnPhone';
 import { ChatHomeSurface } from '../chat-home';
+import { HelpScreen } from '../help';
 import type { ChatThreadSummary } from '../chat-home/types';
 import type { ChatHomeL2Bridge } from '../chat-home/real-port';
 import { MobileDrawer, anyUnseen } from '../mobile/MobileDrawer';
@@ -840,6 +841,29 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
               body: 'This kind has no phone screen in this build, so there is nowhere to open it. The link still names it.',
               ttlMs: 6000,
             });
+          }}
+        />
+      );
+    case 'help':
+      /* HELP IS ON THE PHONE, and that is the point of it. The refusal card
+         says "this still works on a desktop" — an honest thing to say about a
+         three-pane workspace and an absurd one to say about the screen that
+         explains what tm8 is. It is also the only screen here whose content is
+         a DOCUMENT, which is the one shape a narrow column suits.
+         `stacked` makes it one column: the contents, then a page over them
+         with a back verb. */
+      return (
+        <HelpScreen
+          seam={data.seam}
+          spaceId={props.spaceId}
+          stacked
+          panelHost={{
+            data,
+            reasons,
+            ...(props.serverBaseUrl ? { serverBaseUrl: props.serverBaseUrl } : {}),
+            ...(props.viewerMemberId ? { viewerMemberId: props.viewerMemberId } : {}),
+            onNotice: (text: string) =>
+              onNotice({ id: `hlp:${Date.now()}`, tone: 'info', title: 'Help', body: text, ttlMs: 6000 }),
           }}
         />
       );

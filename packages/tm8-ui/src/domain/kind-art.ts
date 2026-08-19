@@ -284,6 +284,17 @@ export const VIEW_ART = {
     'M9.4 4l2.6 2.6',
   ],
   /**
+   * A question mark, hook and dot (Help, 2026-08-19). Deliberately NOT a
+   * circled `?` and NOT a lifebuoy: `KIND_ART.commit` is a bare ring and the
+   * artifact mark is a hexagon, so a ringed glyph at 16px would read as one of
+   * those with noise inside it. The bare hook is the one silhouette in this
+   * table nothing else claims, and it is the mark a reader already knows.
+   */
+  help: [
+    'M5.4 5.8a2.6 2.6 0 1 1 3.5 2.45c-.72.27-1.02.82-1.02 1.53v.72',
+    'M7.88 12.5a.78.78 0 1 0 0 1.56.78.78 0 0 0 0-1.56z',
+  ],
+  /**
    * A gear, drawn as a real toothed outline rather than as radial ticks
    * around a circle. The tick version is the shape a sun/brightness control
    * uses, and this app HAS a theme toggle — "settings" and "brightness" are

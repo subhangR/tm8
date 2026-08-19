@@ -1,7 +1,7 @@
 /**
  * SpaceTabBar — the top row: product mark, the server⋄space switcher slot,
- * the top-level TABS, inbox bell, palette hint, copy-link slot, account
- * avatar.
+ * the top-level TABS, palette hint, the Help `?`, the inbox bell, copy-link
+ * slot, account avatar.
  *
  * REVISION 12 (five-tab ruling R1/R2, 2026-08-15): the identity block moved
  * HERE from the rail head, and the menu's GROUPS render as top-level tabs —
@@ -80,6 +80,18 @@ export interface SpaceTabBarProps {
   onGoHome?(): void;
   /** Opens the Inbox screen — the bell. Absent, the bell renders disabled. */
   onOpenInbox?(): void;
+  /**
+   * Opens the Help shelf — the `?`. Same posture as the bell: absent, it
+   * renders disabled with the reason on it rather than vanishing.
+   *
+   * A BAR CONTROL AND NOT A TAB, deliberately. Help is a full `MenuViewRef`
+   * with its own route and its own screen, so an operator can put it in their
+   * menu; what it is NOT is a member of the shipped default spine. Every tab
+   * there is a surface you INHABIT — Home, Work, Board, Craft, Graph, Files,
+   * Settings — and Help is a reference you CONSULT and leave. Inbox made the
+   * same trade for the same reason and is the precedent this follows.
+   */
+  onOpenHelp?(): void;
   /** Account menu — theme's home per D1. */
   onOpenAccount?(): void;
   onOpenPalette?(): void;
@@ -168,6 +180,20 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
 
       <button type="button" className="shell-tabbar__palette" onClick={props.onOpenPalette}>
         / palette · ⌘K
+      </button>
+
+      {/* Help's one chrome door, and the reason Help takes no tab seat. Same
+          D28 posture as the bell beside it. */}
+      <button
+        type="button"
+        className="shell-tabbar__help"
+        data-testid="open-help"
+        aria-disabled={props.onOpenHelp ? undefined : 'true'}
+        aria-label="Help"
+        title={props.onOpenHelp ? 'Help — how tm8 works' : 'Help is unavailable without a host'}
+        onClick={props.onOpenHelp ?? ((event) => event.preventDefault())}
+      >
+        <span aria-hidden="true">?</span>
       </button>
 
       {/* The bell keeps the D28 posture when no host wired it: focusable,

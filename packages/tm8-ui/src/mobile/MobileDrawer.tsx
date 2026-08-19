@@ -113,8 +113,19 @@ const DESTINATION_REFS: readonly MenuViewRef[] = [
   'files',
 ];
 
-/** The foot's one destination. Beside the account, per ruling 3. */
+/** The foot's destinations. Beside the account, per ruling 3. */
 const SETTINGS_REF: MenuViewRef = 'settings';
+/**
+ * Help sits in the foot with Settings, not in the destination spine above it.
+ *
+ * The phone's counterpart to the desktop's `?` bar control, and the same
+ * ruling: the spine lists surfaces you INHABIT, and Help is a reference you
+ * consult and leave. The foot is where the phone already puts exactly that
+ * class of row. It is at the TOP of the foot because a reader looking for help
+ * is often lost, and the two rows below it are the ones they are not looking
+ * for.
+ */
+const HELP_REF: MenuViewRef = 'help';
 
 /** ＋, on `VectorIcon`'s 16x16 grid — drawn, so it inherits the stroke weight. */
 const PLUS_ART: KindArt = ['M8 3.25v9.5', 'M3.25 8h9.5'];
@@ -341,6 +352,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
               in place, and the viewer closes the drawer having seen it. */}
           {props.share ? <div className="mdrawer__share">{props.share}</div> : null}
           <ul className="mdrawer__rows">
+            <ViewRow viewRef={HELP_REF} activeTarget={activeTarget} onGo={go} />
             <ViewRow viewRef={SETTINGS_REF} activeTarget={activeTarget} onGo={go} />
             {/* Rendered only when the shell handed down something to open —
                 the same honest-absence rule the header's avatar follows. */}

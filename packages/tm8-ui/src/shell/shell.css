@@ -1681,8 +1681,14 @@
 .cv2-root .shell-rail--expanded .shell-rail__group + .shell-rail__group { margin-top: 9px; }
 
 /* The inbox bell (revision 11) — Inbox's one chrome door after its rail row
-   retired. Same control idiom as the palette hint beside it. */
-.cv2-root .shell-tabbar__bell {
+   retired. Same control idiom as the palette hint beside it.
+
+   HELP SHARES THE IDIOM (2026-08-19) rather than inventing a second glyph
+   button: it is the same class of control — one square, one glyph, reachable
+   from every screen — and a Help door that looked different from the bell
+   beside it would read as a different KIND of thing. */
+.cv2-root .shell-tabbar__bell,
+.cv2-root .shell-tabbar__help {
   display: grid;
   place-items: center;
   width: 24px;
@@ -1694,5 +1700,7 @@
   font-size: 12px;
   cursor: pointer;
 }
-.cv2-root .shell-tabbar__bell:hover { color: var(--pn-ink); background: var(--pn-hover); }
-.cv2-root .shell-tabbar__bell[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }
+.cv2-root .shell-tabbar__bell:hover,
+.cv2-root .shell-tabbar__help:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-root .shell-tabbar__bell[aria-disabled='true'],
+.cv2-root .shell-tabbar__help[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }

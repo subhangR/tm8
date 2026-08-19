@@ -33,7 +33,7 @@ import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { blueprintView, nodeRefId, type RefTitles } from './blueprint-model';
 import { BlueprintCanvas } from './BlueprintCanvas';
 import { CraftChatPicker } from './CraftChatPicker';
-import { CraftEntityColumn } from './CraftEntityColumn';
+import { HostedEntityColumn } from '../views/hostedEntityColumn';
 import type { CraftPanelHostProps } from './types';
 import '../session-graph/session-graph.css';
 import './craft.css';
@@ -585,7 +585,7 @@ export function CraftScreen({
               onReset={detailPref.reset}
             />
             <aside className="crf-detail" id="crf-detail-pane" aria-label="Entity details" data-testid="crf-detail">
-              <CraftEntityColumn
+              <HostedEntityColumn
                 {...panelHost}
                 entityId={detailId}
                 /* Drilling REPLACES this column's subject — never a fourth. */
