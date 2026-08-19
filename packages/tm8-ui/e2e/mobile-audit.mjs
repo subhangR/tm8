@@ -53,8 +53,42 @@
  *    disagrees. A wrong number is worse than a missing one.
  */
 import { chromium, firefox } from '@playwright/test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+/*
+ * SELF-IDENTIFICATION — so "was this artifact produced by the current tool?" is
+ * a MECHANICAL COMPARISON rather than a question you ask a person.
+ *
+ * Three separate provenance failures happened before these two fields existed,
+ * and all three were the same failure: a report that could describe its PRODUCT
+ * (git ref) but not the INSTRUMENT that measured it. Those are two axes. A file
+ * can name a current product sha and have been produced by a tool eight schema
+ * changes old, and nothing in it says so.
+ *
+ * `instrument` is the git blob hash of THIS FILE, computed from its own bytes:
+ * identical to `git hash-object e2e/mobile-audit.mjs`, but content-addressed
+ * rather than tree-addressed, so it is correct on a dirty tree, on a detached
+ * HEAD, and outside a repo entirely. Two artifacts with the same value were
+ * produced by byte-identical instruments; different values mean CHECK BEFORE
+ * COMPARING, not cannot-compare.
+ *
+ * `schemaVersion` is bumped BY HAND whenever a row field is added, removed or
+ * has its meaning changed. It answers the coarser question the hash cannot: two
+ * different hashes may still emit the same row shape (a comment edit moves the
+ * hash and nothing else), and a reader diffing rows cares about the shape.
+ */
+const SCHEMA_VERSION = 3;
+function blobHash(path) {
+  try {
+    const buf = readFileSync(path);
+    return createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
+  } catch {
+    return null;
+  }
+}
 
 /**
  * THE REF THE NUMBERS WERE TAKEN AT — captured by this script, never passed in.
@@ -1027,7 +1061,8 @@ async function startVite() {
 }
 
 const ref = gitRef(outDir);
-console.log(`ref: ${ref.headShort} on ${ref.branch}  (${ref.behindMain} behind origin/main)${ref.dirty ? '  ** DIRTY TREE **' : ''}\n`);
+console.log(`ref: ${ref.headShort} on ${ref.branch}  (${ref.behindMain} behind origin/main)${ref.dirty ? '  ** DIRTY TREE **' : ''}`);
+console.log(`instrument: ${String(blobHash(fileURLToPath(import.meta.url))).slice(0, 12)}  schema: v${SCHEMA_VERSION}  engine: ${ENGINE}\n`);
 
 const { base, stop } = await startVite();
 mkdirSync(outDir, { recursive: true });
@@ -1370,6 +1405,10 @@ if (ref.dirty) problems.push(`working tree is DIRTY at ${ref.headShort} — this
 if (ref.behindMain > 50) problems.push(`HEAD is ${ref.behindMain} commits behind origin/main — measuring code main has moved past`);
 
 const report = {
+  /* Read these two FIRST. They say which tool produced the file; `ref` below
+     says which product it measured. See the SELF-IDENTIFICATION docblock. */
+  schemaVersion: SCHEMA_VERSION,
+  instrument: blobHash(fileURLToPath(import.meta.url)),
   label,
   /* Captured by this script, never passed in — see `gitRef`. No timestamp: it
      would change the file on every run and make `git diff` on the committed
