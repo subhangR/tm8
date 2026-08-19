@@ -720,7 +720,24 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 149
     //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 149
     //   (origin/main is 148; this branch is the +1.)
-    expect(server.appliedMigrations.length).toBe(149);
+    // 149 -> 150 (2026-08-19): NOT a landing. This row is a REPAIR — main was
+    // red on this very assertion. #447 (feat/help-tab) added
+    // `160_menu_help_view.sql` and did not move this pin, so `origin/main` at
+    // 04ddf3df carried 150 files against a pin of 149 and failed its own gate.
+    //
+    // Every row above is written as "this branch is main + 1", and that phrasing
+    // is what broke: it is only true when nothing else lands in between. Two
+    // migrations landed in the same window from different branches (159 and
+    // 160), each correct against the tree it was written on, and the pin was
+    // right for neither MERGED tree. The rule the block above already states —
+    // ask the merged tree, never arithmetic — is the whole content of this row.
+    //
+    // So this one is measured on origin/main ITSELF, with no branch offset,
+    // because there is no new migration here to add:
+    //   ls db/migrations/*.sql | wc -l                             -> 150
+    //   git ls-tree --name-only origin/main db/migrations/ | grep -c sql -> 150
+    //   (this branch adds NO migration; 150 is main's own count.)
+    expect(server.appliedMigrations.length).toBe(150);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
