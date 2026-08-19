@@ -775,17 +775,73 @@
    taken here. Unpinning the bar is what makes that fix possible; growing the
    tab from this file would have closed someone else's row from the wrong lane
    and left two owners for one selector. */
+/* ---------------------------------------------------------------------------
+   CONSOLIDATION, AND IT TAKES LANE C'S VALUES ON EVERY CONTESTED PROPERTY —
+   NOT MINE. That is the opposite of what the staged plan said, and the reason
+   is a fact I did not have when I staged it.
+
+   `detail/panel-bar-phone.css` declares these same three selectors at the same
+   specificity, (0,3,0), so every overlap is a tie broken by emission order.
+   Emission order is decidable from the module graph and I read it rather than
+   guessed: `mobile-audit-entry.tsx:36` imports `panels.css` DIRECTLY, and
+   `panel-bar-phone.css` is reachable only through `detail/chrome.tsx:24`, i.e.
+   through `GateApp` at :44. Lines 31-35 ahead of it are stylesheets with no JS,
+   so nothing pulls chrome.tsx earlier. **panels.css is emitted FIRST, therefore
+   THIS FILE LOSES EVERY TIE.** (`main.tsx:8` gives the same ordering.)
+
+   WHAT THAT MEANS, STATED PLAINLY BECAUSE IT IS UNFLATTERING: in the bundle the
+   build service actually graded, my `.pn-panelbar` rule and my `.pn-panelbar__end`
+   rule contributed NOTHING. Every declaration in them was either overridden by
+   Lane C to a different value or duplicated at the same one. Only three
+   declarations of mine were ever live — `flex-wrap`, `row-gap` and `overflow` on
+   `.pn-tabs`, the three Lane C does not declare. DEF-011's fix is mine. The
+   unpin that DEF-007 rides on was delivered by Lane C's `978f3e82`.
+
+   SO CONSOLIDATING ONTO MY VALUES WOULD HAVE SHIPPED NUMBERS THAT HAVE NEVER
+   BEEN IN A GRADED BUILD, under cover of a cleanup. `row-gap: 2px` here and
+   `flex: 1 0 100%` below are exactly that: never applied, never measured, and
+   indistinguishable in every artifact we hold from the values that were.
+
+   AND TAKING LANE C'S VALUES MAKES THE TWO-STEP SAFE. This absorb is a no-op
+   until Lane C deletes its three container rules, because the winner's values
+   are now declared on both sides. There is no broken intermediate state and no
+   dependence on which PR lands first. Had I taken mine, the intermediate state
+   would have differed from both endpoints.
+
+   THE ONE THING NO ARTIFACT CAN SETTLE: whether 4px or 2px was in the graded
+   build is decided by emission order, and no field in the instrument
+   discriminates between them — both produce a passing layout. The module graph
+   is the only evidence, and it is a source-derived inference, not a
+   measurement. Labelled as such. */
 .cv2-root[data-shell='mobile'] .pn-panelbar {
   height: auto;
   min-height: 30px;
   flex-wrap: wrap;
-  row-gap: 2px;
+  /* LANE C'S 4px, NOT MY 2px — see above. Mine never applied. */
+  row-gap: 4px;
+  /* ABSORBED from panel-bar-phone.css. INHERITED, UNEXAMINED: nothing else
+     supplies these two — the desktop base gives `align-items: center` and no
+     padding at all — so removing them is a change nobody intended. I have not
+     measured what they do, and this comment says which of the two it is rather
+     than inventing a reason. */
+  align-items: stretch;
+  padding-block: 4px;
 }
 .cv2-root[data-shell='mobile'] .pn-tabs {
-  /* Its own full-width line. `flex: 1 0 100%` rather than `width: 100%` so it
-     still participates as a flex item and the bar's `row-gap` applies. */
-  flex: 1 0 100%;
+  /* Its own full-width line, and `1 1` is LANE C'S, not the `1 0` I staged.
+     Both rules set `flex-basis: 100%` with wrap on, so neither item is being
+     asked to shrink in the arrangement as built and the shrink term is not
+     doing anything today either way — but `1 1` is the one that was in the
+     bundle, and a guard whose comment oversells it as a repair is how the next
+     reader mis-costs removing it. */
+  flex: 1 1 100%;
   height: auto;
+  /* ABSORBED, AND THE ONLY FLOOR LEFT: the desktop base gives `.pn-tabs`
+     `height: 100%`, the line above replaces that with `auto`, so without this
+     the strip has nothing holding it open when it carries little. */
+  min-height: 30px;
+  /* MINE, AND LIVE — Lane C declares neither. These two are DEF-011's actual
+     fix and the only part of this block that was ever in effect. */
   flex-wrap: wrap;
   row-gap: 2px;
   /* THE SCROLLPORT IS THE DEFECT, so it goes. `visible` and not `auto`:
@@ -795,11 +851,45 @@
   overflow: visible;
 }
 .cv2-root[data-shell='mobile'] .pn-panelbar__end {
-  flex: 1 0 100%;
+  flex: 1 1 100%;
   flex-wrap: wrap;
-  row-gap: 4px;
+  /* ⚡ THE ORPHAN THE STAGED PLAN MISSED, AND IT IS A SHORTHAND-EXPANSION MISS
+     OF EXACTLY THE KIND I HAVE FILED TWICE AGAINST OTHER PEOPLE. Lane C's
+     `gap: 6px` expands to `row-gap: 6px; column-gap: 6px`. I read it as "a 1px
+     tweak on the base's 7px, not an orphan" and moved on — but it is the same
+     property as my `row-gap`, so (a) my 4px never applied, and (b) a wholesale
+     delete of Lane C's rule takes column-gap from 6px BACK UP to the base's
+     7px, inside a cluster whose fit at 390 was measured at 6px. Widening the
+     gaps in the arrangement that put Terminate back on screen is not a
+     cleanup. Both halves written longhand so the next delete cannot move
+     either. */
+  row-gap: 6px;
+  column-gap: 6px;
+  /* KEEPS THE DESTRUCTIVE VERB ON THE RIGHT. The desktop base declares no
+     `justify-content` at all, so its default is `flex-start` — if this line and
+     Lane C's both went, Terminate would left-align on a phone, having been on
+     the right on every other shell, and it would pass every threshold in the
+     program while doing it: still inside `innerWidth`, still zero overflow,
+     still zero below the fold. Do not remove it in a tidy-up. */
   justify-content: flex-end;
+  /* ABSORBED, AND PAIRED WITH `flex-shrink: 1` ABOVE. A shrinkable flex child
+     still holds its own min-content open without this floor; shrink without the
+     floor permits nothing, and the floor without shrink has nothing to permit.
+     Absorbing one and not the other would look done and change nothing.
+
+     AND THE ASYMMETRY THAT EXPLAINS WHY THE PRESSURE SURFACED HERE AND NOT ON
+     THE TAB STRIP: the desktop base declares `min-width: 0` on `.pn-tabs` and
+     declares NONE on this element, so the strip could always shrink past its
+     content and the end cluster never could. Checked in this file. */
+  min-width: 0;
+  /* LONGHAND DELIBERATELY. Lane C's `padding: 0 8px` shorthand resets
+     `padding-right`, which the desktop base sets to 8px; the longhand leaves it
+     alone. Both land on 8px either side, so this one is a true no-op — recorded
+     so a future reader does not "fix" it back to the shorthand. */
   padding-left: 8px;
+  /* NOT ABSORBED, AND STATED SO NOBODY RE-ADDS IT: `align-items: center` comes
+     from the desktop base three rules up in this file and nothing here
+     overrides it. Lane C's copy is a duplicate, not an orphan. */
 }
 .cv2-root .pn-tab:hover { color: var(--pn-ink); }
 .cv2-root .pn-tab--active {
@@ -2170,6 +2260,48 @@
 .cv2-root .lp__disclosure:hover { color: var(--pn-ink-2); background: var(--pn-active); }
 .cv2-root .lp__disclosure--expanded > span { transform: rotate(90deg); }
 .cv2-root .lp__disclosure--empty { color: var(--pn-line); cursor: default; }
+/* DEF-066 — AN ARIA-HIDDEN DECORATION SHOULD NOT BE A HIT TARGET AT ANY SIZE.
+
+   `EntityListPanel` emits this variant when `onToggleChildren` is absent: a
+   `<span aria-hidden>`, a decoration and not a control. But `.lp__disclosure`
+   is `position: absolute; top: 6px; left: 7px; z-index: 3`, and the gate's §7g
+   grows it to 44x44 on the phone, so on a tree row with no toggle handler it is
+   the topmost paintable thing over the row's leading corner and
+   `elementFromPoint` at that corner returns THE SPAN. The line above already
+   says this element is not pressable via `cursor: default`; this finishes the
+   sentence, and it applies on the desktop too, where the span has been
+   absolutely positioned over the same corner at 16px all along.
+
+   TWO RULES, TWO FILES, NO PROPERTY OVERLAP: the gate owns the size in
+   `mobile-screens.css` (it excludes `--empty` there); this owns hit-testing
+   here. Checked as a competition before proposing it, and it is not one.
+
+   ⚡ WHAT THIS ROW NO LONGER CLAIMS, AND THE WITHDRAWN PREMISE IS MINE. I filed
+   it saying the span sits over the leading slot where `lp__statedot` renders,
+   so a second occluder there would read as "DEF-006's fix did not work". IT
+   DOES NOT SIT THERE AND CANNOT:
+
+     lp__statedot    renders only where the kind declares a `stateControl`
+                     -> task, work_session -> the Maestro tiles
+     lp__disclosure  renders only on the GENERIC tile
+                     -> channel, doc, ... -> which declare none
+
+   `stateControl` appears twice in the whole of `domain/registry.ts`, on `task`
+   and `work_session`, and both have dedicated tile renderers. The two elements
+   are DISJOINT BY REGISTRY, not by fixture — no tile in this build renders
+   both, so no fixture of any shape produces the collision I predicted. I had
+   established that the statedot reaches the task tile via `statusControl` and
+   then assumed the generic tile carried one too BECAUSE BOTH TILES HAVE A
+   LEADING SLOT. Reading a slot and concluding a control. The gate's own
+   docblock on §7g already said this ("It is NOT applied to the task tile,
+   whose leading slot is the live state trigger") and I reasoned past it.
+
+   CONSEQUENCE FOR ACCEPTANCE: this rule has NO measurable acceptance in this
+   build. A clean `occludedCount` here is evidence the two elements never met,
+   not evidence the rule works. It closes by code review of the selector or it
+   does not close. Do not let a future clean census read as verified — it has
+   not been exercised in either direction. */
+.cv2-root .lp__disclosure--empty { pointer-events: none; }
 .cv2-root .lp__disclosure > span { display: grid; place-items: center; }
 
 /* 16px and unfilled, matching `pn-st__statusglyph`. The soft-tinted 18px

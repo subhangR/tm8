@@ -453,11 +453,59 @@
   justify-content: flex-end;
   row-gap: 4px;
   padding-left: 0;
-  /* The backing existed to keep the badges readable UNDER the floating
-     cluster. In the flow there is nothing under it to keep readable, and a
-     tinted strip across the row would read as a second selected state. */
-  background: none;
   transform: none;
+}
+/* DEF-059 — A DEFECT IN MY OWN CHANGE, FOUND AUDITING IT AFTER WRITING THE
+   COMMENT THAT DESCRIBES THE BUG.
+
+   `background: none` was declared inside the rule above, with a comment saying
+   the backing existed to keep the badges readable UNDER the floating cluster,
+   that in the flow there is nothing under it, and that a tinted strip across
+   the row would read as a second selected state. All true, and on two states
+   not what happened:
+
+     MINE   .cv2-root[data-shell='mobile'] .pn-tt__actions         (0,3,1)
+     LATER  .cv2-root .pn-tt--active .pn-tt__actions,
+            .cv2-root .pn-tt[data-details='open'] .pn-tt__actions  (0,3,1)
+     LATER  .cv2-root .pn-tt--active:hover .pn-tt__actions         (0,3,1)
+
+   EQUAL SPECIFICITY, LATER IN THE FILE, SO THEY WIN. On a selected row or one
+   with details open, the in-flow cluster got its tint back — a full-width
+   tinted band under the title, which is precisely the "second selected state"
+   my own comment says it must not be.
+
+   The DEF-024 trap exactly, in my own file, after I caught it in the chips band
+   and wrote a paragraph about it. Found only by auditing my phone rules for
+   later same-or-higher-specificity clashes on shared properties — the one check
+   aimed at this class. Two of its three hits were benign; this one was not. */
+.cv2-root[data-shell='mobile'] .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-tt--active .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-tt[data-details='open'] .pn-tt__actions,
+.cv2-root[data-shell='mobile'] .pn-tt--active:hover .pn-tt__actions {
+  background: none;
+}
+/* CROSS-LANE TIE, RULED. `.cv2-root .tch-panel-host .pn-tt__main` in Lane A's
+   `chat-home.css` is (0,3,0) and sets `padding: 7px 6px; gap: 5px`. My phone
+   rule above is also (0,3,0), in a different file, so the winner is emission
+   order — and `gap` expands to `row-gap`, the property I set, so a
+   name-only diff cannot see the collision at all.
+
+   THE RULING: the collision is between a pre-existing desktop-affecting rule
+   and a new phone-only one, and the NEW rule carries the extra specificity.
+   The burden sits on the change, not on the incumbent.
+
+   WHAT THIS OVERRIDES, STATED RATHER THAN SILENT: Lane A's `gap: 5px` is a
+   documented narrowing for the chat column's ~280px width, part of a coat that
+   also re-cuts the row inset to 7px/6px for disclosure-caret alignment. On the
+   phone this takes my 4px instead. I have no evidence about which value is
+   right in that host at 390 — the state is currently UNREACHABLE (the
+   instrument measured `panelHost: present FALSE` on chat-home at both widths)
+   — so this is a determinism fix and not a design decision. If the hosted list
+   ever renders on a phone, Lane A says which value it wants and I take it.
+   Deleting this rule reinstates the tie; changing its value is Lane A's call. */
+.cv2-root[data-shell='mobile'] .tch-panel-host .pn-tt__main {
+  flex-wrap: wrap;
+  row-gap: 4px;
 }
 /* The bar, on both axes, for every control in the cluster — `min-*` rather
    than `width`/`height` so `.lp__rowaction--wide` keeps its `width: auto` and
