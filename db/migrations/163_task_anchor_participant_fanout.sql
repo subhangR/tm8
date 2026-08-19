@@ -1,5 +1,5 @@
 -- =============================================================================
--- 159  A MESSAGE ON A TASK REACHES EVERY LIVE SESSION IN THAT TASK'S
+-- 163  A MESSAGE ON A TASK REACHES EVERY LIVE SESSION IN THAT TASK'S
 --      CONVERSATION -- NOT JUST THE ONE THAT WAS SPAWNED ON IT.
 --
 -- THE DEFECT, measured on the live node (tm8_stable, 2026-08-19). 121 added the
@@ -19,12 +19,34 @@
 --      449  reached NOBODY and had a live session that this file now reaches
 --      690  had no live peer under either rule (correctly silent)
 --
--- So 55% of the reachable traffic was being dropped. Worked example, kept
--- because it is the report that opened the task: task `01a01ae6`, worker
--- session `01a01ae7` posted seven messages to the anchor between 22:21 and
--- 22:30; `session_message_reply_routes` holds zero rows for all seven; the
--- session that CREATED that task, `01a01a5f`, was `idle` -- that is, live, with
--- a terminal -- for every one of them and received none.
+-- So 55% of the reachable traffic was being dropped.
+--
+-- HOW TO REPRODUCE THAT REPLAY, because the obvious way is wrong by 40x.
+-- Liveness has to be reconstructed AT THE TIME OF EACH MESSAGE, from
+-- `work_sessions.exited_at`, not read off the session's CURRENT status. A
+-- reviewer who used current status independently got 0->1472 / 1->21 and would
+-- have concluded the numbers above were fabricated; with `exited_at` the replay
+-- reproduces to within one day of new traffic.
+--
+-- TWO WORKED EXAMPLES, and the second one is this change's own review.
+--
+--   * Task `01a01ae6`: worker session `01a01ae7` posted seven messages to the
+--     anchor between 22:21 and 22:30. `session_message_reply_routes` holds zero
+--     rows for all seven. The session that CREATED that task, `01a01a5f`, was
+--     `idle` -- that is, live, with a terminal -- for every one of them.
+--   * Task `01a01b61`, opened so that a second Opus 5 session could review THIS
+--     FILE. The reviewer posted its findings to both anchors and then counted:
+--     four copies on the task anchor produced ZERO route rows, while the two on
+--     the author's work_session anchor produced two and delivered. The only
+--     reason the review was ever read is that the reviewer was told not to
+--     trust the task anchor.
+--
+-- WHICH RELATION ACTUALLY CARRIES THE REPAIR. Attributing every (message,
+-- session) pair the replay produces: SPOKEN 659 pairs, WORKING 533, OPENED 482.
+-- But by SOLE reachability -- messages that exactly one relation saves --
+-- only-OPENED is 270, only-WORKING 44, only-SPOKEN 38. So `created_in` alone is
+-- a third of the entire fix, which promotes the "it is client-asserted" caveat
+-- below from a footnote to a headline property of this change.
 --
 -- THE MEMBERSHIP SET, WIDENED FROM ONE RELATION TO THREE.
 --
@@ -96,19 +118,75 @@
 --      narrowing changes nothing that exists and closes the hazard this file
 --      would otherwise open.
 --
--- WAKE AMPLIFICATION, ANSWERED WITH A MEASUREMENT RATHER THAN A CAP. A wider
--- membership set is a wider wake, and 120 removed the wake budget, so the
--- question "does this storm?" has to be answered from data. Replaying the same
--- 14 days under this file's rule, targets per message:
+-- WAKE AMPLIFICATION. A wider membership set is a wider wake and 120 removed the
+-- wake budget, so "does this storm?" has to be answered from data. Replaying the
+-- same 14 days under this file's rule, targets per message:
 --
 --     0 -> 691    1 -> 606    2 -> 150    3 -> 41    4 -> 1    5 -> 19
 --
 -- Ninety-five percent of posts reach two sessions or fewer and the maximum is
--- five, so no cap is added here -- a cap would be a mechanism with no measured
--- pressure behind it. The lever already exists if a session wants out: the
+-- five. NO CAP IS ADDED, because a cap with no measured pressure behind it is a
+-- mechanism nobody can tune. But the sentence that used to sit here -- "so this
+-- does not storm" -- was a bigger claim than the measurement supports, and this
+-- is the smaller one:
+--
+--     THAT REPLAY DESCRIBES 121'S TRAFFIC AND CANNOT BOUND THIS FILE'S. It was
+--     produced under a regime where posting on a task wakes nobody, and the
+--     entire point of this change is to make posting on a task worth doing.
+--     SPOKEN is also MONOTONIC -- there is no way to leave a conversation -- and
+--     a woken session's reply lands back on the task (src is the task, by
+--     construction), which permanently enrols it. Under 121 that first step
+--     almost never fires, so the feedback term CANNOT APPEAR IN PAST DATA. The
+--     headroom is already visible: 99 tasks on this node have >= 2 distinct
+--     agent speakers and one has 10.
+--
+-- What replaces the missing bound is FORWARD data, and it needs no new counter
+-- because `session_message_reply_routes` already records one row per target per
+-- post. Fan-out width over real 162 traffic is one query:
+--
+--     select count(*) n, count(*) filter (where true) from (
+--       select r.source_message_id, count(*) width
+--         from public.session_message_reply_routes r
+--         join public.entities a on a.id = r.source_anchor_id and a.kind = 'task'
+--        group by 1) w;
+--
+-- If that distribution moves, the cap discussion reopens with an argument
+-- instead of an anecdote. The per-session opt-out already exists meanwhile: the
 -- interaction profile's `promptPolicy.allowedInjectionKinds` drops
--- `tm8.session-input` and this function returns `sessionInputAllowed: false`
--- for that target, which `message-dispatch.ts` skips before reserving.
+-- `tm8.session-input` and this function returns `sessionInputAllowed: false` for
+-- that target, which `message-dispatch.ts` skips before reserving.
+--
+-- Two adjacent facts recorded because they bound how long a stale member lives,
+-- and neither is repaired here: liveness admits `spawning` WITH NO TIMEOUT (one
+-- session on this node has been `spawning` for 154 hours), and a single session
+-- has opened as many as 70 tasks (p95 22), so an OPENED membership can outlive
+-- its usefulness by hours. `work_sessions.mode` (worker/coordinator/dispatcher,
+-- server-written) is a better-quality signal than `created_in` but it is not a
+-- substitute: it says WHAT a session is, never WHICH TASK it opened, which is
+-- the whole question here.
+--
+-- THE ORDER IS NOT THE PLANNER'S TO CHOOSE, and this is the one thing in this
+-- file that no amount of reading the SQL would have caught.
+--
+-- `w2_task_conversation_sessions` is `language sql stable` with a single-query
+-- body, which makes it INLINABLE. Once Postgres inlines it, `join ... on true`
+-- stops being a per-row lateral and becomes an ordinary subquery the planner may
+-- reorder -- and it chooses to apply `entities anchor ... kind = 'task'` LAST.
+-- So a message anchored on a CHANNEL walked that channel's entire history
+-- through the SPOKEN arm and then discarded every row on `Rows Removed by
+-- Filter: 1`. Measured on the live node with EXPLAIN (ANALYZE, BUFFERS):
+--
+--     guard, channel post w/ 209 siblings   121:   5 buffers   0.032 ms
+--                                           naive: 712 buffers 0.553 ms
+--     CTE,   work_session post w/ 84 sibs   naive: 323 buffers
+--                                           fenced:  6 buffers, `never executed`
+--
+-- All 2437 non-task messages on this node paid it, on every post. Both halves
+-- are therefore made DETERMINISTIC rather than left to the planner: the guard
+-- becomes a plpgsql IF (a real branch), and the CTE gets a `materialized` fence
+-- so the anchor-kind test provably runs first and drives an empty lateral.
+-- `set search_path` on the function would defeat inlining and fixes the guard,
+-- but it was measured NOT to fix the CTE (323 -> 370), so it is not the answer.
 --
 -- NO TYPESCRIPT IN THE BLAST RADIUS, for the same reason 121 had none: the
 -- routes this returns are dispatched by the same `dispatchSessionMessages`
@@ -257,21 +335,43 @@ begin
        )
     or cardinality(mention_ids) > 0;
 
-  -- 121's disjunct. Over-approximates the CTE below on purpose: it does not
-  -- re-test the author-exclusion or the already-owed narrowing, because being
-  -- wrong here costs one extra pass through a loop that then yields nothing,
-  -- while being wrong the other way silently drops the whole class.
-  owes_task_copy := exists (
+  -- 121's disjunct, in TWO STATEMENTS, and the split is a measured performance
+  -- fix rather than a stylistic one. See "THE ORDER IS NOT THE PLANNER'S TO
+  -- CHOOSE" in this file's header: written as one query with the anchor-kind
+  -- test as a join predicate, Postgres INLINES the membership function and is
+  -- then free to reorder, and it puts `entities anchor` LAST -- so a message on
+  -- a CHANNEL walks that channel's entire history through the SPOKEN arm and
+  -- throws all of it away on `Rows Removed by Filter: 1`. Measured on the live
+  -- node, a channel post with 209 siblings: 5 buffers before, 712 after.
+  --
+  -- A plpgsql IF is a real branch and not a planner preference, so the cheap
+  -- question is asked first and the expensive one is not asked at all unless the
+  -- batch actually has a task anchor. Every non-task post -- 2437 of the 4382
+  -- messages on this node -- takes the first statement and stops.
+  owes_task_copy := false;
+  if exists (
     select 1
       from public.messages m
-      join public.entities anchor
-        on anchor.id = m.anchor_id and anchor.kind = 'task' and anchor.deleted_at is null
-      join internal.w2_task_conversation_sessions(m.anchor_id, p_message_ids) member on true
-      join public.work_sessions ws on ws.entity_id = member.work_session_id
+      join public.entities anchor on anchor.id = m.anchor_id
      where m.entity_id = any(p_message_ids)
-       and ws.status in ('spawning', 'running', 'idle')
-       and ws.session_kind = 'agent'
-  );
+       and anchor.kind = 'task' and anchor.deleted_at is null
+  ) then
+    -- Over-approximates the CTE below on purpose: it does not re-test the
+    -- author-exclusion or the already-owed narrowing, because being wrong here
+    -- costs one extra pass through a loop that then yields nothing, while being
+    -- wrong the other way silently drops the whole class.
+    owes_task_copy := exists (
+      select 1
+        from public.messages m
+        join public.entities anchor
+          on anchor.id = m.anchor_id and anchor.kind = 'task' and anchor.deleted_at is null
+        join internal.w2_task_conversation_sessions(m.anchor_id, p_message_ids) member on true
+        join public.work_sessions ws on ws.entity_id = member.work_session_id
+       where m.entity_id = any(p_message_ids)
+         and ws.status in ('spawning', 'running', 'idle')
+         and ws.session_kind = 'agent'
+    );
+  end if;
 
   if not owes_addressed_copy and not owes_task_copy then
     return result;
@@ -332,25 +432,38 @@ begin
              source_message_id          as src_message_id
         from unnest(mention_ids) s(session_id)
     ),
-    -- TASK TARGETS (121, widened by 159): the live AGENT sessions in this
+    -- THE TASK ANCHORS OF THIS BATCH, FENCED. `as materialized` is the CTE's
+    -- half of the same performance fix the guard above takes as a plpgsql IF,
+    -- and it is required for the same reason: without the fence the planner
+    -- inlines the membership function, reorders, and evaluates the anchor-kind
+    -- test AFTER the walk. A batch that reaches this loop at all has satisfied
+    -- an ADDRESSED class -- a work-session anchor, a reply, a poke -- so the
+    -- common case here is a batch with NO task anchor, and it must not pay.
+    -- Measured on the live node, a work_session post with 84 siblings:
+    -- 323 buffers unfenced, 6 fenced with every task-side node `never executed`.
+    task_anchored as materialized (
+      select m.entity_id as message_id, m.anchor_id as task_id
+        from public.messages m
+        join public.entities anchor
+          on anchor.id = m.anchor_id and anchor.kind = 'task' and anchor.deleted_at is null
+       where m.entity_id = any(p_message_ids)
+    ),
+    -- TASK TARGETS (121, widened by 163): the live AGENT sessions in this
     -- task's conversation -- working it, or having opened it, or having spoken
     -- on it -- delivered that anchor's own copy. src is (the task, the message
     -- on it), so the woken session answers on the task.
     task_targets as (
-      select m.entity_id  as target_message_id,
+      select m.message_id as target_message_id,
              ws.entity_id as target_work_session_id,
-             m.anchor_id  as src_anchor_id,
-             m.entity_id  as src_message_id
-        from public.messages m
-        join public.entities anchor
-          on anchor.id = m.anchor_id and anchor.kind = 'task' and anchor.deleted_at is null
-        join internal.w2_task_conversation_sessions(m.anchor_id, p_message_ids) member
+             m.task_id    as src_anchor_id,
+             m.message_id as src_message_id
+        from task_anchored m
+        join internal.w2_task_conversation_sessions(m.task_id, p_message_ids) member
           on true
         join public.work_sessions ws on ws.entity_id = member.work_session_id
         join public.entities se on se.id = ws.entity_id
-       where m.entity_id = any(p_message_ids)
-         and ws.status in ('spawning', 'running', 'idle')
-         -- Narrowing 5 (159): a wake is typed into a terminal, and only an
+       where ws.status in ('spawning', 'running', 'idle')
+         -- Narrowing 5 (163): a wake is typed into a terminal, and only an
          -- agent's terminal is reading prompts. A `shell` or `credential`
          -- session can open a task or post on one through the CLI, has no
          -- interaction pin, and would therefore pass `sessionInputAllowed`.
@@ -360,7 +473,7 @@ begin
          -- Narrowing 2: never hand a session back its own message.
          and not exists (
            select 1 from public.edges authored
-            where authored.src_id = m.entity_id
+            where authored.src_id = m.message_id
               and authored.type = 'authored_from'
               and authored.dst_id = ws.entity_id
          )
@@ -466,3 +579,39 @@ $$;
 revoke all on function internal.w2_task_conversation_sessions(uuid, uuid[]) from public;
 revoke all on function public.w2_record_session_message_routes(uuid[], uuid, uuid[]) from public;
 grant execute on function public.w2_record_session_message_routes(uuid[], uuid, uuid[]) to tm8_app;
+
+-- -----------------------------------------------------------------------------
+-- VERIFY -- only what THIS file establishes. The whole-surface pins live in
+-- tests, which always run a complete chain; a migration is replayed at every
+-- position in history that has ever existed, so a chain-wide assertion here
+-- aborts on drift that is not drift.
+--
+-- The membership helper deliberately has NO grant. It is called only from inside
+-- a SECURITY DEFINER body and therefore runs with that function's authority, so
+-- a grant would widen its reach for no caller that exists -- and the assertion
+-- that nobody but the owner can reach it is exactly the kind of thing that is
+-- silently true today and silently false after someone "fixes" a permission
+-- error by granting rather than by finding the real caller.
+-- -----------------------------------------------------------------------------
+do $verify$
+begin
+  if has_function_privilege(
+       'tm8_app', 'internal.w2_task_conversation_sessions(uuid, uuid[])', 'EXECUTE') then
+    raise exception 'the membership helper must not be directly callable by tm8_app';
+  end if;
+  if not has_function_privilege(
+       'tm8_app', 'public.w2_record_session_message_routes(uuid[], uuid, uuid[])', 'EXECUTE') then
+    raise exception 'the routing function must remain executable by tm8_app';
+  end if;
+  -- The three membership arms are what this file is FOR; a later `create or
+  -- replace` that loses one would otherwise be caught by nothing until a
+  -- coordinator went quiet again.
+  if (select count(*) from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'internal' and p.proname = 'w2_task_conversation_sessions'
+         and p.prosrc like '%working_on%' and p.prosrc like '%created_in%'
+         and p.prosrc like '%authored_from%') <> 1 then
+    raise exception 'the membership helper must carry all three arms: working_on, created_in, authored_from';
+  end if;
+end
+$verify$;

@@ -779,7 +779,32 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 152
     //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 152
     //   (origin/main is 151; this branch is the +1.)
-    expect(server.appliedMigrations.length).toBe(152);
+    // 152 -> 153 (2026-08-20): 163_task_anchor_participant_fanout.sql — a
+    // message on a task reaches the session that OPENED it and every session
+    // that has SPOKEN on it, not only the one a spawn put on it.
+    //
+    // AUTHORED AS 159, THEN 162, NOW 163. Each of those was correctly "the next
+    // number above main's highest" when it was written and wrong by the time it
+    // could land: 159_flatten_rls_predicates and 160_menu_help_view took the
+    // first pair, 161_space_summary_drops_unread_total the next, and 162 went to
+    // the row directly above this one — the repair this branch's own review
+    // split out, deliberately given the lower number so the branch landing first
+    // never had to move twice.
+    //
+    // THIS ROW IS THE ONE THE ASSERTION BELOW CANNOT COVER, and it is written
+    // down because it was PREDICTED and then observed. Both branches carried the
+    // identical `151 -> 152` edit off the same base. Git does not conflict on an
+    // identical edit, so merging the second one would have produced 153 files
+    // against a pin of 152 — silently, with every prefix still unique. The only
+    // defence is the rule this whole comment block keeps restating: land one,
+    // rebase the other, and MEASURE the tree that now exists.
+    //
+    // MEASURED after rebasing onto origin/main at 633eadea (#453 merged), never
+    // derived by adding one:
+    //   ls db/migrations/*.sql | wc -l                             -> 153
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 153
+    //   (origin/main is 152; this branch is the +1.)
+    expect(server.appliedMigrations.length).toBe(153);
 
     // EVERY PREFIX IS UNIQUE. The count pin above catches a file that VANISHES;
     // it is structurally incapable of catching the failure that has now happened
