@@ -124,10 +124,35 @@ function capabilityGate(
  * category ⇒ PERMITTED, not refused — the same posture `capabilityGate` takes
  * for a missing flag inverted, because here the failure mode of guessing wrong
  * is a harmless second terminate rather than a stuck row.
+ *
+ * BUT `done` ALONE IS NOT "ENDED" ANY MORE, and that is this same PR's doing.
+ * The tick files a RUNNING session under Done without closing it — that is the
+ * whole ruling — so `category === 'done'` and "a process is answering" are now
+ * compatible states, and the first no longer implies the second. Gating on the
+ * category alone made the headline feature eat itself: tick a live session and
+ * Terminate went dead on every surface (the row cluster and the panel's
+ * primary both resolve THIS def), refusing with "This session has already
+ * ended" about a session that was still streaming. Measured before this line
+ * existed: `{liveness:'live', category:'done'}` -> disabled.
+ *
+ * So the refusal asks for BOTH halves — filed under Done AND nothing is
+ * answering. That keeps every case the ruling above cares about:
+ *
+ *   ghost (stale/unknown, not done)   PERMITTED — the reported defect.
+ *   exited or failed (done, no PTY)   REFUSED — it genuinely ended.
+ *   ticked while running (done, live) PERMITTED — it has NOT ended, and the
+ *                                     tick was never a claim that it had.
+ *
+ * A non-`live` verdict on a ticked session still refuses, which is the
+ * conservative side of the one genuinely ambiguous case and matches how an
+ * exited row reads. `liveness` is consulted here and NOT in the ruling above
+ * because it is being asked a different question: not "may I act on this" but
+ * "is the thing I would be ending still there".
  */
 function endableGate(ctx: ActionContext): ActionAvailability | null {
   if (!ctx.entityId) return disabled(REASONS.noEntity);
-  return ctx.category === 'done' ? disabled(REASONS.alreadyEnded) : null;
+  if (ctx.category === 'done' && ctx.liveness !== 'live') return disabled(REASONS.alreadyEnded);
+  return null;
 }
 
 /** A verdict-gated session verb: only a `live` seam verdict permits it. */

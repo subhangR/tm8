@@ -816,7 +816,6 @@ const ROWS: readonly KindConfig[] = [
       // the earlier ruling's premise no longer holds.
       inlineEdit: { title: true },
       /**
-      /**
        * THE TICK IS BACK, AND NOW IT IS A REAL VERB — USER RULING 2026-08-19:
        * "we need the tick mark there, tick marks the session done, but does not
        * close it … i want to mark sessions done, but not close them to revisit
