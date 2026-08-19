@@ -124,11 +124,11 @@ export interface EntityViewProps {
   onLaunchDispatch?(request: DispatchSelection): void;
   /**
    * §1.1 mode wiring: the shell holds the layout mode (it is route state) and
-   * this screen passes it through to the panel. Absent ⇒ the panel's local
-   * fallback, exactly as before.
+   * this screen passes it through to the panel. Absent ⇒ the kind's registry
+   * default. READ-ONLY since the view switcher was removed (2026-08-19) —
+   * nothing on this screen writes a mode back, so there is no `onMode`.
    */
   mode?: CollectionMode;
-  onMode?(mode: CollectionMode): void;
   /**
    * W3 — the board's grouping, route state exactly like `mode`: the shell
    * holds it and this screen passes it through. Absent ⇒ the panel's local
@@ -282,15 +282,12 @@ export function EntityView(props: EntityViewProps) {
   /**
    * THE LAYOUT MODE IS RESOLVED HERE, not twice.
    *
-   * The panel carries the same controlled/uncontrolled pair, and if the screen
-   * read `props.mode` while the panel fell back to its OWN local state the two
-   * would disagree the moment a host mounts this view without `onMode` — the
-   * switcher would draw a board inside a rail sized for a list. Resolving once
-   * and passing the pair down leaves the panel's fallback unreachable.
+   * The panel applies the same registry fallback, and if the screen read
+   * `props.mode` while the panel fell back on its own the two could disagree —
+   * a board drawn inside a rail sized for a list. Resolving once and passing
+   * the value down leaves the panel's fallback unreachable.
    */
-  const [uncontrolledMode, setUncontrolledMode] = useState<CollectionMode>(config.defaultMode);
-  const mode = props.mode ?? uncontrolledMode;
-  const setMode = props.onMode ?? setUncontrolledMode;
+  const mode = props.mode ?? config.defaultMode;
   /**
    * THE BOARD IS THE WHOLE SCREEN, not a body inside the 320px rail.
    *
@@ -921,7 +918,6 @@ export function EntityView(props: EntityViewProps) {
           loadMore={data.loadMore(kind)}
           boardFor={data.boardFor(kind) as never}
           mode={mode}
-          onMode={setMode}
           groupBy={props.groupBy}
           onGroupBy={props.onGroupBy}
           members={data.members}

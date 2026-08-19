@@ -10,15 +10,16 @@
  *
  * A unit test of the panel cannot see this: the panel renders the same columns
  * either way and knows nothing about the region it sits in. So this mounts the
- * COMPOSED app, walks to a kind screen and switches layout the way a user does
- * — the only place where "the board took the detail panel's width" is a fact
- * rather than a CSS opinion.
+ * COMPOSED app, walks to a kind screen and asks for the board the way a user
+ * now does — through the ADDRESS, since the view switcher was removed from
+ * every entity list (2026-08-19). That is the only place where "the board took
+ * the detail panel's width" is a fact rather than a CSS opinion.
  *
  * The localStorage stub is last-place-gate.test.tsx's, for its reason:
  * gate.test.tsx's `window.localStorage.clear()` throws under this runner.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { fireEvent, render, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
@@ -48,6 +49,21 @@ beforeEach(() => {
   screenStackStore.getState().clearAll();
 });
 
+/* The address is the only door to a layout now, so these cases drive it
+   directly. The browser target's subscriber re-reads `location.hash` and
+   ignores the event payload (routes/transport.ts:45), so a bare event is
+   enough — jsdom does not always emit one for a programmatic assignment. */
+function goto(hash: string) {
+  window.location.hash = hash;
+  fireEvent(window, new Event('hashchange'));
+}
+
+/** `#/s/{space}/k/tasks` → the same address carrying `?mode=`. */
+function withMode(mode: string): string {
+  const [path] = window.location.hash.split('?');
+  return `${path}?mode=${mode}`;
+}
+
 async function openTasksScreen() {
   const view = render(<GateApp />);
   /* Revision 17: the Work tab retired with the unified Home (task 01a00932)
@@ -68,7 +84,7 @@ describe('the board layout', () => {
     expect(view.getByTestId('entity-view').dataset.layout).toBe('columns');
     expect(view.getByTestId('entity-view-detail')).toBeTruthy();
 
-    fireEvent.click(within(view.getByTestId('view-switcher')).getByRole('button', { name: 'board layout' }));
+    goto(withMode('board'));
     await waitFor(() => expect(view.getByTestId('entity-view').dataset.layout).toBe('board'));
 
     // NOT display:none. A hidden centre still mounts whatever entity is open —
@@ -79,17 +95,25 @@ describe('the board layout', () => {
     view.unmount();
   });
 
-  it('goes back to three regions when the switcher leaves the board', async () => {
+  it('goes back to three regions when the address leaves the board', async () => {
     const view = await openTasksScreen();
-    const switcher = () => within(view.getByTestId('view-switcher'));
 
-    fireEvent.click(switcher().getByRole('button', { name: 'board layout' }));
+    goto(withMode('board'));
     await waitFor(() => expect(view.queryByTestId('entity-view-detail')).toBeNull());
 
-    fireEvent.click(switcher().getByRole('button', { name: 'list layout' }));
+    goto(withMode('list'));
     await waitFor(() => view.getByTestId('entity-view-detail'));
     expect(view.getByTestId('entity-view').dataset.layout).toBe('columns');
 
+    view.unmount();
+  });
+
+  it('draws no switcher on the screen it used to be reached from', async () => {
+    // The control is gone from the kind screen, not merely from the panel's
+    // unit test — this is the composed mount, which is where a stray copy
+    // rendered by some other host would still show up.
+    const view = await openTasksScreen();
+    expect(view.queryByTestId('view-switcher')).toBeNull();
     view.unmount();
   });
 });

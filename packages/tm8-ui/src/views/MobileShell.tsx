@@ -536,31 +536,23 @@ function screenFor(props: MobileShellProps): ReactNode {
         /*
          * DEF-045 — THE LAYOUT MODE IS ROUTE STATE, AND THIS ARM WAS DROPPING IT.
          *
-         * `EntityView` declares `mode`/`onMode` and `groupBy`/`onGroupBy`, the
-         * desktop host threads all four, and this arm passed none of them.
-         * `EntityListPanel` falls through to LOCAL STATE when `mode` is
-         * null-ish, so the failure was silent in both directions:
-         *
-         *   - a phone URL carrying `mode=board` rendered the LIST. The address
-         *     and the screen disagreed, on the one device where the address is
-         *     how the screen was arrived at.
-         *   - the phone's own layout toggle wrote to component state and
-         *     nothing else, so a phone reader's choice was neither shareable
-         *     nor survivable across a reload — while the identical control on
-         *     a desktop was both.
+         * `EntityView` declares `mode` and `groupBy`/`onGroupBy`, the desktop
+         * host threads them, and this arm passed none of them: a phone URL
+         * carrying `mode=board` rendered the LIST. The address and the screen
+         * disagreed, on the one device where the address is how the screen was
+         * arrived at.
          *
          * `nav-targets.ts` has carried `mode` on a kind view all along; it was
          * threaded on one shell and dropped on the other. This is the same law
          * this file opens with — one navigation state, two renderings — and the
          * phone rendering was quietly holding a second copy of part of it.
          *
-         * SIBLING ROW, worth naming here: DEF-013 is that toggle's SIZE (17x15,
-         * fixed in `mobile-screens.css`). This is where its RESULT goes. Fixing
-         * the size alone would have produced a comfortably tappable control
-         * whose effect still could not be shared or reloaded.
+         * THE WRITE HALF IS GONE (2026-08-19): the layout toggle was removed
+         * from every entity list, on this shell and the desktop alike, so the
+         * address is the only thing that can ask for a mode. That also retires
+         * DEF-013, which was that toggle's touch target.
          */
         {...(activeTarget.mode !== undefined ? { mode: activeTarget.mode } : {})}
-        onMode={(m) => props.navigateTo({ ...activeTarget, mode: m })}
         {...(activeTarget.groupBy !== undefined ? { groupBy: activeTarget.groupBy } : {})}
         onGroupBy={(g) => props.navigateTo({ ...activeTarget, groupBy: g })}
         /*

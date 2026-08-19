@@ -275,22 +275,6 @@
   min-height: var(--mobile-touch-min);
 }
 
-/* --- 7b. DEF-013 — the list/board view switcher (17x15 and 18x15) --------- */
-
-/* Measured identically at 390 and 430 on tasks, sessions AND channels, which is
-   what proves it is a font-and-padding size rather than a width-dependent one.
-   The TYPE IS LEFT ALONE deliberately: the row is about the target, and
-   changing the type as well would make the after-run diff on this control
-   impossible to attribute. */
-.cv2-root[data-shell='mobile'] .lp__view {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-inline-size: var(--mobile-touch-min);
-  min-block-size: var(--mobile-touch-min);
-  padding: 0 var(--pn-space-2);
-}
-
 /* --- 7c. DEF-014 — the tier tabs (To Do / In Progress / Done / Cancelled) - */
 
 /* `.lp__tabs` is already `overflow-x: auto`, so taller and wider tabs scroll
