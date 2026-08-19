@@ -370,28 +370,89 @@ describe('every shell stylesheet parses — comments are balanced', () => {
    * step in the test suite, `tsc` does not read stylesheets, and the tap census
    * cannot see a rule that was never in the cascade — the frame simply keeps its
    * safe-area padding, which looks exactly like a device with no keyboard up.
-   * A comment-balance count is the cheapest check that could have failed.
+   * A comment-balance check is the cheapest thing that could have failed.
+   *
+   * IT IS A DEPTH SCAN, NOT A COUNT, AND THE DIFFERENCE IS THE WHOLE POINT.
+   * Counting openers against terminators and comparing totals passes a file
+   * where a terminator with no opener is later rebalanced by a stray opener:
+   * the totals match and the parser is still wrong, because CSS breaks at the
+   * POSITION of the unmatched terminator, not at the end of the file. So this
+   * walks the text and fails the moment depth goes negative — that assertion
+   * fires at the offending offset — and separately requires depth to land on
+   * zero, which catches the unclosed block the first assertion cannot see.
+   * Two assertions, two distinct failure modes; do not collapse them into a
+   * total. The defect that shipped to main happened to be catchable either
+   * way (10 openers, 11 terminators); the next one will not be.
    */
   const SHEETS = ['./mobile.css', './mobile-chrome.css', './mobile-screens.css'] as const;
 
+  /**
+   * Walks CSS comment delimiters and reports the two numbers that matter:
+   * the LOWEST depth reached (negative means a terminator with no opener, at
+   * `firstNegativeAt`) and the FINAL depth (non-zero means an unclosed block).
+   * Extracted so the assertions below can be run against synthetic text and
+   * shown to fail — a guard nobody has watched fail is a guard nobody has
+   * tested.
+   */
+  const scanComments = (text: string) => {
+    let depth = 0;
+    let minDepth = 0;
+    let firstNegativeAt = -1;
+    for (let i = 0; i < text.length - 1; i += 1) {
+      if (text.startsWith('/*', i)) {
+        depth += 1;
+        i += 1;
+      } else if (text.startsWith('*/', i)) {
+        depth -= 1;
+        if (depth < minDepth) {
+          minDepth = depth;
+          if (firstNegativeAt < 0) firstNegativeAt = i;
+        }
+        i += 1;
+      }
+    }
+    return { minDepth, finalDepth: depth, firstNegativeAt };
+  };
+
   for (const sheet of SHEETS) {
     it(`${sheet} has no dangling comment terminator`, () => {
-      const text = readFileSync(new URL(sheet, import.meta.url), 'utf8');
-      let depth = 0;
-      for (let i = 0; i < text.length - 1; i += 1) {
-        if (text.startsWith('/*', i)) {
-          depth += 1;
-          i += 1;
-        } else if (text.startsWith('*/', i)) {
-          depth -= 1;
-          i += 1;
-          // A negative depth is a terminator with no opener — the exact defect.
-          expect(depth, `dangling comment terminator at offset ${i - 1} in ${sheet}`).toBeGreaterThanOrEqual(0);
-        }
-      }
-      expect(depth, `unclosed comment in ${sheet}`).toBe(0);
+      const { minDepth, finalDepth, firstNegativeAt } = scanComments(
+        readFileSync(new URL(sheet, import.meta.url), 'utf8'),
+      );
+      // A negative depth is a terminator with no opener — the exact defect.
+      expect(minDepth, `dangling comment terminator at offset ${firstNegativeAt} in ${sheet}`).toBe(0);
+      expect(finalDepth, `unclosed comment in ${sheet}`).toBe(0);
     });
   }
+
+  /*
+   * THE CONTROL. These are the cases the guard exists for, asserted against
+   * the same function the sheets run through. The middle one is the case a
+   * count-based check gets WRONG, and it is here so that nobody "simplifies"
+   * this back into a count without a red test.
+   */
+  it('fires on a dangling terminator that equal counts would call balanced', () => {
+    // Two openers, two terminators — TOTALS MATCH — but the first terminator
+    // is unmatched, so the parser is already broken before the second opener.
+    const rebalanced = 'a{} */ .dead{x:1} /* still open';
+    const scan = scanComments(rebalanced);
+    expect(scan.minDepth).toBeLessThan(0);
+    expect(scan.firstNegativeAt).toBeGreaterThanOrEqual(0);
+  });
+
+  it('fires on the shape that actually shipped, and passes clean text', () => {
+    // The mobile.css defect: block closed, prose left bare, second terminator.
+    const shipped = '/* one */\n * bare prose\n */\n.rule{a:1}';
+    expect(scanComments(shipped).minDepth).toBeLessThan(0);
+    // An unclosed block is invisible to the depth-floor check and needs its own.
+    const unclosed = '/* opened and never closed\n.rule{a:1}';
+    const openScan = scanComments(unclosed);
+    expect(openScan.minDepth).toBe(0);
+    expect(openScan.finalDepth).toBeGreaterThan(0);
+    // And well-formed text trips neither assertion.
+    const clean = '/* a */\n.rule{a:1}\n/* b */\n.other{b:2}';
+    expect(scanComments(clean)).toMatchObject({ minDepth: 0, finalDepth: 0 });
+  });
 });
 
 describe('the contract is written down, because the lanes are gated on it', () => {
