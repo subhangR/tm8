@@ -334,8 +334,6 @@ export function ActionBar({
    * and the terminal below it never moves.
    */
   flowSurface?: ReactNode;
-  onOpenLaunch?: (entityId: string) => void;
-  launchSubjectId?: string;
 }) {
   const primaries = config.panel.primaries ?? [];
   return (
