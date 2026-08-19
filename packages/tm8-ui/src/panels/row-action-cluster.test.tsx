@@ -14,9 +14,10 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
-import type { EntityCapabilities, EntitySummary } from '@tm8/contract';
+import type { EntityCapabilities, EntitySummary, StatusCategory } from '@tm8/contract';
 import { FIXTURE_SPACE_ID, fixtureSummaries } from '../fixtures';
 import { type ActionContext, type ActionRef } from '../domain';
+import type { SessionLiveness } from '../data/seam';
 import { EntityListPanel } from './index';
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
@@ -48,19 +49,27 @@ function mount(
     onAction?: (ref: ActionRef, entityId: string) => void;
     onComplete?: (entityId: string) => void;
     onTerminate?: (entityId: string) => void;
+    onResume?: (entityId: string) => void;
+    /** The two seam answers the process control turns on — see its describe. */
+    liveness?: SessionLiveness;
+    category?: StatusCategory;
   } = {},
 ) {
+  const rows = rowsOfKind(kind).map((row) =>
+    handlers.category ? { ...row, category: handlers.category } : row,
+  );
   return render(
     <EntityListPanel
       kind={kind}
-      rowsFor={() => rowsOfKind(kind)}
+      rowsFor={() => rows}
       ctx={ctx}
       capabilitiesOf={() => capabilities}
-      livenessOf={() => 'live'}
+      livenessOf={() => handlers.liveness ?? 'live'}
       onAction={handlers.onAction ?? vi.fn()}
       onArchive={vi.fn()}
       onComplete={handlers.onComplete ?? vi.fn()}
       onTerminate={handlers.onTerminate ?? vi.fn()}
+      onResume={handlers.onResume ?? vi.fn()}
       /* Collections needs BOTH to be live — the executor and the read its
          checkmarks come from. Without them it renders its not-wired refusal,
          which is honest but tells us nothing about placement. */
@@ -296,5 +305,144 @@ describe('the session tile renders the registry, and terminate exists once', () 
   it('keeps Copy session ID, which is the anatomy\'s own affordance', () => {
     const { container } = mount('work_session', SESSION);
     expect(within(firstCluster(container)).getByLabelText('Copy session ID')).toBeTruthy();
+  });
+});
+
+/**
+ * THE PROCESS CONTROL — ONE SLOT, TWO VERBS (user ruling 2026-08-19).
+ *
+ * A finished session row used to carry two controls and neither worked: a
+ * Terminate correctly refused with "this session has already ended", and a
+ * tick that drew live, dispatched, wrote — and moved nothing, because an
+ * `exited` session resolves to `done` whatever the tick says (156's own header
+ * says so). The verb that IS eligible on exactly those rows had no button.
+ *
+ * PIN BOTH DIRECTIONS IN ONE TEST, WHICH IS WHY THIS IS A TABLE. PR #429 is
+ * the cautionary tale: #425 shipped 4012 tests and not one paired
+ * `liveness: 'live'` with `category: 'done'`, so the feature's own headline
+ * state was the untested one. Asserting presence and absence together for
+ * every combination is what stops the next amendment trading one against the
+ * other — a swap is only honest while it is TOTAL.
+ */
+describe('the tail slot resolves to terminate-or-resume, never both and never neither', () => {
+  /**
+   * PRESENT MEANS DRAWN IN ANY VOCABULARY — live button, refusal or checking.
+   *
+   * `verbsIn` reads `data-action`, which only a LIVE control carries: a
+   * refusal is a `<span>` with the verb's accessible name on it. That
+   * distinction is exactly what these assertions are about — the ruling is
+   * that the absent verb is ABSENT and not merely greyed — so presence has to
+   * be asked by NAME or an unrendered verb and a refused one look identical.
+   * The session fixture makes this concrete: `canComplete: false`, so the tick
+   * on a running session is drawn refused and carries no `data-action` at all.
+   */
+  const drawn = (container: HTMLElement, label: string): boolean =>
+    within(firstCluster(container)).queryByLabelText(label) !== null;
+
+  it.each([
+    // The reported defect: nothing is answering and the run is filed done.
+    ['done', 'not-running', 'resume'],
+    // THE HEADLINE STATE #425 never paired. A session ticked while running is
+    // under Done AND still streaming, so the run has NOT ended: the slot keeps
+    // Terminate and the tick stays, because there it is the UN-tick.
+    ['done', 'live', 'terminate'],
+    ['in_progress', 'live', 'terminate'],
+    // The stale ghost #425 fixed: not live, not finished, and the one row that
+    // most needs retiring. Unchanged by this ruling.
+    ['to_do', 'unknown', 'terminate'],
+  ] as [StatusCategory, SessionLiveness, 'terminate' | 'resume'][])(
+    'category %s + liveness %s puts %s in the tail, and the tick follows it',
+    (category, liveness, expected) => {
+      const { container } = mount('work_session', SESSION, { category, liveness });
+      const ended = expected === 'resume';
+
+      // THE VERB IS LIVE, not merely drawn: the tail slot is the row's one
+      // process control and a swap that produced a second refusal would have
+      // fixed nothing.
+      expect(verbsIn(firstCluster(container))).toContain(expected);
+      // TOTAL: exactly one of the pair, never two-with-one-greyed and never a
+      // gap. Asked by NAME so a refusal counts as present — see `drawn`.
+      expect(drawn(container, ended ? 'Terminate' : 'Resume')).toBe(false);
+
+      // THE TICK VANISHES ON THE SAME PREDICATE — one control in that state,
+      // not two. It is absent rather than disabled because on a finished run
+      // it has no SUBJECT: "is this row's claim on my attention over?" is
+      // structurally, permanently yes, so there is nothing to toggle and no
+      // refusal to explain.
+      expect(drawn(container, 'Complete')).toBe(!ended);
+    },
+  );
+
+  /**
+   * A DONE *TASK* KEEPS ITS TICK. `hasEnded` is true of any row filed under
+   * Done that nothing is answering for — which is every completed task — so
+   * the swap is scoped to rows that HAVE a process, i.e. that declare
+   * `terminate`. Without that scope this ruling would have silently taken the
+   * un-tick off every finished task in the app, and no session test could see
+   * it.
+   */
+  it('leaves a DONE task alone — no process, so no run to have ended', () => {
+    const { container } = mount('task', DELETABLE, { category: 'done', liveness: 'not-running' });
+    const marks = verbsIn(firstCluster(container));
+    expect(marks).toContain('complete');
+    expect(marks).not.toContain('resume');
+  });
+
+  /**
+   * The tick's lesson, applied before it can be relearned: a verb routed
+   * through the list's general `onAction` reaches `useSessionStart`'s switch,
+   * whose `default:` returns. Resume has its own prop for that reason, and
+   * this is what says so.
+   */
+  it('dispatches through onResume and NOT through onAction', () => {
+    const onResume = vi.fn();
+    const onAction = vi.fn();
+    const { container } = mount('work_session', SESSION, {
+      category: 'done',
+      liveness: 'not-running',
+      onResume,
+      onAction,
+    });
+    const resume = firstCluster(container).querySelector('[data-action="resume"]');
+    if (!resume) throw new Error('no resume control in the cluster');
+    fireEvent.click(resume);
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(onResume.mock.calls[0][0]).toBe(rowsOfKind('work_session')[0].id);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Without an executor it must REFUSE, not draw live. `RowAction` falls back
+   * to `props.onAction` when no dedicated handler is given — which is how the
+   * tick got swallowed — so unwired means BOTH are absent.
+   */
+  it('refuses with a reason when no executor is wired at all', () => {
+    const { container } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={() => rowsOfKind('work_session').map((row) => ({ ...row, category: 'done' as const }))}
+        ctx={ctx}
+        capabilitiesOf={() => SESSION}
+        livenessOf={() => 'not-running'}
+      />,
+    );
+    const cluster = firstCluster(container);
+    expect(cluster.querySelector('button[data-action="resume"]')).toBeNull();
+    expect(within(cluster).getByLabelText('Resume')).toBeTruthy();
+  });
+
+  /**
+   * RESUME IS CONSTRUCTIVE and must not wear the destructive block colour that
+   * `panels.css` gives `[data-action='terminate']`. jsdom loads no stylesheets,
+   * so what is reachable here is the hook the CSS keys on: the stamp is the
+   * verb's own id, so a resume can never match the terminate selector.
+   */
+  it('stamps its own verb, so the destructive hover cannot follow it into the slot', () => {
+    const { container } = mount('work_session', SESSION, {
+      category: 'done',
+      liveness: 'not-running',
+    });
+    const button = firstCluster(container).querySelector('button[data-action="resume"]');
+    expect(button?.getAttribute('data-action')).toBe('resume');
   });
 });

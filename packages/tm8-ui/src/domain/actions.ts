@@ -50,6 +50,11 @@ export const REASONS = {
   cannotGrantPoints: 'You do not have permission to grant points here.',
   notLive: 'This session is not live — there is nothing running to act on.',
   alreadyEnded: 'This session has already ended — it is under Done.',
+  /* Resume's refusal, and the exact complement of the line above. It is
+     reached only where the tail slot is drawn without the swap (the palette,
+     a surface that names the verb directly); on a row the swap means this
+     state shows Terminate instead, so the two are never both refused. */
+  notEnded: 'This session hasn’t ended — there is nothing to resume.',
   livenessUnknown: 'Liveness is unverified on this node right now — the session cannot be acted on until it is confirmed.',
   // §10.7 deferred seam amendments (dual re-consensus pending)
   handoffSendDeferred:
@@ -151,8 +156,79 @@ function capabilityGate(
  */
 function endableGate(ctx: ActionContext): ActionAvailability | null {
   if (!ctx.entityId) return disabled(REASONS.noEntity);
-  if (ctx.category === 'done' && ctx.liveness !== 'live') return disabled(REASONS.alreadyEnded);
+  if (hasEnded(ctx)) return disabled(REASONS.alreadyEnded);
   return null;
+}
+
+/**
+ * HAS THIS ROW'S RUN ENDED — the ONE predicate the tail slot turns on.
+ *
+ * Terminate and Resume are a single control sharing one slot: a row shows
+ * ⏻ Terminate while something could still be answering, and ↺ Resume once
+ * nothing is. That swap is only TOTAL and UNAMBIGUOUS — never two buttons,
+ * never zero — while both halves ask the identical question, so the question
+ * has exactly one definition and lives here. Inline either copy of it and the
+ * two drift the first time the rule is amended, which is the state this
+ * function was extracted out of: `endableGate` had it written into its body,
+ * and a complement written by hand beside it would be a second copy.
+ *
+ * The row cluster consults it a third time, to drop the tick on an ended run
+ * (`EntityControls.RowActionCluster`), so this is also what keeps the count of
+ * controls in that state at one rather than two-with-one-greyed.
+ *
+ * WHY BOTH HALVES AND NOT JUST THE CATEGORY: since the tick shipped, `done`
+ * and "a process is answering" are compatible — ticking a running session
+ * files it under Done without closing it — so the category alone no longer
+ * implies the run is over. See `endableGate` above for the measured failure.
+ *
+ * KNOWN, ACCEPTED IMPRECISION. `ActionContext` carries no session STATUS
+ * (see its docblock in `types.ts`), and the server's real guard on resume is
+ * `status IN ('exited','failed')`. So a session ticked while `spawning` that
+ * never ran reads as ended here and is offered a Resume the node will refuse
+ * with `only exited or failed sessions can be resumed`. That is the right
+ * trade: a refused resume is NON-DESTRUCTIVE and the node's message is
+ * honest, whereas adding a status field to this context to pre-empt it would
+ * make this layer COMPUTE a verdict it is supposed to present (R-UI-5).
+ */
+export function hasEnded(ctx: Pick<ActionContext, 'category' | 'liveness'>): boolean {
+  return ctx.category === 'done' && ctx.liveness !== 'live';
+}
+
+/** The literal complement of `endableGate`'s refusal — see `hasEnded`. */
+function resumableGate(ctx: ActionContext): ActionAvailability | null {
+  if (!ctx.entityId) return disabled(REASONS.noEntity);
+  if (!hasEnded(ctx)) return disabled(REASONS.notEnded);
+  return null;
+}
+
+/**
+ * THE TWO HALVES OF THE PROCESS CONTROL, named once.
+ *
+ * Both the row cluster and the panel action bar resolve one declared slot to
+ * one of these per row. Naming the pair here rather than writing
+ * `ref === 'terminate' ? 'resume' : ref` at each site keeps the action-id
+ * literals out of the components (§15.2) and — the part with teeth — lets the
+ * mount-site guard DERIVE which verbs a surface can reach. `resume` is
+ * declared by no registry row (see work_session's `rowActions`), so a guard
+ * that only reads the registry would call the dispatcher's resume dead code.
+ */
+export const PROCESS_CONTROL = {
+  /** While something could still be answering. */
+  running: 'terminate',
+  /** Once the run has ended. */
+  ended: 'resume',
+} as const satisfies { running: ActionRef; ended: ActionRef };
+
+/**
+ * Resolve the process control's slot for one row. Any other verb passes
+ * through untouched, so a surface can map its whole declared list through it
+ * without asking which entry is the process control.
+ */
+export function processControlFor(
+  ref: ActionRef,
+  ctx: Pick<ActionContext, 'category' | 'liveness'>,
+): ActionRef {
+  return ref === PROCESS_CONTROL.running && hasEnded(ctx) ? PROCESS_CONTROL.ended : ref;
 }
 
 /** A verdict-gated session verb: only a `live` seam verdict permits it. */
@@ -404,6 +480,31 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
        Done, so refusing it on everything that is not currently answering was
        refusing the one verb that fixes a stuck row. */
     (ctx) => opGate(ctx, 'execution.terminate') ?? endableGate(ctx) ?? AVAILABLE,
+  ),
+
+  /**
+   * THE OTHER HALF OF THE PROCESS CONTROL — `execution.resume`.
+   *
+   * A finished session row used to offer two controls and neither worked: a
+   * Terminate correctly refused with "this session has already ended", and a
+   * tick that drew live, dispatched, wrote, and moved nothing (an `exited`
+   * session resolves to `done` whatever the tick says — 156's own header says
+   * so). Meanwhile the one verb that IS eligible on exactly those rows had no
+   * button anywhere in the registry.
+   *
+   * NOT `launching()`. See the union member in `types.ts`: a resume restores a
+   * configuration rather than choosing one, so there is nothing for a launch
+   * config to ask.
+   *
+   * The gate is `resumableGate`, which is `endableGate`'s refusal inverted
+   * through the one shared `hasEnded`. That is what makes the tail slot total:
+   * for any row, exactly one of these two verbs is offered.
+   */
+  resume: define(
+    'resume',
+    'Resume',
+    '↺',
+    (ctx) => opGate(ctx, 'execution.resume') ?? resumableGate(ctx) ?? AVAILABLE,
   ),
 
   'prompt-session': define(

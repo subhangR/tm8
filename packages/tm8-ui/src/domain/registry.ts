@@ -849,6 +849,24 @@ const ROWS: readonly KindConfig[] = [
        * a done session reopens it and the category goes back to following the
        * process. `expectedVersion` is what makes a toggling command safe — a
        * double submit is a version conflict, not a silent flip back.
+       *
+       * AND ON A FINISHED RUN IT IS NOT DRAWN AT ALL (ruled 2026-08-19, with
+       * the process control below). Both verbs above are declared for the row
+       * a session spends its ACTIVE life as; once the run has ended the tick
+       * has no subject — "is this row's claim on my attention over?" is
+       * structurally, permanently yes — so `RowActionCluster` drops it and
+       * swaps Terminate for Resume, leaving ONE control rather than two with
+       * one greyed. Measured before that: `exited` drew a refused Terminate
+       * beside a tick that dispatched, wrote, and moved nothing.
+       *
+       * `resume` IS NOT IN THIS ARRAY, and that is a decision rather than an
+       * omission. `rowActions` is STATIC per-kind data and `ActionAvailability`
+       * has no `hidden` (a rowActions entry cannot hide itself), so a fifth
+       * entry here would render a permanently refused Resume beside a live
+       * Terminate on every running session — the "a refused control is not a
+       * control" ruling that took the tick out in the first place. The swap is
+       * per-ROW state, so the component that sees the row owns it; this array
+       * keeps saying which verbs the kind HAS.
        */
       rowActions: ['complete', 'terminate'],
       stateControl: SESSION_STATE_CONTROL,
@@ -861,6 +879,14 @@ const ROWS: readonly KindConfig[] = [
       // or the terminal canvas. (This note used to add "Complete remains
       // available from rowActions" — it does not, and never did: see the
       // rowActions block above for the three things that refused it.)
+      //
+      // ONE ENTRY, TWO VERBS — the process control, exactly as in the row
+      // cluster: `ActionBar` draws Resume in this slot once the run has ended.
+      // The panel had the identical hole and it is the worse place for it, a
+      // user who opens a dead session looks here first. Declared as the one
+      // verb for the same reason `rowActions` omits `resume`: this array is
+      // static per-kind and listing both would put a permanently refused
+      // control beside the live one.
       primaries: ['terminate'],
       statusPill: {
         source: 'sessionStatus',

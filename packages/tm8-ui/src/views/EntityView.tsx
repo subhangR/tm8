@@ -986,6 +986,7 @@ export function EntityView(props: EntityViewProps) {
              WorkspaceView passed one. A verb with a dedicated prop is dead on
              every host that forgets it, so all three pass it now. */
           onTerminate={primaries.terminate}
+          onResume={primaries.resume}
           onSetValue={rowLifecycle.setValue}
           onSetAxis={rowLifecycle.setAxis}
           taskAxes={data.taskAxes}

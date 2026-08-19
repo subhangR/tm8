@@ -27,7 +27,7 @@
  * charter and must not import views' data type. It names exactly what a
  * terminate needs, so that screen passes its own `seam` unchanged.
  */
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { CommandResult, EntityId } from '@tm8/contract';
 import type { ActionRef } from '../domain';
 import type { Seam } from '../data/seam';
@@ -37,7 +37,7 @@ import type { Seam } from '../data/seam';
  * cannot hand the panel a list that has drifted from the switch below — the
  * enabled-inert failure mode, reintroduced one careless edit at a time.
  */
-export const PANEL_PRIMARY_ACTIONS: readonly ActionRef[] = ['terminate'];
+export const PANEL_PRIMARY_ACTIONS: readonly ActionRef[] = ['terminate', 'resume'];
 
 export interface PanelPrimariesHost {
   /**
@@ -64,6 +64,23 @@ export interface PanelPrimaries {
    * up doing two different things.
    */
   terminate: (entityId: string) => void;
+  /**
+   * The other half of the process control, unwrapped for the same reason — and
+   * here there were already THREE surfaces to keep honest, not two: the panel
+   * bar and the row cluster's tail slot both arrive by verb, and the exited
+   * terminal canvas draws its own "Resume session" button (`ExitedFallback`),
+   * which was the only resume the UI had at all before this.
+   */
+  resume: (entityId: string) => void;
+  /**
+   * The session a resume is currently in flight for, if any — the
+   * ExitedFallback's `resuming`, and the guard that keeps a double press from
+   * racing two spawns onto one session id. It lives with the executor rather
+   * than in a host so that every surface that can fire a resume is covered by
+   * the same guard; the node refuses the second with `conflict`, but the
+   * honest UI is not to send it.
+   */
+  resumingId: string | null;
 }
 
 export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
@@ -104,6 +121,36 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
     [commands, reconcileCommand, onError],
   );
 
+  /**
+   * RESUME — terminate's exact counterpart, and NOT a launch. It relaunches
+   * the agent against the provider's own conversation id, re-reading persona,
+   * project, tasks, model and workdir from the graph, so there is no
+   * configuration to open and it commits on click as terminate does.
+   *
+   * `resumingId` is not cosmetic: this boots a real agent process.
+   */
+  const [resumingId, setResumingId] = useState<string | null>(null);
+  const resume = useCallback(
+    (entityId: string) => {
+      /* Same posture as terminate above: unreachable through `forEntity`
+         without a seam, so a host reaching it directly has wired a control it
+         cannot perform, and that must not be absorbed as a no-op. */
+      if (!commands) {
+        throw new Error(
+          'usePanelPrimaries.resume was called with no seam: the host rendered a control it cannot perform. '
+            + 'Gate the affordance on `forEntity(...) != null`, which returns undefined precisely so this cannot happen.',
+        );
+      }
+      setResumingId(entityId);
+      void commands
+        .resume(entityId as EntityId, { clientMutationId: `resume:${entityId}:${Date.now()}` })
+        .then((result) => reconcileCommand?.(result))
+        .catch((error: unknown) => onError?.('resume', entityId, error))
+        .finally(() => setResumingId(null));
+    },
+    [commands, reconcileCommand, onError],
+  );
+
   const forEntity = useCallback(
     (entityId: string) => {
       if (!commands) return undefined;
@@ -118,17 +165,20 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
           case 'terminate':
             terminate(entityId);
             return;
+          case 'resume':
+            resume(entityId);
+            return;
           default:
             return;
         }
       };
     },
-    [commands, terminate],
+    [commands, terminate, resume],
   );
 
   return useMemo(
-    () => ({ forEntity, wiredActions: PANEL_PRIMARY_ACTIONS, terminate }),
-    [forEntity, terminate],
+    () => ({ forEntity, wiredActions: PANEL_PRIMARY_ACTIONS, terminate, resume, resumingId }),
+    [forEntity, terminate, resume, resumingId],
   );
 }
 

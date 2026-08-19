@@ -312,6 +312,8 @@ export interface EntityListPanelProps {
   wiredActions?: readonly ActionRef[];
   /** Session-row close command; separate from generic header/list actions. */
   onTerminate?: (entityId: string) => void;
+  /** The other half of that row's tail slot — see `ControlHost.onResume`. */
+  onResume?: (entityId: string) => void;
   onCreate?: () => void;
   /** Authoring 7a: the host's REAL create control (NewTaskControl). */
   createSlot?: React.ReactNode;

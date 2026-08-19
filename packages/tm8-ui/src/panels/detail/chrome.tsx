@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import type { EntityDetail, EntityState } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
-import { KindIcon, resolveAction, titleNormalizerFor } from '../../domain';
+import { KindIcon, processControlFor, resolveAction, titleNormalizerFor } from '../../domain';
 import { InlineTitleEditor } from '../../authoring';
 import { Avatar, IconBtn, Pill, type PillTone } from '../../kit';
 import { useMobileSurface } from '../../mobile';
@@ -401,7 +401,22 @@ export function ActionBar({
    */
   markPrimaries?: boolean;
 }) {
-  const primaries = config.panel.primaries ?? [];
+  /**
+   * THE PROCESS CONTROL, IN THE PANEL — the same one-slot swap the row cluster
+   * makes, from the same predicate (user ruling 2026-08-19).
+   *
+   * The panel had the identical hole and it is the worse of the two places to
+   * have it: a user who opens a dead session looks at this bar first, and it
+   * offered one refused Terminate and no way back. `ctx` here is already
+   * filled from the detail with both `liveness` and `category`
+   * (EntityDetailPanel), so the question is answerable without a new read.
+   *
+   * Written as a swap over the declared list rather than as registry data for
+   * the reason the row cluster gives: `panel.primaries` is static per-kind and
+   * listing both would draw one live verb beside one permanently refused one.
+   * A kind that never declares `terminate` is untouched by construction.
+   */
+  const primaries = (config.panel.primaries ?? []).map((ref) => processControlFor(ref, ctx));
   return (
     <div className="pn-actions pn-actions--inline" data-testid="panel-action-bar" ref={barRef}>
       {primaries.map((ref) => (

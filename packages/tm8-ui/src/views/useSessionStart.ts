@@ -46,6 +46,20 @@ import type { Seam } from '../data/seam';
  */
 export const SESSION_START_ACTIONS: readonly ActionRef[] = ['start-terminal'];
 
+/*
+ * `resume` IS DELIBERATELY NOT HERE, and neither are `terminate` or
+ * `complete` — the three verbs that reach a row through their OWN prop on
+ * `ControlHost` (`onResume`, `onTerminate`, `onComplete`) rather than through
+ * this dispatcher. That is the whole reason those props exist: this switch's
+ * `default:` is where the tick went to die, and a resume added here would be
+ * a second executor for a verb `usePanelPrimaries` already performs.
+ *
+ * This constant is what the header DRAWS, and the header has no session to
+ * resume — it is the list's chrome, not a row. So the honest representation
+ * of resume here is its absence, and the switch below stays unreachable for
+ * it because no surface routes it through `onAction`.
+ */
+
 export interface SessionStartHost {
   /** The space the terminal opens in. Absent ⇒ the verb cannot be performed. */
   spaceId?: EntityId | null;

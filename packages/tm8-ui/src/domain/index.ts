@@ -79,7 +79,15 @@ export { KIND_ART, SURFACE_ART, VIEW_ART, type KindArt } from './kind-art';
 export { KindIcon } from './KindIcon';
 export { tileCountBadgesOf, type TileCountBadge } from './tile-counts';
 
-export { REASONS, allActions, deferredActions, resolveAction } from './actions';
+export {
+  PROCESS_CONTROL,
+  REASONS,
+  allActions,
+  deferredActions,
+  hasEnded,
+  processControlFor,
+  resolveAction,
+} from './actions';
 
 export {
   PREDATES_MERGE_DOOR,

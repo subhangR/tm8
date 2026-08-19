@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { REASONS, allKinds, deferredActions, resolveAction } from '../domain';
+import { REASONS, allKinds, deferredActions, processControlFor, resolveAction } from '../domain';
 import { PANEL_PRIMARY_ACTIONS } from './usePanelPrimaries';
 import { ENTITY_VERB_ACTIONS } from './useEntityVerbs';
 
@@ -175,10 +175,33 @@ describe('the dispatcher and the registry agree', () => {
   /** Every panel primary any kind declares, derived — never hand-listed. */
   const declaredPrimaries = new Set(allKinds().flatMap((config) => config.panel.primaries ?? []));
 
+  /**
+   * Every primary the bar can DRAW, which since the process control is not the
+   * same set as the one the registry declares: `ActionBar` resolves a declared
+   * slot through `processControlFor`, so a finished session's bar shows
+   * `resume` where the registry says `terminate`. Derived by running the
+   * resolver over the declared set rather than by adding `resume` to a literal
+   * — the swap has one definition and this guard consults it.
+   */
+  const ENDED = { category: 'done', liveness: 'not-running' } as const;
+  const drawablePrimaries = new Set(
+    [...declaredPrimaries].flatMap((ref) => [ref, processControlFor(ref, ENDED)]),
+  );
+
+  it('the process control swap is what puts resume in reach, not a hand-added entry', () => {
+    // Guard the guard: if the swap ever stops producing `resume`, the widened
+    // set below silently collapses back to the declared one and the dead-code
+    // check starts passing for the wrong reason.
+    expect(declaredPrimaries.has('resume')).toBe(false);
+    expect(drawablePrimaries.has('resume')).toBe(true);
+    expect(processControlFor('terminate', { category: 'in_progress', liveness: 'live' })).toBe('terminate');
+  });
+
   it('every verb the dispatcher claims is actually a panel primary somewhere', () => {
-    // A dispatcher entry no registry row names is dead code that reads as
-    // coverage — the next person trusts the list rather than the registry.
-    const dead = PANEL_PRIMARY_ACTIONS.filter((ref) => !declaredPrimaries.has(ref));
+    // A dispatcher entry no registry row names — and that no swap can put in
+    // that slot — is dead code that reads as coverage: the next person trusts
+    // the list rather than the registry.
+    const dead = PANEL_PRIMARY_ACTIONS.filter((ref) => !drawablePrimaries.has(ref));
     expect(dead).toEqual([]);
   });
 
