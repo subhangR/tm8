@@ -937,12 +937,25 @@ export interface PanelConfig {
    */
   gitSection?: boolean;
   /**
-   * 'chat': the content body is a conversation that ENDS at its composer —
-   * the panel mounts no AttachmentStrip (the composer's + owns attach) and no
-   * PanelFooter below it. Terminal panels already skip both via the archetype
-   * arm; this flag states the same reason structurally for chat surfaces.
+   * THE BODY OWNS ITS OWN BOTTOM EDGE, and this says which way.
+   *
+   * EITHER value means the panel mounts no AttachmentStrip, no attention
+   * section and no PanelFooter beneath the body. Terminal panels already skip
+   * all three through the archetype arm; this flag states the same reason
+   * structurally for kinds that share the shape without sharing the archetype.
+   *
+   *   · 'chat'  — the body is a conversation that ENDS at its composer. The
+   *     composer's ＋ already owns attach, so a strip below it is duplication.
+   *   · 'frame' — the body is a VIEWPORT onto something else, and the panel
+   *     exists to show it (owner ruling 2026-08-20, the artifact screen). Its
+   *     controls ride the panel bar instead of a row of their own, and it takes
+   *     every pixel between that bar and the panel edge.
+   *
+   * Absent ⇒ the ordinary stacked body, which keeps all three. The gates read
+   * PRESENCE rather than each value, so a third composition cannot arrive and
+   * silently inherit a footer nobody chose for it.
    */
-  composition?: 'chat';
+  composition?: 'chat' | 'frame';
   /**
    * The kind's chat surface reads THREAD ROOTS and opens a reply branch in a
    * side pane (the Slack-thread model). REGISTRY DATA, not a kind literal: the

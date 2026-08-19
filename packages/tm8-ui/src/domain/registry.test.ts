@@ -934,13 +934,24 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
   // test was its only one. The live vocabulary is CONTENT_SURFACES in
   // routes/types.ts, which the switch actually reads.
 
-  it("D2: chat surfaces end at the composer — composition:'chat' on channel and work_session only", () => {
-    // The flag is what the panel's strip/footer exclusion reads; work_session
-    // is already excluded via the terminal arm, so there it states the reason
-    // structurally rather than changing behaviour.
+  it('D2: composition is declared by exactly the kinds whose body owns its own bottom edge', () => {
+    // The flag is what the panel's strip/attention/footer exclusion reads, and
+    // that gate tests PRESENCE rather than value — so this pins the whole
+    // census, not one word. work_session is already excluded via the terminal
+    // arm, so there it states the reason structurally rather than changing
+    // behaviour.
+    //
+    //   · 'chat'  — a conversation ends at its composer, whose ＋ owns attach.
+    //   · 'frame' — the artifact panel IS the viewer (owner ruling 2026-08-20).
+    //     A strip and a footer stapled under a viewport were most of the ~320px
+    //     of chrome that ruling removed.
+    const expected: Record<string, 'chat' | 'frame' | undefined> = {
+      channel: 'chat',
+      work_session: 'chat',
+      artifact: 'frame',
+    };
     for (const row of allKinds()) {
-      const expected = row.kind === 'channel' || row.kind === 'work_session' ? 'chat' : undefined;
-      expect(row.panel.composition, String(row.kind)).toBe(expected);
+      expect(row.panel.composition, String(row.kind)).toBe(expected[row.kind]);
     }
   });
 

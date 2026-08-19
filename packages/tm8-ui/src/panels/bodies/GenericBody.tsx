@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   ArtifactPreviewSession,
   ArtifactsPreviewStartInput,
@@ -64,12 +65,21 @@ export function GenericBody({
   downloadHref,
   membership,
   membersHost,
+  barSlot,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
   onOpenEntity?: (id: string) => void;
   commands?: GenericBodyCommands | null;
   onSaved?: (result: CommandResult) => void;
+  /**
+   * The panel bar's end slot, for a block whose controls act on a VIEWPORT and
+   * therefore belong beside the tabs rather than in a row above it — the
+   * artifact viewer, under `composition: 'frame'`. Absent or null ⇒ the block
+   * draws its controls in place, exactly as before, so this arranges and never
+   * requires.
+   */
+  barSlot?: HTMLElement | null;
   /**
    * Authoring for the `membership` block — the same intent-only split the
    * subtree body uses for its sections. Absent ⇒ read-only, never dead
@@ -113,6 +123,7 @@ export function GenericBody({
           downloadHref={downloadHref}
           membership={membership}
           membersHost={membersHost}
+          barSlot={barSlot}
         />
       ))}
     </div>
@@ -128,6 +139,7 @@ function ContentBlock({
   downloadHref,
   membership,
   membersHost,
+  barSlot,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
@@ -137,6 +149,7 @@ function ContentBlock({
   downloadHref?: DownloadHref;
   membership?: MembershipAuthoring | null;
   membersHost?: EntityListPanelProps | null;
+  barSlot?: HTMLElement | null;
 }) {
   const body = (() => {
     switch (block.block) {
@@ -155,7 +168,14 @@ function ContentBlock({
            reset the viewer's whole run state (selected revision, mint timer,
            fullscreen) rather than mint the OLD artifact's revision number
            against the new id. */
-        return <ArtifactPreviewBlock key={detail.id} detail={detail} commands={commands ?? undefined} />;
+        return (
+          <ArtifactPreviewBlock
+            key={detail.id}
+            detail={detail}
+            commands={commands ?? undefined}
+            barSlot={barSlot ?? null}
+          />
+        );
       case 'loop-controls':
         return (
           <LoopControls
@@ -388,15 +408,30 @@ function zipFilename(name: string, revisionNumber: number): string {
 }
 
 /**
- * ARTIFACT VIEWER — the rendered bundle, in-block, under one thin row of the
- * controls that act on it (revision, restart, fullscreen, download).
+ * ARTIFACT VIEWER — the rendered bundle, and essentially nothing else.
  *
- * THE BLOCK IS THE FRAME (owner ruling 2026-08-18). It used to open with a
- * bordered banner carrying the publisher line and the third-party caution, and
- * the section above it carried a `PREVIEW` eyebrow — together ~200px of a panel
- * whose entire purpose is the page below. Both are gone; the sentence they
- * carried moved onto the frame's own `title`, which is the accessible name of
- * the element actually running the code (see `frameTitle`).
+ * THE BLOCK IS THE FRAME (owner ruling 2026-08-18) AND NOW THE PANEL IS TOO
+ * (owner ruling 2026-08-20). The first ruling took the bordered banner, the
+ * `PREVIEW` eyebrow and the empty ＋ tile; the sentence the banner carried moved
+ * onto the frame's own `title`, the accessible name of the element actually
+ * running the code (see `frameTitle`). The second took what was left: the
+ * DETAILS and COLLECTIONS blocks came off the registry row, the attachment
+ * strip and footer came off with `composition: 'frame'`, and the controls that
+ * used to sit in a row of their own now RIDE THE PANEL BAR.
+ *
+ * THE CONTROLS PORTAL, AND THEY DEGRADE. `barSlot` is the panel bar's end slot
+ * — the same one the work session's surface chips use. Given one, the chrome
+ * renders there as marks; given null (a fixture, a host that mounts this block
+ * outside the artifact panel, the dev harness), it renders in place exactly as
+ * it did before. `WorkSessionContent`'s `switchSlot` is the precedent and the
+ * reason: a portal that REQUIRED its target would turn a missing div into
+ * missing controls, silently.
+ *
+ * WHY MARKS AND NOT WORDS: `.pn-tabs` is the only flexible child of the panel
+ * bar and its scrollbar is hidden, so anything the end cluster takes is paid
+ * for by the tab LABELS with nothing on screen saying so — "Connections" simply
+ * renders as "Co". Words cost ~300px here; ▷ ⛶ ⇩ cost ~90. Each keeps its verb
+ * as `aria-label` and tooltip, so nothing becomes unnameable.
  *
  * AUTORUNS when the detail opens (owner ruling 2026-08-16, superseding the
  * §9.5 click-gate; the block mounts only inside the artifact DETAIL panel, so
@@ -424,9 +459,12 @@ function zipFilename(name: string, revisionNumber: number): string {
 function ArtifactPreviewBlock({
   detail,
   commands,
+  barSlot,
 }: {
   detail: EntityDetail;
   commands?: GenericBodyCommands;
+  /** The panel bar's end slot. Null ⇒ the chrome renders in place. */
+  barSlot?: HTMLElement | null;
 }) {
   const previewArtifact = commands?.previewArtifact;
   const listArtifactRevisions = commands?.listArtifactRevisions;
@@ -434,10 +472,16 @@ function ArtifactPreviewBlock({
 
   const state = detail.state as unknown as Record<string, unknown>;
   const content = detail.content as unknown as Record<string, unknown>;
-  const description = typeof content.description === 'string' ? content.description : null;
   const currentRevision = typeof state.revisionNumber === 'number' ? state.revisionNumber : null;
   const fileCount = typeof content.fileCount === 'number' ? content.fileCount : null;
   const totalBytes = typeof content.totalSizeBytes === 'number' ? content.totalSizeBytes : null;
+  /* The two DETAILS rows that were NOT already in `frameTitle` — they ride the
+     revision picker's tooltip rather than a five-row table, because they are
+     facts ABOUT the revision you are looking at. The sha is the only thing a
+     person can verify a downloaded bundle against, so it is carried in full
+     rather than truncated for the tooltip's sake. */
+  const entrypoint = typeof content.entrypoint === 'string' ? content.entrypoint : null;
+  const manifestSha = typeof content.manifestSha256 === 'string' ? content.manifestSha256 : null;
 
   const [run, setRun] = useState<
     | { phase: 'starting' }
@@ -577,50 +621,116 @@ function ArtifactPreviewBlock({
     "third-party content — this page is the artifact's own code, not tm8 UI; never enter tm8 credentials into it",
   ].join(' · ');
 
+  /*
+   * ONE REVISION IS NOT A CHOICE, so it does not draw a control (owner ruling
+   * 2026-08-20). Most artifacts have exactly one, including every one on the
+   * help shelf, and a picker with a single option is a widget that cannot do
+   * anything — in the one row where width is paid for by the tab labels. The
+   * revision is still stated: it is in `frameTitle`, and the entrypoint and
+   * manifest sha ride the picker only when the picker exists. Where it does
+   * not, `frameTitle` is the whole of the provenance, which is exactly what
+   * that string is for.
+   */
+  const revisionFacts = [
+    'revision — ✓ marks the artifact\'s current one',
+    ...(entrypoint != null ? [`entrypoint ${entrypoint}`] : []),
+    ...(manifestSha != null ? [`manifest sha256 ${manifestSha}`] : []),
+  ].join(' · ');
+
+  const chrome = (
+    <div className="pn-preview__chrome" data-testid="artifact-chrome">
+      {revisions !== null && revisions.length > 1 ? (
+        <select
+          className="pn-preview__revpick"
+          aria-label="revision"
+          title={revisionFacts || undefined}
+          value={String(selectedRevision ?? currentRevision ?? revisions[0]!.revisionNumber)}
+          onChange={(e) => setSelectedRevision(Number(e.target.value))}
+        >
+          {/* A `<select>` is as wide as its WIDEST OPTION, so " · current"
+              was not costing eleven characters on one row — it was setting the
+              width of the control on every row. MEASURED at a 428px panel:
+              the picker was 132px of a 331px cluster, which left the three tabs
+              56px and scrolled Connections and Discussion out of the document
+              view entirely, with the strip's scrollbar hidden so nothing said
+              so. The ✓ carries the same fact in one character, and the word it
+              replaces is spelled out in the control's own tooltip. */}
+          {revisions.map((r) => (
+            <option key={r.revisionNumber} value={String(r.revisionNumber)}>
+              {`rev ${r.revisionNumber}${r.revisionNumber === currentRevision ? ' ✓' : ''}`}
+            </option>
+          ))}
+        </select>
+      ) : null}
+      {/* THE WORD IS THE ACCESSIBLE NAME, THE GLYPH IS THE BUTTON. Every one of
+          these keeps `aria-label` and `title`, so `getByRole('button', { name })`
+          still finds it and a pointer still reads it — what they give up is the
+          ~210px of label text that the panel bar charges to the tab strip. */}
+      {/* THE NAME DOES NOT CHANGE WHILE THE VERB WORKS. As a word the button
+          said "Starting…" mid-mint, which was fine as a caption and is not fine
+          as an ACCESSIBLE NAME: the control a screen reader just announced
+          renames itself under the cursor, and `getByRole('button', { name })`
+          finds it or not depending on timing. Worse, an unwired mount never
+          leaves `starting`, so a panel with no executor described its Restart
+          button as permanently starting something. The transient state is
+          `aria-busy` and the tooltip, which is what both are for; the disabled
+          attribute already stops the second press. */}
+      <button
+        type="button"
+        className="pn-btn pn-btn--mark"
+        aria-label="Restart"
+        aria-busy={previewArtifact !== undefined && run.phase === 'starting'}
+        title={
+          previewArtifact === undefined
+            ? 'Restart — preview is not wired here.'
+            : run.phase === 'starting'
+              ? 'Starting…'
+              : 'Restart — mint a fresh preview and reload the frame.'
+        }
+        disabled={previewArtifact === undefined || run.phase === 'starting'}
+        onClick={() => setRestartNonce((n) => n + 1)}
+      >
+        <span aria-hidden>▷</span>
+      </button>
+      <button
+        type="button"
+        className="pn-btn pn-btn--mark"
+        aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        aria-pressed={fullscreen}
+        onClick={() => setFullscreen((f) => !f)}
+      >
+        <span aria-hidden>{fullscreen ? '⛶̸' : '⛶'}</span>
+      </button>
+      <button
+        type="button"
+        className="pn-btn pn-btn--mark"
+        aria-label="Download"
+        aria-busy={exporting}
+        title={
+          exportArtifactRevision === undefined
+            ? 'Download — export is not wired here.'
+            : exporting
+              ? 'Saving…'
+              : 'Download this revision as a zip.'
+        }
+        disabled={exportArtifactRevision === undefined || exporting || shownRevision == null}
+        onClick={() => void onDownload()}
+      >
+        <span aria-hidden>⇩</span>
+      </button>
+    </div>
+  );
+
   return (
     <div className={`pn-preview pn-preview--viewer${fullscreen ? ' pn-preview--fullscreen' : ''}`}>
-      <div className="pn-preview__chrome">
-        {revisions !== null && revisions.length > 0 ? (
-          <select
-            className="pn-preview__revpick"
-            aria-label="revision"
-            value={String(selectedRevision ?? currentRevision ?? revisions[0]!.revisionNumber)}
-            onChange={(e) => setSelectedRevision(Number(e.target.value))}
-          >
-            {revisions.map((r) => (
-              <option key={r.revisionNumber} value={String(r.revisionNumber)}>
-                {`rev ${r.revisionNumber}${r.revisionNumber === currentRevision ? ' · current' : ''}`}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        <button
-          type="button"
-          className="pn-btn"
-          disabled={previewArtifact === undefined || run.phase === 'starting'}
-          title="Mint a fresh preview and reload the frame."
-          onClick={() => setRestartNonce((n) => n + 1)}
-        >
-          {run.phase === 'starting' ? 'Starting…' : 'Restart ▷'}
-        </button>
-        <button
-          type="button"
-          className="pn-btn"
-          aria-pressed={fullscreen}
-          onClick={() => setFullscreen((f) => !f)}
-        >
-          {fullscreen ? 'Exit fullscreen' : 'Fullscreen ⛶'}
-        </button>
-        <button
-          type="button"
-          className="pn-btn"
-          disabled={exportArtifactRevision === undefined || exporting || shownRevision == null}
-          title={exportArtifactRevision === undefined ? 'Export is not wired here.' : 'Download this revision as a zip.'}
-          onClick={() => void onDownload()}
-        >
-          {exporting ? 'Saving…' : 'Download ⇩'}
-        </button>
-      </div>
+      {/* Portalled to the panel bar where the host offers a slot, drawn in place
+          where it does not — see the docblock. FULLSCREEN ALWAYS DRAWS IN PLACE:
+          the fullscreen element is `position: fixed` over the whole app, so
+          controls left behind in the panel bar would be underneath it, and Exit
+          would be unreachable by anything but Escape — which a cross-origin
+          frame swallows the moment focus is inside it. */}
+      {barSlot && !fullscreen ? createPortal(chrome, barSlot) : chrome}
       {previewArtifact === undefined ? (
         <div className="pn-preview__box pn-preview__box--none">
           <span className="pn-preview__label">
@@ -642,7 +752,15 @@ function ArtifactPreviewBlock({
           </span>
         </div>
       )}
-      {description ? <p className="pn-prose">{description}</p> : null}
+      {/* The description paragraph is gone (owner ruling 2026-08-20). Every
+          artifact that has one repeats it as its own subtitle INSIDE the bundle
+          — visibly, in the first screenful of the frame directly above — so it
+          was a duplicate rendered outside the thing it describes. It survives
+          where a reader needs it without the frame: the list tile's excerpt.
+
+          The export error stays. It is the one thing here that the frame cannot
+          say for itself: a failed download leaves the page on screen looking
+          perfectly fine. */}
       {exportError ? <p className="pn-section__empty">{exportError}</p> : null}
     </div>
   );

@@ -165,7 +165,11 @@ describe('artifact viewer — revisions, download, chrome, fullscreen', () => {
     const { findByLabelText, getByText } = renderViewer({ previewArtifact, listArtifactRevisions });
     const select = await findByLabelText('revision');
     expect(listArtifactRevisions).toHaveBeenCalledWith(DETAIL.id);
-    getByText('rev 3 · current');
+    // "· current" became "✓" so the widest OPTION stops setting the control's
+    // width in a bar where width is charged to the tab labels — the word it
+    // replaces is spelled out in the picker's own tooltip.
+    getByText('rev 3 ✓');
+    getByText('rev 2');
     fireEvent.change(select, { target: { value: '2' } });
     await waitFor(() => {
       expect(previewArtifact).toHaveBeenLastCalledWith(
@@ -185,8 +189,8 @@ describe('artifact viewer — revisions, download, chrome, fullscreen', () => {
     (URL as unknown as Record<string, unknown>).createObjectURL = createObjectURL;
     (URL as unknown as Record<string, unknown>).revokeObjectURL = revokeObjectURL;
     try {
-      const { findByText } = renderViewer({ previewArtifact, exportArtifactRevision });
-      fireEvent.click(await findByText('Download ⇩'));
+      const { findByLabelText } = renderViewer({ previewArtifact, exportArtifactRevision });
+      fireEvent.click(await findByLabelText('Download'));
       await waitFor(() => expect(exportArtifactRevision).toHaveBeenCalledWith(DETAIL.id, 3));
       expect(createObjectURL).toHaveBeenCalledTimes(1);
       expect(revokeObjectURL).toHaveBeenCalledWith('blob:tm8/zip-1');
@@ -207,9 +211,9 @@ describe('artifact viewer — revisions, download, chrome, fullscreen', () => {
     (URL as unknown as Record<string, unknown>).createObjectURL = createObjectURL;
     (URL as unknown as Record<string, unknown>).revokeObjectURL = revokeObjectURL;
     try {
-      const { container, findByText } = renderViewer({ previewArtifact, exportArtifactRevision });
+      const { container, findByLabelText } = renderViewer({ previewArtifact, exportArtifactRevision });
       await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull());
-      fireEvent.click(await findByText('Download ⇩'));
+      fireEvent.click(await findByLabelText('Download'));
       await waitFor(() => expect(exportArtifactRevision).toHaveBeenCalledWith(DETAIL.id, 4));
     } finally {
       delete (URL as unknown as Record<string, unknown>).createObjectURL;
@@ -286,12 +290,113 @@ describe('artifact viewer — revisions, download, chrome, fullscreen', () => {
 
   it('fullscreen is a class state on the same element; Escape exits', async () => {
     const previewArtifact = vi.fn(async () => session());
-    const { container, findByText } = renderViewer({ previewArtifact });
+    const { container, findByLabelText } = renderViewer({ previewArtifact });
     const root = () => container.querySelector('.pn-preview')!;
-    fireEvent.click(await findByText('Fullscreen ⛶'));
+    fireEvent.click(await findByLabelText('Fullscreen'));
     expect(root().className).toContain('pn-preview--fullscreen');
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(root().className).not.toContain('pn-preview--fullscreen');
+  });
+
+  /**
+   * ONE REVISION IS NOT A CHOICE (owner ruling 2026-08-20). The picker's width
+   * in the panel bar is paid for by the tab labels, and most artifacts — every
+   * one on the help shelf included — have published exactly once.
+   *
+   * Both directions, because a "renders nothing" assertion alone passes just as
+   * well when the picker is broken outright.
+   */
+  it('draws NO revision picker when there is only one revision, and one when there are more', async () => {
+    const previewArtifact = vi.fn(async () => session());
+    const one = renderViewer({
+      previewArtifact,
+      listArtifactRevisions: async () => ({ revisions: revisionRows().revisions.slice(0, 1) }),
+    });
+    await waitFor(() => expect(one.container.querySelector('iframe')).not.toBeNull());
+    expect(one.queryByLabelText('revision')).toBeNull();
+    one.unmount();
+
+    const many = renderViewer({ previewArtifact, listArtifactRevisions: async () => revisionRows() });
+    expect(await many.findByLabelText('revision')).toBeTruthy();
+  });
+
+  /**
+   * The two DETAILS rows that were NOT already in the frame's accessible name.
+   * The manifest sha is the only fact a person can verify a downloaded bundle
+   * against, so "we deleted the DETAILS table" must not quietly mean "we deleted
+   * the hash" — it rides the picker's tooltip instead, IN FULL.
+   */
+  it('carries entrypoint and the full manifest sha on the revision picker', async () => {
+    const previewArtifact = vi.fn(async () => session());
+    const { findByLabelText } = renderViewer({
+      previewArtifact,
+      listArtifactRevisions: async () => revisionRows(),
+    });
+    const title = (await findByLabelText('revision')).getAttribute('title') ?? '';
+    const content = DETAIL.content as unknown as Record<string, unknown>;
+    expect(title).toContain(String(content.entrypoint));
+    expect(title).toContain(String(content.manifestSha256));
+    // Not an abbreviation of it — a truncated hash verifies nothing.
+    expect(String(content.manifestSha256)).toHaveLength(64);
+  });
+
+  /**
+   * THE CONTROLS RIDE THE PANEL BAR, and they DEGRADE (owner ruling 2026-08-20).
+   *
+   * The portal target is the panel bar's end slot. The failure this pins is the
+   * one a required portal would produce: a host that mounts the block without a
+   * slot losing Restart, Fullscreen and Download entirely, silently. So both
+   * arms are asserted — with a slot the chrome is inside it and NOT in the body,
+   * without one it is in the body exactly as before.
+   */
+  it('portals its chrome into the bar slot when given one, and draws it in place when not', async () => {
+    const previewArtifact = vi.fn(async () => session());
+
+    const inPlace = renderViewer({ previewArtifact });
+    await waitFor(() => expect(inPlace.container.querySelector('iframe')).not.toBeNull());
+    expect(inPlace.container.querySelector('[data-testid="artifact-chrome"]')).not.toBeNull();
+    inPlace.unmount();
+
+    const slot = document.createElement('div');
+    document.body.appendChild(slot);
+    try {
+      const hosted = render(
+        <GenericBody detail={DETAIL} blocks={BLOCKS} commands={{ previewArtifact }} barSlot={slot} />,
+      );
+      await waitFor(() => expect(hosted.container.querySelector('iframe')).not.toBeNull());
+      expect(slot.querySelector('[data-testid="artifact-chrome"]')).not.toBeNull();
+      expect(hosted.container.querySelector('[data-testid="artifact-chrome"]')).toBeNull();
+      // And it is still the same three verbs, reachable by name.
+      for (const name of ['Restart', 'Fullscreen', 'Download']) {
+        expect(slot.querySelector(`[aria-label="${name}"]`), name).not.toBeNull();
+      }
+    } finally {
+      slot.remove();
+    }
+  });
+
+  /**
+   * FULLSCREEN TAKES ITS CONTROLS WITH IT. The fullscreen element is
+   * `position: fixed` over the whole app; controls left in the panel bar would
+   * be underneath it, and Exit would be reachable only by Escape — which a
+   * cross-origin sandboxed frame swallows the moment focus is inside it. That
+   * is a viewer you cannot get out of.
+   */
+  it('draws the chrome in place while fullscreen, even with a bar slot', async () => {
+    const previewArtifact = vi.fn(async () => session());
+    const slot = document.createElement('div');
+    document.body.appendChild(slot);
+    try {
+      const { container, findByLabelText } = render(
+        <GenericBody detail={DETAIL} blocks={BLOCKS} commands={{ previewArtifact }} barSlot={slot} />,
+      );
+      fireEvent.click(await findByLabelText('Fullscreen'));
+      expect(slot.querySelector('[data-testid="artifact-chrome"]')).toBeNull();
+      expect(container.querySelector('[data-testid="artifact-chrome"]')).not.toBeNull();
+      expect(container.querySelector('[aria-label="Exit fullscreen"]')).not.toBeNull();
+    } finally {
+      slot.remove();
+    }
   });
 });
 

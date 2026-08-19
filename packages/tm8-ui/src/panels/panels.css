@@ -1167,12 +1167,16 @@
 /* The viewer variant stretches its children: the frame must fill the panel's
    width, and the base .pn-preview's flex-start would shrink-wrap it. */
 .cv2-root .pn-preview--viewer { align-items: stretch; }
-/* ONE THIN ROW of controls, and nothing else (owner ruling 2026-08-18). The
-   publisher line and third-party caution that used to sit here in a bordered
-   card cost ~200px above a frame the panel exists to show; they moved onto the
-   frame's own `title`. No border and no ground: this row is the frame's
-   handle, not a card in its own right, and every pixel it does not take is
-   pixels the artifact gets. */
+/* THE CONTROLS RIDE THE PANEL BAR (owner ruling 2026-08-20), so in the ordinary
+   case this element is inside `.pn-panelbar__end` and not in the body at all —
+   the row it used to occupy above the frame is gone entirely, along with the
+   ~34px it cost.
+
+   The rules stay because the row still renders IN PLACE in two real cases: a
+   host that mounts the block without a bar slot (the dev harness, a fixture),
+   and fullscreen, where the portal is deliberately not used. `flex-wrap` is
+   what keeps that in-place fallback honest at a narrow width; inside the bar
+   there is one line and nothing to wrap. */
 .cv2-root .pn-preview__chrome {
   display: flex;
   align-items: center;
@@ -1181,6 +1185,10 @@
   flex-wrap: wrap;
   flex: none;
 }
+/* Inside the bar the row is one line, never two: `.pn-panelbar` is a fixed 30px
+   strip, so a wrap here would not make the controls visible — it would push
+   half of them out through the strip's own clip. */
+.cv2-root .pn-panelbar__end .pn-preview__chrome { flex-wrap: nowrap; }
 .cv2-root .pn-preview__revpick {
   font-family: var(--pn-mono);
   font-size: 11px;
@@ -1190,17 +1198,30 @@
   border-radius: 6px;
   padding: 4px 6px;
 }
-/* THE FRAME TAKES THE SLACK. `.pn-body` is already a flex column, so the
-   artifact's section can claim every pixel its siblings (details, collections)
-   do not need instead of standing at a fixed 420px with dead panel below it —
-   a viewer that scrolls while the panel has empty space is the complaint this
-   answers. The min-height stays as the floor for the crowded case, where the
-   body scrolls exactly as before. */
+/* THE FRAME TAKES EVERYTHING. `.pn-body` is a flex column, so the artifact's
+   section claims every pixel between the panel bar and the panel edge — and
+   since the 2026-08-20 ruling there is nothing left to share it with: the
+   siblings it used to take slack from (DETAILS, COLLECTIONS) came off the
+   registry row, and the attachment strip and footer came off with
+   `composition: 'frame'`.
+
+   `min-height` IS DELIBERATELY NOT ZERO HERE, and that is the fix for a real
+   defect rather than a tidy-up. With `min-height: 0` the section shrank freely
+   while `.pn-preview__frame` below held its own 420px floor, and nothing on the
+   path clipped — so on a short panel the IFRAME PAINTED STRAIGHT OVER THE BLOCK
+   BENEATH IT. That is the artifact text bleeding through the DETAILS eyebrow in
+   the 2026-08-20 report. Leaving it `auto` means the section cannot shrink below
+   the frame's floor, so a panel too short for 420px SCROLLS (`.pn-body` is
+   `overflow: auto`) instead of overlapping. Clipping was the other option and is
+   worse: a viewport silently missing its bottom half is the same lie in a
+   quieter voice. */
 .cv2-root .pn-body > .pn-section[data-testid='block-artifact-preview'] {
   flex: 1 1 auto;
-  min-height: 0;
   display: flex;
   flex-direction: column;
+  /* The frame reaches the panel edge — `.pn-body > .pn-section`'s 10px tail is
+     for a block with something under it, and this one never has. */
+  padding-bottom: 0;
 }
 .cv2-root .pn-preview--viewer:not(.pn-preview--fullscreen) { flex: 1 1 auto; min-height: 0; }
 /* The frame: full panel width, generous height, card-white ground — the
