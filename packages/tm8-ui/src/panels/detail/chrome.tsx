@@ -268,6 +268,8 @@ export function ActionBar({
   flowSurface,
   barRef,
   wiredActions,
+  onOpenLaunch,
+  launchSubjectId,
 }: {
   config: KindConfig;
   ctx: ActionContext;
