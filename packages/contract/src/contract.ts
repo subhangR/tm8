@@ -2604,7 +2604,26 @@ export interface SpaceSummary {
   name: string;
   description: string;
   memberCount: number;
-  unreadTotal: number;
+  /**
+   * `null` ⇒ NOT MEASURED on the path that produced this summary, which is
+   * every path that produces one. Counting unread means scanning
+   * `public.messages` under an RLS policy that applies two SECURITY DEFINER
+   * `internal.entity_readable()` calls per row, and `spaces.list` is the
+   * request that gates workspace boot. The server-side reasoning, with the
+   * measurements, is on `SPACE_COLUMNS` in `facade/handlers/spaces.ts`.
+   *
+   * It is `null` rather than `0` because those are different statements and
+   * only one of them is true. A `0` renders identically to "you are caught up"
+   * and nothing catches it. `null` renders as nothing and forces every consumer
+   * to say which it meant — the same rule `messages-model.ts` states for
+   * per-anchor unread ("a row rendering `0 unread` would claim a measurement
+   * nobody took").
+   *
+   * The measured per-space number is `SpaceNavigation.unreadTotal` below, a
+   * lazy per-space read off the boot path. A `number` is still legal here so an
+   * older node's response validates unchanged.
+   */
+  unreadTotal: number | null;
   githubRepo?: string | null;
   createdAt: string;
 }

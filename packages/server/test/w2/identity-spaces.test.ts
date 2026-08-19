@@ -233,7 +233,6 @@ describe('W2.G01 identity and Spaces handler seam', () => {
             github_repo: null,
             created_at: '2026-08-09T17:33:50.899Z',
             member_count: '1',
-            unread_total: '0',
             default_channel_id: CHANNEL_ID,
             default_interaction_profile_id: null,
             settings_revision: 1,
@@ -391,7 +390,9 @@ describe('W2.G01 identity and Spaces handler seam', () => {
             github_repo: null,
             created_at: '2026-07-26T10:00:00.000Z',
             member_count: '1',
-            unread_total: '0',
+            // No `unread_total` — 161 took it out of `w2_update_space`, which
+            // was spending >1 s per rename counting a number the assembler
+            // discarded once `SpaceSummary.unreadTotal` became "not measured".
           },
         };
       },
@@ -412,7 +413,9 @@ describe('W2.G01 identity and Spaces handler seam', () => {
       name: 'Renamed',
       description: 'Description',
       memberCount: 1,
-      unreadTotal: 0,
+      // NOT MEASURED, and `null` is how that is said. `0` would be the claim
+      // "you are caught up", which this path never checked.
+      unreadTotal: null,
       githubRepo: null,
       createdAt: '2026-07-26T10:00:00.000Z',
     });
@@ -431,7 +434,6 @@ describe('W2.G01 identity and Spaces handler seam', () => {
           github_repo: null,
           created_at: '2026-07-26T10:00:00.000Z',
           member_count: '1',
-          unread_total: '0',
           default_channel_id: CHANNEL_ID,
           default_interaction_profile_id: null,
           settings_revision: 3,
