@@ -51,9 +51,16 @@ describe('the full-height sheet variant', () => {
        frame is `calc(100dvh - var(--mobile-keyboard-inset))`, so a sheet at a
        raw `100dvh` is the WHOLE screen and puts the composer it was widened for
        underneath the keyboard. Percentage of the ancestor is what keeps one
-       measurement with one consumer. */
+       measurement with one consumer.
+
+       NO `\b` BEFORE `dvh`, and it is not a style choice. `\bdvh\b` cannot
+       match `100dvh` — `0` and `d` are both word characters, so there is no
+       boundary between them — which makes it a guard that is green whatever
+       the rule says. It was written that way here first, and the M7 negative
+       control (this exact rule set to `100dvh`) is what caught it: the case
+       stayed green while its neighbour reddened. */
     const full = block(".msheet__panel[data-size='full']");
-    expect(full).not.toMatch(/\bdvh\b/);
+    expect(full).not.toMatch(/dvh/);
     expect(full).not.toMatch(/--mobile-keyboard-inset/);
   });
 
@@ -82,6 +89,61 @@ describe('the sheet clears the keyboard the way the tab bar already does', () =>
   });
 
   it('keys off the marker attribute, not off the inline custom property', () => {
+    /* `MobileFrame` publishes the keyboard as BOTH a number (an inline custom
+       property) and a boolean (`data-keyboard`). A rule that matched the number
+       — `[style*='--mobile-keyboard-inset']` — would stop matching the first
+       time the value was formatted differently, and would do it silently. */
+    expect(css).not.toMatch(/\[style\*=[^\]]*keyboard/);
+  });
+});
+
+describe('the controls the sheet inherited from a desktop column', () => {
+  /*
+   * THE FLOOR, PER NAMED CLASS, ROOTED AT `.msheet`. `.ev-aux` is a ~380px
+   * pointer-device column and the sheet renders it under a thumb; its two
+   * navigation controls arrived at desktop density (~22px and ~20px tall).
+   *
+   * Asserted from the stylesheet, not from a render: jsdom has no layout, so
+   * `getBoundingClientRect()` there is all zeroes and a "44px" assertion in a
+   * jsdom test would be measuring nothing. The real geometry is the mobile
+   * audit's job.
+   */
+  it.each(['.kit-chip', '.pn-viewswitch__opt'])(
+    'floors %s inside the sheet at the touch token',
+    (selector) => {
+      const rule = block(`.msheet ${selector}`);
+      expect(rule).toMatch(/min-height:\s*var\(--mobile-touch-min\)/);
+    },
+  );
+
+  it('scopes both floors to the phone, so the desktop column keeps its density', () => {
+    /* `.kit-chip` is used across the whole product and `.pn-viewswitch__opt`
+       sits in the desktop panel too. An unscoped floor would inflate every chip
+       in the app — the exact failure CONTRACT.md §6 forbids a blanket
+       `button { min-height: 44px }` for. */
+    for (const selector of ['.kit-chip', '.pn-viewswitch__opt']) {
+      const at = css.indexOf(`.msheet ${selector}`);
+      const line = css.slice(css.lastIndexOf('\n', at) + 1, css.indexOf('{', at));
+      expect(line).toContain("[data-shell='mobile']");
+    }
+  });
+
+  it('puts the floor on the SMALLER side and does not fake it with a pseudo-element', () => {
+    /* Two rules at once, and both are contract text. §6: the floor belongs on
+       whichever side is smaller — 120×22 fails the same thumb as 22×120 — and
+       these controls are wide and short, so HEIGHT is the side. And no
+       `::after` hit area anywhere in the sheet's block: the audit measures the
+       element's own rect, so a pseudo-element scores as fixed while the thumb
+       still misses. */
+    for (const selector of ['.kit-chip', '.pn-viewswitch__opt']) {
+      expect(block(`.msheet ${selector}`)).not.toMatch(/min-width/);
+    }
+    expect(css.slice(css.indexOf('.msheet {'))).not.toMatch(/\.msheet[^{]*::after[^{]*\{[^}]*(width|height)/);
+  });
+});
+
+describe('regression guards over the whole sheet block', () => {
+  it('never keys a sheet rule off the inline keyboard custom property', () => {
     /* `MobileFrame` publishes the keyboard as BOTH a number (an inline custom
        property) and a boolean (`data-keyboard`). A rule that matched the number
        — `[style*='--mobile-keyboard-inset']` — would stop matching the first

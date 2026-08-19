@@ -824,6 +824,41 @@
   min-height: 0;
 }
 
+/* --------------------------------------------------------------------------
+   WHAT THE SHEET INHERITED FROM A DESKTOP THIRD COLUMN
+
+   `.ev-aux` was designed as a ~380px column on a pointer device, and the sheet
+   now renders it under a thumb. Its two navigation controls came across at
+   desktop density: the Connections view switch is `padding: 3px 10px` at 11px,
+   about 22px tall (`panels.css:886`), and every parent, child and peer is a
+   `.kit-chip` at `padding: 2px 8px`, about 20px (`kit.css:79`). Both sit
+   comfortably inside the frame and both are half the floor — on screen is not
+   the same as reachable, and for the controls that ARE the Connections tab the
+   difference is the whole tab.
+
+   PER NAMED CLASS AND ROOTED AT `.msheet`, per CONTRACT.md §6. Not
+   `button { min-height: 44px }`: the sheet is full of desktop-shared dense
+   components and a blanket rule inflates every one of them. Not an `::after`
+   hit area either — the mobile audit measures the element's OWN
+   `getBoundingClientRect()`, so a pseudo-element scores as fixed while the
+   thumb still misses.
+
+   `.kit-chip` is always a `<button>` (`kit/Chip.tsx:24`), so nothing inert is
+   being padded out here to look tappable.
+
+   The floor goes on the SMALLER side, which for both of these is the height;
+   the inline padding grows with it so that a 44px-tall control does not read
+   as a letterbox around 11px of text. */
+.cv2-root[data-shell='mobile'] .msheet .kit-chip {
+  min-height: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+.cv2-root[data-shell='mobile'] .msheet .pn-viewswitch__opt {
+  min-height: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
 @keyframes msheet-fade {
   from { opacity: 0; }
   to { opacity: 1; }
