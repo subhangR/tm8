@@ -637,6 +637,31 @@
   white-space: nowrap;
   text-decoration: none;
 }
+/* DEF-053 — the panel bar's primary verbs, 45x20 and 46x20.
+
+   "Run" and "Edit" are the PRIMARY ACTIONS OF THE SCREEN and they were two of
+   the twenty offenders on it. They went unfiled until the complete inventory
+   was read, because the discarded harness's twelve-entry sample happened to
+   include them while nobody attributed the sample.
+
+   Height only, and `padding-inline` rather than a width floor: these sit in the
+   panel bar beside each other, and a 44px inline floor on a 45px control buys
+   nothing while a width floor on the NEXT verb someone adds (a two-character
+   icon verb) would push the bar wider. The bar wraps on the phone now
+   (DEF-007/011 above), so extra height costs a row of the bar and not a
+   clipped control — which is the check CONTRACT.md §6 asks for before growing
+   anything, done rather than assumed.
+
+   Applies to `.pn-btn`, which is the base: `--primary` and `--quiet` inherit
+   the floor. That is deliberate — the row named the primaries because they are
+   what the census caught, but a quiet verb in the same bar is the same thumb. */
+.cv2-root[data-shell='mobile'] .pn-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
 .cv2-root .pn-btn:hover { background: var(--pn-hover); }
 .cv2-root .pn-btn--primary {
   color: var(--pn-brand-2);
@@ -711,6 +736,160 @@
   gap: 4px;
   border-bottom: 2px solid transparent;
   white-space: nowrap;
+}
+/* DEF-007 + DEF-011 — ONE MECHANISM, TWO ROWS, AND THE LEDGER FILED THEM APART
+   BECAUSE THEY HAVE DIFFERENT ACCEPTANCE. They have the SAME cause.
+
+   `.pn-panelbar` is a 30px single-line flex row: `.pn-tabs` is `flex: 1 1 auto;
+   min-width: 0; overflow-x: auto`, and `.pn-panelbar__end` (Run · Edit · the
+   kit icon buttons — plus, on a work session, the whole surface switch, which
+   `display: contents` makes a direct child of this bar) is `flex: none`. On a
+   390px phone the end cluster takes what it needs and the tab strip is left a
+   scrollport too narrow for its tabs.
+
+   That single fact produced both rows:
+     - DEF-011 is the strip's own overflow — `hscroll` bleed 46 on task detail,
+       273 on a session, i.e. most of the strip outside its own box, with no
+       scroll affordance a finger can see (`scrollbar-width: none`, by design).
+     - DEF-007 is the OCCLUSION that falls out of it. A tab scrolled out of the
+       port still HAS a box, and that box's coordinates land under the end
+       cluster — so `elementFromPoint()` at "Activity" returns "Run", and on a
+       session all four tabs return a `pn-surface-switch__tab`. Nothing is
+       drawn on top of anything; the strip is simply reporting a hit for a
+       button that is somewhere else. Two rows of desktop chrome in one band.
+
+   THE PHONE STOPS SCROLLING THIS STRIP AND WRAPS IT INSTEAD, which is the one
+   change that answers both acceptances honestly rather than either of them
+   cleverly. `hscrollCount` goes to 0 because there is no scrollport left, not
+   because the assertion was reinterpreted — DEF-011's own file warns against
+   keeping it scrollable and re-reading the acceptance afterwards. And every tab
+   is inside the viewport, at its own coordinates, so `elementFromPoint()`
+   returns it.
+
+   UNPINNED FIRST, per CONTRACT.md §6. `height: 30px` would clip whatever
+   wrapped onto a second line, and DEF-037 records that NO METRIC IN THIS
+   PROGRAM CAN SEE VERTICAL CLIPPING — this rule would have scored a clean
+   overflow number while slicing the tab strip in half.
+
+   `.pn-tab`'s own 30px height is DEF-029 and is Lane C's row, deliberately not
+   taken here. Unpinning the bar is what makes that fix possible; growing the
+   tab from this file would have closed someone else's row from the wrong lane
+   and left two owners for one selector. */
+/* ---------------------------------------------------------------------------
+   CONSOLIDATION, AND IT TAKES LANE C'S VALUES ON EVERY CONTESTED PROPERTY —
+   NOT MINE. That is the opposite of what the staged plan said, and the reason
+   is a fact I did not have when I staged it.
+
+   `detail/panel-bar-phone.css` declares these same three selectors at the same
+   specificity, (0,3,0), so every overlap is a tie broken by emission order.
+   Emission order is decidable from the module graph and I read it rather than
+   guessed: `mobile-audit-entry.tsx:36` imports `panels.css` DIRECTLY, and
+   `panel-bar-phone.css` is reachable only through `detail/chrome.tsx:24`, i.e.
+   through `GateApp` at :44. Lines 31-35 ahead of it are stylesheets with no JS,
+   so nothing pulls chrome.tsx earlier. **panels.css is emitted FIRST, therefore
+   THIS FILE LOSES EVERY TIE.** (`main.tsx:8` gives the same ordering.)
+
+   WHAT THAT MEANS, STATED PLAINLY BECAUSE IT IS UNFLATTERING: in the bundle the
+   build service actually graded, my `.pn-panelbar` rule and my `.pn-panelbar__end`
+   rule contributed NOTHING. Every declaration in them was either overridden by
+   Lane C to a different value or duplicated at the same one. Only three
+   declarations of mine were ever live — `flex-wrap`, `row-gap` and `overflow` on
+   `.pn-tabs`, the three Lane C does not declare. DEF-011's fix is mine. The
+   unpin that DEF-007 rides on was delivered by Lane C's `978f3e82`.
+
+   SO CONSOLIDATING ONTO MY VALUES WOULD HAVE SHIPPED NUMBERS THAT HAVE NEVER
+   BEEN IN A GRADED BUILD, under cover of a cleanup. `row-gap: 2px` here and
+   `flex: 1 0 100%` below are exactly that: never applied, never measured, and
+   indistinguishable in every artifact we hold from the values that were.
+
+   AND TAKING LANE C'S VALUES MAKES THE TWO-STEP SAFE. This absorb is a no-op
+   until Lane C deletes its three container rules, because the winner's values
+   are now declared on both sides. There is no broken intermediate state and no
+   dependence on which PR lands first. Had I taken mine, the intermediate state
+   would have differed from both endpoints.
+
+   THE ONE THING NO ARTIFACT CAN SETTLE: whether 4px or 2px was in the graded
+   build is decided by emission order, and no field in the instrument
+   discriminates between them — both produce a passing layout. The module graph
+   is the only evidence, and it is a source-derived inference, not a
+   measurement. Labelled as such. */
+.cv2-root[data-shell='mobile'] .pn-panelbar {
+  height: auto;
+  min-height: 30px;
+  flex-wrap: wrap;
+  /* LANE C'S 4px, NOT MY 2px — see above. Mine never applied. */
+  row-gap: 4px;
+  /* ABSORBED from panel-bar-phone.css. INHERITED, UNEXAMINED: nothing else
+     supplies these two — the desktop base gives `align-items: center` and no
+     padding at all — so removing them is a change nobody intended. I have not
+     measured what they do, and this comment says which of the two it is rather
+     than inventing a reason. */
+  align-items: stretch;
+  padding-block: 4px;
+}
+.cv2-root[data-shell='mobile'] .pn-tabs {
+  /* Its own full-width line, and `1 1` is LANE C'S, not the `1 0` I staged.
+     Both rules set `flex-basis: 100%` with wrap on, so neither item is being
+     asked to shrink in the arrangement as built and the shrink term is not
+     doing anything today either way — but `1 1` is the one that was in the
+     bundle, and a guard whose comment oversells it as a repair is how the next
+     reader mis-costs removing it. */
+  flex: 1 1 100%;
+  height: auto;
+  /* ABSORBED, AND THE ONLY FLOOR LEFT: the desktop base gives `.pn-tabs`
+     `height: 100%`, the line above replaces that with `auto`, so without this
+     the strip has nothing holding it open when it carries little. */
+  min-height: 30px;
+  /* MINE, AND LIVE — Lane C declares neither. These two are DEF-011's actual
+     fix and the only part of this block that was ever in effect. */
+  flex-wrap: wrap;
+  row-gap: 2px;
+  /* THE SCROLLPORT IS THE DEFECT, so it goes. `visible` and not `auto`:
+     `overflow-x: auto` with `overflow-y: hidden` re-creates a scroll container
+     the moment the content is one pixel wide, which is the state this row was
+     filed in. */
+  overflow: visible;
+}
+.cv2-root[data-shell='mobile'] .pn-panelbar__end {
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  /* ⚡ THE ORPHAN THE STAGED PLAN MISSED, AND IT IS A SHORTHAND-EXPANSION MISS
+     OF EXACTLY THE KIND I HAVE FILED TWICE AGAINST OTHER PEOPLE. Lane C's
+     `gap: 6px` expands to `row-gap: 6px; column-gap: 6px`. I read it as "a 1px
+     tweak on the base's 7px, not an orphan" and moved on — but it is the same
+     property as my `row-gap`, so (a) my 4px never applied, and (b) a wholesale
+     delete of Lane C's rule takes column-gap from 6px BACK UP to the base's
+     7px, inside a cluster whose fit at 390 was measured at 6px. Widening the
+     gaps in the arrangement that put Terminate back on screen is not a
+     cleanup. Both halves written longhand so the next delete cannot move
+     either. */
+  row-gap: 6px;
+  column-gap: 6px;
+  /* KEEPS THE DESTRUCTIVE VERB ON THE RIGHT. The desktop base declares no
+     `justify-content` at all, so its default is `flex-start` — if this line and
+     Lane C's both went, Terminate would left-align on a phone, having been on
+     the right on every other shell, and it would pass every threshold in the
+     program while doing it: still inside `innerWidth`, still zero overflow,
+     still zero below the fold. Do not remove it in a tidy-up. */
+  justify-content: flex-end;
+  /* ABSORBED, AND PAIRED WITH `flex-shrink: 1` ABOVE. A shrinkable flex child
+     still holds its own min-content open without this floor; shrink without the
+     floor permits nothing, and the floor without shrink has nothing to permit.
+     Absorbing one and not the other would look done and change nothing.
+
+     AND THE ASYMMETRY THAT EXPLAINS WHY THE PRESSURE SURFACED HERE AND NOT ON
+     THE TAB STRIP: the desktop base declares `min-width: 0` on `.pn-tabs` and
+     declares NONE on this element, so the strip could always shrink past its
+     content and the end cluster never could. Checked in this file. */
+  min-width: 0;
+  /* LONGHAND DELIBERATELY. Lane C's `padding: 0 8px` shorthand resets
+     `padding-right`, which the desktop base sets to 8px; the longhand leaves it
+     alone. Both land on 8px either side, so this one is a true no-op — recorded
+     so a future reader does not "fix" it back to the shorthand. */
+  padding-left: 8px;
+  /* NOT ABSORBED, AND STATED SO NOBODY RE-ADDS IT: `align-items: center` comes
+     from the desktop base three rules up in this file and nothing here
+     overrides it. Lane C's copy is a duplicate, not an orphan. */
 }
 .cv2-root .pn-tab:hover { color: var(--pn-ink); }
 .cv2-root .pn-tab--active {
@@ -1848,6 +2027,13 @@
     transform: translate(0, -50%);
   }
 }
+/* Member 3 of 3 of the shell-marker half — see `.lp__rowactions` above and the
+   enumeration over `.pn-tt__actions` in `maestro-task-tile.css`. */
+.cv2-root[data-shell='mobile'] .pn-st__actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
 .cv2-root .pn-st__btn { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; color: var(--pn-ink-4); background: transparent; border: 1px solid transparent; border-radius: var(--pn-r-sm); cursor: pointer; transition: color var(--pn-dur-fast), background var(--pn-dur-fast); }
 .cv2-root .pn-st__btn:hover { color: var(--pn-ink); background: var(--pn-active); }
 .cv2-root .pn-st__btn--danger:hover { color: var(--pn-block); }
@@ -2074,6 +2260,48 @@
 .cv2-root .lp__disclosure:hover { color: var(--pn-ink-2); background: var(--pn-active); }
 .cv2-root .lp__disclosure--expanded > span { transform: rotate(90deg); }
 .cv2-root .lp__disclosure--empty { color: var(--pn-line); cursor: default; }
+/* DEF-066 — AN ARIA-HIDDEN DECORATION SHOULD NOT BE A HIT TARGET AT ANY SIZE.
+
+   `EntityListPanel` emits this variant when `onToggleChildren` is absent: a
+   `<span aria-hidden>`, a decoration and not a control. But `.lp__disclosure`
+   is `position: absolute; top: 6px; left: 7px; z-index: 3`, and the gate's §7g
+   grows it to 44x44 on the phone, so on a tree row with no toggle handler it is
+   the topmost paintable thing over the row's leading corner and
+   `elementFromPoint` at that corner returns THE SPAN. The line above already
+   says this element is not pressable via `cursor: default`; this finishes the
+   sentence, and it applies on the desktop too, where the span has been
+   absolutely positioned over the same corner at 16px all along.
+
+   TWO RULES, TWO FILES, NO PROPERTY OVERLAP: the gate owns the size in
+   `mobile-screens.css` (it excludes `--empty` there); this owns hit-testing
+   here. Checked as a competition before proposing it, and it is not one.
+
+   ⚡ WHAT THIS ROW NO LONGER CLAIMS, AND THE WITHDRAWN PREMISE IS MINE. I filed
+   it saying the span sits over the leading slot where `lp__statedot` renders,
+   so a second occluder there would read as "DEF-006's fix did not work". IT
+   DOES NOT SIT THERE AND CANNOT:
+
+     lp__statedot    renders only where the kind declares a `stateControl`
+                     -> task, work_session -> the Maestro tiles
+     lp__disclosure  renders only on the GENERIC tile
+                     -> channel, doc, ... -> which declare none
+
+   `stateControl` appears twice in the whole of `domain/registry.ts`, on `task`
+   and `work_session`, and both have dedicated tile renderers. The two elements
+   are DISJOINT BY REGISTRY, not by fixture — no tile in this build renders
+   both, so no fixture of any shape produces the collision I predicted. I had
+   established that the statedot reaches the task tile via `statusControl` and
+   then assumed the generic tile carried one too BECAUSE BOTH TILES HAVE A
+   LEADING SLOT. Reading a slot and concluding a control. The gate's own
+   docblock on §7g already said this ("It is NOT applied to the task tile,
+   whose leading slot is the live state trigger") and I reasoned past it.
+
+   CONSEQUENCE FOR ACCEPTANCE: this rule has NO measurable acceptance in this
+   build. A clean `occludedCount` here is evidence the two elements never met,
+   not evidence the rule works. It closes by code review of the selector or it
+   does not close. Do not let a future clean census read as verified — it has
+   not been exercised in either direction. */
+.cv2-root .lp__disclosure--empty { pointer-events: none; }
 .cv2-root .lp__disclosure > span { display: grid; place-items: center; }
 
 /* 16px and unfilled, matching `pn-st__statusglyph`. The soft-tinted 18px
@@ -2220,6 +2448,18 @@
     pointer-events: auto;
     transform: translate(0, -50%);
   }
+}
+/* THE SHELL-MARKER HALF, STATED ON ALL THREE MEMBERS OF THE SHAPE — see the
+   enumeration over `.pn-tt__actions` in `maestro-task-tile.css`. The phone
+   shell is also reachable by user override on a fine pointer, where
+   `(pointer: coarse)` is FALSE and a hover a mouse can produce is still not a
+   hover a LIST gives you. Three containers carry this pattern and all three
+   now carry both signals; a fourth would be a defect, and the way to know is
+   to count them. */
+.cv2-root[data-shell='mobile'] .lp__rowactions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
 }
 /* A selected row is not a hovered row, so the backing has to follow it. */
 .cv2-root .lp__tile--selected .lp__rowactions { background: var(--pn-active); }
@@ -3039,6 +3279,28 @@
   outline: none;
   box-shadow: 0 0 0 2px var(--pn-brand-soft);
 }
+/* DEF-006 — THE MARK MUST NOT BE THE THING THE FINGER HITS.
+
+   `elementFromPoint()` at this button's centre returned its own child `svg` on
+   13 rows of the phone tasks list, so the press never reached the button. That
+   is a HIT-TESTING fault and it is a different fault from the size one
+   (DEF-017, fixed in the gate's `mobile-screens.css` block by growing the box
+   to 44x44) — and the gate's fix makes this one WORSE rather than better: at
+   16x16 the glyph filled the box, at 44x44 the glyph is a small target floating
+   in the middle of a large one, and dead centre — where a thumb aims — is
+   exactly where the svg is. Growing a control whose centre swallows the press
+   produces a bigger control that still does nothing.
+
+   The mark is decoration; the button is the control. Stated as `> *` rather
+   than `svg` because the glyph is a `ReactNode` the tile passes in
+   (`EntityControls.tsx`, the `glyph` prop) and the tile is free to wrap it —
+   `MaestroStatusGlyph` draws an svg today, and a selector that names the tag
+   would silently stop working the day it draws a span instead.
+
+   NOT scoped to the phone. A desktop pointer aims at the same centre; the
+   occlusion was simply never measured there, and a decorative child that eats
+   its own button's clicks is not a phone-specific defect. */
+.cv2-root .lp__statedot > * { pointer-events: none; }
 
 /* The wide row-action carries its label.
    `display` IS THE FIX, not the padding. The base `.lp__rowaction` is a
@@ -3098,6 +3360,65 @@
    renders it last and the refusal wraps it in a different element. */
 .cv2-root .lp__rowdetail--chips > :last-child { margin-left: auto; }
 .cv2-root .lp__rowaction svg { display: block; }
+/* THE SAME HIT-TESTING FAULT AS DEF-006, APPLIED FORWARD RATHER THAN WAITING
+   TO BE MEASURED AGAIN.
+
+   `.lp__rowaction` is a `grid` with `place-items: center` holding one glyph, so
+   at its desktop 22x22 the glyph very nearly IS the button and a press that
+   lands on the child still lands close enough to look fine. The moment these
+   grow to the 44px bar on a phone the glyph becomes a small mark floating in
+   the middle of a large box — dead centre, where a thumb aims and where
+   `elementFromPoint()` looks. That is precisely how `lp__statedot` came to be
+   occluded on 13 rows, and it was NOT occluded until the box grew.
+
+   Stated on the shared cluster so all three anatomies (`lp__rowactions`,
+   `pn-tt__actions`, `pn-st__actions`) get it from one place — they carry
+   `.lp__cluster` for exactly this "how the cluster READS lives here, once"
+   reason. The label span in `--wide` is included and wants to be: it is text
+   inside its own button, never a target of its own. */
+.cv2-root .lp__cluster > button > * { pointer-events: none; }
+
+/* THE SHAPE, ENUMERATED — R17. "A control the gate grew to 44px whose glyph is
+   a CENTRED CHILD ELEMENT." Growing the box is what creates the fault: at 16px
+   the glyph nearly IS the button, so a press that lands on the child lands
+   close enough; at 44px the glyph is a small mark floating at dead centre,
+   which is where a thumb aims and where `elementFromPoint()` looks.
+   DEF-006 is this fault, found on `lp__statedot` AFTER the gate grew it.
+
+   MEMBERS, walked one by one rather than guessed at — the grown controls are
+   the gate's §7 block, and the question per control is "is its centre an
+   ELEMENT or a text node?", because a text node returns its parent and is
+   therefore safe:
+
+     .lp__statedot     button > svg glyph          AFFECTED — fixed above, DEF-006
+     .lp__rowaction    button > span > glyph       AFFECTED — fixed above (cluster)
+     .pn-tt__ind       button > svg                AFFECTED — fixed above (cluster)
+     .lp__disclosure   button > span > TileChevron AFFECTED — fixed HERE
+     .lp__new          text only ("＋ New")         safe
+     .lp__quick        text only (`${icon} ${label}`) safe
+     .pn-tt__title     text only                   safe
+     .lp__title        text only                   safe
+     .ibx-chip         text + count                safe
+     .lp__kind         span.lp__kind-glyph + TEXT  UNCERTAIN, see below
+
+   4 of 4 AFFECTED members are treated. That count is the checkable claim; "I
+   made the glyphs pointer-transparent" is not.
+
+   `.lp__disclosure` is NOT DEF-018 and this is not a raid on shell's row —
+   DEF-018 is the SIZE (16x16) and it landed in the gate. This is the OCCLUSION
+   that the gate's own fix introduced, exactly as DEF-017's size fix introduced
+   DEF-006's occlusion on the dot. Same pair, second instance, and nobody has
+   filed it. Fixed defensively because it is one line in a file this lane owns
+   and the alternative is shipping a 44px chevron that swallows the press. It
+   is UNVERIFIABLE on today's fixture — `lp__disclosure` renders only on the
+   generic tile, whose kinds the category partition filters away — so it is
+   flagged as an unfiled, unverified fix rather than claimed.
+
+   `.lp__kind` is left alone and stated rather than silently skipped: its centre
+   falls in its LABEL TEXT, not in its leading glyph span, so the press already
+   reaches the button. If a future label ever renders empty, the centre moves
+   onto the glyph and it joins the list. */
+.cv2-root .lp__disclosure > * { pointer-events: none; }
 .cv2-root .lp__rowdetail--chips .lp__rowaction:hover { color: var(--pn-block); }
 
 /* THE PANEL'S CHIP BAND — the strip's own row under the tab strip.
@@ -3191,6 +3512,54 @@
   box-sizing: border-box;
 }
 
+/* DEF-024 — THE STATE / PRIORITY / TYPE SELECTS: 24px tall AT 10.5px TYPE.
+
+   Filed as `desktop-only affordance` and not as a tap-target row, per RULE R6,
+   and the classification is the fix's brief: a form control under 16px makes
+   iOS Safari ZOOM THE VIEWPORT on focus. The control does not merely need a
+   bigger thumb-print; below the floor it changes the whole page out from under
+   the reader every time they touch it. So the TYPE moves as well as the box,
+   and the type is the half the row is actually about.
+
+   THE PINNED BAND ABOVE IS WHY THIS SELECTOR IS FOUR CLASSES LONG, and it is
+   the exact trap CONTRACT.md §6 names. `.lp__rowdetail--chips .lp__statesel`
+   pins `height: 24px` at (0,3,0). A phone override written the obvious way —
+   `.cv2-root[data-shell='mobile'] .lp__statesel` — is ALSO (0,3,0) and loses
+   the tie on source order, because the band is later in this file. It would
+   have looked correct in the diff, applied nothing, and reported a fix that
+   was never on the page. Matched at (0,4,0) and the band explicitly unpinned.
+
+   The band's own reason survives on a desktop untouched: it exists so four
+   chips from three vocabularies share one height. On a phone they wrap
+   (`flex-wrap: wrap`, above) and there is no single band left to keep even. */
+.cv2-root[data-shell='mobile'] .lp__statesel,
+.cv2-root[data-shell='mobile'] .lp__rowdetail--chips .lp__statesel {
+  height: auto;
+  min-block-size: var(--mobile-touch-min);
+  /* THE iOS FOCUS-ZOOM FLOOR. Not 15.9. */
+  font-size: 16px;
+  line-height: 1.25;
+  padding-block: 4px;
+}
+/* The caret's room scales with the type it sits beside. */
+.cv2-root[data-shell='mobile'] .lp__statesel--live { padding-right: 26px; }
+
+/* The chip row's WIDE row-action — "Archive" on entity detail, 83x24. The
+   sixth of the unowned set, and it needs the SAME (0,4,0) treatment as the
+   selects above for the same reason: the band pins `height: 24px` at (0,3,0)
+   LATER in this file, so a three-class phone override loses the tie on source
+   order and applies nothing.
+
+   Only the `--wide` variant is grown, and only inside the chips band. The bare
+   `.lp__rowaction` in a LIST tile is a different control in a different
+   container, sized in `maestro-task-tile.css` where the cluster it belongs to
+   is un-floated — growing it from here would reach into that fix from a second
+   file and give one selector two owners. */
+.cv2-root[data-shell='mobile'] .lp__rowdetail--chips .lp__rowaction {
+  height: auto;
+  min-block-size: var(--mobile-touch-min);
+}
+
 /* ---------------------------------------------------------------------------
    The assignee picker
    ---------------------------------------------------------------------------
@@ -3214,6 +3583,15 @@
   cursor: pointer;
   min-width: 0;
 }
+/* The assignee picker's trigger, 84x24 and 95x24 on entity detail. Unfiled
+   until the complete inventory was attributed — one of the six the discarded
+   harness's 12-entry sample could not reach.
+
+   `min-block-size` only. It carries a `pn-badge--assignees` whose width is the
+   assignee faces it holds, so an inline floor would either do nothing (it is
+   already 84+) or, on a one-avatar row, pad a badge away from the name it
+   belongs to. */
+.cv2-root[data-shell='mobile'] .lp__assignbtn { min-block-size: var(--mobile-touch-min); }
 .cv2-root .lp__assignbtn:hover .pn-badge--assignees { border-color: var(--pn-ink-4); }
 .cv2-root .lp__assignbtn:focus-visible {
   outline: none;

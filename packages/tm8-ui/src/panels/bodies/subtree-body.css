@@ -82,6 +82,27 @@
 .cv2-root .sb-grid__link:hover {
   color: var(--pn-brand-2);
 }
+/* DEF-052 — the grid cell's link, 52x18 on the baseline of record.
+
+   It is the control that opens a related entity from inside a detail body, so
+   it is a navigation, not a label — and it is the one on this surface a reader
+   is most likely to reach for after reading the row it sits in.
+
+   `min-block-size` and NOT `min-inline-size`: these sit in a two-column grid of
+   label/value pairs, and a 44px floor on the WIDTH would stretch a two-letter
+   value's hit box across its neighbour's column. Height is the axis that is
+   short here — 18px against a 44px bar — and it is the axis a thumb misses on.
+
+   ROUTED, NOT TAKEN. Filed by triage as DEF-052 after I found it unowned in the
+   complete 20-entry inventory of this surface and offered to take it. The row
+   carries `345x18` from the discarded harness; the baseline of record says
+   52x18. Same defect, same fix, and the number in the row is from the file we
+   no longer diff against. */
+.cv2-root[data-shell='mobile'] .sb-grid__link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--mobile-touch-min);
+}
 /* L62 priority tag: mono 10px/600, `rgba(162,156,142,.16)`, r4, 1px 5px. */
 .cv2-root .sb-tag {
   font-family: var(--pn-mono);
@@ -176,6 +197,26 @@
 .cv2-root .sb-description__stance:hover {
   color: var(--pn-brand-2);
 }
+/* DEF-022 — "Edit" at 29x13.
+
+   The desktop rule above is deliberately chrome-less — no padding, no border,
+   transparent — so that the verb reads as the eyebrow's quiet sibling and does
+   not compete with the region it labels. That intent is kept: this adds a box,
+   not a look. `padding-inline` and not `min-inline-size`, because the head is a
+   right-aligned flex row and a 44px minimum on a 29px word would put the label
+   off its own optical edge.
+
+   It is the SECOND "Edit" on this screen and the smaller of the two — the
+   panel-chrome one is 46x20 and is a `pn-btn--primary`. Two verbs with one word
+   at two sizes is a separate complaint nobody has filed; this row is only about
+   whether a thumb can hit this one. */
+.cv2-root[data-shell='mobile'] .sb-description__stance {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
 .cv2-root .sb-description__head .hon-disabled {
   font-family: var(--pn-mono);
   font-size: 10px;
@@ -208,6 +249,34 @@
   margin: 0;
   accent-color: var(--pn-brand);
   cursor: pointer;
+}
+/* DEF-021 — 12x12, THE SMALLEST REAL CONTROL IN THE LEDGER, ON THE WRITE A
+   PHONE USER MAKES MOST OFTEN.
+
+   NOT EXEMPT UNDER RULE R1, and it is worth saying why rather than leaving it
+   to be re-argued: the row IS a `<label>`, so the whole line does toggle the
+   box, and that looks like the delegated-proxy case R1 exempts. It is not. R1
+   exempts an input that is VISUALLY HIDDEN or 1x1 — a thing no finger aims at,
+   whose visible proxy is measured in its place. This input is drawn, it is the
+   only mark on the line that says "tick me", and it is what a thumb goes for.
+   A 12px target with a large forgiving hit area around it is still a 12px
+   target as far as the eye is concerned, and the eye is what aims.
+
+   THE ROW WAS NEVER PINNED — `.sb-criterion` is `padding: 5px 0` with no
+   height — so it grows to hold this and nothing is clipped. That is the check
+   CONTRACT.md §6 asks for before growing a child, done rather than assumed.
+
+   `font-size` is here for a SECOND row and not for looks: the instrument's
+   `tinyInputs` counts any input under the 16px iOS focus-zoom floor, this box
+   inherited the UA's 13.33px, and DEF-024's acceptance is
+   `tinyInputCount === 0` on this surface. Three of that count's seven entries
+   are these boxes. Sizing the selects alone would have left the number at 3
+   and read as a failed fix of DEF-024, which is a different row on a different
+   element. The property is invisible on a checkbox with an explicit box. */
+.cv2-root[data-shell='mobile'] .sb-criterion__box {
+  inline-size: var(--mobile-touch-min);
+  block-size: var(--mobile-touch-min);
+  font-size: 16px;
 }
 /* The REFUSED box is the honesty tooltip form, never a natively disabled input
    (a disabled control leaves the tab order and takes its reason with it). It
@@ -392,6 +461,33 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* DEF-009 — A CHIP THAT CANNOT BE TOLD FROM ITS NEIGHBOUR IS NOT A CHIP.
+
+   `max-width: 22ch` + `nowrap` + ellipsis is a sound DESKTOP rule: the chips
+   sit in a row beside each other and a long title would push the row wide. The
+   run titles in this space are entity titles, which begin with the same words
+   — the before-run caught "Build & capture service — the only builder, s" and
+   "Work on: Mobile lanes — chat, entity list/det", 183px and 182px of each one
+   past the cut. Both chips identify WHICH run; truncated at 22ch they identify
+   nothing, and the ellipsis honestly reports that the identifying half is the
+   half that went.
+
+   On the phone the chips have a column to themselves, so the title WRAPS
+   instead. `max-width: none` first — leaving 22ch in place while allowing
+   wrapping gives a 22ch-wide column with the text folded inside it, which is
+   the same information loss in a taller box.
+
+   This is also the one shape of this row that can satisfy its own acceptance
+   without argument: the instrument counts a box whose content exceeds it and
+   cannot scroll. Wrapped text does not exceed its box. Ellipsised text always
+   does — that is what draws the ellipsis. */
+.cv2-root[data-shell='mobile'] .sb-runchip__title {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 /* Solid when live, hollow ring otherwise — pulse belongs to the activity
    signal (F1/D6), which this body is not handed. */

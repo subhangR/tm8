@@ -5,6 +5,7 @@ import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../d
 import { KindIcon, resolveAction, titleNormalizerFor } from '../../domain';
 import { InlineTitleEditor } from '../../authoring';
 import { Avatar, IconBtn, Pill, type PillTone } from '../../kit';
+import { useMobileSurface } from '../../mobile';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 /*
@@ -155,14 +156,38 @@ export function PanelWindowControls({
   onPromote?: () => void;
   onClose?: () => void;
 }) {
+  /*
+   * DEF-023 — "CLOSE PANEL" IS REMOVED ON THE PHONE, NOT RESIZED. The ruling is
+   * the shell contract's (CONTRACT.md §7), written there and implemented here
+   * because that file's own ownership rule keeps it out of a lane's directory.
+   *
+   * It is a DESKTOP PANEL-STACK VERB ON A SHELL THAT HAS NO PANEL STACK. The
+   * phone shows one surface; there is no stack to close a panel out of, so the
+   * control is either inert or it performs a navigation nobody asked for.
+   * Growing it to 44px would have produced a comfortably tappable control for
+   * an arrangement that does not exist here. The ledger records this close as
+   * `wontfix-removed` and calls it a legitimate PASS rather than a dodge —
+   * REMOVED is what happened, and this comment is the lane stating which of the
+   * two it was.
+   *
+   * "Open full view" is the other half of the same 18x16 pair and is KEPT: the
+   * phone HAS a full view, so that verb still means something. It keeps its
+   * tap-target row and is sized in `kit.css` instead.
+   *
+   * `oneSurface` is the seam that exists for this and is `false` on every
+   * desktop path by construction — this cannot reach a desktop arrangement.
+   */
+  const { oneSurface } = useMobileSurface();
   return (
     <>
       <IconBtn label="Open full view" onClick={onPromote}>
         ⤢
       </IconBtn>
-      <IconBtn label="Close panel" danger onClick={onClose}>
-        ✕
-      </IconBtn>
+      {oneSurface ? null : (
+        <IconBtn label="Close panel" danger onClick={onClose}>
+          ✕
+        </IconBtn>
+      )}
     </>
   );
 }

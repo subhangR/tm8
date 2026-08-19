@@ -139,6 +139,23 @@
   align-items: center;
   justify-content: center;
 }
+/* DEF-023, THE HALF THAT IS KEPT. "Close panel" is REMOVED on the phone by
+   `PanelWindowControls` — a panel-stack verb on a shell with no panel stack —
+   and "Open full view" stays, because the phone HAS a full view. What stays
+   has to be hittable.
+
+   `src/kit` is a shared singleton: this same class is the run surface's icon
+   button (Lane C's DEF-001 offenders include these two by name), so one rule
+   here settles it on both surfaces at once. That is why the ledger routes the
+   row to the owner of the file rather than to each surface that shows it.
+
+   Per-class and real padding, per CONTRACT.md §6 — no blanket `button` rule,
+   no `::after` hit area. `min-*` and not `width`/`height`, so the labelled
+   variants of this button grow around their text instead of being squared. */
+.cv2-root[data-shell='mobile'] .kit-iconbtn {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+}
 .cv2-root .kit-iconbtn:hover {
   background: var(--pn-hover);
 }
