@@ -834,6 +834,7 @@ export function EntityView(props: EntityViewProps) {
     oneSurface ? (
       <MobileSheet
         title={aux ? auxCrumb(aux, auxDetail?.title) : 'Related'}
+        size={auxSheetSize(aux)}
         onDismiss={() => setAux(null)}
         testId="entity-view-aux-sheet"
       >
@@ -1232,27 +1233,38 @@ export function EntityView(props: EntityViewProps) {
         then walk that stack instead of returning the viewer to the paragraph
         they tapped from.
 
-        `.ev-aux__head` is hidden by `mobile-screens.css` here — the sheet
-        draws its own header, and two crumb rows stacked would be the clearest
-        possible sign that a desktop column had been dropped into a phone
-        without being reconsidered.
+        THE COLUMN'S OWN HEAD IS NOT RENDERED HERE — the sheet draws one. Two
+        crumb rows stacked, with two ✕s and an `esc` chip on a device that has
+        no Escape key, is the clearest possible sign of a desktop column dropped
+        into a phone without being reconsidered.
+
+        NOT RENDERED rather than hidden. `mobile-screens.css` also carries a
+        `display: none` for it, and that rule is correct as far as the eye is
+        concerned — but jsdom loads no stylesheets, so NO vitest in this package
+        can see it. "Exactly one header, exactly one close control" was
+        therefore a claim nothing could hold, and two headers had already
+        shipped here once. Declining to render it is the same result stated
+        where a test can read it, which is what `aux-sheet-chrome.test.tsx`
+        asserts.
       */}
       {aux ? wrapAux(
         <aside className="ev-aux" id="entity-view-aux" aria-label="Related" data-testid="entity-view-aux">
-          <div className="ev-aux__head">
-            <span className="ev-aux__crumb">{auxCrumb(aux, auxDetail?.title)}</span>
-            <span className="ev-aux__spacer" />
-            <span className="ev-aux__esc">esc</span>
-            <button
-              type="button"
-              className="ev-aux__close"
-              aria-label="Close related panel"
-              data-testid="entity-view-aux-close"
-              onClick={() => setAux(null)}
-            >
-              ✕
-            </button>
-          </div>
+          {oneSurface ? null : (
+            <div className="ev-aux__head">
+              <span className="ev-aux__crumb">{auxCrumb(aux, auxDetail?.title)}</span>
+              <span className="ev-aux__spacer" />
+              <span className="ev-aux__esc">esc</span>
+              <button
+                type="button"
+                className="ev-aux__close"
+                aria-label="Close related panel"
+                data-testid="entity-view-aux-close"
+                onClick={() => setAux(null)}
+              >
+                ✕
+              </button>
+            </div>
+          )}
           <div className="ev-aux__body">
             {aux.sort === 'entity' ? (
               /* The mount moved to `auxPanel.tsx` so a second host can render
@@ -1333,6 +1345,25 @@ export function EntityView(props: EntityViewProps) {
 function auxCrumb(aux: AuxTarget, title: string | undefined): string {
   if (aux.sort === 'tab') return aux.tab;
   return title ?? 'loading…';
+}
+
+/**
+ * HOW MUCH OF THE PHONE FRAME THIS AUX TARGET NEEDS.
+ *
+ * The criterion is a COMPOSER, not a tab name — Discussion is the full-height
+ * one because it is the aux target you type into. The default sheet is 88% of
+ * a frame that is already `100dvh` minus the measured keyboard inset, so with
+ * the keyboard up "88%" is 88% of what the keyboard left: a composer, its foot
+ * row, and about two visible messages. Connections has nothing to type into and
+ * keeps the strip of screen underneath, which is what distinguishes a sheet
+ * from a navigation.
+ *
+ * The entity sort is `'default'` for the same reason and not by omission: it
+ * mounts `AuxEntityPanel`, a reading surface whose own composer — if the entity
+ * has one — lives behind that panel's tabs rather than under the sheet's foot.
+ */
+function auxSheetSize(aux: AuxTarget | null): 'default' | 'full' {
+  return aux?.sort === 'tab' && aux.tab === 'discussion' ? 'full' : 'default';
 }
 
 /**
