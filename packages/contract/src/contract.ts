@@ -684,6 +684,27 @@ export interface EdgeGroup { type: string; direction: 'outgoing'|'incoming'; lab
 export interface EdgeView { id: string; type: string; source: EntitySummary; target: EntitySummary; props: Record<string, unknown>;
   createdBy: ActorSummary; createdAt: string; updatedAt: string; resolved?: boolean; hard?: boolean }
 
+/**
+ * `graph.query`'s edge projection: the same edge facts as `EdgeView`, but the
+ * endpoints are IDS rather than embedded summaries.
+ *
+ * WHY A SECOND SHAPE. A graph result carries its endpoints ALREADY — every
+ * edge `graph.query` returns has both endpoints in the same response's `nodes`
+ * array, because the query only admits an edge when both endpoints survived
+ * node selection (`queryGraph`, and the `visibleEdgeRows` filter that re-checks
+ * it). Embedding the summaries again made the endpoints THREE QUARTERS of the
+ * payload: measured on a real 150-node space, 998 KB of a 1 356 KB response
+ * was `source` + `target`, every byte a duplicate of a node already present.
+ *
+ * The invariant is the contract: a consumer resolves `sourceId`/`targetId`
+ * against `nodes` and is guaranteed a hit. `EdgeView` is unchanged and still
+ * the shape everywhere an endpoint is NOT already in hand — `entities.connections`,
+ * the event feed, command results.
+ */
+export interface GraphEdgeView { id: string; type: string; sourceId: EntityId; targetId: EntityId;
+  props: Record<string, unknown>;
+  createdBy: ActorSummary; createdAt: string; updatedAt: string; resolved?: boolean; hard?: boolean }
+
 /** Flat `entities.connections` query; cursors bind this complete fingerprint. */
 export interface EntityConnectionsQuery {
   types?: string[];
@@ -827,7 +848,7 @@ export interface CollectionGroup {
   total?: number;
 }
 export interface GraphQuery extends CollectionQuery { focusId?: EntityId; hops?: number; edgeTypes?: string[]; mode?: 'free'|'dependency' }
-export interface GraphResult { nodes: EntitySummary[]; edges: EdgeView[]; clusters: { parentId: EntityId; childIds: EntityId[] }[];
+export interface GraphResult { nodes: EntitySummary[]; edges: GraphEdgeView[]; clusters: { parentId: EntityId; childIds: EntityId[] }[];
   layout?: Record<EntityId, { x: number; y: number }> }
 
 // ---------------------------------------------------------------------------
