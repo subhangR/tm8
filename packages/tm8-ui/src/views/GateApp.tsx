@@ -234,6 +234,34 @@ export interface GateAppProps {
  */
 type BootRoute = 'pending' | 'addressable' | 'none';
 
+/**
+ * A TARGET'S SCREEN KEY — one derivation, exported, for every site that needs it.
+ *
+ * `kind` screens have hosted a stack since the router mounted. VIEW screens could
+ * not, and that was a WIRING GAP rather than a decision: `screenKeyOf.view`
+ * already existed and `CraftScreen` already used it — for surviving unmount, in
+ * memory, with the open entity never reaching the URL. The key existed, the
+ * screen existed, and only the route<->stack loop skipped it.
+ *
+ * A PURE MODULE FUNCTION RATHER THAN A `useCallback` INSIDE THE COMPONENT, and
+ * that is the whole reason it is here: it has no dependencies, so a hook bought
+ * nothing, and a second module needing the same derivation would otherwise have
+ * to write its own. Two spellings of "which key does this target use" is the
+ * failure this file family keeps finding in other guises — one fact, two
+ * implementations, drifting silently. Lane B flagged that its own
+ * `openEntityOnPhone` will be the fourth site; this is the answer to that.
+ *
+ * `entity` targets deliberately get NO key. An entity target IS the leaf; what it
+ * would stack has not been ruled, and inventing an answer in a shared helper is
+ * how a design decision gets made by accident.
+ */
+export function screenKeyOfTarget(target: MenuTarget | null): ScreenKey | null {
+  if (!target) return null;
+  if (target.type === 'kind') return screenKeyOf.kind(target.ref);
+  if (target.type === 'view') return screenKeyOf.view(target.ref);
+  return null;
+}
+
 export function GateApp(props: GateAppProps = {}) {
   // null when this GateApp is not inside an <AuthGate> — the shell tests, and
   // any host that has not mounted the gate.
@@ -410,29 +438,6 @@ export function GateApp(props: GateAppProps = {}) {
    * and re-renders into the screen when the kind lands. Guessing a screen
    * before knowing the kind is the misroute this whole chain was repaired for.
    */
-  /**
-   * A TARGET'S SCREEN KEY, in one place rather than at each of the three sites
-   * that need it.
-   *
-   * `kind` screens have hosted a stack since the router mounted. VIEW screens
-   * could not, and that was a WIRING GAP rather than a decision:
-   * `screenKeyOf.view` already exists and `CraftScreen` already uses it — for
-   * surviving unmount, in memory, with the open entity never reaching the URL.
-   * So the key existed, the screen existed, and only the route<->stack loop
-   * skipped it, which is why `messages` could not carry an open detail in its
-   * address.
-   *
-   * `entity` targets deliberately get NO key. An entity target IS the leaf; the
-   * question of what it would stack has not been ruled, and inventing an answer
-   * here would put a design decision in a helper.
-   */
-  const screenKeyOfTarget = useCallback((target: MenuTarget | null): ScreenKey | null => {
-    if (!target) return null;
-    if (target.type === 'kind') return screenKeyOf.kind(target.ref);
-    if (target.type === 'view') return screenKeyOf.view(target.ref);
-    return null;
-  }, []);
-
   const landing = useMemo<Landing | null>(() => {
     const direct = landingOfRoute(navView);
     if (direct) return direct;
