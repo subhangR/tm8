@@ -29,6 +29,7 @@ import type { Seam, SessionLiveness } from '../data/seam';
 import { GraphView, type GraphTimelineStep } from './GraphView';
 import { attentionSectionFor } from '../views/attentionSurface';
 import { debugSurfaceFor } from '../views/debugSurface';
+import { sessionStatsSurfaceFor } from '../views/sessionStatsSurface';
 import { gitSurfaceFor } from '../views/gitSurface';
 import { mergePrPortFor } from '../views/mergePrPort';
 import { taskGitSectionFor } from '../views/taskGitSection';
@@ -215,6 +216,7 @@ export function GraphScreen(props: GraphScreenProps) {
       liveness={data.livenessOf(selectedId)}
       attentionSection={attentionSectionFor(data.seam, data.spaceId, selectedId, () => data.pull?.(selectedId))}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      sessionStatsSurface={sessionStatsSurfaceFor(data.seam, selectedId)}
       gitSurface={gitSurfaceFor(data.seam, selectedId, data.livenessOf)}
       taskGitSection={taskGitSectionFor(data.seam, detail ?? null, (id) => setSelectedId(id as EntityId))}
       graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>

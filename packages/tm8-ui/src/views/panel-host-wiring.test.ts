@@ -149,6 +149,18 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
+  it.each(hosts)('%s passes sessionStatsSurface at every mount', (_label, file) => {
+    for (const { block } of mounts.filter((m) => m.file === file)) {
+      expect(
+        block.includes('sessionStatsSurface'),
+        `an <EntityDetailPanel> in ${file} does not pass sessionStatsSurface, so an exited ` +
+          'session on this host falls back to the blank canvas — a ring, a verdict and no ' +
+          'post-mortem. Silent in exactly the way debugSurface and attachments were: the ' +
+          'canvas still renders, it just says nothing',
+      ).toBe(true);
+    }
+  });
+
   it.each(hosts)('%s passes membershipAuthoring at every mount', (_label, file) => {
     for (const { block } of mounts.filter((m) => m.file === file)) {
       expect(
@@ -228,6 +240,14 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
         expect(
           block.includes('graphSurfaceFor'),
           `${file} builds graphSurface inline; use graphSurfaceFor() so every host stays identical`,
+        ).toBe(true);
+      }
+      if (block.includes('sessionStatsSurface')) {
+        expect(
+          block.includes('sessionStatsSurfaceFor'),
+          `${file} builds sessionStatsSurface inline; use sessionStatsSurfaceFor() so the read ` +
+            'stays one-shot and file-scanning on every host — a hand-rolled copy that polls ' +
+            'would re-scan a whole transcript on a timer for a session that cannot change',
         ).toBe(true);
       }
       if (block.includes('conversationSurface')) {

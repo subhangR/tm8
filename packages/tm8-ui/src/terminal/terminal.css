@@ -303,6 +303,24 @@
   max-width: 300px;
   text-align: center;
 }
+
+/* WITH A POST-MORTEM the canvas stops being a centred notice and becomes a
+   readable column: taller than the panel, so it scrolls, and wide enough for a
+   four-column figure grid.
+
+   The inner block is centred by the parent's `justify-content` and NOT by
+   `margin-inline: auto`. Auto margins centre nothing against a content-sized
+   flex item, and a `width: 100%` child of a centring flex parent is centred
+   already — so this holds at every panel width instead of only above the
+   max-width. */
+.cv2-root .term-fallback--stats {
+  align-items: flex-start;
+  overflow-y: auto;
+}
+.cv2-root .term-fallback--stats .term-fallback__inner {
+  width: 100%;
+  max-width: 520px;
+}
 .cv2-root .term-fallback__ring {
   width: 12px;
   height: 12px;
@@ -385,6 +403,14 @@
   padding: 3px 10px;
   background: var(--pn-card);
   cursor: pointer;
+}
+/* Same treatment, same reason, as the Resume button above: a refused control
+   must LOOK refused. Until now this chip could not be disabled at all, so an
+   unwired transcript handler drew a chip that was indistinguishable from a
+   working one and did nothing when clicked. */
+.cv2-root .term-fallback__chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* --- LIVE-SESSION BAR (T0-5) — always dark ------------------------------- */

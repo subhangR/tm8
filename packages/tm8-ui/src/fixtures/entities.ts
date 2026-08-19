@@ -1367,6 +1367,48 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     },
   }),
 
+  /*
+   * AN ENDED SESSION WITH A DETAIL — HANDOVER-SessionAnatomy.md §8 F1.
+   *
+   * `sessionStale` was the ONLY work_session with a detail arm, and stale is the
+   * one ended-ish state whose canvas is NOT the exited fallback. So the exited
+   * canvas — the verdict word, the exit facts line, Resume, and now the
+   * post-mortem — could not be opened on the fixture seam at all. Its `state`
+   * already carries both timestamps (`T.older` → `T.old`), which is what makes
+   * `ran … · ended …` a real line here rather than the "duration not recorded"
+   * degradation.
+   *
+   * `sessionFailed` gets one too (F2), and it is NOT redundant: the verdict
+   * `presentSession` hands the canvas is `not-running` for BOTH, and the fork
+   * between "exited" and "failed" is read off the DETAIL's own
+   * `state.status`. Without a failed detail there is no way to reach the
+   * failed interior at all — from a test or from the app — which is exactly
+   * how D3 survived this long.
+   */
+  [sessionExited.id]: detail(sessionExited, {
+    content: {
+      kind: 'work_session',
+      nodeId: 'node-local',
+      launchProjectId: 'proj-tm8ui',
+      workingOn: [taskGuideLines],
+      transcriptDoc: null,
+    },
+    hierarchy: hierarchy(taskGuideLines, [], [channelDesign, taskGuideLines]),
+    connections: { outgoing: [], incoming: [], unresolvedHardDependencyCount: 0 },
+  }),
+
+  [sessionFailed.id]: detail(sessionFailed, {
+    content: {
+      kind: 'work_session',
+      nodeId: 'node-local',
+      launchProjectId: 'proj-tm8ui',
+      workingOn: [taskTombstone],
+      transcriptDoc: null,
+    },
+    hierarchy: hierarchy(taskTombstone, [], [taskTombstone]),
+    connections: { outgoing: [], incoming: [], unresolvedHardDependencyCount: 0 },
+  }),
+
   [teamMemberScout.id]: detail(teamMemberScout, {
     content: {
       kind: 'team_member',

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { useShellKind } from '../../mobile';
@@ -93,6 +93,17 @@ export interface TerminalBodyProps {
   onResume?: () => void;
   resuming?: boolean;
   resumeDisabledReason?: string;
+  /**
+   * THE POST-MORTEM for an ended session, host-wired like `debugSurface`.
+   *
+   * It reads `execution.transcript` and this layer holds no seam — the panel is
+   * presentational by construction — so it arrives already composed, from
+   * `sessionStatsSurfaceFor()`. It reaches only the exited/failed canvas: a
+   * running session's stats belong to the running session's own surfaces, and
+   * mounting a transcript read beside a live PTY would poll a file that the
+   * terminal is already showing you.
+   */
+  statsSurface?: ReactNode;
 }
 
 export function TerminalBody({
@@ -108,6 +119,7 @@ export function TerminalBody({
   onResume,
   resuming,
   resumeDisabledReason,
+  statsSurface,
 }: TerminalBodyProps) {
   const row = toSessionRow(detail);
   const presentation = presentSession({
@@ -226,6 +238,12 @@ export function TerminalBody({
           serverBaseUrl={serverBaseUrl}
           livenessLabel={livenessLabel}
           livenessReason={livenessReason}
+          /* The record's own timestamps, straight through. `toSessionRow`
+             already reads them structurally, so the exit facts arrive by the
+             same route as the recorded status the presentation uses. */
+          startedAt={row.startedAt}
+          exitedAt={row.exitedAt}
+          statsSurface={statsSurface}
           onOpenTranscript={onOpenTranscript}
           {...(onResume ? { onResume } : {})}
           {...(resuming ? { resuming } : {})}
@@ -293,6 +311,9 @@ function SessionCanvas({
   serverBaseUrl,
   livenessLabel,
   livenessReason,
+  startedAt,
+  exitedAt,
+  statsSurface,
   onOpenTranscript,
   onResume,
   resuming,
@@ -307,6 +328,9 @@ function SessionCanvas({
   serverBaseUrl?: string;
   livenessLabel?: string;
   livenessReason?: string;
+  startedAt?: string | null;
+  exitedAt?: string | null;
+  statsSurface?: ReactNode;
   onOpenTranscript?: () => void;
   onResume?: () => void;
   resuming?: boolean;
@@ -353,8 +377,18 @@ function SessionCanvas({
     case 'failed':
     case 'exited':
     default:
+      /* D3 CLOSED. Both statuses keep this one canvas — that was never the
+         problem — but the canvas is now TOLD which ending it is drawing, so a
+         failed session stops calling itself exited while the presentation two
+         rows down correctly calls it failed. `presentation` is the authority
+         here exactly as it is for every other arm of this switch; nothing
+         re-derives the verdict from the record. */
       return (
         <ExitedFallback
+          outcome={presentation === 'failed' ? 'failed' : 'exited'}
+          startedAt={startedAt}
+          exitedAt={exitedAt}
+          {...(statsSurface ? { stats: statsSurface } : {})}
           onOpenTranscript={onOpenTranscript}
           {...(onResume ? { onResume } : {})}
           {...(resuming ? { resuming } : {})}

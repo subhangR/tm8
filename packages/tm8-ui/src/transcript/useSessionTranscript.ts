@@ -29,6 +29,16 @@ export interface UseSessionTranscriptOptions {
   /** How many trailing entries to ask for. The server reads a TAIL and there is
    *  no cursor, so a larger number widens the window; it does not page back. */
   last?: number;
+  /**
+   * Also attach `fileChanges` — the Edit/Write calls this session's agent made,
+   * parsed from the WHOLE transcript rather than the tail.
+   *
+   * OFF BY DEFAULT because of that word: it is a full-file scan, where the rest
+   * of this read is a bounded tail. A polling caller must not ask for it; a
+   * one-shot read of a session that has already ended can afford it exactly
+   * once, and that is the only caller who does.
+   */
+  files?: boolean;
 }
 
 export interface SessionTranscriptRead {
@@ -41,7 +51,7 @@ export interface SessionTranscriptRead {
 export function useSessionTranscript(
   seam: Pick<Seam, 'transcript'>,
   sessionId: EntityId,
-  { intervalMs = null, last }: UseSessionTranscriptOptions = {},
+  { intervalMs = null, last, files }: UseSessionTranscriptOptions = {},
 ): SessionTranscriptRead {
   const [state, setState] = useState<TranscriptState>({ phase: 'loading' });
   // Whether anything has ever landed. Governs rule 1 above, and is a ref rather
@@ -55,7 +65,17 @@ export function useSessionTranscript(
   const load = useCallback(async () => {
     const seq = ++requestSeq.current;
     try {
-      const page = await seam.transcript(sessionId, last === undefined ? undefined : { last });
+      /* Built rather than always-passed so a caller that asks for neither sends
+         no opts at all — the shape the seam has served since before either
+         option existed, and the one every fixture arm is written against. */
+      const opts = {
+        ...(last === undefined ? {} : { last }),
+        ...(files ? { files } : {}),
+      };
+      const page = await seam.transcript(
+        sessionId,
+        Object.keys(opts).length === 0 ? undefined : opts,
+      );
       if (seq !== requestSeq.current) return;
       hasLoaded.current = true;
       setState({ phase: 'ready', page });
@@ -70,7 +90,7 @@ export function useSessionTranscript(
         });
       }
     }
-  }, [seam, sessionId, last]);
+  }, [seam, sessionId, last, files]);
 
   // A new session is a new read from scratch — otherwise the previous session's
   // turns stay on screen under the new session's header.

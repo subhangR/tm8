@@ -198,7 +198,7 @@ describe('terminal host', () => {
 
 describe('fallbacks — each verdict states what is actually known', () => {
   it('exited points at the surviving record and offers resume', () => {
-    const { getByTestId } = render(<ExitedFallback meta="exit code 0 · ran 41m" />);
+    const { getByTestId } = render(<ExitedFallback />);
     const el = getByTestId('session-exited-fallback');
     expect(el.textContent).toContain('Session exited');
     // The record survives — that half of the old copy is unchanged.
@@ -206,6 +206,86 @@ describe('fallbacks — each verdict states what is actually known', () => {
     // "Read-only" is GONE on purpose: a resumable session is not read-only,
     // and the word next to a Resume button would be a false claim.
     expect(el.textContent).not.toMatch(/read-only/i);
+  });
+
+  /**
+   * D3 — the failed session that called itself exited.
+   *
+   * `TerminalBody` has always mapped `failed` and `exited` onto this one
+   * canvas, and the canvas has always said "Session exited" while the
+   * presentation layer correctly said `failed`. Two claims about one session,
+   * on one screen.
+   */
+  it('gives a failed session its own word, and still no exit code', () => {
+    const { getByTestId } = render(<ExitedFallback outcome="failed" />);
+    const el = getByTestId('session-exited-fallback');
+    expect(el.dataset.outcome).toBe('failed');
+    expect(el.textContent).toContain('Session failed');
+    expect(el.textContent).not.toContain('Session exited');
+    // NOT a red number. The contract projects no exit code on any node, so
+    // there is nothing here to colour — the oracle's "non-zero exit codes
+    // render the code in block red" stays unbuildable and unbuilt.
+    expect(el.textContent).not.toMatch(/exit code/i);
+  });
+
+  /**
+   * D1 — the exit facts, which had never rendered on any screen. `meta` was a
+   * string prop for exactly this line and its only caller passed none; it is
+   * superseded by the record itself rather than finally fed.
+   */
+  it('assembles the exit facts from the record, and refuses to invent an ending', () => {
+    const withEnd = render(
+      <ExitedFallback
+        startedAt="2026-01-02T10:00:00.000Z"
+        exitedAt="2026-01-02T10:41:00.000Z"
+      />,
+    );
+    expect(withEnd.getByTestId('session-exit-facts').textContent).toMatch(/ran 41m/);
+    withEnd.unmount();
+
+    // A row whose node died before it could close out. No duration is
+    // manufactured from `now`, and the absence is stated.
+    const openEnded = render(<ExitedFallback startedAt="2026-01-02T10:00:00.000Z" />);
+    const facts = openEnded.getByTestId('session-exit-facts').textContent ?? '';
+    expect(facts).toMatch(/duration not recorded/);
+    expect(facts).toMatch(/no end recorded/);
+    openEnded.unmount();
+
+    // A record with neither timestamp draws no line at all rather than a line
+    // made entirely of refusals.
+    const bare = render(<ExitedFallback />);
+    expect(bare.queryByTestId('session-exit-facts')).toBeNull();
+  });
+
+  /**
+   * D2 — the enabled-inert transcript button, which was a live control with
+   * `onClick={undefined}` on every host that did not wire the handler. Same L6
+   * rule as Resume, which sits beside it and has always obeyed it.
+   */
+  it('refuses the transcript button out loud when no host wired it', () => {
+    const unwired = render(<ExitedFallback />);
+    const inert = unwired.getByTestId('session-open-transcript') as HTMLButtonElement;
+    expect(inert.disabled).toBe(true);
+    expect(inert.title).toMatch(/not wired/i);
+    unwired.unmount();
+
+    const calls: number[] = [];
+    const wired = render(<ExitedFallback onOpenTranscript={() => calls.push(1)} />);
+    const live = wired.getByTestId('session-open-transcript') as HTMLButtonElement;
+    expect(live.disabled).toBe(false);
+    fireEvent.click(live);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('mounts a host-supplied post-mortem without displacing resume', () => {
+    const { getByTestId } = render(
+      <ExitedFallback onResume={() => {}} stats={<p data-testid="stats-probe">stats</p>} />,
+    );
+    expect(getByTestId('stats-probe')).toBeTruthy();
+    // The highest-value control on this screen must not regress behind a wall
+    // of figures: it is still present and still live.
+    expect((getByTestId('session-resume') as HTMLButtonElement).disabled).toBe(false);
+    expect(getByTestId('session-exited-fallback').className).toContain('term-fallback--stats');
   });
 
   it('resume is DISABLED with a reason when the host has not wired it — never hidden', () => {
