@@ -1222,6 +1222,65 @@ describe('the ActionRef registry (§2.5)', () => {
     ).toEqual({ kind: 'available' });
   });
 
+  /**
+   * THE PROCESS CONTROL'S TWO GATES ARE EXACT COMPLEMENTS (ruled 2026-08-19).
+   *
+   * That is what makes the shared tail slot total: for any row exactly one of
+   * the pair is permitted, so the swap can never draw two controls or none.
+   * Asserted as an EXCLUSIVE-OR over the whole cross product rather than as a
+   * handful of cases, because the failure this guards against is a later
+   * amendment moving one gate and not the other — and a case list would have
+   * to be remembered to be extended.
+   */
+  it('terminate and resume are exact complements, on every category × liveness', () => {
+    const categories = ['to_do', 'in_progress', 'done', 'blocked'] as const;
+    const verdicts = ['live', 'stale', 'not-running', 'unknown'] as const;
+    const both: string[] = [];
+    const neither: string[] = [];
+    for (const category of categories) {
+      for (const liveness of verdicts) {
+        const ctx = { spaceId: 's', entityId: 'sess-1', category, liveness } as const;
+        const canEnd = resolveAction('terminate').availability(ctx).kind === 'available';
+        const canResume = resolveAction('resume').availability(ctx).kind === 'available';
+        if (canEnd && canResume) both.push(`${category}/${liveness}`);
+        if (!canEnd && !canResume) neither.push(`${category}/${liveness}`);
+      }
+    }
+    expect({ both, neither }).toEqual({ both: [], neither: [] });
+  });
+
+  it('resume is offered on exactly the row the defect was reported about', () => {
+    // `exited`/`failed` reads here as done + nothing answering. This is the row
+    // that had a refused Terminate beside a tick that wrote and moved nothing.
+    expect(
+      resolveAction('resume').availability({
+        spaceId: 's',
+        entityId: 'sess-1',
+        liveness: 'not-running',
+        category: 'done',
+      }),
+    ).toEqual({ kind: 'available' });
+
+    // A session TICKED WHILE RUNNING has not ended, so it is not resumable —
+    // the headline state #425 shipped 4012 tests without ever pairing.
+    expect(
+      resolveAction('resume').availability({
+        spaceId: 's',
+        entityId: 'sess-1',
+        liveness: 'live',
+        category: 'done',
+      }).kind,
+    ).toBe('disabled');
+  });
+
+  it('resume is NOT a launch — it restores a configuration rather than choosing one', () => {
+    // A `flow: 'launch'` verb opens the config instead of dispatching, which
+    // would put a teammate/model card in front of a session whose persona,
+    // project, model and workdir are re-read from the graph.
+    expect(resolveAction('resume').flow).toBeUndefined();
+    expect(resolveAction('resume').label).toBe('Resume');
+  });
+
   it('never runs a disabled action', async () => {
     const calls: unknown[] = [];
     await resolveAction('complete').run({

@@ -65,9 +65,12 @@ import type {
 } from '../../domain';
 import {
   KindIcon,
+  PROCESS_CONTROL,
   REASONS,
   getKind,
+  hasEnded,
   offWorkflowType,
+  processControlFor,
   resolveAction,
   workflowRefusalText,
   workflowTypeOf,
@@ -165,6 +168,17 @@ export interface ControlHost {
    * be handed its real executor or it draws live and does nothing.
    */
   onTerminate?: (entityId: string) => void;
+  /**
+   * Session RE-open — the other half of the tail slot, and a dedicated prop
+   * for exactly the reason terminate is one: `props.onAction` is the
+   * session-START dispatcher, whose switch has never known this verb, so a
+   * resume routed through it would draw live and be swallowed.
+   *
+   * Absent ⇒ the swapped-in Resume renders its honest not-wired refusal
+   * rather than a live button, which is `RowAction`'s fallback and not a
+   * special case here.
+   */
+  onResume?: (entityId: string) => void;
   /**
    * The tick. A dedicated prop for exactly the reason the two above are.
    *
@@ -334,9 +348,19 @@ const RULED_ORDER: readonly ActionRef[] = ['complete', 'run'];
 /**
  * The verbs that sit AFTER the anatomy's own affordances, hard right.
  *
- * Terminate only. It is not a lifecycle verb under this model — it kills a
- * live PTY this instant — so it is kept away from the verbs that move a row
- * through its life, in the position a destructive control belongs in.
+ * ONE SLOT, TWO VERBS — THE PROCESS CONTROL (user ruling 2026-08-19). The slot
+ * holds `terminate` while a run could still be answering and `resume` once it
+ * has ended; `hasEnded` decides, and only ever one of them is drawn.
+ *
+ * It is declared as `['terminate']` and not as the pair because `TAIL_ORDER`
+ * answers a POSITIONAL question — which of a kind's declared verbs sit hard
+ * right — and `resume` is never declared by a kind (see the swap below, and
+ * the ruling recorded on work_session's `rowActions`). Adding it here would
+ * put a second, permanently refused control in the tail of every session row.
+ *
+ * Neither half is a lifecycle verb under this model — one kills a live PTY
+ * this instant, the other boots a real agent process — so they are kept away
+ * from the verbs that move a row through its life.
  */
 const TAIL_ORDER: readonly ActionRef[] = ['terminate'];
 
@@ -402,15 +426,47 @@ export function RowActionCluster({
   const archiveRefused = capabilities !== undefined && !capabilities.canDelete;
 
   const declared = list.rowActions ?? [];
+
+  /**
+   * HAS THIS ROW'S RUN ENDED — the process control's swap, and the one place
+   * it is decided (user ruling 2026-08-19; see `TAIL_ORDER` above).
+   *
+   * SCOPED TO ROWS THAT HAVE A PROCESS, which is what `terminate` in the
+   * declared list means. Without that guard `hasEnded` is true of every
+   * completed TASK too — `category: 'done'`, and `livenessOf` answers nothing
+   * live for a non-session — and the tick would vanish from every done task,
+   * taking the untick with it. The ruling is about a finished RUN; a row with
+   * no run cannot have finished one.
+   *
+   * It answers TWO questions, deliberately from one predicate:
+   *   · the tail slot draws Resume instead of Terminate, and
+   *   · the tick is not emitted at all.
+   * The second is why this cannot be an availability verdict: `ActionAvailability`
+   * has no `hidden`, and a `rowActions` entry cannot hide itself. Absence
+   * rather than disabled-with-reason is the ruling — the tick on a finished
+   * run has no SUBJECT to toggle, so there is no refusal to explain — and it
+   * is the same ruling Archive already follows two blocks below.
+   *
+   * The 2→1 jitter when a hovered row dies is ACCEPTED, not designed around:
+   * the shift is a welcome signal that the session just ended.
+   */
+  const rowProcess = { category: row.category, liveness: props.livenessOf?.(row.id) };
+  const endedRun = declared.includes(PROCESS_CONTROL.running) && hasEnded(rowProcess);
+
   /* `sort` is stable in every engine this ships to (ES2019 requires it), which
      is what lets an unranked verb keep its declared position. */
-  const middle = declared.filter((ref) => !TAIL_ORDER.includes(ref)).sort((a, b) => rankOf(a) - rankOf(b));
-  const tail = declared.filter((ref) => TAIL_ORDER.includes(ref));
+  const middle = declared
+    .filter((ref) => !TAIL_ORDER.includes(ref))
+    .filter((ref) => !(endedRun && ref === 'complete'))
+    .sort((a, b) => rankOf(a) - rankOf(b));
+  const tail = declared
+    .filter((ref) => TAIL_ORDER.includes(ref))
+    .map((ref) => processControlFor(ref, rowProcess));
 
   /**
    * The dedicated executor for a verb the general `onAction` cannot perform.
    *
-   * THREE verbs are in this position and all three for one reason: the list's
+   * FOUR verbs are in this position and all four for one reason: the list's
    * `onAction` is the session-START dispatcher (see the hosts:
    * `onAction={sessionStart.onAction}`), a switch whose `default:` returns. A
    * verb routed through it draws live — it passed its capability gate — and
@@ -424,6 +480,7 @@ export function RowActionCluster({
    */
   const executorFor = (ref: ActionRef): ((ref: ActionRef, entityId: string) => void) | undefined => {
     if (ref === 'terminate' && props.onTerminate) return (_ref, id) => props.onTerminate?.(id);
+    if (ref === 'resume' && props.onResume) return (_ref, id) => props.onResume?.(id);
     if (ref === 'complete' && props.onComplete) return (_ref, id) => props.onComplete?.(id);
     return undefined;
   };

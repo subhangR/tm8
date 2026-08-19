@@ -1403,39 +1403,56 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(fired).toEqual(['terminate']);
   });
 
-  it('a session under DONE refuses Terminate — it has already ended', () => {
+  it('a session under DONE swaps Terminate for RESUME — one slot, two verbs', () => {
     /**
-     * WHAT CHANGED, 2026-08-19. This used to assert that an EXITED session
-     * refuses Terminate "with the liveness reason", on the reasoning that
-     * there is no process to signal. That reasoning was wrong about the node:
-     * `SpawnService.terminate` treats a missing PTY as success and writes
-     * `exited` anyway, and the user's report was that it left ghost rows —
-     * stale, unknown, stuck in To Do — with a dead button and no way out.
+     * WHAT CHANGED, TWICE, ON 2026-08-19.
      *
-     * So the gate moved from LIVENESS to CATEGORY. The refusal that survives
-     * is the true one: a row already under Done cannot be ended again. The
-     * `liveness="exited"` here is now incidental — what refuses this control
-     * is the category the detail carries.
+     * FIRST this asserted that an EXITED session refuses Terminate "with the
+     * liveness reason", on the reasoning that there is no process to signal.
+     * That reasoning was wrong about the node: `SpawnService.terminate` treats
+     * a missing PTY as success and writes `exited` anyway, and the user's
+     * report was that it left ghost rows — stale, unknown, stuck in To Do —
+     * with a dead button and no way out. So the gate moved from LIVENESS to
+     * CATEGORY, and the refusal that survived was the true one: a row already
+     * under Done cannot be ended again.
+     *
+     * THEN the refusal itself went. A correct refusal is still a dead button
+     * in the row's only destructive slot, and it sat there while the one verb
+     * that IS eligible on exactly these rows — `execution.resume`, a v1
+     * catalog operation since the contract was written — had no button in the
+     * registry at all. Terminate and Resume are ONE control now, sharing the
+     * slot on exactly complementary gates, so this state shows a LIVE verb
+     * rather than a well-explained dead one.
+     *
+     * `liveness="exited"` and the `done` category are the same fixture as
+     * before; only the expected control changed.
      */
     const source = fixtureDetails[sessionStale.id]!;
     const detail = { ...source, category: 'done' as const };
+    const dispatched: string[] = [];
     const { getByTestId } = render(
       <EntityDetailPanel
         detail={detail}
         reasons={REASONS}
         ctx={{ ...ctx, capabilities: detail.capabilities }}
         liveness="exited"
-        onAction={() => {}}
-        wiredActions={['terminate']}
+        onAction={(ref) => dispatched.push(ref)}
+        wiredActions={['terminate', 'resume']}
       />,
     );
     const bar = getByTestId('panel-action-bar');
-    expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBeGreaterThan(0);
     // BY NAME, NOT BY TEXT: on a session bar the primaries are drawn as marks
     // (the labels were part of what pushed the panel's own tabs off the edge),
-    // so the verb states itself through its accessible name. A refusal that
-    // could not be found by the word would be a refusal nobody can read.
-    expect(within(bar).getByRole('button', { name: /terminate/i })).toBeTruthy();
+    // so the verb states itself through its accessible name.
+    //
+    // TERMINATE IS ABSENT, not greyed — the slot holds ONE control, and a
+    // second one carrying "this session has already ended" would be the
+    // "a refused control is not a control" shape this replaced.
+    expect(within(bar).queryByRole('button', { name: /terminate/i })).toBeNull();
+    expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBe(0);
+    const resume = within(bar).getByRole('button', { name: /resume/i });
+    fireEvent.click(resume);
+    expect(dispatched).toEqual(['resume']);
   });
 
   it('but a GHOST session offers it — that is the row the ruling is about', () => {
@@ -1453,13 +1470,18 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         ctx={{ ...ctx, capabilities: detail.capabilities }}
         liveness="unknown"
         onAction={() => {}}
-        wiredActions={['terminate']}
+        wiredActions={['terminate', 'resume']}
       />,
     );
     const bar = getByTestId('panel-action-bar');
     // Named rather than read as text — the session bar's primaries are marks.
     expect(within(bar).getByRole('button', { name: /terminate/i })).toBeTruthy();
     expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBe(0);
+    // THE OTHER DIRECTION, IN THE SAME TEST. The slot is total: a ghost has
+    // not ended, so Resume must not appear beside the Terminate it would
+    // otherwise replace. Pinned here rather than in a test of its own so the
+    // two cannot be traded off against each other later.
+    expect(within(bar).queryByRole('button', { name: /resume/i })).toBeNull();
   });
 
   it('DEFECT: Run on a task panel expands the SAME quick config the list rows open', () => {

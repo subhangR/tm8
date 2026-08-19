@@ -231,14 +231,20 @@ export function WorkspaceView(props: WorkspaceViewProps) {
      session tile's ✕, a stable `useCallback` before this PR — became unstable.
      Nothing is memoised on it today; this keeps it that way by choice rather
      than by luck. */
-  const notifyTerminateFailed = useCallback(
-    (_verb: ActionRef, _entityId: string, error: unknown) => {
+  /* ONE reporter for BOTH halves of the process control, keyed on the verb it
+     is handed. Resume's refusals are the ones a user can act on — no native id
+     recorded, the concurrency cap, an ambiguous Codex rollout — so it gets the
+     longer read; the body is the node's own message either way, never a
+     paraphrase, because paraphrasing discards the remedy. */
+  const notifySessionVerbFailed = useCallback(
+    (verb: ActionRef, _entityId: string, error: unknown) => {
+      const resumed = verb === 'resume';
       props.onNotice({
-        id: 'session-terminate-failed',
+        id: resumed ? 'session-resume-failed' : 'session-terminate-failed',
         tone: 'error',
-        title: 'Session could not be terminated',
+        title: resumed ? 'Session could not be resumed' : 'Session could not be terminated',
         body: String((error as { message?: string })?.message ?? error),
-        ttlMs: 6_000,
+        ttlMs: resumed ? 8_000 : 6_000,
       });
     },
     [props.onNotice],
@@ -246,7 +252,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const primaries = usePanelPrimaries({
     seam: data.seam,
     reconcileCommand: data.reconcileCommand,
-    onError: notifyTerminateFailed,
+    onError: notifySessionVerbFailed,
   });
   const handleSessionTerminate = primaries.terminate;
 
@@ -262,30 +268,17 @@ export function WorkspaceView(props: WorkspaceViewProps) {
    */
 
   /**
-   * Resume — the inverse of close, and the reason the exited card has a button.
+   * Resume — the inverse of close, and now the OTHER HALF of the process
+   * control rather than only the exited card's button.
    *
-   * `resumingId` is not cosmetic: resume boots a real agent process, and a
-   * double-fire races two spawns onto one session id. The server refuses the
-   * second with `conflict`, but the honest UI is to not send it.
+   * It moved into `usePanelPrimaries` beside terminate when the row cluster
+   * and the panel bar grew their own Resume: three surfaces firing the same
+   * command, and the in-flight guard (`resumingId` — resume boots a real agent
+   * process, and a double-fire races two spawns onto one session id) is worth
+   * nothing if only one of them consults it.
    */
-  const [resumingId, setResumingId] = useState<string | null>(null);
-  const handleSessionResume = useCallback((entityId: string) => {
-    setResumingId(entityId);
-    void data.seam.commands.resume(entityId as EntityId, {
-      clientMutationId: `resume:${entityId}:${Date.now()}`,
-    }).then(data.reconcileCommand).catch((error: unknown) => {
-      props.onNotice({
-        id: 'session-resume-failed',
-        tone: 'error',
-        title: 'Session could not be resumed',
-        // The server's refusal, verbatim. Resume fails for REASONS a user can
-        // act on — no native id recorded, the concurrency cap, an ambiguous
-        // Codex rollout — and paraphrasing them would discard the remedy.
-        body: String((error as { message?: string })?.message ?? error),
-        ttlMs: 8_000,
-      });
-    }).finally(() => setResumingId(null));
-  }, [data.seam.commands, data.reconcileCommand, props.onNotice]);
+  const handleSessionResume = primaries.resume;
+  const resumingId = primaries.resumingId;
 
   /** Opening is never blocked on the mutation. Resolve only when the rendered
       summary says attention is pending, and coalesce rapid repeated clicks. */
@@ -778,6 +771,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                expanded inline under a task (any panel kind) deserves the same
                close the sessions list gives it. */
             onTerminate={handleSessionTerminate}
+            onResume={handleSessionResume}
             onSetState={rowLifecycle.setState}
             onArchive={rowLifecycle.archive}
             onComplete={rowLifecycle.complete}
@@ -915,6 +909,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             onSelect={openEntity}
             /* Same rule as the left dock — see the comment there. */
             onTerminate={handleSessionTerminate}
+            onResume={handleSessionResume}
             onSetState={rowLifecycle.setState}
             onArchive={rowLifecycle.archive}
             onComplete={rowLifecycle.complete}

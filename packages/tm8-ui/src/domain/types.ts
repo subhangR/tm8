@@ -347,6 +347,18 @@ export type ActionRef =
   // between and the verb commits directly.
   | 'start-terminal'
   | 'terminate'
+  // THE OTHER HALF OF THE PROCESS CONTROL. Terminate ends a run; this brings
+  // an ended one back with the agent's own conversation restored
+  // (`execution.resume`, a v1 catalog operation since the contract was
+  // written). The two share ONE slot and their gates are exact complements —
+  // see `hasEnded` in `domain/actions.ts`, which both consult.
+  //
+  // NOT wrapped in `launching()`, and the distinction is the same one
+  // `start-terminal` draws next door: a resume RESTORES a configuration
+  // rather than choosing one. Persona, project, tasks, model and workdir are
+  // re-read from the graph and the posture comes off the recorded manifest,
+  // so a launch config would open a card asking for things already decided.
+  | 'resume'
   | 'prompt-session'
   // §8 share-into-session (seam-deferred, §10.7)
   | 'share-into-session'
