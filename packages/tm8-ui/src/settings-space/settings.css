@@ -63,6 +63,18 @@
   flex-direction: column;
   min-height: 0;
   height: 100%;
+  /* THE CENTRING FIX (user report 2026-08-19, "center the settings page").
+     `.set-card` has carried `max-width` + `margin-inline: auto` since the frame
+     pass, and it centred nothing — because `.shell-body` is a flex ROW and this
+     root is a flex ITEM of it with the initial `flex: 0 1 auto`. That sizes the
+     root by its CONTENT, so `auto` margins had a box exactly as wide as the
+     card to centre inside, and the leftover width stayed outside as bare paper:
+     measured 1023px of a 1440px row, an 18px gutter left against 433px right.
+     Growing the root is what gives `margin-inline: auto` something to centre
+     IN. `min-width: 0` beside it for the usual reason — a flex item's automatic
+     minimum is its content, and the sections below scroll internally. */
+  flex: 1;
+  min-width: 0;
   /* The card no longer touches the viewport edges. Without this the rounded
      corners and the border render against nothing and the card reads as a
      failed full-bleed rather than a card. */

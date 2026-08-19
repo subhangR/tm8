@@ -16,6 +16,9 @@
  *   - sections disagreed about how many scrollers they had, and a nested pair
  *     silently clips the inner one.
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, act } from '@testing-library/react';
 import { resolveMenu } from '../shell/menu-resolve';
@@ -136,5 +139,53 @@ describe('the section frame', () => {
     );
     expect(container.querySelector('.set-section__head button')).not.toBeNull();
     expect(container.querySelector('.set-section__scroll button')).toBeNull();
+  });
+
+  /**
+   * THE CENTRING PAIR — held here for the reason stated at the top of this
+   * file: jsdom has no layout engine, the pixels were measured in real Chrome,
+   * and a CSS rule nothing asserts is a rule that comes back.
+   *
+   * It takes BOTH declarations and it took both to fix. `.set-card` has carried
+   * `max-width` + `margin-inline: auto` since the frame pass and centred
+   * nothing, because `.shell-body` (shell.css) is a flex ROW and `.set-root` is
+   * an item of it — at the initial `flex: 0 1 auto` the root was sized by its
+   * CONTENT, so the card's auto margins had a box exactly its own width to
+   * centre inside. Measured in Chrome at a 1440px viewport: 1023px root, 18px
+   * gutter left against 433px right. With `flex: 1` on the root, 125px / 125px.
+   *
+   * So asserting either half alone would pass over the defect.
+   */
+  describe('the card is centred in the shell’s body row', () => {
+    const CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'settings.css'), 'utf8');
+
+    /**
+     * Every declaration this stylesheet makes for a selector, joined.
+     *
+     * ALL of them, not the first: `.set-root` is deliberately declared twice —
+     * once for the four layout custom properties, once for the frame itself —
+     * and a helper that stopped at the first block would read the wrong one and
+     * report a missing rule as a failure.
+     */
+    function declarationsFor(selector: string): string {
+      const blocks: string[] = [];
+      for (let at = CSS.indexOf(`${selector} {`); at > -1; at = CSS.indexOf(`${selector} {`, at + 1)) {
+        blocks.push(CSS.slice(at, CSS.indexOf('}', at)));
+      }
+      expect(blocks.length, `settings.css declares no rule for \`${selector}\``).toBeGreaterThan(0);
+      // Comments carry the words `flex: 1` and `margin-inline: auto` while
+      // explaining them; matching those would pass on the explanation alone.
+      return blocks.join('\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+    }
+
+    it('grows the root, so the auto margins have room to centre in', () => {
+      expect(declarationsFor('.set-root')).toMatch(/flex: 1[;\s]/);
+    });
+
+    it('caps the card and centres it with auto inline margins', () => {
+      const card = declarationsFor('.set-card');
+      expect(card).toMatch(/max-width: var\(--set-card-max\)/);
+      expect(card).toMatch(/margin-inline: auto/);
+    });
   });
 });
