@@ -386,16 +386,20 @@
   cursor: pointer;
 }
 .cv2-root .hp-aside__workspace:hover { color: var(--pn-ink); background: var(--pn-hover); }
+/* The inset around Home's surface is HALF what it was (Subhang, 2026-08-19):
+   the old 10/14 gutter spent a visible band of the canvas on nothing on every
+   side of the screen. All three rules move together — they are the same edge,
+   and a needs strip inset further than the chat under it reads as a misalign. */
 .cv2-root .hp-root--chat .hp-needs {
   flex: none;
-  margin: 10px 14px 0;
+  margin: 5px 7px 0;
 }
-.cv2-root .hp-root--chat .hp-note { margin: 8px 14px 0; }
+.cv2-root .hp-root--chat .hp-note { margin: 4px 7px 0; }
 .cv2-root .hp-chat--full {
   flex: 1;
   height: auto;
   min-height: 0;
-  margin: 10px 14px;
+  margin: 5px 7px;
 }
 /* ONE width for column A on EVERY tab (Subhang, 2026-08-16: "it has to be
    same width"). A per-tab width made the whole layout jump on each tab
