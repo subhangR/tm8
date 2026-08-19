@@ -92,6 +92,53 @@ describe('region B has exactly one occupant', () => {
   });
 });
 
+describe('the conversation header belongs to the conversation', () => {
+  /**
+   * User report 2026-08-19 (task 01a017d3): `New conversation · Work with your
+   * graph from one place` was printed directly above a running terminal. The
+   * header names the OPEN THREAD; while an entity panel or a stage holds
+   * region B the open thread is not what is on screen, so the header captions
+   * a surface it has nothing to do with — and spends 56px doing it, on the one
+   * surface (a terminal) where vertical space is the whole point.
+   */
+  it('is drawn while the conversation itself is in the berth', async () => {
+    const { container } = mount();
+    await screen.findByTestId('chat-entity-tray');
+    expect(container.querySelector('.tch-conversation__head')).not.toBeNull();
+  });
+
+  it('is NOT drawn over a host entity panel', async () => {
+    const { container } = mount({ centerOverride: <div data-testid="host-entity-panel" /> });
+    await screen.findByTestId('host-entity-panel');
+    expect(container.querySelector('.tch-conversation__head')).toBeNull();
+  });
+
+  it('is NOT drawn over a stage either — same reason, different occupant', async () => {
+    const { container } = mount({ stage: 'fleet', onStageChange: vi.fn() });
+    await screen.findByTestId('cockpit-fleet');
+    expect(container.querySelector('.tch-conversation__head')).toBeNull();
+  });
+
+  it('comes BACK when the berth returns to the conversation', async () => {
+    const { port } = createChatHomeFixturePort([CHAT_HOME_FIXTURE_THREAD]);
+    const screenWith = (centre: boolean) => (
+      <ChatHomeScreen
+        port={port}
+        spaceId={SPACE_ID}
+        models={MODELS}
+        routeThreadId={CHAT_HOME_FIXTURE_THREAD.summary.rootId}
+        {...(centre ? { centerOverride: <div data-testid="host-entity-panel" /> } : {})}
+      />
+    );
+    const { container, rerender } = render(screenWith(true));
+    await screen.findByTestId('host-entity-panel');
+    expect(container.querySelector('.tch-conversation__head')).toBeNull();
+
+    rerender(screenWith(false));
+    await waitFor(() => expect(container.querySelector('.tch-conversation__head')).not.toBeNull());
+  });
+});
+
 describe('the dock-down flip (visual lane handoff note)', () => {
   /**
    * `data-empty` centres the greeting + composer as one invitation on an empty

@@ -1262,8 +1262,17 @@ export function ChatHomeScreen({
             one place") is a caption for a chooser that solo does not have.
             Full Chat Home keeps the header: there the title lives nowhere else
             on screen, since the thread LIST names threads, not the open one.
-            The teammate is not lost — the picker's meta line carries it. */}
-        {soloConversation ? null : (
+            The teammate is not lost — the picker's meta line carries it.
+
+            NOT WHILE SOMETHING ELSE HOLDS THE STAGE EITHER (user report
+            2026-08-19, task 01a017d3). The header names the CONVERSATION, and
+            with an entity panel or a stage in region B the conversation is not
+            what is on screen — so `New conversation · Work with your graph from
+            one place` sat above a running terminal, captioning a surface it has
+            nothing to do with. It is the chat's chrome; it belongs to the chat.
+            (The rest of the chat's chrome around region B — the tray and the
+            composer — is a separate open ruling on the same task.) */}
+        {soloConversation || centre != null ? null : (
           <header className="tch-conversation__head">
             <div className="tch-title">
               <strong>{detail?.summary.title ?? 'New conversation'}</strong>
