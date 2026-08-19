@@ -1,0 +1,241 @@
+/* ==========================================================================
+   THE CREATE / EDIT FORM ON A PHONE — the surface the user filed this against
+   ==========================================================================
+
+   The user's words: "for the edit / add child / create I am considering mobile
+   friendly surfaces because it's hard to write content into this surface with
+   current UI", and "need to cleanup and improve on all entities create / edit
+   panels properly, make them mobile friendly".
+
+   ── WHY IT IS HARD TO WRITE IN, WHICH IS ONE FACT AND NOT A LIST ──────────
+
+   `authoring.css` had ZERO `[data-shell='mobile']` rules. Not a bad phone
+   arrangement — no phone arrangement. What renders on a 390px screen today is
+   the desktop card, unchanged:
+
+     .au-dialog__backdrop   position: fixed; inset: 0; display: flex;
+                            align-items: center; padding: 24px
+     .au-dialog             width: min(380px, 100%); max-height: 100%
+     .au-dialog__input      font-size: 13px; padding: 5px 8px
+     textarea.au-dialog__input   min-height: 48px
+     .au-dialog__actions button  padding: 3px 10px; font-size: 11.5px
+
+   A 380px card centred inside 24px of padding on a 390px viewport is 342px of
+   usable width, floating in the middle of the screen. The description box —
+   the one field the user is actually writing in — is 48px tall, about two
+   lines. Cancel and Save are ~19px high. And the whole thing is `position:
+   fixed`, which is the defect that matters most and is explained on its own
+   below.
+
+   ── THIS IS THE SHARED `.au-dialog` VOCABULARY, NOT ONE COMPONENT ─────────
+
+   Three components wear these classes: `EditEntityDialog` (every kind's
+   `editFields`), `LoopCreateControl` (the `scheduled-work` CREATE form) and
+   `MemoryComposer`. Styling the vocabulary rather than the component is what
+   makes the ruling land on the create form as well as the edit form without
+   this lane touching `loops/`, which is not its file. The alternative — a
+   phone arrangement that fixed edit and left create at 13px — is the split the
+   user's second sentence is about.
+
+   ── WHY A SHEET SHAPE AND NOT A `MobileSheet` ────────────────────────────
+
+   CONTRACT.md §4 puts a dialog with its own focusable content and its own
+   dismiss semantics IN the sheet host — the `LaunchSheet` precedent. This one
+   is ALREADY that dialog and already has all of it: `role="dialog"`,
+   `aria-modal`, a backdrop that cancels on outside mousedown, and its own
+   Escape handler (`EditEntityDialog.tsx:216`). Wrapping it in `MobileSheet`
+   would nest a second `aria-modal` with a second backdrop and a second
+   dismiss route inside the first — two modals for one form, and two answers to
+   Escape. So this is an ARRANGEMENT of the dialog that already exists, which
+   is also what keeps the create form and `MemoryComposer` in step: they get it
+   from the class, and no component in `loops/` had to be edited.
+
+   ── SCOPE ────────────────────────────────────────────────────────────────
+
+   Every rule is under `.cv2-root[data-shell='mobile']`, the marker `GateApp`
+   stamps on the phone root. CONSUMED, never reshaped — it is a shared contract
+   with `mobile-screens.css`, `terminal.css` and the zoom gate. The desktop
+   card is untouched: no rule below can match without that attribute. */
+
+/* --- 1. THE OVERLAY, AND THE KEYBOARD -----------------------------------
+   THE ONE DEFECT IN THIS FILE THAT DESTROYS DATA RATHER THAN LOOKS WRONG.
+
+   `.mobile-frame` is `calc(100dvh - var(--mobile-keyboard-inset))` — it
+   SHRINKS by the keyboard, so header, content, notices and tab bar all stay
+   above it "without knowing the keyboard exists" (`MobileFrame.tsx:83`). That
+   inheritance is what makes CONTRACT.md §3's rule — a lane must not wire its
+   own `visualViewport` listener — cost nothing to obey.
+
+   IT DOES NOT REACH A `position: fixed` CHILD. `.mobile-frame` sets `position:
+   relative`, and a relative ancestor is not a containing block for `fixed` —
+   only a transform, filter or containment is. So the backdrop resolves against
+   the LAYOUT VIEWPORT, which on iOS the keyboard overlays without changing.
+   The frame shrinks; this overlay does not. With the keyboard up the form is
+   centred in a viewport whose bottom half is keyboard, and Cancel and Save —
+   the last children — are underneath it. The user is typing into a form they
+   cannot submit.
+
+   The fix is to compose against the number the frame already publishes, which
+   is the same one it shortens itself by. `--mobile-keyboard-inset` is a custom
+   property declared ON `.mobile-frame` (`mobile.css:79`, `0px` default) and
+   custom properties inherit down the DOM regardless of how a descendant is
+   POSITIONED — so the value is readable here even though the box is not laid
+   out by the frame. One measurement, two consumers, exactly as §3 asks.
+
+   BOTTOM-ANCHORED rather than centred. Once the overlay is the visible region,
+   `align-items: flex-end` puts the form's action row against the top of the
+   keyboard — where the thumb already is — instead of floating it in the middle
+   with dead space under it. This is also what makes the sheet's own height
+   cap mean something: it grows UP from a fixed edge. */
+.cv2-root[data-shell='mobile'] .au-dialog__backdrop {
+  bottom: var(--mobile-keyboard-inset, 0px);
+  align-items: flex-end;
+  padding: 0;
+}
+
+/* --- 2. THE FORM IS THE WIDTH OF THE SCREEN ----------------------------
+   A centred 380px card at 390px is the defect. Full width, seated on the
+   bottom edge, with the top corners rounded so it still reads as a layer over
+   the surface rather than as the surface.
+
+   `max-height: 88%` and not `100%`: some of the screen underneath stays
+   visible, which is what says this is temporary and over your place rather
+   than a navigation (CONTRACT.md §4). It resolves against the backdrop, which
+   is now the keyboard-shortened region, so the cap tightens with the keyboard
+   instead of promising height that is not there.
+
+   `padding-block-end: 0` is not a spacing choice — the sticky action row below
+   supplies its own, and a bottom padding here would leave a strip of card the
+   fields scroll underneath. */
+.cv2-root[data-shell='mobile'] .au-dialog {
+  width: 100%;
+  max-width: none;
+  max-height: 88%;
+  border-radius: var(--pn-r-lg) var(--pn-r-lg) 0 0;
+  border-inline: 0;
+  border-block-end: 0;
+  padding-block-end: 0;
+  gap: var(--pn-space-4);
+}
+
+/* --- 3. THE 16px FLOOR, WHICH IS NOT A TASTE ---------------------------
+   Mobile Safari AUTO-ZOOMS the layout viewport when focus lands in a text
+   control whose computed `font-size` is under 16px, AND DOES NOT ZOOM BACK ON
+   BLUR. The base here is 13px. So one tap into any field of this form leaves
+   the reader on a permanently magnified page with every fixed control off
+   screen — and the only way back is a manual pinch.
+
+   IT IS INVISIBLE IN EVERY INSTRUMENT THIS REPO HAS. No desktop browser does
+   it. jsdom loads no stylesheets, so no vitest here can read a computed font
+   size — a test that claimed to check this would be a lie. And a 390px Chrome
+   emulation does not reproduce it either: `isMobile` + `hasTouch` does not make
+   Blink into WebKit. It is WebKit-on-iOS behaviour and only a real device or a
+   real Safari sees it.
+
+   So the assertion this file can honestly support is the one
+   `authoring-phone.test.ts` makes: the declaration is present, it is 16px, and
+   NO LATER RULE IN THIS FILE TAKES IT BACK. That last clause is the one that
+   matters — a first-match check would pass while a second rule below re-set
+   the same selector to 13px.
+
+   16px EXACTLY. `.cv2-root[data-shell='mobile']` is where `mobile-chrome.css`
+   cancels `app.css`'s `zoom: 1.1`, so one CSS pixel here is one
+   device-independent pixel and 16px is the real threshold rather than 16/1.1 =
+   14.5px of it.
+
+   THE PADDING GOES UP WITH IT, to 44px: a 16px input in a 5px inset is ~28px
+   tall, which is a field a thumb can miss on the way to the one below it. */
+.cv2-root[data-shell='mobile'] .au-dialog__input {
+  font-size: 16px;
+  min-height: 44px;
+  padding: 10px 12px;
+}
+
+/* --- 4. THE FIELD THE USER IS ACTUALLY WRITING IN ----------------------
+   48px is about two lines of 13px text. This is the box a task description, a
+   channel topic and an acceptance criterion are typed into — the multiline
+   fields are, in `EditEntityDialog`'s own words, "the ones that reach agent
+   context" — and two lines of it is why writing here is the thing the user
+   filed.
+
+   180px is about eight lines at the 16px floor above. It is a FLOOR and not a
+   height: the base keeps `resize: vertical`, and the sheet scrolls, so a
+   longer draft grows the box rather than trapping the text in it.
+
+   It is deliberately NOT taller. The sheet is capped at 88% of a
+   keyboard-shortened region; a taller floor would push the action row out of
+   the cap on a small phone with the keyboard up, which is the defect §1 exists
+   to close, reintroduced from the inside. */
+.cv2-root[data-shell='mobile'] textarea.au-dialog__input {
+  min-height: 180px;
+}
+
+/* --- 5. SAVE AND CANCEL STAY REACHABLE --------------------------------
+   §1 puts the row above the keyboard. This keeps it there when the FORM is
+   what is long: a kind with five `editFields` and a 180px description scrolls,
+   and a Save that scrolls away with the fields is a Save the reader has to go
+   looking for while the keyboard covers half the screen.
+
+   `position: sticky` inside the sheet's own scroll, with the card's background
+   so the fields pass behind it rather than through it. The row supplies the
+   bottom padding the sheet gave up in §2, plus the home-indicator inset — a
+   control flush against the bottom edge of a notched phone is a control the
+   system gesture takes the tap for.
+
+   FULL WIDTH, SPLIT EVENLY. The desktop's right-aligned pair puts two ~60px
+   targets in the corner furthest from a right thumb's rest position. Save
+   stays visually primary by the ink fill it already has (`authoring.css`
+   D58) — the weight is carried by colour, not by size, so neither button is
+   the one you hit by accident. */
+.cv2-root[data-shell='mobile'] .au-dialog__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: var(--pn-card);
+  padding-block: var(--pn-space-3);
+  padding-block-end: calc(var(--pn-space-3) + var(--mobile-safe-bottom, 0px));
+  margin-top: 0;
+}
+
+.cv2-root[data-shell='mobile'] .au-dialog__actions button {
+  flex: 1 1 0;
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+/* --- 6. A REFUSAL HAS TO SURVIVE THE NEW ARRANGEMENT -------------------
+   `au-dialog__missing` carries `role="alert"` and is how a required field left
+   empty, an unparseable JSON object and an impossible calendar date each state
+   themselves. It is `--pn-fs-micro`, i.e. 11px (`tokens.css:73`) — a scale set
+   for a desktop panel, beside inputs this file has just taken to 16px. A
+   refusal two-thirds the size of the field it is about reads as a caption.
+
+   `au-dialog__unavailable` is the same size and carries more weight: it is the
+   sentence that says why Save is dark, and it is the reason `EditEntityDialog`
+   states its refusal rather than silently disabling the button — "the exact 'I
+   press it and nothing happens' report this whole ticket came from".
+
+   `.au-dialog__label` is NOT in this rule and that is deliberate: it is already
+   11px from the same token, and 11px uppercase mono is a legible field name.
+   It is not a sentence anyone has to read to recover from a failure. */
+.cv2-root[data-shell='mobile'] .au-dialog__missing,
+.cv2-root[data-shell='mobile'] .au-dialog__unavailable {
+  font-size: 13px;
+}
+
+/* THE CONFLICT CARD'S MOVES, WHICH ARE THE ONLY WAY OUT OF A CONFLICT.
+   `RefusalCard` renders "back to the form" — and on the create flow "retry"
+   and "discard my changes" — as `.au-refusal__move`: 9.5px mono in a 2px inset,
+   about 17px tall. On the surface where a save has just failed, those are the
+   controls, and at 17px they are the smallest targets on the screen.
+
+   SCOPED INSIDE `.au-dialog` ON PURPOSE. `RefusalCard` is shared with six other
+   surfaces whose geometry is not this lane's; a bare `.au-refusal__move` floor
+   would reach all of them. `flex-wrap` is already on `.au-refusal__moves`, so
+   three grown moves take a second line rather than the card's width. */
+.cv2-root[data-shell='mobile'] .au-dialog .au-refusal__move {
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 12px;
+}

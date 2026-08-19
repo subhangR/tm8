@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { EntityDetail } from '@tm8/contract';
+import { DisabledIconControl } from '../panels/honesty/DisabledWithReason';
 import type { MarkdownFileHref } from '../kit';
 import type { DocBlock } from './blocks';
 import { DocPreview } from './DocPreview';
@@ -14,6 +15,7 @@ import {
   type DocStance,
 } from './EditorChrome';
 import type { DocSaveHandle } from './useDocSave';
+import './doc-edit-phone.css';
 
 /**
  * T5-3 FRAME 1b — "edit" — THE Z3 EDIT SURFACE.
@@ -44,8 +46,10 @@ import type { DocSaveHandle } from './useDocSave';
  * stance-and-commit row, which the oracle draws INSIDE the content region and
  * which exists only while editing.
  *
- * MOUNTABLE, NOT MOUNTED. Nothing here is wired into a screen; the coordinator
- * holds the wiring seat and `HANDOVER.md` carries the exact props and mounts.
+ * MOUNTED SINCE 2026-08-20, ON THE PHONE ONLY. `ReaderSurface` picks this over
+ * `DocSplitView` when `useMobileSurface().oneSurface` is true — the arrangement
+ * this component's own Write⇄Preview toggle was written for and, until now, the
+ * one nobody had mounted it into. The desktop keeps the split.
  */
 export function DocEditor({
   save,
@@ -53,6 +57,8 @@ export function DocEditor({
   stance: controlledStance,
   onStanceChange,
   onOpenBlock,
+  onCollapse,
+  collapseRefusal,
   conflictActor,
   fileHref,
   attach,
@@ -73,6 +79,36 @@ export function DocEditor({
   onStanceChange?: (next: DocStance) => void;
   /** Absent ⇒ every block's editor entry renders disabled-with-reason. */
   onOpenBlock?: (block: DocBlock) => void;
+  /**
+   * ⇲ — leave the edit stance. THE SAME PAIR `DocSplitView` TAKES, and it is
+   * not symmetry for its own sake: on the phone this component IS the whole
+   * edit stance, so without an exit the only way back to the document is
+   * Cancel — which drops the draft and STAYS in edit (`ReaderSurface`'s own
+   * note on the two controls that look like one). A reader who opened the
+   * editor to look at the source would have no way out that did not also throw
+   * something away.
+   */
+  onCollapse?: () => void;
+  /**
+   * Why collapse is refused, when the HOST is the one refusing it — an unsaved
+   * draft, in `ReaderSurface`'s case. See `DocSplitView` for the full argument.
+   *
+   * THIS PROP IS ALSO WHAT CLAIMS THE EXIT, and that is the one place this
+   * component's contract differs from the split's. The split is a full-view
+   * promotion and ALWAYS has a way back, so `onCollapse` absent can only mean
+   * "refused" there. Here it is genuinely ambiguous: the header block above
+   * records that ⇲ "is drawn in the PANEL HEADER, not inside the content
+   * region", and a host that draws its own exit passes NEITHER prop. Rendering
+   * a refusal for that host would be a second control for one gesture — the
+   * thing this component was written not to do — and it would be refusing a
+   * verb the reader can already perform, which is worse than hiding one.
+   *
+   * So: neither prop ⇒ the host owns the exit and nothing is drawn here. This
+   * prop present, `onCollapse` absent ⇒ the exit is THIS bar's and is refused,
+   * so it renders dimmed carrying this reason. Never enabled-inert, and never
+   * silently dropped once claimed.
+   */
+  collapseRefusal?: { cause: string; remedy: string };
   /** The other writer's name, when the host knows it from the event stream. */
   conflictActor?: string | null;
 }) {
@@ -88,6 +124,15 @@ export function DocEditor({
       <div className="de-bar">
         <StanceToggle stance={stance} onChange={setStance} />
         <span className="de-bar__spacer" />
+        {onCollapse ? (
+          <button type="button" className="de-btn de-btn--quiet" data-testid="doc-collapse" onClick={onCollapse}>
+            ⇲ close
+          </button>
+        ) : collapseRefusal ? (
+          <DisabledIconControl label="Close the editor" reason={collapseRefusal}>
+            ⇲ close
+          </DisabledIconControl>
+        ) : null}
         <SaveActions save={save} />
       </div>
 

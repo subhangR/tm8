@@ -1,0 +1,141 @@
+/* ==========================================================================
+   THE DOC EDITOR ON A PHONE — the arrangement `DocEditor` was written for and
+   had never been rendered into
+   ==========================================================================
+
+   ── WHAT THIS FILE IS ANSWERING ───────────────────────────────────────────
+
+   User ruling 2026-08-20: "Doc editing on the phone is a SINGLE PANE with a
+   Write|Preview switch. No split view." `ReaderSurface` now mounts `DocEditor`
+   when `useMobileSurface().oneSurface` is true.
+
+   `DocEditor` was BUILT for a narrow viewport — its own annotation reads "a
+   320-440px panel can't afford honest columns" — and then mounted by nothing
+   for the whole time it has existed. So its claim to hold up at 390px had
+   never once been tested. It does not, and the reason is that every number in
+   it was transcribed from a DESKTOP oracle frame:
+
+     .de-stance__opt   9.5px text, 3px 10px padding   → ~19px tall
+     .de-btn           11.5px text, 2px 9px padding   → ~20px tall
+     .de-source__area  11.5px mono                    → under the iOS floor
+
+   Two separate defects live in those three lines, and only one of them is
+   visible in a screenshot.
+
+   ── DEFECT 1: A 20px CONTROL IS NOT A CONTROL ON A PHONE ──────────────────
+
+   `Write`, `Preview`, `Cancel`, `Save` and `⇲` are the entire editor. At ~20px
+   they are on screen, laid out, and measurable — and missed by a thumb. That
+   is the distinction `panel-bar-phone.css:191` names as ON SCREEN IS NOT THE
+   SAME AS REACHABLE, and this is the same class of row.
+
+   PER NAMED CLASS, per CONTRACT.md §6, and every floor here is on the SMALLER
+   side: a control 120 wide and 20 tall fails the same thumb as 20 wide and 120
+   tall. No blanket `button { min-height: 44px }` — the phone renders these same
+   dense components inside sheets — and NO `::after` hit areas, because the
+   audit measures the element's own `getBoundingClientRect()` and a
+   pseudo-element scores as fixed while the thumb still misses.
+
+   ── DEFECT 2: iOS ZOOMS THE PAGE ON A SUB-16px INPUT, AND DOES NOT ZOOM BACK ─
+
+   Mobile Safari auto-zooms the layout viewport when focus lands in a text
+   control whose computed `font-size` is under 16px. It does NOT restore the
+   zoom on blur. So one tap into the source area leaves the reader on a
+   permanently magnified page, and every fixed-position control in the app is
+   now off-screen — from ONE declaration in a stylesheet transcribed off a
+   desktop canvas.
+
+   IT IS INVISIBLE EVERYWHERE WE LOOK. No desktop browser does it, jsdom loads
+   no stylesheets at all so no vitest in this repo can see a computed font size,
+   and a 390px Chrome emulation does not reproduce it either — `isMobile` +
+   `hasTouch` does not make Blink into WebKit. It is a WebKit-on-iOS behaviour
+   and the only instrument that sees it is a real device or a real Safari.
+
+   That is why the floor is written as a declaration a source-reading test can
+   assert (`doc-edit-phone.test.ts`) rather than as a claim about a rendered
+   pixel: the assertion this file can honestly support is "the rule is present
+   and no later rule takes it back", and that is the assertion made.
+
+   16px EXACTLY, not larger. `.cv2-root[data-shell='mobile']` is where
+   `mobile-chrome.css` cancels `app.css`'s `zoom: 1.1`, so on this shell one CSS
+   pixel is one device-independent pixel and 16px is the real threshold rather
+   than 16/1.1 = 14.5px of it.
+
+   ── SCOPE ─────────────────────────────────────────────────────────────────
+
+   Every rule is under `.cv2-root[data-shell='mobile']`, the marker `GateApp`
+   stamps on the phone root. CONSUMED here, never reshaped — it is a shared
+   contract with `mobile-screens.css`, `terminal.css` and the zoom gate. The
+   desktop split view is untouched: no rule below can match without that
+   attribute, and `DocSplitView` is not mounted under it at all. */
+
+/* --- 1. THE EDITOR'S OWN BAR --------------------------------------------
+   `.de-bar` already wraps (a RULED divergence from the oracle, for the 320
+   floor), so growing its children moves them onto a second line rather than
+   off the right edge. Its `min-height: 32px` is a FLOOR and not a pin, so
+   nothing needs unpinning first — CONTRACT.md §6's trap does not apply here,
+   and this note says so rather than leaving the next reader to re-derive it. */
+.cv2-root[data-shell='mobile'] .de-bar {
+  gap: 6px;
+  padding: 6px 10px;
+}
+
+/* The two halves of the stance toggle. The pill is `overflow: hidden` with the
+   border on the GROUP, so the floor goes on the segments and the group takes
+   its height from them. */
+.cv2-root[data-shell='mobile'] .de-stance__opt {
+  min-height: 44px;
+  min-width: 64px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
+
+/* Cancel · Save · ⇲ close. `.de-btn` is `flex: none`, so this is a floor on the
+   control and not a claim on the row's width. */
+.cv2-root[data-shell='mobile'] .de-bar .de-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+/* The disabled-with-reason form of the same controls — an unwired ⇲, a Save
+   refused in a conflict. R2 excludes disabled elements from the tap census
+   because there is nothing to tap, but a refusal that is a different SIZE from
+   the control it stands in for makes the bar jump as the document changes
+   state, under the reader's thumb. Same rule, same reason, as
+   `panel-bar-phone.css`'s `.hon-disabled` floor. */
+.cv2-root[data-shell='mobile'] .de-bar .hon-disabled {
+  min-height: 44px;
+}
+
+/* --- 2. THE SOURCE AREA, WHICH IS WHERE THE WRITING HAPPENS -------------
+   THE 16px FLOOR (defect 2 above). This is the one declaration in this file
+   that prevents a whole-app failure rather than an awkward one.
+
+   The 240px floor is a separate claim: `.de-source__area`'s base `min-height`
+   is 120px, sized for the F3c 320 floor as a MINIMUM the layout may not go
+   under. On a phone this pane is the entire edit surface and there is no second
+   column to read the document in, so it gets real height. `flex: 1` still
+   governs above the floor, and the keyboard is handled by the frame — the
+   editor sits inside `.mobile-frame`, which is already
+   `calc(100dvh - var(--mobile-keyboard-inset))`, so the pane shrinks with the
+   keyboard without this file measuring anything. CONTRACT.md §3: a lane must
+   not wire its own `visualViewport` listener. */
+.cv2-root[data-shell='mobile'] .de-source__area {
+  font-size: 16px;
+  min-height: 240px;
+  line-height: 1.6;
+}
+
+/* --- 3. THE FOOTER NEEDS NOTHING, AND THAT IS WORTH RECORDING ------------
+   `esc cancels · ⌘enter saves` is a sentence about a hardware keyboard on a
+   device that usually has none, and the first draft of this file quietened it.
+   Then I read `.de-foot`: it is ALREADY `flex-wrap: wrap` at `font-size: 10px`
+   with a 28px floor, so both declarations I had written were the values that
+   were already in force. They would have shipped as two lines that look like a
+   phone fix and change nothing — the same class of dead rule
+   `panel-bar-phone.css` documents at length rather than deleting silently.
+
+   The hint stays rendered. A phone can have a keyboard attached, in which case
+   it is true; and hiding a statement because it is USUALLY irrelevant is how
+   the account menu went missing from the phone for months (DEF-003). */
