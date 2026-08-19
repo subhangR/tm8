@@ -699,7 +699,19 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 147
     //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 147
     //   (origin/main is 146; this branch is the +1.)
-    expect(server.appliedMigrations.length).toBe(147);
+    // 147 -> 148 (2026-08-19): 158_counts_read_visibility_off_the_row.sql —
+    // `space_kind_counts` and `unread_counts` stop calling
+    // `internal.entity_readable()` once per row for a row they have already
+    // joined, which is 12x and 28x respectively on prod-shaped data. Note the
+    // gap: 157 is taken by an in-flight branch (`fix/boot-spaces-unread`) that
+    // has not landed, so the number here is 158 and the COUNT is 148 — the two
+    // stop agreeing from this row on, which is exactly why this assertion
+    // counts files instead of reading the highest prefix. MEASURED on this
+    // branch, freshly branched from main, not derived by adding one:
+    //   ls db/migrations/*.sql | wc -l                             -> 148
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 148
+    //   (origin/main is 147; this branch is the +1.)
+    expect(server.appliedMigrations.length).toBe(148);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
