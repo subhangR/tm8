@@ -593,6 +593,19 @@
   padding-bottom: var(--mobile-fab-reserve);
 }
 
+/* THE COUNT LINE IS THE PIECE THE BODY'S RESERVE DOES NOT COVER, and it took a
+   measurement to see: `.lp__foot` sits BELOW `.lp__body`, so the body's bottom
+   padding pushes the rows clear and leaves the foot exactly where it was —
+   spanning the full width, 29px tall, with the button sitting on its right end.
+   It happens not to collide with today's fixture (the string ends at 272px and
+   the FAB starts at 322), which is precisely the kind of pass that stops being
+   true on somebody else's data: a longer kind label or a five-digit count runs
+   straight under it. The inline reserve makes the clearance structural rather
+   than lucky. */
+.cv2-root[data-shell='mobile'] .ev-list .lp__foot {
+  padding-inline-end: calc(var(--mobile-fab-size) + var(--pn-space-3) * 2);
+}
+
 .cv2-root[data-shell='mobile'] .ev-fab {
   /* ABSOLUTE AGAINST `.ev-root`, NOT FIXED. `position: fixed` on this surface
      is measured against the VIEWPORT, which is not the frame: the frame is
