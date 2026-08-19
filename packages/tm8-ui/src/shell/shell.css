@@ -735,35 +735,6 @@
   background: var(--pn-surface);
   overflow: hidden;
 }
-.cv2-root .shell-ws__side--drop {
-  outline: 2px solid var(--pn-brand);
-  outline-offset: -2px;
-  background: var(--pn-active);
-}
-.cv2-root .shell-ws__dock-grip {
-  width: 100%;
-  height: 14px;
-  min-height: 14px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-bottom: 1px solid var(--pn-line);
-  border-radius: 0;
-  background: var(--pn-surface);
-  color: var(--pn-ink-4);
-  font-size: 12px;
-  line-height: 1;
-  cursor: grab;
-}
-.cv2-root .shell-ws__dock-grip:hover,
-.cv2-root .shell-ws__dock-grip:focus-visible,
-.cv2-root .shell-ws__dock-grip[data-dragging] {
-  background: var(--pn-hover);
-  color: var(--pn-brand);
-  outline: none;
-}
-.cv2-root .shell-ws__dock-grip:active { cursor: grabbing; }
 .cv2-root .shell-ws__side-content {
   flex: 1;
   display: flex;

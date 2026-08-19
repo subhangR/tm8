@@ -59,7 +59,6 @@ export interface SidePanelKinds {
   rightWidth: number;
   setLeftKind(kind: string): void;
   setRightKind(kind: string): void;
-  movePanel(from: SidePanelDock, to: SidePanelDock): void;
   resizePanel(side: SidePanelDock, width: number): void;
   resetPanelWidth(side: SidePanelDock): void;
 }
@@ -168,18 +167,6 @@ export function useSidePanelKinds(options: SidePanelKindsOptions): SidePanelKind
     ),
     setRightKind: useCallback(
       (kind: string) => persist({ ...panels, right: kind }),
-      [panels, persist],
-    ),
-    movePanel: useCallback(
-      (from: SidePanelDock, to: SidePanelDock) => {
-        if (from === to) return;
-        persist({
-          left: panels.right,
-          right: panels.left,
-          leftWidth: Math.max(LEFT_PANEL_MIN, panels.rightWidth),
-          rightWidth: Math.max(RIGHT_PANEL_MIN, panels.leftWidth),
-        });
-      },
       [panels, persist],
     ),
     resizePanel: useCallback(

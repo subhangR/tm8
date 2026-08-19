@@ -15,21 +15,6 @@ const layout: WorkspaceLayout = {
   belowFloors: false,
 };
 
-function dataTransfer(): DataTransfer {
-  const values = new Map<string, string>();
-  return {
-    dropEffect: 'none',
-    effectAllowed: 'all',
-    files: [] as unknown as FileList,
-    items: [] as unknown as DataTransferItemList,
-    types: [],
-    clearData: (type?: string) => (type ? values.delete(type) : values.clear()),
-    getData: (type: string) => values.get(type) ?? '',
-    setData: (type: string, value: string) => void values.set(type, value),
-    setDragImage: () => undefined,
-  } as DataTransfer;
-}
-
 function renderGrid(overrides: Partial<React.ComponentProps<typeof WorkspaceGrid>> = {}) {
   return render(
     <WorkspaceGrid
@@ -44,31 +29,18 @@ function renderGrid(overrides: Partial<React.ComponentProps<typeof WorkspaceGrid
   );
 }
 
-describe('WorkspaceGrid panel docking', () => {
-  it('moves either panel across the center by drag and drop', () => {
-    const onMovePanel = vi.fn();
-    const view = renderGrid({ onMovePanel });
-    const transfer = dataTransfer();
+describe('WorkspaceGrid side panels', () => {
+  /* The dock grip is gone (task 01a01a3c). It was a 14px unlabelled strip above
+     every panel's own header whose entire function was swapping the two docks —
+     the only affordance in the workspace that cost vertical space on both
+     columns to serve a binary toggle nobody could name. A panel's first row is
+     now its own header. */
+  it('gives a panel no chrome above its content', () => {
+    const view = renderGrid();
+    const left = view.getByLabelText('Left panel');
 
-    fireEvent.dragStart(view.getByRole('button', { name: /drag tasks panel/i }), {
-      dataTransfer: transfer,
-    });
-    fireEvent.dragEnter(view.getByLabelText('Right panel'), { dataTransfer: transfer });
-    expect(view.getByLabelText('Right panel').className).toContain('shell-ws__side--drop');
-    fireEvent.drop(view.getByLabelText('Right panel'), { dataTransfer: transfer });
-
-    expect(onMovePanel).toHaveBeenCalledWith('left', 'right');
-  });
-
-  it('offers a keyboard equivalent for moving panels', () => {
-    const onMovePanel = vi.fn();
-    const view = renderGrid({ onMovePanel });
-
-    fireEvent.keyDown(view.getByRole('button', { name: /drag sessions panel/i }), {
-      key: 'ArrowLeft',
-    });
-
-    expect(onMovePanel).toHaveBeenCalledWith('right', 'left');
+    expect(left.querySelector('.shell-ws__dock-grip')).toBeNull();
+    expect(left.firstElementChild?.className).toBe('shell-ws__side-content');
   });
 });
 

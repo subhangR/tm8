@@ -165,33 +165,18 @@ describe('THE GATE — composed T0-1 master screen', () => {
     const { getByTestId } = renderGate();
     const grid = await waitFor(() => getByTestId('workspace-grid'));
     // Anatomy, not geometry: the three regions exist and are labelled.
-    within(grid).getByLabelText('Left panel');
-    within(grid).getByLabelText('Right panel');
-    within(grid).getByLabelText('Workspace center');
-  });
-
-  it('moves a complete side panel across the center without losing its behavior', async () => {
-    const view = renderGate();
-    const grid = await waitFor(() => view.getByTestId('workspace-grid'));
     const left = within(grid).getByLabelText('Left panel');
     const right = within(grid).getByLabelText('Right panel');
+    within(grid).getByLabelText('Workspace center');
 
     expect(left.querySelector('[data-kind="task"]')).not.toBeNull();
     expect(right.querySelector('[data-kind="work_session"]')).not.toBeNull();
 
-    fireEvent.keyDown(within(left).getByRole('button', { name: /drag task panel/i }), {
-      key: 'Enter',
-    });
-
-    await waitFor(() => expect(right.querySelector('[data-kind="task"]')).not.toBeNull());
-    expect(left.querySelector('[data-kind="work_session"]')).not.toBeNull();
-    expect(within(right).getByRole('button', { name: /drag task panel/i })).toBeTruthy();
-
-    // The empty-center roster follows the registry's terminal capability, not
-    // a hard-wired assumption that Sessions stays on the right.
-    const rosterNames = [...view.getByTestId('empty-center').querySelectorAll('.shell-empty__name')]
-      .map((node) => node.textContent);
-    expect(rosterNames).toContain('forge');
+    /* A dock's first row is its OWN header. The 14px drag grip that used to
+       sit above it — whose only function was swapping the two docks — is gone
+       (task 01a01a3c), so nothing separates a panel from its content. */
+    expect(left.firstElementChild?.className).toBe('shell-ws__side-content');
+    expect(right.firstElementChild?.className).toBe('shell-ws__side-content');
   });
 
   it('renders the empty centre as a grouped terminal summary plus the grammar lesson', async () => {
