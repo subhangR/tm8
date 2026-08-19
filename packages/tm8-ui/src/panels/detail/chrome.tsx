@@ -7,6 +7,20 @@ import { InlineTitleEditor } from '../../authoring';
 import { Avatar, IconBtn, Pill, type PillTone } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
+/*
+ * DEF-001 — the phone arrangement of `.pn-panelbar`, which this file renders.
+ *
+ * A SEPARATE STYLESHEET, imported HERE rather than appended to `panels.css`,
+ * and the reason is coordination rather than taste: this fix was escalated out
+ * of the lane structure to land ahead of lane integration (Terminate is a
+ * SAFETY control and it was off-screen at 390), while `panels.css` has lane
+ * work in flight in it. One file per defect is how this program avoids a
+ * shared-file merge conflict; the import is the whole of the edit here.
+ *
+ * Every rule inside is scoped `.cv2-root[data-shell='mobile']`, so it cannot
+ * reach the desktop shell, a tablet, or a narrow desktop window.
+ */
+import './panel-bar-phone.css';
 
 /**
  * THE SHARED CHROME — header · action bar · tab strip · footer.
@@ -380,6 +394,29 @@ function ActionButton({
   return (
     <button
       type="button"
+      /*
+       * A NAMED WITNESS FOR THE VERB, added for DEF-001's grading and useful
+       * beyond it.
+       *
+       * The row this serves is "Terminate is off-screen on a phone", and the
+       * trap in grading it is that A CONTROL WHICH FAILED TO RENDER ALSO
+       * SCORES ZERO OVERFLOW — the fix and the disappearance produce the same
+       * clean number, and the clean number reads as success. So the census
+       * needs something to assert PRESENCE on before it grades a rect.
+       *
+       * IT MARKS THE LIVE ARM ONLY, and that is deliberate rather than
+       * incomplete. The two arms above answer a different question: an unwired
+       * or unavailable verb renders `DisabledIconControl` (`.hon-disabled`,
+       * carrying its reason), and giving both the same testid would collapse
+       * "Terminate is pressable" and "Terminate is refused-with-reason" into
+       * one boolean — the exact conflation this program has now been bitten by
+       * repeatedly. Present here means live; the refusal is found by its own
+       * class and its accessible name, and the two are reported separately.
+       *
+       * Derived from the action ref, so every primary gets one and no verb
+       * needs naming here (§15.2).
+       */
+      data-testid={primary ? `panel-primary-${ref_}` : undefined}
       className={[
         primary ? 'pn-btn pn-btn--primary' : 'pn-actions__verb',
         expanded ? 'pn-actions__verb--on' : '',
