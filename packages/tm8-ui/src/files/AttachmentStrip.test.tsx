@@ -307,13 +307,14 @@ describe('removing an attachment cuts the LINK, not the file', () => {
 // ---------------------------------------------------------------------------
 
 describe('the ＋ tile', () => {
-  it('is NOT drawn on an empty anchor — the idle strip is silent, but still mounted for drop', () => {
-    // Owner ruling 2026-08-18, reversing the addendum's "the ＋ tile IS the
-    // empty state": on an entity that has never had a file, that tile is
-    // ~140px of dashed box offering something nobody asked for. Drop is the
-    // path now, which is why the ROOT must survive — the drop listeners hang
-    // off it (`rootRef.current.closest(...)`), so an unmounted strip would
-    // take the last way to attach with it.
+  it('is an ICON on an empty anchor — one 28px paperclip, not a dashed tile and not nothing', () => {
+    // Owner ruling 2026-08-19, narrowing 2026-08-18. The addendum's "the ＋
+    // tile IS the empty state" cost ~140px of dashed box on every entity that
+    // never had a file, so it went; but what replaced it was DROP ALONE, and a
+    // touch screen has no drag — the report that reopened this was "attach
+    // option not visible in entity detail screen". The tile stays gone, its
+    // affordance comes back as an icon. The ROOT still survives idle for the
+    // drop listeners (`rootRef.current.closest(...)`).
     render(
       <AttachmentStrip
         anchorId={'e1' as never}
@@ -321,11 +322,62 @@ describe('the ＋ tile', () => {
         projectFolder={{ projects: vi.fn(), list: vi.fn(), attach: vi.fn() } as never}
       />,
     );
-    expect(screen.queryByTestId('attachment-add')).toBeNull();
+    const add = screen.getByTestId('attachment-add');
+    // Named for assistive tech, wordless on screen — no 'attach' label row,
+    // which is what made the tile tall.
+    expect(add.getAttribute('aria-label')).toBe('Attach a file');
+    expect(add.textContent).toBe('📎');
+    expect(add.className).toContain('fn-tile--clip');
+    expect(add.className).not.toContain('fn-tile--plus');
     expect(screen.queryByText(/no attachments/i)).toBeNull();
     const root = screen.getByTestId('attachment-strip');
     expect(root.dataset.idle).toBe('true');
     expect(root.className).toContain('fn-tiles--idle');
+  });
+
+  it('taps straight through to the one wired path while idle — no menu in the way', async () => {
+    const projects = vi.fn().mockResolvedValue([]);
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        files={[]}
+        projectFolder={{ projects, list: vi.fn(), attach: vi.fn() } as never}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('attachment-add'));
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+  });
+
+  it('opens the device picker from the idle icon — the mobile path', () => {
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        files={[]}
+        startUpload={() => { throw new Error('unused'); }}
+      />,
+    );
+    const input = screen.getByTestId('attachment-file-input') as HTMLInputElement;
+    // No `accept`, no `capture`: the phone's own sheet then offers camera,
+    // photo library and files, and narrowing it here removes the user's
+    // choices.
+    expect(input.getAttribute('accept')).toBeNull();
+    expect(input.getAttribute('capture')).toBeNull();
+    const clicked = vi.spyOn(input, 'click');
+    fireEvent.click(screen.getByTestId('attachment-add'));
+    expect(clicked).toHaveBeenCalledTimes(1);
+  });
+
+  it('becomes the labelled tile once the anchor has a file — the tile grammar its neighbours use', () => {
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        files={[row({ fileEntityId: 'f1', name: 'notes.txt', mime: 'text/plain' })]}
+        startUpload={() => { throw new Error('unused'); }}
+      />,
+    );
+    const add = screen.getByTestId('attachment-add');
+    expect(add.className).toContain('fn-tile--plus');
+    expect(add.textContent).toContain('attach');
   });
 
   it('comes back the moment the anchor has a file, and acts directly with one wired path', async () => {
