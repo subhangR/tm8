@@ -159,8 +159,22 @@ describe('DEF-038 — the loading state is honest about what is happening', () =
     // pretend otherwise. What is fixed is the shell's honesty while it waits.
     expect(shell).not.toMatch(/>\s*Loading…\s*</);
     expect(shell).toContain('data-testid="mobile-loading"');
+  });
+
+  it('the wait MOVES — the kit boot loader, not two static sentences', () => {
+    // Honest and static is still a screen with no evidence it is working. The
+    // phone waits longest of any surface (see the component's note: the whole
+    // event log, 500 rows a round trip, before `ready` can flip) and was the
+    // one surface not drawing the turning 8 the desktop gate has always used.
+    expect(shell).toMatch(/<BootLoader\b/);
+    // Imported through the kit BARREL, never a deep path: the barrel is what
+    // pulls `kit.css` in, and `../kit/BootLoader` would mount the mark with no
+    // stylesheet behind it on any screen that had not already loaded one.
+    expect(shell).toMatch(/import \{[^}]*\bBootLoader\b[^}]*\} from '\.\.\/kit'/);
     // Told, not just drawn: a screen reader on a silent screen learns nothing.
-    expect(shell).toMatch(/role="status"/);
+    // The role now rides `BootLoader` itself — asserted where it lives, in
+    // `kit/kit.test.tsx`, on a RENDER rather than on this file's text. A regex
+    // here would match the docblock above it and pass on a comment.
   });
 });
 

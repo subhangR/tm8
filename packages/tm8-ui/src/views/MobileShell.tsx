@@ -37,7 +37,7 @@ import { MobileAccountSheet } from '../mobile/MobileAccountSheet';
 import '../mobile/mobile-chrome.css';
 import '../mobile/mobile-screens.css';
 import { CopyLinkControl } from '../share';
-import { Avatar, VectorIcon } from '../kit';
+import { Avatar, BootLoader, VectorIcon } from '../kit';
 import type { Theme } from '../theme/useTheme';
 import { isUnbuiltViewRef } from './view-ref-screens';
 import { CHANNEL_KIND, getKind, slugOfKind, type KindArt } from '../domain';
@@ -652,15 +652,40 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
        *
        * WHAT IS FIXED HERE AND WHAT IS NOT, stated plainly rather than implied.
        * The PAGING STRATEGY is not fixed here; it lives in `src/data/` and it
-       * is a real piece of work that nobody owns yet. What is fixed is the
-       * shell's own honesty while it waits: the state now says what is
-       * happening and that it is expected to take time, and `role="status"`
-       * means a screen reader is told rather than left on a silent screen.
-       * That is the difference between a slow app and an app that looks broken.
+       * is a real piece of work that nobody owns yet — `connection.ts`
+       * `prepareSpace()` walks the space's whole event log 500 rows at a time,
+       * SERIALLY, before `ready` can flip, and this space's log is ~100k rows,
+       * which is ~200 round trips a phone pays over cellular. What is fixed
+       * here is the shell's own honesty while it pays them.
+       *
+       * AND HONEST NO LONGER MEANS STATIC. Two sentences on blank paper for
+       * thirty seconds is honest and still reads as a dead app: nothing on the
+       * screen MOVES, so there is no evidence the wait is a wait rather than a
+       * hang. The desktop gate has answered this since the kit landed —
+       * `BootLoader`, the tm8 wordmark with the ribbon 8 turning on its own
+       * axis — and the phone, the device that waits LONGEST, was the one
+       * surface not using it.
+       *
+       * `BootLoader`'s own header scopes it to boot and boot only, and this IS
+       * boot: `data.ready` is false because `openSpace` + `hydrate` have not
+       * returned, so there is no space, no menu and no geometry a skeleton
+       * could honestly trace. Same state, same component. It carries its own
+       * `role="status"` + live region, so a screen reader is still told rather
+       * than left on a silent screen.
+       *
+       * The wrapper is not decoration. `main.mobile-frame__content` is a
+       * BLOCK (see `mobile-screens.css` §1), so `.kit-boot`'s `flex: 1`
+       * resolves to nothing there and the mark would sit jammed against the
+       * header instead of centred. `.mobile-boot` is the flex column that
+       * gives it a height to fill — the same trick `.mobile-empty` uses, kept
+       * separate because that class also styles a first-child statement in
+       * the serif and would restyle the loader's own parts.
        */
-      <div className="mobile-empty" data-testid="mobile-loading" role="status" aria-live="polite">
-        <p>Catching up with this space.</p>
-        <p>Reading its history — on a large space over a slow connection this takes a while.</p>
+      <div className="mobile-boot" data-testid="mobile-loading">
+        <BootLoader
+          label="catching up"
+          detail="Reading this space's history — on a large space over a slow connection this takes a while."
+        />
       </div>
     );
   if (!activeTarget) {
