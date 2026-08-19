@@ -3,6 +3,7 @@ import type { CommandResult, EntityDetail } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { getKind } from '../../domain';
 import {
+  DocEditor,
   DocSplitView,
   EditEntryControl,
   useDocSave,
@@ -10,6 +11,7 @@ import {
   type DocCommands,
 } from '../../doc-edit';
 import type { MarkdownFileHref } from '../../kit';
+import { useMobileSurface } from '../../mobile';
 import type { TriggerOption } from '../../rich-input';
 import { ReaderBody } from './ReaderBody';
 
@@ -19,10 +21,11 @@ import { ReaderBody } from './ReaderBody';
  *
  *   read  — `ReaderBody`: the outline chips over the document rendered as
  *           markdown, with the oracle's `Edit` primary above it.
- *   edit  — `DocSplitView`: markdown source beside its live preview, sharing
- *           one draft, mounted exactly where the handover says the editor
- *           goes — "replaces the Content-tab body while editing, i.e. where
- *           ReaderBody renders".
+ *   edit  — `DocSplitView` on a desktop: markdown source beside its live
+ *           preview, sharing one draft, mounted exactly where the handover
+ *           says the editor goes — "replaces the Content-tab body while
+ *           editing, i.e. where ReaderBody renders". On a phone, `DocEditor`:
+ *           one pane and a Write⇄Preview toggle. See the fork below.
  *
  * WHY THIS FILE EXISTS AT ALL. `useDocSave` is a hook and `PanelBody` is a
  * function that early-returns eight different bodies — a hook there would run
@@ -89,6 +92,7 @@ export interface ReaderSurfaceProps {
 export function ReaderSurface(props: ReaderSurfaceProps) {
   const { detail, onOpenEntity } = props;
   const [editing, setEditing] = useState(false);
+  const { oneSurface } = useMobileSurface();
 
   const config = getKind(detail.kind);
   const editRefusal = config.panel.capabilityReasons?.canEdit;
@@ -128,31 +132,63 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
     /**
      * THE SPLIT IS THE EDIT SURFACE (user ruling 2026-07-31): markdown source
      * on the left, the live rendered preview on the right, one draft between
-     * them. `DocEditor`'s Write⇄Preview toggle is the answer for a narrow
-     * column; this centre column is full-width, and at that width showing both
-     * at once beats making the viewer choose. `DocEditor` remains exported and
-     * is the right mount for a narrow host.
+     * them. This centre column is full-width, and at that width showing both
+     * at once beats making the viewer choose.
      *
-     * ONE EXIT, not two. `⇲ collapse` in the split's own bar IS the exit, and
-     * it is withheld while the draft is dirty so a click cannot silently
-     * discard text — with `collapseRefusal` carrying the true reason, since
-     * the control's own fallback copy would blame the wiring instead.
+     * ON A PHONE IT IS NOT (user ruling 2026-08-20: "no split view on the
+     * phone"). Two honest columns do not exist at 390px — the split's own
+     * annotation says the stance is "chosen by geometry, not preference", and
+     * this is the geometry it meant. `DocEditor` is that answer: one pane, a
+     * Write⇄Preview toggle, the SAME `DocSaveHandle`. Same session, same draft,
+     * same conflict story; only the arrangement differs, which is the whole
+     * reason both frames were built against one hook.
+     *
+     * THE FORK IS `oneSurface`, NOT A WIDTH. A media query would restyle the
+     * desktop shell in a narrow window (`mobile/surface.tsx` states why at
+     * length); off the phone shell there is no provider, so the phone arm here
+     * is unreachable by construction rather than by a selector.
+     *
+     * ONE EXIT, not two, in BOTH arrangements. `⇲` in the editor's own bar IS
+     * the exit, and it is withheld while the draft is dirty so a click cannot
+     * silently discard text — with `collapseRefusal` carrying the true reason,
+     * since the control's own fallback copy would blame the wiring instead.
      */
+    const exit = {
+      onCollapse: save.dirty ? undefined : () => setEditing(false),
+      collapseRefusal: {
+        cause: 'This document has unsaved changes',
+        remedy: 'save them, or use Cancel to drop the draft first',
+      },
+    };
+
     return (
-      <div className="rs-root" data-testid="reader-surface" data-stance="edit">
-        <DocSplitView
-          save={save}
-          detail={detail}
-          fileHref={props.fileHref}
-          attach={props.attach}
-          onAttached={props.onAttached}
-          skillOptions={props.skillOptions}
-          onCollapse={save.dirty ? undefined : () => setEditing(false)}
-          collapseRefusal={{
-            cause: 'This document has unsaved changes',
-            remedy: 'save them, or use Cancel to drop the draft first',
-          }}
-        />
+      <div
+        className="rs-root"
+        data-testid="reader-surface"
+        data-stance="edit"
+        data-arrangement={oneSurface ? 'phone' : 'desktop'}
+      >
+        {oneSurface ? (
+          <DocEditor
+            save={save}
+            detail={detail}
+            fileHref={props.fileHref}
+            attach={props.attach}
+            onAttached={props.onAttached}
+            skillOptions={props.skillOptions}
+            {...exit}
+          />
+        ) : (
+          <DocSplitView
+            save={save}
+            detail={detail}
+            fileHref={props.fileHref}
+            attach={props.attach}
+            onAttached={props.onAttached}
+            skillOptions={props.skillOptions}
+            {...exit}
+          />
+        )}
       </div>
     );
   }

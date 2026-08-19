@@ -707,6 +707,50 @@
   animation: msheet-rise var(--pn-dur-base) var(--pn-ease-out);
 }
 
+/* THE VARIANT THAT GIVES UP THE STRIP, for the surfaces that carry a composer.
+   `MobileSheet.size` explains WHEN a host should ask for it; this is what it
+   costs.
+
+   IT INHERITS THE KEYBOARD SHRINK RATHER THAN RE-DERIVING IT, and the chain is
+   worth stating because `100%` is only correct if every link holds: the frame
+   is `calc(100dvh - var(--mobile-keyboard-inset))` and `position: relative`
+   (`mobile.css:95`), `.mobile-frame__sheet` is `inset: 0` against it
+   (`mobile.css:184`), and `.msheet` is `inset: 0` again against that. So this
+   100% is 100% of the part of the screen the keyboard is NOT sitting on,
+   already measured, with no second copy of the arithmetic to fall out of step.
+   `100dvh` here instead would have been the whole screen — and the composer
+   would have gone under the keyboard on precisely the surface this variant
+   exists to serve.
+
+   The top border and radius go with the strip. They drew this surface's edge
+   against the screen behind it; at full height there is no screen visible
+   behind it to draw an edge against, and a rounded corner sitting on the
+   frame's own top edge reads as a rendering fault rather than as a lifted
+   surface. The grabber, the title and the ✕ are what still say "sheet". */
+.msheet__panel[data-size='full'] {
+  height: 100%;
+  max-height: 100%;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* THE HOME-INDICATOR INSET IS FOR THE HOME INDICATOR, and while the keyboard is
+   up there is no home indicator to clear — the keyboard is drawn over it. This
+   is the same fact `.mobile-frame__tabbar` already zeroes for itself
+   (`mobile.css:147`), stated at the other surface that pads against the same
+   token. Left standing it is ~34px of blank paper between a composer's foot row
+   and the keyboard, on the one screen state where vertical room is scarcest —
+   and it is the full-height sheet, which has just spent the strip to buy that
+   room, that pays for it most visibly.
+
+   Keyed off `data-keyboard`, the marker attribute, NOT off the inline custom
+   property: a `[style*=…]` substring match would stop matching the first time
+   the number was formatted differently, and would do it silently. */
+.mobile-frame[data-keyboard='up'] .msheet__panel {
+  padding-bottom: 0;
+}
+
 .msheet__head {
   flex: none;
   position: relative;
@@ -778,6 +822,41 @@
 .msheet__body > * {
   flex: 1;
   min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
+   WHAT THE SHEET INHERITED FROM A DESKTOP THIRD COLUMN
+
+   `.ev-aux` was designed as a ~380px column on a pointer device, and the sheet
+   now renders it under a thumb. Its two navigation controls came across at
+   desktop density: the Connections view switch is `padding: 3px 10px` at 11px,
+   about 22px tall (`panels.css:886`), and every parent, child and peer is a
+   `.kit-chip` at `padding: 2px 8px`, about 20px (`kit.css:79`). Both sit
+   comfortably inside the frame and both are half the floor — on screen is not
+   the same as reachable, and for the controls that ARE the Connections tab the
+   difference is the whole tab.
+
+   PER NAMED CLASS AND ROOTED AT `.msheet`, per CONTRACT.md §6. Not
+   `button { min-height: 44px }`: the sheet is full of desktop-shared dense
+   components and a blanket rule inflates every one of them. Not an `::after`
+   hit area either — the mobile audit measures the element's OWN
+   `getBoundingClientRect()`, so a pseudo-element scores as fixed while the
+   thumb still misses.
+
+   `.kit-chip` is always a `<button>` (`kit/Chip.tsx:24`), so nothing inert is
+   being padded out here to look tappable.
+
+   The floor goes on the SMALLER side, which for both of these is the height;
+   the inline padding grows with it so that a 44px-tall control does not read
+   as a letterbox around 11px of text. */
+.cv2-root[data-shell='mobile'] .msheet .kit-chip {
+  min-height: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+}
+
+.cv2-root[data-shell='mobile'] .msheet .pn-viewswitch__opt {
+  min-height: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
 }
 
 @keyframes msheet-fade {

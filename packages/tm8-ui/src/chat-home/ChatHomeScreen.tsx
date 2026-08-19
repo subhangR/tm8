@@ -270,6 +270,15 @@ export interface ChatHomeScreenProps {
  * file moved or shrank. Importers now name the canonical type directly.
  */
 
+/**
+ * How close to the end still counts as "at the end" for the transcript's
+ * stick-to-bottom. Named once because it is read in two places — the `scroll`
+ * handler that records the reader's intent and the docblock that explains it —
+ * and because a bare `48` in a scroll comparison is the kind of number that
+ * gets tuned by whoever is annoyed that week.
+ */
+const NEAR_BOTTOM_PX = 48;
+
 type ComposerPhase =
   | 'idle'
   | 'posting-root'
@@ -637,12 +646,46 @@ export function ChatHomeScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by id list
   }, [ownMessageIdsKey]);
 
+  /**
+   * ── THE TRANSCRIPT OPENS AT THE NEWEST TURN, AND STAYS THERE WHILE IT GROWS ─
+   *
+   * There was NO scroll logic on this screen at all. `.tch-transcript` is a
+   * plain `overflow-y: auto` box, so a conversation opened at `scrollTop: 0` —
+   * the reader landed on the oldest message of a thread they came back to for
+   * its newest, and a streaming answer wrote itself off the bottom of a box
+   * that never followed it. Reported on task 01a01c3f: "it should always scroll
+   * to the bottom, when opened, it stays on top."
+   *
+   * TWO REFS AND NO STATE, deliberately. Scroll position is not something this
+   * component renders — nothing on screen changes because the reader scrolled —
+   * so putting it in state would re-render the whole transcript on every
+   * `scroll` event, which on a long thread is the one place that cost is felt.
+   *
+   * `stickToBottom` IS THE READER'S INTENT, not a position. Once they scroll up
+   * to read back, a still-streaming answer must NOT yank them to the bottom
+   * again; the moment they return to within `NEAR_BOTTOM_PX` of the end they
+   * have opted back in. That threshold is a tolerance, not a guess: a phone's
+   * momentum scroll and the browser's own sub-pixel rounding both land a few
+   * pixels short of the exact maximum, and an exact comparison would read a
+   * reader who IS at the bottom as one who left.
+   *
+   * `useLayoutEffect`, so the correction lands in the same frame as the content
+   * that caused it. A `useEffect` here paints the un-scrolled frame first and
+   * the transcript visibly jumps on every streamed chunk.
+   */
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
+
   const activeConfig = detail?.summary.config ?? null;
   const selectedModel = useMemo(
     () => models.find((model) => model.model === modelId) ?? null,
     [modelId, models],
   );
   const busy = isBusyPhase(phase);
+  /** A thread being BORN — the two round trips between Send and a root that
+   *  exists. There is no `detail` to hang a pulse off during either, which is
+   *  why `thinking` below cannot speak for them. */
+  const startingThread = phase === 'posting-root' || phase === 'configuring';
   const thinking = detail !== null && showThinking(phase, detail);
   const pendingTurnId =
     detail !== null && thinking
@@ -650,6 +693,22 @@ export function ChatHomeScreen({
       : null;
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
+
+  /* Opening a conversation is not "growth" — it always lands on the newest
+     turn, whatever the reader was doing in the thread they just left. */
+  useLayoutEffect(() => {
+    stickToBottomRef.current = true;
+  }, [selectedRootId]);
+
+  /* Keyed on `detail` and `thinking` because those are exactly the two things
+     that change the transcript's height: every frame merge mints a new detail
+     object (`mergeChatTurnFrame` is immutable), and the waiting mark is a row
+     that appears and disappears under the last turn. */
+  useLayoutEffect(() => {
+    const element = transcriptRef.current;
+    if (!element || !stickToBottomRef.current) return;
+    element.scrollTop = element.scrollHeight;
+  }, [detail, thinking]);
 
   const selectionUnavailable =
     teammateId === ''
@@ -1278,10 +1337,20 @@ export function ChatHomeScreen({
           </section>
         ) : null}
         <div
+          ref={transcriptRef}
           className="tch-transcript"
           aria-live="polite"
           data-hidden={centre != null ? 'true' : undefined}
           hidden={centre != null || undefined}
+          /* THE READER'S INTENT, recorded on every scroll and read by the
+             stick-to-bottom effect above. Scrolling up to read back opts out of
+             following a streaming answer; coming back within the tolerance opts
+             straight back in, with no control to find and press. */
+          onScroll={(event) => {
+            const element = event.currentTarget;
+            stickToBottomRef.current =
+              element.scrollHeight - element.scrollTop - element.clientHeight <= NEAR_BOTTOM_PX;
+          }}
         >
           {loadError ? (
             <div className="tch-load-error" role="alert">
@@ -1323,6 +1392,40 @@ export function ChatHomeScreen({
                 </div>
               ) : null}
             </>
+          ) : loading || startingThread ? (
+            /*
+             * ── THE WELCOME IS A CLAIM, AND FOR TWO WAITS IT WAS A FALSE ONE ──
+             *
+             * This arm used to fall straight through to the greeting, which
+             * says "New conversation" — an assertion about the space, not a
+             * shrug. It was drawn in two states where nobody had established
+             * it, and on a phone, where this screen IS the app's front door,
+             * both are the first thing the reader sees.
+             *
+             * `loading` — the opening `listThreads`/`listTeammates` read. Cold
+             * start auto-opens the most recent conversation, so the honest
+             * answer during that read is "I do not know yet"; the greeting
+             * announced an empty space and was then replaced by a conversation
+             * that existed the whole time. The only thing that ever covered
+             * this read was the SIDEBAR's "Reading conversations…" line, and
+             * solo hosts (the phone, Craft) do not mount the sidebar at all —
+             * so on exactly the surface with the slowest connection there was
+             * no loading state whatsoever.
+             *
+             * `startingThread` — `posting-root` and `configuring`, the two
+             * round trips a first message costs. `thinking` cannot cover them:
+             * it is gated on `detail !== null` (it has to be — `showThinking`
+             * reads the turns), and a thread being born has no detail yet. So
+             * the reader pressed Send on the one screen state where pressing
+             * Send is the whole point and watched the greeting sit there.
+             *
+             * Reported together on task 01a01c3f as "some loaders state
+             * mangemetn, loader coming up in the correct time".
+             */
+            <div className="tch-wait tch-wait--solo" role="status" data-testid="chat-home-loading">
+              <WaitMark />
+              {startingThread ? 'Starting this conversation…' : 'Reading your conversations…'}
+            </div>
           ) : (
             <div className="tch-welcome">
               {/* THE BRAND, NOT A BOLT. This slot held a `⌁` glyph in a bordered

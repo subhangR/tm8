@@ -369,6 +369,29 @@ export function MobileShell(props: MobileShellProps) {
    * addressable is a route change in `nav-targets`/`landingOfRoute` — shared
    * with the desktop, since one codec serves both shells — and it is
    * deliberately not smuggled in here.
+   *
+   * ── `threadId` MIRRORS THE SCREEN'S SELECTION, IT DOES NOT MERELY PROPOSE ONE
+   *
+   * It used to be write-only: the shell pushed a selection down through
+   * `routeThreadId` and never heard what the screen actually landed on. Two of
+   * the screen's own behaviours make a selection the shell did not choose —
+   * cold start opens the most recent conversation, and a first send adopts the
+   * root it just created — and after either of them the shell believed `null`
+   * while a real conversation was on screen.
+   *
+   * THAT IS WHY "New conversation" DID NOTHING (reported on task 01a01c3f:
+   * "New conversation is not creating a new conversation and replacing current
+   * chat"). The verb is `setThreadId(null)`, and from a state React already
+   * held as `null` that is not a change: no re-render, no new `routeThreadId`,
+   * so the screen's adopt effect — which keys on exactly that prop — never ran
+   * and the open conversation stayed open. The button was correct and inert.
+   *
+   * `onSelectionChange` closes the loop, and it fixes the drawer's highlight in
+   * the same stroke: with the shell holding the REAL selection, the row for the
+   * conversation you are reading is the row that reads as current. Feedback
+   * only — the screen adopts `routeThreadId`, publishes the resolved selection
+   * back, and a publish that matches what was pushed sets no state, so the two
+   * settle in one round rather than ringing.
    */
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
@@ -524,6 +547,7 @@ export function MobileShell(props: MobileShellProps) {
             soloConversation: true,
             routeThreadId: threadId,
             onThreadsChange: setThreads,
+            onSelectionChange: setThreadId,
           })}
           {/* THE DRAWER. Rendered beside the screen rather than inside it,
               exactly like the account sheet below: it portals through the
@@ -629,6 +653,9 @@ interface ChatHosting {
   readonly soloConversation: true;
   readonly routeThreadId: EntityId | null;
   readonly onThreadsChange: (threads: readonly ChatThreadSummary[]) => void;
+  /** The screen's RESOLVED selection coming back up — see the block over
+   *  `threadId` for why a one-way push left "New conversation" inert. */
+  readonly onSelectionChange: (rootId: EntityId | null) => void;
 }
 
 function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
@@ -906,6 +933,7 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
           soloConversation={chat.soloConversation}
           routeThreadId={chat.routeThreadId}
           onThreadsChange={chat.onThreadsChange}
+          onSelectionChange={chat.onSelectionChange}
           viewerName={props.viewerActor?.displayName}
           {...(props.viewerActor ? { viewerId: props.viewerActor.id } : {})}
         />
