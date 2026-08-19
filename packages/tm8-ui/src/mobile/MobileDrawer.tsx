@@ -145,6 +145,15 @@ export interface MobileDrawerProps {
   readonly onSelectThread: (id: EntityId) => void;
   readonly onNewThread: () => void;
 
+  /**
+   * The header's Copy link, re-hosted in the foot beside Settings.
+   *
+   * AN ELEMENT, NOT A TARGET. The address is built from shell state the drawer
+   * has no business re-deriving; handing over the finished control keeps the
+   * one routing opinion in the one place that already holds it. `null` is a
+   * real answer — the chat screen has nothing page-shaped to share.
+   */
+  readonly share?: ReactNode;
   /** The foot's account row. Absent ⇒ not drawn (there is nothing behind it). */
   readonly onOpenAccount?: (() => void) | undefined;
   /** The name to put on that row. */
@@ -290,6 +299,29 @@ export function MobileDrawer(props: MobileDrawerProps) {
                           {counts.unseen}
                         </span>
                       ) : null}
+                      {/*
+                        THE KIND TOTAL, WHICH USED TO BE `662` IN THE LIST'S OWN
+                        BAR. It came off that bar with the chrome collapse, and
+                        this is where it lands rather than nowhere: here it is
+                        one of a column of totals against nineteen kinds, which
+                        is the only reading that makes a total useful. Wedged in
+                        the corner of a 390px band it was a number with nothing
+                        to compare it to.
+
+                        Same absent-is-not-zero rule as the unread count above,
+                        and the same reason — the node may not have counted this
+                        kind at all. A counted zero DOES draw here, unlike
+                        unread: "0 tasks" is a fact about the space, where "0
+                        unread" is the resting state of everything.
+                      */}
+                      {counts ? (
+                        <span
+                          className="mdrawer__total"
+                          aria-label={`${counts.total} ${config.labelPlural.toLowerCase()}`}
+                        >
+                          {counts.total}
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 );
@@ -302,6 +334,12 @@ export function MobileDrawer(props: MobileDrawerProps) {
             Settings and the account, pinned below the scroll so they do not
             travel to the bottom of a 19-row list to be found (ruling 3). */}
         <div className="mdrawer__foot">
+          {/* COPY LINK, off the 53px header. It is a verb about the screen the
+              viewer is on, and it sits above Settings because Settings leaves
+              that screen while this one is about it. Dismissing on activation
+              would race the copy, so it does not — the control says "Copied"
+              in place, and the viewer closes the drawer having seen it. */}
+          {props.share ? <div className="mdrawer__share">{props.share}</div> : null}
           <ul className="mdrawer__rows">
             <ViewRow viewRef={SETTINGS_REF} activeTarget={activeTarget} onGo={go} />
             {/* Rendered only when the shell handed down something to open —

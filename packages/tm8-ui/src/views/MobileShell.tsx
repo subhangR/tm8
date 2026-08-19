@@ -466,17 +466,14 @@ export function MobileShell(props: MobileShellProps) {
         <span className="mobile-header__title">{title}</span>
       </span>
       )}
-      {/* Copy link goes with the title band, and for the same reason: the thing
-          being shared is a PAGE, and the chat screen's page is the space's
-          front door — an address every viewer of this space already has. It
-          returns the moment a thread is addressable (see the state above). */}
-      {onChatScreen ? null : (
-      <CopyLinkControl
-        spaceId={spaceId}
-        target={activeTarget ?? { type: 'view', ref: 'workspace' }}
-        openEntity={props.openEntity}
-      />
-      )}
+      {/* COPY LINK IS IN THE DRAWER NOW (owner ruling, 2026-08-19).
+          It sat here beside the title, and the reasoning held — the thing being
+          shared is a PAGE — but the header is 53px shared by five things and
+          this is the one of them nobody reaches for in a session. It is a verb
+          about the current screen, which is exactly what the drawer is a list
+          of, and it costs the title band nothing there. The `onChatScreen`
+          exemption travels with it (see `share` below): the chat screen's page
+          is the space's front door, an address every viewer already has. */}
       {/*
         DEF-003 — THE ACCOUNT AFFORDANCE.
 
@@ -544,6 +541,19 @@ export function MobileShell(props: MobileShellProps) {
               activeTarget={activeTarget}
               navigateTo={navigateTo}
               countsFor={data.countsFor}
+              /* The header's Copy link, re-hosted. Built HERE because the
+                 address is the shell's answer — `activeTarget` and the open
+                 entity are shell state — and handed over as an element so the
+                 drawer does not acquire a second opinion about routing. */
+              share={
+                onChatScreen ? null : (
+                  <CopyLinkControl
+                    spaceId={spaceId}
+                    target={activeTarget ?? { type: 'view', ref: 'workspace' }}
+                    openEntity={props.openEntity}
+                  />
+                )
+              }
               threads={threads}
               selectedThreadId={threadId}
               onSelectThread={(id) => {

@@ -327,6 +327,86 @@ describe('the FAB — a create verb on the list, and an ABSENCE where there is n
   });
 });
 
+describe('DEF-030 — the list chrome is a BUDGET, and it is spent in three bands', () => {
+  const listPanel = read('../panels/EntityListPanel.tsx');
+  const entityView = read('../views/EntityView.tsx');
+
+  /*
+   * The measured before/after this block exists to keep true, at 390x844 in
+   * Chrome with `isMobile`/`hasTouch` (`e2e/capture-list-chrome.mjs`):
+   *
+   *   header 53 · selector 53 · new-task 55 · search 44 · tabs 50 · filters 101
+   *     → first row at 372px, 44.1% of the screen, list 478px, ~9 rows
+   *   header 53 · selector+search 48 · tabs 48
+   *     → first row at 155px, 18.4% of the screen, list 695px, ~14 rows
+   *
+   * Every assertion below is one of the three moves that bought the 217px. A
+   * band that quietly comes back is a band nobody measured, so each is pinned
+   * by the rule that removed it rather than by the total.
+   */
+
+  it('places the bands explicitly, so an optional one cannot re-flow the grid', () => {
+    // Auto-placement is a function of WHICH optional bands rendered — the lens
+    // note is absent on most kinds and present on a collection lens. Explicit
+    // `grid-row`/`grid-column` is indifferent to that; auto-placement is not,
+    // and the failure is a phone-only reordering no unit test can see.
+    expect(screens).toMatch(/\.lp\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\)/);
+    expect(screens).toMatch(/\.lp__selector\s*\{\s*grid-row:\s*1;\s*grid-column:\s*1;/);
+    expect(screens).toMatch(/\.lp__searchrow\s*\{\s*grid-row:\s*1;\s*grid-column:\s*2;/);
+  });
+
+  it('retires the three bands it retired by DISPLAY, not by not rendering them', () => {
+    // `display: none` keeps every class string, every floor rule and every
+    // sheet host in the tree, which is what lets the filter bar's four menus
+    // still mount into `MobileSheet` from a hidden subtree. Deleting the JSX
+    // would have deleted the desktop's bands with it.
+    expect(screens).toMatch(/\.lp__actions\s*\{\s*display:\s*none/);
+    expect(screens).toMatch(/\.lp__filterbar\s*\{\s*display:\s*none/);
+  });
+
+  it('gives the two surviving rows a REAL floor, not a pseudo-element', () => {
+    expect(screens).toMatch(/\.lp__selector\s*\{[^}]*min-height:\s*48px/);
+    expect(screens).toMatch(/\.lp__tierrow\s*\{[^}]*min-block-size:\s*48px/);
+    // The search input is the target, not the row that pads it: a padded
+    // parent scored 244x23 in the tap census while the row read as 44.
+    expect(screens).toMatch(/\.lp__searchinput\s*\{[^}]*min-block-size:\s*var\(--mobile-touch-min\)/);
+  });
+
+  it('costs the tier row no layout for its hairline', () => {
+    // No `border-box` reset in this package, so `border-bottom` ADDS to the
+    // 48px floor and the band measures 49. An inset shadow draws the same
+    // hairline for free — that pixel is the difference between 150 and 149.
+    expect(screens).toMatch(/\.lp__tierrow\s*\{[^}]*box-shadow:\s*inset 0 -1px 0 0 var\(--pn-line\)/);
+    expect(screens).not.toMatch(/\.lp__tierrow\s*\{[^}]*border-bottom:\s*1px/);
+  });
+
+  it('draws the four categories as MARKS but still says their counts aloud', () => {
+    // Labels and counts came off the screen, not out of the accessibility
+    // tree. A row of four unlabelled rings is a row of four unnamed buttons
+    // to a screen reader, which is a worse screen than the one we shrank.
+    expect(listPanel).toMatch(/oneSurface \? <CategoryGlyph category=\{tab\.id\} \/>/);
+    expect(listPanel).toMatch(/'aria-label': `\$\{tab\.label\}, \$\{tabLabel\(tab\)\}`/);
+  });
+
+  it('sends the narrowing verbs to sheets rather than back onto the header', () => {
+    // The filter bar's 101px is not deleted work, it is RELOCATED work: the
+    // same four menu bodies render into `MobileSheet` from a second control
+    // beside the FAB. `picker` is lifted so the panel keeps owning the bodies
+    // while the view owns the opening.
+    expect(listPanel).toMatch(/const narrowing = \(/);
+    expect(listPanel).toMatch(/<MobileSheet title=\{title\}/);
+    expect(entityView).toMatch(/picker=\{picker\}[\s\S]{0,80}onPicker=\{setPicker\}/);
+    expect(screens).toMatch(/\.cv2-root\[data-shell='mobile'\] \.ev-narrow/);
+    expect(screens).not.toMatch(/^\.ev-narrow/m);
+  });
+
+  it('keeps the kind TOTAL, by moving it to the drawer rather than dropping it', () => {
+    const drawer = read('./MobileDrawer.tsx');
+    expect(screens).toMatch(/\.lp__total/);
+    expect(drawer).toMatch(/className="mdrawer__total"/);
+  });
+});
+
 describe('DEF-013…020 — the shared touch floor is a token, and it is not a blanket rule', () => {
   it('names the floor once', () => {
     expect(frame).toMatch(/--mobile-touch-min:\s*44px/);

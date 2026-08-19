@@ -296,6 +296,21 @@
   padding-block: var(--pn-space-1);
 }
 
+/* Copy link, re-hosted from the phone header. The control brings its own
+   appearance from `copy-link.css`; this only gives it the row geometry its
+   neighbours have, so the foot reads as one list rather than as a button
+   sitting on top of two rows. */
+.mdrawer__share {
+  display: flex;
+  padding-inline: var(--pn-space-2);
+}
+
+.mdrawer__share > * {
+  flex: 1;
+  min-block-size: var(--mobile-touch-min);
+  justify-content: flex-start;
+}
+
 /*
  * Motion is an enhancement. The drawer must still ARRIVE for a reader who has
  * asked the platform for less of it — only its travel is removed.
@@ -309,4 +324,23 @@
   .mdrawer__row {
     transition: none;
   }
+}
+
+/* THE KIND TOTAL, arrived from the list's own bar (`mobile-screens.css` §9b).
+   QUIET, WHERE THE UNREAD BADGE IS LOUD — and the difference is the point.
+   Unread is a call to act and wears the brand on a filled pill; a total is
+   context and wears the same mono face as every other census number in this
+   product, in the receded ink. Two filled pills on one row would make the
+   count of things and the count of NEW things look like the same fact. */
+.mdrawer__total {
+  flex: 0 0 auto;
+  min-inline-size: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  line-height: 1.6;
+  color: var(--pn-ink-3);
+  font-variant-numeric: tabular-nums;
 }
