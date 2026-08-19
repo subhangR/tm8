@@ -45,6 +45,41 @@ migrations; import none of them verbatim.
 Naming: `NNN_description.sql`, applied in lexical order by the migration runner
 (`tools/conformance` gate: migrations apply clean to a fresh sidecar PG on 5442).
 
+## Cross-file couplings you cannot see from the file you are editing
+
+A migration is **immutable once applied** — `db/migrate.mjs` keeps a content
+checksum per file and `up` refuses to run against a database whose ledger
+disagrees with the disk. So a warning that belongs *in* an old file cannot be
+put there. They live here instead.
+
+**149 `internal.category_transition_allowed` ← 156's session tick.** The set has
+no `done -> in_progress` arm, and 156 depends on that absence. A user can file a
+still-running session under Done; the mark survives the process going idle for
+exactly one reason — 156's bridge guard asks this function and declines to undo
+what it refuses. There is no `marked_done` column, deliberately: the pair
+`(work_sessions.status, entities.status_category)` already encodes "ticked while
+running" unambiguously, and a stored third copy is the drift 147/150/155 spent
+four migrations collapsing.
+
+Add that arm and **every tick in the product silently stops sticking** — no
+error, and nothing red outside 156's own VERIFY tripwire, which only fires at
+apply time. If you want the arm, 156's persistence has to become an explicit
+stored fact in the same change.
+
+**156's bridge guard is narrower than the trigger it mirrors.** It asks
+`category_transition_allowed`, but `internal.validate_status_transition` only
+consults that function when no `workflow_transitions` row targets the state —
+if any row does, entry is governed exclusively by those rows. So an authored
+override could still raise 23514 *inside* `work_session_transition`, which is
+the hazard 156 exists to close.
+
+Unreachable today, checked rather than assumed: zero `workflow_transitions`
+rows, zero `entity_kinds` with `workflow_id` set, no RPC writes that column, and
+`work_session` resolves to the built-in global workflow no space RPC can add
+transitions to. It becomes reachable the day phase 6 lets a kind point at a
+space workflow — at which point 156's guard needs to ask the trigger's whole
+rule, not half of it.
+
 ## Tests
 
 ```bash

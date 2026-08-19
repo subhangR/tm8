@@ -1177,7 +1177,7 @@ describe('the ActionRef registry (§2.5)', () => {
 
   it('and refuses it on a row that has already ended', () => {
     // The one refusal left, and it is a statement rather than a capability
-    // guess: a row under Done cannot be ended again.
+    // guess: a row under Done with nothing answering cannot be ended again.
     const result = resolveAction('terminate').availability({
       spaceId: 's',
       entityId: 'sess-1',
@@ -1185,6 +1185,41 @@ describe('the ActionRef registry (§2.5)', () => {
       category: 'done',
     });
     expect(result.kind).toBe('disabled');
+  });
+
+  it('but a session TICKED WHILE RUNNING keeps its Terminate', () => {
+    /**
+     * THE CASE THIS PR CREATES, and the one that made the refusal above too
+     * broad while it was keyed on the category alone.
+     *
+     * The tick's entire ruling is "mark done, do not close": a session under
+     * Done may still be running, streaming and holding a PTY. Refusing
+     * Terminate on `category === 'done'` therefore ate the feature — tick a
+     * live session and the verb went dead on BOTH surfaces (the row cluster
+     * and `panel.primaries` resolve the same def), refusing with "This session
+     * has already ended" about a session that had not ended at all. Measured
+     * at the time: `{liveness:'live', category:'done'}` -> disabled.
+     *
+     * "Ended" needs both halves — filed under Done AND nothing answering.
+     */
+    expect(
+      resolveAction('terminate').availability({
+        spaceId: 's',
+        entityId: 'sess-1',
+        liveness: 'live',
+        category: 'done',
+      }),
+    ).toEqual({ kind: 'available' });
+
+    // And the ghost the ruling is about is still permitted, unchanged.
+    expect(
+      resolveAction('terminate').availability({
+        spaceId: 's',
+        entityId: 'sess-1',
+        liveness: 'stale',
+        category: 'in_progress',
+      }),
+    ).toEqual({ kind: 'available' });
   });
 
   it('never runs a disabled action', async () => {
