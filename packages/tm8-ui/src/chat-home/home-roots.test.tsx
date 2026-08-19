@@ -107,6 +107,86 @@ describe('Home root column', () => {
     expect(onRoot).toHaveBeenCalledWith('chats');
   });
 
+  /**
+   * THE MENU'S PER-ROW ＋ (user ruling 2026-08-19).
+   *
+   * This NARROWS R5 rather than reversing it — the row's LABEL still only ever
+   * switches, which the test above pins. What is new is a SECOND control per
+   * row, so making a doc from a list of tasks costs one press instead of
+   * switch-then-find-the-＋.
+   *
+   * The rows are queried by `aria-label` and never by position: the birth
+   * control is deliberately not a `menuitem` (the label is the menu item), so
+   * a positional query would silently start reading the label the day the
+   * order changed.
+   */
+  describe('the kind menu’s per-row birth verb', () => {
+    const openMenu = (view: ReturnType<typeof renderHome>) => {
+      fireEvent.click(view.getByRole('button', { name: 'Choose which list to show' }));
+      return within(view.getByRole('menu', { name: 'Entity lists' }));
+    };
+
+    it('every row carries one, and SESSIONS carry a terminal rather than a ＋', () => {
+      const view = renderHome({ root: 'task', onCreateKind: vi.fn() });
+      const menu = openMenu(view);
+      expect(menu.getByRole('button', { name: 'New task' })).toBeTruthy();
+      expect(menu.getByRole('button', { name: 'New doc' })).toBeTruthy();
+      /* Sessions are STARTED, not authored — the registry says so through
+         `list.quickStart`, and the row wears that verb's own label. A ＋ here
+         would promise an entity this flow cannot make. */
+      expect(menu.queryByRole('button', { name: 'New session' })).toBeNull();
+      expect(menu.getByRole('button', { name: 'Terminal' })).toBeTruthy();
+    });
+
+    it('pressing a row’s ＋ births THAT kind and lands the column on its root', () => {
+      const onCreateKind = vi.fn();
+      const onRoot = vi.fn();
+      const view = renderHome({ root: 'task', onRoot, onCreateKind });
+      fireEvent.click(openMenu(view).getByRole('button', { name: 'New doc' }));
+      expect(onCreateKind).toHaveBeenCalledWith('doc');
+      /* D10, same as the cell's ＋: a new doc landing in a list of tasks would
+         be a row the column cannot show. */
+      expect(onRoot).toHaveBeenCalledWith('doc');
+      expect(view.queryByRole('menu', { name: 'Entity lists' })).toBeNull();
+    });
+
+    it('honesty per row: a refused kind is disabled WITH its reason and does not fire', () => {
+      const onCreateKind = vi.fn();
+      const view = renderHome({
+        root: 'task',
+        onCreateKind,
+        createKindUnavailable: (kind) =>
+          kind === 'doc' ? { cause: 'Docs aren’t created from here', remedy: 'ask an owner' } : null,
+      });
+      const menu = openMenu(view);
+      const refused = menu.getByRole('button', { name: 'New doc' });
+      expect(refused.getAttribute('aria-disabled')).toBe('true');
+      expect(refused.getAttribute('title')).toContain('Docs aren’t created from here');
+      fireEvent.click(refused);
+      expect(onCreateKind).not.toHaveBeenCalled();
+      /* Its neighbour is unaffected — one refused kind must not refuse the menu. */
+      expect(menu.getByRole('button', { name: 'New task' }).getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('an unwired host draws NO row controls — one refusal on the cell, not fourteen in a popover', () => {
+      const view = renderHome({ root: 'task' });
+      const menu = openMenu(view);
+      expect(menu.queryByRole('button', { name: 'New doc' })).toBeNull();
+      /* The cell's own ＋ still says it, once, out loud. */
+      expect(view.getByRole('button', { name: 'New task' })).toBeTruthy();
+    });
+
+    it('the CELL wears the same verb its menu row does — a sessions cell is a terminal', () => {
+      const view = renderHome({
+        root: 'work_session',
+        kindCell: { kind: 'work_session', label: 'Sessions', single: 'Session' },
+        onNewEntity: vi.fn(),
+      });
+      expect(view.queryByRole('button', { name: 'New session' })).toBeNull();
+      expect(view.getByRole('button', { name: 'Terminal' })).toBeTruthy();
+    });
+  });
+
   it('honesty: the kind ＋ without a wire renders disabled WITH the reason, never hidden', () => {
     const view = renderHome({
       newEntityUnavailable: { cause: 'Creating is not wired here', remedy: 'no executor' },

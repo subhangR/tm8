@@ -60,7 +60,7 @@ import {
   slugOfKind,
 } from '../domain';
 import type { CockpitStage, NavView } from '../routes/types';
-import type { ListRootOption } from '../panels/ListRootHeader';
+import { rootBirthAction, type ListRootOption } from '../panels/ListRootHeader';
 import { HomeRail } from './HomeRail';
 import { HomeTrail } from './HomeTrail';
 import { inTreeOf } from './home-tree';
@@ -70,6 +70,7 @@ import { useLaunchPort } from './useLaunchPort';
 import { useMembershipSurface } from './membershipSurface';
 import { usePanelPrimaries } from './usePanelPrimaries';
 import { useRowLifecycle } from './useRowLifecycle';
+import { useSessionStart } from './useSessionStart';
 import type { GateData } from './useGateData';
 
 /* Same floor and same default as the channel screen's aside: two surfaces
@@ -174,6 +175,9 @@ export interface HomeChatRegions {
   /** D2/D3 generalized (R5): create-immediately for the kind cell's kind. */
   onNewEntity?: (() => void) | undefined;
   newEntityUnavailable: { cause: string; remedy: string } | null;
+  /** The kind menu's per-row ＋ — the same verb, for any kind in the list. */
+  onCreateKind: (kind: string) => void;
+  createKindUnavailable: (kind: string) => { cause: string; remedy: string } | null;
   /** B's non-chat occupant, rendered inside the chat grid (D8). */
   centerOverride?: ReactNode;
   /** The conversation the ADDRESS names (`/home/chat/{id}`), for the screen
@@ -324,6 +328,19 @@ export function HomeView(props: HomeViewProps) {
     reconcileCommand: data.reconcileCommand,
     onError: notifyActionFailed,
   });
+  /* THE SESSIONS CELL'S BIRTH VERB (user ruling 2026-08-19). Home had no
+     session-start dispatcher at all, so its Sessions root offered no way to
+     get one — the ＋ simply refused. Same host wiring the Work tab uses,
+     including the project rule: a terminal opens where a launch would, not in
+     a scratch directory nobody chose. */
+  const sessionStart = useSessionStart({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    projectId: data.launch.projects.find((p) => p.selectedByDefault && p.trusted)?.id ?? null,
+    onOpen: (id) => navStore.getState().openCenter(id),
+    onError: (verb, error) => notifyActionFailed(verb, '', error),
+  });
   const rowLifecycle = useRowLifecycle({
     data,
     viewerMemberId: props.viewerMemberId,
@@ -387,12 +404,6 @@ export function HomeView(props: HomeViewProps) {
     placeholderTitle: placeholderNameFor(cellConfig, placeholderTitleFor(cellConfig.label)),
     commands: data.seam.commands,
     onCreated: (id) => navStore.getState().openCenter(id),
-    refusal: cellConfig.list.quickCreate
-      ? null
-      : {
-          cause: `${cellConfig.labelPlural} aren’t created from here`,
-          remedy: 'they are made by their own flow',
-        },
   });
   useEffect(() => {
     if (newEntity.state.phase !== 'refused') return;
@@ -405,6 +416,49 @@ export function HomeView(props: HomeViewProps) {
     });
     newEntity.dismiss();
   }, [newEntity, onNotice]);
+
+  /**
+   * HOW A KIND IS BORN FROM THE ROOT HEADER — the cell's ＋ and every row of
+   * its menu, answered by ONE function so the two cannot disagree.
+   *
+   * The Work tab states the rule in full (`WorkspaceView.birthFor`); the two
+   * differ only in where the newborn lands, which is this screen's region B.
+   */
+  const birthFor = useCallback(
+    (kind: string): { refusal: { cause: string; remedy: string } | null; perform: () => void } => {
+      const action = rootBirthAction(kind);
+      if (action) {
+        const dispatch = sessionStart.onAction;
+        return dispatch
+          ? { refusal: null, perform: () => dispatch(action, '') }
+          : {
+              refusal: {
+                cause: `Starting ${getKind(kind).labelPlural.toLowerCase()} isn’t wired here`,
+                remedy: 'this surface was mounted without a command executor',
+              },
+              perform: () => undefined,
+            };
+      }
+      const target = getKind(kind);
+      return {
+        refusal:
+          newEntity.unavailableFor(target.kind)
+          ?? (target.list.quickCreate
+            ? null
+            : {
+                cause: `${target.labelPlural} aren’t created from here`,
+                remedy: 'they are made by their own flow',
+              }),
+        perform: () =>
+          void newEntity.create({
+            kind: target.kind,
+            placeholderTitle: placeholderNameFor(target, placeholderTitleFor(target.label)),
+          }),
+      };
+    },
+    [newEntity, sessionStart.onAction],
+  );
+  const cellBirth = birthFor(cellConfig.kind);
 
   /* THE C COLUMN IS DRAGGABLE, clamped against B's floor. D13: when the
      window cannot afford all three regions, C keeps its width and OVERLAYS B
@@ -577,8 +631,10 @@ export function HomeView(props: HomeViewProps) {
     selectedEntityId: centerId,
     onSelectEntity: (id) => navStore.getState().openCenter(id as EntityId),
     onShowChat: () => navStore.getState().clearStack(),
-    ...(newEntity.unavailable === null ? { onNewEntity: () => void newEntity.create() } : {}),
-    newEntityUnavailable: newEntity.unavailable,
+    ...(cellBirth.refusal === null ? { onNewEntity: cellBirth.perform } : {}),
+    newEntityUnavailable: cellBirth.refusal,
+    onCreateKind: (kind) => birthFor(kind).perform(),
+    createKindUnavailable: (kind) => birthFor(kind).refusal,
     ...(centerOverride !== undefined ? { centerOverride } : {}),
     routeThreadId,
     /* The open conversation is part of the address (`/home/chat/{id}`), so

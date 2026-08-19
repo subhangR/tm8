@@ -18,6 +18,7 @@ import {
   useNewTask,
   useTaskSave,
   type AuthoringCommands,
+  type NewTaskHandle,
 } from './index';
 
 /**
@@ -202,6 +203,69 @@ describe('the new-task flow', () => {
     expect(calls.create).toHaveLength(1);
     expect(calls.create[0].kind).toBe('channel');
     expect(calls.create[0].title).toBe('Untitled channel');
+  });
+
+  /**
+   * The SAME defect one level out. The root header's kind menu gives every row
+   * its own ＋, and the row you press is almost never the kind the list is
+   * showing — so a create that silently used the BOUND kind would make a task
+   * from the Docs row, which is `createTask` all over again.
+   *
+   * The target kind and its placeholder travel together, and both are asserted:
+   * the right kind under the previous kind's name is still a wrong row.
+   */
+  it('a TARGETED create makes the kind it was handed, not the bound one', async () => {
+    const { commands, calls } = scriptCommands({});
+    const seen: NewTaskHandle[] = [];
+    function Probe() {
+      seen.push(
+        useNewTask({
+          spaceId: TASK.spaceId,
+          kind: 'task',
+          placeholderTitle: placeholderTitleFor('Task'),
+          commands,
+        }),
+      );
+      return null;
+    }
+    render(<Probe />);
+    await act(async () => {
+      await seen[seen.length - 1]!.create({
+        kind: 'doc',
+        placeholderTitle: placeholderTitleFor('Doc'),
+      });
+    });
+    expect(calls.create).toHaveLength(1);
+    expect(calls.create[0].kind).toBe('doc');
+    expect(calls.create[0].title).toBe('Untitled doc');
+  });
+
+  /**
+   * `unavailableFor` answers about a kind this flow is NOT bound to — the
+   * question the kind menu asks once per row. The bound kind's own refusal
+   * must not travel: a sessions list whose ＋ refuses correctly would
+   * otherwise refuse every other row for the same reason.
+   */
+  it('unavailableFor answers per KIND — a refused bound kind does not refuse its neighbours', () => {
+    const { commands } = scriptCommands({});
+    const seen: NewTaskHandle[] = [];
+    function Probe() {
+      seen.push(
+        useNewTask({
+          spaceId: TASK.spaceId,
+          kind: 'work_session',
+          placeholderTitle: placeholderTitleFor('Session'),
+          commands,
+        }),
+      );
+      return null;
+    }
+    render(<Probe />);
+    const flow = seen[seen.length - 1]!;
+    expect(flow.unavailable).not.toBeNull();
+    expect(flow.unavailableFor('work_session')).not.toBeNull();
+    expect(flow.unavailableFor('doc')).toBeNull();
+    expect(flow.unavailableFor('task')).toBeNull();
   });
 
   it('DISABLES WITH REASON on a kind the generic create cannot make', () => {

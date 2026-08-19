@@ -606,6 +606,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
         onCreate={props.onCreate}
         createSlot={props.createSlot}
         onAction={props.onAction}
+        hostOwnsBirth={props.selectorSlot === 'host'}
         {...(props.wiredActions ? { wiredActions: props.wiredActions } : {})}
       />
 
@@ -1109,6 +1110,7 @@ function HeaderActions({
   createSlot,
   onAction,
   wiredActions,
+  hostOwnsBirth,
 }: {
   config: KindConfig;
   ctx: ActionContext;
@@ -1116,6 +1118,19 @@ function HeaderActions({
   createSlot?: React.ReactNode;
   onAction?: (ref: ActionRef, entityId: string) => void;
   wiredActions?: readonly ActionRef[];
+  /**
+   * The host draws the kind cell (`selectorSlot: 'host'`), so the host's ＋
+   * half already carries this kind's birth verb — see `ListRootHeader`'s
+   * `rootBirthAction`. USER RULING 2026-08-19: on those surfaces this row must
+   * not draw it a second time. It sat directly beneath the cell that now owns
+   * it, which made `▮ Terminal` the only control on the sessions list with two
+   * live copies one row apart.
+   *
+   * Scoped to `quickStart` and to hosted cells ON PURPOSE. The `k/` collection
+   * screen draws the panel's OWN `KindSelector`, whose cell has no ＋ at all,
+   * so there the verb has nowhere else to live and stays here.
+   */
+  hostOwnsBirth?: boolean;
 }) {
   const { quickCreate, quickLaunch, quickStart } = config.list;
   // Per-verb, not per-header. `chrome.tsx`'s exact expression: an unwired verb
@@ -1153,7 +1168,7 @@ function HeaderActions({
    * actually ask.
    */
   const showLaunch = Boolean(quickLaunch && dispatcherFor(quickLaunch));
-  const showStart = Boolean(quickStart && dispatcherFor(quickStart));
+  const showStart = Boolean(!hostOwnsBirth && quickStart && dispatcherFor(quickStart));
   if (!showCreate && !showLaunch && !showStart) return null;
 
   return (

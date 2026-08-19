@@ -19,6 +19,7 @@ import {
   EntityDetailPanel,
   EntityListPanel,
   ListRootHeader,
+  rootBirthAction,
   type DetailReasons,
 } from '../panels';
 import { useRowLifecycle } from './useRowLifecycle';
@@ -583,10 +584,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
      it in the centre — Home's D3 behaviour, adopted verbatim so the two
      surfaces differ by layout and nothing else.
 
-     `refusal` is what makes a non-creatable kind (work_session: quickCreate
-     false) report `unavailable` instead of silently making an entity nobody
-     asked for. The header draws the ＋ disabled-with-reason from it rather
-     than hiding it — a refused verb is told, never hidden. */
+     `refusalFor` is what makes a non-creatable kind report refused instead of
+     silently making an entity nobody asked for. It is applied at the HEADER
+     (`birthFor`) rather than passed to the hook as `refusal`, because the
+     header now asks about every kind in the menu and not only the bound one:
+     a refusal bound into the hook would have answered "sessions aren't created
+     from here" for the Docs row of a sessions list. */
   const leftConfig = getKind(leftKind);
   const rightConfig = getKind(rightKind);
   const refusalFor = (config: ReturnType<typeof getKind>) =>
@@ -608,7 +611,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       data.reconcileCommand(result);
       nav.push?.(id as EntityId);
     },
-    refusal: refusalFor(leftConfig),
   });
   const rightCreateFlow = useNewTask({
     spaceId: data.spaceId,
@@ -619,7 +621,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       data.reconcileCommand(result);
       nav.push?.(id as EntityId);
     },
-    refusal: refusalFor(rightConfig),
   });
 
   /* THE ROOT HEADER, one per column (task 01a0102f). The same component Home
@@ -642,6 +643,49 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     const config = isLeft ? leftConfig : rightConfig;
     const flow = isLeft ? leftCreateFlow : rightCreateFlow;
     const onKindChange = isLeft ? props.onLeftKindChange : props.onRightKindChange;
+
+    /**
+     * HOW A KIND IS BORN FROM THIS HEADER — one function, answering for the
+     * cell's ＋ and for every row of its menu, which is the point: pressing ＋
+     * on the Sessions row and pressing ＋ on the Sessions cell must not do
+     * different things.
+     *
+     * Two arms, and the registry decides which (never a kind literal, §15.2):
+     *   - `rootBirthAction` ⇒ the kind is STARTED. Sessions are the case: the
+     *     birth is `start-terminal`, dispatched through `useSessionStart`,
+     *     which owns the space and the project a terminal needs.
+     *   - otherwise ⇒ the generic create, with the TARGET kind's own
+     *     placeholder. `flow` is the vehicle (its commands, its `onCreated`),
+     *     not the subject — its bound kind is only the default.
+     */
+    const birthFor = (kind: string): { refusal: { cause: string; remedy: string } | null; perform: () => void } => {
+      const action = rootBirthAction(kind);
+      if (action) {
+        const dispatch = sessionStart.onAction;
+        /* The SAME gate the retired header button used: `onAction` is present
+           exactly when a terminal can be started, so a surface without a
+           command seam refuses out loud instead of throwing on click. */
+        return dispatch
+          ? { refusal: null, perform: () => dispatch(action, '') }
+          : {
+              refusal: {
+                cause: `Starting ${getKind(kind).labelPlural.toLowerCase()} isn’t wired here`,
+                remedy: 'this surface was mounted without a command executor',
+              },
+              perform: () => undefined,
+            };
+      }
+      const target = getKind(kind);
+      return {
+        refusal: flow.unavailableFor(target.kind) ?? refusalFor(target),
+        perform: () =>
+          void flow.create({
+            kind: target.kind,
+            placeholderTitle: placeholderNameFor(target, placeholderTitleFor(target.label)),
+          }),
+      };
+    };
+    const birth = birthFor(config.kind);
     return (
       <ListRootHeader
         rootsLabel={`${isLeft ? 'Left' : 'Right'} panel list`}
@@ -650,8 +694,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
            selected one — there is nothing else it could be showing. */
         cellActive
         onSelectCell={() => undefined}
-        {...(flow.unavailable === null ? { onCreate: () => void flow.create() } : {})}
-        createUnavailable={flow.unavailable}
+        {...(birth.refusal === null ? { onCreate: birth.perform } : {})}
+        createUnavailable={birth.refusal}
         options={homeRootKinds().map((k) => ({
           kind: k.kind,
           label: k.labelPlural,
@@ -659,6 +703,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         }))}
         currentKind={config.kind}
         onPickKind={(kind) => onKindChange?.(kind)}
+        onCreateKind={(kind) => birthFor(kind).perform()}
+        createKindUnavailable={(kind) => birthFor(kind).refusal}
       />
     );
   };

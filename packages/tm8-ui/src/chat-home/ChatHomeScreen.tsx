@@ -143,6 +143,11 @@ export interface ChatHomeScreenProps {
    *  `newEntityUnavailable`'s reason, never hidden. */
   onNewEntity?: (() => void) | undefined;
   newEntityUnavailable?: { cause: string; remedy: string } | null;
+  /** The kind menu's PER-ROW ＋ — the cell's verb, for any kind in the list.
+   *  See `ListRootHeader.onCreateKind` for why an absent one hides the row
+   *  controls rather than refusing fourteen times. */
+  onCreateKind?: ((kind: string) => void) | undefined;
+  createKindUnavailable?: ((kind: string) => { cause: string; remedy: string } | null) | undefined;
   /**
    * The host's own CONTENT for a KIND root — the workspace's
    * `EntityListPanel` with its full tree, tiles, lifecycle tabs and in-panel
@@ -295,6 +300,8 @@ export function ChatHomeScreen({
   onShowChat,
   onNewEntity,
   newEntityUnavailable,
+  onCreateKind,
+  createKindUnavailable,
   routeThreadId,
   onThreadSelected,
   soloConversation = false,
@@ -1100,6 +1107,8 @@ export function ChatHomeScreen({
           options={rootKindOptions}
           currentKind={root}
           onPickKind={setRoot}
+          onCreateKind={onCreateKind}
+          createKindUnavailable={createKindUnavailable}
         />
         {onChatsRoot ? (
           <input
