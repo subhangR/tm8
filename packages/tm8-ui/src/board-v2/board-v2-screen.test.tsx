@@ -299,6 +299,44 @@ describe('the client-appended tab', () => {
   });
 });
 
+describe('a card opens its entity ON the board', () => {
+  it('presses a card into the shared detail panel WITHOUT leaving the board, and Esc gives the board back', async () => {
+    const view = await mountBoard();
+    expect(view.queryByTestId('b2-entity-panel')).toBeNull();
+
+    /* The state the old handoff destroyed: a board narrowed to one card. If
+       pressing it navigates, this search box is gone with the screen. */
+    fireEvent.change(view.getByLabelText('Filter cards by title'), { target: { value: 'guide' } });
+    await waitFor(() => expect(view.getAllByTestId('b2-card')).toHaveLength(1));
+
+    fireEvent.click(within(view.getAllByTestId('b2-card')[0]!).getByText(GUIDE));
+
+    // The panel is open, and the board it opened over is still underneath.
+    await waitFor(() => view.getByTestId('b2-entity-panel'));
+    expect(view.getByTestId('board-v2-screen')).toBeTruthy();
+    expect(columnKeys(view)).toEqual(CATEGORY_KEYS);
+    expect((view.getByLabelText('Filter cards by title') as HTMLInputElement).value).toBe('guide');
+    // It is the app's ONE panel, not a board-local summary.
+    await waitFor(() =>
+      expect(within(view.getByTestId('b2-entity-panel')).getAllByText(GUIDE).length)
+        .toBeGreaterThan(0),
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(view.queryByTestId('b2-entity-panel')).toBeNull());
+    expect(view.getByTestId('board-v2-screen')).toBeTruthy();
+    view.unmount();
+  });
+
+  it('publishes the column count so the panel can be exactly one column wide', async () => {
+    const view = await mountBoard();
+    const stage = view.getByTestId('board-v2-screen').querySelector('.b2__stage') as HTMLElement;
+    // Four category columns ⇒ the panel's width calc divides by four.
+    expect(stage.style.getPropertyValue('--b2-cols')).toBe(String(CATEGORY_KEYS.length));
+    view.unmount();
+  });
+});
+
 describe('the create control', () => {
   it('renders a live ＋ New control that follows the selected kind', async () => {
     const view = await mountBoard();

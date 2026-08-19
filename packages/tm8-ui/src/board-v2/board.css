@@ -11,9 +11,14 @@
    and ate the top of the screen, growing with every teammate added. Filter
    triggers are one line each, so the board keeps everything below ~44px. */
 
+/* `flex: 1` IS LOAD-BEARING, and its absence was half the dead space at the
+   right edge. Every full-bleed screen is a child of `.shell-body`, a flex row —
+   so without it this section is sized by its CONTENTS, and columns that want to
+   grow have nothing to grow into. `.gv-screen` has always had it. */
 .b2 {
   display: flex;
   flex-direction: column;
+  flex: 1;
   height: 100%;
   min-height: 0;
   min-width: 0;
@@ -344,7 +349,22 @@
   cursor: pointer;
 }
 
-/* One scroller for the whole strip; columns keep their intrinsic width. */
+/* THE STAGE — the scroller plus whatever sits over it. A separate element from
+   `.b2__cols` ON PURPOSE: an absolutely-positioned child of a scroll container
+   is laid out against the SCROLLED content, so a panel parented to the scroller
+   would slide off the right edge the moment the strip moved sideways. */
+.b2__stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* One scroller for the whole strip. THE COLUMNS FILL THE WIDTH: equal flex off
+   a shared 272px basis, so four columns split a wide window four ways and
+   nothing is left dead at the right edge. 272px is the FLOOR, not the size —
+   below N×272 the columns stop shrinking and this scroller takes over, which
+   is the old behaviour on a narrow window, unchanged. */
 .b2__cols {
   flex: 1;
   min-height: 0;
@@ -356,7 +376,8 @@
 }
 
 .b2__col {
-  flex: 0 0 272px;
+  flex: 1 1 272px;
+  min-width: 272px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -509,4 +530,42 @@
 .b2__pivot--off {
   opacity: 0.55;
   cursor: default;
+}
+
+/* ---- the entity panel ---------------------------------------------------- */
+
+/* A pressed card opens the app's ONE detail panel OVER the last column, at
+   exactly that column's width. It OVERLAYS rather than joining the strip, so
+   opening and closing a card moves nothing: the columns keep the widths they
+   had, and the board a user was reading is still under their cursor when the
+   panel goes away.
+
+   THE WIDTH IS DERIVED, NOT MEASURED. Every column shares one flex rule, so a
+   column is `(stage − 2×12 padding − (n−1)×12 gap) / n` and the host publishes
+   `n` as `--b2-cols`. Same floor as a column: under pressure the panel stops at
+   272px rather than becoming a sliver of itself. */
+.b2__panel {
+  position: absolute;
+  inset-block: 10px;
+  inset-inline-end: 12px;
+  width: calc((100% - 24px - (var(--b2-cols, 1) - 1) * 12px) / var(--b2-cols, 1));
+  min-width: 272px;
+  max-width: calc(100% - 24px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  /* It is over the board, and it should read that way — the column beneath is
+     covered, not replaced. */
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.16);
+}
+
+/* The panel supplies its own header and scroll; this host only bounds it. */
+.b2__panel > * {
+  flex: 1;
+  min-height: 0;
 }

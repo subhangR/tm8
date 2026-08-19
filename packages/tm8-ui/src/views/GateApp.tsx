@@ -1914,10 +1914,13 @@ export function GateApp(props: GateAppProps = {}) {
               data={data}
               viewerMemberId={viewerMemberId}
               onNotice={notices.push}
-              onOpenEntity={(id) => {
-                navigateTo(WORKSPACE_TARGET);
-                nav.push(id as EntityId);
-              }}
+              reasons={reasons}
+              serverBaseUrl={activeServer.routeBaseUrl}
+              /* A card press opens the detail INSIDE the board now, so no
+                 `onOpenEntity` is handed down: the old handler navigated to the
+                 workspace, which unmounted the board and took the kind, the
+                 filters, the search and the scroll with it — the same reason
+                 Craft stopped passing one. Nothing is stubbed in its place. */
             />
           ) : data.ready &&
             activeTarget?.type === 'entity' &&
