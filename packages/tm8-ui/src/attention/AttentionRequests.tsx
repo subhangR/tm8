@@ -79,11 +79,31 @@ export function AttentionRequests(props: AttentionRequestsProps) {
   const [writeError, setWriteError] = useState<string | null>(null);
   const live = useRef(true);
 
+  /**
+   * THE PORT IS HELD BY REFERENCE, NEVER BY DEPENDENCY — this is the fix for the
+   * section's flicker, and it belongs here rather than only at the five call
+   * sites.
+   *
+   * `attentionSectionFor` builds the port inside each host's render. When that
+   * identity was in `load`'s dependency array, `load` changed on every host
+   * render, the mount effect below re-ran, and `load('initial')` put the section
+   * back into `phase: 'loading'` — which returns `null`. The whole `<section>`
+   * left the document and came back a fetch later, shunting the content body up
+   * and then down again, over and over, for as long as the host kept rendering.
+   *
+   * A ref severs that. The effect keys on the ENTITY, which is the only thing
+   * that actually changes what should be on screen, and the fetch always reads
+   * whatever port the latest render handed us. `port.ts` memoises the factory as
+   * well, but this is the half that a sixth host cannot accidentally undo.
+   */
+  const portRef = useRef(port);
+  portRef.current = port;
+
   const load = useCallback(
     (mode: 'initial' | 'refresh') => {
       if (injected) return;
       if (mode === 'initial') setState({ phase: 'loading' });
-      port.history(entityId).then(
+      portRef.current.history(entityId).then(
         ({ rows, truncated }) => {
           if (!live.current) return;
           setState({ phase: 'ready', rows, truncated });
@@ -98,7 +118,7 @@ export function AttentionRequests(props: AttentionRequestsProps) {
         },
       );
     },
-    [entityId, port, injected],
+    [entityId, injected],
   );
 
   useEffect(() => {
@@ -111,7 +131,9 @@ export function AttentionRequests(props: AttentionRequestsProps) {
     (row: AttentionRequest, status: AttentionRequestStatus, note: string) => {
       setBusy(row.id);
       setWriteError(null);
-      port
+      // Through the ref for the same reason `load` is — a click handler must not
+      // be a reason to keep the port in a dependency array.
+      portRef.current
         .settle({
           requestId: row.id,
           expectedVersion: row.version,
@@ -144,13 +166,19 @@ export function AttentionRequests(props: AttentionRequestsProps) {
           },
         );
     },
-    [load, port, props.onSettled],
+    [load, props.onSettled],
   );
 
   // LOADING AND EMPTY BOTH RENDER NOTHING, and for the same reason: this
   // section is mounted on every entity in the product, and the overwhelming
   // majority have never been escalated (user ruling — hide when empty). A
   // spinner would flash a box onto every page in the app for one frame.
+  //
+  // This is safe ONLY because `loading` is now entered once per entity. It used
+  // to be re-entered on every host render, and rendering `null` from a state the
+  // component kept falling back into is what made the section strobe. A refresh
+  // deliberately never comes through here: `load('refresh')` leaves the rows on
+  // screen, so a settlement re-reads the history without the page moving.
   if (state.phase === 'loading') return null;
 
   if (state.phase === 'error') {

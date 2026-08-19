@@ -320,6 +320,122 @@ describe('attentionPortFromSeam against createFixtureSeam()', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The flicker — the section refetching and unmounting itself on every host render
+// ---------------------------------------------------------------------------
+
+describe('stability under a re-rendering host', () => {
+  /**
+   * THE BUG THIS PINS. `attentionSectionFor` builds the port inside each host's
+   * render, so the prop arrived with a fresh identity every time. That identity
+   * was in `load`'s dependency array feeding the mount effect, so every host
+   * render refetched and pushed the section back to `phase: 'loading'` — which
+   * renders `null`. The section left the document and came back, and the content
+   * body below it jumped up and down for as long as the host kept rendering.
+   */
+  it('does NOT refetch when the host hands it a brand-new port object each render', async () => {
+    const rows = [req({ id: 'open1', points: 65, status: 'open' })];
+    const history = vi.fn(async () => ({ rows, truncated: false }));
+    const { findByTestId, rerender } = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort(rows, { history })} now={NOW} />,
+    );
+
+    await findByTestId('attention-request-open1');
+    expect(history).toHaveBeenCalledTimes(1);
+
+    // Five host renders, each allocating a port exactly the way the real
+    // `attentionSectionFor` does. None of them is a reason to read again.
+    for (let i = 0; i < 5; i += 1) {
+      rerender(<AttentionRequests entityId={ENTITY} port={fakePort(rows, { history })} now={NOW} />);
+    }
+
+    expect(history).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays MOUNTED across those renders — the section never blinks out of the document', async () => {
+    const rows = [req({ id: 'open1', points: 65, status: 'open' })];
+    // A history that never settles after the first call: if the effect re-ran,
+    // the component would sit in `loading` and render null, and the assertion
+    // below would catch the section missing rather than merely re-fetched.
+    let calls = 0;
+    const history = vi.fn(() => {
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve({ rows, truncated: false })
+        : new Promise<{ rows: AttentionRequest[]; truncated: boolean }>(() => {});
+    });
+    const { findByTestId, queryByTestId, rerender } = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort(rows, { history })} now={NOW} />,
+    );
+
+    await findByTestId('attention-requests');
+    for (let i = 0; i < 5; i += 1) {
+      rerender(<AttentionRequests entityId={ENTITY} port={fakePort(rows, { history })} now={NOW} />);
+      expect(queryByTestId('attention-requests')).toBeTruthy();
+    }
+  });
+
+  it('DOES refetch when the entity changes — the one input that should re-read', async () => {
+    const rows = [req({ id: 'open1', points: 65, status: 'open' })];
+    const history = vi.fn(async () => ({ rows, truncated: false }));
+    const port = fakePort(rows, { history });
+    const { findByTestId, rerender } = render(
+      <AttentionRequests entityId={ENTITY} port={port} now={NOW} />,
+    );
+
+    await findByTestId('attention-request-open1');
+    expect(history).toHaveBeenCalledTimes(1);
+
+    rerender(<AttentionRequests entityId={'ent-2' as EntityId} port={port} now={NOW} />);
+    await waitFor(() => expect(history).toHaveBeenCalledTimes(2));
+    expect(history.mock.calls[1]![0]).toBe('ent-2');
+  });
+
+  it('reads through the LATEST port even though it is not a dependency', async () => {
+    const rows = [req({ id: 'open1', points: 65, status: 'open', version: 1 })];
+    const stale = vi.fn(async () => ({ request: null, entity: null, affectedCount: 1 }) as never);
+    const fresh = vi.fn(async () => ({ request: null, entity: null, affectedCount: 1 }) as never);
+    const { findByTestId, getByTestId, rerender } = render(
+      <AttentionRequests entityId={ENTITY} port={fakePort(rows, { settle: stale })} rows={rows} now={NOW} />,
+    );
+    await findByTestId('attention-request-open1');
+
+    // The host re-renders with a new port. Holding the port in a ref must not
+    // mean holding the FIRST one forever.
+    rerender(
+      <AttentionRequests entityId={ENTITY} port={fakePort(rows, { settle: fresh })} rows={rows} now={NOW} />,
+    );
+    fireEvent.click(getByTestId('attention-resolve-open1'));
+    fireEvent.click(getByTestId('attention-confirm-open1'));
+
+    await waitFor(() => expect(fresh).toHaveBeenCalledTimes(1));
+    expect(stale).not.toHaveBeenCalled();
+  });
+});
+
+describe('attentionPortFromSeam identity', () => {
+  it('returns the SAME port for the same seam and space, so a render is not an allocation', async () => {
+    const seam = createFixtureSeam();
+    const spaceId = (await seam.spaces())[0]!.id;
+    expect(attentionPortFromSeam(seam, spaceId)).toBe(attentionPortFromSeam(seam, spaceId));
+  });
+
+  it('separates spaces — one seam legitimately serves more than one over its life', async () => {
+    const seam = createFixtureSeam();
+    const spaceId = (await seam.spaces())[0]!.id;
+    expect(attentionPortFromSeam(seam, spaceId)).not.toBe(
+      attentionPortFromSeam(seam, 'some-other-space' as SpaceId),
+    );
+  });
+
+  it('separates seams, so a fixture and a real node never share a port', async () => {
+    const a = createFixtureSeam();
+    const b = createFixtureSeam();
+    const spaceId = (await a.spaces())[0]!.id;
+    expect(attentionPortFromSeam(a, spaceId)).not.toBe(attentionPortFromSeam(b, spaceId));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Regression guard for the status enum
 // ---------------------------------------------------------------------------
 
