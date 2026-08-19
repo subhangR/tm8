@@ -495,6 +495,54 @@
 
 
 /* ==========================================================================
+   7k. WHAT A ROW WITH NOTHING ON IT IS ACTUALLY PAYING FOR
+
+   MEASURED, a row carrying no badges: 56px, of which
+   `44 (the tap floor) + 6 + 6 (`.pn-tt__main` padding-block)`. The 44 is not
+   negotiable — it is this program's acceptance, and the title, the status mark
+   and the disclosure are all held to it. The 12 is.
+
+   So the padding drops to 2px and the empty row becomes 48px: still four
+   clear pixels between one 44px target and the next, and the rows themselves
+   never touch. That is the FLOOR for this row — 48 of 48 is now content and
+   tap area, and anything below it would have to come out of the 44, which is
+   a different decision than a layout one and is not this rule's to take.
+
+   The text inside the target is 16.25px, so the visible gap between one title
+   and the next is ~32px whatever this number is. Cutting the padding tightens
+   the LIST without tightening the TYPE.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-tt__main {
+  padding-block: 2px;
+}
+
+/* ==========================================================================
+   7l. THE ROW'S SECOND LINE STARTS UNDER THE ROW, NOT UNDER THE TITLE
+
+   `.pn-tt__badges` — the comment count, the terminal and the rest of the
+   linked-state chips — is indented by a hand-computed `29px`, and the
+   arithmetic is written above it in `maestro-task-tile.css`:
+   "7px row inset + 16px status mark + 6px gap = title start".
+
+   THAT ARITHMETIC IS TRUE ON THE DESKTOP AND FALSE HERE. §7f grows
+   `.pn-tt__status` from 16px to the 44px touch floor, so the title now starts
+   at 7 + 44 + 6 = 57px and the badges still start at 29 — 28px to the LEFT of
+   the title they belong to. On screen the chips hang out under the status
+   column in their own margin, reading as a separate row of the list rather
+   than as the second line of the one above them.
+
+   Restated from the same parts rather than as a new hard number, so it cannot
+   drift from §7f the way the original drifted from the 16px mark: the row
+   inset, the status column and the flex gap, each named where it is defined.
+   `--tt-indent` stays in the sum because a nested row's whole anatomy shifts
+   with it and the badge line has to shift too.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-tt__badges {
+  padding-inline-start: calc(7px + var(--tt-indent, 0px) + var(--mobile-touch-min) + 6px);
+}
+
+
+/* ==========================================================================
    8. THE CENSUS IS RENDERED THREE TIMES, AND THE PHONE PAYS FOR THE THIRD
 
    The same four numbers reach the screen by three routes, all from one source:
