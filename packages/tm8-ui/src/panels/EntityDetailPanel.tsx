@@ -10,6 +10,7 @@ import type {
   WorkSessionInteractionProfileProjection,
 } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
+import { useMobileSurface } from '../mobile';
 import type { ContentSurface } from '../routes';
 import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
 import { getKind, newLaunchMutationId, resolveAction } from '../domain';
@@ -434,6 +435,10 @@ export interface EntityDetailPanelProps {
 }
 
 export function EntityDetailPanel(props: EntityDetailPanelProps) {
+  /* DEF-004 — see the `onOpenLaunch` spread on the ActionBar below. Read from
+     the host's context and never from the window: `GateApp` has already made
+     the shell decision once. `false` on every desktop path by construction. */
+  const { oneSurface } = useMobileSurface();
   const {
     detail,
     host = 'stack',
@@ -766,6 +771,42 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                  configure is a worse answer than the honest "not wired here"
                  refusal. Which surface opens is decided below, by the verb. */
               onFlow={props.launch || mergePr ? setFlowRef : undefined}
+              /*
+               * DEF-004 — RUN OPENS THE FULL SHEET WHERE THE HOST MOUNTS ONE.
+               *
+               * The list row has had this precedence since D44 ("the sheet
+               * OUTRANKS the inline expand"); the detail panel did not, so the
+               * SAME VERB on the SAME ENTITY behaved differently depending on
+               * which surface you pressed it from.
+               *
+               * It matters most on a phone, and that is why it arrives now. The
+               * inline expand is `.pn-actions__flow` — absolute, 300px wide,
+               * anchored to a 30px bar — and CONTRACT.md §4 rules that anchored
+               * popovers "do not survive the trip to a 390px header". The full
+               * sheet now HAS a phone arrangement; the quick config does not.
+               * On a phone the detail panel is also the surface where Run is
+               * reliably reachable at all: the list row's cluster is
+               * hover-revealed.
+               *
+               * Spread, never defaulted: absent leaves the expand exactly as it
+               * was for every host without a sheet.
+               *
+               * GATED ON `oneSurface`, AND THAT IS A SCOPE DECISION RATHER THAN
+               * A TECHNICAL ONE — stated because the unconditional version is
+               * arguably the better product and I am deliberately not shipping
+               * it here. Applying this precedence everywhere would make the
+               * desktop detail panel agree with the desktop LIST ROW, which has
+               * had the rule since D44; today they disagree, and that
+               * inconsistency is real. But it is a DESKTOP behaviour change, in
+               * a shell that is in daily use, with no row behind it, no
+               * evidence, and nobody having asked — in a program scoped to
+               * coarse-pointer phones. Widening it is a separate decision for
+               * whoever owns the desktop; it is filed as an observation, not
+               * smuggled in under a phone fix.
+               */
+              {...(oneSurface && props.launch?.onFullOptions
+                ? { onOpenLaunch: props.launch.onFullOptions, launchSubjectId: detail.id }
+                : {})}
               flowSurface={
                 flowRef && resolveAction(flowRef).flow === 'merge-pr' && mergePr && mergeSubject ? (
                   <MergePullRequestFlow

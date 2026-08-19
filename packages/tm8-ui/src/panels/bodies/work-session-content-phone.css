@@ -1,0 +1,137 @@
+/* ==========================================================================
+   THE RUN SURFACE'S SWITCH, ON A PHONE — DEF-029 (Lane C's half)
+   ==========================================================================
+
+   ── WHAT WAS MEASURED ────────────────────────────────────────────────────
+
+   `before-lanes-results.json`, surface `launch-run-session`, phone-390 AND
+   phone-430, `tapUnder44 = 13 of 29`. Five of those thirteen are these chips:
+
+     button.pn-surface-switch__tab   66x22 "Terminal"    77x22 "Transcript"
+                                     37x22 "Git"         49x22 "Debug"
+                                     49x22 "Graph"
+
+   ── WHY 22, WHICH IS THE PART WORTH KNOWING ──────────────────────────────
+
+   The control is NOT under-sized in `panels.css`. `.pn-surface-switch__tab`
+   declares `min-width: 76px; min-height: 44px` and has all along. What measured
+   22px is the `--bar` MODIFIER, which strips the floor deliberately so five
+   chips can ride the panel bar's fixed 30px row — panels.css records the trade
+   in its own comment ("the 44px target is knowingly traded for the bar's 30px
+   — the same trade Terminate, ⤢ and ✕ already made to sit there").
+
+   That trade is a desktop-pointer trade. It is not available to a thumb, and it
+   is also one of the reasons the bar's control cluster ended up 67px off the
+   right edge (DEF-001) — five chips holding ~300px of min-content open in a row
+   that also has to hold Terminate.
+
+   So the fix is SUBTRACTION, not a new override: `WorkSessionContent` declines
+   the panel-bar slot on the phone, the `--bar` modifier stops applying, and the
+   base rule's 44px floor is simply in force again. This file only supplies what
+   the row needs at 390 that the desktop's own row never had to think about.
+
+   ── SCOPE ────────────────────────────────────────────────────────────────
+
+   Under `.cv2-root[data-shell='mobile']` — the marker `GateApp` and
+   `MobileFrame` stamp, CONSUMED here and never changed (it is a shared contract
+   with `mobile-screens.css`, `terminal.css`'s 21 rule heads, and the zoom gate).
+   Additionally qualified by `[data-arrangement='phone-row']`, which
+   `WorkSessionContent` sets only when `useMobileSurface().oneSurface` is true,
+   so neither mechanism alone can leak this onto a desktop.
+
+   NOT FIXED HERE: the four `button.pn-tab`s at h=30 are the other half of
+   DEF-029 and live in `panels.css` / `detail/chrome.tsx` (Lane B), and per the
+   row's own note they must flip TOGETHER with DEF-007's occlusion fix — sizing
+   them without unstacking leaves them big and still unpressable. Requested
+   through the ledger, not done here. */
+
+/* --- The switch's own row ------------------------------------------------
+   `.pn-surface-switch` (un-modified) is already `min-height: 52px` with its own
+   background and hairline, because that is what it was before the panel-bar
+   ruling moved it. Two things are added for 390:
+
+   WRAP, as insurance rather than as the expected case. Two 76px chips plus the
+   refusal marker fit a 390px row with room to spare; wrapping is what stops a
+   longer refusal string, a translation, or a larger text-size preference from
+   pushing the marker past the right edge instead of onto a second line — and
+   `.mobile-frame` is `overflow: hidden`, so past the right edge means DESTROYED,
+   with the document-level overflow number still reading zero (RULE R3).
+
+   GAP, because 2px between two 44px targets is two 44px targets that get
+   mis-tapped. The desktop's 2px is right for a pointer landing on a 22px chip;
+   it is wrong the moment the chips are thumb-sized and adjacent. */
+.cv2-root[data-shell='mobile'] .pn-surface-switch[data-arrangement='phone-row'] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  row-gap: 6px;
+  padding: 6px 10px;
+}
+
+/* The tablist itself. It is an inner element here rather than the row — see the
+   TSX for why: `role="tablist"` promises its children are tabs, and the refusal
+   marker beside them is not one. */
+.cv2-root[data-shell='mobile'] .pn-surface-switch[data-arrangement='phone-row'] .pn-surface-switch__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* --- The refusal marker --------------------------------------------------
+   Git · Debug · Graph, stated rather than merely absent.
+
+   QUIET ON PURPOSE, and not because it is unimportant. It is a statement of
+   fact about what this arrangement does not have — the same tone
+   `mobile-screens.css` gives its other honest absences — and it must not
+   compete with the two live tabs beside it for a thumb's attention. It is
+   `DisabledIconControl` underneath, which per RULE R2 is correctly excluded
+   from the 44px bar: there is nothing to tap and a size assertion would be
+   meaningless.
+
+   `margin-inline-start: auto` puts it at the end of the row, so the two things
+   you CAN press stay together on the left where the eye starts. */
+.cv2-root[data-shell='mobile'] .pn-surface-switch__refused {
+  margin-inline-start: auto;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--pn-ink-4);
+  overflow-wrap: anywhere;
+}
+
+/* --- The routed refusal --------------------------------------------------
+   Rendered when the ADDRESS named a surface this shell refuses — somebody
+   shared `?contentSurface=git` from a desktop.
+
+   `flex: none`, so it takes the space of a statement and never the space of a
+   screen: the session underneath is still open and still readable, which is
+   what makes this a refusal beside the content rather than instead of it. */
+.cv2-root[data-shell='mobile'] .pn-surface-refusal {
+  flex: none;
+  margin: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-hover);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cv2-root[data-shell='mobile'] .pn-surface-refusal__head {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+
+.cv2-root[data-shell='mobile'] .pn-surface-refusal__body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+  overflow-wrap: anywhere;
+}

@@ -47,6 +47,7 @@ import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import type { DetailReasons } from '../panels';
 import type { Notice } from '../shell';
 import { EntityView } from './EntityView';
+import type { DispatchSelection, LaunchSelection } from './LaunchSheet';
 import { ChannelView } from './ChannelView';
 import { InboxView } from './InboxView';
 import { ChatHomeSurface } from '../chat-home';
@@ -96,6 +97,43 @@ export interface MobileShellProps {
       stamp reads — a second `useTheme()` here would be a second truth. */
   theme?: Theme;
   onThemeChange?: (theme: Theme) => void;
+
+  /*
+   * DEF-004 — THE LAUNCH FLOW'S INPUTS, AND WHY THEIR ABSENCE WAS THE DEFECT.
+   *
+   * The kind arm below passes `EntityView` everything it needs to LIST and to
+   * OPEN, and passed it nothing at all about launching. `EntityView` already
+   * mounts the full `LaunchSheet` on `launchSubjectId` and already builds its
+   * sources through `useLaunchPort`; with `onLaunchOpen` absent the port omits
+   * `onFullOptions`, so a row's `Run ▸` had no sheet to open and the subject
+   * was never set. The result is the row as filed: NO phone route reaches the
+   * launch flow. Not only `workspace` — every route, because the one screen a
+   * phone can launch from was wired for everything except launching.
+   *
+   * The workspace being refused forever (owner ruling) is what leaves no other
+   * door, and is why this is a row rather than a nice-to-have.
+   *
+   * THESE ARE THE SAME SEVEN GateApp ALREADY PASSES on its desktop branch — to
+   * `WorkspaceView`, to `HomeView` and to `EntityView` itself. This arm is
+   * being given an existing contract, not a new one, which is the whole reason
+   * a shell-owned file can take a lane's change: there is nothing here to
+   * design.
+   *
+   * ALL OPTIONAL, AND THAT IS LOAD-BEARING RATHER THAN CAUTIOUS. Every one is
+   * spread at the call site, never defaulted: `RowAction` decides whether Run
+   * opens a sheet by asking whether `onOpenLaunch` EXISTS, so a
+   * `?? (() => undefined)` would switch its honest refusal off and leave a
+   * live-looking control that swallows the press — the identical failure the
+   * switch below documents for `onOpenEntity`. A host that wires none of these
+   * gets Run rendered refused-with-reason, which is true.
+   */
+  onLaunchOpen?(id: EntityId): void;
+  launchSubjectId?: EntityId | null;
+  launchRefusal?: { cause: string; detail: string } | null;
+  launchInFlight?: boolean;
+  onLaunchCancel?(): void;
+  onLaunchSubmit?(config: LaunchSelection): void;
+  onLaunchDispatch?(request: DispatchSelection): void;
 }
 
 /**
@@ -524,6 +562,38 @@ function screenFor(props: MobileShellProps): ReactNode {
         onMode={(m) => props.navigateTo({ ...activeTarget, mode: m })}
         {...(activeTarget.groupBy !== undefined ? { groupBy: activeTarget.groupBy } : {})}
         onGroupBy={(g) => props.navigateTo({ ...activeTarget, groupBy: g })}
+        /*
+         * DEF-004 — THE PHONE'S DOOR INTO LAUNCH, and it is THIS arm because
+         * there is nowhere else it could be.
+         *
+         * The workspace is refused forever by owner ruling, and this is the
+         * only phone screen that hosts a list of launchable entities. So the
+         * route is: the Tasks tab → a task row's `Run ▸` → the full sheet.
+         *
+         * ONE TAP, NOT TWO, and that falls out of a rule that already exists
+         * rather than a phone special case. `RowAction` reads
+         * "the sheet OUTRANKS the inline expand": where a host mounted the
+         * full sheet, Run opens it directly and the tile never expands into the
+         * anchored quick-config card. That card is a desktop popover — it hangs
+         * off a 22px cluster button and does not survive the trip to 390px —
+         * so the phone wanting to skip it and the existing rule wanting to skip
+         * it are the same want, and no branch here has to say so.
+         *
+         * NOT THE LIST HEADER. `useSessionStart` omits `launch-session` from
+         * its wired actions deliberately and permanently — a list header has no
+         * subject to name — so the Sessions header draws no launch control at
+         * all, by design and not by omission. The subject comes from a ROW.
+         *
+         * Every one is spread, so a host that wires none of them leaves Run
+         * refused-with-reason instead of live-looking and inert.
+         */
+        {...(props.onLaunchOpen ? { onLaunchOpen: props.onLaunchOpen } : {})}
+        {...(props.launchSubjectId !== undefined ? { launchSubjectId: props.launchSubjectId } : {})}
+        {...(props.launchRefusal !== undefined ? { launchRefusal: props.launchRefusal } : {})}
+        {...(props.launchInFlight !== undefined ? { launchInFlight: props.launchInFlight } : {})}
+        {...(props.onLaunchCancel ? { onLaunchCancel: props.onLaunchCancel } : {})}
+        {...(props.onLaunchSubmit ? { onLaunchSubmit: props.onLaunchSubmit } : {})}
+        {...(props.onLaunchDispatch ? { onLaunchDispatch: props.onLaunchDispatch } : {})}
       />
     );
   }

@@ -268,6 +268,8 @@ export function ActionBar({
   flowSurface,
   barRef,
   wiredActions,
+  onOpenLaunch,
+  launchSubjectId,
 }: {
   config: KindConfig;
   ctx: ActionContext;
@@ -295,6 +297,33 @@ export function ActionBar({
   /** Toggles that expand. Absent ⇒ a flow verb falls back to `onAction`. */
   onFlow?: (ref: ActionRef | null) => void;
   /**
+   * THE FULL LAUNCH SHEET, when the host mounts one — DEF-004.
+   *
+   * `RowAction` in the list has carried this rule since D44 and states it in
+   * one line: **"the sheet OUTRANKS the inline expand: where the host mounted
+   * the full launch sheet, one click on Run opens it directly and the tile
+   * never expands."** The detail panel's Run did not have the rule, so the same
+   * verb on the same entity behaved differently depending on which surface you
+   * pressed it from — the inconsistency this program keeps filing rows about,
+   * in the one pair of controls a person is most likely to compare.
+   *
+   * IT MATTERS MOST ON A PHONE, which is why it is arriving now. The inline
+   * expand is `.pn-actions__flow`: absolutely positioned, 300px wide, anchored
+   * to a 30px bar. `mobile/CONTRACT.md` §4 rules that anchored popovers "do not
+   * survive the trip to a 390px header" — that is the whole reason the account
+   * menu is a sheet. The full sheet HAS a phone arrangement now; the quick
+   * config does not.
+   *
+   * ABSENT ⇒ UNCHANGED. The expand is what every host without a sheet keeps,
+   * and its disabled-with-reason path is untouched. This is a precedence rule,
+   * not a replacement.
+   */
+  onOpenLaunch?: (entityId: string) => void;
+  /** The subject the sheet would be opened FOR. Required alongside
+      `onOpenLaunch` for the same reason `RowAction` takes `row.id`: a sheet is
+      bound to an entity and there is no subject in an action ref. */
+  launchSubjectId?: string;
+  /**
    * The expanded flow's own surface, rendered by the host.
    *
    * It hangs off THIS row rather than taking one of its own: the bar is a
@@ -317,6 +346,9 @@ export function ActionBar({
           onAction={wiredActions && !wiredActions.includes(ref) ? undefined : onAction}
           openFlow={openFlow}
           onFlow={onFlow}
+          {...(onOpenLaunch && launchSubjectId
+            ? { onOpenLaunch, launchSubjectId }
+            : {})}
           primary
         />
       ))}
@@ -335,6 +367,8 @@ function ActionButton({
   onAction,
   openFlow,
   onFlow,
+  onOpenLaunch,
+  launchSubjectId,
   primary = false,
 }: {
   ref_: ActionRef;
@@ -342,10 +376,27 @@ function ActionButton({
   onAction?: (ref: ActionRef) => void;
   openFlow?: ActionRef | null;
   onFlow?: (ref: ActionRef | null) => void;
+  onOpenLaunch?: (entityId: string) => void;
+  launchSubjectId?: string;
   primary?: boolean;
 }) {
   const def = resolveAction(ref_);
   const availability = def.availability(ctx);
+
+  /*
+   * THE SHEET OUTRANKS THE INLINE EXPAND — `RowAction`'s rule, now here too.
+   *
+   * Tested on the flow's PRESENCE and not on `'launch'`, exactly as `RowAction`
+   * and `ActionButton`'s own `opensFlow` below are: the registry says which
+   * verbs stop for a surface before they commit, and this only honours it. The
+   * moment a second flow existed (B10's merge confirm) an equality check would
+   * itself have been the action-id literal §15.2 bans.
+   *
+   * `def.flow === 'launch'` is therefore NOT what this reads. It reads whether
+   * the HOST offered a launch sheet for a subject — which only a launch verb can
+   * ever be handed — so a merge-confirm flow is untouched and still expands.
+   */
+  const opensSheet = def.flow === 'launch' && onOpenLaunch != null && launchSubjectId != null;
 
   /*
    * D44 — a flow verb OPENS ITS SURFACE instead of dispatching, exactly as the
@@ -359,7 +410,7 @@ function ActionButton({
    * It is therefore NOT enabled-inert without `onAction` — clicking genuinely
    * does something, and the config states for itself whether it can commit.
    */
-  const opensFlow = def.flow != null && onFlow != null;
+  const opensFlow = def.flow != null && !opensSheet && onFlow != null;
 
   /*
    * R5 #9: an unwired verb is DISABLED-WITH-REASON, not enabled-inert. The
@@ -367,7 +418,7 @@ function ActionButton({
    * that did nothing when clicked — the user cannot distinguish that from a
    * broken app. Structural check, so it cannot drift from what is wired.
    */
-  if (!onAction && !opensFlow) {
+  if (!onAction && !opensFlow && !opensSheet) {
     return (
       <DisabledIconControl label={def.label} glyph={def.icon} reason={NOT_WIRED_REASON}>
         {primary ? def.label : null}
@@ -425,6 +476,10 @@ function ActionButton({
         .join(' ')}
       aria-expanded={opensFlow ? expanded : undefined}
       onClick={() => {
+        if (opensSheet) {
+          onOpenLaunch?.(launchSubjectId as string);
+          return;
+        }
         if (opensFlow) {
           onFlow?.(expanded ? null : ref_);
           return;

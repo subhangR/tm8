@@ -1092,7 +1092,34 @@ export function GateApp(props: GateAppProps = {}) {
         /* D11 (task 01a006f8): a launch submitted FROM HOME stays in Home —
            the new session takes region B and the left column flips to
            Sessions. Everywhere else keeps the workspace hand-off. */
-        if (activeTarget?.type === 'view' && activeTarget.ref === 'dashboard') {
+        if (shell === 'mobile') {
+          /*
+           * DEF-004's SECOND HALF — WHERE A PHONE LAUNCH ARRIVES.
+           *
+           * The `else` below hands off to the WORKSPACE, and the workspace is
+           * refused forever on a phone (owner ruling). So without this arm the
+           * flow completed and then threw the viewer onto the "no phone layout"
+           * card, with the session they had just started nowhere on screen —
+           * and the notice underneath it said "the live terminal is open in the
+           * workspace", which on this shell is not true. Opening the launch
+           * door without this would have finished the journey at a wall.
+           *
+           * It lands on the SESSIONS SCREEN with the new session OPEN, which is
+           * the phone's own arrangement of what the workspace hand-off does:
+           * `navigateTo` writes the address (one router, both shells) and the
+           * screen stack is what "opened" means on a phone — the same pair the
+           * cold-link hydration above uses, so a launched session is reached
+           * exactly as a pasted link to one would be.
+           *
+           * `nav.push` is deliberately NOT called here: it is the desktop panel
+           * stack, and pushing onto a stack this shell does not render would
+           * leave a phantom entry for the desktop to find later.
+           */
+          navigateTo({ type: 'kind', ref: LIVE_COUNT_KIND });
+          screenStackStore
+            .getState()
+            .open(screenKeyOf.kind(LIVE_COUNT_KIND), sessionId as EntityId);
+        } else if (activeTarget?.type === 'view' && activeTarget.ref === 'dashboard') {
           /* Route-owned now (task 01a00932 D1): the session ROOTS the centre
              trail and the address flips to the sessions root. */
           rememberHomeRoot(data.spaceId, LIVE_COUNT_KIND);
@@ -1108,10 +1135,17 @@ export function GateApp(props: GateAppProps = {}) {
           id: 'launch-done',
           tone: 'info',
           title: 'Session launched',
+          /* THE NOTICE NAMES WHERE THE SESSION ACTUALLY IS, per shell. It said
+             "in the workspace" unconditionally, which on a phone pointed at the
+             one screen this build refuses — a true-sounding sentence sending a
+             reader somewhere that does not exist for them. Three arms because
+             there are three destinations, not because there are three shells. */
           body:
-            activeTarget?.type === 'view' && activeTarget.ref === 'dashboard'
-              ? 'The live terminal is open here in Home.'
-              : 'The live terminal is open in the workspace.',
+            shell === 'mobile'
+              ? 'The new session is open in Sessions.'
+              : activeTarget?.type === 'view' && activeTarget.ref === 'dashboard'
+                ? 'The live terminal is open here in Home.'
+                : 'The live terminal is open in the workspace.',
           ttlMs: 6000,
         });
       })
@@ -1648,6 +1682,35 @@ export function GateApp(props: GateAppProps = {}) {
           }}
           theme={theme}
           onThemeChange={setTheme}
+          /*
+           * DEF-004 — THE LAUNCH FLOW, HANDED TO THE PHONE.
+           *
+           * The identical set this component already passes three times on the
+           * desktop branch below (WorkspaceView, HomeView, EntityView). The
+           * phone branch had none of them, so `EntityView`'s launch port never
+           * received `onFullOptions`, a row's `Run ▸` had no sheet to open, and
+           * `launchSubjectId` was never set on the one screen a phone can
+           * launch from. Not a workspace problem: EVERY phone route missed it.
+           *
+           * `onSpawn` IS DELIBERATELY NOT AMONG THEM, and that is the one place
+           * this fork cannot be a copy. The desktop's spawn handler ends
+           * `navigateTo(WORKSPACE_TARGET); nav.push(sessionId)` — and the
+           * workspace is refused forever on a phone, so reusing it would land
+           * a viewer who just launched a session on the "no phone layout" card,
+           * with the session they started nowhere in sight. The phone's answer
+           * to "where does a launch go" is below, in `onLaunchSubmit`'s own
+           * arrival, and it goes to a screen this shell actually has.
+           */
+          onLaunchOpen={(id) => launch.open(id)}
+          launchSubjectId={launch.subjectId}
+          launchRefusal={launchRefusal}
+          launchInFlight={launching}
+          onLaunchCancel={() => {
+            setLaunchRefusal(null);
+            launch.close();
+          }}
+          onLaunchSubmit={submitLaunch}
+          onLaunchDispatch={submitDispatch}
           notices={<NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />}
         />
       </div>
