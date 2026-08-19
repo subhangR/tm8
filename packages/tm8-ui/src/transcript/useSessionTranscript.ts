@@ -148,6 +148,20 @@ export function useSessionTranscript(
   const generation = useRef(0);
   const loadSeq = useRef(0);
 
+  /**
+   * The cursor a walk stalled AT, so the refusal is scoped to the bytes that
+   * earned it rather than to the session.
+   *
+   * A stall taken on the FIRST walk happens while `older.length` is still 0,
+   * so the poll is running again the moment the walk ends and can replace the
+   * tail with a window starting somewhere else. That new cursor has not
+   * refused anything — but a session-wide `phase: 'stalled'` would go on
+   * refusing on its behalf, and the reader could not walk at all. The effect
+   * below lifts the refusal as soon as the cursor it belongs to is no longer
+   * the one on offer.
+   */
+  const stalledAt = useRef<number | null>(null);
+
   /* Built rather than always-passed so a caller that asks for neither sends no
      opts at all — the shape the seam has served since before either option
      existed, and the one every fixture arm is written against. */
@@ -190,6 +204,7 @@ export function useSessionTranscript(
   // history would stay under them.
   useEffect(() => {
     generation.current += 1;
+    stalledAt.current = null;
     hasLoaded.current = false;
     setState({ phase: 'loading' });
     setOlder([]);
@@ -220,6 +235,17 @@ export function useSessionTranscript(
   const oldest = older[0] ?? newest;
   const hasOlder = oldest?.hasOlder === true;
 
+  // Lift a stall the moment the cursor it was taken against is no longer the
+  // one the reader would ask with — see `stalledAt`. The same giant record
+  // will very likely stall the new cursor too, and that is fine: it will
+  // refuse again, on its own evidence, rather than on a stale verdict.
+  useEffect(() => {
+    if (olderRead.phase === 'stalled' && stalledAt.current !== (oldest?.windowStart ?? null)) {
+      stalledAt.current = null;
+      setOlderRead(IDLE);
+    }
+  }, [olderRead.phase, oldest?.windowStart]);
+
   const loadOlder = useCallback(() => {
     const cursor = oldest?.windowStart;
     if (oldest?.hasOlder !== true || cursor === null || cursor === undefined) return;
@@ -245,8 +271,12 @@ export function useSessionTranscript(
          * that window changes nothing, leaves `oldest.windowStart` where it
          * was, and lets the sentinel ask for the identical bytes again: an
          * unbounded loop. Stopping with a reason is the honest end.
+         *
+         * The refusal belongs to THIS CURSOR, not to the session — see
+         * `stalledAt`.
          */
         if (page.windowStart !== null && page.windowStart >= cursor) {
+          stalledAt.current = cursor;
           setOlderRead({
             phase: 'stalled',
             message:
@@ -279,6 +309,7 @@ export function useSessionTranscript(
     // Bumped BEFORE the reload: a walk still in flight belongs to the
     // accumulation being dropped, and must not land into the fresh one.
     generation.current += 1;
+    stalledAt.current = null;
     setOlder([]);
     setOlderRead(IDLE);
     void load();

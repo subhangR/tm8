@@ -288,6 +288,50 @@ describe('the Transcript surface', () => {
       expect(transcript.mock.calls.length).toBe(calls);
     });
 
+
+    /**
+     * RESIDUAL FROM RE-REVIEW (PR #452). A stall taken on the FIRST walk lands
+     * while `older.length` is still 0, so the poll is running again the moment
+     * the walk ends and can replace the tail with a window starting somewhere
+     * else. A session-wide `stalled` went on refusing on that new cursor's
+     * behalf — a cursor that had refused nothing — and the reader could not
+     * walk at all.
+     *
+     * The refusal belongs to the bytes that earned it. When the tail moves, it
+     * is lifted; the same giant record will very likely refuse the new cursor
+     * too, but on its own evidence rather than on a stale verdict.
+     */
+    it('lifts a stall when the tail slides to a cursor that refused nothing', async () => {
+      vi.useFakeTimers();
+      try {
+        const stuck = page({ entries: [turn('the newest turn')], windowStart: 900, hasOlder: true });
+        const moved = page({ entries: [turn('a newer turn')], windowStart: 1200, hasOlder: true });
+        let tail = stuck;
+        const transcript = vi.fn((_id: string, opts?: { before?: number }) =>
+          opts?.before === undefined ? Promise.resolve(tail) : Promise.resolve(stuck));
+        const seam = { transcript, commands: { prompt: vi.fn() } } as never;
+        render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
+        await vi.advanceTimersByTimeAsync(0);
+
+        fireEvent.click(screen.getByTestId('transcript-load-older'));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(screen.getByTestId('transcript-stalled')).toBeTruthy();
+
+        // The poll never paused — no window was ever held — so the tail moves.
+        tail = moved;
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        // The poll's render and the lift it triggers are separate rounds.
+        await vi.advanceTimersByTimeAsync(0);
+
+        // A different cursor is on offer, so the refusal no longer applies.
+        expect(screen.queryByTestId('transcript-stalled')).toBeNull();
+        expect(screen.getByTestId('transcript-load-older')).toBeTruthy();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     /**
      * THE POLL PAUSE. The newest window is a tail, so its start slides forward
      * as the file grows; replacing it under an accumulation would open a hole
