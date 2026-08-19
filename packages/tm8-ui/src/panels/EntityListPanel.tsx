@@ -3346,6 +3346,11 @@ export function Tile({
       data-tree={config.list.tree ? 'true' : undefined}
       data-children={childCount > 0 ? childCount : undefined}
       data-flow={flowRef ? 'open' : undefined}
+      /* The task tile has carried this since #435; the standard anatomy needed
+         it for the same reason. The phone drops the row's verbs while the row
+         is CLOSED, and "closed" is a fact only this tile knows — a descendant
+         selector cannot read a sibling's `useState`. */
+      data-details={detailsExpanded ? 'open' : undefined}
       data-streaming={streaming ? 'true' : 'false'}
     >
       <div className="lp__tile-main" onClick={() => props.onSelect?.(row.id)}>
@@ -3485,8 +3490,15 @@ export function Tile({
                    one trails the row, matching the control-card's `pn-tt__ind`. */
                 <button
                   type="button"
+                  /* `--ind` names it the OPENER, the way `pn-tt__ind` does on
+                     the task tile. The phone hides this cluster's verbs while
+                     the row is closed and must keep exactly this one; a
+                     structural selector would break the day a verb is added
+                     after it. */
                   className={
-                    detailsExpanded ? 'lp__rowaction lp__rowaction--on' : 'lp__rowaction'
+                    detailsExpanded
+                      ? 'lp__rowaction lp__rowaction--ind lp__rowaction--on'
+                      : 'lp__rowaction lp__rowaction--ind'
                   }
                   title="Details"
                   aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} details for ${row.title}`}

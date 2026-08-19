@@ -493,6 +493,81 @@
   min-block-size: var(--mobile-touch-min);
 }
 
+/* ==========================================================================
+   7j′. THE SAME AMENDMENT, ON THE ANATOMY THAT DID NOT GET IT.
+
+   7j above is written about `.pn-tt__actions` — the MaestroTaskTile, which is
+   the tasks screen and nothing else. Sessions, channels, docs and every other
+   kind render the STANDARD tile, whose cluster is `.lp__rowactions`, and it
+   kept the pinned-open treatment: Archive · Collections · Run · disclosure,
+   four controls on every row of every list that is not Tasks.
+
+   It was worse there than the argument in 7j describes, because this cluster
+   never left the float. `position: absolute; right: 6px` on an OPAQUE
+   `--pn-hover` backing, revealed at rest by `panels.css`'s coarse-pointer and
+   shell-marker rules — so on a 390px channel row it sat ON TOP OF the meta it
+   shares the line with. Measured in the capture: `12 unread` rendered as
+   `12 unre` with the rest under the backing. Not clipped by an overflow rule,
+   which is why `overflowCount` reported 0 and the tap census reported only a
+   22x22 button: the text is laid out, measurable, and covered. Same class of
+   defect §4 documents, and the same reason only a screenshot finds it.
+
+   THE RULING (owner, 2026-08-19): the list is a list. These are quick actions
+   for AN ENTITY, so they belong on the entity, and this tile already renders
+   the full `EntityControlStrip` when the row opens — a strictly larger set of
+   verbs than the three the cluster was showing. Nothing is lost by dropping
+   them from the closed row; the promise DEF-030 was opened for is still met,
+   one 44px tap away, exactly as 7j meets it on the task tile.
+
+   THE SHAPE IS 7j's, RULE FOR RULE, because the two anatomies should not drift:
+   keep the container (it holds the opener), drop its other children while the
+   row is closed, and grow the opener to the floor. What is EXTRA here is the
+   un-floating — the task tile was already put in flow by
+   `maestro-task-tile.css`, and this one still needs it or the lone disclosure
+   goes on covering the meta it is meant to sit beside.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .lp__tile:not([data-details='open']) .lp__rowactions > *:not(.lp__rowaction--ind) {
+  display: none;
+}
+
+/* In the flow, not over the row. `background` is enumerated across the states
+   `panels.css` tints LATER at equal specificity — DEF-059's lesson, applied
+   before it could bite: a selected or flow-open row would otherwise get its
+   opaque strip back and cover the meta again on exactly the rows a reader is
+   most likely to be looking at. */
+.cv2-root[data-shell='mobile'] .lp__rowactions,
+.cv2-root[data-shell='mobile'] .lp__tile--selected .lp__rowactions,
+.cv2-root[data-shell='mobile'] .lp__tile--selected:hover .lp__rowactions,
+.cv2-root[data-shell='mobile'] .lp__tile[data-flow='open'] .lp__rowactions {
+  position: static;
+  transform: none;
+  padding-left: 0;
+  background: none;
+}
+
+/* The opener carries the whole promise here too, so it takes the whole floor.
+   `min-*`, not `width`/`height`, so `.lp__rowaction--wide` inside an OPEN row
+   still grows around its label instead of being squared off at 44. */
+.cv2-root[data-shell='mobile'] .lp__rowactions .lp__rowaction {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+}
+
+/* AND THE OPENER LOSES ITS CHROME. `.lp__rowaction` is a bordered `--pn-card`
+   chip, which is right for three of them clustered together and wrong for one
+   alone: grown to the 44px floor it becomes a heavy boxed button parked at the
+   end of an otherwise quiet row, louder than the title it belongs to. The task
+   tile's `pn-tt__ind` is a bare chevron and this is the same control, so it
+   reads the same way. Only while CLOSED — an open row is back to a cluster of
+   peers and they should all look alike again. */
+.cv2-root[data-shell='mobile']
+  .lp__tile:not([data-details='open'])
+  .lp__rowactions
+  .lp__rowaction--ind {
+  background: none;
+  border-color: transparent;
+}
+
 
 /* ==========================================================================
    7k. WHAT A ROW WITH NOTHING ON IT IS ACTUALLY PAYING FOR

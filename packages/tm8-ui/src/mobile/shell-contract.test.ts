@@ -400,6 +400,29 @@ describe('DEF-030 — the list chrome is a BUDGET, and it is spent in three band
     expect(screens).not.toMatch(/^\.ev-narrow/m);
   });
 
+  it('clears the row verbs off the STANDARD tile too, not just the task tile', () => {
+    // §7j did this for `.pn-tt__actions` — the tasks screen and nothing else.
+    // Sessions, channels and every other kind render `.lp__rowactions`, which
+    // kept Archive · Collections · Run pinned open on every row AND kept the
+    // float, so on a 390px channel row the opaque backing sat on top of the
+    // meta: `12 unread · 2 working` rendered as `12 unre`. Laid out, measurable
+    // and covered — `overflowCount` scores 0 on it, which is why only the
+    // capture found it.
+    expect(screens).toMatch(
+      /\.lp__tile:not\(\[data-details='open'\]\) \.lp__rowactions > \*:not\(\.lp__rowaction--ind\)\s*\{\s*display:\s*none/,
+    );
+    // In the flow, or the lone opener goes on covering what it sits beside.
+    expect(screens).toMatch(/\.lp__rowactions,[\s\S]{0,400}position:\s*static/);
+  });
+
+  it('keeps the opener the tile knows about, and the tile says when it is open', () => {
+    // A structural `:not(:last-child)` would break the day a verb is added
+    // after the disclosure, and `data-details` is a fact only the tile holds —
+    // no descendant selector can read a sibling's `useState`.
+    expect(listPanel).toMatch(/data-details=\{detailsExpanded \? 'open' : undefined\}/);
+    expect(listPanel).toMatch(/'lp__rowaction lp__rowaction--ind'/);
+  });
+
   it('keeps the kind TOTAL, by moving it to the drawer rather than dropping it', () => {
     const drawer = read('./MobileDrawer.tsx');
     expect(screens).toMatch(/\.lp__total/);
