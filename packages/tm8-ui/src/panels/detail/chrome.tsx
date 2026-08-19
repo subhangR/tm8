@@ -6,7 +6,12 @@ import { KindIcon, processControlFor, resolveAction, titleNormalizerFor } from '
 import { InlineTitleEditor } from '../../authoring';
 import { Avatar, IconBtn, Pill, type PillTone } from '../../kit';
 import { useMobileSurface } from '../../mobile';
-import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
+import {
+  DisabledIconControl,
+  NOT_WIRED_REASON,
+  toReason,
+  type UnavailableReason,
+} from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 /*
  * DEF-001 — the phone arrangement of `.pn-panelbar`, which this file renders.
@@ -311,6 +316,39 @@ function statusValue(source: StatusSource, state: EntityState): string | null {
 // ---------------------------------------------------------------------------
 
 /**
+ * THE CONTEXT A PRIMARY VERB IS ASKED ABOUT, filled from the detail the panel is
+ * already holding.
+ *
+ * A host builds `ctx` before it has the entity — `EntityView` passes little more
+ * than a space and an id — so four fields that decide availability arrive only
+ * with the detail. Terminate refuses itself on a session that has already ended,
+ * and without `category` and `liveness` the panel's copy of the verb was the one
+ * place that could not see that: it offered Terminate on a finished session
+ * while the row cluster correctly refused it.
+ *
+ * The host's own value always WINS where it set one; this only fills gaps. And
+ * it is a function rather than four lines of spread at each call site because
+ * there are now two call sites — the action bar and the phone's action menu —
+ * and a verb that reads as live in one and refused in the other is precisely the
+ * disagreement this program keeps filing rows about.
+ */
+export function panelActionContext(
+  detail: EntityDetail,
+  ctx: ActionContext,
+  /** The seam's verdict, which is the panel's prop and not the detail's field. */
+  liveness?: SessionLiveness,
+): ActionContext {
+  return {
+    ...ctx,
+    entityId: ctx.entityId ?? detail.id,
+    kind: ctx.kind ?? detail.kind,
+    capabilities: ctx.capabilities ?? detail.capabilities,
+    liveness: ctx.liveness ?? liveness,
+    category: ctx.category ?? detail.category,
+  };
+}
+
+/**
  * The compact panel toolbar renders only the kind's primary verbs. Secondary
  * entity operations (points, linking and child creation) belong to their
  * content surfaces and no longer compete with navigation or the title.
@@ -454,6 +492,77 @@ export function ActionBar({
   );
 }
 
+/**
+ * WHICH SURFACE A PRIMARY VERB REACHES, given what the host wired.
+ *
+ * Three facts, and every consumer needs all three: `opensSheet` and `opensFlow`
+ * decide what a press DOES, and all three together decide whether the verb is
+ * refused at all. They were computed inline in `ActionButton` and were correct
+ * there; they are lifted because the FAB asks the identical question about the
+ * identical verb, and two independent answers to "can this be pressed" is how
+ * two surfaces start disagreeing about the same entity.
+ */
+export interface ActionWiring {
+  /** The host's dispatcher can perform this ref. */
+  readonly wired: boolean;
+  /** The host mounted the full launch sheet for a subject — D44's precedence. */
+  readonly opensSheet: boolean;
+  /** The verb declares a flow and the host can expand it in place. */
+  readonly opensFlow: boolean;
+}
+
+/**
+ * Resolve `ActionWiring` from the four props every primary-rendering surface
+ * already holds. The two derivations inside are `ActionButton`'s, unchanged;
+ * see the docblocks at the call sites below for D44 and the §15.2 argument for
+ * testing a flow's PRESENCE rather than its name.
+ */
+export function actionWiring(
+  ref: ActionRef,
+  wired: boolean,
+  hosts: {
+    readonly onOpenLaunch?: ((entityId: string) => void) | undefined;
+    readonly launchSubjectId?: string | undefined;
+    readonly canExpandFlow?: boolean;
+  },
+): ActionWiring {
+  const def = resolveAction(ref);
+  const opensSheet =
+    def.flow === 'launch' && hosts.onOpenLaunch != null && hosts.launchSubjectId != null;
+  const opensFlow = def.flow != null && !opensSheet && (hosts.canExpandFlow ?? false);
+  return { wired, opensSheet, opensFlow };
+}
+
+/**
+ * IS THIS VERB REFUSED, AND WHY — asked once, answered once.
+ *
+ * THE PRECEDENCE IS THE POINT, and it is why this is a function rather than
+ * three checks each surface repeats:
+ *
+ *   1. NOTHING CAN PERFORM IT (R5 #9's structural check — no dispatcher, no
+ *      sheet, no expand) ⇒ `NOT_WIRED_REASON`. This outranks availability
+ *      deliberately: a verb the build cannot dispatch is not "unavailable
+ *      because the entity is in the wrong state", it is absent plumbing, and
+ *      reporting the entity's reason for it would send the reader to fix
+ *      something that is not broken.
+ *   2. THE REGISTRY REFUSES IT for this entity ⇒ the registry's own reason.
+ *   3. Otherwise live.
+ *
+ * `null` means live. Nothing here decides PRESENTATION — the bar draws a
+ * `DisabledIconControl`, the phone FAB draws a dimmed row with a caption — so
+ * the two surfaces can look different while being unable to disagree about
+ * whether the verb can be pressed, or about why not.
+ */
+export function actionRefusal(
+  ref: ActionRef,
+  ctx: ActionContext,
+  wiring: ActionWiring,
+): UnavailableReason | null {
+  if (!wiring.wired && !wiring.opensFlow && !wiring.opensSheet) return NOT_WIRED_REASON;
+  const availability = resolveAction(ref).availability(ctx);
+  return availability.kind === 'disabled' ? toReason(availability.reason) : null;
+}
+
 function ActionButton({
   ref_,
   ctx,
@@ -477,64 +586,39 @@ function ActionButton({
   mark?: boolean;
 }) {
   const def = resolveAction(ref_);
-  const availability = def.availability(ctx);
 
   /*
-   * THE SHEET OUTRANKS THE INLINE EXPAND — `RowAction`'s rule, now here too.
-   *
-   * Tested on the flow's PRESENCE and not on `'launch'`, exactly as `RowAction`
-   * and `ActionButton`'s own `opensFlow` below are: the registry says which
-   * verbs stop for a surface before they commit, and this only honours it. The
-   * moment a second flow existed (B10's merge confirm) an equality check would
-   * itself have been the action-id literal §15.2 bans.
-   *
-   * `def.flow === 'launch'` is therefore NOT what this reads. It reads whether
-   * the HOST offered a launch sheet for a subject — which only a launch verb can
-   * ever be handed — so a merge-confirm flow is untouched and still expands.
+   * THE SHEET OUTRANKS THE INLINE EXPAND (D44, `RowAction`'s rule), and the
+   * flow test is on the flow's PRESENCE rather than on `'launch'` — the
+   * registry says which verbs stop for a surface before they commit, and this
+   * only honours it. Both derivations moved into `actionWiring` above, verbatim,
+   * so the FAB cannot answer either question differently; the reasons they are
+   * written the way they are live in that function's docblock.
    */
-  const opensSheet = def.flow === 'launch' && onOpenLaunch != null && launchSubjectId != null;
+  const wiring = actionWiring(ref_, onAction != null, {
+    onOpenLaunch,
+    launchSubjectId,
+    canExpandFlow: onFlow != null,
+  });
+  const { opensSheet, opensFlow } = wiring;
 
   /*
-   * D44 — a flow verb OPENS ITS SURFACE instead of dispatching, exactly as the
-   * list row's `RowAction` does. Asking the resolved def for `flow` keeps this
-   * free of both kind and action-id literals (§15.2): the registry says which
-   * verbs stop for a surface before they commit, and this only knows how to
-   * honour it. It tests for a flow's PRESENCE, not for `'launch'` — the moment
-   * a second flow existed (B10's merge confirm) the equality check was itself
-   * the action-id literal this comment claims not to have.
+   * R5 #9's unwired check and the registry's own refusal, in that order — see
+   * `actionRefusal`. They render IDENTICALLY here and always did; what differed
+   * was only which sentence they carried, which is exactly the part that is now
+   * decided in one place.
    *
-   * It is therefore NOT enabled-inert without `onAction` — clicking genuinely
-   * does something, and the config states for itself whether it can commit.
+   * TOOLTIP form, not the inline-caption form. The action bar is a fixed 32px
+   * overflow-hidden row; the caption variant stacks a control plus a full
+   * sentence, so three disabled verbs emitted three sentences that clipped
+   * mid-word across the bar at the R5 gate. T0-4 2.2 draws disabled action-bar
+   * verbs as a dimmed control carrying its reason on hover and focus — the
+   * reason stays reachable, the row keeps its height.
    */
-  const opensFlow = def.flow != null && !opensSheet && onFlow != null;
-
-  /*
-   * R5 #9: an unwired verb is DISABLED-WITH-REASON, not enabled-inert. The
-   * primaries landed ahead of their behaviour and rendered as live buttons
-   * that did nothing when clicked — the user cannot distinguish that from a
-   * broken app. Structural check, so it cannot drift from what is wired.
-   */
-  if (!onAction && !opensFlow && !opensSheet) {
+  const refusal = actionRefusal(ref_, ctx, wiring);
+  if (refusal) {
     return (
-      <DisabledIconControl label={def.label} glyph={def.icon} reason={NOT_WIRED_REASON}>
-        {/* A marked primary is its glyph alone — `DisabledIconControl` already
-            carries the label as the accessible name and draws the reason. */}
-        {primary && !mark ? def.label : null}
-      </DisabledIconControl>
-    );
-  }
-
-  if (availability.kind === 'disabled') {
-    /*
-     * TOOLTIP form, not the inline-caption form. The action bar is a fixed
-     * 32px overflow-hidden row; the caption variant stacks a control plus a
-     * full sentence, so three disabled verbs emitted three sentences that
-     * clipped mid-word across the bar at the R5 gate. T0-4 2.2 draws disabled
-     * action-bar verbs as a dimmed control carrying its reason on hover and
-     * focus — the reason stays reachable, the row keeps its height.
-     */
-    return (
-      <DisabledIconControl label={def.label} glyph={def.icon} reason={toReason(availability.reason)}>
+      <DisabledIconControl label={def.label} glyph={def.icon} reason={refusal}>
         {/* A marked primary is its glyph alone — `DisabledIconControl` already
             carries the label as the accessible name and draws the reason. */}
         {primary && !mark ? def.label : null}
@@ -625,6 +709,28 @@ export function TabStrip({
   end?: React.ReactNode;
   onSelect?: (tab: PanelTab) => void;
 }) {
+  /*
+   * THE PHONE HAS NO TAB ROW — user ruling 2026-08-20.
+   *
+   * The two navigational tabs and the kind's primary verbs move into the
+   * floating action button; what is left of this region on a phone is the
+   * inline save affordance and nothing else, and where THAT is absent the
+   * region is absent with it. An empty padded strip with a hairline under it is
+   * the dead chrome this removal exists to reclaim — ~90px of a 844px screen
+   * spent before the body starts.
+   *
+   * `PANEL_TABS` and `PanelTab` are UNTOUCHED. The desktop still renders three
+   * tabs off the same constant; this is one shell declining to draw a
+   * vocabulary, not the vocabulary being trimmed to fit a shell. (A fourth tab
+   * WAS deleted from that constant on 2026-08-19, for being permanently empty
+   * on every kind — a different question, already settled, and the reason the
+   * constant is left exactly as it stands.)
+   *
+   * `oneSurface` is `false` on every desktop path by construction, so the
+   * desktop arrangement below cannot be reached by this branch.
+   */
+  const { oneSurface } = useMobileSurface();
+  if (oneSurface) return end ? <PhonePanelBar>{end}</PhonePanelBar> : null;
   return (
     <div className="pn-panelbar" data-testid="panel-toolbar">
       <div className="pn-tabs" role="tablist" aria-label="Panel sections" data-testid="panel-tabs">
@@ -655,6 +761,207 @@ export function TabStrip({
       {end ? <div className="pn-panelbar__end">{end}</div> : null}
     </div>
   );
+}
+
+/**
+ * What is left of the panel bar on a phone: the inline save affordance, and the
+ * transfer control when a remote server makes it apply.
+ *
+ * IT COLLAPSES WHEN IT IS EMPTY, AND THE COLLAPSE IS CSS. Both children
+ * self-gate to `null` — `SaveControls` while the edit is clean, `TransferControl`
+ * on a node with no remote — and neither can be asked in advance, because
+ * transfer's answer arrives from an async directory read that `src/transfer`
+ * owns and this file must not second-guess (§15.2). So the element renders
+ * unconditionally and `:empty` removes its padding, its hairline and its box —
+ * see `panel-bar-phone.css`. Structurally the row is still one node with zero
+ * element children, which is what a test can assert; that it also occupies zero
+ * pixels is a stylesheet fact, and no vitest in this repo loads one.
+ */
+function PhonePanelBar({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="pn-panelbar pn-panelbar--phone"
+      data-testid="panel-phone-bar"
+      /* Deliberately NOT `panel-toolbar`: that id means "the row with the tabs
+         and the action cluster in it", and four suites assert its anatomy. A
+         row that shares the name while containing neither would make every one
+         of those assertions ambiguous rather than failing. */
+    >
+      {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The phone's action menu — what the tab row became
+// ---------------------------------------------------------------------------
+
+/**
+ * ONE ROW OF THE PHONE'S FLOATING ACTION MENU, produced here and drawn by
+ * `EntityFab`.
+ *
+ * DECLARED BY THE PRODUCER, not imported from the consumer, and that is a
+ * layering decision worth one sentence: the panel's chrome knows what verbs an
+ * entity has; the phone shell knows how to draw a menu. Data flows one way, so
+ * the dependency points one way, and `panels/` does not reach into `mobile/` for
+ * a type. The field names match `EntityFabItem`'s exactly and TypeScript is
+ * structural, so this is assignable to it without either side importing the
+ * other.
+ */
+export interface PanelMenuItem {
+  /** Action ref or tab id — opaque to the menu, which never interprets it. */
+  readonly id: string;
+  readonly label: string;
+  readonly glyph?: string;
+  /** A count beside the label. `0` is a measured answer and renders. */
+  readonly count?: number;
+  /** Present ⇒ REFUSED: drawn dimmed, non-activating, with this as its caption. */
+  readonly reason?: string;
+  readonly onSelect?: () => void;
+  /** `'end'` draws a hairline above the row — the lower group. */
+  readonly group?: 'main' | 'end';
+}
+
+/**
+ * A refusal reason as the menu's one-line caption. The same join
+ * `DisabledAction` makes for its inline caption, so a verb refused in the bar
+ * and the same verb refused in the menu read as the same sentence.
+ */
+function captionOf(reason: UnavailableReason): string {
+  return reason.remedy ? `${reason.cause} — ${reason.remedy}` : reason.cause;
+}
+
+/**
+ * A FLOW VERB WITH NOWHERE TO OPEN, on a phone.
+ *
+ * `.pn-actions__flow` is the inline expand: absolutely positioned, 300px wide,
+ * anchored to the action bar — and on a phone there IS no action bar any more,
+ * so an expand would be anchored to nothing. `mobile/CONTRACT.md` §4 had already
+ * ruled that arrangement out at 390px before this row removed its anchor.
+ *
+ * The launch flow is unaffected and this is not its refusal: where the host
+ * mounts the full sheet, Run opens the sheet (D44's precedence, `actionWiring`),
+ * and where it does not, the verb is simply unwired. What lands here is the
+ * merge confirm — a commitment card with no phone arrangement — and it is
+ * refused BY NAME rather than dispatched. Dispatching it would perform a merge
+ * with its confirmation step silently skipped, which is the one outcome worse
+ * than refusing it.
+ */
+const NO_PHONE_FLOW_REASON: UnavailableReason = {
+  cause: 'This verb stops at a confirmation card that has no phone arrangement',
+  remedy: 'open this entity on a desktop to reach it',
+};
+
+export interface PanelMenuInput {
+  readonly config: KindConfig;
+  /** The ENRICHED context — see `panelActionContext`. */
+  readonly ctx: ActionContext;
+  /** The same counts `TabStrip` receives, so the two cannot disagree. */
+  readonly counts?: Partial<Record<PanelTab, number>>;
+  readonly onSelectTab: (tab: PanelTab) => void;
+  readonly onAction?: (ref: ActionRef) => void;
+  readonly wiredActions?: readonly ActionRef[];
+  readonly onOpenLaunch?: (entityId: string) => void;
+  readonly launchSubjectId?: string;
+  /** Wires `⤢ Open full view`. Absent ⇒ the row is refused, never hidden. */
+  readonly onPromote?: () => void;
+}
+
+/**
+ * WHAT THE PHONE'S ACTION MENU CONTAINS — derived, never typed out.
+ *
+ * Three sources, in this order:
+ *
+ *   1. THE TWO NAVIGATIONAL TABS the phone no longer has a strip for. They keep
+ *      `onTabChange`, which already routes both to a `MobileSheet` through
+ *      `EntityView`'s aux column — the menu is a new way in to an existing
+ *      route, not a second route.
+ *   2. `config.panel.primaries`, through the SAME `processControlFor` swap
+ *      `ActionBar` makes, so a session that has ended offers Resume rather than
+ *      a refused Terminate.
+ *   3. `⤢ Open full view`, in the lower group.
+ *
+ * REGISTRY-DRIVEN THROUGHOUT (§15.2). No kind is named, no action id is named:
+ * a kind that declares a new primary gains a row here the moment the registry
+ * says so, and this function does not change.
+ *
+ * A REFUSED VERB IS IN THE LIST, dimmed, carrying its reason (house rule 1) —
+ * `reason` present is the whole of that signal, and it is never omission. The
+ * refusal comes from `actionRefusal`, which is also what the action bar asks, so
+ * the two surfaces cannot disagree about whether a verb can be pressed.
+ */
+export function panelMenuItems(input: PanelMenuInput): PanelMenuItem[] {
+  const { config, ctx, counts, onSelectTab, onAction, wiredActions } = input;
+
+  const tabs: PanelMenuItem[] = PANEL_TABS.filter((t) => t.id !== 'content').map(({ id, label }) => {
+    const count = counts?.[id];
+    return {
+      id,
+      label,
+      ...(typeof count === 'number' ? { count } : {}),
+      onSelect: () => onSelectTab(id),
+    };
+  });
+
+  const primaries: PanelMenuItem[] = (config.panel.primaries ?? [])
+    .map((declared) => processControlFor(declared, ctx))
+    .map((ref) => {
+      const def = resolveAction(ref);
+      const wiring = actionWiring(
+        ref,
+        onAction != null && (wiredActions == null || wiredActions.includes(ref)),
+        {
+          onOpenLaunch: input.onOpenLaunch,
+          launchSubjectId: input.launchSubjectId,
+          /* No inline expand on a phone — see NO_PHONE_FLOW_REASON. */
+          canExpandFlow: false,
+        },
+      );
+      /* A flow verb that reaches neither its sheet nor a dispatcher is refused
+         for the arrangement it needs, not for missing plumbing — the plumbing
+         is there on a desktop. `def.flow` is read as PRESENCE, never by name. */
+      const reason =
+        def.flow != null && !wiring.opensSheet && !wiring.wired
+          ? NO_PHONE_FLOW_REASON
+          : actionRefusal(ref, ctx, wiring);
+      return {
+        id: ref,
+        label: def.label,
+        ...(def.icon ? { glyph: def.icon } : {}),
+        ...(reason
+          ? { reason: captionOf(reason) }
+          : {
+              onSelect: () => {
+                if (wiring.opensSheet) {
+                  input.onOpenLaunch?.(input.launchSubjectId as string);
+                  return;
+                }
+                onAction?.(ref);
+              },
+            }),
+      };
+    });
+
+  /*
+   * ⤢ IS THE ONE WINDOW VERB THE PHONE KEEPS — `PanelWindowControls` states why:
+   * ✕ closes a panel out of a stack this shell does not have, and ⤢ names
+   * something the phone genuinely has. Refused-with-reason where the host never
+   * wired it, which on `EntityView` today is always, and that refusal is the
+   * honest report of a control that has been enabled-inert in that mount.
+   */
+  const end: PanelMenuItem[] = [
+    {
+      id: 'open-full-view',
+      label: 'Open full view',
+      glyph: '⤢',
+      group: 'end',
+      ...(input.onPromote
+        ? { onSelect: input.onPromote }
+        : { reason: captionOf(NOT_WIRED_REASON) }),
+    },
+  ];
+
+  return [...tabs, ...primaries, ...end];
 }
 
 // ---------------------------------------------------------------------------

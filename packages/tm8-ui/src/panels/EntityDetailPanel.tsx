@@ -28,9 +28,19 @@ import {
   PanelHeader,
   PanelWindowControls,
   TabStrip,
+  panelActionContext,
   type PanelHost,
   type PanelTab,
 } from './detail/chrome';
+/*
+ * THE CHIP BAND'S PHONE GEOMETRY — a separate stylesheet, imported by the
+ * component that renders `.pn-controls`, for the coordination reason
+ * `panel-bar-phone.css` states at length: `panels.css` is shared and has lane
+ * work in flight in it, and one file per change is how this program avoids a
+ * shared-file merge conflict. Every rule inside is scoped
+ * `.cv2-root[data-shell='mobile']`.
+ */
+import './detail/panel-controls-phone.css';
 import {
   ErrorBody,
   LoadingBody,
@@ -492,7 +502,23 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   } = props;
 
   const [uncontrolledTab, setUncontrolledTab] = useState<PanelTab>('content');
-  const tab = activeTab ?? uncontrolledTab;
+  /*
+   * THE PHONE'S BODY IS ALWAYS THE CONTENT TAB — user ruling 2026-08-20.
+   *
+   * With the strip gone there is no way to SELECT connections or discussion as
+   * a body on this shell, and they are not meant to be one: both already open
+   * as a `MobileSheet` over the panel (`EntityView`'s aux column), which is the
+   * arrangement the ruling improves rather than rebuilds.
+   *
+   * CLAMPED HERE RATHER THAN AT THE HOST, because `activeTab` is a CONTROLLED
+   * prop and `EntityView` drives it from state shared with the desktop. A host
+   * whose `onTabChange` routes both aux tabs to a sheet can still leave
+   * `activeTab` holding one of them — a back press, a restored route, a second
+   * mount — and the body would then render a Connections list UNDER the sheet
+   * showing the same connections. The clamp reads the arrangement, so no host
+   * has to remember it.
+   */
+  const tab: PanelTab = oneSurface ? 'content' : (activeTab ?? uncontrolledTab);
 
   /**
    * USER RULING 2026-07-31 — the [ TERMINAL | CHAT ] switch belongs on the top
@@ -869,6 +895,44 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           connections: countConnections(detail, props.connections),
         }}
         end={
+          /*
+           * THE PHONE'S END CLUSTER IS THE SAVE AFFORDANCE AND TRANSFER, and
+           * everything else in it has moved into the floating action menu —
+           * user ruling 2026-08-20. `TabStrip` renders no strip at all on this
+           * shell (see its `oneSurface` branch), so what is passed here is the
+           * whole of the region.
+           *
+           * SAVECONTROLS STAY INLINE, DELIBERATELY. A pending unsaved title
+           * edit hidden inside a closed menu is a data-loss shape, not a layout
+           * choice: the user cannot see that there is something to save, and
+           * the two verbs that answer it are two taps away behind a control
+           * that gives no sign it is holding them.
+           *
+           * TRANSFER STAYS INLINE TOO, and it is the ONE verb that could not
+           * follow the others. `TransferControl` renders NOTHING unless a
+           * remote server is registered and the kind is transferable — its
+           * docblock argues at length that this is the deliberate exception to
+           * disabled-with-reason, because on a single-server node "transfer to
+           * another server" is not a deferred feature but a concept that does
+           * not apply. A menu row obeys the opposite rule: present, dimmed,
+           * carrying its reason. Moving it would either overrule that decision
+           * or force this file to re-implement an async, kind-aware gate that
+           * `src/transfer` owns (§15.2). It self-gates to null, so where it
+           * does not apply the row collapses with it.
+           *
+           * BOTH ARMS OMIT THE SURFACE SLOT. `WorkSessionContent` declines the
+           * slot on a phone anyway (`ridesPanelBar`), so passing one here has
+           * had no effect on this shell since `099c3a03`; not passing it is the
+           * same fact said in the direction that cannot rot.
+           */
+          oneSurface ? (
+            <>
+              {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
+                <SaveControls save={save} />
+              ) : null}
+              <TransferControl detail={detail} />
+            </>
+          ) : (
           <>
             {controlsRideBar ? (
               <div
@@ -884,19 +948,10 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                  five surface chips, so it is the only one whose primaries have
                  to give up their words. Registry data, never a kind literal. */
               markPrimaries={isTerminal}
-              ctx={{
-                ...ctx,
-                entityId: ctx.entityId ?? detail.id,
-                kind: ctx.kind ?? detail.kind,
-                capabilities: ctx.capabilities ?? detail.capabilities,
-                liveness: ctx.liveness ?? props.liveness,
-                /* Same fill-from-the-detail rule as the three above. Terminate
-                   refuses itself on a row that has already ended, and without
-                   this the panel's copy of the verb would be the one place that
-                   could not see that — offering Terminate on a finished
-                   session while the row cluster correctly refuses it. */
-                category: ctx.category ?? detail.category,
-              }}
+              /* Filled from the detail — see `panelActionContext`, which is
+                 also what the phone's action menu asks, so the bar and the menu
+                 cannot form different opinions about the same verb. */
+              ctx={panelActionContext(detail, ctx, props.liveness)}
               onAction={props.onAction}
               wiredActions={props.wiredActions}
               openFlow={flowRef}
@@ -1019,6 +1074,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               promoteHidden={isTerminal}
             />
           </>
+          )
         }
         onSelect={selectTab}
       />

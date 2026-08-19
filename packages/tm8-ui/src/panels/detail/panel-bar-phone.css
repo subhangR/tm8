@@ -225,3 +225,85 @@
 .cv2-root[data-shell='mobile'] .pn-panelbar__end .hon-disabled {
   min-height: 44px;
 }
+
+/* ==========================================================================
+   --- 4. WHAT IS LEFT OF THIS ROW — user ruling 2026-08-20
+   ==========================================================================
+
+   THE THREE SECTIONS ABOVE ARE NOW UNREACHABLE ON A PHONE, AND ARE KEPT.
+   `TabStrip` renders no `.pn-tabs` and no `.pn-panelbar__end` on `oneSurface`
+   any more — the tabs and the action cluster moved into the floating action
+   menu — so every selector above that names one of those two classes can no
+   longer match on this shell. They are kept for the reason section 2 already
+   states about its own dead rule: the same file serves a tree where they still
+   run, and deleting a phone arrangement from the only place it is written down
+   because one branch stopped reaching it is how the arrangement is lost. They
+   also document the measurement (`115px at 390 and 137px at 430`) that this
+   removal is the successor to.
+
+   WHAT RENDERS HERE INSTEAD is `.pn-panelbar--phone`, holding at most the
+   inline save affordance and the transfer control — and usually neither.
+
+   ── (0,4,0), AND THE REASON IS RECORDED TWO FILES AWAY ────────────────────
+   `panels.css:715` declares `.cv2-root[data-shell='mobile'] .pn-panelbar` at
+   (0,3,0), and `panels.css:688` establishes — from the module graph, not from a
+   guess — that **panels.css is emitted FIRST, so this file loses every tie**.
+   A rule written the obvious way here, `.cv2-root[data-shell='mobile']
+   .pn-panelbar--phone`, is also (0,3,0) and would lose its `min-height` to that
+   rule's 30px: the bar would keep a 30px strip in exactly the state this
+   removal exists to reclaim, and it would look correct in the diff. Both rules
+   below name the base class as well, which makes them (0,4,0) and settles it on
+   specificity rather than on an emission order neither file controls. */
+.cv2-root[data-shell='mobile'] .pn-panelbar.pn-panelbar--phone {
+  min-height: 0;
+  align-items: center;
+  justify-content: flex-end;
+  column-gap: 6px;
+  row-gap: 6px;
+  padding-block: 6px;
+  padding-inline: var(--pn-space-4);
+}
+
+/* NO CHILDREN, NO ROW — not a shorter row.
+   Both children self-gate to `null`: `SaveControls` while the edit is clean,
+   `TransferControl` on a node with no remote server. Neither can be asked in
+   advance from the component (transfer's answer arrives from an async directory
+   read that `src/transfer` owns), so the element renders unconditionally and
+   this removes it. `:empty` is exact here — React renders `null` as no node at
+   all, so a bar with two null children genuinely has no children, not whitespace.
+
+   `display: none` rather than a zero-height, zero-padding version of the row:
+   the base rule also draws a `border-bottom`, and a 1px hairline with nothing
+   above it is a fence around nothing. That hairline separated the tabs from the
+   band; with the tabs gone the band's own top edge is the boundary.
+
+   NOT VERIFIABLE IN VITEST. jsdom loads no stylesheets, so no test in this repo
+   can see that this row occupies zero pixels. What a test CAN see is that the
+   element has zero element children, which is the structural half of the same
+   claim and is asserted. */
+.cv2-root[data-shell='mobile'] .pn-panelbar.pn-panelbar--phone:empty {
+  display: none;
+}
+
+/* --- 5. THE FLOOR, PER CLASS, FOR THE TWO CONTROLS THAT ARE LEFT --------
+   Section 3's argument applies unchanged and is not restated: `mobile/
+   CONTRACT.md` §6 forbids a blanket `button { min-height: 44px }` and forbids
+   `::after` hit areas, so these are real `min-height`s on named classes inside
+   one container.
+
+   `.au-btn` is Save and Cancel. They were never in section 3's list because
+   they were never measured — the census photographed `.pn-panelbar__end` on a
+   session panel, where the title is not editable and `SaveControls` renders
+   nothing. Sized here rather than left to be found later: this row now exists
+   ONLY when they are in it, so an under-sized Save would be the entire content
+   of the only chrome the phone panel has left. */
+.cv2-root[data-shell='mobile'] .pn-panelbar--phone .au-btn {
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+.cv2-root[data-shell='mobile'] .pn-panelbar--phone .kit-iconbtn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
