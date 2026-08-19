@@ -181,18 +181,17 @@
   text-align: center;
 }
 
+/* THE MARK IS THE MARK, NOT A CARD AROUND ONE. This was a bordered 42px tile
+   holding a `⌁` glyph — chrome that read as a status chip on the product's
+   front door. It now sizes `kit/RibbonMark` (design box 560x700, so the width
+   follows the height at that ratio) and draws nothing else: no border, no
+   surface, no shadow. A brand mark standing on the paper is what the empty
+   canvas wants; a tile is what a notification wants. */
 .tch-welcome__mark {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
+  height: 46px;
+  width: calc(46px * 560 / 700);
   margin-bottom: var(--pn-space-3);
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-md);
-  background: var(--pn-card);
-  color: var(--pn-brand-2);
-  font-size: var(--pn-fs-h2);
-  box-shadow: var(--pn-sh-sm);
+  color: var(--pn-brand);
 }
 
 .tch-welcome h1 {
@@ -1528,4 +1527,202 @@ button.tch-entity-chip:hover {
    reverted rather than tuned. */
 .cv2-root[data-shell='mobile'] .tch-root {
   height: 100%;
+}
+
+
+/* ==========================================================================
+   THE PHONE'S CHAT SCREEN IS ONE CANVAS AND ONE COMPOSER.
+
+   The shell now hosts the thread column in a sheet (`MobileShell`, the ☰), so
+   what is left on this surface is the conversation and the box you write in.
+   These rules give that pair the arrangement the reference asks for: the mark
+   and the greeting centred in the free space, the composer DOCKED at the
+   bottom as a floating card.
+
+   WHY THE DOCK NEEDS A RULE AT ALL. The desktop empty state deliberately
+   centres greeting + composer as one invitation (`[data-empty]`, above) —
+   right for a wide canvas, wrong for a phone, where the one control you reach
+   for lives under your thumb and everything else is reading. The two `auto`
+   margins that do the centring are undone here and only here.
+
+   NO KEYBOARD ARITHMETIC. `margin-bottom` and nothing else: CONTRACT.md §3
+   shrinks the whole frame by `--mobile-keyboard-inset`, so a docked composer
+   rides above the keyboard for free. A `position: sticky`/`fixed` composer
+   would be the second keyboard arithmetic that section exists to forbid.
+   ========================================================================== */
+
+/* THE ROW, NOT THE ITEM. `.tch-root` is a GRID and declares columns only, so
+   its single row is implicit and therefore AUTO — sized to its content. The
+   container is 741px tall on a 390x844 phone and the row measured 381: the
+   conversation was a content-height box floating in a full-height grid, which
+   is why the composer sat mid-canvas with 350px of dead paper under it. A
+   `height: 100%` on the conversation resolves against that 381px row and
+   changes nothing; the row is what has to be told to fill. */
+.cv2-root[data-shell='mobile'] .tch-root {
+  grid-template-rows: minmax(0, 100%);
+}
+
+/* The greeting takes the canvas; the composer takes the foot. `margin-top:
+   auto` on the wrap is what docks it, and it beats `[data-empty]`'s centring
+   pair (same specificity, later in the file) so a NEW conversation docks too —
+   which is the state the screen is in almost every time it is opened. */
+.cv2-root[data-shell='mobile'] .tch-conversation .tch-transcript {
+  flex: 1;
+  justify-content: center;
+  margin-top: 0;
+}
+.cv2-root[data-shell='mobile'] .tch-conversation .tch-composer-wrap {
+  margin: auto auto var(--pn-space-3);
+}
+
+/* Full-bleed but for one gutter: at 390px the desktop's 32px inset spends 8%
+   of the width on nothing, and the card is where every control on this screen
+   lives. */
+.cv2-root[data-shell='mobile'] .tch-composer-wrap {
+  width: calc(100% - 2 * var(--pn-space-3));
+}
+
+/* A CARD THAT FLOATS, not a panel welded to the foot. The reference draws one
+   rounded surface standing off the paper; `--pn-r-lg` + the lifted shadow is
+   that, and it is scoped to the phone so the desktop composer — which sits
+   inside a bordered column and would look detached — is untouched. */
+.cv2-root[data-shell='mobile'] .tch-composer {
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-lg);
+}
+
+/* The mark reads as the screen's subject on a phone, where it is the only
+   thing above the fold. */
+.cv2-root[data-shell='mobile'] .tch-welcome__mark {
+  height: 58px;
+  width: calc(58px * 560 / 700);
+  margin-bottom: var(--pn-space-4);
+}
+
+/* The welcome copy is a caption for an empty screen, and on a phone it was
+   three lines of it under a heading. Centred, narrower, and out of the way of
+   the composer. */
+.cv2-root[data-shell='mobile'] .tch-welcome {
+  padding-inline: var(--pn-space-4);
+}
+
+
+/* --- THE FOOT IS ONE ROW, AND IT HAS TO STAY ONE ROW --------------------- */
+
+/* WHAT WENT WRONG WHEN THE TOUCH FLOOR LANDED. Growing every control to 44px
+   (DEF-026, above) took a foot built for a 760px desktop pane and asked it to
+   hold five 44px controls in 342px. It wrapped: attach on its own line, three
+   pick triggers on the next, Send on a third — 150px of composer chrome under
+   a one-line field, and the primary action of the primary screen at the very
+   bottom edge of the phone. The floor was right; the ROW was never re-laid.
+
+   SO THE ROW SCROLLS INSTEAD OF WRAPPING. Attach and Send are pinned to the
+   two ends where a thumb expects them, and the thread settings — mode,
+   teammate, model — take whatever is left and scroll sideways when they do not
+   fit. Nothing is hidden and nothing is compressed to an ellipsis it did not
+   need: the roster is variable-length by construction (a node can offer any
+   number of teammates and models), so a layout that must fit ALL of them in
+   342px is a layout that must lie about one of them. */
+.cv2-root[data-shell='mobile'] .ri-card__foot {
+  flex-wrap: nowrap;
+  /* The gap is what the scrolling strip clips INTO. At 4px the last chip's
+     border was cut a pixel from Send's edge and the two read as one broken
+     control; 8px makes the clip legible as "there is more this way". */
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1) var(--pn-space-2);
+}
+
+.cv2-root[data-shell='mobile'] .tch-picks {
+  flex: 1;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  margin-left: 0;
+  /* The strip is scrolled by the same finger that taps it; a scrollbar over a
+     44px control would eat part of the target. */
+  scrollbar-width: none;
+}
+.cv2-root[data-shell='mobile'] .tch-picks::-webkit-scrollbar { display: none; }
+.cv2-root[data-shell='mobile'] .tch-pick { flex: none; }
+
+/* Attach loses its box. At 24px the border was what made a 24px glyph findable;
+   at 44px the target is its own affordance, and a bordered square beside a
+   round Send reads as two unrelated controls. */
+.cv2-root[data-shell='mobile'] .tch-attach {
+  flex: none;
+  margin-right: 0;
+  border-color: transparent;
+  border-radius: var(--pn-r-pill);
+}
+
+/* Send is a pill pinned to the end of the row — the shape the primary action
+   has on every phone the reader already uses, and the one that survives a foot
+   whose middle is scrolling. It keeps its WORD: squeezing "Send ↑" into a 44px
+   disc clipped the label, and an icon-only primary would be the one control on
+   this screen a reader has to guess at. The padding stays for that reason. */
+.cv2-root[data-shell='mobile'] .tch-send,
+.cv2-root[data-shell='mobile'] .tch-stop {
+  flex: none;
+  margin-left: 0;
+  border-radius: var(--pn-r-pill);
+}
+
+
+/* --- THE CONVERSATION SHEET (`MobileShell`'s ☰) --------------------------- */
+
+/* Rows are `--mobile-touch-min` tall by real padding, never a pseudo-element
+   hit area — CONTRACT.md §7, and the audit instrument measures the ELEMENT. */
+.mchats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mchats__new,
+.mchats__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-block-size: var(--mobile-touch-min);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink);
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mchats__new {
+  justify-content: center;
+  color: var(--pn-brand);
+  font-weight: 600;
+}
+
+.mchats__row[aria-current='true'] { background: var(--pn-surface-2); }
+
+.mchats__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.mchats__preview {
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--pn-fs-micro);
+}
+
+.mchats__empty {
+  padding: var(--pn-space-3);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
 }

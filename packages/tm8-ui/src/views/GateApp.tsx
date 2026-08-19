@@ -1657,6 +1657,15 @@ export function GateApp(props: GateAppProps = {}) {
           reasons={reasons}
           onNotice={notices.push}
           nodeKey={nodeKey}
+          /* THE SAME BRIDGE THE DESKTOP HOME GETS, and its absence here was the
+             phone reproducing the exact defect `chatBridge`'s own docblock was
+             written for: "without this bridge the shipped home rendered a
+             disabled composer blaming the node for operations it serves." The
+             desktop took that fix at both of its mount sites; this third one,
+             added later by the mobile lane, never did. Two amber refusals and a
+             dead Send on the phone's default screen — none of it true, on a
+             node that serves both operations. */
+          chatBridge={chatBridge}
           {...(viewerMemberId ? { viewerMemberId } : {})}
           {...(channelEntities[0]?.id ? { chatAnchorId: channelEntities[0].id } : {})}
           {...(data.spaces.find((sp) => sp.id === data.spaceId)?.name

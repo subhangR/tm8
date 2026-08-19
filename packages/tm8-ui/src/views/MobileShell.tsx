@@ -52,6 +52,9 @@ import { ChannelView } from './ChannelView';
 import { InboxView } from './InboxView';
 import { openEntityOnPhone } from './openEntityOnPhone';
 import { ChatHomeSurface } from '../chat-home';
+import type { ChatThreadSummary } from '../chat-home/types';
+import type { ChatHomeL2Bridge } from '../chat-home/real-port';
+import { MobileChatsSheet } from '../chat-home/MobileChatsSheet';
 import type { GateData } from './useGateData';
 
 export interface MobileShellProps {
@@ -66,6 +69,15 @@ export interface MobileShellProps {
   viewerMemberId?: string | null;
   notices?: ReactNode;
   nodeKey: string;
+  /**
+   * The chat surface's L2 wiring — the space-wide thread read and the
+   * write-once thread configuration. NOT optional in spirit: without it
+   * `createChatHomePortFromSeam` refuses BOTH operations with a message that
+   * blames the node, so a host that forgets it ships a screen that lies. It is
+   * declared optional only because the fixture harnesses mount this shell with
+   * no server behind it, and there the refusal is the truth.
+   */
+  chatBridge?: ChatHomeL2Bridge;
   chatAnchorId?: EntityId;
   spaceLabel?: string;
 
@@ -160,6 +172,12 @@ const TABS: readonly { readonly label: string; readonly art: KindArt; readonly t
 
 /** The chevron's own geometry, on `VectorIcon`'s 16x16 grid. */
 const CHEVRON_UP_ART: KindArt = ['M10.4 3.6 5.6 8l4.8 4.4'];
+
+/** ☰, on the same 16x16 grid. The short third rule is what distinguishes it
+ *  from a list icon at a glance, and it is drawn rather than typed so it
+ *  inherits `currentColor` and the shell's stroke weight like every other
+ *  mark in this header. */
+const MENU_ART: KindArt = ['M2.5 4.25h11', 'M2.5 8h11', 'M2.5 11.75h7'];
 
 function sameTarget(a: MenuTarget | null, b: MenuTarget): boolean {
   if (!a || a.type !== b.type) return false;
@@ -321,15 +339,64 @@ export function MobileShell(props: MobileShellProps) {
    */
   const [sheetHost, setSheetHost] = useState<HTMLDivElement | null>(null);
 
+  /*
+   * ── THE CHAT SCREEN IS ONE SURFACE, AND ITS INVENTORY LIVES IN A SHEET ────
+   *
+   * Home IS the chat (`ChatHomeSurface`, the `dashboard` arm below). The
+   * desktop screen puts its thread inventory in a permanent left column; at
+   * 390px that column has nowhere to be, so it collapsed ON TOP of the
+   * conversation — a `Chats ＋` strip, a full-width search field, a refusal
+   * card and a two-column empty state, all above the composer, before a single
+   * word of the conversation. A phone has ONE surface; the inventory is not it.
+   *
+   * SO THE COLUMN IS HOSTED, NOT HIDDEN. `ChatHomeScreen` already has the seam
+   * for exactly this — `soloConversation` is what Craft passes when the thread
+   * column belongs to the host — and it publishes the list back through
+   * `onThreadsChange` and takes the selection back through `routeThreadId`.
+   * Nothing is lost and nothing is duplicated: the same rows, in a sheet, one
+   * tap away behind the header's ☰. That is the shell's own law (screens are
+   * shared, the ARRANGEMENT is not) applied to the one screen that had not had
+   * it applied yet.
+   *
+   * THE SELECTION IS LOCAL STATE AND NOT AN ADDRESS, and that is a known gap
+   * rather than a preference: the phone has no `?thread=` route today, so a
+   * chosen thread survives neither a reload nor a shared link. Making it
+   * addressable is a route change in `nav-targets`/`landingOfRoute` — shared
+   * with the desktop, since one codec serves both shells — and it is
+   * deliberately not smuggled in here.
+   */
+  const [chatsOpen, setChatsOpen] = useState(false);
+  const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
+  const [threadId, setThreadId] = useState<EntityId | null>(null);
+  const onChatScreen = activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
+
   /* The link affordance is in the header for the same reason it is in the
      desktop tab bar: the thing being shared is THE PAGE. On a phone it matters
      more, not less — a phone is where links are received and forwarded. */
   const header = (
-    <div className="mobile-header">
+    <div className="mobile-header" data-chrome={onChatScreen ? 'chat' : undefined}>
+      {/* ☰ — THE CHAT SCREEN'S ONLY LEFT-HAND CONTROL, and it replaces the
+          band of chrome that used to sit inside the screen. It opens the
+          conversation inventory as a sheet; see the state above for why the
+          column is hosted rather than hidden. There is no chevron here because
+          Home is a screen root: nothing is open to go up from. */}
+      {onChatScreen ? (
+        <button
+          type="button"
+          className="mobile-header__menu"
+          data-testid="mobile-chats-menu"
+          aria-haspopup="dialog"
+          aria-expanded={chatsOpen}
+          aria-label="Conversations"
+          onClick={() => setChatsOpen(true)}
+        >
+          <VectorIcon paths={MENU_ART} size={20} strokeWidth={1.6} />
+        </button>
+      ) : null}
       {/* Rendered ONLY when something is open. A chevron at a screen root would
           be dead chrome that either does nothing or leaves the app, and the tab
           bar is already the navigation there. */}
-      {showUp ? (
+      {showUp && !onChatScreen ? (
         <button
           type="button"
           className="mobile-header__back"
@@ -348,6 +415,13 @@ export function MobileShell(props: MobileShellProps) {
           <VectorIcon paths={CHEVRON_UP_ART} size={20} strokeWidth={1.6} />
         </button>
       ) : null}
+      {/* NOT ON THE CHAT SCREEN. The eyebrow + "Home" pair names a destination
+          the tab bar is already showing as current, and the screen below it is
+          a blank canvas whose whole job is to invite a first message. Two rows
+          of chrome captioning an empty page is the clutter this screen was
+          reported for. Every other screen keeps them: there the title names
+          something the tab bar cannot (a channel, an entity, a refusal). */}
+      {onChatScreen ? null : (
       <span className="mobile-header__titles">
         <span className="mobile-header__space">{props.spaceLabel ?? 'tm8'}</span>
         {/*
@@ -368,11 +442,18 @@ export function MobileShell(props: MobileShellProps) {
         */}
         <span className="mobile-header__title">{title}</span>
       </span>
+      )}
+      {/* Copy link goes with the title band, and for the same reason: the thing
+          being shared is a PAGE, and the chat screen's page is the space's
+          front door — an address every viewer of this space already has. It
+          returns the moment a thread is addressable (see the state above). */}
+      {onChatScreen ? null : (
       <CopyLinkControl
         spaceId={spaceId}
         target={activeTarget ?? { type: 'view', ref: 'workspace' }}
         openEntity={props.openEntity}
       />
+      )}
       {/*
         DEF-003 — THE ACCOUNT AFFORDANCE.
 
@@ -439,7 +520,30 @@ export function MobileShell(props: MobileShellProps) {
           screen would leave the next screen unable to open one at all. */}
       <CatchBoundary label="mobile-view">
         <MobileSurfaceProvider sheetHost={sheetHost}>
-          {screenFor(props)}
+          {screenFor(props, {
+            soloConversation: true,
+            routeThreadId: threadId,
+            onThreadsChange: setThreads,
+          })}
+          {/* THE CONVERSATION INVENTORY. Rendered beside the screen rather than
+              inside it, exactly like the account sheet above: a sheet portals
+              through the surface context, and a sheet that unmounted with its
+              screen could not survive the screen changing under it. */}
+          {chatsOpen ? (
+            <MobileChatsSheet
+              threads={threads}
+              selectedId={threadId}
+              onSelect={(id) => {
+                setThreadId(id);
+                setChatsOpen(false);
+              }}
+              onNew={() => {
+                setThreadId(null);
+                setChatsOpen(false);
+              }}
+              onDismiss={() => setChatsOpen(false)}
+            />
+          ) : null}
           {/*
             THE ACCOUNT SHEET IS RENDERED INSIDE THE PROVIDER, because
             `MobileSheet` portals through the surface context and there is no
@@ -482,7 +586,20 @@ export function MobileShell(props: MobileShellProps) {
  * so and offers the tabs, rather than drawing something the address does not
  * name.
  */
-function screenFor(props: MobileShellProps): ReactNode {
+/**
+ * What the chat screen needs from the shell that the ROUTE does not carry: the
+ * hosted-column arrangement, the selected thread, and the way the list gets
+ * back out to the sheet that draws it. A second parameter rather than three
+ * more `MobileShellProps` — these are the shell's own internal state, not
+ * something a host wires, and putting them on the public props would invite one.
+ */
+interface ChatHosting {
+  readonly soloConversation: true;
+  readonly routeThreadId: EntityId | null;
+  readonly onThreadsChange: (threads: readonly ChatThreadSummary[]) => void;
+}
+
+function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
   const { data, activeTarget, reasons, onNotice } = props;
   /* Each line is its own ELEMENT, not a bare text node. `.mobile-empty`'s
      styling leads with the first child — the statement in the serif face, the
@@ -709,7 +826,16 @@ function screenFor(props: MobileShellProps): ReactNode {
           seam={data.seam}
           spaceId={props.spaceId}
           nodeKey={props.nodeKey}
+          {...(props.chatBridge ? { bridge: props.chatBridge } : {})}
           {...(props.chatAnchorId ? { anchorId: props.chatAnchorId } : {})}
+          /* ONE SURFACE: the thread column is the header's sheet, not a band
+             stacked above the conversation. See `ChatHosting` and the state
+             that builds it. */
+          soloConversation={chat.soloConversation}
+          routeThreadId={chat.routeThreadId}
+          onThreadsChange={chat.onThreadsChange}
+          viewerName={props.viewerActor?.displayName}
+          {...(props.viewerActor ? { viewerId: props.viewerActor.id } : {})}
         />
       );
     default:
