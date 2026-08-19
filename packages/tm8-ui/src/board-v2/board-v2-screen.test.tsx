@@ -5,9 +5,12 @@
  *
  *  · the closed category skeleton in reading order, every column a REAL
  *    `filters.category` read (the fixture applies the predicate for real);
- *  · the kind selector making the board universal: a statusless kind's rows
- *    land in the honest 'No status yet' column, and the category columns
- *    stay empty rather than borrowing them;
+ *  · the kind selector making the board universal: a kind that carries no
+ *    status WORD still lands under a real category — phase 5 (migration 152)
+ *    gave every kind a status and refuses to apply while any row lacks one —
+ *    and the categories it is NOT in stay empty rather than borrowing it. The
+ *    'No status yet' column is a pre-phase-5 vestige and now renders for no
+ *    kind, which is why it is asserted ABSENT rather than populated;
  *  · a real drag commit for tasks THROUGH the category drop seam (fallback
  *    'open', since the fixture space resolves to the global default);
  *  · a REFUSED move for a kind that cannot move yet — visible, with the
@@ -166,19 +169,43 @@ describe('the category board', () => {
 });
 
 describe('the universal kind selector', () => {
-  it('a statusless kind shows its rows in the honest No-status-yet column, and nothing borrows a category', async () => {
+  it('a kind carrying no status WORD still lands under a real category — after phase 5 there is no statusless kind', async () => {
     const view = await mountBoard();
     openAxis(view, 'b2-kind');
     fireEvent.click(view.getByTestId('b2-kind-doc'));
-    /* The category reads answer EMPTY for docs (a NULL category never matches
-       the predicate) while the base read fills the uncategorised column with
-       the server-computed absence — never a client-invented bucket. */
-    await waitFor(() => expect(columnKeys(view)).toEqual([...CATEGORY_KEYS, 'uncategorised']));
-    await waitFor(() => {
-      const uncategorised = column(view, 'uncategorised');
-      expect(uncategorised.getAllByTestId('b2-card').length).toBeGreaterThan(0);
-    });
+    /*
+     * THIS CASE ASSERTED THE OPPOSITE AND IS REVERSED DELIBERATELY, not
+     * loosened and not deleted. It read: "a statusless kind shows its rows in
+     * the honest No-status-yet column, and nothing borrows a category", on the
+     * premise that a kind whose rows carry no status word has no category for
+     * the four reads to match.
+     *
+     * PHASE 5 (migration 152) ended that premise, and the record of the
+     * reversal belongs here because this case IS where the old one was
+     * written down. Birth widened from `kind = 'task'` to EVERY kind, the
+     * backfill gave every pre-existing row of every kind a status, and the
+     * migration REFUSES TO APPLY while any row still has a null
+     * `status_category`:
+     *
+     *     raise exception '152: % entities have a status but no category'
+     *
+     * So a doc HAS a category on any live node — `to_do`, its seed, since docs
+     * are not one of the facts-about-the-past kinds — and the fixture says so
+     * too now that `categoryOf` mirrors 152's seeding table instead of
+     * modelling a phase-1 node.
+     *
+     * The uncategorised column therefore earns no width here, for exactly the
+     * reason it earns none on a fully-categorised task board above: it renders
+     * only when it has something to say. That it is now silent for EVERY kind
+     * is the honest report, not a regression.
+     */
+    await waitFor(() => expect(columnKeys(view)).toEqual(CATEGORY_KEYS));
+    await waitFor(() =>
+      expect(column(view, 'to_do').getAllByTestId('b2-card').length).toBeGreaterThan(0));
+    // And still nothing BORROWS: the categories no doc is in stay empty, which
+    // is the half of the original assertion that survives phase 5 unchanged.
     expect(column(view, 'in_progress').queryAllByTestId('b2-card')).toHaveLength(0);
+    expect(column(view, 'done').queryAllByTestId('b2-card')).toHaveLength(0);
     view.unmount();
   });
 
@@ -186,20 +213,28 @@ describe('the universal kind selector', () => {
     const view = await mountBoard();
     openAxis(view, 'b2-kind');
     fireEvent.click(view.getByTestId('b2-kind-doc'));
-    await waitFor(() => expect(columnKeys(view)).toContain('uncategorised'));
     await waitFor(() =>
-      expect(column(view, 'uncategorised').getAllByTestId('b2-card').length).toBeGreaterThan(0));
+      expect(column(view, 'to_do').getAllByTestId('b2-card').length).toBeGreaterThan(0));
 
     const body = view.getByLabelText('Docs board');
-    // Walk to the uncategorised column (index 4) and push its first card left
-    // into Cancelled: docs have a status from phase 5 (migration 152) but no
-    // settable CONTROL yet, so the drop must still refuse — with that reason.
-    for (let i = 0; i < 4; i += 1) fireEvent.keyDown(body, { key: 'ArrowRight' });
-    fireEvent.keyDown(body, { key: 'ArrowLeft', ctrlKey: true });
+    /* THE COLUMN MOVED, THE ASSERTION DID NOT. This walked four columns right
+       to reach 'No status yet' and pushed LEFT out of it. Docs sit in To Do
+       now — their phase-5 seed — and To Do is where focus already is, because
+       a kind switch resets it to {col: 0, row: 0} (BoardV2Screen.tsx:203). So
+       the push is one step RIGHT, into In Progress.
+
+       What is being pinned is unchanged and is the whole point of the case:
+       docs have a status since phase 5 but no settable CONTROL yet, so the
+       move must REFUSE VISIBLY WITH ITS REASON rather than no-op. The comment
+       this case already carried — "docs have a status from phase 5 (migration
+       152) but no settable CONTROL yet" — was true when it was written and
+       sat one line under an assertion that docs were uncategorised. Only one
+       of those two could be right. */
+    fireEvent.keyDown(body, { key: 'ArrowRight', ctrlKey: true });
     const refusal = await waitFor(() => view.getByTestId('b2-refusal'));
     expect(refusal.textContent).toMatch(/no settable control yet/i);
-    // And nothing moved: every doc still sits in No status yet.
-    expect(column(view, 'cancelled').queryAllByTestId('b2-card')).toHaveLength(0);
+    // And nothing moved: every doc still sits in To Do.
+    expect(column(view, 'in_progress').queryAllByTestId('b2-card')).toHaveLength(0);
     view.unmount();
   });
 });

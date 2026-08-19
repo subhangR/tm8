@@ -85,9 +85,33 @@ type SummaryOver = Partial<Omit<EntitySummary, 'state' | 'kind'>> & Pick<EntityS
  * lifecycle's, where `failed` is `done` — a run that ended, badly, is not a run
  * somebody cancelled.
  *
- * A row whose state carries no status word gets NO key, not a default:
- * absence means "this entity has no position in a workflow", and inventing
- * `to_do` for it would file it under a tab nobody put it in.
+ * A ROW WITH NO STATUS WORD FALLS BACK TO ITS KIND'S SEED, AND THAT REVERSES
+ * WHAT THIS COMMENT USED TO SAY. It used to read: "absence means this entity
+ * has no position in a workflow, and inventing `to_do` for it would file it
+ * under a tab nobody put it in." That was true of a phase-1 node, where only
+ * task and work_session had statuses at all.
+ *
+ * PHASE 5 (migration 152) ended it. Birth widened from `kind = 'task'` to
+ * EVERY kind, the backfill gave every pre-existing row of every kind a status
+ * — soft-deleted rows included, because "a restored entity with a NULL status
+ * would be the one row in the graph the four tabs cannot show" (152 §5) — and
+ * the file ends by REFUSING TO APPLY if any row is left behind:
+ *
+ *     raise exception '152: % entities have a status but no category'
+ *
+ * So absent-category is not a state a live node can be in; it is a state the
+ * database now guarantees against, and `migrations apply clean` re-proves that
+ * on every CI run. Inventing `to_do` is precisely what the SERVER does.
+ *
+ * Omitting the key was therefore this fixture doing the one thing the
+ * paragraph above says a fixture may not do — lying about the server — for the
+ * seventeen kinds that carry no status word. It rendered them into a four-tab
+ * partition where an absent axis matches no present clause, so they appeared
+ * under NO tab and the channel list came up empty (gate.test.tsx).
+ *
+ * The fallback mirrors 152's seeding table exactly: the facts-about-the-past
+ * kinds seed `done` (`internal.kind_seeds_done`, 152:215-218), `pull_request`
+ * seeds from the forge state it already carries, everything else seeds `to_do`.
  */
 const FIXTURE_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
   // task
@@ -106,12 +130,38 @@ const FIXTURE_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
   failed: 'done',
 };
 
-function categoryOf(over: SummaryOver): { category?: StatusCategory } {
+/**
+ * Kinds whose rows are FACTS ABOUT THE PAST: existence IS completion, so 152
+ * births and backfills them into `done` rather than `to_do`. Mirrors
+ * `internal.kind_seeds_done` (152:215-218) member for member.
+ */
+const FIXTURE_KIND_SEEDS_DONE: ReadonlySet<string> = new Set([
+  'commit',
+  'message',
+  'file',
+  'memory',
+  'artifact',
+]);
+
+/** 152's `pull_request` arm: the category agrees with the forge state the row
+ * already carries rather than contradicting it on day one. */
+const FIXTURE_PR_STATE_CATEGORY: Readonly<Record<string, StatusCategory>> = {
+  merged: 'done',
+  closed: 'cancelled',
+};
+
+function categoryOf(over: SummaryOver): { category: StatusCategory } {
   if (over.category !== undefined) return { category: over.category };
-  const status = (over.state as unknown as { status?: unknown }).status;
-  if (typeof status !== 'string') return {};
-  const category = FIXTURE_STATUS_CATEGORY[status];
-  return category === undefined ? {} : { category };
+  const state = over.state as unknown as Record<string, unknown>;
+  const status = state.status;
+  if (typeof status === 'string') {
+    const category = FIXTURE_STATUS_CATEGORY[status];
+    if (category !== undefined) return { category };
+  }
+  if (over.kind === 'pull_request' && typeof state.state === 'string') {
+    return { category: FIXTURE_PR_STATE_CATEGORY[state.state] ?? 'to_do' };
+  }
+  return { category: FIXTURE_KIND_SEEDS_DONE.has(over.kind) ? 'done' : 'to_do' };
 }
 
 function summary(over: SummaryOver): EntitySummary {
