@@ -133,22 +133,21 @@
   display: flex;
   flex-direction: column;
 }
-/* USER RULING 2026-07-29: all session metadata lives in one collapsed drawer
-   BELOW the canvas.
-   USER RULING 2026-07-31: and the collapsed state costs NOTHING — the drawer
-   is unmounted while closed, so the canvas reaches the panel's bottom edge.
-   Opening it still shrinks the canvas temporarily rather than reserving space
-   forever. */
-.cv2-root .pn-terminal-drawer {
-  flex: none;
-  border-top: 1px solid var(--pn-line);
-  background: var(--pn-surface);
-}
+/* THE SESSION-DETAILS DRAWER AND ITS FLOATING CONTROLS ARE GONE (user ruling
+   2026-08-19). `.pn-terminal-drawer*`, `.pn-terminal-overlay*` and
+   `.pn-ctxhead*` — roughly 160 lines — are deleted with the markup they
+   styled: the SESSION DETAILS toggle, the exit-terminal chip, and the drawer
+   holding chrome strip · ASSOCIATED PROJECTS · SHARED CONTEXT.
 
-/* THE STAGE — the canvas plus the controls that float ON it.
-   `position: relative` is the whole point: it is the containing block the
-   overlay is pinned to, so the overlay costs zero layout height and the black
-   box below it runs edge to edge. */
+   `.pn-provenance` above SURVIVES on purpose: `SessionAnatomy` still writes
+   it. `.term-exit-chip` in terminal.css likewise — `TerminalChromeStrip` is
+   still the component that owns that class, it simply has no mount here any
+   more. */
+
+/* THE STAGE — the canvas, and now nothing else. `position: relative` used to
+   be the whole point (it anchored the floating overlay); with the overlay
+   gone it is kept because `LiveTerminal` positions inside this box, and the
+   flex triple below is what lets the canvas take every remaining pixel. */
 .cv2-root .pn-terminal-stage {
   position: relative;
   flex: 1 1 auto;
@@ -156,146 +155,6 @@
   display: flex;
   flex-direction: column;
 }
-
-/* THE FLOATING CONTROLS — hover/focus-revealed, never removed.
-   Opacity, NOT display/visibility: the exit chip is the only visible
-   instruction for escaping a focused terminal (C6 layer 3), so it must stay
-   in the tab order at all times. `:focus-within` is what makes that honest —
-   a keyboard user who tabs to a chip they cannot see reveals it by landing on
-   it. `pointer-events` is off on the ROW so an invisible strip can never eat a
-   click meant for the terminal's last line, and back on for the chips
-   themselves once they are showing. */
-.cv2-root .pn-terminal-overlay {
-  position: absolute;
-  right: 8px;
-  bottom: 6px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  /* At the 320px panel floor (L4) the two chips are wider than the canvas.
-     Absolutely-positioned overflow would run off the LEFT edge and be cut by
-     the panel's `overflow: hidden` — which is exactly backwards, because the
-     leftmost chip is the details toggle and the one that must survive is the
-     exit chip on the right. Capping the row and letting the details chip be
-     the only thing that shrinks makes the squeeze deterministic. */
-  max-width: calc(100% - 16px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease-out;
-}
-.cv2-root .pn-terminal-overlay > .term-exit-chip { flex: none; }
-.cv2-root .pn-terminal-overlay__chip { min-width: 0; }
-.cv2-root .pn-terminal-overlay .pn-terminal-drawer__label {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cv2-root .pn-terminal-stage:hover .pn-terminal-overlay,
-.cv2-root .pn-terminal-overlay:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-.cv2-root .pn-terminal-overlay__chip {
-  appearance: none;
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  height: 20px;
-  padding: 0 8px;
-  border: 1px solid var(--pn-line-2);
-  border-radius: 6px;
-  background: var(--pn-card);
-  color: var(--pn-ink-2);
-  cursor: pointer;
-  text-align: left;
-}
-.cv2-root .pn-terminal-overlay__chip:hover { color: var(--pn-ink); border-color: var(--pn-ink-4); }
-.cv2-root .pn-terminal-overlay__chip:focus-visible {
-  outline: 1px solid var(--pn-brand);
-  outline-offset: 1px;
-}
-.cv2-root .pn-terminal-drawer__caret {
-  flex: none;
-  color: var(--pn-ink-4);
-}
-.cv2-root .pn-terminal-drawer__label {
-  flex: none;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--pn-track-wide);
-}
-.cv2-root .pn-terminal-drawer__content {
-  max-height: 224px;
-  overflow-y: auto;
-  border-top: 1px solid var(--pn-line);
-}
-.cv2-root .pn-terminal-drawer__content .term-strip {
-  border-bottom: 1px solid var(--pn-line);
-}
-/* R5 #10 — TERMINAL-DOMINANT. The context header is the only thing above the
-   chrome strip, and it takes its own height and no more: `flex: none` so it
-   can never grow into the terminal, and when expanded it scrolls INSIDE its
-   own cap rather than pushing the canvas down. "An empty state that costs the
-   primary surface half its height inverts the honesty economy." */
-/* Sits BELOW the canvas since the 2026-07-29 two-row ruling (D63) — the
-   border flips to the top edge accordingly. Expansion still costs the canvas
-   height only while open (flex shrinks it), never permanently. */
-.cv2-root .pn-ctxhead {
-  flex: none;
-  border-top: 1px solid var(--pn-line);
-}
-/* The expansion cap is in PIXELS, not a percentage. `max-height: 38%` looked
-   right and silently did nothing: this element's parent is `flex: none` with
-   an auto height, and a percentage max-height against an indefinite height
-   does not resolve — so the region neither capped nor scrolled, it just
-   clipped, and SHARED CONTEXT was in the DOM but off-screen with no scrollbar
-   to reveal it. Caught in the browser; jsdom cannot see it, because the
-   assertion "the element exists" passes either way. */
-.cv2-root .pn-ctxhead__detail {
-  max-height: 190px;
-  overflow-y: auto;
-  padding-bottom: 6px;
-}
-/* The collapsed line: one row, 26px, never wraps. */
-.cv2-root .pn-ctxhead__summary {
-  appearance: none;
-  width: 100%;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 10px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-family: var(--pn-mono);
-  font-size: 10.5px;
-  color: var(--pn-ink-2);
-  text-align: left;
-}
-.cv2-root .pn-ctxhead__summary:hover { background: var(--pn-hover); }
-.cv2-root .pn-ctxhead__caret { color: var(--pn-ink-4); }
-.cv2-root .pn-ctxhead__facts {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.cv2-root .pn-ctxhead__sep { color: var(--pn-ink-4); }
-/* An absence is stated, not shouted — it reads quieter than a present fact,
-   which is the whole point of the ruling. */
-.cv2-root .pn-ctxhead__fact--empty { color: var(--pn-ink-4); font-style: italic; }
-/* A drag surfaces the region even while collapsed: dropping must never
-   require expanding first, or drag-share dies on every default session. */
-.cv2-root .pn-ctxhead--open { background: var(--pn-surface); }
 
 /* The canvas takes ALL remaining height below the strip — every verdict's
    rendering, not just the live one, so the geometry never jumps when a

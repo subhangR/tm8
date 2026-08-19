@@ -605,22 +605,13 @@ button.tch-entity-chip:hover {
   margin: 0 auto auto;
 }
 
-/* TRAY-ONLY: the berth while region B is NOT the chat (user report 2026-08-19,
-   task 01a017d3). The composer is gone, so the two geometries it justified go
-   with it. `min(760px, …)` is a READING MEASURE — it exists to keep a line of
-   prose scannable, and a row of tabs is not prose; centred under a full-bleed
-   entity panel it read as a second, unrelated surface. The `auto` bottom
-   margin is the empty state's centring trick, which must not float the tray
-   into the middle of a terminal — hence this rule sits AFTER `[data-empty]`
-   (equal specificity, later wins) so a stage opened from a new thread still
-   docks. What is left is one ~36px row: the way back, and nothing else. */
-.tch-composer-wrap[data-chrome='tray'] {
-  width: 100%;
-  margin: 0;
-}
-.tch-composer-wrap[data-chrome='tray'] .tch-tray {
-  margin: var(--pn-space-2) var(--pn-space-3);
-}
+/* NO TRAY-ONLY VARIANT ANY MORE. A `[data-chrome='tray']` rule made this wrap
+   full-bleed for the one row left in it when a stage held region B. The row
+   itself is now gone (user report 2026-08-19, task 01a017d3 — see the berth
+   note in ChatHomeScreen), so the wrap only ever renders over the chat and the
+   760px reading measure above is the only geometry it needs. Recorded rather
+   than silently dropped: a rule for an element that no longer exists is the
+   orphan half of what chat-home-css-coverage.test.ts guards against. */
 
 /* THE ENTITY TRAY — the control panel's top row (Cockpit ruling 2026-08-18).
    Chips reuse `.tch-entity-chip` (same anatomy as the transcript's touched

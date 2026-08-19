@@ -1323,58 +1323,50 @@ export function ChatHomeScreen({
           )}
         </div>
 
-        {/* THE BOTTOM BERTH IS THE CHAT'S, NOT REGION B'S (user report
-            2026-08-19, task 01a017d3). While an entity panel or a stage holds
-            region B, this wrap carries the TRAY ONLY — the way back — and the
-            composer stands down with the header. Reasons, in order:
+        {/* THE BOTTOM BERTH IS THE CHAT'S, AND ONLY THE CHAT'S (user report
+            2026-08-19, task 01a017d3 — amending the 2026-08-18 Cockpit ruling
+            that gave this berth to region B as a whole).
 
-            it was WRAPPING THE PANEL. Head above, tray + composer below, a
-            running terminal squeezed in what was left. The composer is the
-            chat's instrument; addressed to the open thread, captioned `Reply
-            in this thread…`, it promises to send somewhere that is not what
-            you are looking at.
+            Nothing of the chat is drawn while an entity panel or a stage holds
+            region B. Not the header above, not the composer, and — the part
+            this supersedes — NOT THE TRAY EITHER. The first pass kept the tray
+            as the way back, reasoning that one ~36px row is cheap. The user's
+            answer, seeing it: `why still the chat, fleet, graph is showing at
+            the bottom`. Cheap is not the test. The panel is what you opened,
+            and a row of another surface's tabs pinned under it is that other
+            surface still framing it.
 
-            it was SPENDING THE HEIGHT. ~200px of it — and the surface under it
-            is a terminal, where vertical space is the entire point.
+            THE WAY BACK SURVIVES WITHOUT A DOCKED ROW: `Escape` (handled on
+            this section), the panel's own ✕, and picking anything in column A.
+            None of them cost the panel a pixel.
 
-            it was NARROWER THAN THE PANEL. The wrap is `min(760px, 100% - 32px)`
-            centred, so the tray sat inset from a full-bleed panel — two
-            different widths stacked, reading as two unrelated surfaces.
-
-            THE TRAY STAYS. The 2026-08-18 Cockpit ruling kept this berth for
-            the way back (the tray's ⌂ Chat tab, Esc), and that reason survives
-            the composer: one row of tabs, ~36px, is the one-click return to
-            the thread. `data-chrome='tray'` lets it go full-bleed, since with
-            the composer gone the 760px reading measure has nothing to measure. */}
-        <div
-          className="tch-composer-wrap"
-          data-phase={phase}
-          data-chrome={centre != null ? 'tray' : undefined}
-          ref={composerWrapRef}
-        >
-          {(detail && !newThread) || centre != null ? (
-            <EntityTray
-              turns={detail && !newThread ? detail.turns : []}
-              suppressEntityIds={ownMessageIds}
-              resolveEntity={resolveEntity}
-              /* On this host an entity tab swaps the STAGE when the host
-                 wired selection; a host without one falls back to its plain
-                 entity-open. */
-              onOpenEntity={onSelectEntity ? (id) => onSelectEntity(id) : onOpenEntity}
-              /* The two stages that are not entities. Absent handler ⇒ no
-                 tab, never a dead one. */
-              {...(onStageChange ? { onStage: onStageChange, activeStage: stage } : {})}
-              activeEntityId={centerOverride != null ? selectedEntityId : null}
-              onShowChat={onShowChat}
-              chatBusy={thinking || phase === 'streaming'}
-            />
-          ) : null}
-          {/* The composer stands down while region B is not the chat (see the
-              berth note above). Its errors, its refusal and its stopped-turn
-              notice go with it: they are reports on THIS thread's last send,
-              and a send is not reachable from here. */}
-          {centre != null ? null : (
-            <>
+            The consequence for a STAGE (Fleet/Graph) is sharper than for an
+            entity panel — a stage has no ✕ of its own, so Escape and column A
+            are the whole exit. Flagged to the user with the change rather than
+            quietly softened, because a hidden third case is how a ruling gets
+            re-litigated a week later. */}
+        {centre != null ? null : (
+          <div className="tch-composer-wrap" data-phase={phase} ref={composerWrapRef}>
+            {detail && !newThread ? (
+              <EntityTray
+                turns={detail.turns}
+                suppressEntityIds={ownMessageIds}
+                resolveEntity={resolveEntity}
+                /* On this host an entity tab swaps the STAGE when the host
+                   wired selection; a host without one falls back to its plain
+                   entity-open. */
+                onOpenEntity={onSelectEntity ? (id) => onSelectEntity(id) : onOpenEntity}
+                /* The two stages that are not entities. Absent handler ⇒ no
+                   tab, never a dead one. */
+                {...(onStageChange ? { onStage: onStageChange, activeStage: stage } : {})}
+                /* Always null here by construction: `centre` is
+                   `centerOverride ?? stagePane`, so reaching this branch means
+                   BOTH are null and no tab can be the active one. */
+                activeEntityId={null}
+                onShowChat={onShowChat}
+                chatBusy={thinking || phase === 'streaming'}
+              />
+            ) : null}
             {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
             {refusal ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
             {phase === 'stopped-continuable' ? (
@@ -1532,9 +1524,8 @@ export function ChatHomeScreen({
                 )}
               </>}
             />
-            </>
-          )}
-        </div>
+          </div>
+        )}
       </section>
     </main>
   );

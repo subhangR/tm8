@@ -144,15 +144,14 @@ describe('Home root column', () => {
     expect(view.getByText('Nothing loaded here matches.')).toBeTruthy();
   });
 
-  it('D8 revised (Cockpit 2026-08-18): an entity in B hides the TRANSCRIPT without unmounting it — the control panel stays', () => {
+  it('D8 revised (Cockpit 2026-08-18): an entity in B hides the TRANSCRIPT without unmounting it — but nothing of the chat is DRAWN', () => {
     const view = renderHome({
       root: 'task',
       centerOverride: <div data-testid="fake-center">terminal here</div>,
     });
     expect(view.getByTestId('tch-center-override')).toBeTruthy();
-    // The transcript hides but keeps its mount (a streaming thread must not
-    // tear down); the conversation section itself stays visible because the
-    // composer and the entity tray keep the bottom berth under the stage.
+    // The transcript hides but keeps its mount — D8's reason is unchanged: a
+    // streaming thread must not tear down while you look at something else.
     const conversation = view.container.querySelector('.tch-conversation');
     expect(conversation).not.toBeNull();
     expect(conversation?.hasAttribute('hidden')).toBe(false);
@@ -160,7 +159,13 @@ describe('Home root column', () => {
     expect(transcript).not.toBeNull();
     expect(transcript?.getAttribute('data-hidden')).toBe('true');
     expect(transcript?.hasAttribute('hidden')).toBe(true);
-    expect(view.container.querySelector('.tch-composer-wrap')).not.toBeNull();
+    /* WHAT CHANGED (task 01a017d3): the bottom berth no longer stays. The
+       first pass kept the tray there as the way back; the user's answer to
+       shipping that was `why still the chat, fleet, graph is showing at the
+       bottom`. Hidden-not-unmounted is about the TRANSCRIPT's state, and it
+       never required drawing the chat's chrome around someone else's panel. */
+    expect(view.container.querySelector('.tch-composer-wrap')).toBeNull();
+    expect(view.queryByTestId('chat-entity-tray')).toBeNull();
   });
 
   it('D9: while an entity occupies B, no chat row draws active', async () => {
