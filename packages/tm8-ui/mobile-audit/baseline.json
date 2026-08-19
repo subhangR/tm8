@@ -1,13 +1,13 @@
 {
   "label": "baseline",
   "ref": {
-    "head": "1e7ddb526925406b62acacbe6f0c333b233e0b76",
-    "headShort": "1e7ddb52",
-    "branch": "tm8/01a00ba8",
-    "behindMain": 0,
+    "head": "91691dc13572339e84ba12eac042aa257b00dc79",
+    "headShort": "91691dc1",
+    "branch": "feat/mobile-drawer-and-fab",
+    "behindMain": 2,
     "dirty": false,
     "dirtyFiles": [],
-    "untrackedCount": 0
+    "untrackedCount": 9
   },
   "minTapPx": 44,
   "epsilonPx": 0.5,
@@ -33,86 +33,20 @@
       "worstRightEdge": 390,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 19,
-      "tapTargetsUnderMin": 17,
+      "tapTargetsTotal": 10,
+      "tapTargetsUnderMin": 1,
       "tapTargetsSmallest": [
         {
           "w": 1,
           "h": 1,
           "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > input.tch-attach__input",
           "text": ""
-        },
-        {
-          "w": 61,
-          "h": 14,
-          "path": "article.tch-turn > div.tch-parts > details.tch-thinking > summary",
-          "text": "Thinking"
-        },
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 23,
-          "h": 26,
-          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--active > button.tch-rootcell__plus",
-          "text": "＋"
-        },
-        {
-          "w": 45,
-          "h": 26,
-          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--active > button.tch-rootcell__label",
-          "text": "Chats"
-        },
-        {
-          "w": 26,
-          "h": 26,
-          "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > button.tch-attach",
-          "text": "＋"
-        },
-        {
-          "w": 47,
-          "h": 26,
-          "path": "div.ri-card__foot > span.tch-picks > span.tch-pick > button.tch-pick__trigger",
-          "text": "plan▾"
-        },
-        {
-          "w": 76,
-          "h": 26,
-          "path": "div.ri-card__foot > span.tch-picks > span.tch-pick > button.tch-pick__trigger",
-          "text": "FForge▾"
         }
       ],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/home",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "A | Y | You"
     },
     {
       "viewport": "phone-390",
@@ -129,106 +63,24 @@
       "innerWidth": 390,
       "scrollWidth": 390,
       "bodyScrollWidth": 390,
-      "overflowCount": 7,
-      "worstRightEdge": 449,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
       "worstLeftEdge": 0,
-      "overflowRoots": [
-        {
-          "right": 449,
-          "path": "div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip > span.hon-tip",
-          "text": "The tree layout arrives with A2the switc"
-        },
-        {
-          "right": 428,
-          "path": "div.mobile-frame > main.mobile-frame__content > div.ev-root > main.ev-detail",
-          "text": "◇Nothing needs your attention.Choose any"
-        },
-        {
-          "right": 401,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "↓ Recent activity"
-        }
-      ],
-      "tapTargetsTotal": 25,
-      "tapTargetsUnderMin": 25,
+      "overflowRoots": [],
+      "tapTargetsTotal": 17,
+      "tapTargetsUnderMin": 1,
       "tapTargetsSmallest": [
         {
-          "w": 9,
-          "h": 421,
-          "path": "div.mobile-frame > main.mobile-frame__content > div.ev-root > div.kit-resizer",
-          "text": ""
-        },
-        {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 19,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view",
-          "text": "▥"
-        },
-        {
-          "w": 166,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "4f8c2a9e-77b1-4e3d-9c2f-a1b0d3"
-        },
-        {
-          "w": 166,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Session tree guide lines"
-        },
-        {
-          "w": 166,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Wire palette to real command r"
-        },
-        {
-          "w": 157,
-          "h": 19,
+          "w": 332,
+          "h": 23,
           "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
           "text": ""
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "filter ▾"
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "people ▾"
-        },
-        {
-          "w": 101,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "collections ▾"
-        },
-        {
-          "w": 126,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "↓ Recent activity"
-        },
-        {
-          "w": 21,
-          "h": 26,
-          "path": "section.lp > div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip",
-          "text": "⑂The tree layout arrives with "
         }
       ],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/k/tasks",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Tasks | ↗"
     },
     {
       "viewport": "phone-390",
@@ -245,111 +97,24 @@
       "innerWidth": 390,
       "scrollWidth": 390,
       "bodyScrollWidth": 390,
-      "overflowCount": 9,
-      "worstRightEdge": 504,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
       "worstLeftEdge": 0,
-      "overflowRoots": [
-        {
-          "right": 504,
-          "path": "div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip > span.hon-tip",
-          "text": "The tree layout arrives with A2the switc"
-        },
-        {
-          "right": 428,
-          "path": "div.mobile-frame > main.mobile-frame__content > div.ev-root > main.ev-detail",
-          "text": "◇Nothing needs your attention.Choose any"
-        },
-        {
-          "right": 405,
-          "path": "div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip > span.hon-tip",
-          "text": "Graph view isn’t available yet."
-        },
-        {
-          "right": 401,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "↓ Recent activity"
-        }
-      ],
-      "tapTargetsTotal": 21,
-      "tapTargetsUnderMin": 20,
+      "overflowRoots": [],
+      "tapTargetsTotal": 14,
+      "tapTargetsUnderMin": 1,
       "tapTargetsSmallest": [
         {
-          "w": 9,
-          "h": 321,
-          "path": "div.mobile-frame > main.mobile-frame__content > div.ev-root > div.kit-resizer",
-          "text": ""
-        },
-        {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 157,
-          "h": 19,
+          "w": 332,
+          "h": 23,
           "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
           "text": ""
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "filter ▾"
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "people ▾"
-        },
-        {
-          "w": 101,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "collections ▾"
-        },
-        {
-          "w": 126,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "↓ Recent activity"
-        },
-        {
-          "w": 21,
-          "h": 26,
-          "path": "section.lp > div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip",
-          "text": "⑂The tree layout arrives with "
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "section.ev-list > section.lp > div.lp__actions > button.lp__quick",
-          "text": "▮ Terminal"
-        },
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
         }
       ],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/k/sessions",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Sessions | ↗"
     },
     {
       "viewport": "phone-390",
@@ -366,106 +131,30 @@
       "innerWidth": 390,
       "scrollWidth": 390,
       "bodyScrollWidth": 390,
-      "overflowCount": 7,
-      "worstRightEdge": 471,
+      "overflowCount": 0,
+      "worstRightEdge": 390,
       "worstLeftEdge": 0,
-      "overflowRoots": [
-        {
-          "right": 471,
-          "path": "div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip > span.hon-tip",
-          "text": "The tree layout arrives with A2the switc"
-        },
-        {
-          "right": 428,
-          "path": "div.mobile-frame > main.mobile-frame__content > div.ev-root > main.ev-detail",
-          "text": "◇Nothing needs your attention.Choose any"
-        },
-        {
-          "right": 401,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "↓ Recent activity"
-        }
-      ],
-      "tapTargetsTotal": 21,
-      "tapTargetsUnderMin": 21,
+      "overflowRoots": [],
+      "tapTargetsTotal": 17,
+      "tapTargetsUnderMin": 2,
       "tapTargetsSmallest": [
         {
-          "w": 8,
-          "h": 18,
-          "path": "div.lp__tile > div.lp__tile-main > div.lp__row1 > button.lp__title",
-          "text": "design"
-        },
-        {
-          "w": 9,
-          "h": 301,
-          "path": "div.mobile-frame > main.mobile-frame__content > div.ev-root > div.kit-resizer",
+          "w": 22,
+          "h": 22,
+          "path": "div.lp__tile-main > div.lp__row1 > span.lp__rowactions.lp__cluster > button.lp__rowaction",
           "text": ""
         },
         {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 157,
-          "h": 19,
+          "w": 332,
+          "h": 23,
           "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
           "text": ""
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "filter ▾"
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "people ▾"
-        },
-        {
-          "w": 101,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "collections ▾"
-        },
-        {
-          "w": 126,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "↓ Recent activity"
-        },
-        {
-          "w": 21,
-          "h": 26,
-          "path": "section.lp > div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip",
-          "text": "⑂The tree layout arrives with "
-        },
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
         }
       ],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/k/channels",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Channels | ↗"
     },
     {
       "viewport": "phone-390",
@@ -486,74 +175,32 @@
       "worstRightEdge": 390,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 10,
-      "tapTargetsUnderMin": 10,
+      "tapTargetsTotal": 7,
+      "tapTargetsUnderMin": 3,
       "tapTargetsSmallest": [
         {
-          "w": 53,
-          "h": 17,
-          "path": "div.ibx-card > div.ibx-head > div.ibx-head__line > button.ibx-chip",
-          "text": "unread"
-        },
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 108,
-          "h": 28,
+          "w": 98,
+          "h": 26,
           "path": "div.ibx-head > div.ibx-head__line > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
           "text": "mark all read"
         },
         {
-          "w": 139,
-          "h": 28,
+          "w": 127,
+          "h": 26,
           "path": "span.ibx-seg > span.ibx-seg__off > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
           "text": "your teammates"
         },
         {
-          "w": 65,
-          "h": 28,
+          "w": 59,
+          "h": 26,
           "path": "div.ibx-head > div.ibx-head__line > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
           "text": "type ▾"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
         }
       ],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/inbox",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Inbox | ↗"
     },
     {
       "viewport": "phone-390",
@@ -574,50 +221,13 @@
       "worstRightEdge": 390,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/workspace",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Workspace | ↗"
     },
     {
       "viewport": "phone-390",
@@ -638,50 +248,13 @@
       "worstRightEdge": 390,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/feed",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Feed | ↗"
     },
     {
       "viewport": "phone-390",
@@ -702,50 +275,13 @@
       "worstRightEdge": 390,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/graph",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Graph | ↗"
     },
     {
       "viewport": "phone-390",
@@ -766,50 +302,13 @@
       "worstRightEdge": 390,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 4,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/files",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | File browser | ↗"
     },
     {
       "viewport": "phone-390",
@@ -830,50 +329,13 @@
       "worstRightEdge": 390,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/git",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Code | ↗"
     },
     {
       "viewport": "phone-390",
@@ -894,50 +356,13 @@
       "worstRightEdge": 390,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/messages",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Messages | ↗"
     },
     {
       "viewport": "phone-390",
@@ -958,50 +383,13 @@
       "worstRightEdge": 390,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/board",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Board | ↗"
     },
     {
       "viewport": "phone-390",
@@ -1022,50 +410,13 @@
       "worstRightEdge": 390,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/craft",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Craft | ↗"
     },
     {
       "viewport": "phone-390",
@@ -1086,50 +437,13 @@
       "worstRightEdge": 390,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/settings",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Settings | ↗"
     },
     {
       "viewport": "phone-430",
@@ -1150,86 +464,20 @@
       "worstRightEdge": 430,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 19,
-      "tapTargetsUnderMin": 17,
+      "tapTargetsTotal": 10,
+      "tapTargetsUnderMin": 1,
       "tapTargetsSmallest": [
         {
           "w": 1,
           "h": 1,
           "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > input.tch-attach__input",
           "text": ""
-        },
-        {
-          "w": 61,
-          "h": 14,
-          "path": "article.tch-turn > div.tch-parts > details.tch-thinking > summary",
-          "text": "Thinking"
-        },
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 23,
-          "h": 26,
-          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--active > button.tch-rootcell__plus",
-          "text": "＋"
-        },
-        {
-          "w": 45,
-          "h": 26,
-          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--active > button.tch-rootcell__label",
-          "text": "Chats"
-        },
-        {
-          "w": 26,
-          "h": 26,
-          "path": "div.tch-composer-wrap > div.ri-card.tch-composer > div.ri-card__foot > button.tch-attach",
-          "text": "＋"
-        },
-        {
-          "w": 47,
-          "h": 26,
-          "path": "div.ri-card__foot > span.tch-picks > span.tch-pick > button.tch-pick__trigger",
-          "text": "plan▾"
-        },
-        {
-          "w": 76,
-          "h": 26,
-          "path": "div.ri-card__foot > span.tch-picks > span.tch-pick > button.tch-pick__trigger",
-          "text": "FForge▾"
         }
       ],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/home",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "A | Y | You"
     },
     {
       "viewport": "phone-430",
@@ -1246,96 +494,24 @@
       "innerWidth": 430,
       "scrollWidth": 430,
       "bodyScrollWidth": 430,
-      "overflowCount": 3,
-      "worstRightEdge": 449,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
       "worstLeftEdge": 0,
-      "overflowRoots": [
-        {
-          "right": 449,
-          "path": "div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip > span.hon-tip",
-          "text": "The tree layout arrives with A2the switc"
-        }
-      ],
-      "tapTargetsTotal": 25,
-      "tapTargetsUnderMin": 25,
+      "overflowRoots": [],
+      "tapTargetsTotal": 17,
+      "tapTargetsUnderMin": 1,
       "tapTargetsSmallest": [
         {
-          "w": 9,
-          "h": 421,
-          "path": "div.mobile-frame > main.mobile-frame__content > div.ev-root > div.kit-resizer",
-          "text": ""
-        },
-        {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 19,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view",
-          "text": "▥"
-        },
-        {
-          "w": 166,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "4f8c2a9e-77b1-4e3d-9c2f-a1b0d3"
-        },
-        {
-          "w": 166,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Session tree guide lines"
-        },
-        {
-          "w": 166,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Wire palette to real command r"
-        },
-        {
-          "w": 157,
-          "h": 19,
+          "w": 372,
+          "h": 23,
           "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
           "text": ""
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "filter ▾"
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "people ▾"
-        },
-        {
-          "w": 101,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "collections ▾"
-        },
-        {
-          "w": 126,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "↓ Recent activity"
-        },
-        {
-          "w": 21,
-          "h": 26,
-          "path": "section.lp > div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip",
-          "text": "⑂The tree layout arrives with "
         }
       ],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/k/tasks",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Tasks | ↗"
     },
     {
       "viewport": "phone-430",
@@ -1352,96 +528,24 @@
       "innerWidth": 430,
       "scrollWidth": 430,
       "bodyScrollWidth": 430,
-      "overflowCount": 3,
-      "worstRightEdge": 504,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
       "worstLeftEdge": 0,
-      "overflowRoots": [
-        {
-          "right": 504,
-          "path": "div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip > span.hon-tip",
-          "text": "The tree layout arrives with A2the switc"
-        }
-      ],
-      "tapTargetsTotal": 21,
-      "tapTargetsUnderMin": 20,
+      "overflowRoots": [],
+      "tapTargetsTotal": 14,
+      "tapTargetsUnderMin": 1,
       "tapTargetsSmallest": [
         {
-          "w": 9,
-          "h": 321,
-          "path": "div.mobile-frame > main.mobile-frame__content > div.ev-root > div.kit-resizer",
-          "text": ""
-        },
-        {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 157,
-          "h": 19,
+          "w": 372,
+          "h": 23,
           "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
           "text": ""
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "filter ▾"
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "people ▾"
-        },
-        {
-          "w": 101,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "collections ▾"
-        },
-        {
-          "w": 126,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "↓ Recent activity"
-        },
-        {
-          "w": 21,
-          "h": 26,
-          "path": "section.lp > div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip",
-          "text": "⑂The tree layout arrives with "
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "section.ev-list > section.lp > div.lp__actions > button.lp__quick",
-          "text": "▮ Terminal"
-        },
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
         }
       ],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/k/sessions",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Sessions | ↗"
     },
     {
       "viewport": "phone-430",
@@ -1458,96 +562,30 @@
       "innerWidth": 430,
       "scrollWidth": 430,
       "bodyScrollWidth": 430,
-      "overflowCount": 3,
-      "worstRightEdge": 471,
+      "overflowCount": 0,
+      "worstRightEdge": 430,
       "worstLeftEdge": 0,
-      "overflowRoots": [
-        {
-          "right": 471,
-          "path": "div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip > span.hon-tip",
-          "text": "The tree layout arrives with A2the switc"
-        }
-      ],
-      "tapTargetsTotal": 21,
-      "tapTargetsUnderMin": 21,
+      "overflowRoots": [],
+      "tapTargetsTotal": 17,
+      "tapTargetsUnderMin": 2,
       "tapTargetsSmallest": [
         {
-          "w": 8,
-          "h": 18,
-          "path": "div.lp__tile > div.lp__tile-main > div.lp__row1 > button.lp__title",
-          "text": "design"
-        },
-        {
-          "w": 9,
-          "h": 301,
-          "path": "div.mobile-frame > main.mobile-frame__content > div.ev-root > div.kit-resizer",
+          "w": 22,
+          "h": 22,
+          "path": "div.lp__tile-main > div.lp__row1 > span.lp__rowactions.lp__cluster > button.lp__rowaction",
           "text": ""
         },
         {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 157,
-          "h": 19,
+          "w": 372,
+          "h": 23,
           "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
           "text": ""
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "filter ▾"
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "people ▾"
-        },
-        {
-          "w": 101,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "collections ▾"
-        },
-        {
-          "w": 126,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "↓ Recent activity"
-        },
-        {
-          "w": 21,
-          "h": 26,
-          "path": "section.lp > div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip",
-          "text": "⑂The tree layout arrives with "
-        },
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
         }
       ],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/k/channels",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Channels | ↗"
     },
     {
       "viewport": "phone-430",
@@ -1568,74 +606,32 @@
       "worstRightEdge": 430,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 10,
-      "tapTargetsUnderMin": 10,
+      "tapTargetsTotal": 7,
+      "tapTargetsUnderMin": 3,
       "tapTargetsSmallest": [
         {
-          "w": 53,
-          "h": 17,
-          "path": "div.ibx-card > div.ibx-head > div.ibx-head__line > button.ibx-chip",
-          "text": "unread"
-        },
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 108,
-          "h": 28,
+          "w": 98,
+          "h": 26,
           "path": "div.ibx-head > div.ibx-head__line > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
           "text": "mark all read"
         },
         {
-          "w": 139,
-          "h": 28,
+          "w": 127,
+          "h": 26,
           "path": "span.ibx-seg > span.ibx-seg__off > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
           "text": "your teammates"
         },
         {
-          "w": 65,
-          "h": 28,
+          "w": 59,
+          "h": 26,
           "path": "div.ibx-head > div.ibx-head__line > span.hon-disabled-group > span.hon-disabled.hon-disabled--inline",
           "text": "type ▾"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
         }
       ],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/inbox",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Inbox | ↗"
     },
     {
       "viewport": "phone-430",
@@ -1656,50 +652,13 @@
       "worstRightEdge": 430,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/workspace",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Workspace | ↗"
     },
     {
       "viewport": "phone-430",
@@ -1720,50 +679,13 @@
       "worstRightEdge": 430,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/feed",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Feed | ↗"
     },
     {
       "viewport": "phone-430",
@@ -1784,50 +706,13 @@
       "worstRightEdge": 430,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/graph",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Graph | ↗"
     },
     {
       "viewport": "phone-430",
@@ -1848,50 +733,13 @@
       "worstRightEdge": 430,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 4,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/files",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | File browser | ↗"
     },
     {
       "viewport": "phone-430",
@@ -1912,50 +760,13 @@
       "worstRightEdge": 430,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/git",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Code | ↗"
     },
     {
       "viewport": "phone-430",
@@ -1976,50 +787,13 @@
       "worstRightEdge": 430,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/messages",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Messages | ↗"
     },
     {
       "viewport": "phone-430",
@@ -2040,50 +814,13 @@
       "worstRightEdge": 430,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/board",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Board | ↗"
     },
     {
       "viewport": "phone-430",
@@ -2104,50 +841,13 @@
       "worstRightEdge": 430,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/craft",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Craft | ↗"
     },
     {
       "viewport": "phone-430",
@@ -2168,50 +868,13 @@
       "worstRightEdge": 430,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 6,
-      "tapTargetsUnderMin": 6,
-      "tapTargetsSmallest": [
-        {
-          "w": 56,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Home"
-        },
-        {
-          "w": 55,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Tasks"
-        },
-        {
-          "w": 77,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Sessions"
-        },
-        {
-          "w": 79,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Channels"
-        },
-        {
-          "w": 53,
-          "h": 22,
-          "path": "nav.mobile-frame__tabbar > ul.mobile-tabs > li > button.mobile-tabs__tab",
-          "text": "Inbox"
-        },
-        {
-          "w": 101,
-          "h": 29,
-          "path": "div.mobile-frame > header.mobile-frame__header > div.mobile-header > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        }
-      ],
+      "tapTargetsTotal": 3,
+      "tapTargetsUnderMin": 0,
+      "tapTargetsSmallest": [],
       "shell": "mobile",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/settings",
-      "firstText": "atelier | ↗ | Copy link"
+      "firstText": "ATELIER | Settings | ↗"
     },
     {
       "viewport": "tablet-768",
@@ -2225,41 +888,41 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 918,
-      "scrollWidth": 918,
+      "innerWidth": 964,
+      "scrollWidth": 964,
       "bodyScrollWidth": 768,
       "overflowCount": 9,
-      "worstRightEdge": 1009,
+      "worstRightEdge": 1056,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 981,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 799,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
-      "tapTargetsTotal": 58,
-      "tapTargetsUnderMin": 32,
+      "tapTargetsTotal": 60,
+      "tapTargetsUnderMin": 35,
       "tapTargetsSmallest": [
         {
           "w": 1,
@@ -2274,16 +937,16 @@
           "text": ""
         },
         {
-          "w": 61,
+          "w": 307,
           "h": 14,
           "path": "article.tch-turn > div.tch-parts > details.tch-thinking > summary",
           "text": "Thinking"
         },
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 17,
@@ -2294,50 +957,50 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "w": 215,
+          "w": 226,
           "h": 20,
           "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
           "text": "Unblock the storage laneTask"
         },
         {
-          "w": 151,
+          "w": 160,
           "h": 20,
           "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
           "text": "◇019f0000…0022entity"
         },
         {
-          "w": 23,
-          "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
-          "text": "◹"
+          "w": 226,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
         },
         {
-          "w": 23,
-          "h": 26,
-          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--active > button.tch-rootcell__plus",
-          "text": "＋"
+          "w": 160,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
         },
         {
-          "w": 23,
-          "h": 26,
-          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__plus",
-          "text": "＋"
+          "w": 60,
+          "h": 22,
+          "path": "div.tch-composer-wrap > nav.tch-tray > div.tch-tray__tabs > button.tch-tray__chat",
+          "text": "⌂ Chat"
         }
       ],
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/home",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -2351,162 +1014,36 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 917,
-      "scrollWidth": 917,
+      "innerWidth": 964,
+      "scrollWidth": 964,
       "bodyScrollWidth": 768,
       "overflowCount": 9,
-      "worstRightEdge": 1009,
+      "worstRightEdge": 1055,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 980,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 799,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
-          "text": "prompts"
-        }
-      ],
-      "tapTargetsTotal": 33,
-      "tapTargetsUnderMin": 31,
-      "tapTargetsSmallest": [
-        {
-          "w": 9,
-          "h": 983,
-          "path": "div.shell-root > div.shell-body > div.ev-root > div.kit-resizer",
-          "text": ""
-        },
-        {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 19,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view",
-          "text": "▥"
-        },
-        {
-          "w": 36,
-          "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
-        },
-        {
-          "w": 284,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "4f8c2a9e-77b1-4e3d-9c2f-a1b0d3"
-        },
-        {
-          "w": 284,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Session tree guide lines"
-        },
-        {
-          "w": 284,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Wire palette to real command r"
-        },
-        {
-          "w": 275,
-          "h": 19,
-          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
-          "text": ""
-        },
-        {
-          "w": 66,
-          "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
-          "text": "prompts"
-        },
-        {
-          "w": 20,
-          "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
-          "text": "A"
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "filter ▾"
-        },
-        {
-          "w": 70,
-          "h": 20,
-          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
-          "text": "people ▾"
-        }
-      ],
-      "shell": "desktop",
-      "coarsePointer": true,
-      "hash": "#/s/sp-atelier/k/tasks",
-      "firstText": "tm8 | ◈ | atelier"
-    },
-    {
-      "viewport": "tablet-768",
-      "route": "sessions",
-      "url": "#/s/sp-atelier/k/sessions",
-      "expectShell": "desktop",
-      "shellOk": true,
-      "phoneRole": "screen",
-      "note": "Sessions tab — EntityView",
-      "screenshot": "screens/tablet-768__sessions.png",
-      "pageErrors": [],
-      "viewportWidth": 768,
-      "viewportHeight": 1024,
-      "innerWidth": 917,
-      "scrollWidth": 917,
-      "bodyScrollWidth": 768,
-      "overflowCount": 9,
-      "worstRightEdge": 1009,
-      "worstLeftEdge": 0,
-      "overflowRoots": [
-        {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
-          "text": "A"
-        },
-        {
-          "right": 980,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
-          "text": "↗Copy link"
-        },
-        {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
-          "text": "◹"
-        },
-        {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
-          "text": "/ palette · ⌘K"
-        },
-        {
-          "right": 799,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
@@ -2520,16 +1057,16 @@
           "text": ""
         },
         {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
-          "w": 36,
-          "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "w": 284,
+          "h": 18,
+          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
+          "text": "Name the empty states"
         },
         {
           "w": 275,
@@ -2540,13 +1077,13 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -2574,22 +1111,148 @@
           "text": "↓ Recent activity"
         },
         {
-          "w": 21,
-          "h": 26,
-          "path": "section.lp > div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip",
-          "text": "⑂The tree layout arrives with "
-        },
-        {
-          "w": 57,
+          "w": 55,
           "h": 21,
           "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
-          "text": "Open 3"
+          "text": "To Do 1"
+        },
+        {
+          "w": 94,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab",
+          "text": "In Progress 3"
+        }
+      ],
+      "shell": "desktop",
+      "coarsePointer": true,
+      "hash": "#/s/sp-atelier/k/tasks",
+      "firstText": "tm | ◈ | atelier"
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "sessions",
+      "url": "#/s/sp-atelier/k/sessions",
+      "expectShell": "desktop",
+      "shellOk": true,
+      "phoneRole": "screen",
+      "note": "Sessions tab — EntityView",
+      "screenshot": "screens/tablet-768__sessions.png",
+      "pageErrors": [],
+      "viewportWidth": 768,
+      "viewportHeight": 1024,
+      "innerWidth": 964,
+      "scrollWidth": 964,
+      "bodyScrollWidth": 768,
+      "overflowCount": 9,
+      "worstRightEdge": 1055,
+      "worstLeftEdge": 0,
+      "overflowRoots": [
+        {
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "text": "↗Copy link"
+        },
+        {
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
+        },
+        {
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "text": "/ palette · ⌘K"
+        },
+        {
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        }
+      ],
+      "tapTargetsTotal": 27,
+      "tapTargetsUnderMin": 25,
+      "tapTargetsSmallest": [
+        {
+          "w": 9,
+          "h": 983,
+          "path": "div.shell-root > div.shell-body > div.ev-root > div.kit-resizer",
+          "text": ""
+        },
+        {
+          "w": 24,
+          "h": 17,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 275,
+          "h": 19,
+          "path": "section.ev-list > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
+        },
+        {
+          "w": 20,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "text": "A"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "filter ▾"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "people ▾"
+        },
+        {
+          "w": 101,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "collections ▾"
+        },
+        {
+          "w": 126,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "↓ Recent activity"
+        },
+        {
+          "w": 55,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
+          "text": "To Do 0"
+        },
+        {
+          "w": 94,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab",
+          "text": "In Progress 3"
+        },
+        {
+          "w": 50,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab",
+          "text": "Done 2"
         }
       ],
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/k/sessions",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -2603,36 +1266,36 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 917,
-      "scrollWidth": 917,
+      "innerWidth": 964,
+      "scrollWidth": 964,
       "bodyScrollWidth": 768,
       "overflowCount": 9,
-      "worstRightEdge": 1009,
+      "worstRightEdge": 1055,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 980,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 799,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
@@ -2646,16 +1309,10 @@
           "text": ""
         },
         {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 126,
@@ -2672,13 +1329,13 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -2706,16 +1363,22 @@
           "text": "↓ Recent activity"
         },
         {
-          "w": 21,
-          "h": 26,
-          "path": "section.lp > div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip",
-          "text": "⑂The tree layout arrives with "
+          "w": 55,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
+          "text": "To Do 1"
+        },
+        {
+          "w": 94,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab",
+          "text": "In Progress 0"
         }
       ],
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/k/channels",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -2729,47 +1392,47 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 917,
-      "scrollWidth": 917,
+      "innerWidth": 964,
+      "scrollWidth": 964,
       "bodyScrollWidth": 768,
       "overflowCount": 9,
-      "worstRightEdge": 1009,
+      "worstRightEdge": 1055,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 980,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 799,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
-      "tapTargetsTotal": 18,
-      "tapTargetsUnderMin": 16,
+      "tapTargetsTotal": 19,
+      "tapTargetsUnderMin": 17,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 53,
@@ -2780,19 +1443,19 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
           "w": 23,
           "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
@@ -2841,7 +1504,7 @@
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/inbox",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -2855,46 +1518,46 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 918,
-      "scrollWidth": 918,
+      "innerWidth": 964,
+      "scrollWidth": 964,
       "bodyScrollWidth": 768,
-      "overflowCount": 70,
-      "worstRightEdge": 1094,
+      "overflowCount": 36,
+      "worstRightEdge": 1056,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 981,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 832,
-          "path": "div.cv2-root > div.shell-root > div.shell-body > div.shell-ws.shell-ws--columns",
-          "text": "⠿Tasks▾4≡⑂The tree layout arrives with A"
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
         },
         {
-          "right": 800,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
-          "text": "prompts"
+          "right": 832,
+          "path": "div.cv2-root.shell-scope > div.shell-root > div.shell-body > div.shell-ws.shell-ws--columns",
+          "text": "⠿Tasks＋▾⌕fTo Do 1In Progress 3Done 0Canc"
         }
       ],
-      "tapTargetsTotal": 54,
-      "tapTargetsUnderMin": 52,
+      "tapTargetsTotal": 49,
+      "tapTargetsUnderMin": 47,
       "tapTargetsSmallest": [
         {
           "w": 9,
@@ -2921,58 +1584,58 @@
           "text": "⠿"
         },
         {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 19,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view",
-          "text": "▥"
-        },
-        {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 17,
+          "h": 26,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__caret",
+          "text": "▾"
+        },
+        {
+          "w": 17,
+          "h": 25,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__caret",
+          "text": "▾"
         },
         {
           "w": 166,
           "h": 18,
           "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "4f8c2a9e-77b1-4e3d-9c2f-a1b0d3"
+          "text": "Name the empty states"
         },
         {
-          "w": 166,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Session tree guide lines"
-        },
-        {
-          "w": 166,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Wire palette to real command r"
+          "w": 18,
+          "h": 25,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__plus",
+          "text": "▮"
         },
         {
           "w": 157,
           "h": 19,
           "path": "div.shell-ws__side-content > section.lp > div.lp__searchrow > input.lp__searchinput",
           "text": ""
+        },
+        {
+          "w": 177,
+          "h": 19,
+          "path": "div.shell-ws__side-content > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 66,
+          "h": 20,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "text": "prompts"
         }
       ],
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/workspace",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -2986,64 +1649,64 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 917,
-      "scrollWidth": 917,
+      "innerWidth": 964,
+      "scrollWidth": 964,
       "bodyScrollWidth": 768,
       "overflowCount": 9,
-      "worstRightEdge": 1009,
+      "worstRightEdge": 1055,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 980,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 799,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
-      "tapTargetsTotal": 14,
-      "tapTargetsUnderMin": 12,
+      "tapTargetsTotal": 15,
+      "tapTargetsUnderMin": 13,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
           "w": 23,
           "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
@@ -3098,7 +1761,7 @@
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/feed",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -3112,41 +1775,41 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 918,
-      "scrollWidth": 918,
+      "innerWidth": 964,
+      "scrollWidth": 964,
       "bodyScrollWidth": 768,
       "overflowCount": 9,
-      "worstRightEdge": 1009,
+      "worstRightEdge": 1056,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 981,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 799,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
-      "tapTargetsTotal": 28,
-      "tapTargetsUnderMin": 26,
+      "tapTargetsTotal": 29,
+      "tapTargetsUnderMin": 27,
       "tapTargetsSmallest": [
         {
           "w": 16,
@@ -3167,10 +1830,10 @@
           "text": "⤢"
         },
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 186,
@@ -3181,19 +1844,19 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
           "w": 23,
           "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
@@ -3224,7 +1887,7 @@
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/graph",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -3238,47 +1901,47 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 918,
-      "scrollWidth": 918,
+      "innerWidth": 964,
+      "scrollWidth": 964,
       "bodyScrollWidth": 768,
       "overflowCount": 9,
-      "worstRightEdge": 1009,
+      "worstRightEdge": 1056,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 981,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 799,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
-      "tapTargetsTotal": 33,
-      "tapTargetsUnderMin": 31,
+      "tapTargetsTotal": 34,
+      "tapTargetsUnderMin": 32,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 369,
@@ -3289,13 +1952,13 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -3313,7 +1976,7 @@
         {
           "w": 23,
           "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
@@ -3350,7 +2013,7 @@
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/files",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -3364,47 +2027,47 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 917,
-      "scrollWidth": 917,
+      "innerWidth": 964,
+      "scrollWidth": 964,
       "bodyScrollWidth": 768,
       "overflowCount": 9,
-      "worstRightEdge": 1009,
+      "worstRightEdge": 1055,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 980,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 799,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
-      "tapTargetsTotal": 21,
-      "tapTargetsUnderMin": 19,
+      "tapTargetsTotal": 22,
+      "tapTargetsUnderMin": 20,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 123,
@@ -3421,19 +2084,19 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
           "w": 23,
           "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
@@ -3476,7 +2139,7 @@
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/git",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -3490,47 +2153,47 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 917,
-      "scrollWidth": 917,
+      "innerWidth": 964,
+      "scrollWidth": 964,
       "bodyScrollWidth": 768,
       "overflowCount": 9,
-      "worstRightEdge": 1009,
+      "worstRightEdge": 1055,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1055,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 980,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 945,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 799,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
-      "tapTargetsTotal": 25,
-      "tapTargetsUnderMin": 18,
+      "tapTargetsTotal": 26,
+      "tapTargetsUnderMin": 19,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 64,
@@ -3553,13 +2216,13 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -3577,7 +2240,7 @@
         {
           "w": 23,
           "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
@@ -3602,7 +2265,7 @@
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/messages",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -3616,8 +2279,8 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 918,
-      "scrollWidth": 918,
+      "innerWidth": 964,
+      "scrollWidth": 964,
       "bodyScrollWidth": 768,
       "overflowCount": 53,
       "worstRightEdge": 2201,
@@ -3644,14 +2307,19 @@
           "text": "In review14f8c2a9e-77b1-4e3d-9c2f-a1b0d3"
         },
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 980,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
+        },
+        {
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "text": "◹"
         },
         {
           "right": 943,
@@ -3659,29 +2327,30 @@
           "text": "Working1Session tree guide linesMedium✓ "
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
-          "text": "◹"
-        },
-        {
-          "right": 867,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 799,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
-      "tapTargetsTotal": 26,
-      "tapTargetsUnderMin": 23,
+      "tapTargetsTotal": 29,
+      "tapTargetsUnderMin": 26,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 253,
+          "h": 19,
+          "path": "section.bd__col.bd__col--focused > div.bd__cards > article.bd__card.bd__card--focused > button.bd__card-title",
+          "text": "Name the empty states"
         },
         {
           "w": 253,
@@ -3698,19 +2367,19 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
           "w": 23,
           "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
@@ -3742,18 +2411,12 @@
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
           "text": "Graph"
-        },
-        {
-          "w": 49,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Files"
         }
       ],
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/board",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -3767,41 +2430,41 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 918,
-      "scrollWidth": 918,
+      "innerWidth": 965,
+      "scrollWidth": 965,
       "bodyScrollWidth": 768,
       "overflowCount": 9,
-      "worstRightEdge": 1009,
+      "worstRightEdge": 1056,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1009,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 981,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1027,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 899,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 868,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 800,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
       "tapTargetsTotal": 34,
-      "tapTargetsUnderMin": 28,
+      "tapTargetsUnderMin": 31,
       "tapTargetsSmallest": [
         {
           "w": 1,
@@ -3811,75 +2474,75 @@
         },
         {
           "w": 9,
-          "h": 937,
+          "h": 983,
           "path": "div.shell-body > div.crf-root > div.crf-split > div.kit-resizer",
           "text": ""
         },
         {
-          "w": 61,
+          "w": 342,
           "h": 14,
           "path": "article.tch-turn > div.tch-parts > details.tch-thinking > summary",
           "text": "Thinking"
         },
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "w": 215,
+          "w": 226,
           "h": 20,
           "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
           "text": "Unblock the storage laneTask"
         },
         {
-          "w": 151,
+          "w": 160,
           "h": 20,
           "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
           "text": "◇019f0000…0022entity"
         },
         {
+          "w": 226,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
+        },
+        {
+          "w": 160,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
+        },
+        {
           "w": 23,
           "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "w": 257,
+          "w": 146,
           "h": 23,
           "path": "section.crf-canvas > div.crf-pane-head > label.crf-pick.crf-pick--graph > select",
           "text": "No graphs yet"
-        },
-        {
-          "w": 56,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Home"
-        },
-        {
-          "w": 53,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Work"
         }
       ],
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/craft",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "tablet-768",
@@ -3893,64 +2556,64 @@
       "pageErrors": [],
       "viewportWidth": 768,
       "viewportHeight": 1024,
-      "innerWidth": 918,
-      "scrollWidth": 918,
+      "innerWidth": 965,
+      "scrollWidth": 965,
       "bodyScrollWidth": 768,
       "overflowCount": 9,
-      "worstRightEdge": 1010,
+      "worstRightEdge": 1056,
       "worstLeftEdge": 0,
       "overflowRoots": [
         {
-          "right": 1010,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "right": 1056,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "right": 981,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
+          "right": 1028,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.copy-link.copy-link__button",
           "text": "↗Copy link"
         },
         {
-          "right": 900,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "right": 946,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
-          "right": 868,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "right": 914,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "right": 800,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "right": 846,
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         }
       ],
-      "tapTargetsTotal": 31,
-      "tapTargetsUnderMin": 29,
+      "tapTargetsTotal": 32,
+      "tapTargetsUnderMin": 30,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
           "w": 23,
           "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
           "text": "◹"
         },
         {
@@ -4005,7 +2668,7 @@
       "shell": "desktop",
       "coarsePointer": true,
       "hash": "#/s/sp-atelier/settings",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -4026,8 +2689,8 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 58,
-      "tapTargetsUnderMin": 34,
+      "tapTargetsTotal": 60,
+      "tapTargetsUnderMin": 38,
       "tapTargetsSmallest": [
         {
           "w": 1,
@@ -4042,16 +2705,16 @@
           "text": ""
         },
         {
-          "w": 61,
+          "w": 807,
           "h": 14,
           "path": "article.tch-turn > div.tch-parts > details.tch-thinking > summary",
           "text": "Thinking"
         },
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 17,
@@ -4062,50 +2725,50 @@
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "w": 215,
+          "w": 226,
           "h": 20,
           "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
           "text": "Unblock the storage laneTask"
         },
         {
-          "w": 151,
+          "w": 160,
           "h": 20,
           "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
           "text": "◇019f0000…0022entity"
         },
         {
-          "w": 23,
-          "h": 26,
-          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--active > button.tch-rootcell__plus",
-          "text": "＋"
+          "w": 226,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
         },
         {
-          "w": 23,
-          "h": 26,
-          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__plus",
-          "text": "＋"
+          "w": 160,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/home",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -4126,8 +2789,8 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 33,
-      "tapTargetsUnderMin": 33,
+      "tapTargetsTotal": 28,
+      "tapTargetsUnderMin": 28,
       "tapTargetsSmallest": [
         {
           "w": 9,
@@ -4136,46 +2799,22 @@
           "text": ""
         },
         {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 19,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view",
-          "text": "▥"
-        },
-        {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
-          "w": 715,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "4f8c2a9e-77b1-4e3d-9c2f-a1b0d3"
-        },
-        {
           "w": 724,
           "h": 18,
           "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Session tree guide lines"
-        },
-        {
-          "w": 724,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Wire palette to real command r"
+          "text": "Name the empty states"
         },
         {
           "w": 749,
@@ -4186,13 +2825,13 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -4200,12 +2839,36 @@
           "h": 20,
           "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
           "text": "filter ▾"
+        },
+        {
+          "w": 70,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "people ▾"
+        },
+        {
+          "w": 101,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "collections ▾"
+        },
+        {
+          "w": 126,
+          "h": 20,
+          "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
+          "text": "↓ Recent activity"
+        },
+        {
+          "w": 55,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
+          "text": "To Do 1"
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/k/tasks",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -4226,8 +2889,8 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 29,
-      "tapTargetsUnderMin": 29,
+      "tapTargetsTotal": 27,
+      "tapTargetsUnderMin": 27,
       "tapTargetsSmallest": [
         {
           "w": 9,
@@ -4236,21 +2899,15 @@
           "text": ""
         },
         {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
@@ -4262,13 +2919,13 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -4296,16 +2953,22 @@
           "text": "↓ Recent activity"
         },
         {
-          "w": 21,
-          "h": 26,
-          "path": "section.lp > div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip",
-          "text": "⑂The tree layout arrives with "
+          "w": 55,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
+          "text": "To Do 0"
+        },
+        {
+          "w": 94,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab",
+          "text": "In Progress 3"
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/k/sessions",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -4326,8 +2989,8 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 29,
-      "tapTargetsUnderMin": 29,
+      "tapTargetsTotal": 28,
+      "tapTargetsUnderMin": 28,
       "tapTargetsSmallest": [
         {
           "w": 9,
@@ -4336,21 +2999,15 @@
           "text": ""
         },
         {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
@@ -4368,13 +3025,13 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -4400,12 +3057,18 @@
           "h": 20,
           "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
           "text": "↓ Recent activity"
+        },
+        {
+          "w": 55,
+          "h": 21,
+          "path": "section.ev-list > section.lp > div.lp__tierrow > button.lp__tab.lp__tab--active",
+          "text": "To Do 1"
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/k/channels",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -4426,14 +3089,14 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 18,
-      "tapTargetsUnderMin": 18,
+      "tapTargetsTotal": 19,
+      "tapTargetsUnderMin": 19,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 53,
@@ -4444,19 +3107,19 @@
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -4478,6 +3141,12 @@
           "text": "Board"
         },
         {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
+        },
+        {
           "w": 52,
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
@@ -4494,18 +3163,12 @@
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
           "text": "Files"
-        },
-        {
-          "w": 67,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Settings"
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/inbox",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -4522,28 +3185,18 @@
       "innerWidth": 1440,
       "scrollWidth": 1440,
       "bodyScrollWidth": 1440,
-      "overflowCount": 6,
-      "worstRightEdge": 1689,
+      "overflowCount": 1,
+      "worstRightEdge": 1490,
       "worstLeftEdge": 0,
       "overflowRoots": [
-        {
-          "right": 1689,
-          "path": "div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip > span.hon-tip",
-          "text": "The tree layout arrives with A2the switc"
-        },
-        {
-          "right": 1589,
-          "path": "div.lp__selector > span.lp__views > span.hon-disabled.hon-disabled--tooltip > span.hon-tip",
-          "text": "Graph view isn’t available yet."
-        },
         {
           "right": 1490,
           "path": "section.lp > div.lp__filterbar > div.lp__filters > button.lp__chip",
           "text": "↓ Recent activity"
         }
       ],
-      "tapTargetsTotal": 54,
-      "tapTargetsUnderMin": 54,
+      "tapTargetsTotal": 48,
+      "tapTargetsUnderMin": 48,
       "tapTargetsSmallest": [
         {
           "w": 9,
@@ -4570,58 +3223,58 @@
           "text": "⠿"
         },
         {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 19,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view",
-          "text": "▥"
-        },
-        {
-          "w": 16,
-          "h": 16,
-          "path": "section.lp > div.lp__selector > span.lp__views > button.lp__view.lp__view--active",
-          "text": "≡"
-        },
-        {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
+        },
+        {
+          "w": 17,
+          "h": 26,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__caret",
+          "text": "▾"
+        },
+        {
+          "w": 17,
+          "h": 25,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__caret",
+          "text": "▾"
         },
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
           "w": 208,
           "h": 18,
           "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "4f8c2a9e-77b1-4e3d-9c2f-a1b0d3"
+          "text": "Name the empty states"
         },
         {
-          "w": 208,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Session tree guide lines"
+          "w": 18,
+          "h": 25,
+          "path": "div.tch-rootbar > div.tch-roots > div.tch-rootcell.tch-rootcell--kind > button.tch-rootcell__plus",
+          "text": "▮"
         },
         {
-          "w": 208,
-          "h": 18,
-          "path": "div.lp__branch > div.pn-tt > div.pn-tt__main > button.pn-tt__title",
-          "text": "Wire palette to real command r"
+          "w": 199,
+          "h": 19,
+          "path": "div.shell-ws__side-content > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
+        },
+        {
+          "w": 286,
+          "h": 19,
+          "path": "div.shell-ws__side-content > section.lp > div.lp__searchrow > input.lp__searchinput",
+          "text": ""
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/workspace",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -4642,31 +3295,31 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 14,
-      "tapTargetsUnderMin": 14,
+      "tapTargetsTotal": 15,
+      "tapTargetsUnderMin": 15,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -4686,6 +3339,12 @@
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
           "text": "Board"
+        },
+        {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
         },
         {
           "w": 52,
@@ -4710,18 +3369,12 @@
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
           "text": "Settings"
-        },
-        {
-          "w": 26,
-          "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
-          "text": "◹"
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/feed",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -4742,8 +3395,8 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 28,
-      "tapTargetsUnderMin": 28,
+      "tapTargetsTotal": 29,
+      "tapTargetsUnderMin": 29,
       "tapTargetsSmallest": [
         {
           "w": 16,
@@ -4764,15 +3417,15 @@
           "text": "⤢"
         },
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
@@ -4784,13 +3437,13 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -4821,7 +3474,7 @@
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/graph",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -4842,19 +3495,19 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 33,
-      "tapTargetsUnderMin": 33,
+      "tapTargetsTotal": 34,
+      "tapTargetsUnderMin": 34,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
@@ -4866,13 +3519,13 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -4906,22 +3559,22 @@
           "text": "Board"
         },
         {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
+        },
+        {
           "w": 52,
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
           "text": "Craft"
-        },
-        {
-          "w": 58,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Graph"
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/files",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -4942,19 +3595,19 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 21,
-      "tapTargetsUnderMin": 21,
+      "tapTargetsTotal": 22,
+      "tapTargetsUnderMin": 22,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
@@ -4972,13 +3625,13 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -5000,6 +3653,12 @@
           "text": "Board"
         },
         {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
+        },
+        {
           "w": 52,
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
@@ -5010,18 +3669,12 @@
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
           "text": "Graph"
-        },
-        {
-          "w": 49,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Files"
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/git",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -5042,14 +3695,14 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 25,
-      "tapTargetsUnderMin": 20,
+      "tapTargetsTotal": 26,
+      "tapTargetsUnderMin": 21,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 64,
@@ -5072,19 +3725,19 @@
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -5121,7 +3774,7 @@
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/messages",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -5158,20 +3811,26 @@
           "text": "Blocked1Wire palette to real command reg"
         }
       ],
-      "tapTargetsTotal": 26,
-      "tapTargetsUnderMin": 25,
+      "tapTargetsTotal": 29,
+      "tapTargetsUnderMin": 28,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
+        },
+        {
+          "w": 253,
+          "h": 19,
+          "path": "section.bd__col.bd__col--focused > div.bd__cards > article.bd__card.bd__card--focused > button.bd__card-title",
+          "text": "Name the empty states"
         },
         {
           "w": 253,
@@ -5188,13 +3847,13 @@
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -5216,28 +3875,22 @@
           "text": "Board"
         },
         {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
+        },
+        {
           "w": 52,
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
           "text": "Craft"
-        },
-        {
-          "w": 58,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Graph"
-        },
-        {
-          "w": 49,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Files"
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/board",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -5259,7 +3912,7 @@
       "worstLeftEdge": 0,
       "overflowRoots": [],
       "tapTargetsTotal": 34,
-      "tapTargetsUnderMin": 31,
+      "tapTargetsUnderMin": 33,
       "tapTargetsSmallest": [
         {
           "w": 1,
@@ -5269,75 +3922,75 @@
         },
         {
           "w": 9,
-          "h": 813,
+          "h": 859,
           "path": "div.shell-body > div.crf-root > div.crf-split > div.kit-resizer",
           "text": ""
         },
         {
-          "w": 61,
+          "w": 508,
           "h": 14,
           "path": "article.tch-turn > div.tch-parts > details.tch-thinking > summary",
           "text": "Thinking"
         },
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
-          "w": 215,
+          "w": 226,
           "h": 20,
           "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
           "text": "Unblock the storage laneTask"
         },
         {
-          "w": 151,
+          "w": 160,
           "h": 20,
           "path": "article.tch-turn > div.tch-parts > div.tch-touched > button.tch-entity-chip",
           "text": "◇019f0000…0022entity"
         },
         {
-          "w": 763,
+          "w": 226,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "Unblock the storage laneTask"
+        },
+        {
+          "w": 160,
+          "h": 20,
+          "path": "nav.tch-tray > div.tch-tray__tabs > span.tch-tray__tab > button.tch-entity-chip",
+          "text": "◇019f0000…0022entity"
+        },
+        {
+          "w": 652,
           "h": 23,
           "path": "section.crf-canvas > div.crf-pane-head > label.crf-pick.crf-pick--graph > select",
           "text": "No graphs yet"
-        },
-        {
-          "w": 56,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Home"
-        },
-        {
-          "w": 53,
-          "h": 24,
-          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
-          "text": "Work"
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/craft",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     },
     {
       "viewport": "desktop-1440",
@@ -5358,31 +4011,31 @@
       "worstRightEdge": 1440,
       "worstLeftEdge": 0,
       "overflowRoots": [],
-      "tapTargetsTotal": 31,
-      "tapTargetsUnderMin": 31,
+      "tapTargetsTotal": 32,
+      "tapTargetsUnderMin": 32,
       "tapTargetsSmallest": [
         {
-          "w": 36,
+          "w": 24,
           "h": 17,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
-          "text": "tm8"
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__mark.shell-tabbar__mark--door",
+          "text": "tm"
         },
         {
           "w": 103,
           "h": 18,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__palette",
           "text": "/ palette · ⌘K"
         },
         {
           "w": 66,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__prompts",
           "text": "prompts"
         },
         {
           "w": 20,
           "h": 20,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
+          "path": "div.cv2-root.shell-scope > div.shell-root > header.shell-tabbar > button.shell-tabbar__avatar",
           "text": "A"
         },
         {
@@ -5402,6 +4055,12 @@
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
           "text": "Board"
+        },
+        {
+          "w": 73,
+          "h": 24,
+          "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab",
+          "text": "Board v2"
         },
         {
           "w": 52,
@@ -5426,18 +4085,12 @@
           "h": 24,
           "path": "div.shell-root > header.shell-tabbar > nav.shell-tabbar__tabs > button.shell-tabbar__tab.shell-tabbar__tab--active",
           "text": "Settings"
-        },
-        {
-          "w": 26,
-          "h": 24,
-          "path": "div.cv2-root > div.shell-root > header.shell-tabbar > button.shell-tabbar__bell",
-          "text": "◹"
         }
       ],
       "shell": "desktop",
       "coarsePointer": false,
       "hash": "#/s/sp-atelier/settings",
-      "firstText": "tm8 | ◈ | atelier"
+      "firstText": "tm | ◈ | atelier"
     }
   ]
 }
