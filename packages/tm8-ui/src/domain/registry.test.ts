@@ -225,15 +225,19 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // shape here is asymmetric with the task's on purpose — `status: true`
     // would mount a picker over a value no client may write.
     expect(session.inlineEdit).toEqual({ title: true });
-    expect(session.rowActions).toEqual(['complete', 'terminate']);
+    // Terminate alone since 2026-08-19 — see `5c` below for the three separate
+    // things that refused the tick on a session row.
+    expect(session.rowActions).toEqual(['terminate']);
   });
 
-  it("keeps both session row verbs but only Terminate in the compact panel toolbar", () => {
+  it('keeps Terminate as the session verb, on the row and in the compact toolbar', () => {
     // USER RULING 2026-07-29: terminal panels use the Task panel's pressure
-    // budget — one primary beside tabs and window controls. Complete remains
-    // reachable on the session row; Terminate is the in-panel session verb.
+    // budget — one primary beside tabs and window controls. Terminate is that
+    // primary, and since the tick left `rowActions` it is the session's only
+    // verb in both places, which is the honest shape: a session's status is
+    // observed, and Terminate is the one thing a user can DO to a run.
     const session = getKind('work_session');
-    expect(session.list.rowActions).toEqual(['complete', 'terminate']);
+    expect(session.list.rowActions).toEqual(['terminate']);
     expect(session.panel.primaries).toEqual(['terminate']);
   });
 
@@ -322,7 +326,14 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
   it('5b. PHASE 7 — the session state options carry the ruled categories', () => {
     const options = getKind('work_session').list.stateControl?.options ?? [];
     expect(options.map((o) => [o.id, o.category])).toEqual([
-      ['spawning', 'in_progress'],
+      // `spawning` is `to_do` as of migration 155, and this copy MIRRORS
+      // `internal.session_status_category` rather than deciding anything. Two
+      // reasons, either sufficient: it is 147's `pulled -> to_do` ("claimed is
+      // not started") applied to the same shape of fact, and it is what makes
+      // `execution_resume` — which returns an exited session to `spawning` —
+      // the ruled `done -> to_do` reopen instead of a `done -> in_progress`
+      // that `category_transition_allowed` refuses outright.
+      ['spawning', 'to_do'],
       ['running', 'in_progress'],
       ['idle', 'in_progress'],
       // `failed` is `done`, NOT `cancelled`: failure is a runtime fact that
@@ -330,6 +341,24 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       ['exited', 'done'],
       ['failed', 'done'],
     ]);
+  });
+
+  it('5c. a session declares no verb the node refuses — the tick is gone', () => {
+    // `complete` was declared here and was dead three times over: the server
+    // computes `canComplete` off `tasks.work_status` (NULL for a session), the
+    // door is `complete_task` (`where kind = 'task'`), and a session's status is
+    // OBSERVED so there is nothing for the verb to write. It rendered
+    // permanently disabled-with-reason on every session row.
+    //
+    // Terminate is the verb that produces a session's `done` (`exited`), and as
+    // of migration 155 that actually moves the row's category — so the tick's
+    // apparent job is done by the lifecycle rather than by a refused button.
+    const rowActions = getKind('work_session').list.rowActions ?? [];
+    expect(rowActions).not.toContain('complete');
+    expect(rowActions).toContain('terminate');
+    // `run` stays out for its own reason: `derive_task_for_entity` raises for a
+    // work_session, which is what `NOT_LAUNCHABLE` records.
+    expect(getKind('work_session').launchable).toBe(false);
   });
 
   it('D56 — no tab anywhere carries a client-side partition any more', () => {

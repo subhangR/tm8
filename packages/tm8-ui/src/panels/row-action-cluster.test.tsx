@@ -147,9 +147,14 @@ describe('the row action cluster is one shape across all three anatomies', () =>
     );
     // No `archive`: `canDelete: false` HIDES it on every session row, which is
     // the ruling holding rather than the order breaking.
+    //
+    // No `Complete` either, since 2026-08-19, and for a different reason worth
+    // keeping apart from Archive's: Archive is hidden by SERVER TRUTH per row,
+    // while the tick is gone from the kind's `rowActions` entirely — the node
+    // has no door that could complete a session, so the verb was never the
+    // kind's to declare. See `registry.test.ts` case 5c.
     expect(marks).toEqual([
       'collections',
-      'Complete',
       'Copy session ID',
       'terminate',
       'Expand details',

@@ -238,9 +238,27 @@ const SESSION_STATE_CONTROL: StateControl = {
   /* A session's OBSERVED lifecycle, bucketed. `failed` is `done` and not
      `cancelled`: under this model failure is a RUNTIME FACT that gets a badge
      (design invariant 4), and the run itself did reach its end — nobody
-     cancelled it. `idle` is in_progress: an idle session is still alive. */
+     cancelled it. `idle` is in_progress: an idle session is still alive.
+
+     THIS TABLE IS A MIRROR, as of migration 155. The WRITER is
+     `internal.session_status_category`, and the server's own copy is
+     `SESSION_STATUS_CATEGORY` (packages/server/src/facade/status.ts) — the same
+     three-artifact arrangement 147 made for `work_status`. Nothing here
+     computes a row's tab; `EntitySummary.category` arrives with the row. These
+     categories only narrow the STATUS FILTER CHIP to the open tab, so a copy
+     that disagreed would offer `exited` as a filter under In Progress.
+
+     `spawning` MOVED from `in_progress` to `to_do` with 155, and it is not a
+     taste call. `public.execution_resume` returns an exited session to
+     `spawning`; under `to_do` that is the ruled `done -> to_do` REOPEN, and
+     under `in_progress` it is `done -> in_progress`, which
+     `internal.category_transition_allowed` refuses outright — the bridge would
+     have made every resume in the product a 23514. It is also 147's own
+     `pulled -> to_do` ruling ("claimed is not started") applied to the same
+     shape of fact: a spawning session has been ASKED for, and some have been
+     asking for days. */
   options: [
-    { id: 'spawning', category: 'in_progress' },
+    { id: 'spawning', category: 'to_do' },
     { id: 'running', category: 'in_progress' },
     { id: 'idle', category: 'in_progress' },
     { id: 'exited', category: 'done' },
@@ -797,15 +815,45 @@ const ROWS: readonly KindConfig[] = [
       // control renders NULL while clean, so the compact row is unaffected and
       // the earlier ruling's premise no longer holds.
       inlineEdit: { title: true },
-      rowActions: ['complete', 'terminate'],
+      /**
+       * TERMINATE, AND NOTHING ELSE — the tick is gone (2026-08-19).
+       *
+       * `complete` had been declared here since the array existed and could
+       * never have worked. Three independent things refuse it, and removing any
+       * one of them would still leave the other two:
+       *
+       *   1. The SERVER refuses the affordance. `capabilitiesOf` computes
+       *      `canComplete` from `tasks.work_status`, which is NULL for a
+       *      session, so the tick rendered permanently disabled-with-reason on
+       *      every session row in the product.
+       *   2. The DOOR refuses the write. `complete` reaches
+       *      `seam.commands.complete` -> `public.complete_task`, which selects
+       *      `where kind = 'task'`. A session cannot be found by it.
+       *   3. There is nothing for it to WRITE. A session's status is OBSERVED —
+       *      `SESSION_STATE_CONTROL.readOnlyReason` says so, and the node
+       *      reports it from the process. `done` for a session means `exited`,
+       *      and the verb that produces `exited` is Terminate, which is already
+       *      in this cluster.
+       *
+       * So the ruling that removed `quickCreate` a few lines up applies
+       * verbatim — "a refused control is not a control" — and this is the same
+       * defect class it was ruled on. What made the row LOOK broken rather than
+       * merely refused is separate and is fixed in migration 155: a terminated
+       * session now actually reaches the `done` category, so the tick's job
+       * ("get this off the To Do tab") is done by the lifecycle rather than by
+       * a button that was never able to do it.
+       */
+      rowActions: ['terminate'],
       stateControl: SESSION_STATE_CONTROL,
     }),
     panel: {
       archetype: 'terminal',
       // USER RULING 2026-07-29: terminal panels use the same compact two-row
       // geometry as tasks. Keep the destructive session verb at the right of
-      // the tab row; Complete remains available from `rowActions`, where it
-      // does not squeeze the title/tabs/window controls or the terminal canvas.
+      // the tab row, where it does not squeeze the title/tabs/window controls
+      // or the terminal canvas. (This note used to add "Complete remains
+      // available from rowActions" — it does not, and never did: see the
+      // rowActions block above for the three things that refused it.)
       primaries: ['terminate'],
       statusPill: {
         source: 'sessionStatus',
