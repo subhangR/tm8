@@ -317,6 +317,40 @@
   padding-block: calc((var(--mobile-touch-min) - 1.3em) / 2);
 }
 
+/* --- 7e′. THE TITLE WAS LINE-BROKEN BEFORE IT WAS EVER SHRUNK ------------- */
+
+/* MEASURED on the live node, Tasks at 390x844 dpr3, 43 rows: heights were
+   `104 x17 · 121 x4 · 129 x1 · 152 x18 · 169 x3` — mean 130.8, and TWO rows
+   visible in a 398.8px list.
+
+   `.pn-tt__title` is `flex: 1 1 auto` — basis `auto`, so its flex basis is its
+   OWN CONTENT WIDTH, and a real title measures 425-464px. DEF-036 made
+   `.pn-tt__main` `flex-wrap: wrap` so the action cluster could take its own
+   line. In a WRAPPING flex container, line-breaking runs against the
+   hypothetical main size — BEFORE flex-shrink. So a 425px title beside the
+   44px status in 359px of room is put on the NEXT LINE, and only then shrunk
+   to fit it. `min-width: 0` permits shrinking; it does not prevent wrapping.
+
+   That is the entire cause of the 152px row — the one that reads as a bare
+   status circle floating alone above a gap, which is how it was reported. The
+   desktop container is `nowrap`, so this never happened there; jsdom has no
+   layout, so nothing in this repo could see it.
+
+   ONE DECLARATION, and it changes nothing else: `152 -> 104`, `169 -> 121`,
+   titles on their own line `18 -> 0`. No band moves; only the wrap.
+
+   THE ROW STAYS ONE LINE OF TITLE, which is a ruling and not an omission. A
+   two-line clamp fits inside the same 44px touch box for free (two 16.25px
+   lines is 32.5px) and would end every truncation on the screen — it was
+   built, measured and then withdrawn, because a list is for SCANNING and a
+   uniform one-line row is what makes a flick down it legible. The whole title
+   is one tap away and is already on the button's `title` attribute. 7e's
+   single-line `white-space: nowrap` + `text-overflow: ellipsis` therefore
+   stands, and this rule adds nothing to it but the basis. */
+.cv2-root[data-shell='mobile'] .pn-tt__title {
+  flex-basis: 0;
+}
+
 /* --- 7f. DEF-017 — the row state dot (16x16) ----------------------------- */
 
 /* THE COLUMN GROWS WITH THE CONTROL, and that is the load-bearing half.
@@ -398,6 +432,140 @@
   min-inline-size: var(--mobile-touch-min);
   min-block-size: var(--mobile-touch-min);
   padding-inline: var(--pn-space-3);
+}
+
+
+/* ==========================================================================
+   7j. THE FOUR ROW VERBS MOVE BEHIND THE ROW'S OWN DISCLOSURE
+       — amends DEF-030 / DEF-036, and says so.
+
+   WHAT DEF-036 DID AND WHY IT WAS RIGHT AT THE TIME. `.pn-tt__actions` is a
+   desktop hover affordance: `opacity: 0; pointer-events: none` at rest,
+   revealed under `:hover`. On touch there is no hover, so the cluster did not
+   merely look hidden — it did not EXIST (`inertCount` 67 over 46 rows). The fix
+   revealed it under `(pointer: coarse)` and `[data-shell='mobile']`, and took
+   it out of the float onto its own line, because a permanently-revealed
+   floating cluster sits opaque on top of the title and steals the tap that
+   opens the row. Both halves were necessary and both are still here.
+
+   WHAT THAT COSTS, MEASURED. The extra line is 44px + 4px row-gap = **48px on
+   EVERY row** — 46% of a 104px row. The band is 359px wide and holds 228px of
+   buttons, so 131px (36%) of it is empty. Across the list it is the single
+   largest consumer of the phone's vertical budget: with it, THREE rows fit in
+   the 428px list; without it, SIX.
+
+   WHY IT IS NOT A HOVER FIX ANY MORE. Revealing a cluster on a pointer that is
+   already over the row costs a desktop reader nothing — it appears where they
+   are already looking and vanishes again. Pinning that same cluster open on
+   EVERY row of a touch list is a different thing wearing the same CSS: four
+   verbs the reader did not ask for, repeated 43 times, between them and the
+   next title. The affordance that made sense as a reveal does not make sense as
+   a permanent fixture.
+
+   THE AMENDMENT, AND THE LINE IT KEEPS. DEF-030's requirement is that these
+   verbs be REACHABLE ON TOUCH, and that requirement is met here: the row's
+   disclosure (`.pn-tt__ind`, grown to the 44px floor and moved onto the title's
+   line) opens the row, and the full cluster is there when it does. What is
+   given up is "visible without asking", which is a weaker promise than the one
+   the ledger rows were opened for. The verbs are ONE 44px TAP away, not gone,
+   and `pointer-events: auto` above is untouched — a row that is open behaves
+   exactly as it did.
+
+   NOT `display: none` ON THE CONTAINER. The container keeps the disclosure, so
+   it must stay laid out; only the verbs inside it are dropped, and only while
+   the row is closed. Hiding the container would take the opener with it and
+   leave a row that can never be expanded — the exact absence DEF-030 is about.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-tt:not([data-details='open']) .pn-tt__actions {
+  flex: 0 0 auto;
+}
+
+.cv2-root[data-shell='mobile'] .pn-tt:not([data-details='open']) .pn-tt__actions > *:not(.pn-tt__ind) {
+  display: none;
+}
+
+/* The opener carries the whole promise now, so it takes the whole floor. */
+.cv2-root[data-shell='mobile'] .pn-tt__ind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+}
+
+
+/* ==========================================================================
+   7k. WHAT A ROW WITH NOTHING ON IT IS ACTUALLY PAYING FOR
+
+   MEASURED, a row carrying no badges: 56px, of which
+   `44 (the tap floor) + 6 + 6 (`.pn-tt__main` padding-block)`. The 44 is not
+   negotiable — it is this program's acceptance, and the title, the status mark
+   and the disclosure are all held to it. The 12 is.
+
+   So the padding drops to 2px and the empty row becomes 48px: still four
+   clear pixels between one 44px target and the next, and the rows themselves
+   never touch. That is the FLOOR for this row — 48 of 48 is now content and
+   tap area, and anything below it would have to come out of the 44, which is
+   a different decision than a layout one and is not this rule's to take.
+
+   The text inside the target is 16.25px, so the visible gap between one title
+   and the next is ~32px whatever this number is. Cutting the padding tightens
+   the LIST without tightening the TYPE.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-tt__main {
+  padding-block: 2px;
+}
+
+/* ==========================================================================
+   7l. THE ROW'S SECOND LINE STARTS UNDER THE ROW, NOT UNDER THE TITLE
+
+   `.pn-tt__badges` — the comment count, the terminal and the rest of the
+   linked-state chips — is indented by a hand-computed `29px`, and the
+   arithmetic is written above it in `maestro-task-tile.css`:
+   "7px row inset + 16px status mark + 6px gap = title start".
+
+   THAT ARITHMETIC IS TRUE ON THE DESKTOP AND FALSE HERE. §7f grows
+   `.pn-tt__status` from 16px to the 44px touch floor, so the title now starts
+   at 7 + 44 + 6 = 57px and the badges still start at 29 — 28px to the LEFT of
+   the title they belong to. On screen the chips hang out under the status
+   column in their own margin, reading as a separate row of the list rather
+   than as the second line of the one above them.
+
+   Restated from the same parts rather than as a new hard number, so it cannot
+   drift from §7f the way the original drifted from the 16px mark: the row
+   inset, the status column and the flex gap, each named where it is defined.
+   `--tt-indent` stays in the sum because a nested row's whole anatomy shifts
+   with it and the badge line has to shift too.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-tt__badges {
+  padding-inline-start: calc(7px + var(--tt-indent, 0px) + var(--mobile-touch-min) + 6px);
+}
+
+
+/* ==========================================================================
+   8. THE CENSUS IS RENDERED THREE TIMES, AND THE PHONE PAYS FOR THE THIRD
+
+   The same four numbers reach the screen by three routes, all from one source:
+   `.lp__total` in the root bar ("657"), the four lifecycle TABS
+   ("To Do 266 / In Progress 105 / Done 273 / Cancelled 13"), and `.lp__foot`,
+   which spells them out again verbatim — "266 to do · 105 in progress ·
+   273 done · 13 cancelled" — 50px BELOW the tabs that already say them.
+
+   Measured at 390x844: `.lp__foot` is 29.3px, and it is PERMANENT. Scrolling
+   `.lp__body` to 1200 left it exactly where it was: the bands are static in a
+   fixed frame and the list is its own scroller, so this is 29.3px of a 398.8px
+   list surrendered on every frame to restate what is legible, unscrolled,
+   two thumb-widths higher.
+
+   On a desktop the footer is a status line at the bottom of a tall column and
+   it costs nothing anybody notices. On a phone it is 7% of the list.
+
+   HIDDEN, NOT DELETED, AND ONLY HERE. Nothing is removed from the tree and no
+   other shell changes: the count still has two renderings on the phone and all
+   three on the desktop, so this is the one route with no reader left to lose.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .lp__foot {
+  display: none;
 }
 
 
