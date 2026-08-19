@@ -91,20 +91,20 @@ describe('param encodings (SPEC-FINAL §4.2.2)', () => {
 
   it('percent-encodes ids that contain the delimiters', () => {
     const awkward = 'a.b:c,d e/f%g#h';
-    const route = routeOf({ panels: { ...emptyPanels(), stack: [awkward], tabs: { [awkward]: 'activity' } } });
+    const route = routeOf({ panels: { ...emptyPanels(), stack: [awkward], tabs: { [awkward]: 'connections' } } });
     const { hash } = build(route);
     // The dot delimiter is escaped explicitly — encodeURIComponent leaves it.
     expect(hash).not.toMatch(/p=[^&]*[^%]\./);
     const back = parse(hash).route!;
     expect(back.panels.stack).toEqual([awkward]);
-    expect(back.panels.tabs[awkward]).toBe('activity');
+    expect(back.panels.tabs[awkward]).toBe('connections');
   });
 });
 
 describe('round-trip (property)', () => {
   it('parse ∘ build is the identity on normalized routes', () => {
     const rand = lcg(20260728);
-    const tabs: PanelTab[] = ['content', 'discussion', 'connections', 'activity'];
+    const tabs: PanelTab[] = ['content', 'connections', 'discussion'];
     const surfaces: ContentSurface[] = ['terminal', 'transcript'];
 
     for (let iteration = 0; iteration < 250; iteration += 1) {
@@ -157,7 +157,7 @@ describe('normalize (LLD §5.2, §6)', () => {
         panels: {
           stack,
           pinned,
-          tabs: { [id(0)]: 'content', [id(1)]: 'activity', [id(99)]: 'discussion' },
+          tabs: { [id(0)]: 'content', [id(1)]: 'connections', [id(99)]: 'discussion' },
           contentSurface: { [id(2)]: 'transcript', [id(99)]: 'terminal' },
           session: null,
         },
@@ -184,12 +184,12 @@ describe('normalize (LLD §5.2, §6)', () => {
         panels: {
           ...emptyPanels(),
           stack: [id(1)],
-          tabs: { [id(1)]: 'activity', [id(7)]: 'discussion' },
+          tabs: { [id(1)]: 'connections', [id(7)]: 'discussion' },
           contentSurface: { [id(1)]: 'transcript', [id(7)]: 'terminal' },
         },
       }),
     );
-    expect(canonical.panels.tabs).toEqual({ [id(1)]: 'activity' });
+    expect(canonical.panels.tabs).toEqual({ [id(1)]: 'connections' });
     expect(canonical.panels.contentSurface).toEqual({ [id(1)]: 'transcript' });
   });
 
@@ -243,12 +243,27 @@ describe('D12 — a retired contentSurface token still resolves', () => {
 describe('unparseable params are discarded ATOMICALLY', () => {
   it('discards the whole t param when any pair is malformed', () => {
     const { route, dropped } = parse(
-      `#/s/${SPACE}/workspace?p=${id(1)}.${id(2)}&t=${id(1)}:activity,${id(2)}:nonsense`,
+      `#/s/${SPACE}/workspace?p=${id(1)}.${id(2)}&t=${id(1)}:connections,${id(2)}:nonsense`,
     );
     expect(dropped).toContain('tabs');
     expect(route!.panels.tabs).toEqual({});
     // The other params survive: the discard is per-param, not per-hash.
     expect(route!.panels.stack).toEqual([id(1), id(2)]);
+  });
+
+  /**
+   * `activity` was a `t=` member until 2026-08-19 and links carrying it are
+   * already in people's hands. It gets NO legacy alias, unlike
+   * `chat`→`transcript`: the tab was removed, not renamed, so there is no
+   * current spelling to forward it to. This pins the degradation as DELIBERATE
+   * — the pair drops, the drop is reported, the rest of the route survives, and
+   * the panel opens on its default tab rather than on a surface that is gone.
+   */
+  it('a retired tab token drops the pair and reports it — the route still opens', () => {
+    const { route, dropped } = parse(`#/s/${SPACE}/workspace?p=${id(1)}&t=${id(1)}:activity`);
+    expect(dropped).toContain('tabs');
+    expect(route!.panels.tabs).toEqual({});
+    expect(route!.panels.stack).toEqual([id(1)]);
   });
 
   it('discards an unknown mode and an unregistered origin, keeping the route', () => {
@@ -345,7 +360,7 @@ describe('the 2048 cap and its ordered atomic drops', () => {
       panels: {
         stack,
         pinned: many(3),
-        tabs: Object.fromEntries(stack.map((e) => [e, 'activity' as PanelTab])),
+        tabs: Object.fromEntries(stack.map((e) => [e, 'connections' as PanelTab])),
         contentSurface: Object.fromEntries(stack.map((e) => [e, 'transcript' as ContentSurface])),
         session: null,
       },
@@ -365,7 +380,7 @@ describe('the 2048 cap and its ordered atomic drops', () => {
         panels: {
           stack,
           pinned: many(3),
-          tabs: Object.fromEntries(stack.map((e) => [e, 'activity' as PanelTab])),
+          tabs: Object.fromEntries(stack.map((e) => [e, 'connections' as PanelTab])),
           contentSurface: Object.fromEntries(stack.map((e) => [e, 'transcript' as ContentSurface])),
           session: null,
         },
@@ -399,7 +414,7 @@ describe('the 2048 cap and its ordered atomic drops', () => {
       panels: {
         stack,
         pinned: [],
-        tabs: Object.fromEntries(stack.map((e) => [e, 'activity' as PanelTab])),
+        tabs: Object.fromEntries(stack.map((e) => [e, 'connections' as PanelTab])),
         contentSurface: Object.fromEntries(stack.map((e) => [e, 'transcript' as ContentSurface])),
         session: null,
       },
@@ -481,10 +496,10 @@ describe('the unified Home root and the right trail (task 01a00932)', () => {
       panels: {
         ...emptyPanels(),
         right: ['c'],
-        tabs: { c: 'activity' as PanelTab },
+        tabs: { c: 'connections' as PanelTab },
       },
     });
-    expect(normalize(route).panels.tabs).toEqual({ c: 'activity' });
+    expect(normalize(route).panels.tabs).toEqual({ c: 'connections' });
   });
 
   it('drops the right trail after the t tier and before pins', () => {
@@ -497,7 +512,7 @@ describe('the unified Home root and the right trail (task 01a00932)', () => {
         stack,
         right,
         pinned,
-        tabs: { keep: 'activity' as PanelTab },
+        tabs: { keep: 'connections' as PanelTab },
       },
     });
     const { hash, dropped } = build(route);

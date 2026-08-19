@@ -8,9 +8,17 @@
 import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
 import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain';
 
-/** The four outer panel tabs (D3: always four, fixed order). */
-export type PanelTab = 'content' | 'discussion' | 'connections' | 'activity';
-export const PANEL_TABS: readonly PanelTab[] = ['content', 'discussion', 'connections', 'activity'];
+/**
+ * The three outer panel tabs, fixed order — the vocabulary of `t=`.
+ *
+ * `activity` was a member until 2026-08-19 and is deliberately NOT given a
+ * `LEGACY_*` alias below: unlike `chat`→`transcript`, it was not renamed, it
+ * was removed, and there is no current spelling to forward a link to. A URL
+ * still carrying it decodes to the default tab and the codec REPORTS the drop,
+ * which is the honest reading — the addressed surface no longer exists.
+ */
+export type PanelTab = 'content' | 'connections' | 'discussion';
+export const PANEL_TABS: readonly PanelTab[] = ['content', 'connections', 'discussion'];
 
 /**
  * Per-panel content surface, meaningful only for work_session panels. NEVER

@@ -37,18 +37,29 @@ import './panel-bar-phone.css';
 
 export type PanelHost = 'stack' | 'pinned' | 'peek' | 'z4';
 
-export type PanelTab = 'content' | 'discussion' | 'connections' | 'activity';
+export type PanelTab = 'content' | 'connections' | 'discussion';
 
 /**
- * D3: FOUR TABS ALWAYS, fixed order, every kind, no exceptions. The two T5-7
- * three-tab mocks are mock abbreviation, and the ruling says so explicitly —
- * so this array is a constant, never a computed list.
+ * THREE TABS ALWAYS, fixed order, every kind, no exceptions. Still a constant
+ * and never a computed list, so no kind can grow or lose one.
+ *
+ * USER RULING 2026-08-19, two parts:
+ *
+ *   · CONNECTIONS COMES BEFORE DISCUSSION. A panel reads "what is this · what
+ *     is it wired to · what was said about it". The graph is the structural
+ *     fact, so it sits beside the entity rather than behind the conversation.
+ *   · ACTIVITY IS GONE. It rendered `entities.activity` rows, and no host in
+ *     the product ever passed them — every `EntityDetailPanel` mount left the
+ *     `activity` prop absent, so the tab drew its designed empty state on
+ *     every entity, on every screen, always. A permanently empty tab in the
+ *     one bar the panel navigates by is worse than no tab: it takes width
+ *     from the labels that do answer something (see `TabStrip`) to say
+ *     nothing.
  */
 export const PANEL_TABS: readonly { id: PanelTab; label: string }[] = [
   { id: 'content', label: 'Content' },
-  { id: 'discussion', label: 'Discussion' },
   { id: 'connections', label: 'Connections' },
-  { id: 'activity', label: 'Activity' },
+  { id: 'discussion', label: 'Discussion' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -589,7 +600,7 @@ export function TabStrip({
   onSelect,
 }: {
   active: PanelTab;
-  /** Discussion and Connections carry counts; Content and Activity never do. */
+  /** Discussion and Connections carry counts; Content never does. */
   counts?: Partial<Record<PanelTab, number>>;
   /** USER RULING 2026-07-29: the first tab names WHAT you are looking at —
       the kind's singular label ("Task", "Doc", "Session") — instead of the

@@ -74,7 +74,7 @@ describe('stack', () => {
 
   it('prunes per-panel state when a panel closes', () => {
     nav().push(A);
-    nav().setTab(A, 'activity');
+    nav().setTab(A, 'connections');
     nav().setContentSurface(A, 'chat');
     nav().pop();
     expect(nav().tabs).toEqual({});
@@ -264,8 +264,8 @@ describe('selectors', () => {
 describe('tab and surface writes', () => {
   it('drops an explicit content tab — an omitted pair already means content', () => {
     nav().push(A);
-    nav().setTab(A, 'activity');
-    expect(nav().tabs[A]).toBe('activity');
+    nav().setTab(A, 'connections');
+    expect(nav().tabs[A]).toBe('connections');
     nav().setTab(A, 'content');
     expect(nav().tabs).toEqual({});
   });
@@ -443,10 +443,10 @@ describe('the Home trails — openCenter/push and the right panel (task 01a00932
   it('a right-panel id is an OPEN id: its tab state survives centre changes', () => {
     const s = navStore.getState();
     s.openRight('x');
-    s.setTab('x', 'activity');
+    s.setTab('x', 'connections');
     s.openCenter('a');
     s.pop();
-    expect(navStore.getState().tabs['x']).toBe('activity');
+    expect(navStore.getState().tabs['x']).toBe('connections');
     // …and is pruned the moment the right trail lets go of it.
     s.openRight('x');
     navStore.getState().closeRight();

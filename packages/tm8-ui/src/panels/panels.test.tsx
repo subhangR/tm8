@@ -112,7 +112,7 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
   });
 
   it.each(kindsWithFixtures.map((r) => [r.config.kind, r.detail] as const))(
-    'D3: %s renders FOUR tabs in fixed order — the first names the KIND (user ruling 2026-07-29)',
+    '%s renders THREE tabs in fixed order — the first names the KIND (user ruling 2026-07-29)',
     (kind, detail) => {
       const { getByTestId } = render(
         <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} />,
@@ -121,9 +121,11 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
         .getAllByRole('tab')
         .map((t) => t.textContent?.replace(/\d+$/, '').trim());
       // The first tab reads the kind's SINGULAR registry label ("Task",
-      // "Session"), superseding the canvas's generic "Content" by user
-      // ruling; the other three and the fixed order are unchanged law.
-      expect(labels).toEqual([getKind(kind).label, 'Discussion', 'Connections', 'Activity']);
+      // "Session"), superseding the canvas's generic "Content" by user ruling.
+      // ORDER IS THE ASSERTION, not just membership: Connections BEFORE
+      // Discussion (user ruling 2026-08-19), and no fourth tab — Activity was
+      // removed in the same ruling and a `toEqual` is what keeps it removed.
+      expect(labels).toEqual([getKind(kind).label, 'Connections', 'Discussion']);
     },
   );
 
@@ -1698,7 +1700,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
     expect(header.contains(actions)).toBe(false);
     expect(toolbar.contains(tabs)).toBe(true);
-    for (const label of ['Task', 'Discussion', 'Connections', 'Activity']) {
+    for (const label of ['Task', 'Connections', 'Discussion']) {
       expect(tabs.textContent).toContain(label);
     }
     expect(toolbar.contains(actions)).toBe(true);
@@ -1745,7 +1747,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(header.textContent).toContain(detail.title);
     expect(header.contains(actions)).toBe(false);
     expect(toolbar.contains(tabs)).toBe(true);
-    for (const label of ['Session', 'Discussion', 'Connections', 'Activity']) {
+    for (const label of ['Session', 'Connections', 'Discussion']) {
       expect(tabs.textContent).toContain(label);
     }
     expect(toolbar.contains(actions)).toBe(true);
@@ -1952,11 +1954,11 @@ describe('EntityDetailPanel — attachments ride in the content body (D3 intact)
     };
   }
 
-  it('STILL FOUR TABS with an attachment present — no fifth tab, ever', () => {
+  it('STILL THREE TABS with an attachment present — no extra tab, ever', () => {
     const { getByTestId } = render(
       <EntityDetailPanel detail={withAttachment(anyDetail)} reasons={REASONS} ctx={ctx} />,
     );
-    expect(within(getByTestId('panel-tabs')).getAllByRole('tab')).toHaveLength(4);
+    expect(within(getByTestId('panel-tabs')).getAllByRole('tab')).toHaveLength(3);
   });
 
   it('renders the attached file INSIDE the panel, with a working download link', () => {
@@ -2179,12 +2181,16 @@ describe('file-preview renders the real image', () => {
  *
  * The mount rule has two halves and they are complements of each other: the
  * Content body for every archetype that can host an inline section, and the
- * Activity tab for the two that cannot — terminal (a live PTY owning its full
- * height) and `composition: 'chat'` (a body that ends at its composer). Those
- * are the same two exclusions the attachment strip carries, but the strip
+ * Connections tab for the two that cannot — terminal (a live PTY owning its
+ * full height) and `composition: 'chat'` (a body that ends at its composer).
+ * Those are the same two exclusions the attachment strip carries, but the strip
  * simply DROPS them; this section relocates them, because work sessions are
  * among the most-escalated entities in a space and CLI-only history for them
  * was not acceptable (user ruling 2026-08-16).
+ *
+ * THE OVERFLOW HALF MOVED from the Activity tab to Connections when Activity
+ * was removed (user ruling 2026-08-19). These assertions are what proved the
+ * removal did not quietly take session attention history with it.
  *
  * Both halves are asserted here, in both directions, because the failure mode
  * of a two-place rule is a kind that renders it TWICE — which no single
@@ -2226,7 +2232,7 @@ describe('EntityDetailPanel — the attention section has exactly one home per k
     }
   });
 
-  it('mounts on the ACTIVITY tab — and NOT in the content body — for terminal and chat', () => {
+  it('mounts on the CONNECTIONS tab — and NOT in the content body — for terminal and chat', () => {
     const relocated = kindsBy(true);
     // work_session (terminal) and channel/voice_channel (chat) today.
     expect(relocated.length).toBeGreaterThan(0);
@@ -2241,24 +2247,24 @@ describe('EntityDetailPanel — the attention section has exactly one home per k
       ).toBeNull();
       content.unmount();
 
-      const activity = render(
+      const connections = render(
         <EntityDetailPanel
           detail={detail!}
           reasons={REASONS}
           ctx={ctx}
           attentionSection={SECTION}
-          activeTab="activity"
+          activeTab="connections"
         />,
       );
       expect(
-        within(activity.getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
+        within(connections.getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
         `${config.kind} lost its attention history entirely — it is in neither place`,
       ).toHaveLength(1);
-      activity.unmount();
+      connections.unmount();
     }
   });
 
-  it('never renders TWICE: a kind that takes the inline mount does not also get the activity one', () => {
+  it('never renders TWICE: a kind that takes the inline mount does not also get the overflow one', () => {
     for (const { config, detail } of kindsBy(false)) {
       const { getByTestId, unmount } = render(
         <EntityDetailPanel
@@ -2266,12 +2272,12 @@ describe('EntityDetailPanel — the attention section has exactly one home per k
           reasons={REASONS}
           ctx={ctx}
           attentionSection={SECTION}
-          activeTab="activity"
+          activeTab="connections"
         />,
       );
       expect(
         within(getByTestId('entity-detail-panel')).queryAllByTestId('attention-section-probe'),
-        `${config.kind} renders the attention section on BOTH the content body and the activity tab`,
+        `${config.kind} renders the attention section on BOTH the content body and the connections tab`,
       ).toHaveLength(0);
       unmount();
     }

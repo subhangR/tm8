@@ -1,40 +1,24 @@
-import { useRef, useState, type ReactNode } from 'react';
-import type {
-  ActivityItem,
-  Connections,
-  EdgeGroup,
-  EntityDetail,
-  EntityId,
-  Mention,
-  MessageView,
-} from '@tm8/contract';
-import { Avatar, Chip, Eyebrow, Markdown, type MarkdownComponents } from '../../kit';
+/* ONE COMPONENT LEFT IN THIS FILE, so one import list.
+   Everything the deleted Discussion renderer and Activity feed pulled in —
+   the rich-input composer, `feed-model`'s markdown preparation, `Avatar`,
+   `ActivityItem` — went with them. Those imports outlived their last use, and
+   nothing in this package fails on a dead import: there is no lint step, and
+   `tsc` is configured without `noUnusedLocals`. They only get removed if
+   whoever deletes the code deletes them too. */
+import { useState, type ReactNode } from 'react';
+import type { Connections, EdgeGroup, EntityDetail } from '@tm8/contract';
+import { Chip, Eyebrow } from '../../kit';
 import { KindIcon, getKind } from '../../domain';
-import type { FileUploadTask } from '../../files/upload';
-import { ChooseFilesControl } from '../../files/ChooseFilesControl';
-import { DisabledIconControl } from '../honesty/DisabledWithReason';
-import {
-  AttachmentChips,
-  TriggerPopover,
-  skillReference,
-  useRichInput,
-  type TriggerOption,
-} from '../../rich-input';
-/* Module-deep into the chat lane's PURE half — `feed-model` is plain functions
-   with no React and no DOM. A message body is a message body wherever it is
-   drawn, so the Discussion tab shares the channel's source preparation instead
-   of growing a second copy that could drift from it. */
-import { chatMarkdownSource, mentionIdInHref } from '../../channel-screen/feed-model';
 import { EmptyBody } from './PanelStates';
 
 /**
- * THE THREE SHARED TABS — designed once, rendered for every kind.
+ * THE SHARED TABS — designed once, rendered for every kind.
  *
- * Discussion, Connections and Activity are KIND-AGNOSTIC BY CONSTRUCTION:
- * they render `messages.list`, `EdgeGroup`s and `entities.activity` rows, none
- * of which vary by kind. That is why the four-tab law (D3) costs nothing —
- * three of the four tabs are the same component everywhere, so "every kind
- * gets four tabs" is one implementation, not fifteen.
+ * Connections and Discussion are KIND-AGNOSTIC BY CONSTRUCTION: they render
+ * `EdgeGroup`s and a host-composed conversation surface, neither of which
+ * varies by kind. That is why "every kind gets the same tabs" costs nothing —
+ * two of the three are the same component everywhere, so it is one
+ * implementation, not fifteen.
  */
 
 // ---------------------------------------------------------------------------
@@ -305,76 +289,26 @@ export function ConnectionsTab({
 }
 
 // ---------------------------------------------------------------------------
-// Activity
+// Activity — REMOVED
 // ---------------------------------------------------------------------------
 
 /**
- * "actor · verb · object — authorship never buried."
+ * `ActivityTab` (actor · verb · date, over `entities.activity`) stood here
+ * until 2026-08-19, when the user removed the fourth tab.
  *
- * The dot is coloured from the status ramp by event type, and one rule is
- * absolute here as everywhere: an `unknown` delivery is styled as a WARNING,
- * never as success.
- */
-export function ActivityTab({ items }: { items: readonly ActivityItem[] }) {
-  return (
-    <div className="pn-body" id="tabpanel-activity" role="tabpanel" aria-labelledby="tab-activity">
-      {items.length === 0 ? (
-        <EmptyBody glyph="◫" sentence="No activity recorded on this entity yet." />
-      ) : (
-        <ul className="pn-activity">
-          {items.map((item) => (
-            <li className="pn-activity__row" key={item.id}>
-              <span className={`pn-activity__dot pn-activity__dot--${verbTone(item.verb)}`} aria-hidden />
-              {item.actor ? (
-                <Avatar
-                  actorId={item.actor.id}
-                  provenance={item.actor.isAgent ? 'agent' : 'human'}
-                  label={item.actor.displayName}
-                  size={20}
-                  src={item.actor.avatar ?? null}
-                />
-              ) : null}
-              <span className="pn-activity__text">
-                {`${item.actor?.displayName ?? 'someone'} ${humanizeVerb(item.verb)}`}
-              </span>
-              <span className="pn-activity__time">{relativeish(item.createdAt)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/**
- * Verb → ramp tone. Keyed on the VERB vocabulary, not on kind. `unknown`
- * anywhere in a delivery verb goes amber — the one mapping that is a rule
- * rather than a preference.
- */
-function verbTone(verb: string): 'run' | 'wait' | 'info' | 'block' | 'idle' {
-  if (verb.includes('unknown') || verb.includes('stale')) return 'wait';
-  if (verb.includes('fail') || verb.includes('delete') || verb.includes('refus')) return 'block';
-  if (verb.includes('complete') || verb.includes('deliver')) return 'run';
-  if (verb.includes('link') || verb.includes('referenc')) return 'info';
-  return 'idle';
-}
-
-function humanizeVerb(verb: string): string {
-  return verb.replace(/[._]/g, ' ');
-}
-
-/**
- * Deliberately coarse: exact relative time needs a clock, and a clock in a
- * render path makes every test time-dependent. The date is shown plainly and
- * the precise timestamp rides on the element for anyone who needs it.
- */
-function relativeish(iso: string): string {
-  return iso.slice(0, 10);
-}
-
-/**
- * The clause the placeholder and the empty state both end with, built from
- * what is DECLARED rather than from what a designer once hoped would be here.
- * Returns `''` when neither sigil is live, so the invitation degrades to a
- * plain "reply below" instead of naming a key that does nothing.
+ * IT WAS DELETED RATHER THAN LEFT UNMOUNTED because no host ever fed it: the
+ * panel's `activity` prop was optional and absent at all five mount sites, so
+ * the tab rendered "No activity recorded on this entity yet." on every entity
+ * in the product, every time it was opened. That is the enabled-inert class
+ * this panel's own honesty rules ban, sitting in the bar the panel navigates
+ * by — and charging the tabs that DO answer something for its width (see
+ * `PANEL_TABS` in ./chrome.tsx).
+ *
+ * The seam op is untouched and unrelated: `entities.activity` still backs the
+ * channel feed and the CLI.
+ *
+ * (A second orphaned docblock stood below this one, describing the Discussion
+ * composer's `sigilInvitation` — a function deleted in an earlier pass whose
+ * comment was left behind. Removed for the same reason as the dead imports
+ * above: a comment with no code under it is a claim nothing can falsify.)
  */

@@ -219,12 +219,12 @@ Anatomy top→bottom (T0-3 canvas is the visual ground truth):
 
 ### 3.2 EntityDetailPanel (Z3)
 
-Fixed anatomy for every kind (02-LAYOUT §3; D3: **four tabs always** — Content / Discussion / Connections / Activity, fixed order, no exceptions; the T5-7 three-tab mocks are abbreviation):
+Fixed anatomy for every kind (02-LAYOUT §3; **three tabs always** — Content / Connections / Discussion, fixed order, no exceptions). USER RULING 2026-08-19 supersedes D3's four: Connections moved ahead of Discussion (a panel reads "what is this · what is it wired to · what was said about it"), and Activity was removed — no host ever passed it rows, so it drew its empty state on every entity in the product while charging the other labels their width:
 
-header (breadcrumb · kind glyph · inline-editable title · status pill · overflow ⋯ · pin 📌 · promote ⤢ · close ✕) → action bar (react/points · Link · Add child · Pull · registry primaries) → the four tabs → footer (viewers 👁 — hollow-value per D7.2 · by-actor · `v{n}` — the disabled-with-reason home of the deferred version-history feature (R7, §4.2) · active-ago).
+header (breadcrumb · kind glyph · inline-editable title · status pill · overflow ⋯ · pin 📌 · promote ⤢ · close ✕) → action bar (react/points · Link · Add child · Pull · registry primaries) → the tabs → footer (viewers 👁 — hollow-value per D7.2 · by-actor · `v{n}` — the disabled-with-reason home of the deferred version-history feature (R7, §4.2) · active-ago).
 
 - Content renderer = `registry(kind).panel.archetype` → archetype body. **No kind branches outside the registry** (L2).
-- Discussion = the inherited thread over `messages.list` for this entity; Connections = grouped `EdgeGroup` rail + edge composer; Activity = `entities.activity` rows. All three are kind-agnostic by construction.
+- Connections = grouped `EdgeGroup` rail + edge composer, behind a List/Graph view switch; Discussion = the host-composed conversation surface for this entity. Both are kind-agnostic by construction. (`entities.activity` is still a seam op — it just has no tab; the channel feed and the CLI read it.)
 - Capability gating: `EntityDetail.capabilities` decides; `capabilityReasons` words the OFF states.
 - Pin control shows refusal reasons (§5.3) rather than disabling silently.
 - **Panel states are part of the anatomy** (T0-4 "Panel states" + T4 state matrix): Loading, Stale-pin, Error-boundary, Permission-lost, and Tombstone renderings exist for every kind by construction (they live in the shared panel shell, not per archetype); each is fixture-demonstrable (§10.6).
