@@ -1154,12 +1154,12 @@ function PanelBody(
             streaming={props.streaming}
             needsAttention={props.needsAttention}
             attentionDetail={props.attentionDetail}
-            handoffs={props.handoffs}
-            shareUnavailableReason={reasons.shareUnavailable}
-            withdrawUnavailableReason={reasons.withdrawUnavailable}
+            /* `handoffs`, the two share reasons and `onOpenEntity` are no
+               longer passed: `TerminalBody` stopped accepting them when the
+               session-details drawer was removed (user ruling 2026-08-19).
+               They are still read here for the rest of the panel. */
             livenessLabel={config.list.liveTreatment?.(props.liveness ?? 'unknown').label}
             livenessReason={config.list.liveTreatment?.(props.liveness ?? 'unknown').reason}
-            onOpenEntity={onOpenEntity}
             {...(props.onContentSurfaceChange
               ? { onOpenTranscript: () => props.onContentSurfaceChange?.('transcript') }
               : {})}

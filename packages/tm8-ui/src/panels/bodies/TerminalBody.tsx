@@ -1,18 +1,15 @@
 import { useCallback, useRef, useState } from 'react';
-import type { EntityDetail, HandoffView } from '@tm8/contract';
+import type { EntityDetail } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
-import { Eyebrow } from '../../kit';
 import { useShellKind } from '../../mobile';
 import {
   ExitedFallback,
   LiveTerminal,
   NeedsYouBanner,
-  ReservedToolbarSeam,
   StaleFallback,
   TERMINAL_FONT_SIZE,
   TERMINAL_FONT_SIZE_KEY,
   TERMINAL_PLACEHOLDER,
-  TerminalChromeStrip,
   TerminalHost,
   TerminalModifierBar,
   UnverifiedFallback,
@@ -23,27 +20,28 @@ import {
   toSessionRow,
   type LiveTerminalHandle,
 } from '../../terminal';
-import { DisabledIconControl, toReason } from '../honesty/DisabledWithReason';
-import { SharedContextSection } from '../share/SharedContextSection';
-import { ShareDropTarget } from '../share/ShareDropTarget';
 
 /**
  * THE TERMINAL ARCHETYPE BODY — the work_session Content tab (LLD §2.3, T0-2).
  *
- * Stack, top → bottom, exactly as the canvas draws it:
- *   ASSOCIATED PROJECTS · SHARED CONTEXT   (the Content body proper)
- *   reserved toolbar seam                  (RULING K — always present)
- *   chrome strip                           (pixel-frozen, RULING A)
+ * Stack, top → bottom (user ruling 2026-08-19 — see the note above the render):
  *   ⚠ needs you banner                     (only when blocked on the user)
  *   terminal host  OR  an honest fallback
+ *   modifier bar                           (phone only, below the canvas)
+ *
+ * That is the whole stack now. It used to carry ASSOCIATED PROJECTS · SHARED
+ * CONTEXT, a reserved toolbar seam, a pixel-frozen chrome strip, a floating
+ * SESSION DETAILS / exit-terminal overlay and the drawer they opened. All of
+ * it is gone by ruling: the terminal is the thing, and everything else was
+ * charging it height or overlaying its output.
  *
  * Live verdicts mount the real xterm/PTY transport. Recorded terminal states
  * keep the designed fallbacks, so stale/unknown/exited sessions never render a
  * black box that implies bytes can still arrive.
  *
- * THE CANVAS REGION IS THE ONLY THING THAT SWAPS. Header, seam, strip and
- * footer keep exact geometry across every verdict, so a session ending never
- * jumps the layout under the user's cursor.
+ * THE CANVAS REGION IS THE ONLY THING THAT SWAPS — and now it is very nearly
+ * the only thing there is, so a session ending cannot jump the layout under
+ * the user's cursor at all.
  */
 
 /**
@@ -77,18 +75,19 @@ export interface TerminalBodyProps {
   needsAttention?: boolean;
   /** What the agent is waiting for, when it is. */
   attentionDetail?: string;
-  /** From the seam's `handoffs()` read. */
-  handoffs?: readonly HandoffView[];
-  /** §10.7 interim copy, injected so the reasons have one home. */
-  shareUnavailableReason: string;
-  withdrawUnavailableReason: string;
+  /* GONE with the drawer (user ruling 2026-08-19): `handoffs`,
+     `shareUnavailableReason`, `withdrawUnavailableReason`, `onOpenEntity` and
+     `compact`. Every one of them fed only the chrome strip, the context header
+     or the exit chip. Dropped from the interface rather than left accepted-
+     and-ignored: a prop a component takes and does nothing with is a standing
+     invitation to wire a feature into a dead end. */
   /** The registry's WORD for a degraded verdict (liveTreatment().label). */
   livenessLabel?: string;
   /** The registry's authored explanation for a degraded verdict. */
   livenessReason?: string;
-  /** True at the 320px floor — the exit chip label compacts. */
-  compact?: boolean;
-  onOpenEntity?: (id: string) => void;
+  /** Selects the TRANSCRIPT surface. The overlay chip that used to call this
+   *  is gone; the surface switcher in the panel bar is the way now, and
+   *  `SessionFallback` still offers it on an exited session. */
   onOpenTranscript?: () => void;
   /** Resume this exited/failed session. Absent = the host has not wired it. */
   onResume?: () => void;
@@ -103,13 +102,8 @@ export function TerminalBody({
   streaming,
   needsAttention,
   attentionDetail,
-  handoffs = [],
-  shareUnavailableReason,
-  withdrawUnavailableReason,
   livenessLabel,
   livenessReason,
-  compact,
-  onOpenEntity,
   onOpenTranscript,
   onResume,
   resuming,
@@ -123,15 +117,9 @@ export function TerminalBody({
     needsAttention,
   });
   const style = presentationStyle(presentation);
-  const [detailsExpanded, setDetailsExpanded] = useState(false);
-  const [detailsDragging, setDetailsDragging] = useState(false);
-  const detailsOpen = detailsExpanded || detailsDragging;
-  const content = detail.content as unknown as Record<string, unknown>;
-  const launchProjectId =
-    typeof content.launchProjectId === 'string' ? content.launchProjectId : null;
-  // Non-null while a live verdict has mounted LiveTerminal. Tests and an
-  // explicit operator opt-out still use the placeholder, so the exit-focus
-  // action remains safely optional.
+  // Still held with nothing above it calling `blur()`: `LiveTerminal` needs the
+  // handle, and the phone modifier bar drives the terminal through it. Only the
+  // exit CHIP is gone, not the exit itself.
   const liveTerminalRef = useRef<LiveTerminalHandle>(null);
   const stageRef = useRef<HTMLDivElement>(null);
 
@@ -196,56 +184,42 @@ export function TerminalBody({
 
   /* USER RULING 2026-07-29 — "the terminal is the main thing of our app":
    * the canvas starts DIRECTLY under the tab strip and takes every pixel
-   * down to the panel footer. The chrome strip and the context line move
-   * BELOW the canvas — moved, not hidden (R7): every fact and control they
-   * carried is still one glance down, and the drag-share target still
-   * surfaces on dragover exactly as before. The needs-you banner stays above
-   * the canvas: it is conditional, rare, and its whole job is to interrupt.
-   * This supersedes the top-stacked order the T0-2 canvas draws; the
-   * divergence is user-ruled (D63).
+   * down to the panel footer. The needs-you banner stays above the canvas: it
+   * is conditional, rare, and its whole job is to interrupt. This supersedes
+   * the top-stacked order the T0-2 canvas draws; the divergence is user-ruled
+   * (D63).
    *
-   * USER RULING 2026-07-31 (D63 extended) — "remove the bottom strip …
-   * terminal all the way, till the component bottom." The 28px drawer BAR is
-   * gone as a permanent cost. Nothing it carried is gone WITH it, which is
-   * what keeps this a move and not a deletion:
-   *   · its toggle and the exit chip became a FLOATING overlay on the canvas
-   *     itself — zero layout height, so the black box now reaches the panel's
-   *     bottom edge exactly as ruled;
-   *   · the drawer's content (chrome strip · projects · shared context) still
-   *     opens from that toggle, and still auto-opens on dragover so
-   *     drag-share never depended on expanding first;
-   *   · the collapsed SUMMARY line ("<name> · ⬒<project> · nothing shared")
-   *     is the one thing with no pixels left to live in. It moves onto the
-   *     toggle's `title`/aria-label, so the facts are still one hover — and
-   *     one screen-reader stop — away rather than silently dropped.
+   * USER RULING 2026-08-19 (D63 taken to its end) — "remove the bottom panel
+   * which opens up, the associated projects, shared context and all that
+   * shit, the session details chip at the bottom, exit terminal button at the
+   * bottom". This time it IS a deletion, not a move, and the honest record of
+   * what went with it:
    *
-   * THE OVERLAY IS HOVER/FOCUS-REVEALED, not always-on (see panels.css). It
-   * may never be display:none or removed at a narrow width, though: the exit
-   * chip is the only visible instruction for getting the keyboard back out of
-   * a focused terminal (C6 layer 3), so it is opacity-hidden and keyboard-
-   * reachable, and `:focus-within` brings it back the instant a tab lands on
-   * it. */
-  const summary = `${row.name} · ${launchProjectId ? `⬒ ${launchProjectId}` : 'no project'} · ${
-    handoffs.length === 0 ? 'nothing shared' : `${handoffs.length} shared`
-  }`;
+   *   · the SESSION DETAILS toggle and the drawer it opened — chrome strip
+   *     (persona · provider · state), ASSOCIATED PROJECTS, the launched-from
+   *     provenance line, SHARED CONTEXT and the ShareDropTarget;
+   *   · the exit chip. `⌃\`` still leaves a focused terminal — the keystroke
+   *     is a keyboard-layer contract (C6 layer 3), not this button — but it
+   *     is now UNDOCUMENTED ON SCREEN. That is a real loss and was raised
+   *     with the user rather than absorbed silently;
+   *   · the `transcript ↗` chip on exited sessions. No loss: it duplicated
+   *     the TRANSCRIPT tab in the surface switcher, which is wired and
+   *     visible.
+   *
+   * The drawer was `SharedContextSection`'s ONLY mount, so shared context and
+   * drag-to-share are unreachable from the panel until someone re-homes them.
+   * `SessionAnatomy` already exists, unmounted, holding a compact rendering of
+   * exactly these facts — it is the obvious destination, and deliberately not
+   * done here: the ruling was to remove them from the terminal's bottom, not
+   * to redesign where they live.
+   *
+   * What is left is the ruling in one line: the canvas, and nothing else. */
 
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
       {needsAttention && style.isLive ? <NeedsYouBanner detail={attentionDetail} /> : null}
 
-      <div
-        className="pn-terminal-stage"
-        data-testid="terminal-stage"
-        ref={stageRef}
-        onDragEnter={() => setDetailsDragging(true)}
-        onDragOver={() => setDetailsDragging(true)}
-        onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-            setDetailsDragging(false);
-          }
-        }}
-        onDrop={() => setDetailsDragging(false)}
-      >
+      <div className="pn-terminal-stage" data-testid="terminal-stage" ref={stageRef}>
         <SessionCanvas
           presentation={presentation}
           sessionId={detail.id}
@@ -266,46 +240,6 @@ export function TerminalBody({
             : {})}
         />
 
-        <div className="pn-terminal-overlay">
-          <button
-            type="button"
-            className="pn-terminal-overlay__chip"
-            data-testid="terminal-details-toggle"
-            aria-expanded={detailsOpen}
-            title={summary}
-            aria-label={`Session details — ${summary}`}
-            onClick={() => setDetailsExpanded((open) => !open)}
-          >
-            <span className="pn-terminal-drawer__caret" aria-hidden>
-              {detailsOpen ? '▾' : '▸'}
-            </span>
-            <span className="pn-terminal-drawer__label">Session details</span>
-          </button>
-
-          {style.isLive ? (
-            <button
-              type="button"
-              className="term-exit-chip"
-              onClick={() => liveTerminalRef.current?.blur()}
-              data-testid="exit-terminal-chip"
-              aria-label="Exit terminal focus — press Control and backtick"
-            >
-              {compact ? 'exit ' : 'exit terminal '}
-              <span className="term-exit-chip__key" aria-hidden>
-                ⌃`
-              </span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="term-exit-chip"
-              onClick={onOpenTranscript}
-              data-testid="transcript-chip"
-            >
-              transcript ↗
-            </button>
-          )}
-        </div>
       </div>
 
       {/*
@@ -330,171 +264,23 @@ export function TerminalBody({
         />
       ) : null}
 
-      {detailsOpen ? (
-        <div
-          className="pn-terminal-drawer pn-terminal-drawer--open"
-          data-testid="terminal-bottom-drawer"
-          data-expanded="true"
-          onDragEnter={() => setDetailsDragging(true)}
-          onDragOver={() => setDetailsDragging(true)}
-          onDragLeave={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              setDetailsDragging(false);
-            }
-          }}
-          onDrop={() => setDetailsDragging(false)}
-        >
-          <div className="pn-terminal-drawer__content">
-            <TerminalChromeStrip
-              actor={row.actor}
-              persona={row.name}
-              provider={row.provider}
-              presentation={presentation}
-              statusDetail={livenessReason}
-              compact={compact}
-              onOpenTranscript={onOpenTranscript}
-              onExitTerminal={() => liveTerminalRef.current?.blur()}
-              showFocusControl={false}
-            />
-
-            <SessionContextHeader
-              detail={detail}
-              handoffs={handoffs}
-              receiverName={row.name}
-              shareUnavailableReason={shareUnavailableReason}
-              withdrawUnavailableReason={withdrawUnavailableReason}
-              onOpenEntity={onOpenEntity}
-              forceOpen={detailsDragging}
-            />
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
 
-/**
- * THE CONTEXT HEADER — R5 #10, user-ratified default.
- *
- * THE LAW, in the user's words: "an empty state that costs the primary surface
- * half its height inverts the honesty economy." Two always-open sections spent
- * roughly half this panel's height saying "no project recorded" and "nothing
- * shared" while the LIVE TERMINAL — the thing users stare at longest — was
- * squeezed into what remained. Honesty about an absence is cheap to state and
- * must be cheap to render; it may never outbid the primary surface for space.
- *
- * So: ONE compact line, expandable on demand, and the terminal takes every
- * pixel below the chrome strip. This matches composed T0-1's own default —
- * terminal dominates — so it is a ratified default, not a divergence.
- *
- * THE COLLAPSED LINE STILL CARRIES THE FACTS. It is a summary, not a hiding
- * place: the project (or its absence) and the share count are both stated, so
- * collapsing costs the viewer no information they had before — only the
- * vertical space that information was charging them.
- *
- * DROPPING MUST NOT REQUIRE EXPANDING FIRST. A drag entering this region
- * surfaces the drop target regardless of collapse; if it did not, drag-share
- * would be dead for every collapsed session, which is all of them by default.
- */
-function SessionContextHeader({
-  detail,
-  handoffs,
-  receiverName,
-  shareUnavailableReason,
-  withdrawUnavailableReason,
-  onOpenEntity,
-  forceOpen = false,
-}: {
-  detail: EntityDetail;
-  handoffs: readonly HandoffView[];
-  receiverName: string;
-  shareUnavailableReason: string;
-  withdrawUnavailableReason: string;
-  onOpenEntity?: (id: string) => void;
-  forceOpen?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  /**
-   * Raised by a drag ENTERING the region. Kept separate from `expanded` so
-   * that releasing the drag returns the header to whatever the viewer chose,
-   * rather than silently leaving it open behind them.
-   */
-  const [dragging, setDragging] = useState(false);
+/* SessionContextHeader and AssociatedProjects lived here and are DELETED
+   (user ruling 2026-08-19 — see the stack note in TerminalBody). Between them
+   they rendered the collapsed `<name> · ⬒<project> · nothing shared` summary,
+   ASSOCIATED PROJECTS, the immutable launched-from provenance line, SHARED
+   CONTEXT and the drag-share target. Every one of those was reachable only
+   through the drawer that ruling removes, so keeping them would leave two
+   components with no caller — the orphan half of the mistake
+   chat-home-css-coverage.test.ts was written about, in TSX.
 
-  // Structural read, not a kind comparison (§15.2): ask what the content HAS.
-  const content = detail.content as unknown as Record<string, unknown>;
-  const launchProjectId =
-    typeof content.launchProjectId === 'string' ? content.launchProjectId : null;
-
-  const open = expanded || dragging || forceOpen;
-
-  return (
-    <div
-      className={open ? 'pn-ctxhead pn-ctxhead--open' : 'pn-ctxhead'}
-      data-testid="session-context-header"
-      data-expanded={open ? 'true' : 'false'}
-      onDragEnter={() => setDragging(true)}
-      onDragOver={() => setDragging(true)}
-      onDragLeave={(e) => {
-        // Only when the pointer leaves the REGION, not on every child boundary
-        // crossed on the way in — otherwise the target flickers shut mid-drag.
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
-      }}
-      onDrop={() => setDragging(false)}
-    >
-      <button
-        type="button"
-        className="pn-ctxhead__summary"
-        aria-expanded={open}
-        onClick={() => setExpanded((v) => !v)}
-      >
-        <span aria-hidden className="pn-ctxhead__caret">
-          {open ? '▾' : '▸'}
-        </span>
-        <span className="pn-ctxhead__facts">
-          {launchProjectId ? (
-            <span className="pn-ctxhead__fact">{`⬒ ${launchProjectId}`}</span>
-          ) : (
-            <span className="pn-ctxhead__fact pn-ctxhead__fact--empty">no project recorded</span>
-          )}
-          <span aria-hidden className="pn-ctxhead__sep">
-            ·
-          </span>
-          <span
-            className={
-              handoffs.length === 0
-                ? 'pn-ctxhead__fact pn-ctxhead__fact--empty'
-                : 'pn-ctxhead__fact'
-            }
-          >
-            {handoffs.length === 0 ? 'nothing shared' : `⤓ ${handoffs.length} shared`}
-          </span>
-        </span>
-      </button>
-
-      {open ? (
-        <div className="pn-ctxhead__detail">
-          <AssociatedProjects detail={detail} onOpenEntity={onOpenEntity} />
-          <SharedContextSection
-            handoffs={handoffs}
-            withdrawUnavailableReason={withdrawUnavailableReason}
-            onOpenSource={onOpenEntity}
-          />
-          {/* Reserved so the surface switch costs no relayout. It has since
-              landed in the panel bar; this seam still holds the height, and its
-              occupant is the toolbar drop target (§8). */}
-          <ReservedToolbarSeam>
-            <ShareDropTarget
-              receiverName={receiverName}
-              unavailableReason={shareUnavailableReason}
-              accept={false}
-            />
-          </ReservedToolbarSeam>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+   `SharedContextSection` and `ShareDropTarget` are deliberately NOT deleted:
+   both are exported from panels/index.ts, and `SessionAnatomy` already holds a
+   compact rendering of the same facts with no mount of its own. That is where
+   shared context goes if it is wanted back on this panel. */
 
 /**
  * The canvas slot. Each verdict gets the rendering that states what we
@@ -578,62 +364,3 @@ function SessionCanvas({
   }
 }
 
-/**
- * ASSOCIATED PROJECTS — where this session may act.
- *
- * The LAUNCH project is IMMUTABLE PROVENANCE: it records where the session
- * was started and can never be edited, because rewriting it would falsify the
- * record of what an agent was allowed to touch. The canvas says so in the
- * caption ("launched from ⬒ … · immutable") and this renders it as a
- * non-editable fact rather than a removable chip.
- *
- * The `＋` add affordance is visible and disabled-with-reason: no seam
- * operation associates further projects with a running session, so offering a
- * working control would advertise something the facade cannot do (L6).
- */
-function AssociatedProjects({
-  detail,
-  onOpenEntity,
-}: {
-  detail: EntityDetail;
-  onOpenEntity?: (id: string) => void;
-}) {
-  // Structural read, not a kind comparison (§15.2): ask what the content HAS.
-  const content = detail.content as unknown as Record<string, unknown>;
-  const launchProjectId =
-    typeof content.launchProjectId === 'string' ? content.launchProjectId : null;
-
-  return (
-    <section className="pn-section" data-testid="associated-projects-section">
-      <Eyebrow faint>ASSOCIATED PROJECTS</Eyebrow>
-      <div className="pn-chiprow">
-        {launchProjectId ? (
-          <button
-            type="button"
-            className="kit-chip"
-            onClick={() => onOpenEntity?.(launchProjectId)}
-            title={launchProjectId}
-          >
-            <span aria-hidden className="kit-chip__glyph">
-              ⬒
-            </span>
-            {launchProjectId}
-          </button>
-        ) : (
-          <span className="pn-section__empty">no project recorded for this session</span>
-        )}
-        <DisabledIconControl
-          label="Associate another project"
-          glyph="＋"
-          reason={{
-            cause: 'Can’t add a project to a running session',
-            remedy: 'no facade operation associates projects after launch',
-          }}
-        />
-      </div>
-      {launchProjectId ? (
-        <p className="pn-provenance">{`launched from ⬒ ${launchProjectId} · immutable`}</p>
-      ) : null}
-    </section>
-  );
-}

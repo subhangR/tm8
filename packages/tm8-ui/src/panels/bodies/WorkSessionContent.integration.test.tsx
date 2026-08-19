@@ -61,23 +61,26 @@ it('mounts the host-composed conversation surface under the Transcript chip', ()
 });
 
 /**
- * THE DEAD CONTROL THAT FINALLY HAS A DESTINATION.
+ * THE DEAD CONTROL THAT GOT A DESTINATION, THEN GOT REMOVED.
  *
- * `TerminalBody` draws a "transcript ↗" chip on every session that is not live
- * (TerminalBody.tsx:298-306), and until the Transcript surface existed no host
- * passed `onOpenTranscript` — so it was an ENABLED button with
- * `onClick={undefined}`, the enabled-inert control the panel's honesty rules
- * ban everywhere else.
+ * `TerminalBody` used to draw a "transcript ↗" chip on every session that was
+ * not live. Until the Transcript surface existed no host passed
+ * `onOpenTranscript`, so it was an ENABLED button with `onClick={undefined}` —
+ * the enabled-inert control the panel's honesty rules ban everywhere else.
+ * Wiring it to select the surface fixed that.
  *
- * It opens the surface by SELECTING it, which is why the assertion is on the
- * host's surface-change callback rather than on a pane: the host owns that
- * choice and round-trips it back as `requestedSurface`, exactly as it does for
- * the conversation surface's own way back to the terminal.
+ * The 2026-08-19 ruling then took the whole floating overlay off the canvas,
+ * chip included. This is the ONE removal in that ruling that costs nothing:
+ * the chip was a shortcut to the Transcript TAB, and the test directly above
+ * proves that tab selects the same surface through the same callback. So the
+ * assertion inverts — the chip must be gone, and the tab must still work —
+ * rather than being deleted, which would leave no record that a way to the
+ * transcript is still required of this panel.
  */
-it('the exited session’s transcript chip selects the Transcript surface', async () => {
+it('the exited session has no transcript chip — the Transcript tab is the way', async () => {
   const source = fixtureDetails[sessionStale.id]!;
   const onContentSurfaceChange = vi.fn();
-  const { findByTestId } = render(
+  const { queryByTestId, findByRole } = render(
     <EntityDetailPanel
       detail={source}
       reasons={REASONS}
@@ -89,6 +92,7 @@ it('the exited session’s transcript chip selects the Transcript surface', asyn
     />,
   );
 
-  fireEvent.click(await findByTestId('transcript-chip'));
+  expect(queryByTestId('transcript-chip')).toBeNull();
+  fireEvent.click(await findByRole('tab', { name: 'Transcript' }));
   expect(onContentSurfaceChange).toHaveBeenCalledWith('transcript');
 });
