@@ -50,7 +50,43 @@ export interface AttentionPort {
   }): Promise<AttentionRequestMutationResult>;
 }
 
+/**
+ * THE FACTORY IS MEMOISED, and that is a correctness property rather than a
+ * performance one.
+ *
+ * `attentionSectionFor` calls this INSIDE the render of five hosts. A fresh
+ * object literal per call meant the port's identity changed on every one of
+ * those renders, and `AttentionRequests` had it in a `useCallback` dependency
+ * array feeding a mount effect — so every host render re-ran the effect, refetched
+ * the history, and dropped the section to `phase: 'loading'`, which renders
+ * `null`. The section unmounted and remounted continuously, and everything below
+ * it in the content body jumped up and back down each time.
+ *
+ * The component no longer keys off this identity (see `AttentionRequests`), so
+ * the loop cannot come back through that door either. This cache is the other
+ * half: every caller of a factory named `…FromSeam` reasonably assumes that the
+ * same seam and space yield the same port, and now they do.
+ *
+ * A `WeakMap` on the seam is what keeps this from being a leak: a seam that goes
+ * out of scope takes its ports with it. The inner key is the space id, because
+ * one seam legitimately serves several spaces over its life.
+ */
+const PORTS = new WeakMap<Seam, Map<string, AttentionPort>>();
+
 export function attentionPortFromSeam(seam: Seam, spaceId: SpaceId | string): AttentionPort {
+  let bySpace = PORTS.get(seam);
+  if (!bySpace) {
+    bySpace = new Map();
+    PORTS.set(seam, bySpace);
+  }
+  const cached = bySpace.get(String(spaceId));
+  if (cached) return cached;
+  const port = buildPort(seam, spaceId);
+  bySpace.set(String(spaceId), port);
+  return port;
+}
+
+function buildPort(seam: Seam, spaceId: SpaceId | string): AttentionPort {
   return {
     async history(entityId) {
       const page = await seam.attentionRequests({
