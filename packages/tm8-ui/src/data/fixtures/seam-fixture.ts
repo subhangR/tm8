@@ -156,6 +156,7 @@ import {
   memberNoor,
   noor,
   sessionCredentialLogin,
+  sessionExited,
   sessionLive,
   sessionStale,
 } from '../../fixtures';
@@ -2308,6 +2309,66 @@ export function createFixtureSeam(): FixtureSeam {
       // native transcript, so every other session renders the explained empty.
       // `stats: null` rather than a zeroed object — there are no statistics
       // about a file that was never found, and zeros read as "did nothing".
+      /*
+       * THE EXITED SESSION'S POST-MORTEM STORY (HANDOVER-SessionAnatomy.md §8
+       * F1). Every session but the live PTY used to answer the explained empty,
+       * which meant the exited canvas could only ever be seen in its
+       * no-transcript form — the one state where the stats panel renders no
+       * numbers at all.
+       *
+       * This arm is shaped around the ONE rule the panel exists to keep:
+       * HOLLOW IS NOT ZERO. `outputTokens: 0` is a measured zero and must reach
+       * the DOM as `0`; `cacheReadTokens`/`cacheCreationTokens` are null and
+       * must reach it as `—`. A fixture with four populated numbers would let a
+       * renderer that gates on truthiness pass every test in the package.
+       *
+       * `partial: false` and a non-zero `malformed` are deliberate too: they are
+       * the combination that proves the two caveat markers are independent
+       * rather than one flag rendered twice.
+       */
+      if (workSessionId === sessionExited.id) {
+        return clone({
+          sessionId: workSessionId,
+          available: true,
+          unavailableReason: null,
+          searchedPaths: [],
+          agentTool: 'claude-code' as const,
+          entries: [
+            {
+              at: '2026-01-02T11:02:00.000Z',
+              source: 'user' as const,
+              text: 'Move the token scale onto the shared ramp and keep both themes legible.',
+              truncated: false,
+            },
+            {
+              at: '2026-01-02T11:41:00.000Z',
+              source: 'assistant' as const,
+              text: 'Done — the ramp is shared and the dark values fall out of it rather than being authored twice.',
+              truncated: false,
+            },
+          ],
+          stats: {
+            partial: false,
+            userMessages: 1,
+            assistantMessages: 1,
+            // A REAL ZERO, next to two hollows. This is the whole point of the
+            // arm: `0` and `—` are different claims and must render differently.
+            toolCalls: 0,
+            inputTokens: 12_400,
+            outputTokens: 0,
+            cacheReadTokens: null,
+            cacheCreationTokens: null,
+            tools: [],
+            models: ['claude-fable-5'],
+          },
+          stuck: null,
+          lastActivityAt: '2026-01-02T11:41:00.000Z',
+          // Non-zero: the "some lines did not parse" marker has a story, and it
+          // is the honest explanation for why a count looks low.
+          malformed: 3,
+          ...(opts?.files ? { fileChanges: clone(FIXTURE_FILE_CHANGES) } : {}),
+        });
+      }
       if (workSessionId !== sessionLive.id) {
         return clone({
           sessionId: workSessionId,

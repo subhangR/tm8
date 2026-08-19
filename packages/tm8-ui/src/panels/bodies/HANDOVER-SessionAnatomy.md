@@ -2,6 +2,52 @@
 
 **status-as-of:** `756a9b0` (HEAD) + working tree · worker `sess_1785273199588_6t5bml23f` · 2026-07-29 02:56 IST
 
+---
+
+> ## ADDENDUM 2026-08-19 — D1, D2 and D3 are CLOSED; §7's collision is RULED
+> *(session-stats lane. This block is appended; nothing below it is edited, so
+> the original record stays readable as what it was when it was written.)*
+>
+> **`TerminalBody.tsx` IS NO LONGER FROZEN.** §7 called it frozen and that was
+> true in July. It has since been rewritten twice under user ruling — the phone
+> modifier bar (`b899c2f3`) and "the terminal's bottom chrome is gone"
+> (`3b42f319`, 2026-08-19), which deleted the drawer, the chrome strip, the
+> context header and five props. A file being actively re-cut by ruling is not
+> frozen, so the exited canvas was extended in place rather than shadowed from
+> `EntityDetailPanel`'s content path.
+>
+> | drift | state now |
+> |---|---|
+> | **D1** — exit facts never rendered | **CLOSED.** The `meta: string` prop is SUPERSEDED, not fed: `ExitedFallback` now takes `startedAt`/`exitedAt` and assembles the line itself through `transcript/session-stats.ts` `exitFactsLine()`. A string prop was a second place for a host to word the same fact differently, and it could not carry a relative label without freezing it at the caller's render. No dead prop is left behind. |
+> | **D2** — transcript button enabled-inert | **CLOSED, both halves.** `EntityDetailPanel.tsx` had already begun passing `onOpenTranscript` when the Transcript surface shipped; the remaining hole was that a host which passes none still drew an ENABLED button. It is now disabled-with-reason, the same L6 treatment Resume beside it has always had. |
+> | **D3** — a failed session says "Session exited" | **CLOSED.** `ExitedFallback` takes `outcome`, fed from `presentSession` — the same authority every other arm of the canvas switch already read. Still NO red exit code: the contract projects none on any node, so N3 below remains unanswered and unbuildable. |
+> | **D4 / D5 / D6** | untouched. D4's footer facts and D5's share verb went with the 2026-08-19 chrome deletion; D6 is unchanged. |
+>
+> **§7's "one collision you must rule": the FALLBACK's transcript button is the
+> one that ships.** `SessionAnatomy` has no production mount anywhere in the
+> package (grep: its own file, its own test, and five handover docs), so its
+> `transcript` block is not a second control — it is an unmounted one. Wiring it
+> to create a duplicate and then deleting the fallback's would have been motion.
+>
+> **§8's fixture requests: F1 and F2 are SUPPLIED.** `fixtureDetails` now has an
+> EXITED and a FAILED `work_session` detail arm, and `seam-fixture.ts`'s
+> `transcript()` answers `sessionExited` with a real page. F2 is not optional
+> and the reason is worth keeping: `presentSession` returns `not-running` for
+> both endings, and the exited/failed fork is read off the DETAIL's own
+> `state.status` — with no failed detail the failed interior was unreachable
+> from a test *and* from the app, which is how D3 survived a year. F3 (a
+> non-null `transcriptDoc`) is still open and still only affects SessionAnatomy.
+>
+> **What was added beside all this:** a post-mortem panel
+> (`transcript/SessionStatsPanel.tsx`) in the ended canvas — tokens, messages,
+> tools, models, files touched — over `execution.transcript`. No new table, no
+> new migration, no producer. It is host-wired like `debugSurface`
+> (`views/sessionStatsSurface.tsx`, guarded by `panel-host-wiring.test.ts`)
+> because the panel layer holds no seam. **Cost is deliberately absent**: there
+> is no per-model rate table for work sessions and `stats.models` is a flat set
+> across the session, so a run that switched models has already lost the split a
+> correct figure needs.
+
 > File location note: the brief (§4.7) says a new non-source artifact goes OUTSIDE `src/`.
 > The quiet-protocol directive named this exact path, so the directive wins and the
 > deviation is recorded here rather than silently taken. No guard reads `.md`

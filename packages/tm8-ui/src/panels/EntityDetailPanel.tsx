@@ -292,6 +292,17 @@ export interface EntityDetailPanelProps {
   /** The GRAPH surface (what the session is connected to). Same contract as Debug. */
   graphSurface?: ReactNode;
   /**
+   * THE EXITED SESSION'S POST-MORTEM — tokens, messages, tools, models and the
+   * files it touched, read from the agent's own transcript. Same contract as
+   * Debug: self-fetching, host wires the seam (`views/sessionStatsSurface.tsx`).
+   *
+   * It lands INSIDE the terminal archetype's canvas rather than in a tab of its
+   * own, because the slot it fills is the one the ended session already owns:
+   * the fallback that until now said "Session exited" and nothing else. A host
+   * that passes nothing gets exactly that screen back, unchanged.
+   */
+  sessionStatsSurface?: ReactNode;
+  /**
    * ATTENTION HISTORY — every request ever escalated on this entity, settled or
    * not. Self-fetching; the host wires the seam (`views/attentionSurface.tsx`).
    *
@@ -1179,6 +1190,9 @@ function PanelBody(
                They are still read here for the rest of the panel. */
             livenessLabel={config.list.liveTreatment?.(props.liveness ?? 'unknown').label}
             livenessReason={config.list.liveTreatment?.(props.liveness ?? 'unknown').reason}
+            {...(props.sessionStatsSurface
+              ? { statsSurface: props.sessionStatsSurface }
+              : {})}
             {...(props.onContentSurfaceChange
               ? { onOpenTranscript: () => props.onContentSurfaceChange?.('transcript') }
               : {})}

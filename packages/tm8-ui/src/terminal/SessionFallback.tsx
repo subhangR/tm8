@@ -15,10 +15,37 @@
  *     offers the only honest remedy (correct the record), never "reconnect",
  *     which cannot work.
  */
+import type { ReactNode } from 'react';
+import { useNow } from '../kit/time';
+import { exitFactsLine, outcomeTitle } from '../transcript/session-stats';
 
 export function ExitedFallback({
-  /** e.g. "exit code 0 · ran 41m · ended 12m ago" — assembled by the caller. */
-  meta,
+  /**
+   * WHICH ENDING THIS WAS. `TerminalBody` maps both `failed` and `exited` onto
+   * this one canvas, and both used to read "Session exited" while the
+   * presentation layer correctly called the first one `failed` — the strip and
+   * the interior disagreeing about the same session (drift D3,
+   * HANDOVER-SessionAnatomy.md). The word is the fix; there is deliberately no
+   * red exit CODE, because the contract projects none on any node and a number
+   * invented here would claim a measurement nobody took.
+   *
+   * Defaulted rather than required: `exited` is the state this component was
+   * written for, so an unaware caller keeps the reading it already had.
+   */
+  outcome = 'exited',
+  /**
+   * THE SESSION'S OWN TIMESTAMPS, superseding the `meta: string` this component
+   * used to accept. That prop existed for exactly this line and its only caller
+   * never passed one, so the oracle's `ran 41m · ended 12m ago` had never
+   * rendered on any screen (drift D1, HANDOVER-SessionAnatomy.md:88).
+   *
+   * The RECORD arrives, not a pre-formatted sentence: a string prop is a second
+   * place for a host to word the same fact differently, and it cannot carry a
+   * relative label without freezing it at the caller's render. Both are null on
+   * a session whose row never closed out, and the line says so.
+   */
+  startedAt,
+  exitedAt,
   onOpenTranscript,
   onResume,
   /** True while a resume is in flight — the button must not be double-fired. */
@@ -29,12 +56,22 @@ export function ExitedFallback({
    * guess assembled here.
    */
   resumeDisabledReason,
+  /**
+   * THE POST-MORTEM, when a host has wired one. A ReactNode rather than data
+   * because the numbers come from `execution.transcript` and this layer holds
+   * no seam — the same reason `debugSurface` and `gitSurface` arrive as nodes.
+   * Absent, the canvas keeps exactly the shape it had.
+   */
+  stats,
 }: {
-  meta?: string;
+  outcome?: 'exited' | 'failed';
+  startedAt?: string | null;
+  exitedAt?: string | null;
   onOpenTranscript?: () => void;
   onResume?: () => void;
   resuming?: boolean;
   resumeDisabledReason?: string;
+  stats?: ReactNode;
 }) {
   // L6: never hide, never enabled-inert. An unwired or refused resume renders
   // as a DISABLED button carrying its reason — a missing button would read as
@@ -44,12 +81,30 @@ export function ExitedFallback({
     ? 'Resume is not wired on this surface yet.'
     : resumeDisabledReason;
 
+  /* The shared 30s clock, subscribed ONLY here. This component mounts on a dead
+     session, so the tick can never reach the live terminal's render path — the
+     reason the line is assembled inside rather than by `TerminalBody`, which is
+     also the parent of `LiveTerminal`. */
+  const now = useNow();
+  const meta =
+    startedAt == null && exitedAt == null
+      ? null
+      : exitFactsLine({ startedAt, exitedAt, now });
+
   return (
-    <div className="term-fallback" data-testid="session-exited-fallback">
+    <div
+      className={`term-fallback${stats ? ' term-fallback--stats' : ''}`}
+      data-testid="session-exited-fallback"
+      data-outcome={outcome}
+    >
       <div className="term-fallback__inner">
         <span className="term-fallback__ring" aria-hidden />
-        <span className="term-fallback__title">Session exited</span>
-        {meta ? <span className="term-fallback__meta">{meta}</span> : null}
+        <span className="term-fallback__title">{outcomeTitle(outcome)}</span>
+        {meta ? (
+          <span className="term-fallback__meta" data-testid="session-exit-facts">
+            {meta}
+          </span>
+        ) : null}
         <div className="term-fallback__actions">
           <button
             type="button"
@@ -62,7 +117,23 @@ export function ExitedFallback({
           >
             {resuming ? 'Resuming…' : 'Resume session'}
           </button>
-          <button type="button" className="term-fallback__chip" onClick={onOpenTranscript}>
+          {/* THE SAME L6 RULE AS RESUME, applied to the control that had been
+              breaking it since it was written. This button was ENABLED with
+              `onClick={undefined}` on any host that did not wire
+              `onOpenTranscript` — a live control that silently did nothing,
+              which is the enabled-inert class this canvas bans one line above.
+              It is now refused out loud instead. */}
+          <button
+            type="button"
+            className="term-fallback__chip"
+            data-testid="session-open-transcript"
+            onClick={onOpenTranscript}
+            disabled={!onOpenTranscript}
+            aria-disabled={!onOpenTranscript}
+            {...(onOpenTranscript
+              ? {}
+              : { title: 'The transcript surface is not wired on this view.' })}
+          >
             View transcript ↗
           </button>
         </div>
@@ -86,6 +157,10 @@ export function ExitedFallback({
             {reason}
           </span>
         ) : null}
+        {/* BELOW the verdict and the controls, deliberately. Resume is the
+            highest-value thing on this screen and a wall of figures above it
+            would push it under the fold on a short panel. */}
+        {stats ?? null}
       </div>
     </div>
   );
