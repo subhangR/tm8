@@ -583,12 +583,44 @@ button.tch-entity-chip:hover {
      block is .ri-host (position: relative), not this ancestor. */
   container-type: inline-size;
 }
-/* The foot sheds copy before it sheds controls: the phase word goes first.
-   Losing a label beats the three thread-setting triggers or Send wrapping
-   onto a second line. (The keyboard tip and the pinned note are gone for
-   good — user ruling 2026-08-18: the foot carries controls, not copy.) */
+/* THE FOOT SHEDS COPY BEFORE IT SHEDS CONTROLS, in that order and no other:
+   the phase word, then trigger width, then the teammate's NAME — and never a
+   control, never a second line. Losing a label beats the three thread-setting
+   triggers or Send wrapping. (The keyboard tip and the pinned note are gone
+   for good — user ruling 2026-08-18: the foot carries controls, not copy.)
+
+   NOT ON THE PHONE. `data-shell='mobile'` answers this same squeeze the
+   opposite way and deliberately: the picks scroll sideways so that nothing is
+   hidden and nothing is ellipsized, because a node's roster is variable-length
+   and a layout that must fit all of it in 342px is one that must lie about
+   some of it (see the mobile foot rules at the end of this file). The mobile
+   composer is ~342px wide, so without this guard these desktop rules would
+   land on the phone and undo that ruling. */
 @container (max-width: 480px) {
   .tch-phase { display: none; }
+  /* The phase word is what carried `margin-left: auto`, so hiding it also took
+     away the thing that pushed Send to the right edge — the button drifted
+     back against the last trigger and left a hole at the end of the row. The
+     free space collects on the picks instead. Send keeps its own 8px margin,
+     so when the row runs out of slack and this `auto` resolves to 0 the two
+     controls still do not touch. */
+  .cv2-root:not([data-shell='mobile']) .tch-picks { margin-right: auto; }
+}
+
+@container (max-width: 420px) {
+  .cv2-root:not([data-shell='mobile']) .tch-picks { gap: 4px; }
+  .cv2-root:not([data-shell='mobile']) .tch-pick__trigger { max-width: 108px; }
+}
+
+/* THE NAME BECOMES THE FACE. Below this the teammate trigger is its avatar and
+   its caret — the face already says which teammate, so the word beside it was
+   the one piece of the foot that could go without costing an answer. The
+   tooltip (`title` on the trigger) keeps the full name one hover away, and the
+   accessible name is unchanged because it was never the value to begin with. */
+@container (max-width: 360px) {
+  .cv2-root:not([data-shell='mobile']) .tch-pick--faced .tch-pick__value { display: none; }
+  .cv2-root:not([data-shell='mobile']) .tch-pick--faced .tch-pick__trigger { padding-inline: 5px; }
+  .cv2-root:not([data-shell='mobile']) .tch-pick__trigger { max-width: 88px; }
 }
 
 /* THE EMPTY STATE CENTRES THE PAIR (ref mockup 02-home-empty): greeting and
@@ -724,6 +756,11 @@ button.tch-entity-chip:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* NOT SHRINKABLE. A 24px square with the default `flex-shrink: 1` is a 24px
+     square right up until the row runs out of room, and then it is a squashed
+     glyph — the box is the affordance here, so it holds its size and the
+     pick triggers do the giving. */
+  flex: none;
   width: 24px;
   height: 24px;
   margin-right: var(--pn-space-1);
@@ -748,8 +785,23 @@ button.tch-entity-chip:hover {
 
 .tch-phase { margin-left: auto; color: var(--pn-wait); font: var(--pn-fs-tick) var(--pn-mono); }
 
+/* SEND NEVER GIVES, AND THIS IS THE RULE THE OVERLAP BUG WAS MISSING.
+   Everything else in the foot refused to shrink — `.tch-pick` is a flex item
+   with the automatic `min-width: auto`, so the three triggers held their
+   content width whatever happened — which left Send as the ONLY item with any
+   give. Under 360px it was squeezed until "Send ↑" wrapped onto two lines: the
+   button grew from 31px to 49px tall, the foot from 47px to 59px, and the row
+   still did not fit, so the model trigger ran out past the card's edge and
+   under the button. (Measured in `chat-dev.html`: 8px of overlap at a 360px
+   composer, 151px at 220px.) `flex: none` plus `nowrap` means the primary
+   action keeps one line and its full footprint at every width; the triggers
+   below are what yields instead. */
 .tch-send,
-.tch-stop { margin-left: var(--pn-space-2); }
+.tch-stop {
+  flex: none;
+  margin-left: var(--pn-space-2);
+  white-space: nowrap;
+}
 
 /* The primary action and the thread-setting triggers get a real keyboard
    ring — hover styling alone leaves a keyboard user aiming blind. */
@@ -1182,11 +1234,17 @@ button.tch-entity-chip:hover {
   min-width: 0;
   margin-left: var(--pn-space-1);
 }
-.tch-pick { display: inline-flex; }
+/* THE TRIGGERS ARE THE FOOT'S SHOCK ABSORBER, so every link in the chain has
+   to be allowed to compress. `min-width: 0` on the item AND on the button
+   defeats the automatic minimum size that otherwise pins a flex item at its
+   content width — without both, `.tch-pick__value`'s ellipsis can never
+   engage and the row overflows instead of narrowing. */
+.tch-pick { display: inline-flex; min-width: 0; }
 .tch-pick__trigger {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
   max-width: 150px;
   min-height: 24px;
   padding: 2px 6px 2px 5px;
@@ -1212,7 +1270,9 @@ button.tch-entity-chip:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tch-pick__caret { color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
+/* The caret is the promise of a menu, so it is the last thing to be traded
+   away — it holds its size while the value beside it ellipsizes. */
+.tch-pick__caret { flex: none; color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
 
 /* Portalled by `useMenuAnchor` — positioned inline, sized here. */
 .tch-pickmenu {
