@@ -2913,6 +2913,12 @@ export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.o
   stuck: SessionTranscriptStuckSchema.nullable(),
   lastActivityAt: IsoTimestamp.nullable(),
   malformed: z.number().int().nonnegative(),
+  // The page-back cursor. Nullable rather than zero-defaulted for the same
+  // reason `stats` is: 0 is a REAL offset — the start of the file, the one
+  // place there is nothing older — so an unavailable page must not be able to
+  // claim it.
+  windowStart: z.number().int().nonnegative().nullable(),
+  hasOlder: z.boolean(),
   fileChanges: SessionFileChangesSchema.nullable().optional(),
 }).strict();
 

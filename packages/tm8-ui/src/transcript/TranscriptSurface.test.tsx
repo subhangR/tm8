@@ -42,6 +42,11 @@ function page(over: Partial<SessionTranscriptPage> = {}): SessionTranscriptPage 
     },
     malformed: 0,
     stuck: null,
+    // The whole file, by default: the surface's claim that this is where the
+    // session began has to be EARNED, so a fixture must opt into `hasOlder`
+    // rather than get it for free.
+    windowStart: 0,
+    hasOlder: false,
     ...over,
   } as SessionTranscriptPage;
 }
@@ -52,6 +57,32 @@ function seamWith(p: SessionTranscriptPage | Error, prompt = vi.fn().mockResolve
     commands: { prompt },
   } as never;
 }
+
+/**
+ * A seam that answers each `before` cursor with a genuinely EARLIER window.
+ *
+ * Written as a lookup from cursor to page rather than "return the next thing in
+ * a list", because the thing under test is that the surface sends back the
+ * cursor it was given. A seam that ignored `before` and served pages in order
+ * would pass a paging test while the surface asked for nothing at all.
+ */
+function pagingSeam(pages: Record<'tail' | number, SessionTranscriptPage>) {
+  const transcript = vi.fn((_id: string, opts?: { before?: number }) => {
+    const key = opts?.before === undefined ? 'tail' : opts.before;
+    const hit = pages[key as 'tail' | number];
+    return hit === undefined
+      ? Promise.reject(new Error(`no fixture window for cursor ${String(key)}`))
+      : Promise.resolve(hit);
+  });
+  return { seam: { transcript, commands: { prompt: vi.fn() } } as never, transcript };
+}
+
+const turn = (text: string) => ({
+  at: '2026-08-18T09:00:00.000Z',
+  source: 'assistant' as const,
+  text,
+  truncated: false,
+});
 
 describe('the Transcript surface', () => {
   it('renders the turns oldest-first, as the server sends them', async () => {
@@ -86,19 +117,254 @@ describe('the Transcript surface', () => {
     ).toBe('false');
   });
 
-  // A tail read has turns above the first one shown. Saying nothing would let
-  // the first visible turn read as the session's beginning.
-  it('marks a partial read as a tail rather than a beginning', async () => {
-    const partial = page({ stats: { ...page().stats!, partial: true } });
+  // A window that does not reach the first byte has turns above the first one
+  // shown. Saying nothing would let the first visible turn read as the
+  // session's beginning, which is the lie this line exists to prevent.
+  it('says earlier turns exist, and offers a way to go get them', async () => {
+    const partial = page({ windowStart: 4096, hasOlder: true });
     render(<TranscriptSurface seam={seamWith(partial)} sessionId={SESSION} liveness="live" />);
     const note = await screen.findByTestId('transcript-tail-boundary');
-    expect(note.textContent).toMatch(/read as a tail/i);
+    expect(note.textContent).toMatch(/earlier turns exist/i);
+    // The manual control is the FALLBACK the observer is allowed to fail
+    // behind, so it has to be a real focusable button and not a hover target.
+    const button = screen.getByTestId('transcript-load-older');
+    expect(button.tagName).toBe('BUTTON');
+    // The retired claim. It was true before there was a cursor and is false now.
+    expect(document.body.textContent).not.toMatch(/cannot be paged back to/i);
   });
 
-  it('does not claim a tail when the whole transcript was read', async () => {
+  /**
+   * The one claim on this surface that has to be EARNED: the server reached the
+   * first byte of the file, so this really is where the session began. It must
+   * never be the default a page falls into.
+   */
+  it('claims the beginning of the session only when nothing is older', async () => {
     render(<TranscriptSurface seam={seamWith(page())} sessionId={SESSION} liveness="live" />);
-    await screen.findByTestId('transcript-turns');
+    const start = await screen.findByTestId('transcript-start-boundary');
+    expect(start.textContent).toMatch(/beginning of the session/i);
     expect(screen.queryByTestId('transcript-tail-boundary')).toBeNull();
+    expect(screen.queryByTestId('transcript-load-older')).toBeNull();
+  });
+
+  describe('walking back through the session', () => {
+    const windows = () => ({
+      tail: page({ entries: [turn('the newest turn')], windowStart: 900, hasOlder: true }),
+      900: page({ entries: [turn('the middle turn')], windowStart: 400, hasOlder: true }),
+      400: page({ entries: [turn('the first turn')], windowStart: 0, hasOlder: false }),
+    });
+
+    it('asks for the window before the oldest one it holds, by its cursor', async () => {
+      const { seam, transcript } = pagingSeam(windows());
+      render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="not-running" />);
+      fireEvent.click(await screen.findByTestId('transcript-load-older'));
+
+      await waitFor(() => {
+        expect(transcript).toHaveBeenCalledWith(SESSION, { before: 900 });
+      });
+      // The SECOND walk must use the cursor the SECOND page reported, not an
+      // arithmetic guess from the first — real turns are wildly uneven in size.
+      fireEvent.click(await screen.findByTestId('transcript-load-older'));
+      await waitFor(() => {
+        expect(transcript).toHaveBeenCalledWith(SESSION, { before: 400 });
+      });
+    });
+
+    it('prepends older turns above the ones already on screen, in order', async () => {
+      const { seam } = pagingSeam(windows());
+      render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="not-running" />);
+      fireEvent.click(await screen.findByTestId('transcript-load-older'));
+      await screen.findByText('the middle turn');
+      fireEvent.click(screen.getByTestId('transcript-load-older'));
+      await screen.findByText('the first turn');
+
+      const texts = [...screen.getByTestId('transcript-turns').querySelectorAll('.tr-turn')]
+        .map((n) => n.textContent ?? '');
+      // Oldest-first across the whole walk: the accumulation reads as one
+      // conversation, not as three windows stacked in arrival order.
+      expect(texts[0]).toMatch(/the first turn/);
+      expect(texts[1]).toMatch(/the middle turn/);
+      expect(texts[2]).toMatch(/the newest turn/);
+    });
+
+    it('earns the beginning claim only after the walk reaches byte 0', async () => {
+      const { seam } = pagingSeam(windows());
+      render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="not-running" />);
+      await screen.findByTestId('transcript-tail-boundary');
+      fireEvent.click(screen.getByTestId('transcript-load-older'));
+      await screen.findByText('the middle turn');
+      // Still not the beginning: one more window exists below this one.
+      expect(screen.queryByTestId('transcript-start-boundary')).toBeNull();
+      fireEvent.click(screen.getByTestId('transcript-load-older'));
+      await screen.findByTestId('transcript-start-boundary');
+      expect(screen.queryByTestId('transcript-load-older')).toBeNull();
+    });
+
+    // Same rule as the poll: a read that fails must not cost the reader the
+    // turns they already had. It reports itself and offers the walk again.
+    it('reports a failed walk without blanking what is on screen', async () => {
+      const { seam } = pagingSeam({
+        tail: page({ entries: [turn('the newest turn')], windowStart: 900, hasOlder: true }),
+      });
+      render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="not-running" />);
+      fireEvent.click(await screen.findByTestId('transcript-load-older'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('transcript-tail-boundary').textContent)
+          .toMatch(/no fixture window for cursor 900/);
+      });
+      expect(screen.getByText('the newest turn')).toBeTruthy();
+      expect(screen.queryByTestId('transcript-error')).toBeNull();
+      expect(screen.getByTestId('transcript-load-older').textContent).toMatch(/try earlier turns/i);
+    });
+
+
+    /**
+     * REGRESSION (review of PR #452). `loadOlder` read the shared request
+     * counter that `load()` increments, and the poll paused only once a window
+     * had LANDED — so a 5s tick inside the FIRST page-back discarded the
+     * fetched window and left the walk in `loading` forever. With the button
+     * replaced by "Reading earlier turns…", the sentinel disabled, `loadOlder`
+     * early-returning on that phase, and `pagedBack` still false so the resume
+     * control was not rendered, the reader had no control at all.
+     *
+     * The old poll-pause test could not see it: its seam resolved
+     * synchronously, so no tick could land inside the walk. This one holds the
+     * walk open across a tick on purpose.
+     */
+    it('survives a poll tick landing inside the first page-back', async () => {
+      vi.useFakeTimers();
+      try {
+        const pages = windows();
+        let release: (() => void) | undefined;
+        const transcript = vi.fn((_id: string, opts?: { before?: number }) => {
+          if (opts?.before === undefined) return Promise.resolve(pages.tail);
+          // Held open, so the 5s tick below lands mid-walk.
+          return new Promise((resolve) => {
+            release = () => { resolve(pages[900]); };
+          });
+        });
+        const seam = { transcript, commands: { prompt: vi.fn() } } as never;
+        render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
+        await vi.advanceTimersByTimeAsync(0);
+        fireEvent.click(screen.getByTestId('transcript-load-older'));
+        await vi.advanceTimersByTimeAsync(5_000);
+        release!();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // The window landed rather than being discarded...
+        expect(screen.getByText('the middle turn')).toBeTruthy();
+        // ...and the reader has a control again rather than a frozen spinner.
+        expect(screen.getByTestId('transcript-load-older')).toBeTruthy();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * REGRESSION (review of PR #452). The server cannot step past a SINGLE
+     * record larger than its read budget: the window lies entirely inside one
+     * record, so there is no earlier boundary to name and it returns the
+     * cursor it was given. Prepending that window changed nothing, left the
+     * cursor where it was, and let the control ask for the identical bytes
+     * again — an unbounded loop.
+     *
+     * It is not an error and it is not the beginning. Both would be lies:
+     * there IS more above, and this reader cannot reach it.
+     */
+    it('stops with a reason when a window comes back on the same cursor', async () => {
+      const stuck = page({ entries: [turn('the newest turn')], windowStart: 900, hasOlder: true });
+      const { seam, transcript } = pagingSeam({ tail: stuck, 900: stuck });
+      render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="not-running" />);
+      fireEvent.click(await screen.findByTestId('transcript-load-older'));
+
+      const stalled = await screen.findByTestId('transcript-stalled');
+      expect(stalled.textContent).toMatch(/cannot be reached/i);
+      expect(stalled.textContent).toMatch(/larger than the node reads in one window/i);
+      // Neither a beginning nor a retry: the walk is over for this cursor.
+      expect(screen.queryByTestId('transcript-start-boundary')).toBeNull();
+      expect(screen.queryByTestId('transcript-load-older')).toBeNull();
+      const calls = transcript.mock.calls.length;
+      await new Promise((r) => setTimeout(r, 50));
+      expect(transcript.mock.calls.length).toBe(calls);
+    });
+
+
+    /**
+     * RESIDUAL FROM RE-REVIEW (PR #452). A stall taken on the FIRST walk lands
+     * while `older.length` is still 0, so the poll is running again the moment
+     * the walk ends and can replace the tail with a window starting somewhere
+     * else. A session-wide `stalled` went on refusing on that new cursor's
+     * behalf — a cursor that had refused nothing — and the reader could not
+     * walk at all.
+     *
+     * The refusal belongs to the bytes that earned it. When the tail moves, it
+     * is lifted; the same giant record will very likely refuse the new cursor
+     * too, but on its own evidence rather than on a stale verdict.
+     */
+    it('lifts a stall when the tail slides to a cursor that refused nothing', async () => {
+      vi.useFakeTimers();
+      try {
+        const stuck = page({ entries: [turn('the newest turn')], windowStart: 900, hasOlder: true });
+        const moved = page({ entries: [turn('a newer turn')], windowStart: 1200, hasOlder: true });
+        let tail = stuck;
+        const transcript = vi.fn((_id: string, opts?: { before?: number }) =>
+          opts?.before === undefined ? Promise.resolve(tail) : Promise.resolve(stuck));
+        const seam = { transcript, commands: { prompt: vi.fn() } } as never;
+        render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
+        await vi.advanceTimersByTimeAsync(0);
+
+        fireEvent.click(screen.getByTestId('transcript-load-older'));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(screen.getByTestId('transcript-stalled')).toBeTruthy();
+
+        // The poll never paused — no window was ever held — so the tail moves.
+        tail = moved;
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        // The poll's render and the lift it triggers are separate rounds.
+        await vi.advanceTimersByTimeAsync(0);
+
+        // A different cursor is on offer, so the refusal no longer applies.
+        expect(screen.queryByTestId('transcript-stalled')).toBeNull();
+        expect(screen.getByTestId('transcript-load-older')).toBeTruthy();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * THE POLL PAUSE. The newest window is a tail, so its start slides forward
+     * as the file grows; replacing it under an accumulation would open a hole
+     * in the middle of the reader's history that no cursor points at. There is
+     * no "after" cursor to close such a hole with, so the surface stops the
+     * poll instead and says so.
+     */
+    it('stops polling while the reader is holding older windows, and says so', async () => {
+      vi.useFakeTimers();
+      try {
+        const { seam, transcript } = pagingSeam(windows());
+        render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
+        await vi.advanceTimersByTimeAsync(0);
+        fireEvent.click(screen.getByTestId('transcript-load-older'));
+        await vi.advanceTimersByTimeAsync(0);
+
+        const afterWalk = transcript.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(transcript.mock.calls.length).toBe(afterWalk);
+        expect(screen.getByTestId('transcript-poll-paused').textContent)
+          .toMatch(/not being loaded while you read earlier ones/i);
+
+        // Resuming drops the walk and re-reads the tail — the one refresh that
+        // cannot leave a gap.
+        fireEvent.click(screen.getByRole('button', { name: /back to the newest turns/i }));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(transcript.mock.calls.length).toBeGreaterThan(afterWalk);
+        expect(screen.queryByTestId('transcript-poll-paused')).toBeNull();
+        expect(screen.queryByText('the middle turn')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   // An absent transcript is a real and common state — not an error, and often

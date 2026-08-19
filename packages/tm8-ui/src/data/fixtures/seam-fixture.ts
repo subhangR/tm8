@@ -195,6 +195,84 @@ const FIXTURE_FILE_CHANGES = {
   filesTruncated: false,
   source: 'transcript' as const,
 };
+
+/**
+ * THE LIVE SESSION'S TRANSCRIPT, LONG ENOUGH TO PAGE.
+ *
+ * 34 turns against a 20-turn window, so the walk backwards takes two pages and
+ * the second one reaches the beginning — the only shape in which BOTH ends of
+ * the feature are reachable from a fixture: a `hasOlder: true` boundary that
+ * invites the walk, and the earned `hasOlder: false` claim that this really is
+ * where the session started.
+ *
+ * `offset` stands in for the byte offset of the record behind each turn. Its
+ * VALUES are arbitrary; what has to be true is the shape the real reader
+ * guarantees — strictly increasing, and 0 for the first turn, so that walking
+ * back terminates at the start of the file rather than at an arbitrary floor.
+ * The offsets are spaced unevenly on purpose: an evenly-spaced fixture would
+ * let a client that computed the next cursor arithmetically (`windowStart -
+ * pageSize`) pass, and that client is broken against a real transcript, where
+ * turns are wildly different sizes.
+ */
+interface FixtureTranscriptTurn {
+  at: string;
+  source: 'user' | 'assistant';
+  text: string;
+  truncated: boolean;
+  offset: number;
+}
+
+function fixtureTranscriptTurns(): FixtureTranscriptTurn[] {
+  const beats: [source: 'user' | 'assistant', text: string][] = [
+    ['user', 'Take the failing spawn test and find why the PTY never emits.'],
+    ['assistant', 'Reading the spawn service and its test harness to see which side owns the timeout.'],
+    ['assistant', 'The harness builds the ring before the host is attached, so there is a window with no reader.'],
+    ['user', 'Does it fail the same way under codex?'],
+    ['assistant', 'Same failure, different timing — which points at the harness rather than at either adapter.'],
+    ['assistant', 'Instrumenting the ring with a write counter to see whether the bytes arrive at all.'],
+    ['assistant', 'They arrive. 4 frames land before the first read, so nothing is lost — it is only unread.'],
+    ['user', 'Then the assertion is wrong, not the code.'],
+    ['assistant', 'Agreed for the first flush. The second assertion is still measuring something real.'],
+    ['assistant', 'Splitting the test: one case for the buffered frames, one for the live stream.'],
+    ['assistant', 'The buffered case passes immediately. The live case still hangs at 5s.'],
+    ['user', 'Do not raise the timeout to make it pass.'],
+    ['assistant', 'No — a timeout raise would hide it. Tracing where the stream stops instead.'],
+    ['assistant', 'The stream stops at the first resize: the host re-opens the fd and the old reader keeps the stale one.'],
+    ['assistant', 'That is the bug. Resize swaps the descriptor without re-subscribing the consumer.'],
+    ['user', 'Is that reachable outside the test?'],
+    ['assistant', 'Yes — any terminal resize on a live session hits it, which matches the “terminal goes quiet” reports.'],
+    ['assistant', 'Writing a regression that resizes mid-stream and asserts the bytes keep coming.'],
+    ['assistant', 'The regression fails on main and passes with the re-subscribe, which is the pair worth having.'],
+    ['user', 'Good. Keep the split tests too.'],
+    ['assistant', 'Kept. The buffered case is what tells you WHICH half broke when this regresses again.'],
+    ['assistant', 'Running the whole execution suite to see what else touched the resize path.'],
+    ['assistant', 'One unrelated red, already red on main — recording it rather than folding it in here.'],
+    ['user', 'Diff it by name against main before you believe that.'],
+    ['assistant', 'Done. Same single test by name on both sides, so it is inherited and not mine.'],
+    ['assistant', 'Tidying the instrumentation back out; the counter was a probe, not a feature.'],
+    ['assistant', 'Re-reading the diff for anything I left behind. The probe is gone and the fix is three lines.'],
+    ['user', 'Does the re-subscribe leak the old reader?'],
+    ['assistant', 'It did. Closing the stale descriptor in the same step, with a test that counts open handles.'],
+    ['assistant', 'Handle count is flat across 50 resizes now, where it grew by one per resize before.'],
+    ['assistant', 'Full suite green apart from the inherited red.'],
+    ['user', 'Ship it.'],
+    ['assistant', 'Committed and pushed; the PR body carries the handle-count numbers.'],
+    ['assistant', 'Linked to the task, so the status chips track it from here.'],
+  ];
+  // Uneven, strictly increasing, first turn at 0.
+  let offset = 0;
+  return beats.map(([source, text], i) => {
+    const turn: FixtureTranscriptTurn = {
+      at: new Date(Date.UTC(2026, 0, 4, 9, 15 + i * 3, 2)).toISOString(),
+      source,
+      text,
+      truncated: false,
+      offset,
+    };
+    offset += 180 + ((i * 137) % 420);
+    return turn;
+  });
+}
 /**
  * Re-exported because seam-level tests address the fixture space through the
  * SEAM module they exercise. This was imported here and NOT re-exported for a
@@ -2376,6 +2454,11 @@ export function createFixtureSeam(): FixtureSeam {
           // Non-zero: the "some lines did not parse" marker has a story, and it
           // is the honest explanation for why a count looks low.
           malformed: 3,
+          // A SHORT transcript read whole: the window reaches byte 0, so the
+          // top of this one is the real beginning of the session. This is the
+          // arm that proves the earned `hasOlder: false` claim renders.
+          windowStart: 0,
+          hasOlder: false,
           ...(opts?.files ? { fileChanges: clone(FIXTURE_FILE_CHANGES) } : {}),
         });
       }
@@ -2391,39 +2474,46 @@ export function createFixtureSeam(): FixtureSeam {
           stuck: null,
           lastActivityAt: null,
           malformed: 0,
+          // No file was opened, so there is no byte to page back from.
+          windowStart: null,
+          hasOlder: false,
         });
       }
-      // Oldest-first, as the contract requires of a tail, and short enough that
-      // the default window (20) never trims it — a fixture that silently paged
-      // would hide the renderer's ordering bug rather than expose it.
-      const entries = [
-        {
-          at: '2026-01-04T09:15:02.000Z',
-          source: 'user' as const,
-          text: 'Take the failing spawn test and find why the PTY never emits.',
-          truncated: false,
-        },
-        {
-          at: '2026-01-04T09:15:44.000Z',
-          source: 'assistant' as const,
-          text: 'Reading the spawn service and its test harness to see which side owns the timeout.',
-          truncated: false,
-        },
-        {
-          at: '2026-01-04T09:18:10.000Z',
-          source: 'assistant' as const,
-          text: 'The harness asserts on a ring that is only filled after the first flush, so the read races the write.',
-          truncated: false,
-        },
-      ];
+      /*
+       * THE PAGING ARM — and it pages for real.
+       *
+       * A fixture that cannot answer a `before` request with a genuinely
+       * EARLIER window makes every paging test theatre: the test would pass
+       * against a seam that quietly returned the same turns forever. So this
+       * arm models the server's actual cursor rule rather than approximating
+       * it — each turn gets a synthetic byte offset, a window is the newest
+       * `last` turns below the cursor, and the page reports the offset of the
+       * FIRST TURN IT RETURNED. Windows therefore abut exactly as the reader's
+       * do, and walking back to `hasOlder: false` reaches turn 0 and no
+       * further.
+       *
+       * Long enough (34 turns against a 20-turn window) that the walk takes
+       * two pages and the second one lands on the beginning.
+       */
+      const liveTurns = fixtureTranscriptTurns();
       const last = opts?.last ?? 20;
+      const before = opts?.before ?? Number.POSITIVE_INFINITY;
+      const below = liveTurns.filter((t) => t.offset < before);
+      const window = last > 0 ? below.slice(-last) : below;
+      // The offset of the first turn RETURNED, never the first turn read: a
+      // cursor at the window's own start would leave the turns the `last`
+      // slice dropped unreachable, which is the one bug this feature exists to
+      // not have.
+      const windowStart = window[0]?.offset ?? 0;
       return clone({
         sessionId: workSessionId,
         available: true,
       unavailableReason: null,
       searchedPaths: [],
         agentTool: 'claude-code',
-        entries: entries.slice(-last),
+        entries: window.map(({ offset: _offset, ...entry }) => entry),
+        windowStart,
+        hasOlder: windowStart > 0,
         stats: {
           // True on purpose: the reader tails a bounded slice, so the honest
           // default state of this surface is "you are looking at a window".
@@ -2445,7 +2535,7 @@ export function createFixtureSeam(): FixtureSeam {
         // Null, not a zeroed object: the heuristic does not fire on this
         // session, and a `{ silentMs: 0 }` would render as a stuck badge.
         stuck: null,
-        lastActivityAt: '2026-01-04T09:18:10.000Z',
+        lastActivityAt: liveTurns[liveTurns.length - 1]?.at ?? null,
         malformed: 0,
         // The transcript-derived file accounting — attached only when asked,
         // like the real server's `files=1`. Observed tool calls, not git.

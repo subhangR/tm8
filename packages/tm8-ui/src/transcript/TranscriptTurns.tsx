@@ -29,6 +29,7 @@
  * The byline keeps the avatar and the timestamp on both sides, which is what
  * makes it read as a conversation.
  */
+import type { ReactNode } from 'react';
 import type { SessionTranscriptEntry } from '@tm8/contract';
 import { Avatar } from '../kit/Avatar';
 import { Markdown } from '../kit/Markdown';
@@ -39,23 +40,25 @@ import './transcript.css';
 
 export interface TranscriptTurnsProps {
   entries: readonly SessionTranscriptEntry[];
-  /** Marks the top of the list as a tail boundary rather than a beginning. The
-   *  server reads backwards from the end and there is no cursor, so an
-   *  unmarked first turn reads as "this is where the session started" — which
-   *  is false whenever the window is partial. */
-  partial?: boolean;
+  /**
+   * What sits above the first turn — the top boundary.
+   *
+   * A SLOT rather than a `partial` flag, because the two surfaces owe the
+   * reader different things there and only one of them can act. The Transcript
+   * surface renders a boundary that WALKS: it holds the page-back control, the
+   * sentinel that trips it, and the earned "this is the beginning" claim when
+   * there is nothing older. Debug renders nothing here and states its tail
+   * boundary in prose above the list, beside the stats that boundary qualifies.
+   * Neither claim belongs to the turn list itself.
+   */
+  head?: ReactNode;
   testId?: string;
 }
 
-export function TranscriptTurns({ entries, partial = false, testId }: TranscriptTurnsProps) {
+export function TranscriptTurns({ entries, head, testId }: TranscriptTurnsProps) {
   return (
     <div className="tr-turns" data-testid={testId ?? 'transcript-turns'}>
-      {partial ? (
-        <p className="tr-turns__boundary" data-testid="transcript-tail-boundary">
-          Showing the most recent turns. The transcript is read as a tail, so earlier turns exist
-          above this line and cannot be paged back to.
-        </p>
-      ) : null}
+      {head}
       {/* Oldest-first, exactly as the server sends it. A tail read backwards is
           unreadable, and reversing here would fight the contract. */}
       {entries.map((entry, i) => (

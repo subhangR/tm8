@@ -608,11 +608,13 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<SessionLaunchRecord>('execution.launch', { params: { workSessionId } });
     },
     transcript(workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> {
-      // One optional key; http.ts drops `undefined`, so the default read sends
-      // a bare path and lets the server own the window size.
+      // Optional keys only; http.ts drops `undefined`, so the default read
+      // sends a bare path and lets the server own the window size. `before` is
+      // the page-back cursor — a byte offset taken from a previous page's
+      // `windowStart`, sent only when that page said `hasOlder`.
       return http.call<SessionTranscriptPage>('execution.transcript', {
         params: { workSessionId },
-        query: { last: opts?.last, files: opts?.files ? '1' : undefined },
+        query: { last: opts?.last, before: opts?.before, files: opts?.files ? '1' : undefined },
       });
     },
     projectContention(projectId: string): Promise<ContentionReport> {

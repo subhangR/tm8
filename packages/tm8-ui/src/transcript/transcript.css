@@ -100,8 +100,40 @@
   flex-direction: column;
 }
 
+/*
+ * THE TOP BOUNDARY — what is above the first turn, and how to go get it.
+ *
+ * `overflow-anchor: none` is load-bearing, not tidiness. Chrome's scroll
+ * anchoring picks its own anchor element and adjusts `scrollTop` on its own
+ * account when content is inserted above the viewport, which is exactly what a
+ * page-back does. Two corrections for the same prepend — the browser's and
+ * `useTranscriptScroll`'s — do not agree, and the reader gets a jump. This
+ * block opts the boundary out so the surface's own correction is the only one.
+ */
+.tr-turns__top {
+  overflow-anchor: none;
+}
+
+/* The IntersectionObserver's target. It has no content and must still be a real
+   box: a zero-height element can never intersect, so the observer would never
+   fire and the walk would silently depend on the button alone. */
+.tr-turns__sentinel {
+  height: 1px;
+}
+
 .tr-turns__boundary {
   margin: 0 0 var(--pn-space-4);
+  color: var(--pn-ink-3);
+  font-size: 10px;
+  text-align: center;
+}
+
+.tr-turns__boundary-error {
+  color: var(--pn-bad, var(--pn-ink-2));
+}
+
+.tr-turns__paused {
+  margin: 0 0 var(--pn-space-2);
   color: var(--pn-ink-3);
   font-size: 10px;
   text-align: center;

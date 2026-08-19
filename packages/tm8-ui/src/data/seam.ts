@@ -350,13 +350,27 @@ export interface JournalOpts {
 }
 
 /**
- * The DEBUG transcript read's window. There is NO cursor: the server reads a
- * tail, so "older" is not a page you can walk — asking for more turns widens
- * the same window rather than stepping back through history.
+ * The transcript read's window, and its BYTE cursor.
+ *
+ * `before` is what makes this a page rather than a tail: the server reads the
+ * window ENDING at that byte, and every page reports the `windowStart` to pass
+ * back for the one before it. Byte offsets, not the journal's line ordinals —
+ * a transcript is append-only so a byte never moves, and this reader exists to
+ * avoid the full scan an ordinal cursor would need on a file that can run to
+ * tens of megabytes.
+ *
+ * Windows ABUT: the server's cursor lands on a record boundary, so
+ * concatenating pages needs no dedupe and leaves no gap. Raising `last` is NOT
+ * the same thing — it widens one window into a server cap, it does not step.
  */
 export interface TranscriptOpts {
   /** Newest turns to return; server default is 20, max 200. */
   last?: number;
+  /**
+   * Read the window ending at this byte instead of at EOF — a previous page's
+   * `windowStart`. Only send it when that page said `hasOlder`.
+   */
+  before?: number;
   /**
    * Also scan the whole transcript for Edit/Write tool calls and attach
    * `fileChanges` — "what did this session change", without a worktree,
