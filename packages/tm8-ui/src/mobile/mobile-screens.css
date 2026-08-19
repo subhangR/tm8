@@ -556,3 +556,94 @@
     animation: none;
   }
 }
+
+/* ==========================================================================
+   THE FLOATING CREATE BUTTON, AND THE ROOM THE LIST RESERVES FOR IT
+
+   Owner answers A–D (2026-08-19). `EntityView` decides WHETHER it renders
+   (registry data — a kind with no wired create draws no FAB at all, absent
+   rather than inert); this decides where it sits and how big it is.
+
+   SCOPED `[data-shell='mobile']` LIKE EVERY RULE IN THIS FILE, so it is dead
+   on the desktop by construction rather than by a selector somebody has to
+   keep correct. `EntityView`'s own `oneSurface` guard means the element is not
+   even in the desktop DOM; this is the second half of the same statement.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   THE RESERVE IS A FRAME TOKEN, declared in `mobile.css` beside the other
+   chrome floors, because THREE regions compose against it and none of them
+   owns it: the list's bottom padding (below), this button's own offset, and
+   the frame's notice host. Only the button's SIZE is local — nothing else in
+   the frame needs to know how big it is, only how much room to leave.
+
+   Two hand-typed numbers is how a "fixed" overlap comes back the first time
+   one of them is nudged, which is the failure §7.3 already wrote this token
+   arrangement to prevent for the tab bar.
+   -------------------------------------------------------------------------- */
+.cv2-root[data-shell='mobile'] {
+  --mobile-fab-size: 56px;
+}
+
+/* THE LAST ROW MUST NOT BE TRAPPED UNDER IT (answer D). A pinned control over
+   a scrolling list eats the final row unless the list ends above it, and no
+   metric in this program can see that: the row is present, laid out and
+   measurable, it is simply covered. */
+.cv2-root[data-shell='mobile'] .ev-list .lp__body {
+  padding-bottom: var(--mobile-fab-reserve);
+}
+
+.cv2-root[data-shell='mobile'] .ev-fab {
+  /* ABSOLUTE AGAINST `.ev-root`, NOT FIXED. `position: fixed` on this surface
+     is measured against the VIEWPORT, which is not the frame: the frame is
+     shortened by the soft-keyboard inset, so a fixed FAB stays put while the
+     screen it belongs to shrinks — and lands under the keyboard. The view root
+     is already the containing block the launch sheet and the edit dialog use
+     for exactly this reason. */
+  position: absolute;
+  inset-block-end: calc(var(--mobile-safe-bottom, 0px) + var(--pn-space-3));
+  inset-inline-end: var(--pn-space-3);
+  z-index: 15;
+
+  /* 56px on both sides — comfortably over the 44px floor, and REAL geometry.
+     No `::after` hit area anywhere near this control: the audit measures
+     `getBoundingClientRect()` OF THE ELEMENT, so a pseudo-element would score
+     as fixed while the thumb still missed. */
+  inline-size: var(--mobile-fab-size);
+  block-size: var(--mobile-fab-size);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  padding: 0;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-h3);
+  line-height: 1;
+  box-shadow: var(--pn-sh-pop);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root[data-shell='mobile'] .ev-fab:active {
+  transform: scale(0.94);
+}
+
+.cv2-root[data-shell='mobile'] .ev-fab:focus-visible {
+  outline: 2px solid var(--pn-ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root[data-shell='mobile'] .ev-fab {
+    transition: none;
+  }
+}

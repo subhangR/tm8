@@ -1,0 +1,312 @@
+/*
+ * THE NAVIGATION DRAWER.
+ *
+ * §14 — every colour resolves through a `--pn-*` token; the package-level
+ * `hex-ban.test.ts` scans this file.
+ *
+ * IT SLIDES FROM THE LEFT, and that is one line rather than a mechanism. The
+ * owner raised a right-hand drawer for thumb reach and did not rule; left is
+ * built because the ☰ that opens it is top-LEFT and the desktop rail this
+ * drawer is a rendering of is on the left, so the panel appears to come out
+ * from under the control that was pressed. Flipping it is `inset-inline-start`
+ * → `end` and a sign on one `translateX`, which is why building the recommended
+ * one now costs nothing if the ruling goes the other way.
+ *
+ * EVERY TARGET GROWS BY REAL PADDING AND A REAL `min-block-size`. There is no
+ * `::after` hit area anywhere in this file, deliberately: the mobile audit
+ * measures `getBoundingClientRect()` OF THE ELEMENT, so a pseudo-element trick
+ * scores as fixed while the thumb still misses. `shell-contract.test.ts` pins
+ * that rule for the shell sheets and this one holds itself to it.
+ */
+
+.mdrawer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  /* The panel hugs the edge it came from. */
+  justify-content: flex-start;
+  background: rgba(0, 0, 0, 0.32);
+  animation: mdrawer-scrim var(--pn-dur-base) var(--pn-ease-out);
+}
+
+@keyframes mdrawer-scrim {
+  from {
+    opacity: 0;
+  }
+}
+
+.mdrawer__panel {
+  /*
+   * NOT FULL WIDTH. A sliver of the screen behind it stays visible, which is
+   * what says "this is a layer over your screen" rather than "you navigated to
+   * a menu page" — and it gives the scrim somewhere to be tapped, which is the
+   * dismissal every drawer user already knows.
+   */
+  inline-size: min(84vw, 340px);
+  max-inline-size: 100%;
+  block-size: 100%;
+  display: flex;
+  flex-direction: column;
+  /* A grid/flex child that scrolls needs a floor, or the panel grows to its
+     content height and the whole frame scrolls instead. The same L4 rule
+     `.mobile-frame__content` documents, one layer in. */
+  min-block-size: 0;
+
+  background: var(--pn-surface);
+  border-inline-end: 1px solid var(--pn-line);
+  box-shadow: var(--pn-sh-pop);
+
+  padding-top: var(--mobile-safe-top);
+  padding-bottom: var(--mobile-safe-bottom);
+  padding-inline-start: var(--mobile-safe-left);
+
+  animation: mdrawer-in var(--pn-dur-base) var(--pn-ease-out);
+}
+
+@keyframes mdrawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+/* ── THE HEAD ────────────────────────────────────────────────────────────── */
+
+.mdrawer__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-block-size: var(--mobile-header-min);
+  padding-inline: var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.mdrawer__space {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  font-family: var(--pn-mono);
+  font-weight: 600;
+  /* `--pn-fs-sm`, not `--pn-fs-micro`: DEF-040 measured 11px as the smallest
+     type in the phone shell and this is the same eyebrow treatment. */
+  font-size: var(--pn-fs-sm);
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mdrawer__close {
+  flex: 0 0 auto;
+  /* The floor is on the SMALLER side — a control 44 wide and 22 tall fails the
+     same thumb. Square, therefore. */
+  inline-size: var(--mobile-touch-min);
+  block-size: var(--mobile-touch-min);
+  margin-inline-end: calc(var(--pn-space-2) * -1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-body);
+  cursor: pointer;
+  border-radius: var(--pn-r-pill);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mdrawer__close:active {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+
+/* ── THE SCROLL ──────────────────────────────────────────────────────────── */
+
+.mdrawer__scroll {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-block: var(--pn-space-2);
+}
+
+.mdrawer__section + .mdrawer__section {
+  border-top: 1px solid var(--pn-line);
+  margin-top: var(--pn-space-2);
+  padding-top: var(--pn-space-2);
+}
+
+.mdrawer__label {
+  margin: 0;
+  padding: var(--pn-space-1) var(--pn-space-3);
+  font-family: var(--pn-mono);
+  font-weight: 600;
+  font-size: var(--pn-fs-sm);
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+}
+
+.mdrawer__rows {
+  list-style: none;
+  margin: 0;
+  /* A `<ul>` carries discs and 40px of user-agent inline-start padding, and
+     shipping that was the defect `.mobile-tabs` was written to close. */
+  padding: 0;
+}
+
+/* ── ONE ROW ─────────────────────────────────────────────────────────────── */
+
+.mdrawer__row {
+  inline-size: 100%;
+  /* REAL height, not a pseudo-element. See this file's head. */
+  min-block-size: var(--mobile-touch-min);
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  text-align: start;
+
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+
+  font-family: var(--pn-ui);
+  font-weight: 500;
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.mdrawer__row:active {
+  background: var(--pn-active);
+}
+
+/*
+ * CURRENT FROM `aria-current`, WHICH THE COMPONENT ALREADY EMITS — the same
+ * rule the tab bar used and for the same reason: the accessible property and
+ * the visual state are ONE fact, so a row that looks current and does not
+ * announce itself as current is not a possible rendering.
+ */
+.mdrawer__row[aria-current] {
+  background: var(--pn-active);
+  color: var(--pn-brand);
+  font-weight: 600;
+}
+
+.mdrawer__row:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+  border-radius: var(--pn-r-sm);
+}
+
+.mdrawer__mark {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 20px;
+  color: var(--pn-ink-2);
+}
+
+.mdrawer__row[aria-current] .mdrawer__mark {
+  color: var(--pn-brand);
+}
+
+.mdrawer__name {
+  flex: 1 1 auto;
+  /* Without this a flex item refuses to shrink below its content and the count
+     is pushed off the right edge instead of the name truncating. */
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mdrawer__name--stacked {
+  display: flex;
+  flex-direction: column;
+  white-space: normal;
+}
+
+.mdrawer__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mdrawer__preview {
+  font-size: var(--pn-fs-sm);
+  font-weight: 400;
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mdrawer__row--verb {
+  color: var(--pn-ink-2);
+}
+
+/*
+ * THE UNREAD COUNT. Drawn only when there IS one — see the component: an absent
+ * count draws nothing, and a counted zero is the resting state of every row.
+ */
+.mdrawer__count {
+  flex: 0 0 auto;
+  min-inline-size: 20px;
+  padding-inline: var(--pn-space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--pn-paper);
+  background: var(--pn-brand);
+  border-radius: var(--pn-r-pill);
+}
+
+.mdrawer__empty {
+  padding: var(--pn-space-2) var(--pn-space-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+/* ── THE FOOT ────────────────────────────────────────────────────────────── */
+
+.mdrawer__foot {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--pn-line);
+  padding-block: var(--pn-space-1);
+}
+
+/*
+ * Motion is an enhancement. The drawer must still ARRIVE for a reader who has
+ * asked the platform for less of it — only its travel is removed.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .mdrawer,
+  .mdrawer__panel {
+    animation: none;
+  }
+
+  .mdrawer__row {
+    transition: none;
+  }
+}

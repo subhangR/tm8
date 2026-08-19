@@ -1,7 +1,13 @@
 /*
- * MOBILE CHROME — the tab bar, the header and the honest empty states.
+ * MOBILE CHROME — the header and the honest empty states.
  *
- * THE DEFECT THIS FILE CLOSES. `MobileShell.tsx` has emitted `.mobile-tabs`,
+ * THE TAB BAR WAS HERE, and its rules retired with it (owner ruling
+ * 2026-08-19): `MobileShell` no longer fills the frame's `tabBar` region, so
+ * `.mobile-tabs*` styled markup nothing emits. What took its place is
+ * `.mobile-header__menu` — the ☰, on every screen — and `mobile-drawer.css`.
+ *
+ * THE DEFECT THIS FILE ORIGINALLY CLOSED, kept because it is the reason the
+ * file exists at all. `MobileShell.tsx` had emitted `.mobile-tabs`,
  * `.mobile-tabs__tab`, `.mobile-header` and `.mobile-empty` since the shell
  * landed, and NOT ONE of those class names had a single rule anywhere in the
  * package. `mobile.css` styles the frame REGIONS (`__header`, `__content`,
@@ -246,148 +252,77 @@
 }
 
 /* ==========================================================================
-   THE TAB BAR
+   THE ☰, AND THE FACT IT CARRIES
+
+   THE TAB BAR'S REPLACEMENT, and the only navigation control this shell has
+   left, so it appears on EVERY screen (owner ruling 4) rather than on the chat
+   screen alone. It opens `MobileDrawer`.
+
+   IT IS FIRST IN THE HEADER because it is the top-left ☰ every phone reader
+   already knows, and because the drawer it opens slides from that same edge —
+   the panel appears to come out from under the control that was pressed.
    ========================================================================== */
 
-/*
- * Five equal columns, because five equal destinations is what the bar promises.
- * `grid-auto-columns: 1fr` rather than flex `1 1 0`: a grid column is exactly a
- * fifth of the bar regardless of whether "Sessions" is wider than "Home", so
- * the marks line up on a rhythm instead of drifting with the words.
- *
- * `list-style: none` + zeroed padding is the rule whose absence WAS the defect:
- * a `<ul>` carries discs and 40px of inline-start padding from the user agent,
- * and that is precisely what shipped.
- */
-.mobile-tabs {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  align-items: stretch;
-}
-
-.mobile-tabs > li {
-  display: flex;
-  min-width: 0;
-}
-
-/*
- * THE TAB. Icon over word, both drawn — a mark alone is a guess, and a word
- * alone at this size is the list the bar replaced.
- *
- * `min-block-size: var(--mobile-tabbar-min)` is 49px from the frame's own
- * token, so the bar's floor and the target's floor cannot drift apart. Width is
- * a fifth of the viewport (78px at 390), so both sides clear 44.
- */
-.mobile-tabs__tab {
+.mobile-header__menu {
   position: relative;
-  flex: 1 1 auto;
-  min-width: 0;
-  min-block-size: var(--mobile-tabbar-min);
+  flex: 0 0 auto;
+  /* The floor is on the SMALLER side — a control 44 wide and 22 tall fails the
+     same thumb the census measures. Square, therefore, exactly like
+     `.mobile-header__back` beside it. */
+  inline-size: var(--mobile-header-min);
+  block-size: var(--mobile-header-min);
+  /* Optically re-align to the frame edge: the mark is small inside a 44px box,
+     so an unadjusted button leaves the ☰ floating a third of the way in while
+     the title beside it starts at the true margin. */
+  margin-inline-start: calc(var(--pn-space-3) * -1);
 
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: var(--pn-space-1) 2px;
 
-  /* Every user-agent default off, explicitly. `appearance` is what removes the
-     native control look on iOS, where a `<button>` otherwise arrives with its
-     own background and corner radius no amount of `background: none` reaches. */
   appearance: none;
   -webkit-appearance: none;
   background: none;
   border: 0;
-  margin: 0;
-
-  font-family: var(--pn-ui);
-  font-weight: 500;
-  font-size: var(--pn-fs-micro);
-  line-height: 1.1;
-  letter-spacing: var(--pn-track-tight);
-  color: var(--pn-ink-3);
+  padding: 0;
+  color: var(--pn-ink-2);
   cursor: pointer;
-
-  /* The grey flash iOS paints over any tapped control — it fights the active
-     state below and reads as a rendering fault on a designed bar. */
+  border-radius: var(--pn-r-pill);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  transition: color var(--pn-dur-fast) var(--pn-ease-standard);
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard),
+    color var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
-.mobile-tabs__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* The mark carries the state change; the word only follows it. Opacity rather
-     than a second colour keeps the whole bar on one ink. */
-  opacity: 0.75;
-  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard),
-    transform var(--pn-dur-base) var(--pn-ease-out);
-}
-
-.mobile-tabs__label {
-  max-inline-size: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.mobile-header__menu:active {
+  background: var(--pn-active);
+  color: var(--pn-ink);
 }
 
 /*
- * ACTIVE STATE FROM `aria-current="page"`, WHICH THE COMPONENT ALREADY EMITS.
+ * THE UNREAD INDICATOR (owner ruling 5). Inbox left the always-visible row when
+ * the tab bar went, so the unread FACT had to be carried somewhere or the
+ * drawer would be a strictly worse Inbox.
  *
- * No new state, no `--active` class, no JS-tracked index. The accessible
- * property and the visual state are THE SAME FACT, so they cannot drift: a tab
- * that looks selected and does not announce itself as the current page is not a
- * possible rendering of this rule.
+ * A DOT AND NOT A NUMBER, here. The per-kind numbers are in the drawer, on the
+ * rows they belong to; a total on the ☰ would be a figure with no referent —
+ * unread WHAT — and it would need room this header does not have.
+ *
+ * DRAWN ONLY WHEN THE COMPONENT RENDERS IT, which is only when something is
+ * genuinely unread. A node that could not serve counts renders nothing: absent
+ * is not zero and it is not unread either. See `anyUnseen`.
  */
-.mobile-tabs__tab[aria-current='page'] {
-  color: var(--pn-brand);
-  font-weight: 600;
-}
-
-.mobile-tabs__tab[aria-current='page'] .mobile-tabs__icon {
-  opacity: 1;
-  transform: translateY(-1px);
-}
-
-/*
- * The brass rule above the active tab — the one accent, at hairline weight.
- * Drawn on a pseudo-element rather than a border so it can animate its width
- * from the centre out without moving the label by a pixel.
- */
-.mobile-tabs__tab::before {
-  content: '';
+.mobile-header__dot {
   position: absolute;
-  inset-block-start: 0;
-  inset-inline: 30%;
-  block-size: 2px;
-  border-radius: 0 0 var(--pn-r-pill) var(--pn-r-pill);
+  inset-block-start: 9px;
+  inset-inline-end: 9px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--pn-r-pill);
   background: var(--pn-brand);
-  transform: scaleX(0);
-  transition: transform var(--pn-dur-base) var(--pn-ease-out);
-}
-
-.mobile-tabs__tab[aria-current='page']::before {
-  transform: scaleX(1);
-}
-
-/* Press feedback. A tab bar with no touch response reads as a picture of a tab
-   bar — this is the whole of the "did it register" question, answered in 120ms. */
-.mobile-tabs__tab:active .mobile-tabs__icon {
-  transform: scale(0.92);
-}
-
-/* Keyboard focus is drawn INSIDE the bar: an outline on a control flush with the
-   frame edge is half-clipped by the frame's own `overflow: hidden`. */
-.mobile-tabs__tab:focus-visible {
-  outline: 2px solid var(--pn-brand);
-  outline-offset: -3px;
-  border-radius: var(--pn-r-sm);
+  /* A ring in the header's own colour, so the dot reads as a mark ON the ☰
+     rather than as a stray glyph that happens to overlap it. */
+  box-shadow: 0 0 0 2px var(--pn-surface);
 }
 
 /* ==========================================================================
@@ -484,24 +419,17 @@
 /*
  * REDUCED MOTION. This codebase honours the preference in ~20 places and this
  * matches that pattern rather than inventing one: motion off, every end state
- * kept. The active tab still reads as active — the brass rule is present, it
- * simply does not grow into place.
+ * kept. The drawer still ARRIVES for a reader who asked for less of it; only
+ * its travel is removed (`mobile-drawer.css` says the same for its own rules).
  */
 @media (prefers-reduced-motion: reduce) {
   .mobile-frame__content > * {
     animation: none;
   }
 
-  .mobile-tabs__tab,
-  .mobile-tabs__icon,
-  .mobile-tabs__tab::before,
-  .mobile-header__back {
+  .mobile-header__back,
+  .mobile-header__menu {
     transition: none;
-  }
-
-  .mobile-tabs__tab:active .mobile-tabs__icon,
-  .mobile-tabs__tab[aria-current='page'] .mobile-tabs__icon {
-    transform: none;
   }
 }
 

@@ -180,6 +180,153 @@ describe('DEF-003 — the phone can reach the account, the space and the theme',
   });
 });
 
+describe('the drawer replaced the tab bar, and the bar cannot come back by halves', () => {
+  /*
+   * THESE ARE THE FLOORS UNDER OWNER RULINGS 1–7 (2026-08-19). They replace the
+   * tab bar's own assertions rather than deleting them — the property each one
+   * protected still matters, it just has a different carrier now.
+   *
+   * WHY SOURCE TEXT AND NOT A RENDER. Same reason as every other case in this
+   * file: jsdom loads no stylesheets and sees no layout, so "the drawer is the
+   * desktop rail" and "the ☰ is on every screen" are structural claims about
+   * where the words come from, not behavioural ones. A render test here would
+   * prove the fixture.
+   */
+  const drawer = read('./MobileDrawer.tsx');
+
+  it('the shell stops FILLING the tab bar region, and does not remove the region', () => {
+    // Ruling 1, both halves. The bar is gone from the shell; the slot survives
+    // in the frame, because removing a region is a different change with a
+    // different blast radius and `mobile-frame.test.ts` owns that contract.
+    expect(shell).not.toContain('mobile-tabs');
+    expect(shell).not.toMatch(/tabBar=/);
+    expect(read('./MobileFrame.tsx')).toMatch(/\{tabBar\s*\?/);
+  });
+
+  it('draws its words and marks from the DESKTOP registries, not from a phone list', () => {
+    // Ruling 2. Two navigation vocabularies for one product is how it starts
+    // feeling like two products. `TABS` was a third copy of two registries and
+    // it is what this asserts cannot return: the destinations come from
+    // `VIEW_PRESENTATION`, the entity rows from `homeRailGroups()` — the very
+    // table the desktop Home rail renders — and the marks from `KindIcon`,
+    // which reads `KIND_ART`.
+    expect(drawer).toContain('VIEW_PRESENTATION');
+    expect(drawer).toContain('homeRailGroups');
+    expect(drawer).toContain('KindIcon');
+    // No kind literals: §15.2 makes one outside `domain/` a build failure, and
+    // the rule is doing real work here — a hand-written kind list is exactly
+    // how the two shells would drift.
+    expect(drawer).not.toMatch(/'(task|work_session|channel|doc|pull_request)'/);
+  });
+
+  it('names its four sections in the ruled order', () => {
+    // Ruling 3. Chats first because it is what a reader returns to; Settings
+    // and the account at the foot rather than lost at the bottom of a long
+    // scroll.
+    const order = ['"Chats"', '"Destinations"'].map((label) => drawer.indexOf(label));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect(order[0]).toBeLessThan(order[1]!);
+    expect(drawer).toContain('mdrawer__foot');
+    expect(drawer).toContain('SETTINGS_REF');
+  });
+
+  it('is opened by the header ☰ on EVERY screen, not on the chat screen alone', () => {
+    // Ruling 4. The ☰ used to be gated on `onChatScreen`; it is the only
+    // navigation this shell has left, so a gate there would strand every other
+    // screen with no way to reach anything.
+    //
+    // ASSERTED AS THE ABSENCE OF A TERNARY IMMEDIATELY AROUND THE TRIGGER, and
+    // the shape is exact rather than a proximity match on purpose: the header's
+    // own root element carries `data-chrome={onChatScreen ? …}` a few lines up,
+    // so anything looser passes on the wrong text. What must not return is the
+    // `{cond ? (<button className="mobile-header__menu" …` form the ☰ shipped
+    // in before this change.
+    expect(shell).toContain('data-testid="mobile-drawer-menu"');
+    expect(shell).not.toMatch(/\?\s*\(\s*<button[^>]*mobile-header__menu/);
+  });
+
+  it('carries unseen, and ABSENT IS NOT ZERO', () => {
+    // Ruling 5, and it is the row that decides whether this change is an
+    // improvement or a regression: Inbox left the always-visible row, so
+    // without a carrier the drawer would be a strictly worse Inbox.
+    //
+    // THE THREE-VALUED ANSWER IS THE POINT. `useGateData` swallows a failed
+    // `spaces.counts` so the counters can never cost the boot, which means
+    // "could not count" is a real and common state. A `boolean` return would
+    // fold it into `false` and the ☰ would draw an all-clear nobody
+    // established — and a row would draw a `0` nobody counted.
+    expect(shell).toContain('anyUnseen');
+    expect(drawer).toMatch(/anyUnseen\([^)]*\): boolean \| null/);
+    expect(drawer).toMatch(/counts && counts\.unseen > 0/);
+    // The `null` arm is reachable: a count that never landed is not zero.
+    expect(drawer).toMatch(/return counted \? false : null/);
+  });
+
+  it('still names the screen everywhere except the chat screen', () => {
+    // Ruling 6. With no highlighted tab, the header is the only thing that says
+    // where you are — so the title band matters MORE than it did, not less. The
+    // chat screen stays bare (PR #427): a blank canvas with a composer needs no
+    // caption.
+    expect(shell).toMatch(/onChatScreen \? null : \(/);
+    expect(shell).toContain('mobile-header__title');
+  });
+
+  it('opens a kind FULL-SCREEN and closes, rather than listing inside itself', () => {
+    // Ruling 7. A drawer that expanded a kind into rows beside itself is a
+    // two-pane phone UI, which is the arrangement the whole mobile shell exists
+    // to refuse. Every row goes through one `go()` that navigates AND dismisses,
+    // so "a row that forgot to dismiss" is not a shape this file has.
+    expect(drawer).toMatch(/navigateTo\(target\);\s*onDismiss\(\);/);
+    // And it renders no list: `EntityListPanel` has no business in here.
+    expect(drawer).not.toContain('EntityListPanel');
+  });
+
+  it('grows its targets with real geometry, never a pseudo-element', () => {
+    // The audit measures `getBoundingClientRect()` OF THE ELEMENT, so an
+    // `::after` hit area scores as fixed while the thumb still misses. Same
+    // rule the shell sheets are held to above, applied to the new sheet.
+    const drawerCss = read('./mobile-drawer.css');
+    expect(drawerCss).not.toMatch(/::(after|before)[^{]*\{[^}]*min-(block-size|height)/);
+    expect(drawerCss).toMatch(/\.mdrawer__row\s*\{[\s\S]{0,200}min-block-size:\s*var\(--mobile-touch-min\)/);
+  });
+});
+
+describe('the FAB — a create verb on the list, and an ABSENCE where there is none', () => {
+  const entityView = read('../views/EntityView.tsx');
+  const screensCss = screens;
+
+  it('is the SAME verb the header ＋ performs, not a second create path', () => {
+    // Owner answer B. `createFlow` is the one `useNewTask` handle, with the one
+    // `onCreated` that opens the new entity with its title focused (D3). Two
+    // create paths is two chances to make differently-shaped entities.
+    expect(entityView).toMatch(/className="ev-fab"[\s\S]{0,400}createFlow\.create\(\)/);
+  });
+
+  it('is ABSENT, not inert, for a kind with no wired create', () => {
+    // Owner answer C. Commits, worktrees and PRs are observed rather than
+    // authored. The gate is registry data and it is DELIBERATELY the same
+    // expression `createSlot` is gated on, so the FAB and the header ＋ cannot
+    // disagree about whether this kind can be born.
+    expect(entityView).toMatch(/oneSurface && !selectedId && config\.list\.quickCreate \?/);
+  });
+
+  it('never renders on a desktop, by construction rather than by a selector', () => {
+    // `oneSurface` is false wherever there is no `MobileSurfaceProvider`, which
+    // is every desktop mount — so the element is not in the desktop DOM at all,
+    // and the styling is additionally scoped to the phone shell.
+    expect(screensCss).toMatch(/\.cv2-root\[data-shell='mobile'\] \.ev-fab/);
+    expect(screensCss).not.toMatch(/^\.ev-fab/m);
+  });
+
+  it('leaves the list room, so the last row is never trapped underneath', () => {
+    // Owner answer D. A pinned control over a scrolling list eats the final row
+    // unless the list ends above it — and NO metric in this program can see
+    // that: the row is present, laid out and measurable, it is simply covered.
+    expect(screensCss).toMatch(/\.lp__body\s*\{[^}]*padding-bottom:\s*var\(--mobile-fab-reserve\)/);
+    expect(frame).toMatch(/--mobile-fab-reserve:/);
+  });
+});
+
 describe('DEF-013…020 — the shared touch floor is a token, and it is not a blanket rule', () => {
   it('names the floor once', () => {
     expect(frame).toMatch(/--mobile-touch-min:\s*44px/);

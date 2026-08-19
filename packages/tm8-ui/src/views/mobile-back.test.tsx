@@ -129,10 +129,17 @@ describe('the phone really is rendering the phone shell', () => {
      silently rendered the DESKTOP shell would still pass most of them — the
      contract is shared, which is exactly what makes that mistake invisible. So
      the fork is asserted once, loudly, before anything depends on it. */
-  it('mounts the mobile tab bar and not the desktop menu rail', async () => {
+  /* The tell USED to be `.mobile-tabs`. The tab bar was removed (owner ruling
+     2026-08-19) and the drawer's ☰ replaced it as this shell's navigation, so
+     the fork is asserted on the ☰ instead — which is a BETTER tell than the bar
+     was, because it is present on every mobile screen rather than on the five
+     the bar happened to name. The drawer itself is not asserted here: it is a
+     modal layer and it is shut until somebody opens it, so its absence would
+     prove nothing about which shell mounted. */
+  it('mounts the phone header’s ☰ and not the desktop menu rail', async () => {
     const target = createMemoryTarget(kindHash);
     const view = mount(target);
-    await waitFor(() => expect(view.container.querySelector('.mobile-tabs')).not.toBeNull());
+    await waitFor(() => expect(view.queryByTestId('mobile-drawer-menu')).not.toBeNull());
     expect(view.queryByTestId('menu-rail')).toBeNull();
     view.unmount();
   });
