@@ -122,7 +122,7 @@
  * every notched device, on the one screen state where vertical room is
  * scarcest. Zeroed by the same measured number the frame's height uses, so
  * there is one fact about the keyboard and two consumers of it, not two facts.
- */
+ *
  * A MARKER ATTRIBUTE, not a selector that reads the inline style. `MobileFrame`
  * stamps `data-keyboard="up"` from the same measurement — an attribute is
  * greppable, testable without a layout engine, and cannot quietly stop matching

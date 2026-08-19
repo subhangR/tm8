@@ -354,6 +354,46 @@ describe('the contract closes the specificity loophole, not just the edit one', 
   });
 });
 
+describe('every shell stylesheet parses — comments are balanced', () => {
+  /*
+   * A GUARD FOR A DEFECT THIS CONTRACT SHIPPED TO MAIN.
+   *
+   * `mobile.css` carried a DANGLING `*​/`: an edit closed one comment block and
+   * left the following paragraph as bare top-level text ending in a second
+   * `*​/`. A CSS parser reads that text as the beginning of a selector, runs on
+   * until the next `{`, and DISCARDS the whole rule as an invalid selector — so
+   * `.mobile-frame[data-keyboard='up'] .mobile-frame__tabbar { padding-bottom: 0 }`
+   * never applied. The keyboard's home-indicator fix was dead from the day it
+   * landed.
+   *
+   * IT IS INVISIBLE TO EVERYTHING ELSE THIS PACKAGE RUNS. There is no CSS parse
+   * step in the test suite, `tsc` does not read stylesheets, and the tap census
+   * cannot see a rule that was never in the cascade — the frame simply keeps its
+   * safe-area padding, which looks exactly like a device with no keyboard up.
+   * A comment-balance count is the cheapest check that could have failed.
+   */
+  const SHEETS = ['./mobile.css', './mobile-chrome.css', './mobile-screens.css'] as const;
+
+  for (const sheet of SHEETS) {
+    it(`${sheet} has no dangling comment terminator`, () => {
+      const text = readFileSync(new URL(sheet, import.meta.url), 'utf8');
+      let depth = 0;
+      for (let i = 0; i < text.length - 1; i += 1) {
+        if (text.startsWith('/*', i)) {
+          depth += 1;
+          i += 1;
+        } else if (text.startsWith('*/', i)) {
+          depth -= 1;
+          i += 1;
+          // A negative depth is a terminator with no opener — the exact defect.
+          expect(depth, `dangling comment terminator at offset ${i - 1} in ${sheet}`).toBeGreaterThanOrEqual(0);
+        }
+      }
+      expect(depth, `unclosed comment in ${sheet}`).toBe(0);
+    });
+  }
+});
+
 describe('the contract is written down, because the lanes are gated on it', () => {
   it('states what a lane may not touch', () => {
     // After this lands, a lane changing shell CSS is a defect rather than a
