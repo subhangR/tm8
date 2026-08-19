@@ -85,6 +85,25 @@
   border-radius: 5px;
   font-size: 9.5px;
 }
+/* THE MARK FORM OF A BAR CHIP — a square box centred on the glyph.
+
+   The five surfaces cost roughly 110px of the bar this way instead of roughly
+   330px, and that difference is the width the four panel tabs had been silently
+   giving up: `.pn-tabs` is the only flexible child of `.pn-panelbar` and it
+   hides its own scrollbar, so the shortfall showed up as "Connections" clipped
+   to "Co" and "Activity" scrolled off the edge rather than as anything a reader
+   could see the cause of.
+
+   `display: flex` rather than the inherited text flow, because a 14px svg in a
+   text box sits on the TEXT baseline — it would ride high against the ⏻ and ✕
+   beside it, which is the same misalignment `kit-vicon` exists to fix. */
+.cv2-root .pn-surface-switch__tab--mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 22px;
+  padding: 0;
+}
 .cv2-root .pn-surface-switch__tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
 .cv2-root .pn-surface-switch__tab[aria-selected='true'] {
   color: var(--pn-ink);
@@ -528,6 +547,27 @@
   border-color: rgba(var(--pn-brand-rgb), 0.35);
 }
 .cv2-root .pn-btn--primary:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
+/* A PRIMARY DRAWN AS ITS GLYPH — the work-session bar's Terminate.
+
+   IT KEEPS `--primary`, so it keeps the brand ring and fill. That is the point
+   of a separate modifier instead of demoting the verb to an `IconBtn`: DEF-001
+   was filed because Terminate — a SAFETY control — was hard to reach, so the
+   fix for a crowded row must not be to make the one destructive verb in it look
+   like the four navigation marks beside it. It gives up its width, not its
+   prominence.
+
+   Square and centred: `def.icon` is a text character (⏻), and a text character
+   in a padded inline box sits on its own font's baseline and lands at a
+   different optical height from the svg marks either side of it. */
+.cv2-root .pn-btn--mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 24px;
+  padding: 2px 0;
+  font-size: 13px;
+  line-height: 1;
+}
 .cv2-root[data-theme='dark'] .pn-btn--primary,
 [data-theme='dark'] .cv2-root .pn-btn--primary { color: var(--pn-brand); }
 .cv2-root .pn-btn--quiet {

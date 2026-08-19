@@ -152,9 +152,27 @@ export function PanelHeader({
 export function PanelWindowControls({
   onPromote,
   onClose,
+  promoteHidden = false,
 }: {
   onPromote?: () => void;
   onClose?: () => void;
+  /**
+   * DROP "OPEN FULL VIEW" — user ruling 2026-08-19, for the work-session bar.
+   *
+   * That bar is the crowded one: alone among the kinds it also carries the five
+   * content-surface chips, and the four panel tabs beside them were absorbing
+   * the whole overflow. ⤢ is the cheapest thing in the cluster to lose, because
+   * a session panel is reached by an address that already opens it full.
+   *
+   * IT IS IGNORED ON A PHONE, and that is a correctness gate rather than a
+   * caller's option. DEF-023 below removes ✕ on `oneSurface` and keeps ⤢
+   * DELIBERATELY, because the phone HAS a full view and that verb is the only
+   * one of the pair that still means anything there. Honouring this flag on a
+   * phone would take the second of two controls after the first was already
+   * taken, leaving the panel with no window verb at all — a desktop economy
+   * quietly stranding a surface it was never measured on.
+   */
+  promoteHidden?: boolean;
 }) {
   /*
    * DEF-023 — "CLOSE PANEL" IS REMOVED ON THE PHONE, NOT RESIZED. The ruling is
@@ -180,9 +198,11 @@ export function PanelWindowControls({
   const { oneSurface } = useMobileSurface();
   return (
     <>
-      <IconBtn label="Open full view" onClick={onPromote}>
-        ⤢
-      </IconBtn>
+      {promoteHidden && !oneSurface ? null : (
+        <IconBtn label="Open full view" onClick={onPromote}>
+          ⤢
+        </IconBtn>
+      )}
       {oneSurface ? null : (
         <IconBtn label="Close panel" danger onClick={onClose}>
           ✕
@@ -295,6 +315,7 @@ export function ActionBar({
   wiredActions,
   onOpenLaunch,
   launchSubjectId,
+  markPrimaries = false,
 }: {
   config: KindConfig;
   ctx: ActionContext;
@@ -359,6 +380,26 @@ export function ActionBar({
    * and the terminal below it never moves.
    */
   flowSurface?: ReactNode;
+  /**
+   * DRAW THE PRIMARIES AS MARKS, NOT WORDS — for a bar that has run out of room.
+   *
+   * The work-session panel is the one that has: it is the only kind whose bar
+   * ALSO carries the five content-surface chips, and the four panel tabs beside
+   * them are the only flexible thing in the row (`TabStrip` below). A labelled
+   * "Terminate" was the last ~90px of a cluster that had already pushed
+   * "Activity" off the edge.
+   *
+   * THE VERB KEEPS ITS TONE. `pn-btn--primary` still applies, so Terminate is
+   * still the one control in the row wearing the brand ring — it is a safety
+   * verb and DEF-001 was filed because it was HARD TO REACH, so shrinking it to
+   * an anonymous icon would be answering one row by reopening another. It loses
+   * its width, not its prominence, and it keeps its name as tooltip and
+   * accessible name.
+   *
+   * OFF BY DEFAULT: every other kind's bar renders exactly as before. This is a
+   * request from the one host that needs it, not a new house style.
+   */
+  markPrimaries?: boolean;
 }) {
   const primaries = config.panel.primaries ?? [];
   return (
@@ -375,6 +416,7 @@ export function ActionBar({
             ? { onOpenLaunch, launchSubjectId }
             : {})}
           primary
+          mark={markPrimaries}
         />
       ))}
       {flowSurface ? (
@@ -395,6 +437,7 @@ function ActionButton({
   onOpenLaunch,
   launchSubjectId,
   primary = false,
+  mark = false,
 }: {
   ref_: ActionRef;
   ctx: ActionContext;
@@ -404,6 +447,8 @@ function ActionButton({
   onOpenLaunch?: (entityId: string) => void;
   launchSubjectId?: string;
   primary?: boolean;
+  /** Render the primary as its glyph rather than its word — see `markPrimaries`. */
+  mark?: boolean;
 }) {
   const def = resolveAction(ref_);
   const availability = def.availability(ctx);
@@ -446,7 +491,9 @@ function ActionButton({
   if (!onAction && !opensFlow && !opensSheet) {
     return (
       <DisabledIconControl label={def.label} glyph={def.icon} reason={NOT_WIRED_REASON}>
-        {primary ? def.label : null}
+        {/* A marked primary is its glyph alone — `DisabledIconControl` already
+            carries the label as the accessible name and draws the reason. */}
+        {primary && !mark ? def.label : null}
       </DisabledIconControl>
     );
   }
@@ -462,7 +509,9 @@ function ActionButton({
      */
     return (
       <DisabledIconControl label={def.label} glyph={def.icon} reason={toReason(availability.reason)}>
-        {primary ? def.label : null}
+        {/* A marked primary is its glyph alone — `DisabledIconControl` already
+            carries the label as the accessible name and draws the reason. */}
+        {primary && !mark ? def.label : null}
       </DisabledIconControl>
     );
   }
@@ -495,10 +544,15 @@ function ActionButton({
       data-testid={primary ? `panel-primary-${ref_}` : undefined}
       className={[
         primary ? 'pn-btn pn-btn--primary' : 'pn-actions__verb',
+        primary && mark ? 'pn-btn--mark' : '',
         expanded ? 'pn-actions__verb--on' : '',
       ]
         .filter(Boolean)
         .join(' ')}
+      /* The word becomes the name and the tooltip when the glyph replaces it,
+         so the verb is still findable by `getByRole('button', { name })` and
+         still says what it is on hover. */
+      {...(primary && mark ? { 'aria-label': def.label, title: def.label } : {})}
       aria-expanded={opensFlow ? expanded : undefined}
       onClick={() => {
         if (opensSheet) {
@@ -512,7 +566,13 @@ function ActionButton({
         onAction?.(ref_);
       }}
     >
-      {primary ? def.label : `${def.icon} ${def.label}`}
+      {primary && mark ? (
+        <span aria-hidden>{def.icon}</span>
+      ) : primary ? (
+        def.label
+      ) : (
+        `${def.icon} ${def.label}`
+      )}
     </button>
   );
 }

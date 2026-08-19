@@ -2,6 +2,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type Keyboard
 import { createPortal } from 'react-dom';
 import type { WorkSessionInteractionProfileProjection } from '@tm8/contract';
 import { CONTENT_SURFACES, type ContentSurface } from '../../routes';
+import { SURFACE_ART } from '../../domain';
+import { VectorIcon } from '../../kit';
 import { useMobileSurface } from '../../mobile';
 import { DisabledIconControl } from '../honesty/DisabledWithReason';
 import './work-session-content-phone.css';
@@ -319,6 +321,27 @@ export function WorkSessionContent({
    */
   const ridesPanelBar = switchSlot !== null && !oneSurface;
 
+  /*
+   * IN THE BAR THE CHIPS ARE MARKS; IN THEIR OWN ROW THEY STAY WORDS.
+   *
+   * The panel bar is a fixed 30px row that `.pn-tabs` and `.pn-panelbar__end`
+   * share, and only `.pn-tabs` can give: it is `flex: 1 1 auto; min-width: 0`
+   * against an end cluster that is `flex: none`. So every pixel this switch
+   * spends is taken from the four panel tabs — and it silently WAS taken. Five
+   * uppercase words beside a labelled Terminate scrolled "Connections" down to
+   * "Co" and "Activity" clean off the edge, with `scrollbar-width: none` to
+   * hide that anything had happened. Five marks give that width back.
+   *
+   * THE PHONE ARRANGEMENT KEEPS ITS WORDS, and that is not an oversight. There
+   * the switch declines the slot and owns a 44px row of its own
+   * (`ridesPanelBar` above), offering TWO surfaces and competing with nothing —
+   * no width to buy, and buying it anyway would cost a reader two labels for no
+   * gain.
+   *
+   * The label is never lost either way: it becomes the button's accessible name
+   * and its tooltip, so the mark is shorthand for a word that is still there
+   * rather than a replacement for one.
+   */
   const tabs = surfaces.map((s) => (
     <button
       key={s}
@@ -328,15 +351,23 @@ export function WorkSessionContent({
       id={tabId(s)}
       type="button"
       role="tab"
-      className="pn-surface-switch__tab"
+      className={
+        ridesPanelBar
+          ? 'pn-surface-switch__tab pn-surface-switch__tab--mark'
+          : 'pn-surface-switch__tab'
+      }
       data-surface={s}
       aria-selected={surface === s}
       aria-controls={panelId(s)}
       tabIndex={surface === s ? 0 : -1}
+      /* The name goes on the BUTTON, not on the svg: the mark is decorative
+         shorthand, so `getByRole('tab', { name: 'Git' })` keeps working and a
+         screen reader hears the word exactly as it did before. */
+      {...(ridesPanelBar ? { 'aria-label': SURFACE_LABEL[s], title: SURFACE_LABEL[s] } : {})}
       onClick={() => select(s)}
       onKeyDown={onTabKeyDown}
     >
-      {SURFACE_LABEL[s]}
+      {ridesPanelBar ? <VectorIcon paths={SURFACE_ART[s]} size={14} /> : SURFACE_LABEL[s]}
     </button>
   ));
 

@@ -294,3 +294,66 @@ export const VIEW_ART = {
     'M8 10.1a2.1 2.1 0 1 0 0-4.2 2.1 2.1 0 0 0 0 4.2z',
   ],
 } as const satisfies Record<string, KindArt>;
+
+/**
+ * THE WORK-SESSION CONTENT SURFACES — Terminal · Transcript · Git · Debug · Graph.
+ *
+ * A THIRD table rather than more entries in the other two, because these name
+ * neither a kind nor a rail view: they are the five panes of one panel. Keeping
+ * them apart is what lets `git` and `graph` REUSE a `VIEW_ART` mark by pointing
+ * at it — a deliberate shared silhouette, visible as one line here, instead of
+ * a second copy of the same path data that drifts the first time one is edited.
+ *
+ * WHY THE CHIPS BECAME MARKS AT ALL: the five labels were text, and together
+ * with a labelled Terminate they made `.pn-panelbar__end` wide enough that the
+ * four panel tabs — the flexible side of that row — scrolled "Connections" to a
+ * stub and "Activity" off the edge entirely, behind a hidden scrollbar. See
+ * `TabStrip` in `panels/detail/chrome.tsx`.
+ */
+export const SURFACE_ART = {
+  /**
+   * A PROMPT AND A CARET, with no window around them — deliberately NOT
+   * `KIND_ART.work_session`, which is a prompt INSIDE a terminal window.
+   *
+   * That mark means "a session", and it is already on screen a few pixels away
+   * in the panel header's own glyph slot. Reusing it here would put one
+   * silhouette on the thing and on one of its five parts — exactly the "ten of
+   * them are the same small blob" failure this file exists to prevent. Dropping
+   * the chrome and keeping the prompt says "the terminal ITSELF".
+   */
+  terminal: ['M3.4 4.6 7 8l-3.6 3.4', 'M8.6 11.6h4'],
+
+  /**
+   * A BUBBLE WITH LINES IN IT — what was said, written down.
+   *
+   * Distinct from both neighbours on purpose: `KIND_ART.message` is an EMPTY
+   * bubble (one message, the entity) and `VIEW_ART.messages` is two overlapping
+   * bubbles (every conversation in the space). This is one conversation with a
+   * body — the transcript file read back.
+   */
+  transcript: [
+    'M13.2 9.4a1.9 1.9 0 0 1-1.9 1.9H6.6L3.5 13.6V5a1.9 1.9 0 0 1 1.9-1.9h5.9a1.9 1.9 0 0 1 1.9 1.9z',
+    'M6.1 6.4h4.6',
+    'M6.1 8.6h2.8',
+  ],
+
+  /** The branch mark, shared with the Git VIEW because it is the same idea. */
+  git: VIEW_ART.git,
+
+  /**
+   * A LOG: three rows, each a leading tick and a line.
+   *
+   * Not a bug, and that is the honest choice rather than the obvious one. This
+   * surface is the session's CLI JOURNAL — the calls the agent made — so a bug
+   * mark would promise a debugger it is not. Not `KIND_ART.doc` either: no page
+   * outline, because a journal is a stream and not a sheet.
+   */
+  debug: ['M3.2 4.4h.01', 'M3.2 8h.01', 'M3.2 11.6h.01', 'M6 4.4h6.8', 'M6 8h6.8', 'M6 11.6h4.2'],
+
+  /**
+   * Nodes and edges, shared with the Graph VIEW. Both answer "what is connected
+   * to what"; this one is simply scoped to one session, and a different mark
+   * for the same question would be a distinction the reader has to invent.
+   */
+  graph: VIEW_ART.graph,
+} as const satisfies Record<string, KindArt>;

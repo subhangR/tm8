@@ -226,8 +226,24 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     // Still switchable in the bar — relocating a control may not quietly cost
     // it its behaviour. All five surfaces are unconditional now: the last
     // gated one was Chat, and the gate retired with the name.
-    const tabs = [...surfaceSwitch.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
-    expect(tabs).toEqual(['Terminal', 'Transcript', 'Git', 'Debug', 'Graph']);
+    //
+    // READ AS ACCESSIBLE NAMES, NOT AS TEXT, because in the bar these chips are
+    // MARKS: the labels were what made `.pn-panelbar__end` wide enough to scroll
+    // the panel's own tabs off their edge. The name is the point of the
+    // assertion either way — a mark that dropped the word would be five
+    // anonymous glyphs, which is the trade this change explicitly did not make.
+    const tabEls = [...surfaceSwitch.querySelectorAll('[role="tab"]')];
+    expect(tabEls.map((t) => t.getAttribute('aria-label'))).toEqual([
+      'Terminal',
+      'Transcript',
+      'Git',
+      'Debug',
+      'Graph',
+    ]);
+    // And they really are marks — otherwise this test would keep passing on the
+    // labelled arrangement that caused the crowding.
+    expect(tabEls.every((t) => t.querySelector('svg.kit-vicon') !== null)).toBe(true);
+    expect(tabEls.map((t) => t.textContent)).toEqual(['', '', '', '', '']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {
@@ -1415,7 +1431,11 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const bar = getByTestId('panel-action-bar');
     expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBeGreaterThan(0);
-    expect(bar.textContent).toContain('Terminate');
+    // BY NAME, NOT BY TEXT: on a session bar the primaries are drawn as marks
+    // (the labels were part of what pushed the panel's own tabs off the edge),
+    // so the verb states itself through its accessible name. A refusal that
+    // could not be found by the word would be a refusal nobody can read.
+    expect(within(bar).getByRole('button', { name: /terminate/i })).toBeTruthy();
   });
 
   it('but a GHOST session offers it — that is the row the ruling is about', () => {
@@ -1437,7 +1457,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
     const bar = getByTestId('panel-action-bar');
-    expect(bar.textContent).toContain('Terminate');
+    // Named rather than read as text — the session bar's primaries are marks.
+    expect(within(bar).getByRole('button', { name: /terminate/i })).toBeTruthy();
     expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBe(0);
   });
 
@@ -1693,7 +1714,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
   it('gives terminal panels the same title-first, toolbar-second layout as tasks', () => {
     const detail = fixtureDetails[sessionStale.id]!;
-    const { getByTestId, getByRole } = render(
+    const { getByTestId, getByRole, queryByRole } = render(
       <EntityDetailPanel
         detail={detail}
         reasons={REASONS}
@@ -1728,13 +1749,25 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       expect(tabs.textContent).toContain(label);
     }
     expect(toolbar.contains(actions)).toBe(true);
-    expect(toolbar.contains(getByRole('button', { name: 'Open full view' }))).toBe(true);
+    /*
+     * ⤢ IS GONE FROM THIS BAR — user ruling 2026-08-19, and it is a SESSION
+     * exception to the shared anatomy rather than a change to it: the task
+     * panel above still asserts the control is present.
+     *
+     * This is the one bar that also carries the five content-surface chips, and
+     * `.pn-tabs` is its only flexible child — so everything in the end cluster
+     * was being paid for by the four tab labels this test checks a few lines
+     * up. "Open full view" is the cheapest of them to lose, because the address
+     * that reaches a session already opens it full.
+     */
+    expect(queryByRole('button', { name: 'Open full view' })).toBeNull();
     expect(toolbar.contains(getByRole('button', { name: 'Close panel' }))).toBe(true);
     expect(toolbar.querySelector('[aria-label="More actions"]')).toBeNull();
     expect(toolbar.querySelector('[aria-label="Pin panel"]')).toBeNull();
     expect(toolbar.textContent).not.toContain('Save');
     expect(toolbar.querySelector('.hon-caption')).toBeNull();
-    expect(actions.textContent).toContain('Terminate');
+    // Named, not read as text: a session's primaries are drawn as marks.
+    expect(actions.contains(getByRole('button', { name: /terminate/i }))).toBe(true);
     expect(actions.textContent).not.toContain('Complete');
     expect(getByTestId('terminal-body')).toBeTruthy();
   });
