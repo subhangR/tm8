@@ -1419,24 +1419,11 @@
 .cv2-root .pn-composer__send:disabled,
 .cv2-root .pn-composer__input:disabled { opacity: 0.55; cursor: not-allowed; }
 
-.cv2-root .pn-activity { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.cv2-root .pn-activity__row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 0;
-  /* T0-1 `padding:7px 0;border-bottom:1px solid #F0EDE4`. */
-  border-bottom: 1px solid var(--pn-x-hairline-soft);
-}
-.cv2-root .pn-activity__row:last-child { border-bottom: 0; }
-.cv2-root .pn-activity__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--pn-idle); }
-.cv2-root .pn-activity__dot--run { background: var(--pn-run); }
-/* `unknown` is a WARNING here as everywhere — never the green of success. */
-.cv2-root .pn-activity__dot--wait { background: var(--pn-wait); }
-.cv2-root .pn-activity__dot--block { background: var(--pn-block); }
-.cv2-root .pn-activity__dot--info { background: var(--pn-info); }
-.cv2-root .pn-activity__text { flex: 1; min-width: 0; font-size: 12px; color: var(--pn-ink-2); }
-.cv2-root .pn-activity__time { flex: none; font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-ink-4); }
+/* The `.pn-activity*` rules stood here until 2026-08-19. They dressed the
+   Activity tab's rows, and the tab and its component are gone (see
+   `detail/tabs.tsx`), so the last selector that could ever match them went with
+   it. Deleted rather than kept "in case it comes back": dead CSS is invisible
+   to every test in this package. */
 .cv2-root .pn-state__title--actor { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
 
 .cv2-root .sr-only {

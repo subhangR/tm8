@@ -23,7 +23,7 @@ import type { DocSaveHandle } from './useDocSave';
  * than to this body:
  *
  *   [chrome]         breadcrumb · title · v-pill · "editing" pill · ⋯ ✕
- *   [chrome]         the four-tab strip
+ *   [chrome]         the panel tab strip
  *   action bar       Write|Preview · (spacer) · Cancel · Save v4    ← here
  *   conflict banner  only in a conflict                             ← here
  *   body             mono source, or the preview                    ← here

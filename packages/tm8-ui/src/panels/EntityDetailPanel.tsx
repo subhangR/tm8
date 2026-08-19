@@ -1,6 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react';
 import type {
-  ActivityItem,
   CommandResult,
   Connections,
   EntityDetail,
@@ -39,7 +38,7 @@ import {
   StalePinBanner,
   TombstoneBody,
 } from './detail/PanelStates';
-import { ActivityTab, ConnectionsTab } from './detail/tabs';
+import { ConnectionsTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
 import {
   EntityControlStrip, stripHasLiveControl, type ControlHost, type ControlSubject,
@@ -68,14 +67,15 @@ import { MergePullRequestFlow } from './pull-requests/MergePullRequestFlow';
  * EntityDetailPanel — one of the two universal primitives (L3).
  *
  * ONE COMPONENT RENDERS EVERY KIND. The anatomy is fixed (header → action bar
- * → four tabs → footer); the ONLY per-kind region is the Content body, and
- * which body that is comes from `registry(kind).panel.archetype` — registry
- * DATA. There is no `kind ===` anywhere in this file, and there cannot be:
- * §15.2 fails the build on one.
+ * → tabs → footer); the ONLY per-kind region is the Content body, and which
+ * body that is comes from `registry(kind).panel.archetype` — registry DATA.
+ * There is no `kind ===` anywhere in this file, and there cannot be: §15.2
+ * fails the build on one.
  *
- * D3 — FOUR TABS ALWAYS. Content · Discussion · Connections · Activity, fixed
- * order, every kind, no exceptions. It costs almost nothing because three of
- * the four are kind-agnostic by construction (see detail/tabs.tsx).
+ * THREE TABS ALWAYS — Content · Connections · Discussion, fixed order, every
+ * kind, no exceptions (user ruling 2026-08-19; see `PANEL_TABS` for why
+ * Connections leads and why Activity was removed). It costs almost nothing
+ * because two of the three are kind-agnostic by construction (detail/tabs.tsx).
  *
  * THE SAME INSTANCE SERVES EVERY HOST. `host` ('stack' | 'pinned' | 'peek' |
  * 'z4') changes width and chrome only — never anatomy — so a panel is the
@@ -197,7 +197,6 @@ export interface EntityDetailPanelProps {
 
   /** Tab data. Absent ⇒ that tab renders its designed empty state. */
   messages?: readonly MessageView[];
-  activity?: readonly ActivityItem[];
   connections?: Connections;
   authoredFrom?: Readonly<Record<string, string | null>>;
   /** Observer-backed PR facts linked to this subject by tracking edges. */
@@ -315,9 +314,10 @@ export interface EntityDetailPanelProps {
    * Most archetypes take it inline in the Content body. The terminal archetype
    * and `composition:'chat'` cannot — a live PTY owns its full height and a
    * chat body ends at its composer, the same two structural exclusions the
-   * attachment strip carries — so for those it rides the ACTIVITY tab instead
-   * (user ruling 2026-08-16). Excluding them outright was the alternative and
-   * was rejected: work sessions are among the most-escalated entities in a
+   * attachment strip carries — so for those it rides the CONNECTIONS tab
+   * instead (user ruling 2026-08-16; it rode the Activity tab until that tab
+   * was removed on 2026-08-19). Excluding them outright was the alternative
+   * and was rejected: work sessions are among the most-escalated entities in a
    * space, and their history would have been CLI-only.
    *
    * Absent ⇒ nothing renders. The section is invisible on any entity with no
@@ -627,7 +627,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * USER RULING 2026-08-05, on the task panel, verbatim: "the top part is
    * showing the drop downs in vertical, they should be in a single row … below
    * the tabs (task, discussion, connections, activity) a row with these drop
-   * downs."
+   * downs." (That ruling named the tab row as it stood then; the row is now
+   * task · connections · discussion, and the strip's place under it is
+   * unchanged.)
    *
    * Two things were wrong and they are separate:
    *
@@ -985,8 +987,8 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               const bodyConsumesSlot = config.panel.archetype === 'subtree';
               /* ATTENTION HISTORY rides on the SAME three exclusions as the
                  strip — and unlike the strip, the two archetypes it excludes do
-                 not LOSE the section: `PanelBody`'s activity arm mounts it for
-                 them instead. Ordered above the strip because an escalation
+                 not LOSE the section: `PanelBody`'s connections arm mounts it
+                 for them instead. Ordered above the strip because an escalation
                  someone may still be waiting on outranks a file list. It never
                  goes into the subtree body's slot: that slot is the description
                  block's, and a scored queue is not a description. */
@@ -1085,42 +1087,46 @@ function PanelBody(
     );
   }
   if (tab === 'connections') {
-    return (
-      <ConnectionsTab
-        detail={detail}
-        connections={props.connections}
-        onOpenEntity={onOpenEntity}
-        /* The SAME surface the session's Graph chip renders, offered here for
-           every other kind — see the tab's docblock. Sessions never reach this
-           arm (the terminal archetype returns above with its own chip), so no
-           entity gets two entrances to the same canvas. */
-        graph={props.graphSurface}
-      />
-    );
-  }
-  if (tab === 'activity') {
     /**
-     * THE OVERFLOW HOME FOR THE TWO ARCHETYPES THAT CANNOT TAKE THE SECTION
-     * INLINE — terminal (a live PTY owning its full height) and chat (a body
-     * that ends at its composer). Those two are excluded from the content-body
-     * mount for the same structural reasons the attachment strip excludes them,
-     * and a work session is one of the most-escalated things in a space, so
-     * dropping the section for them would have made session attention history
-     * reachable only from the CLI (user ruling 2026-08-16).
+     * THE ATTENTION SECTION'S OVERFLOW HOME, for the two archetypes that
+     * cannot take it inline — terminal (a live PTY owning its full height) and
+     * chat (a body that ends at its composer). Those two are excluded from the
+     * content-body mount for the same structural reasons the attachment strip
+     * excludes them, and a work session is one of the most-escalated things in
+     * a space, so dropping the section for them would have made session
+     * attention history reachable only from the CLI (user ruling 2026-08-16).
+     *
+     * IT MOVED HERE FROM THE ACTIVITY TAB when that tab was removed
+     * (2026-08-19). Connections is where it belongs of the two remaining: an
+     * escalation is a fact ABOUT this entity's standing, like its edges, where
+     * Discussion is a conversation with its own composer and paging and would
+     * have had to grow a slot to take it.
      *
      * The CONDITION IS THE EXACT COMPLEMENT of the content-body one, so the
      * section renders in exactly one place per kind and can never appear twice
      * — `panels.test.tsx` asserts both halves of that.
      *
-     * Deliberately ABOVE the feed: it is the shorter, more actionable half, and
-     * an activity feed has no natural end to append below.
+     * Deliberately ABOVE the tab: it is the shorter, more actionable half, and
+     * the peer list has no natural end to append below.
      */
     const overflow =
       config.panel.archetype === 'terminal' || config.panel.composition === 'chat';
     return (
       <>
         {overflow ? props.attentionSection : null}
-        <ActivityTab items={props.activity ?? []} />
+        <ConnectionsTab
+          detail={detail}
+          connections={props.connections}
+          onOpenEntity={onOpenEntity}
+          /* The SAME surface the session's Graph chip renders, offered here for
+             every kind — see the tab's docblock. (The old comment here claimed
+             "sessions never reach this arm"; they do, and always did — this
+             body has no early return for the terminal archetype, and every host
+             passes `graphSurface` unconditionally. So a session has two
+             entrances to one canvas. Left as-is: it is pre-existing and closing
+             it is a ruling about the session chip row, not about tab order.) */
+          graph={props.graphSurface}
+        />
       </>
     );
   }

@@ -585,7 +585,11 @@ export interface Seam {
   children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>>;
   /** Connections tab, and the edge-id lookup behind any edge REMOVAL. */
   connections(id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>>;
-  /** Activity tab. */
+  /**
+   * The entity's activity rows. Backed the Activity tab until that tab was
+   * removed (2026-08-19); the op stays because the channel feed and the CLI
+   * read the same rows, and it is the read a future audit surface would take.
+   */
   activity(id: EntityId, opts?: PageOpts): Promise<Page<ActivityItem>>;
   /**
    * Discussion tab, and — with `rootMessageId` — a thread's branch.

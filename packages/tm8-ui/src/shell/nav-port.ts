@@ -18,19 +18,20 @@
  * runs the law and hands the store the settled RESULT via `applyNormalization`.
  */
 import type { EntityId } from '@tm8/contract';
-import type { ContentSurface } from '../routes/types';
-
-export type PanelTab = 'content' | 'discussion' | 'connections' | 'activity';
+import type { ContentSurface, PanelTab } from '../routes/types';
 
 /**
- * RE-EXPORTED, NOT RE-DECLARED. This was a second literal copy of the same
- * union, and the Chat→Transcript rename is what proved the cost: the two
+ * RE-EXPORTED, NOT RE-DECLARED. Each of these was a second literal copy of the
+ * same union, and the Chat→Transcript rename is what proved the cost: the two
  * drifted apart the moment one was edited, and the type error surfaced three
- * files away from either definition. `routes` is upstream of `shell` in the
- * §1.1 DAG, so this is the alias the file's own docblock says it should have
- * become — a binding target, never a second definition.
+ * files away from either definition. `PanelTab` joined them on 2026-08-19 for
+ * the same reason — removing `activity` had to be done in three places, and
+ * this is the copy that would silently have kept the retired member alive.
+ * `routes` is upstream of `shell` in the §1.1 DAG, so these are the aliases
+ * the file's own docblock says they should have become — binding targets,
+ * never second definitions.
  */
-export type { ContentSurface };
+export type { ContentSurface, PanelTab };
 export type PanelHost = 'stack' | 'pinned' | 'peek' | 'z4';
 
 export interface NavPanelState {
