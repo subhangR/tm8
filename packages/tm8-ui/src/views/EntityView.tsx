@@ -38,6 +38,9 @@ import {
   EntityDetailPanel,
   EntityListPanel,
   EmptyBody,
+  countConnections,
+  panelActionContext,
+  panelMenuItems,
   type ControlHost,
   type DetailReasons,
   type ListPicker,
@@ -63,7 +66,7 @@ import {
 } from '../authoring';
 import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
-import { MobileSheet, useMobileSurface } from '../mobile';
+import { EntityFab, MobileSheet, useMobileSurface } from '../mobile';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';
@@ -1052,6 +1055,64 @@ export function EntityView(props: EntityViewProps) {
         >
           <span aria-hidden>＋</span>
         </button>
+      ) : null}
+
+      {/*
+        ── THE ENTITY'S OWN FAB — what the phone's tab row became ────────────
+
+        User ruling 2026-08-20. The panel bar cost ~90px of a 844px screen to
+        carry two navigational tabs and the kind's primary verbs; the tabs are
+        gone on this shell and their contents are here.
+
+        MOUNTED AT THE VIEW ROOT, BESIDE THE CREATE FAB, and that is the same
+        positioning argument `.ev-fab` records: the layer is `position: absolute`
+        against `.ev-root`, never `fixed`, because the frame SHRINKS by
+        `--mobile-keyboard-inset` and a fixed control stays where the viewport
+        was — under the soft keyboard. Mounting it inside the panel would have
+        resolved that `inset: 0` against a scrolling body instead.
+
+        IT CANNOT CO-EXIST WITH THE CREATE FAB. That one is gated
+        `!selectedId` and this one on `selectedId`: the list and the entity are
+        two different screens on this shell, never both.
+
+        WHAT IT CONTAINS IS `panelMenuItems`' ANSWER and nothing this file
+        decides — registry data, the same refusal precedence the desktop action
+        bar asks, and the same counts the desktop tab strip is given. No kind is
+        named here and no action id is (§15.2).
+      */}
+      {oneSurface && selectedId && detail ? (
+        <EntityFab
+          label={`${getKind(detail.kind).label} actions`}
+          items={panelMenuItems({
+            config: getKind(detail.kind),
+            /* Filled from the detail, so Terminate can see that a session has
+               ended — the same context the panel's own action bar is given. */
+            ctx: panelActionContext(
+              detail,
+              { ...ctx, entityId: selectedId },
+              data.livenessOf(selectedId),
+            ),
+            counts: {
+              discussion: messages?.length,
+              connections: countConnections(detail, data.connectionsOf(selectedId)),
+            },
+            /* THE EXISTING ROUTE, NOT A SECOND ONE. `onTabChange` already sends
+               both aux tabs to `setAux({sort:'tab'})`, and `wrapAux` wraps that
+               column in a `MobileSheet` on this shell. The menu is a new door
+               into it. */
+            onSelectTab: (tab) =>
+              setAux({ sort: 'tab', tab: tab as 'discussion' | 'connections' }),
+            onAction: panelActions.onAction,
+            wiredActions: panelActions.wiredActions,
+            /* D44's precedence: where the host mounts the full launch sheet, Run
+               opens it directly rather than the 300px inline expand, which
+               `mobile/CONTRACT.md` §4 rules does not survive a 390px screen —
+               and which now has no bar left to anchor to. */
+            ...(launchPort?.onFullOptions
+              ? { onOpenLaunch: launchPort.onFullOptions, launchSubjectId: selectedId }
+              : {}),
+          })}
+        />
       ) : null}
 
       {/*
