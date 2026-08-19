@@ -32,7 +32,7 @@
  * where one that silently rewrites every affected row's status gets found in a
  * quarter, by a customer.
  */
-import type { StatusCategory, WorkStatus } from '@tm8/contract';
+import type { StatusCategory, WorkSessionStatus, WorkStatus } from '@tm8/contract';
 
 /**
  * `satisfies`, not a bare `as const`: this list is what `narrowWorkStatus()`
@@ -89,6 +89,43 @@ export const WORK_STATUS_CATEGORY: Record<WorkStatus, StatusCategory> = {
   blocked: 'in_progress',
   done: 'done',
   cancelled: 'cancelled',
+};
+
+/**
+ * The RULED `work_sessions.status` → category mapping, as TypeScript.
+ *
+ * A MIRROR of `internal.session_status_category()` in
+ * `db/migrations/155_session_status_category.sql`, which is the real writer —
+ * the column is maintained by that migration's bridge trigger, not by this
+ * constant, and nothing in the server calls this to populate a DTO. It is here
+ * for the reason `WORK_STATUS_CATEGORY` is: the mapping is a product decision
+ * that deserves to be readable from the code that consumes its results, and a
+ * test can hold the two copies against each other.
+ *
+ * The two members that are not the obvious guess, both ruled:
+ *
+ *   `spawning → to_do`  — 147's `pulled → to_do` ("claimed is not started")
+ *     applied to the same shape of fact, and the thing that makes
+ *     `public.session_resume` a legal `done → to_do` REOPEN. Under
+ *     `spawning → in_progress` a resume would be `done → in_progress`, which
+ *     `internal.category_transition_allowed` refuses outright.
+ *   `failed → done`     — the client's existing ruling, mirrored rather than
+ *     made here (`SESSION_STATE_CONTROL` in the UI registry): failure is a
+ *     runtime fact that gets a badge, and the run did reach its end. Nobody
+ *     cancelled it. NO session status maps to `cancelled`, which is honest
+ *     rather than an omission — nothing in the session lifecycle is a
+ *     cancellation, and `terminate` produces `exited`.
+ *
+ * `Record<WorkSessionStatus, …>` is load-bearing for the same reason it is
+ * above: a new status arm fails to compile until someone decides which bucket
+ * it belongs to.
+ */
+export const SESSION_STATUS_CATEGORY: Record<WorkSessionStatus, StatusCategory> = {
+  spawning: 'to_do',
+  running: 'in_progress',
+  idle: 'in_progress',
+  exited: 'done',
+  failed: 'done',
 };
 
 /**
