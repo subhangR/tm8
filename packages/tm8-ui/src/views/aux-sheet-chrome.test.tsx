@@ -129,21 +129,42 @@ afterEach(cleanup);
 /**
  * Open the entity, then send one of the two AUX tabs right.
  *
- * THE TAB STRIP IS THE ENTRANCE TODAY AND WILL NOT BE FOREVER. The phone's tab
- * row is being replaced by a FAB carrying the same two destinations, and when
- * that lands this helper is the ONE place that has to learn the new control —
- * every assertion below is about what the sheet contains, not about how it was
- * opened. The tab is addressed by its `id`, which `chrome.tsx` derives from the
- * `PanelTab` union, so a renamed tab breaks this loudly rather than silently
- * selecting nothing.
+ * THE ENTRANCE MOVED, EXACTLY AS THIS COMMENT SAID IT WOULD. What stood here
+ * read: "THE TAB STRIP IS THE ENTRANCE TODAY AND WILL NOT BE FOREVER. The
+ * phone's tab row is being replaced by a FAB carrying the same two
+ * destinations, and when that lands this helper is the ONE place that has to
+ * learn the new control — every assertion below is about what the sheet
+ * contains, not about how it was opened."
+ *
+ * It landed (user ruling 2026-08-20). `#tab-discussion` does not exist on this
+ * shell any more, and this helper is the only thing in the file that changed.
+ * Every assertion below is untouched and all four still pass — which is the
+ * check that the prediction was right rather than merely well phrased: had any
+ * of them depended on the tab row, teaching the helper a new door would not
+ * have been enough to keep them.
+ *
+ * TWO CONTROLS NOW, because the menu has to be OPENED before it has rows. The
+ * FAB's trigger carries `entity-fab`; each row carries `data-fab-item`, whose
+ * value is `PanelMenuItem.id` — and for these two that id comes straight off
+ * `PANEL_TABS`, so the property the old comment relied on survives the move: a
+ * renamed tab breaks this loudly rather than silently selecting nothing.
  */
 async function openAux(tab: 'discussion' | 'connections') {
   const target = createMemoryTarget(entityHash(A));
   const view = render(<GateApp routerTarget={target} />);
   await waitFor(() => expect(document.querySelector('[data-testid="entity-view"]')).not.toBeNull());
 
+  const trigger = await waitFor(() => {
+    const found = document.querySelector('[data-testid="entity-fab"]');
+    expect(found).not.toBeNull();
+    return found as HTMLElement;
+  });
+  await act(async () => {
+    fireEvent.click(trigger);
+  });
+
   const control = await waitFor(() => {
-    const found = document.querySelector(`#tab-${tab}`);
+    const found = document.querySelector(`[data-fab-item="${tab}"]`);
     expect(found).not.toBeNull();
     return found as HTMLElement;
   });
