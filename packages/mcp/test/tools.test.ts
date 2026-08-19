@@ -37,6 +37,14 @@ describe('tool curation', () => {
     expect(MCP_TOOL_NAMES).toContain('repo_multi_edit');
   });
 
+  it('keeps provider-facing input schemas free of root combinators', () => {
+    for (const tool of TM8_MCP_TOOLS) {
+      expect(tool.inputSchema, tool.name).not.toHaveProperty('oneOf');
+      expect(tool.inputSchema, tool.name).not.toHaveProperty('allOf');
+      expect(tool.inputSchema, tool.name).not.toHaveProperty('anyOf');
+    }
+  });
+
   it('maps every next-level operation to the closed catalog without adding a row', () => {
     const catalogNames = new Set(OPERATIONS.map((operation) => operation.name));
     for (const operation of MCP_MAPPED_OPERATIONS) {
