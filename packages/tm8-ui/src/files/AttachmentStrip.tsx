@@ -311,18 +311,21 @@ export function AttachmentStrip({
    * entity in the workspace would be chrome claiming a feature that is not
    * wired here.
    *
-   * THE EMPTY STATE IS NOW SILENT TOO (owner ruling 2026-08-18). The ＋ tile
-   * used to be the empty state's whole invitation, which meant ~140px of
-   * dashed box under every entity that has never had a file — read off an
-   * artifact panel, that is a third of the viewport spent on an offer nobody
-   * made. Attaching keeps its path: DROP, on the host marked
-   * `data-attachment-drophost` (the detail panel marks itself, so it is every
-   * kind, not only the ones with a description block).
+   * THE EMPTY STATE IS ONE ICON (owner ruling 2026-08-19, narrowing
+   * 2026-08-18). The ＋ tile was once the empty state's whole invitation —
+   * ~140px of dashed box under every entity that has never had a file, a third
+   * of a phone viewport spent on an offer nobody made — so 2026-08-18 removed
+   * it and left DROP as the path, on the host marked
+   * `data-attachment-drophost`. Drop is not a path a phone has: there is no
+   * drag on a touch screen, so the silence made attaching unreachable on
+   * mobile and unfindable everywhere else. `idle` now renders a single 28px
+   * paperclip instead — the tile's height objection survives, its only
+   * affordance does not.
    *
-   * `idle` HIDES rather than unmounts, and that distinction is load-bearing:
-   * the drop listeners hang off `rootRef.current.closest(...)`, so a strip
-   * that returned null here would take the only remaining way to attach down
-   * with it. The root stays in the DOM, `display:none`, holding the wiring.
+   * `idle` still HIDES the tile GRAMMAR rather than unmounting the root, and
+   * that distinction is load-bearing: the drop listeners hang off
+   * `rootRef.current.closest(...)`, so a strip that returned null here would
+   * take drop down with it.
    */
   if (files.length === 0 && pending.length === 0 && !startUpload && !projectFolder) return null;
   const idle = files.length === 0 && pending.length === 0;
@@ -392,12 +395,19 @@ export function AttachmentStrip({
         </div>
       ))}
 
-      {/* The ＋ is gated on `idle`, not merely hidden by `.fn-tiles--idle`:
-          jsdom loads no stylesheets, so a button left in the tree "but hidden
-          by CSS" is a button every test still finds and clicks — a green suite
-          asserting an affordance no browser renders. Not rendering it is the
-          only version of this rule the tests can actually see. */}
-      {!idle && (startUpload || projectFolder) ? (
+      {/* THE IDLE ANCHOR KEEPS AN ICON (owner ruling 2026-08-19, narrowing
+          the 2026-08-18 silence). Silence removed the 140px dashed box, and
+          it also removed the only TAPPABLE way to attach: what remained was
+          drop, and a phone cannot drag a file onto a panel. So the idle state
+          is one 28px paperclip — a twentieth of the tile it replaced, and a
+          real touch target — while a strip that already has tiles keeps the
+          labelled ＋ tile that matches its neighbours.
+
+          It is a class change, never a `display:none`: jsdom loads no
+          stylesheets, so a button hidden by CSS is a button every test still
+          finds and clicks — a green suite asserting an affordance no browser
+          renders. */}
+      {startUpload || projectFolder ? (
         <span className="fn-plus" ref={menuRef} onBlur={(event) => {
           const wrap = menuRef.current;
           if (wrap && event.relatedTarget instanceof Node && wrap.contains(event.relatedTarget)) return;
@@ -405,18 +415,25 @@ export function AttachmentStrip({
         }}>
           <button
             type="button"
-            className="fn-tile fn-tile--plus"
+            className={idle ? 'fn-tile fn-tile--clip' : 'fn-tile fn-tile--plus'}
             data-testid="attachment-add"
             ref={plusRef}
+            /* THE ACCESSIBLE NAME IS EXPLICIT because the idle form has no
+               visible text — a paperclip glyph is decorative, and a button
+               named "📎" is a button screen readers cannot describe. */
+            aria-label="Attach a file"
             aria-haspopup={startUpload && projectFolder ? 'menu' : undefined}
             aria-expanded={startUpload && projectFolder ? menuOpen : undefined}
             title="Attach a file to this entity"
             onClick={plusAct}
           >
-            <span className="fn-tile__face fn-tile__face--plus" aria-hidden>
-              ＋
+            <span
+              className={idle ? 'fn-tile__face fn-tile__face--clip' : 'fn-tile__face fn-tile__face--plus'}
+              aria-hidden
+            >
+              {idle ? '📎' : '＋'}
             </span>
-            <span className="fn-tile__name">attach</span>
+            {idle ? null : <span className="fn-tile__name">attach</span>}
           </button>
           {menuOpen && startUpload && projectFolder ? (
             <div className="fn-menu" role="menu" aria-label="Attach a file">

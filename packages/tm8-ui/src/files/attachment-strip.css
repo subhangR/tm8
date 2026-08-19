@@ -21,13 +21,42 @@
   min-width: 0;
 }
 
-/* NOTHING ATTACHED, NOTHING DRAWN — but the element STAYS, because the drop
-   listeners are hung off its closest marked ancestor and unmounting it would
-   remove the last way to attach. `display:none` is deliberate here (unlike
-   `.fn-tiles__input`, which is clipped precisely so it stays reachable): this
-   root has nothing an assistive user could act on while idle, and the drop
-   target it enables is the panel, not this box. */
-.fn-tiles--idle { display: none; }
+/* NOTHING ATTACHED — one paperclip, and nothing else (owner ruling
+   2026-08-19). This row used to be `display:none`, which left DROP as the only
+   way to attach; a phone cannot drag a file onto a panel, so on mobile the
+   feature was simply unreachable. The idle row is now the width and height of
+   a single 28px icon: cheaper than the dashed ＋ tile that ruling deleted, and
+   tappable, which the silence was not. */
+.fn-tiles--idle { gap: 0; }
+
+/* The idle affordance: an icon, not a tile. No name row, no dashed frame, no
+   64px column — it sits in the panel like any other quiet icon control, and
+   it is 28px so a thumb can hit it. */
+.fn-tile--clip {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+
+.fn-tile--clip:hover { color: var(--pn-ink); background: var(--pn-hover); }
+
+.fn-tile__face--clip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  line-height: 1;
+}
 
 /* --- one tile -------------------------------------------------------------- */
 
