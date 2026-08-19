@@ -69,10 +69,18 @@ export interface UseSessionTranscriptOptions {
   files?: boolean;
 }
 
-/** The page-back walk's own state, kept apart from the first read's. */
+/**
+ * The page-back walk's own state, kept apart from the first read's.
+ *
+ * `stalled` is not a failure and must not be drawn as one. The read succeeded;
+ * it simply could not STEP, because a single record larger than the server's
+ * read budget spans the whole window and a byte cursor cannot land inside a
+ * record. The walk is over at that point and saying so is the honest end —
+ * retrying would ask for the same bytes forever.
+ */
 export interface OlderRead {
-  phase: 'idle' | 'loading' | 'error';
-  /** Why the last walk failed. Null in every other phase. */
+  phase: 'idle' | 'loading' | 'error' | 'stalled';
+  /** Why the last walk failed or stopped. Null when idle or loading. */
   message: string | null;
 }
 
@@ -118,11 +126,27 @@ export function useSessionTranscript(
   // than state because it must not itself cause a render.
   const hasLoaded = useRef(false);
 
-  // A read in flight when the session id changes must not land into the new
-  // session's state — the reader would see another session's turns. The page-back
-  // walk shares the counter, so a walk started under session A is discarded
-  // just as firmly as a poll was.
-  const requestSeq = useRef(0);
+  /*
+   * TWO COUNTERS, BECAUSE A POLL AND A WALK INVALIDATE DIFFERENT THINGS.
+   *
+   * `generation` moves only when the ACCUMULATION itself stops being valid: a
+   * new session, or a resume. Both a tail read and a walk check it, and both
+   * are discarded when it moves.
+   *
+   * `loadSeq` orders the tail reads among THEMSELVES, so an overtaken poll
+   * cannot land after a newer one.
+   *
+   * They were one counter, and that was a bug worth recording. `load()`
+   * incremented it, a walk read it, and a 5s poll landing inside the first
+   * page-back therefore discarded the fetched window AND left the walk stuck
+   * in `loading` — with the button replaced by "Reading earlier turns…", the
+   * sentinel disabled, `loadOlder` early-returning on the same phase, and
+   * `pagedBack` still false so the resume control was not rendered either. No
+   * way out but switching sessions. A poll invalidates no walk; it is a
+   * different read of a different window.
+   */
+  const generation = useRef(0);
+  const loadSeq = useRef(0);
 
   /* Built rather than always-passed so a caller that asks for neither sends no
      opts at all — the shape the seam has served since before either option
@@ -140,14 +164,16 @@ export function useSessionTranscript(
   );
 
   const load = useCallback(async () => {
-    const seq = ++requestSeq.current;
+    const gen = generation.current;
+    const seq = ++loadSeq.current;
+    const stale = () => gen !== generation.current || seq !== loadSeq.current;
     try {
       const page = await seam.transcript(sessionId, windowOpts());
-      if (seq !== requestSeq.current) return;
+      if (stale()) return;
       hasLoaded.current = true;
       setState({ phase: 'ready', page });
     } catch (err) {
-      if (seq !== requestSeq.current) return;
+      if (stale()) return;
       // Only surface an error if we have nothing to show; a transient poll
       // failure must not blank an already-rendered transcript.
       if (!hasLoaded.current) {
@@ -163,6 +189,7 @@ export function useSessionTranscript(
   // turns stay on screen under the new session's header, and its walked-back
   // history would stay under them.
   useEffect(() => {
+    generation.current += 1;
     hasLoaded.current = false;
     setState({ phase: 'loading' });
     setOlder([]);
@@ -174,14 +201,19 @@ export function useSessionTranscript(
   }, [load]);
 
   useEffect(() => {
-    // Paused while paged back — see the header. `older.length` rather than a
-    // flag so the pause cannot drift out of step with what is on screen.
-    if (intervalMs === null || older.length > 0) return;
+    /*
+     * Paused while paged back — see the header. The pause engages on the
+     * REQUEST, not on the landed window: `older.length > 0` alone leaves the
+     * FIRST walk unprotected, which is the whole window in which the reader
+     * has committed to reading history and the accumulation does not exist
+     * yet to prove it.
+     */
+    if (intervalMs === null || older.length > 0 || olderRead.phase === 'loading') return;
     const timer = setInterval(() => void load(), intervalMs);
     return () => {
       clearInterval(timer);
     };
-  }, [intervalMs, load, older.length]);
+  }, [intervalMs, load, older.length, olderRead.phase]);
 
   const newest = state.phase === 'ready' ? state.page : null;
   // The oldest window held is the one whose cursor names what comes before it.
@@ -191,15 +223,37 @@ export function useSessionTranscript(
   const loadOlder = useCallback(() => {
     const cursor = oldest?.windowStart;
     if (oldest?.hasOlder !== true || cursor === null || cursor === undefined) return;
-    if (olderRead.phase === 'loading') return;
-    const seq = requestSeq.current;
+    // 'stalled' is terminal for this cursor: the same request would return the
+    // same non-advancing window, so re-asking is a loop, not a retry.
+    if (olderRead.phase === 'loading' || olderRead.phase === 'stalled') return;
+    const gen = generation.current;
     setOlderRead({ phase: 'loading', message: null });
     void (async () => {
       try {
         const page = await seam.transcript(sessionId, windowOpts(cursor));
-        // A walk that started under a different session, or that raced a
-        // refresh, must not prepend into what is on screen now.
-        if (seq !== requestSeq.current) return;
+        // A walk that started under a different session, or before a resume,
+        // must not prepend into what is on screen now. A POLL does not
+        // invalidate it — see the counters above.
+        if (gen !== generation.current) return;
+        /*
+         * A WALK THAT DID NOT MOVE IS THE END OF THE WALK.
+         *
+         * The server steps to the record boundary below the cursor, and it
+         * cannot step past a SINGLE record larger than its read budget — the
+         * window is entirely inside one record, so there is no earlier
+         * boundary to name and it returns the cursor it was given. Prepending
+         * that window changes nothing, leaves `oldest.windowStart` where it
+         * was, and lets the sentinel ask for the identical bytes again: an
+         * unbounded loop. Stopping with a reason is the honest end.
+         */
+        if (page.windowStart !== null && page.windowStart >= cursor) {
+          setOlderRead({
+            phase: 'stalled',
+            message:
+              'a single record here is larger than the node reads in one window, so the walk cannot step past it',
+          });
+          return;
+        }
         setOlder((prev) => {
           // The cursor moved under us (a resume, or a second walk that landed
           // first): dropping this window is right, because prepending it would
@@ -210,7 +264,7 @@ export function useSessionTranscript(
         });
         setOlderRead(IDLE);
       } catch (err) {
-        if (seq !== requestSeq.current) return;
+        if (gen !== generation.current) return;
         // Reported, never blanking: the turns already on screen are still
         // exactly as true as they were before this read was attempted.
         setOlderRead({
@@ -222,6 +276,9 @@ export function useSessionTranscript(
   }, [newest, oldest, olderRead.phase, seam, sessionId, windowOpts]);
 
   const resumeLive = useCallback(() => {
+    // Bumped BEFORE the reload: a walk still in flight belongs to the
+    // accumulation being dropped, and must not land into the fresh one.
+    generation.current += 1;
     setOlder([]);
     setOlderRead(IDLE);
     void load();

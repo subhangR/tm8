@@ -255,8 +255,17 @@ interface SourcedEntry {
   line: number;
 }
 
-/** Drop an entry that merely repeats the one before it. Both CLIs re-emit the
- *  same assistant text across a streaming boundary. */
+/**
+ * Drop an entry that merely repeats the one before it. Both CLIs re-emit the
+ * same assistant text across a streaming boundary.
+ *
+ * PER WINDOW, NOT PER SESSION — say it here so nobody reads it as a property
+ * of the accumulated walk. Each window is extracted on its own, so a duplicate
+ * pair that straddles a window boundary survives as two entries and renders
+ * twice. Cosmetic, and the alternative is worse: suppressing across the seam
+ * would mean the page a caller gets back depends on which page they asked for
+ * previously, which is exactly the statefulness a byte cursor exists to avoid.
+ */
 function pushEntry(entries: SourcedEntry[], entry: SessionTranscriptEntry, line: number): void {
   const prev = entries[entries.length - 1]?.entry;
   if (prev && prev.source === entry.source && prev.text === entry.text) return;
@@ -840,12 +849,37 @@ export async function readSessionTranscript(
   const all = codex
     ? extractCodexEntries(lines, maxChars)
     : extractClaudeEntries(lines, maxChars);
-  const kept = last > 0 ? all.slice(-last) : all;
+
+  /*
+   * THE SLICE MAY NOT CUT A RECORD IN HALF.
+   *
+   * One record can produce SEVERAL entries — a claude assistant message whose
+   * content is `[text, tool_use, text]` yields two, and both carry the same
+   * line index. The cursor is a BYTE offset, and a byte offset cannot name a
+   * position INSIDE a record: the next page begins at a record boundary or it
+   * begins nowhere. So when `slice(-last)` lands between two entries of one
+   * record, the entries below the cut sit above the next page's start with
+   * nothing able to address them, and they are lost for good.
+   *
+   * Widening back to the record boundary is what makes the cursor expressible
+   * at all. It costs a page at most a few entries longer than `last`, which is
+   * the honest price for `last` bounding TURNS while the cursor is a position
+   * in BYTES.
+   */
+  let kept = last > 0 ? all.slice(-last) : all;
+  if (kept.length < all.length && kept[0] !== undefined) {
+    const firstLine = kept[0].line;
+    let from = all.length - kept.length;
+    while (from > 0 && all[from - 1]?.line === firstLine) from -= 1;
+    kept = all.slice(from);
+  }
 
   // THE CURSOR THE CALLER GETS BACK is the offset of the record behind the
   // FIRST ENTRY THEY CAN SEE, not the window's own first byte — see
-  // `SourcedEntry`. When the slice dropped nothing (or there is nothing to
-  // slice) the two coincide.
+  // `SourcedEntry`. Because of the widening above, that record contributes no
+  // entry the caller cannot already see, so `before = cursor` skips nothing.
+  // When the slice dropped nothing (or there is nothing to slice) the two
+  // coincide.
   const cursor = kept.length < all.length && kept[0] !== undefined
     ? offsets[kept[0].line] ?? windowStart
     : windowStart;
@@ -862,7 +896,17 @@ export async function readSessionTranscript(
     searchedPaths: [],
     agentTool,
     entries: kept.map((e) => e.entry),
-    stats: collectStats(lines, all.map((e) => e.entry), codex, cursor > 0 || tail.windowEnd < tail.size),
+    // `partial` answers ONE question and it is not `hasOlder`'s: are these
+    // COUNTS windowed? So it is measured against the bytes `collectStats`
+    // actually read — `windowStart`, the raw window — and never against
+    // `cursor`, which the entry slice moves. A small file read whole, sliced
+    // to `last`, has complete counts and more turns above: `partial: false`
+    // with `hasOlder: true`, and both are true statements. Deriving this from
+    // `cursor` made it claim the counts were partial when they were not, and
+    // the CLI prints a sentence over these numbers that would then be wrong.
+    stats: collectStats(
+      lines, all.map((e) => e.entry), codex, windowStart > 0 || tail.windowEnd < tail.size,
+    ),
     // A historical window is in no position to say whether an agent is stuck
     // NOW: it is describing bytes that were written minutes or hours ago, and
     // the heuristic measures silence against the clock. Null is the refusal.

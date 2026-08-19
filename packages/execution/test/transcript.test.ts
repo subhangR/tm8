@@ -738,3 +738,86 @@ describe('readSessionTranscript — paging back by byte offset', () => {
     expect(older.stuck).toBeNull();
   });
 });
+
+/**
+ * REGRESSIONS FROM REVIEW (PR #452). Both shipped green and both lost a turn.
+ */
+describe('readSessionTranscript — the cursor cannot split a record', () => {
+  const CWD_R = CWD;
+  async function plant(home: string, lines: unknown[]): Promise<void> {
+    const dir = join(home, '.claude', 'projects', encodeClaudeProjectDir(CWD_R));
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'n1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n'));
+  }
+  const read = (home: string, over: Record<string, unknown>) =>
+    readSessionTranscript({
+      sessionId: 's1', agentTool: 'claude-code', nativeSessionId: 'n1', cwd: CWD_R, home, ...over,
+    });
+
+  /** ONE record, TWO prose entries — the shape the slice used to cut through. */
+  const twoTexts = (at: string, a: string, b: string) => ({
+    type: 'assistant',
+    timestamp: at,
+    message: {
+      role: 'assistant',
+      model: 'claude-opus-5',
+      content: [
+        { type: 'text', text: a },
+        { type: 'tool_use', name: 'Bash', input: {} },
+        { type: 'text', text: b },
+      ],
+    },
+  });
+
+  /**
+   * A `last` slice landing BETWEEN two entries of one record used to report
+   * that record's offset as the cursor, so the next page excluded the record
+   * whole — including the entry the slice had just dropped. Unreachable
+   * forever, in the one feature whose point is that nothing is.
+   *
+   * `last` bounds TURNS; the cursor is a position in BYTES; a byte offset
+   * cannot name a place inside a record. The page widens to the record
+   * boundary instead, and is allowed to come back longer than `last`.
+   */
+  it('widens the page rather than cutting a multi-entry record in half', async () => {
+    const home = await makeHome();
+    await plant(home, [
+      claudeText('2026-08-07T10:00:00.000Z', 'E0'),
+      claudeText('2026-08-07T10:00:01.000Z', 'E1'),
+      twoTexts('2026-08-07T10:00:02.000Z', 'E2', 'E3'),
+      claudeText('2026-08-07T10:00:03.000Z', 'E4'),
+      claudeText('2026-08-07T10:00:04.000Z', 'E5'),
+    ]);
+
+    const walked: string[] = [];
+    let cursor: number | undefined;
+    for (let i = 0; i < 10; i += 1) {
+      const page = await read(home, cursor === undefined ? { last: 3 } : { last: 3, before: cursor });
+      walked.unshift(...page.entries.map((e) => e.text));
+      if (!page.hasOlder) break;
+      cursor = page.windowStart!;
+    }
+    // E2 was the casualty: it shared a record with E3, and the slice kept E3.
+    expect(walked).toEqual(['E0', 'E1', 'E2', 'E3', 'E4', 'E5']);
+  });
+
+  /**
+   * `partial` answers "are these COUNTS windowed", which is not `hasOlder`'s
+   * question. Deriving it from the entry cursor made a whole-file read claim
+   * partial counts — and `packages/cli` prints "(tail only — these counts
+   * cover the part of the transcript that was read)" straight over them.
+   */
+  it('does not call complete counts partial just because turns were sliced', async () => {
+    const home = await makeHome();
+    await plant(home, Array.from({ length: 25 }, (_, i) =>
+      claudeText(`2026-08-07T10:00:${String(i).padStart(2, '0')}.000Z`, `turn ${String(i)}`)));
+
+    const page = await read(home, { last: 5 });
+    expect(page.entries).toHaveLength(5);
+    // The whole file fitted in one window, so the counts cover the whole file.
+    expect(page.stats?.assistantMessages).toBe(25);
+    expect(page.stats?.partial).toBe(false);
+    // ...and there ARE turns above the five shown. Two fields, two questions.
+    expect(page.hasOlder).toBe(true);
+  });
+});

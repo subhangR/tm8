@@ -105,7 +105,10 @@ export function TranscriptSurface({
   } = useSessionTranscript(seam, sessionId, { intervalMs: isLive ? POLL_MS : null });
 
   const { scrollRef, sentinelRef, follow } = useTranscriptScroll({
-    entries, olderCount, hasOlder, loadOlder, busy: older.phase === 'loading',
+    entries, olderCount, hasOlder, loadOlder,
+    // A stalled walk disables the sentinel for the same reason it disables the
+    // button: asking again asks for identical bytes.
+    busy: older.phase === 'loading' || older.phase === 'stalled',
   });
 
   const backToNewest = useCallback(() => {
@@ -221,6 +224,12 @@ function useTranscriptScroll({
     prevOlder.current = olderCount;
     prevHeight.current = el.scrollHeight;
     prevTop.current = el.scrollTop;
+    // RE-DERIVE `following` FROM THE ELEMENT, not only from scroll events.
+    // The flag is a cache of a geometric fact, and a cache that only a scroll
+    // event can invalidate goes stale the moment the position moves without
+    // one — including the moves this effect just made. Reading it back here
+    // costs nothing and keeps the next render's decision honest.
+    following.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
   }, [entries, olderCount]);
 
   /*
@@ -303,6 +312,15 @@ function TranscriptTop({
         <p className="tr-turns__boundary" data-testid="transcript-tail-boundary">
           {older.phase === 'loading' ? (
             <span role="status">Reading earlier turns…</span>
+          ) : older.phase === 'stalled' ? (
+            /* THE WALK IS OVER AND THE TRANSCRIPT IS NOT. Neither an error nor
+               a beginning — both would be lies. There IS more above and this
+               reader cannot reach it, so it says exactly that, and offers no
+               retry, because a retry asks for the same bytes forever. */
+            <span data-testid="transcript-stalled">
+              Earlier turns exist above this line, but they cannot be reached:{' '}
+              {older.message ?? 'the walk could not step past this point'}.
+            </span>
           ) : (
             <>
               Earlier turns exist above this line.{' '}

@@ -217,6 +217,77 @@ describe('the Transcript surface', () => {
       expect(screen.getByTestId('transcript-load-older').textContent).toMatch(/try earlier turns/i);
     });
 
+
+    /**
+     * REGRESSION (review of PR #452). `loadOlder` read the shared request
+     * counter that `load()` increments, and the poll paused only once a window
+     * had LANDED — so a 5s tick inside the FIRST page-back discarded the
+     * fetched window and left the walk in `loading` forever. With the button
+     * replaced by "Reading earlier turns…", the sentinel disabled, `loadOlder`
+     * early-returning on that phase, and `pagedBack` still false so the resume
+     * control was not rendered, the reader had no control at all.
+     *
+     * The old poll-pause test could not see it: its seam resolved
+     * synchronously, so no tick could land inside the walk. This one holds the
+     * walk open across a tick on purpose.
+     */
+    it('survives a poll tick landing inside the first page-back', async () => {
+      vi.useFakeTimers();
+      try {
+        const pages = windows();
+        let release: (() => void) | undefined;
+        const transcript = vi.fn((_id: string, opts?: { before?: number }) => {
+          if (opts?.before === undefined) return Promise.resolve(pages.tail);
+          // Held open, so the 5s tick below lands mid-walk.
+          return new Promise((resolve) => {
+            release = () => { resolve(pages[900]); };
+          });
+        });
+        const seam = { transcript, commands: { prompt: vi.fn() } } as never;
+        render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="live" />);
+        await vi.advanceTimersByTimeAsync(0);
+        fireEvent.click(screen.getByTestId('transcript-load-older'));
+        await vi.advanceTimersByTimeAsync(5_000);
+        release!();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // The window landed rather than being discarded...
+        expect(screen.getByText('the middle turn')).toBeTruthy();
+        // ...and the reader has a control again rather than a frozen spinner.
+        expect(screen.getByTestId('transcript-load-older')).toBeTruthy();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * REGRESSION (review of PR #452). The server cannot step past a SINGLE
+     * record larger than its read budget: the window lies entirely inside one
+     * record, so there is no earlier boundary to name and it returns the
+     * cursor it was given. Prepending that window changed nothing, left the
+     * cursor where it was, and let the control ask for the identical bytes
+     * again — an unbounded loop.
+     *
+     * It is not an error and it is not the beginning. Both would be lies:
+     * there IS more above, and this reader cannot reach it.
+     */
+    it('stops with a reason when a window comes back on the same cursor', async () => {
+      const stuck = page({ entries: [turn('the newest turn')], windowStart: 900, hasOlder: true });
+      const { seam, transcript } = pagingSeam({ tail: stuck, 900: stuck });
+      render(<TranscriptSurface seam={seam} sessionId={SESSION} liveness="not-running" />);
+      fireEvent.click(await screen.findByTestId('transcript-load-older'));
+
+      const stalled = await screen.findByTestId('transcript-stalled');
+      expect(stalled.textContent).toMatch(/cannot be reached/i);
+      expect(stalled.textContent).toMatch(/larger than the node reads in one window/i);
+      // Neither a beginning nor a retry: the walk is over for this cursor.
+      expect(screen.queryByTestId('transcript-start-boundary')).toBeNull();
+      expect(screen.queryByTestId('transcript-load-older')).toBeNull();
+      const calls = transcript.mock.calls.length;
+      await new Promise((r) => setTimeout(r, 50));
+      expect(transcript.mock.calls.length).toBe(calls);
+    });
+
     /**
      * THE POLL PAUSE. The newest window is a tail, so its start slides forward
      * as the file grows; replacing it under an accumulation would open a hole
