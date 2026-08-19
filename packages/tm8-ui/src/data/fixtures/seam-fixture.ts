@@ -76,6 +76,7 @@ import {
   type FeedItem,
   type FileUploadGrant,
   type FileUploadInitInput,
+  type GraphEdgeView,
   type GraphQuery,
   type GraphResult,
   type HandoffView,
@@ -1983,7 +1984,16 @@ export function createFixtureSeam(): FixtureSeam {
       }
       return clone({
         nodes,
-        edges,
+        // Project to the WIRE shape (`GraphEdgeView`): endpoint ids, not
+        // embedded summaries. The traversal above works in `EdgeView` because
+        // that is what the fixture's connection extras hold; what leaves this
+        // seam must match what the node sends, or the fixture stops being a
+        // stand-in for it. Both endpoints are in `nodes` by the filters above.
+        edges: edges.map(({ source, target, ...rest }): GraphEdgeView => ({
+          ...rest,
+          sourceId: source.id,
+          targetId: target.id,
+        })),
         clusters: [...clustersByParent].map(([parentId, childIds]) => ({ parentId, childIds })),
       });
     },

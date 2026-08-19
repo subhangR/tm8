@@ -62,6 +62,7 @@ import {
   evictRowKeys,
 } from './row-cache';
 import { createDomainStore, projectRows, selectConnectionsOf, type DomainStoreHandle } from '../data/project/domain-store';
+import { resolveGraphEdges } from '../data/project/graph-edges';
 import {
   CACHED_LAUNCH_KINDS,
   nodeKeyOf,
@@ -981,7 +982,23 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
         if (generation !== spaceGeneration.current) return;
         const store = domain.store.getState();
         store.ingestSummaries(result.nodes);
-        store.ingestEdges(result.edges);
+        // `graph.query` sends endpoint IDS (`GraphEdgeView`), because every
+        // endpoint is already in `result.nodes` — the summaries used to ride
+        // along a second time and were ~75% of the response. The normalized
+        // edge family this store shares with the event feed is still keyed on
+        // full `EdgeView`s, so resolve the ids here, at the one boundary that
+        // has the nodes in hand, rather than teaching every edge consumer two
+        // shapes. `resolveGraphEdges` drops nothing silently: an id the server
+        // did not send (which its own filter makes impossible) is skipped and
+        // counted, never turned into a half-built edge.
+        const graphEdgeSet = resolveGraphEdges(result.nodes, result.edges);
+        store.ingestEdges(graphEdgeSet.edges);
+        if (graphEdgeSet.unresolved.length > 0) {
+          console.warn(
+            `graph.query returned ${graphEdgeSet.unresolved.length} edge(s) whose endpoints were not in nodes`,
+            graphEdgeSet.unresolved,
+          );
+        }
         setGraphLoad({
           phase: 'ready',
           error: null,

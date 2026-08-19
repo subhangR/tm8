@@ -237,10 +237,16 @@ describe('W2.G05 collection, graph, and undo handlers', () => {
     expect(result.edges[0]).toMatchObject({
       id: EDGE_ID,
       type: 'depends_on',
-      source: { id: ROOT_ID },
-      target: { id: CHILD_ID },
+      sourceId: ROOT_ID,
+      targetId: CHILD_ID,
       hard: true,
     });
+    // THE ENDPOINTS ARE IDS AND NOTHING ELSE. Re-embedding the summaries here
+    // was ~75% of a real 150-node response, every byte a duplicate of a node
+    // in the same payload — see `GraphEdgeView`. A regression that puts them
+    // back would still pass every assertion above, so name their absence.
+    expect(result.edges[0]).not.toHaveProperty('source');
+    expect(result.edges[0]).not.toHaveProperty('target');
     expect(result.clusters).toEqual([{ parentId: ROOT_ID, childIds: [CHILD_ID] }]);
     expect(edgeSql).toContain('src.deleted_at is null');
     expect(edgeSql).toContain('dst.deleted_at is null');

@@ -34,8 +34,11 @@ function renderGraph(dto: unknown): string {
   const lines: string[] = [];
   for (const node of nodes) lines.push(`node  ${summaryLine(node)}`);
   for (const edge of edges) {
-    const source = (edge.source as { id?: unknown } | undefined)?.id;
-    const target = (edge.target as { id?: unknown } | undefined)?.id;
+    // `graph.query` sends endpoint IDS. The `source`/`target` fallbacks read a
+    // node that predates that change — this renderer is the human view of a
+    // remote DTO and has no reason to go blank against an older server.
+    const source = edge.sourceId ?? (edge.source as { id?: unknown } | undefined)?.id;
+    const target = edge.targetId ?? (edge.target as { id?: unknown } | undefined)?.id;
     lines.push(`edge  ${String(edge.id ?? '')}  ${String(source ?? '')} -${String(edge.type ?? '')}-> ${String(target ?? '')}`);
   }
   return lines.length > 0 ? lines.join('\n') : 'no nodes';

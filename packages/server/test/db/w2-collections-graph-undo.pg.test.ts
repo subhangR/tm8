@@ -270,9 +270,19 @@ describe.sequential('W2.G05 collection, graph, and undo PostgreSQL semantics', (
     expect(graph.edges).toHaveLength(1);
     expect(graph.edges[0]).toMatchObject({
       type: 'depends_on',
-      source: { id: fixture.rootId },
-      target: { id: fixture.childId },
+      sourceId: fixture.rootId,
+      targetId: fixture.childId,
     });
+    // THE CONTRACT THE ID SHAPE RESTS ON: every endpoint of every returned
+    // edge is in this same response's `nodes`, so a client can always resolve
+    // `sourceId`/`targetId` locally and never has to tolerate a dangling one.
+    // Asserted against the DB, where the RLS carve-outs above could in
+    // principle admit an edge whose endpoint the node selection dropped.
+    const nodeIds = new Set(graph.nodes.map((node) => node.id));
+    for (const edge of graph.edges) {
+      expect(nodeIds.has(edge.sourceId)).toBe(true);
+      expect(nodeIds.has(edge.targetId)).toBe(true);
+    }
     expect(graph.clusters).toEqual([{ parentId: fixture.rootId, childIds: [fixture.childId] }]);
 
     const outsider = await asApp(database, fixture.outsiderIdentityId, (q) => queryGraph(

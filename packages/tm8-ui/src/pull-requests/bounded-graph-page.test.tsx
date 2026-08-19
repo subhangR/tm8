@@ -20,21 +20,36 @@
  */
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
-import type { EntitySummary, GraphResult } from '@tm8/contract';
+import type { EdgeView, EntitySummary } from '@tm8/contract';
 import { FIXTURE_SPACE_ID, prTransplant, sessionLive, taskGuideLines } from '../fixtures';
 import { createFixtureSeam } from '../data/fixtures/seam-fixture';
+import { resolveGraphEdges } from '../data/project/graph-edges';
 import { LinkedPullRequestChips } from './LinkedPullRequestChips';
 import { indexLinkedPullRequests } from './linked-pull-requests';
 
-async function boundedGraphPage(): Promise<GraphResult> {
+/**
+ * The page AS THE SHELL HOLDS IT, which is what `indexLinkedPullRequests`
+ * reads. `graph.query` puts endpoint ids on the wire; `loadGraph` resolves
+ * them against the same response's nodes before anything reaches the store, so
+ * this suite runs on the far side of that step — the same normalized `EdgeView`
+ * family the event feed and `entities.connections` fill.
+ */
+interface ShellGraphPage { nodes: EntitySummary[]; edges: EdgeView[] }
+
+async function boundedGraphPage(): Promise<ShellGraphPage> {
   const seam = createFixtureSeam();
   await seam.openSpace(FIXTURE_SPACE_ID);
   // The SAME call the shell makes on boot, limit included.
-  return seam.graph({ spaceId: FIXTURE_SPACE_ID, layout: 'graph', limit: 150 });
+  const page = await seam.graph({ spaceId: FIXTURE_SPACE_ID, layout: 'graph', limit: 150 });
+  const resolved = resolveGraphEdges(page.nodes, page.edges);
+  // Every endpoint of every edge is in the page by construction; a fixture
+  // that ever stopped honouring that would make this suite meaningless.
+  expect(resolved.unresolved).toEqual([]);
+  return { nodes: page.nodes, edges: resolved.edges };
 }
 
 /** The page as it arrives when the PR node and its `tracks` edge lost their seats. */
-function withoutTheLinkedPullRequest(page: GraphResult): GraphResult {
+function withoutTheLinkedPullRequest(page: ShellGraphPage): ShellGraphPage {
   return {
     ...page,
     nodes: page.nodes.filter((node) => node.id !== prTransplant.id),
@@ -45,7 +60,7 @@ function withoutTheLinkedPullRequest(page: GraphResult): GraphResult {
 }
 
 /** The same page with the badge ALSO gone — the world before this projection. */
-function withoutTheBadge(page: GraphResult): GraphResult {
+function withoutTheBadge(page: ShellGraphPage): ShellGraphPage {
   return {
     ...page,
     nodes: page.nodes.map((node): EntitySummary => {

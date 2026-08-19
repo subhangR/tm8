@@ -412,6 +412,16 @@ describe('THE GATE — composed T0-1 master screen', () => {
       await waitFor(() =>
         expect(graph.querySelectorAll('.gv-node, .gv-shelf__chips > *').length).toBeGreaterThan(0),
       );
+      // EDGES, TOO — and this half is not decoration. `graph.query` puts
+      // endpoint IDS on the wire and `loadGraph` resolves them against the
+      // same response's nodes before anything reaches the store; if that
+      // resolution ever silently produced nothing, the nodes above would still
+      // draw and the canvas would go quietly relationless. This is the only
+      // assertion in the repo that runs the whole path — real seam, real
+      // reducer, real layout — and sees a line on the screen at the end of it.
+      await waitFor(() =>
+        expect(graph.querySelectorAll('.gv-edge').length).toBeGreaterThan(0),
+      );
     } finally {
       view.unmount();
       if (resizeObserver === undefined) delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;

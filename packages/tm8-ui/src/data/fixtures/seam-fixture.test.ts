@@ -65,7 +65,9 @@ describe('fixture seam — reads', () => {
     expect(graph.nodes.length).toBeGreaterThan(0);
     expect(graph.edges.length).toBeGreaterThan(0);
     const graphIds = new Set(graph.nodes.map((node) => node.id));
-    expect(graph.edges.every((edge) => graphIds.has(edge.source.id) && graphIds.has(edge.target.id))).toBe(true);
+    // The invariant `GraphEdgeView` rests on: endpoints are ids, and every id
+    // resolves inside this same response's `nodes`.
+    expect(graph.edges.every((edge) => graphIds.has(edge.sourceId) && graphIds.has(edge.targetId))).toBe(true);
 
     const detail = await seam.entity(taskUuidTitle.id);
     expect(EntityDetailSchema.safeParse(detail).success).toBe(true);

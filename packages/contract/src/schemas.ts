@@ -58,7 +58,7 @@ import type {
   FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GateTaskInput,
-  GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
+  GraphEdgeView, GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
   Hierarchy, HomeSnapshot, IdentityProfileUpdateInput, IdentityProfileView,
   InboxListQuery, InboxMarkReadInput, InboxRecipient,
   InteractionProfileDraft, InteractionProfilePinView, InteractionProfilePreview,
@@ -587,6 +587,24 @@ export const EdgeViewSchema: z.ZodType<EdgeView> = z.lazy(() => z.object({
   hard: z.boolean().optional(),
 }).strict());
 
+/**
+ * `graph.query`'s edge shape. Identical to `EdgeViewSchema` except that the
+ * endpoints are ids: the same response's `nodes` array already carries both
+ * summaries, so embedding them was pure duplication (see `GraphEdgeView`).
+ */
+export const GraphEdgeViewSchema: z.ZodType<GraphEdgeView> = z.lazy(() => z.object({
+  id: z.string(),
+  type: z.string(),
+  sourceId: EntityIdSchema,
+  targetId: EntityIdSchema,
+  props: z.record(z.unknown()),
+  createdBy: ActorSummarySchema,
+  createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+  resolved: z.boolean().optional(),
+  hard: z.boolean().optional(),
+}).strict());
+
 export const EntityConnectionsQuerySchema: z.ZodType<EntityConnectionsQuery> = z.object({
   types: uniqueArray(z.string().min(1)).optional(),
   direction: z.enum(['incoming', 'outgoing', 'both']).optional(),
@@ -894,7 +912,7 @@ export const GraphQuerySchema: z.ZodType<GraphQuery> = z.object({
 
 export const GraphResultSchema: z.ZodType<GraphResult> = z.lazy(() => z.object({
   nodes: z.array(EntitySummarySchema),
-  edges: z.array(EdgeViewSchema),
+  edges: z.array(GraphEdgeViewSchema),
   clusters: z.array(z.object({ parentId: EntityIdSchema, childIds: z.array(EntityIdSchema) }).strict()),
   layout: z.record(z.object({ x: z.number(), y: z.number() }).strict()).optional(),
 }).strict());
