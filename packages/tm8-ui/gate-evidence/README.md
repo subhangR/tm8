@@ -92,3 +92,40 @@ suites were green throughout — the control is in the DOM with a real 16px box
 either way, and jsdom loads no stylesheets. That is D10's argument again, and
 the fix is the `opacity: 0.55` rule `.pn-st__arrow` had already adopted for
 exactly this reason one file over.
+
+## SETTINGS PAGE CENTRING (user report 2026-08-19, "center the settings page")
+
+Captured from `/settings-dev.html` — the real `SettingsShell` over the fixture
+seam, mounted inside `.cv2-root.shell-scope > .shell-root > .shell-body`, which
+is the exact nesting `GateApp` renders it in. That nesting is the whole point:
+`.shell-body` is the flex ROW that decides how wide `.set-root` gets, so a
+harness mounting the shell in a plain full-width div would reproduce nothing.
+Headless Chrome via CDP, 1440x900 at dpr 2, dark theme.
+
+| File | sha256 | Shows |
+|---|---|---|
+| `settings-centring-before.png` | `882daf3fdcdc510fd1ba83da5316a8fd1eda4fbe9a056af277f06efa943d82a5` | The reported defect: the card pinned left, 18px gutter against 433px of bare paper |
+| `settings-centring-after.png` | `4ca40637bf82c3a441cba4aedfe8fbd6d44b59478d85dedd1122c1b8e03ebc06` | `flex: 1` on `.set-root` — 125px / 125px, the card at its 1080px `--set-card-max` |
+
+Measured across six viewports (`.set-card` left/right gutter inside
+`.shell-body`, rect px, so 1.1x the CSS values):
+
+| viewport | before L / R | after L / R |
+|---|---|---|
+| 3016 | 18 / **2009** | 913 / 913 |
+| 1920 | 18 / **913** | 365 / 365 |
+| 1440 | 18 / **433** | 125 / 125 |
+| 1180 | 18 / **173** | 18 / 16 |
+| 900 | 18 / 16 | 18 / 16 |
+| 760 | 18 / 16 | 18 / 16 |
+
+Below ~1180 the two agree, because there the card is narrower than
+`--set-card-max` and fills the frame either way — which is why every viewport
+the sections were originally reviewed at looked correct.
+
+**What the browser caught that jsdom could not.** `.set-card` had carried
+`max-width` + `margin-inline: auto` since the frame pass and centred nothing,
+because a flex item at the initial `flex: 0 1 auto` is sized by its content —
+so the auto margins had a box exactly as wide as the card to centre inside. No
+vitest can see this: jsdom loads no stylesheets and has no layout engine. D10
+again.
