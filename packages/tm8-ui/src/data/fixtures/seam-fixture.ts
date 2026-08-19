@@ -160,6 +160,7 @@ import {
   sessionLive,
   sessionStale,
 } from '../../fixtures';
+import { SHIPPED_DEFAULT_MENU } from '../../domain';
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
 
@@ -1753,11 +1754,20 @@ export function createFixtureSeam(): FixtureSeam {
         // W4 ride-along, exactly as the node answers it: the same settings
         // round trip that carries the axes carries the workflows keyed on them.
         taskWorkflows: [...taskWorkflows].sort((a, b) => a.typeValue.localeCompare(b.typeValue)).map((w) => clone(w)),
-        menu: {
-          schemaVersion: 1,
-          revision: 1,
-          groups: [{ id: 'fixture', label: 'Fixture', items: [{ type: 'view', ref: 'settings' }] }],
-        },
+        /* THE SAME MENU `menu()` ANSWERS WITH, because on the node they are
+           the same row. `spaces.settings` reads `space_menu_configs` directly
+           and `spaces.menu.get` reads it through `get_space_menu`; a node
+           cannot serve two different menus for one space, so a fixture that
+           does is lying about a shape its consumers now rely on.
+
+           It used to, harmlessly: nothing read `settings.menu`, because boot
+           took the menu from the separate `menu()` round trip. That read is
+           gone (it was a duplicate — see `hydrate`), so this field is now the
+           rail's actual source and the disagreement became visible as a tab
+           row nobody designed. `menu()` resolves null here by C-4 and the UI
+           substitutes its shipped default, so the shipped default is exactly
+           what a consistent settings payload has to carry. */
+        menu: SHIPPED_DEFAULT_MENU,
         defaultChannelId: null,
         defaultInteractionProfileId: 'ip-house-style',
         settingsRevision: 1,

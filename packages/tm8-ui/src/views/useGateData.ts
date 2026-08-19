@@ -35,7 +35,6 @@ import type {
   Page,
   PostMessageInput,
   EntitySummary,
-  MenuConfig,
   SpaceId,
   SpaceKindCounts,
   SpaceSummary,
@@ -387,6 +386,15 @@ const LAUNCH_SOURCE_KINDS = new Set(['team_member', 'interaction_profile']);
 
 /** The server's own `MAX_LIMIT`. Asking for more is an invalid_input refusal. */
 const MAX_COLLECTION_LIMIT = 200;
+
+/**
+ * One launch row seeded from the browser cache, remembered so hydrate can
+ * retract it. The version is the retraction's PRECONDITION — see `seededIds`.
+ */
+interface SeededRow {
+  id: string;
+  version: number;
+}
 
 /** Trailing debounce for persisting the launch cache. See its effect. */
 const LAUNCH_CACHE_DEBOUNCE_MS = 1000;
@@ -1083,58 +1091,65 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
    * Hydration is written as ONE idempotent, re-runnable function from day one
    * (§10.2.5): `onResync` means catch-up integrity was lost, and the only
    * honest response is to re-run the reads rather than patch around the gap.
+   *
+   * IT IS SPLIT IN TWO, AND THE SPLIT IS THE POINT.
+   *
+   * What `hydrate` AWAITS is what first paint genuinely cannot render without:
+   * the space's settings, the graph, and the rows of the two VISIBLE panels.
+   * Everything else resolves after `setReady(true)` — see `deferred` at the
+   * end of this function and its call site in the space-open effect.
+   *
+   * Boot used to await eleven reads. Four of them carry comments in this very
+   * file saying they are an ENHANCEMENT and must never cost the boot — and
+   * were then `await`ed inside the `Promise.all` that gates `ready`. FAILING
+   * cost the boot nothing; SUCCEEDING SLOWLY cost it up to a second. Two more
+   * (`team_member`, `interaction_profile` at `MAX_COLLECTION_LIMIT`) are the
+   * complete option sets behind the launch sheet's pickers — a set nobody can
+   * see until they open the sheet, measured at 0.33s of every boot.
+   *
+   * Nothing is dropped. Every read still happens, with the same soft-fail
+   * posture it had; it happens AFTER the workspace opens instead of before.
    */
   const hydrate = useCallback(
     async (space: SpaceId, generation = spaceGeneration.current) => {
       const isCurrent = () => generation === spaceGeneration.current;
-      const [menuRaw, snapshot, projects, settings, identity, , counts] = await Promise.all([
-        seam.menu(space).catch((error: unknown) => {
-          if (isCurrent()) setMenu(resolveMenu(undefined, error));
-          return undefined;
-        }),
-        // `refresh()` RESOLVES the snapshot; there is no accessor to read one
-        // back. Holding the latest is this layer's job by design (A1c), which
-        // is why every renderer below takes `liveIds` as a plain array.
-        seam.liveness.refresh(space).catch(() => undefined),
-        seam.projects(space),
+      const [settings] = await Promise.all([
         seam.spaceSettings(space),
-        // Display identity is an enhancement to boot, not an availability
-        // gate. Membership still drives the people filter when identity is
-        // unreadable; only the viewer-specific face stays absent.
-        seam.identity().catch(() => null),
         loadGraph(space, DEFAULT_WINDOW, generation),
-        // SOFT-FAILS to `undefined`, like `menu` above and unlike the reads
-        // that gate boot. The rail's numbers are an enhancement: a node that
-        // cannot answer this should render a rail with no counts, never a
-        // workspace that refuses to open. Absent counters are also why the
-        // rail draws nothing rather than `0` on a miss — see `countsFor`.
-        // `Promise.resolve().then(...)` rather than a bare call: it converts a
-        // SYNCHRONOUS throw into a rejection the `.catch` can absorb. A direct
-        // `seam.counts(...)` that threw before returning a promise would take
-        // the whole `Promise.all` down and leave the workspace stuck at
-        // `ready === false` — the counters failing must never cost the boot.
-        Promise.resolve().then(() => seam.counts(space)).catch(() => undefined),
       ]);
       if (!isCurrent()) return;
-      if (menuRaw !== undefined) setMenu(resolveMenu(menuRaw as MenuConfig | null));
-      if (snapshot) {
-        setLiveIds(snapshot.liveEntityIds);
-        setExecutionCapacity(snapshot.capacity);
-      }
-      setLinkedProjects(projects);
+      /* THE MENU RIDES `spaces.settings`; THERE IS NO SECOND READ.
+         `hydrate` used to call BOTH `seam.menu(space)` and
+         `seam.spaceSettings(space)`, and `SpaceSettingsView.menu` is the same
+         `MenuConfig`, off the same `space_menu_configs` row (server
+         `identity-spaces.ts` reads the table directly; `spaces.menu.get` reads
+         it through `get_space_menu`). Verified identical on the wire. ~12ms,
+         but a whole round trip and a whole pool slot per boot.
+
+         THE FAILURE POSTURES RECONCILE, and in the safe direction. The worry
+         is that `menu` soft-failed independently while `settings` does not, so
+         folding one into the other could turn a menu problem into a boot
+         failure. It cannot: `spaces.settings` ALREADY throws
+         `upstream_unavailable` when that row is missing, and again when the
+         assembled view (menu included) fails `SpaceSettingsViewSchema`. Every
+         condition the separate soft-fail was protecting against already failed
+         the boot through `settings`, on main, before this change. The
+         independent catch was decorative.
+
+         `resolveMenu` still absorbs the rest: a seam that omits `menu`
+         entirely (rolling nodes, fixture seams) reads as `absent` and lands on
+         the shipped default, exactly as a null from the deleted read did. */
+      setMenu(resolveMenu(settings.menu ?? null));
       // Rolling/fixture seams from before membership projection may omit the
       // array. Treat that as unread membership, never as a fabricated actor.
       const memberActors = (settings.members ?? []).map((member) => member.actor);
-      const viewerMemberId = identity?.memberships.find((membership) => membership.spaceId === space)?.memberId;
       setMembers(memberActors);
       // Same posture as membership: a settings shape from before the axes
       // projection reads as "none defined", never as a fabricated axis.
       setTaskAxes(settings.taskAxes ?? []);
       // W4 rides the same read with the same posture.
       setTaskWorkflows(settings.taskWorkflows ?? []);
-      setViewerActor(memberActors.find((member) => member.id === viewerMemberId) ?? null);
       setSpaceDefaultProfileId(settings.defaultInteractionProfileId);
-      if (counts) setKindCounts(counts);
 
       const load = async (kind: string, limit?: number) => {
         const query = { spaceId: space, kinds: [kind], ...(limit ? { limit } : {}) } as unknown as CollectionQuery;
@@ -1146,98 +1161,246 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       };
       // BOUNDED, not `Promise.all`: these are the collections.query calls that
       // boot fires per kind, and unbounded they arrive at the node together —
-      // with the counts/menu/graph reads above already in flight, ONE tab's
-      // boot approached the whole pool, and two tabs exceeded it. The rail's
-      // counters already come from the one-query `spaces.counts` read above;
-      // only the panels' actual rows justify per-kind queries at all.
-      const loaded = await mapLimit(
-        [...new Set([options.leftKind, options.rightKind, 'team_member', 'interaction_profile'])],
-        BOOT_READ_CONCURRENCY,
-        async (kind) => {
-          // LAUNCH SOURCES ASK FOR THE WHOLE SET, EXPLICITLY. An unbounded
-          // collections.query takes the server's DEFAULT_LIMIT of 50, and these
-          // two kinds are not a list the viewer pages through — they are the
-          // COMPLETE option set behind the teammate and profile pickers. Past
-          // 50 teammates the 51st simply stops being offerable, with no error
-          // and no reason shown: the picker looks complete and is not. Panel
-          // kinds keep the default, because those ARE paged lists.
-          const items = await load(kind, LAUNCH_SOURCE_KINDS.has(kind) ? MAX_COLLECTION_LIMIT : undefined);
-          return { kind, items };
-        },
-      );
-      const unnamedProfiles = loaded
-        .filter((entry) => entry.kind === 'interaction_profile')
-        .flatMap((entry) => entry.items)
-        .filter((profile) => profile.state.kind === 'interaction_profile' && profile.title.trim().length === 0);
-      // Older nodes returned Interaction Profile collection rows with an empty
-      // envelope title even though the canonical entity detail already knew
-      // the versioned draft name. Resolve only those compatibility rows. A
-      // current node returns the name in the summary and pays zero extra reads.
-      await mapLimit(unnamedProfiles, BOOT_READ_CONCURRENCY, async (profile) => {
-        const detail = await seam.entity(profile.id).catch(() => undefined);
-        if (detail && isCurrent()) domain.store.getState().ingestDetail(detail);
+      // with the graph read above already in flight, ONE tab's boot approached
+      // the whole pool, and two tabs exceeded it. Only the panels' actual rows
+      // justify a per-kind query on the GATE at all; the rail's counters come
+      // from the one-query `spaces.counts` read, deferred below.
+      const panelKinds = [...new Set([options.leftKind, options.rightKind])];
+      const gated = await mapLimit(panelKinds, BOOT_READ_CONCURRENCY, async (kind) => {
+        // A panel kind that is ALSO a launch source keeps the launch limit.
+        // The two roles are independent: `team_member` on the left panel is
+        // still the picker's complete option set, and taking the server's
+        // default here would silently shorten it. See the deferred read below
+        // for why that limit exists at all.
+        const items = await load(kind, LAUNCH_SOURCE_KINDS.has(kind) ? MAX_COLLECTION_LIMIT : undefined);
+        return { kind, items };
       });
       if (!isCurrent()) return;
-      /* THE AUTHORITATIVE SET REPLACES THE SEED — including the rows it does
-         NOT contain.
 
-         `ingestSummaries` MERGES, so a teammate deleted while this browser was
-         closed would be seeded from cache, survive hydrate untouched, and stay
-         in the picker for the whole session. Nothing else would ever remove it:
-         the server cannot send an `entity.deleted` event for something that was
-         deleted before this client connected.
+      /* EVERYTHING BELOW THIS LINE HAPPENS AFTER FIRST PAINT.
+         Returned rather than started here, so the ordering is visible at the
+         call site: the space-open effect runs `setReady(true)` and THEN calls
+         this. Nothing in it is awaited by boot, and nothing in it can fail
+         boot — see the error posture note inside. */
+      return () => {
+        void (async () => {
+          /* THE DEFERRED SET IS BOUNDED TOO. "After paint" must not mean "all
+             at once": these reads share the same 8-connection pool as the
+             gating ones, and the tab that just opened is now also rendering.
+             One queue at `BOOT_READ_CONCURRENCY`, launch kinds FIRST so the
+             tombstone pass below unblocks as early as the bound allows.
 
-         So the seeded ids hydrate did not return are tombstoned explicitly. The
-         launch memo already drops `deletedAt !== null`, so this is the same
-         mechanism a live deletion uses rather than a second code path. */
-      const launchRows = loaded
-        .filter((entry) => CACHED_LAUNCH_KINDS.has(entry.kind))
-        .flatMap((entry) => entry.items);
-      const returned = new Set(launchRows.map((row) => row.id));
-      const orphaned = (seededIds.current.get(space) ?? []).filter((id) => !returned.has(id));
-      if (orphaned.length > 0) {
-        const store = domain.store.getState();
-        const stale = orphaned
-          .map((id) => store.entities[id as EntityId])
-          .filter((row): row is EntitySummary => row !== undefined && row.deletedAt === null)
-          .map((row) => ({ ...row, deletedAt: new Date().toISOString() }));
-        if (stale.length > 0) store.ingestSummaries(stale);
-      }
-      seededIds.current.delete(space);
+             ERROR POSTURE. Every unit absorbs its own rejection, and the queue
+             itself is `void`ed. This is not laziness about errors — the
+             space-open effect's `catch` treats a `hydrate` rejection as a BOOT
+             FAILURE and re-runs `openSpace` + the entire hydrate behind a
+             backoff. A deferred read reaching that catch would restart a boot
+             that had already succeeded. Each read keeps exactly the soft-fail
+             posture it had on the gate: absent counts leave the rail blank,
+             an unreadable identity leaves the viewer's face absent, and
+             neither becomes a new error surface.
 
-      // Persisted from the READ, not the store: the cache must only ever hold
-      // rows the server actually returned.
-      writeLaunchCache(nodeKeyOf(options.serverBaseUrl), space, launchRows);
+             `projects` is the one whose posture CHANGES, and only in the
+             forgiving direction: it used to reject into that catch and cost a
+             whole re-boot. Off the gate it cannot, so a failed read leaves the
+             linked-projects list empty instead of restarting the workspace. */
+          const deferredLaunchKinds = [...LAUNCH_SOURCE_KINDS].filter(
+            (kind) => !panelKinds.includes(kind),
+          );
+          const launchLoads: Array<{ kind: string; items: EntitySummary[] }> = [];
+          /* A LAUNCH READ THAT DID NOT ANSWER IS NOT AN EMPTY ANSWER.
+             The tombstone pass below reads "the server did not return it" as
+             "it was deleted". That inference is only sound when the server
+             actually spoke. On the gate this was free: a rejecting launch read
+             took `hydrate` down and the pass never ran. Off the gate the
+             rejection is absorbed, so without this flag a single transient
+             blip would leave `returned` empty and retract the viewer's whole
+             seeded picker. */
+          let launchReadFailed = false;
+          const units: Array<() => Promise<void>> = [
+            ...deferredLaunchKinds.map((kind) => async () => {
+              // LAUNCH SOURCES ASK FOR THE WHOLE SET, EXPLICITLY. An unbounded
+              // collections.query takes the server's DEFAULT_LIMIT of 50, and
+              // these two kinds are not a list the viewer pages through — they
+              // are the COMPLETE option set behind the teammate and profile
+              // pickers. Past 50 teammates the 51st simply stops being
+              // offerable, with no error and no reason shown: the picker looks
+              // complete and is not.
+              //
+              // Which is also why they do not gate: 0.33s of every boot, for
+              // 200 rows nobody can see until they open the launch sheet.
+              const items = await load(kind, MAX_COLLECTION_LIMIT).catch(() => undefined);
+              if (items === undefined) {
+                launchReadFailed = true;
+                return;
+              }
+              if (isCurrent()) launchLoads.push({ kind, items });
+            }),
+            // `refresh()` RESOLVES the snapshot; there is no accessor to read
+            // one back. Holding the latest is this layer's job by design
+            // (A1c), which is why every renderer below takes `liveIds` as a
+            // plain array. Live dots are not a reason to hold the workspace
+            // shut — they light up when the snapshot lands.
+            async () => {
+              const snapshot = await seam.liveness.refresh(space).catch(() => undefined);
+              if (!snapshot || !isCurrent()) return;
+              setLiveIds(snapshot.liveEntityIds);
+              setExecutionCapacity(snapshot.capacity);
+            },
+            // SOFT-FAILS to `undefined`. The rail's numbers are an
+            // enhancement: a node that cannot answer this should render a rail
+            // with no counts, never a workspace that refuses to open. Absent
+            // counters are also why the rail draws nothing rather than `0` on
+            // a miss — see `countsFor`.
+            // `Promise.resolve().then(...)` rather than a bare call: it
+            // converts a SYNCHRONOUS throw into a rejection the `.catch` can
+            // absorb.
+            async () => {
+              const counts = await Promise.resolve()
+                .then(() => seam.counts(space))
+                .catch(() => undefined);
+              if (counts && isCurrent()) setKindCounts(counts);
+            },
+            // Display identity is an enhancement to boot, not an availability
+            // gate. Membership still drives the people filter when identity is
+            // unreadable; only the viewer-specific face stays absent — which
+            // is precisely why it can arrive a moment late. `memberActors` is
+            // closed over from the SETTINGS read that gated paint, so this
+            // unit needs no second membership read.
+            async () => {
+              const identity = await seam.identity().catch(() => null);
+              if (!isCurrent()) return;
+              const viewerMemberId = identity?.memberships
+                .find((membership) => membership.spaceId === space)?.memberId;
+              setViewerActor(memberActors.find((member) => member.id === viewerMemberId) ?? null);
+            },
+            async () => {
+              const projects = await seam.projects(space).catch(() => undefined);
+              if (projects && isCurrent()) setLinkedProjects(projects);
+            },
+          ];
+          await mapLimit(units, BOOT_READ_CONCURRENCY, (unit) => unit());
+          if (!isCurrent()) return;
 
-      const teammateRows = loaded
-        .filter((entry) => entry.kind === 'team_member')
-        .flatMap((entry) => entry.items);
-      /* THE PER-TEAMMATE READ IS GONE, NOT MOVED.
+          const loaded = [...gated, ...launchLoads];
+          const unnamedProfiles = loaded
+            .filter((entry) => entry.kind === 'interaction_profile')
+            .flatMap((entry) => entry.items)
+            .filter((profile) => profile.state.kind === 'interaction_profile' && profile.title.trim().length === 0);
+          // Older nodes returned Interaction Profile collection rows with an
+          // empty envelope title even though the canonical entity detail
+          // already knew the versioned draft name. Resolve only those
+          // compatibility rows. A current node returns the name in the summary
+          // and pays zero extra reads.
+          await mapLimit(unnamedProfiles, BOOT_READ_CONCURRENCY, async (profile) => {
+            const detail = await seam.entity(profile.id).catch(() => undefined);
+            if (detail && isCurrent()) domain.store.getState().ingestDetail(detail);
+          });
+          if (!isCurrent()) return;
+          /* THE AUTHORITATIVE SET REPLACES THE SEED — including the rows it
+             does NOT contain.
 
-         This used to be one `entities.connections` request PER TEAMMATE, to
-         find the single `defaults_to_profile` edge each may have, and it was
-         AWAITED before `hydrate` returned — so the workspace sat behind a read
-         whose count was linear in the size of the space. Measured on the real
-         app: 136 round trips over 129 teammates, 866ms to 3831ms of a 3.9s
-         boot, while every read a workspace actually needs was done at 866ms.
+             `ingestSummaries` MERGES, so a teammate deleted while this browser
+             was closed would be seeded from cache, survive hydrate untouched,
+             and stay in the picker for the whole session. Nothing else would
+             ever remove it: the server cannot send an `entity.deleted` event
+             for something that was deleted before this client connected.
 
-         The node now projects the answer onto the row itself as
-         `state.defaultProfileId` (server `entity-read.ts`, via the batch edge
-         query `loadRelations` already runs — zero extra queries), so the launch
-         memo below reads it straight off the summary it already had. N requests
-         became none, rather than N requests moved off the critical path.
+             So the seeded ids the launch reads did not return are tombstoned
+             explicitly. The launch memo already drops `deletedAt !== null`, so
+             this is the same mechanism a live deletion uses rather than a
+             second code path.
 
-         `teammateRows` is still bound above because the launch cache is written
-         from it; it simply costs no follow-up read now. */
+             THE PASS MOVED WITH THE READS IT DEPENDS ON. It cannot run on the
+             gate any more, because the reads that produce `returned` no longer
+             do; running it early would tombstone every seeded row on the
+             grounds that a read still in flight had not returned it — deleting
+             the whole picker on every boot. It reads `gated` as well as
+             `launchLoads` because a launch kind that is also a panel kind was
+             loaded on the gate.
+
+             AND IT IS NOW VERSION-GUARDED, because deferring widened a window.
+             On the gate this pass ran BEFORE `releaseBufferedEvents()`, so no
+             event could have touched a seeded row. It now runs with the event
+             stream live, and "the launch read did not return it" stops being
+             proof the row is gone — an `entity.upsert` may have arrived for it
+             in between, and tombstoning over that would hide a row the server
+             had just re-asserted. So a seed is only tombstoned while the store
+             still holds it at the EXACT version the seed wrote. Anything that
+             moved the row since is a fresher statement than this pass has, and
+             it is left alone. (This also closes a hole that predates the
+             deferral: `graph.query` can ingest a newer `team_member` row that
+             no launch read returns, and the unguarded pass tombstoned it.) */
+          /* NO VERDICT WITHOUT THE EVIDENCE. A launch read that rejected makes
+             both halves of this block unsound — the tombstone pass would
+             retract rows nobody asked about, and `writeLaunchCache` would
+             persist a set missing a whole kind, turning one blip into a
+             permanently short picker. So both are skipped and the seed is left
+             STANDING: `seededIds` keeps its entry, the cache keeps its rows,
+             and the pickers keep offering what they were seeded with.
+
+             The cost of that choice, stated: a teammate deleted while the
+             browser was closed can linger in the picker until the next boot
+             whose launch read succeeds. That is the failure mode the seeding
+             comment already accepts — a stale option refuses at spawn with the
+             node's own reason. Emptying the picker on a transient read failure
+             is the worse of the two. */
+          if (launchReadFailed) return;
+          const launchRows = loaded
+            .filter((entry) => CACHED_LAUNCH_KINDS.has(entry.kind))
+            .flatMap((entry) => entry.items);
+          const returned = new Set(launchRows.map((row) => row.id));
+          const orphaned = (seededIds.current.get(space) ?? []).filter((seed) => !returned.has(seed.id));
+          if (orphaned.length > 0) {
+            const store = domain.store.getState();
+            const stale = orphaned
+              .map((seed) => ({ seed, row: store.entities[seed.id as EntityId] }))
+              .filter((pair): pair is { seed: SeededRow; row: EntitySummary } =>
+                pair.row !== undefined
+                && pair.row.deletedAt === null
+                && pair.row.version === pair.seed.version)
+              .map(({ row }) => ({ ...row, deletedAt: new Date().toISOString() }));
+            if (stale.length > 0) store.ingestSummaries(stale);
+          }
+          seededIds.current.delete(space);
+
+          // Persisted from the READ, not the store: the cache must only ever
+          // hold rows the server actually returned.
+          writeLaunchCache(nodeKeyOf(options.serverBaseUrl), space, launchRows);
+
+          /* THE PER-TEAMMATE READ IS GONE, NOT MOVED.
+
+             This used to be one `entities.connections` request PER TEAMMATE,
+             to find the single `defaults_to_profile` edge each may have, and
+             it was AWAITED before `hydrate` returned — so the workspace sat
+             behind a read whose count was linear in the size of the space.
+             Measured on the real app: 136 round trips over 129 teammates,
+             866ms to 3831ms of a 3.9s boot, while every read a workspace
+             actually needs was done at 866ms.
+
+             The node now projects the answer onto the row itself as
+             `state.defaultProfileId` (server `entity-read.ts`, via the batch
+             edge query `loadRelations` already runs — zero extra queries), so
+             the launch memo below reads it straight off the summary it already
+             had. N requests became none, rather than N requests moved off the
+             critical path. Note the difference from what this block does: that
+             loop was DELETED, these reads are RESCHEDULED. */
+        })();
+      };
     },
     [seam, options.leftKind, options.rightKind, options.serverBaseUrl, absorb, loadGraph, domain],
   );
 
   /**
-   * Ids seeded from the browser cache, per space, awaiting hydrate's verdict.
+   * Rows seeded from the browser cache, per space, awaiting hydrate's verdict.
    * A ref because it is bookkeeping BETWEEN two effects, never rendered.
+   *
+   * The VERSION rides along with the id because the tombstone pass now runs
+   * with the event stream live: "still at the version I seeded" is what makes
+   * "the launch read did not return it" mean deleted rather than merely
+   * overtaken. See that pass in `hydrate`'s deferred block.
    */
-  const seededIds = useRef(new Map<string, string[]>());
+  const seededIds = useRef(new Map<string, SeededRow[]>());
 
   const [bootError, setBootError] = useState<string | null>(null);
   // Set from the SAME error as `bootError`, at every site, so the message and
@@ -1422,8 +1585,9 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     const seeded = readLaunchCache(nodeKeyOf(options.serverBaseUrl), spaceId);
     if (seeded) {
       // Remembered so hydrate can tombstone whichever of them the server no
-      // longer returns. Without this the seed would be unretractable.
-      seededIds.current.set(spaceId, seeded.map((row) => row.id));
+      // longer returns. Without this the seed would be unretractable. The
+      // version comes along because the retraction is conditional on it.
+      seededIds.current.set(spaceId, seeded.map((row) => ({ id: row.id, version: row.version })));
       domain.store.getState().ingestSummaries(seeded);
     }
 
@@ -1443,7 +1607,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
             if (openedSpace.current !== spaceId) seam.closeSpace(spaceId);
             return;
           }
-          await hydrate(spaceId, generation);
+          const deferred = await hydrate(spaceId, generation);
           if (cancelled || generation !== spaceGeneration.current) {
             if (openedSpace.current !== spaceId) seam.closeSpace(spaceId);
             return;
@@ -1453,6 +1617,13 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
             setBootError(null);
             setBootErrorCode(null);
             setReady(true);
+            // THE NON-GATING READS START HERE, AFTER `ready`, ON PURPOSE.
+            // `hydrate` hands them back rather than starting them itself so
+            // this ordering is a statement in the boot sequence and not a
+            // detail buried in a callback. `deferred` is undefined when
+            // hydrate returned early on a stale generation — there is then
+            // nothing to populate, because nothing is looking at it.
+            deferred?.();
           }
           return;
         } catch (error: unknown) {
