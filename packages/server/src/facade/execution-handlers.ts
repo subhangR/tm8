@@ -2395,6 +2395,30 @@ function registerHandlers(
       last = Math.min(parsed, TRANSCRIPT_LAST_MAX);
     }
 
+    /*
+     * THE PAGE-BACK CURSOR — a byte offset taken from a previous page's
+     * `windowStart`, and the only thing a request may ever say about the file.
+     * It names a POSITION INSIDE the file the session's own row already chose;
+     * it cannot name a file. The authorization story above is unchanged: the
+     * work_session entity read under the caller's claims is still the gate,
+     * and every path component still comes from that row.
+     *
+     * Positive, like `last`. 0 is the start of the file, where `hasOlder` is
+     * already false, so a client that reads its own cursor never sends it.
+     */
+    const rawBefore = ctx.query.get('before');
+    let before: number | undefined;
+    if (rawBefore !== null && rawBefore !== '') {
+      const parsed = Number.parseInt(rawBefore, 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new CollabError(
+          'invalid_input',
+          `before must be a positive integer, got ${rawBefore}`,
+        );
+      }
+      before = parsed;
+    }
+
     const cwd =
       session.workdir_mode === 'scratch'
         ? dataDir === undefined
@@ -2422,6 +2446,7 @@ function registerHandlers(
         agentConfigDir: session.agent_config_dir,
         fallbackAgentConfigDirs,
         last,
+        ...(before === undefined ? {} : { before }),
         includeFileChanges,
       }),
     );

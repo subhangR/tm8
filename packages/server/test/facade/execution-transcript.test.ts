@@ -265,6 +265,54 @@ describe('execution.transcript handler', () => {
     }
   });
 
+  /**
+   * `before` is the page-back cursor and the ONLY thing a request may say about
+   * the file. It names a position INSIDE the file the session's own row already
+   * chose — it cannot name a file — which is what keeps the authorization story
+   * above exactly as it was.
+   */
+  it('pages back to the window before the cursor it is handed', async () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      assistantTurn(`turn ${String(i)}`, `2026-08-01T12:00:${String(i).padStart(2, '0')}.000Z`));
+    await plantClaude(home, '/work/tm8', many);
+    const handler = buildHandler({ dataDir, home, rows: () => [row()] });
+
+    const tail = await call(handler, ctxFor(SESSION_ID, { last: '10' }));
+    expect(tail.entries.map((e) => e.text)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `turn ${String(20 + i)}`),
+    );
+    expect(tail.hasOlder).toBe(true);
+    expect(tail.windowStart).toBeGreaterThan(0);
+
+    const older = await call(
+      handler,
+      ctxFor(SESSION_ID, { last: '10', before: String(tail.windowStart) }),
+    );
+    // Abutting, not overlapping: turn 19 is the one immediately before turn 20.
+    expect(older.entries.map((e) => e.text)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `turn ${String(10 + i)}`),
+    );
+
+    const oldest = await call(
+      handler,
+      ctxFor(SESSION_ID, { last: '10', before: String(older.windowStart) }),
+    );
+    expect(oldest.entries[0]?.text).toBe('turn 0');
+    // Byte 0 reached: the earned claim, and the walk's terminating condition.
+    expect(oldest.windowStart).toBe(0);
+    expect(oldest.hasOlder).toBe(false);
+  });
+
+  it('refuses a non-positive or non-numeric `before`, naming the offending value', async () => {
+    const handler = buildHandler({ dataDir, home, rows: () => [row()] });
+    for (const bad of ['0', '-5', 'somewhere']) {
+      await expect(call(handler, ctxFor(SESSION_ID, { before: bad }))).rejects.toMatchObject({
+        code: 'invalid_input',
+        message: expect.stringContaining(bad),
+      });
+    }
+  });
+
   it('reports no_transcript_file when the node has no data dir and the session is scratch', async () => {
     // Without a data dir there is no scratch root, so the cwd cannot be derived
     // at all — and an underivable cwd is an explained empty, not a crash.

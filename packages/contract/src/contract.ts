@@ -4100,6 +4100,34 @@ export interface SessionTranscriptPage {
   /** Lines the reader could not parse — surfaced, never silently dropped. */
   malformed: number;
   /**
+   * THE PAGE-BACK CURSOR: the byte offset, in the agent's own transcript file,
+   * of the record behind the FIRST entry in `entries`. Pass it back as the
+   * `before` query parameter to read the window immediately older than this
+   * one. Null only when the page is unavailable — there is no cursor into a
+   * file that was never opened.
+   *
+   * A BYTE offset, deliberately, where `SessionJournalPage` pages on a line
+   * ordinal: the journal reads its whole file and can afford an ordinal, while
+   * this reader exists to avoid reading a file that can run to tens of
+   * megabytes, so an ordinal would reintroduce a full scan on every page. A
+   * transcript is APPEND-ONLY, so a byte offset never moves and costs one seek
+   * to reach.
+   *
+   * Consecutive windows ABUT — no record read twice, none skipped — because
+   * the offset names a record boundary. That is what lets a client accumulate
+   * older pages by plain concatenation, with no dedupe.
+   */
+  windowStart: number | null;
+  /**
+   * True iff transcript exists BEFORE this window: `windowStart > 0`.
+   *
+   * Named `hasOlder` rather than the journal's `hasMore` because here "more"
+   * has exactly one direction. False is an EARNED claim, not a default: it
+   * says this window reaches the first byte of the file, so its first turn
+   * really is where the session began.
+   */
+  hasOlder: boolean;
+  /**
    * Present only when the caller asked (`files=1`) AND the dialect supports
    * it (claude-code). WHAT THIS IS: the file writes the harness OBSERVED this
    * session's agent make through its Edit/Write tools, parsed from the whole

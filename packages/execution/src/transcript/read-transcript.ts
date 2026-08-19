@@ -43,6 +43,18 @@ import { collectFileChanges } from './file-changes.js';
 const TAIL_BYTES = 256 * 1024;
 const MAX_TAIL_BYTES = 4 * 1024 * 1024;
 
+/**
+ * How far ONE page-back request may walk before it answers with what it has.
+ *
+ * A window can be full of valid records and yield no PROSE at all — a stretch
+ * of pure tool traffic parses perfectly and speaks not once — so a page-back
+ * has to keep stepping backwards to fill its `last`. Unbounded, that walks a
+ * 50 MB file inside a single request. Bounded, a reader who hits the budget
+ * gets a page that is honestly empty and a `windowStart` that lets them ask
+ * again, which is the same walk spread across requests.
+ */
+const PAGE_BACK_SCAN_BYTES = 4 * 1024 * 1024;
+
 const DEFAULT_LAST = 20;
 const DEFAULT_MAX_CHARS = 2_000;
 
@@ -225,12 +237,30 @@ function truncate(text: string, maxChars: number): { text: string; truncated: bo
   return { text: text.slice(0, maxChars), truncated: true };
 }
 
+/**
+ * An entry plus the index of the record that produced it.
+ *
+ * THIS INDEX IS WHAT MAKES THE CURSOR EXACT. The page returned to a caller is
+ * the newest `last` entries of the window, which is usually FEWER than the
+ * window parsed — and the entries dropped by that slice sit between the
+ * window's first byte and the first byte the caller can see. Reporting the
+ * window's own start as the cursor would make the next page begin below them,
+ * so they could never be reached again: a gap, in the one feature whose whole
+ * point is that there are none. Reporting the offset of the record behind the
+ * first entry the caller KEPT closes it exactly.
+ */
+interface SourcedEntry {
+  entry: SessionTranscriptEntry;
+  /** Index into the window's `lines` / `offsets` arrays. */
+  line: number;
+}
+
 /** Drop an entry that merely repeats the one before it. Both CLIs re-emit the
  *  same assistant text across a streaming boundary. */
-function pushEntry(entries: SessionTranscriptEntry[], entry: SessionTranscriptEntry): void {
-  const prev = entries[entries.length - 1];
+function pushEntry(entries: SourcedEntry[], entry: SessionTranscriptEntry, line: number): void {
+  const prev = entries[entries.length - 1]?.entry;
   if (prev && prev.source === entry.source && prev.text === entry.text) return;
-  entries.push(entry);
+  entries.push({ entry, line });
 }
 
 const iso = (ms: number | null): string | null =>
@@ -238,9 +268,10 @@ const iso = (ms: number | null): string | null =>
 
 // ── entry extraction ────────────────────────────────────────────────────────
 
-function extractClaudeEntries(lines: unknown[], maxChars: number): SessionTranscriptEntry[] {
-  const entries: SessionTranscriptEntry[] = [];
-  for (const line of lines) {
+function extractClaudeEntries(lines: unknown[], maxChars: number): SourcedEntry[] {
+  const entries: SourcedEntry[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
     const rec = asRecord(line);
     if (!rec) continue;
     // Sub-agent traffic is a different conversation — see the header.
@@ -263,7 +294,7 @@ function extractClaudeEntries(lines: unknown[], maxChars: number): SessionTransc
         const cleaned = cleanText(raw);
         if (!cleaned) continue;
         const cut = truncate(cleaned, maxChars);
-        pushEntry(entries, { at, source: 'assistant', text: cut.text, truncated: cut.truncated });
+        pushEntry(entries, { at, source: 'assistant', text: cut.text, truncated: cut.truncated }, i);
       }
     } else if (rec.type === 'user') {
       const content = message.content;
@@ -286,15 +317,16 @@ function extractClaudeEntries(lines: unknown[], maxChars: number): SessionTransc
       const cleaned = cleanText(humanized);
       if (cleaned.length < 3) continue;
       const cut = truncate(cleaned, maxChars);
-      pushEntry(entries, { at, source: 'user', text: cut.text, truncated: cut.truncated });
+      pushEntry(entries, { at, source: 'user', text: cut.text, truncated: cut.truncated }, i);
     }
   }
   return entries;
 }
 
-function extractCodexEntries(lines: unknown[], maxChars: number): SessionTranscriptEntry[] {
-  const entries: SessionTranscriptEntry[] = [];
-  for (const line of lines) {
+function extractCodexEntries(lines: unknown[], maxChars: number): SourcedEntry[] {
+  const entries: SourcedEntry[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
     const at = iso(parseTimestamp(line));
     const rec = asRecord(line);
     if (!rec) continue;
@@ -305,7 +337,7 @@ function extractCodexEntries(lines: unknown[], maxChars: number): SessionTranscr
       const cleaned = cleanText(eventText);
       if (!cleaned) continue;
       const cut = truncate(cleaned, maxChars);
-      pushEntry(entries, { at, source: 'assistant', text: cut.text, truncated: cut.truncated });
+      pushEntry(entries, { at, source: 'assistant', text: cut.text, truncated: cut.truncated }, i);
       continue;
     }
 
@@ -318,14 +350,14 @@ function extractCodexEntries(lines: unknown[], maxChars: number): SessionTranscr
       const cleaned = cleanText(text);
       if (!cleaned) continue;
       const cut = truncate(cleaned, maxChars);
-      pushEntry(entries, { at, source: 'assistant', text: cut.text, truncated: cut.truncated });
+      pushEntry(entries, { at, source: 'assistant', text: cut.text, truncated: cut.truncated }, i);
     } else if (message.role === 'user') {
       const humanized = humanizeUserPrompt(text);
       if (!humanized || humanized.length < 3) continue;
       if (NOISE_TAG_PATTERNS.some((p) => p.test(humanized))) continue;
       const cut = truncate(cleanText(humanized), maxChars);
       if (!cut.text) continue;
-      pushEntry(entries, { at, source: 'user', text: cut.text, truncated: cut.truncated });
+      pushEntry(entries, { at, source: 'user', text: cut.text, truncated: cut.truncated }, i);
     }
   }
   return entries;
@@ -503,53 +535,106 @@ function detectStuck(lines: unknown[], codex: boolean, now: number): SessionTran
 
 interface TailResult {
   lines: unknown[];
+  /** Byte offset of each record in `lines`, parallel by index. */
+  offsets: number[];
   malformed: number;
-  partial: boolean;
+  /**
+   * Byte offset of the first COMPLETE record in this window, and the cursor a
+   * caller passes back as `before` to read the window immediately older than
+   * this one. 0 means the window reaches the first byte of the file.
+   */
+  windowStart: number;
+  /** One past the last byte considered: the caller's `before`, or EOF. */
+  windowEnd: number;
+  /** The file's size at the moment it was read. */
+  size: number;
 }
 
 /**
- * Parse the tail of a JSONL file, widening the window while it yields nothing.
+ * Parse ONE window of a JSONL file, widening it while it yields nothing.
  *
  * A transcript can reach tens of megabytes and a SINGLE tool-output line can be
  * larger than the starting window, so a fixed window can legitimately parse to
  * zero records on a healthy file. Doubling up to MAX_TAIL_BYTES is maestro's
  * fix for exactly that.
+ *
+ * `before` reads the window ENDING at that byte instead of at EOF — this is the
+ * whole paging mechanism. It is a BYTE offset, not a line ordinal, and that is
+ * a deliberate divergence from `readSessionJournal` next door, which paginates
+ * on ordinal because `seq` is neither unique nor monotonic. The journal can
+ * afford an ordinal because it reads the whole file; this reader exists
+ * precisely to avoid reading the whole file, and an ordinal cursor would
+ * reintroduce a full scan on every page. Do not "fix" this into consistency.
+ *
+ * WHY A BYTE OFFSET IS A STABLE CURSOR AT ALL: an agent transcript is
+ * APPEND-ONLY. Bytes never move, so an offset recorded now still names the same
+ * record an hour later, and reaching it costs one seek rather than a scan.
+ *
+ * THE NO-OVERLAP / NO-GAP PROPERTY, which the client's accumulation rests on:
+ * a seeked read lands mid-record, so the bytes before the window's first
+ * newline are the tail of a record whose head is outside the window and are
+ * discarded. `windowStart` is the offset just past that newline — a record
+ * boundary. Reading again with `before = windowStart` therefore ends exactly
+ * where this window began: consecutive windows abut, with no record read twice
+ * and none skipped.
+ *
+ * That boundary is found in the BUFFER rather than in the decoded string on
+ * purpose. A seek can land inside a multi-byte character, and the U+FFFD the
+ * decoder substitutes is a different length from the bytes it replaced, so
+ * string arithmetic would drift the cursor off the boundary it is supposed to
+ * be exact about.
  */
-async function readTail(path: string): Promise<TailResult> {
+async function readTail(path: string, before?: number): Promise<TailResult> {
   const { size } = await stat(path);
-  let windowBytes = Math.min(TAIL_BYTES, size || TAIL_BYTES);
+  const windowEnd = before === undefined ? size : Math.max(0, Math.min(before, size));
+  let windowBytes = Math.min(TAIL_BYTES, windowEnd || TAIL_BYTES);
 
   for (;;) {
-    const offset = Math.max(0, size - windowBytes);
+    const offset = Math.max(0, windowEnd - windowBytes);
+    const length = windowEnd - offset;
     const handle = await open(path, 'r');
-    let content: string;
+    let buffer: Buffer;
+    let bytesRead: number;
     try {
-      const buffer = Buffer.alloc(Math.min(windowBytes, size));
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
-      content = buffer.toString('utf8', 0, bytesRead);
+      buffer = Buffer.alloc(length);
+      ({ bytesRead } = await handle.read(buffer, 0, length, offset));
     } finally {
       await handle.close();
     }
 
-    const raw = content.split('\n').filter((l) => l.trim() !== '');
-    // A seeked read almost certainly starts mid-record.
-    const candidates = offset > 0 ? raw.slice(1) : raw;
+    // Skip the partial record a seek lands in. `indexOf` bounded by bytesRead:
+    // a window with no newline at all holds one record's middle and no
+    // beginning, which the doubling below is what answers.
+    let start = 0;
+    if (offset > 0) {
+      const nl = buffer.indexOf(0x0a);
+      start = nl === -1 || nl + 1 > bytesRead ? bytesRead : nl + 1;
+    }
+    const windowStart = offset + start;
 
     const lines: unknown[] = [];
+    const offsets: number[] = [];
     let malformed = 0;
-    for (const line of candidates) {
+    let at = windowStart;
+    for (const line of buffer.toString('utf8', start, bytesRead).split('\n')) {
+      const lineStart = at;
+      // + 1 for the '\n' the split consumed. The decode begins at a record
+      // boundary, so every character here round-trips and the width is exact.
+      at += Buffer.byteLength(line, 'utf8') + 1;
+      if (line.trim() === '') continue;
       try {
         lines.push(JSON.parse(line));
+        offsets.push(lineStart);
       } catch {
         malformed += 1;
       }
     }
 
-    const exhausted = windowBytes >= MAX_TAIL_BYTES || windowBytes >= size;
+    const exhausted = windowBytes >= MAX_TAIL_BYTES || windowBytes >= windowEnd;
     if (lines.length > 0 || exhausted) {
-      return { lines, malformed, partial: offset > 0 };
+      return { lines, offsets, malformed, windowStart, windowEnd, size };
     }
-    windowBytes = Math.min(size, windowBytes * 2, MAX_TAIL_BYTES);
+    windowBytes = Math.min(windowEnd, windowBytes * 2, MAX_TAIL_BYTES);
   }
 }
 
@@ -589,6 +674,17 @@ export interface ReadTranscriptOptions {
   /** Bounded historical candidates (known identity homes plus the node home). */
   fallbackAgentConfigDirs?: string[];
   last?: number;
+  /**
+   * Read the window ENDING at this byte instead of at EOF — the page-back
+   * cursor, taken from a previous page's `windowStart`.
+   *
+   * A request carrying this is asking about HISTORY, and two fields change
+   * meaning because of it: the walk keeps stepping backwards until it has
+   * `last` entries (a stretch of pure tool traffic parses fine and speaks
+   * nothing), and `stuck` comes back null, because "no prose for 30 seconds"
+   * is a claim about NOW and a historical window has no standing to make it.
+   */
+  before?: number;
   maxChars?: number;
   now?: number;
   /**
@@ -634,6 +730,11 @@ export async function readSessionTranscript(
     stuck: null,
     lastActivityAt: null,
     malformed: 0,
+    // No file was read, so there is no byte to page back from and nothing
+    // older to promise. Null and false are the honest pair; 0 would name a
+    // cursor into a file that was never opened.
+    windowStart: null,
+    hasOlder: false,
   });
 
   let path: string;
@@ -683,9 +784,10 @@ export async function readSessionTranscript(
     return unavailable('unsupported_agent_tool');
   }
 
+  const pagingBack = opts.before !== undefined;
   let tail: TailResult;
   try {
-    tail = await readTail(path);
+    tail = await readTail(path, opts.before);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException | undefined)?.code;
     return unavailable(
@@ -696,12 +798,59 @@ export async function readSessionTranscript(
   // Sniff the dialect from the CONTENT, never from the recorded agent_tool: a
   // resumed session can have been relaunched under a different tool, and the
   // file on disk is the authority on its own format.
-  const codex = isCodexLog(tail.lines);
-  const all = codex
-    ? extractCodexEntries(tail.lines, maxChars)
-    : extractClaudeEntries(tail.lines, maxChars);
+  let codex = isCodexLog(tail.lines);
+  let lines = tail.lines;
+  let offsets = tail.offsets;
+  let malformed = tail.malformed;
+  let windowStart = tail.windowStart;
 
-  const lastActivity = tail.lines.reduce<number | null>((newest, line) => {
+  if (pagingBack) {
+    /*
+     * THE BACKWARD WALK, and why one window is not enough.
+     *
+     * `readTail` widens a window that parses to zero RECORDS. It cannot widen
+     * one that parses to plenty of records and zero PROSE — a stretch of pure
+     * tool traffic is a perfectly healthy window with nothing to say. A reader
+     * walking back through such a stretch one window at a time would click
+     * "earlier turns" repeatedly and watch nothing appear, so the walk is done
+     * here instead, bounded by PAGE_BACK_SCAN_BYTES.
+     *
+     * ONLY ON A PAGE-BACK. The plain tail read keeps its single window because
+     * it is the one a live surface re-reads every five seconds; making that
+     * poll willing to walk megabytes would pay this feature's cost on the path
+     * that never asked for it.
+     */
+    let scanned = tail.windowEnd - windowStart;
+    let entriesSoFar = (codex ? extractCodexEntries : extractClaudeEntries)(lines, maxChars).length;
+    while (entriesSoFar < last && windowStart > 0 && scanned < PAGE_BACK_SCAN_BYTES) {
+      const older = await readTail(path, windowStart);
+      // No progress means the window held one record's middle and `readTail`
+      // exhausted its doubling — walking again would spin on the same bytes.
+      if (older.windowStart >= windowStart) break;
+      scanned += windowStart - older.windowStart;
+      lines = [...older.lines, ...lines];
+      offsets = [...older.offsets, ...offsets];
+      malformed += older.malformed;
+      windowStart = older.windowStart;
+      codex = isCodexLog(lines);
+      entriesSoFar = (codex ? extractCodexEntries : extractClaudeEntries)(lines, maxChars).length;
+    }
+  }
+
+  const all = codex
+    ? extractCodexEntries(lines, maxChars)
+    : extractClaudeEntries(lines, maxChars);
+  const kept = last > 0 ? all.slice(-last) : all;
+
+  // THE CURSOR THE CALLER GETS BACK is the offset of the record behind the
+  // FIRST ENTRY THEY CAN SEE, not the window's own first byte — see
+  // `SourcedEntry`. When the slice dropped nothing (or there is nothing to
+  // slice) the two coincide.
+  const cursor = kept.length < all.length && kept[0] !== undefined
+    ? offsets[kept[0].line] ?? windowStart
+    : windowStart;
+
+  const lastActivity = lines.reduce<number | null>((newest, line) => {
     const ts = parseTimestamp(line);
     return ts !== null && (newest === null || ts > newest) ? ts : newest;
   }, null);
@@ -712,11 +861,16 @@ export async function readSessionTranscript(
     unavailableReason: null,
     searchedPaths: [],
     agentTool,
-    entries: last > 0 ? all.slice(-last) : all,
-    stats: collectStats(tail.lines, all, codex, tail.partial),
-    stuck: detectStuck(tail.lines, codex, now),
+    entries: kept.map((e) => e.entry),
+    stats: collectStats(lines, all.map((e) => e.entry), codex, cursor > 0 || tail.windowEnd < tail.size),
+    // A historical window is in no position to say whether an agent is stuck
+    // NOW: it is describing bytes that were written minutes or hours ago, and
+    // the heuristic measures silence against the clock. Null is the refusal.
+    stuck: pagingBack ? null : detectStuck(lines, codex, now),
     lastActivityAt: iso(lastActivity),
-    malformed: tail.malformed,
+    malformed,
+    windowStart: cursor,
+    hasOlder: cursor > 0,
   };
 
   if (opts.includeFileChanges) {
