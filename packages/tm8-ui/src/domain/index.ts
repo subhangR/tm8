@@ -75,7 +75,7 @@ export {
   slugOfKind,
 } from './registry';
 
-export { KIND_ART, VIEW_ART, type KindArt } from './kind-art';
+export { KIND_ART, SURFACE_ART, VIEW_ART, type KindArt } from './kind-art';
 export { KindIcon } from './KindIcon';
 export { tileCountBadgesOf, type TileCountBadge } from './tile-counts';
 

@@ -8,10 +8,11 @@ import { resetTransferDirectoryCache } from './transfer-client';
 
 /**
  * The gate the user ruled: the control exists ONLY when a remote server is
- * connected. No connection — no button, not a disabled one; on a
- * single-server node the concept does not apply. With a connection, a
- * transferable kind gets the live button and an untransferable kind gets
- * disabled-with-reason.
+ * connected AND the kind can actually travel. No connection — no button, not a
+ * disabled one; on a single-server node the concept does not apply. A kind the
+ * engine cannot carry is the same answer for the same reason (ruling
+ * 2026-08-19; see the last test). One arm is live: a transferable kind with a
+ * connection, which is what keeps absence meaningful.
  */
 
 const taskDetail = fixtureDetails[taskUuidTitle.id] as EntityDetail;
@@ -75,11 +76,39 @@ describe('TransferControl', () => {
     expect(button.tagName).toBe('BUTTON');
   });
 
-  it('refuses an untransferable kind with a reason, not silence', async () => {
+  /*
+   * WAS "refuses an untransferable kind with a reason, not silence" — reversed
+   * by user ruling 2026-08-19, and the reversal is about WHICH honesty form
+   * this case takes, not about dropping one.
+   *
+   * The old arm drew a dimmed ⇄ reading "this kind can't be transferred yet".
+   * But `TRANSFERABLE_KINDS` is not a rollout order — it is what the engine can
+   * carry — and a work_session is off it because a session IS a process on a
+   * node: its pty and its worktree are the machine it runs on. There is no
+   * later release in which it travels, so "yet" was a control promising
+   * something the design does not intend. That puts it with the no-connection
+   * case above (a concept that does not apply ⇒ render nothing) rather than
+   * with deferred features (⇒ disabled-with-reason).
+   *
+   * It cost real pixels too: a permanently unpressable control in
+   * `.pn-panelbar__end`, the fixed-width side of the one bar in the app that
+   * had run out of room, helping push the session panel's own tabs off the edge
+   * in order to say a thing that will never change.
+   *
+   * THE RULE IS STILL PINNED, one test up: a transferable kind with a
+   * connection gets a LIVE button. That is what stops absence here from
+   * quietly coming to mean "broken" instead of "not a thing".
+   */
+  it('renders nothing for an untransferable kind — not a permanent refusal', async () => {
     vi.stubGlobal('fetch', fetchAnswering([CONNECTION]));
-    render(<TransferControl detail={sessionDetail} />);
-    const refused = await screen.findByTestId('disabled-with-reason');
-    expect(refused.getAttribute('aria-label')).toBe('Transfer to another server');
-    expect(refused.textContent).toContain('can’t be transferred yet');
+    const { container } = render(<TransferControl detail={sessionDetail} />);
+    // WAITED FOR, not asserted immediately: this control is empty on its first
+    // frame no matter what, while the directory read is in flight, so a bare
+    // check would pass just as happily with the refusal arm still in place.
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Transfer to another server')).toBeNull();
+    });
+    expect(screen.queryByTestId('disabled-with-reason')).toBeNull();
+    expect(container.firstChild).toBeNull();
   });
 });

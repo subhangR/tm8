@@ -757,6 +757,10 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
             <ActionBar
               barRef={actionBarRef}
               config={config}
+              /* The terminal archetype is the only bar that ALSO carries the
+                 five surface chips, so it is the only one whose primaries have
+                 to give up their words. Registry data, never a kind literal. */
+              markPrimaries={isTerminal}
               ctx={{
                 ...ctx,
                 entityId: ctx.entityId ?? detail.id,
@@ -886,6 +890,10 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
             <PanelWindowControls
               onPromote={props.onPromote}
               onClose={onClose}
+              /* Same crowding, same gate: the surface-chip bar gives up ⤢ on a
+                 desktop. The control itself refuses this on a phone, where ✕
+                 is already gone — see `promoteHidden`. */
+              promoteHidden={isTerminal}
             />
           </>
         }
