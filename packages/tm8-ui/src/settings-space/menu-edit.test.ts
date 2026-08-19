@@ -189,7 +189,12 @@ describe('add', () => {
     // `availableViewRefs` is VIEW_PRESENTATION minus what the draft places.
     // …and 'craft' joined it with revision 18 (Craft P1): the rowed BASE
     // predates the tab, so the editor offers the ref as an add.
-    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels', 'craft']);
+    // …and 'help' joined it 2026-08-19 WITHOUT a revision bump, which is the
+    // one new shape here: Help is a `VIEW_PRESENTATION` ref with a mounted
+    // screen that NO shipped group places, so it is free in every draft by
+    // construction. That is the point of it — its door is a bar control, and
+    // an operator who wants it on the rail must be able to add it.
+    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels', 'craft', 'help']);
   });
 
   it('the revision-19 shipped default frees the whole retired set — unrouted, not deleted', () => {
@@ -206,7 +211,8 @@ describe('add', () => {
     // that it was deleted. `git` and `messages`, the other two refs the old
     // Work group carried, are still free and still authorable.
     expect([...availableViewRefs(startDraft(SHIPPED_DEFAULT_MENU))].sort()).toEqual(
-      ['channels', 'feed', 'git', 'inbox', 'messages'].sort(),
+      // 'help' rides along: no group places it, so it is free here too.
+      ['channels', 'feed', 'git', 'inbox', 'messages', 'help'].sort(),
     );
   });
 
@@ -216,7 +222,7 @@ describe('add', () => {
     expect(draftConfig(d).groups.find((g) => g.id === 'graph')?.items.map((i) => i.ref))
       .toEqual(['graph', 'feed']);
     // And once used, it stops being on offer.
-    expect(availableViewRefs(d)).toEqual(['inbox', 'channels', 'craft']);
+    expect(availableViewRefs(d)).toEqual(['inbox', 'channels', 'craft', 'help']);
   });
 
   it('offers only refs the rail can actually render, and never a duplicate', () => {
