@@ -41,6 +41,24 @@
  *       has browsed. Threads re-read on the same 1:1 curve.
  *   fixed hydration fan-out, independent of that: menu + counts + graph +
  *       projects + settings + liveness + N collection queries.
+ *
+ * === AMENDED 2026-08-19: THE FAN-OUT IS THE SAME SIZE MINUS ONE, AND MOSTLY
+ *     OFF THE GATE ===
+ *
+ * The fan-out above is still paid on a resync, with two differences, both
+ * asserted in C:
+ *
+ *   - `spaces.menu.get` is GONE, not moved. It was a duplicate of the menu
+ *     `spaces.settings` already returns, off the same `space_menu_configs`
+ *     row. One fewer round trip and one fewer pool slot per resync.
+ *   - `counts`, `identity`, `liveness`, `projects` and the two launch-source
+ *     collection queries now resolve AFTER `setReady(true)` instead of before
+ *     it. The request count a resync costs is therefore unchanged for them —
+ *     what changed is that the workspace is open while they are in flight.
+ *
+ * So this file's headline number is not improved by that change and was never
+ * meant to be: a resync still re-reads everything. What improved is when the
+ * screen comes back, which is the thing a foregrounding phone actually feels.
  *   one permanently-unreadable entity, 8 resyncs x 40 render passes:
  *       [1,1,1,1,1,1,1,1]; the identical run with NO resync: [1,0,0,0,0,0,0,0].
  *       So a resync also hands back the retry budget — one extra GET per
@@ -322,7 +340,13 @@ describe('what a resync costs', () => {
 
     const before = h.read();
     act(() => h.fireResync());
-    await waitFor(() => expect(h.read().menu).toBeGreaterThan(before.menu));
+    /* WAITS ON `settings`, NOT ON `menu`. This used to watch the menu counter
+       because a resync re-read `spaces.menu.get`. It no longer exists: the
+       menu was a DUPLICATE of what `spaces.settings` already returns, off the
+       same `space_menu_configs` row, and hydrate now reads it there. Watching
+       a counter that can never move again would hang this test rather than
+       fail it, which is why the wait moved to the read that still gates. */
+    await waitFor(() => expect(h.read().settings).toBeGreaterThan(before.settings));
     await act(async () => { await new Promise((r) => setTimeout(r, 1_500)); });
     const after = h.read();
 
@@ -336,8 +360,20 @@ describe('what a resync costs', () => {
       liveness: after.liveness - before.liveness,
     }));
 
-    expect(after.menu - before.menu, 'hydrate re-reads the menu').toBe(1);
-    expect(after.counts - before.counts, 'hydrate re-reads the rail counts').toBe(1);
+    expect(after.settings - before.settings, 'hydrate re-reads the settings — and the menu rides it').toBe(1);
+    /* ZERO, AND THAT IS THE POINT. `spaces.menu.get` returned the same
+       `MenuConfig` the settings read above already carried, so every boot AND
+       every resync paid a whole round trip and a whole pool slot for a second
+       copy of data it had in hand. A regression that reintroduces the read
+       fails here rather than quietly costing a request per resync. */
+    expect(after.menu - before.menu, 'the duplicate menu read is gone, not deferred').toBe(0);
+    /* STILL PAID IN FULL — it is now paid AFTER `ready` rather than before it,
+       which is the whole of the change. The counter is read 1.5s after the
+       resync precisely so a deferred read has landed by the time it is
+       checked: "off the gate" must not be allowed to decay into "dropped". */
+    expect(after.counts - before.counts, 'the rail counts are deferred, not skipped').toBe(1);
+    expect(after.projects - before.projects, 'linked projects are deferred, not skipped').toBe(1);
+    expect(after.liveness - before.liveness, 'liveness is deferred, not skipped').toBe(1);
     expect(after.query - before.query, 'hydrate re-runs the per-kind collection queries').toBeGreaterThan(0);
   });
 });
