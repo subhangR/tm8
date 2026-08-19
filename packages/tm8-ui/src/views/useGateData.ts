@@ -350,6 +350,127 @@ function bootRetryDelayMs(attempt: number, error: unknown): number {
 }
 
 /**
+ * Is re-asking THIS read worth anything?
+ *
+ * `unauthenticated` is a node ANSWERING that it refuses this credential, and
+ * `not_found`/`forbidden`/`invalid_input` are the node answering that it looked.
+ * No amount of re-asking changes a final answer, so these are handed back to the
+ * whole-hydrate loop, which owns them exactly as it did before this split — the
+ * `unauthenticated` park on the session store is that loop's job, not this one's,
+ * and a per-read retry that swallowed it would spin forever against a refusal.
+ *
+ * Everything else — a served 503, a proxy 502/504, an unreachable node, the
+ * transport's own timeout abort — is the transient class this fix exists for.
+ */
+function isRetryableBootError(error: unknown): boolean {
+  if (error instanceof CollabError && error.code === 'unauthenticated') return false;
+  return !isTerminalReadError(error);
+}
+
+/** A backoff wait that a cancelled boot can abandon instead of outliving. */
+function sleepUntil(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal?.aborted === true) {
+      resolve();
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/** What `retryBootRead` needs from the hook to retry one read in place. */
+interface BootReadContext {
+  /** The generation guard. False ⇒ this boot is stale; stop, do not re-issue. */
+  isCurrent: () => boolean;
+  /** Aborted on unmount, so a backoff wait never outlives the component. */
+  signal?: AbortSignal;
+  /** Surfaces the failure while the retry keeps working. */
+  onFailure: (error: unknown) => void;
+  /**
+   * Attempt budget. Omitted ⇒ FOREVER, which is the right answer for a read
+   * that gates the workspace: an unreachable node is normal and transient, and
+   * a boot that gives up turns every blip into an error card only a reload
+   * clears. A read that runs AFTER first paint passes a budget instead — see
+   * `recovering` in `hydrate`.
+   */
+  maxAttempts?: number;
+}
+
+/**
+ * RETRY THE FAILED READ, NOT THE WORLD.
+ *
+ * Boot's gating reads used to share one fate: `Promise.all` rejects on the first
+ * failure, and the space-open loop answered by resetting the store and re-running
+ * the WHOLE of `hydrate` — so one slow read that tripped the transport timeout
+ * discarded every good response alongside it and re-issued the lot against the
+ * node that was already struggling, after up to 15s (60s on a 503) of dead wait.
+ *
+ * Wrapping each read here keeps every success. The read that failed is the only
+ * one re-issued, and it is re-issued on the SAME overload-aware ladder — the
+ * retry-forever posture of the gate is unchanged, it is simply no longer a
+ * re-boot.
+ *
+ * This STRICTLY REDUCES the self-inflicted load the ladder exists to bound. The
+ * old path put the whole read set on the wire per cycle whatever failed; the new
+ * one puts as many reads as actually failed, and every fan-out it sits inside is
+ * already bounded by `BOOT_READ_CONCURRENCY`.
+ *
+ * The generation guard is re-checked on BOTH sides of the wait: a retry is a new
+ * resume point, and a space switched during the backoff must not be written into
+ * by the read that wakes up after it.
+ *
+ * WHY THE BOOT READS DO NOT GET A SHORTER TIMEOUT THAN
+ * `DEFAULT_REQUEST_TIMEOUT_MS`, which was the obvious companion change — fail a
+ * wedged read fast into the path above instead of stalling the whole gate.
+ * Rejected, on evidence:
+ *
+ *   1. There is no latency at which "slow" and "broken" separate. Measured on
+ *      prod 2026-08-19, N identical concurrent `collections.query`, median:
+ *      N=1 0.32s, N=8 0.64s, N=16 1.33s, N=24 2.03s, N=32 2.20s. The curve is
+ *      LINEAR from N=4 with no cliff — these reads are CPU-bound on a 4-core
+ *      box, so latency tracks concurrency and nothing else. A shorter deadline
+ *      is therefore a bet on how many tabs and agents are booting at once, and
+ *      the honest read of a linear curve is that the bet has no safe value. The
+ *      absolute numbers move with the box's load (the parent analysis measured
+ *      the same shape at ~2.8x these figures on a busier hour), which is exactly
+ *      the point: a fixed threshold cannot track a moving multiplier.
+ *   2. It would misfire precisely when it costs most. Several tabs booting
+ *      together is both the case that makes reads slow and the case where
+ *      converting slow into failed adds retries to a node that is already the
+ *      bottleneck — the feedback loop `bootRetryDelayMs` exists to damp.
+ *   3. `timeoutMs` is a property of the whole HTTP client, not of a request
+ *      (see `createHttpClient`). Per-read deadlines would mean threading a new
+ *      option through `RequestOptions`, `ops`, and every gating call site — real
+ *      surface area spent on a change the measurements do not support.
+ */
+async function retryBootRead<T>(run: () => Promise<T>, ctx: BootReadContext): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run();
+    } catch (error: unknown) {
+      // A stale or final failure belongs to the caller, unchanged.
+      if (!ctx.isCurrent() || !isRetryableBootError(error)) throw error;
+      if (ctx.maxAttempts !== undefined && attempt + 1 >= ctx.maxAttempts) throw error;
+      // HONESTY AND SELF-HEALING ARE NOT TRADED AGAINST EACH OTHER: on the gate
+      // the reason renders while this loop keeps working, exactly as it did when
+      // the whole hydrate was the unit of retry. A partial failure must not go
+      // silent just because it now costs less to recover from.
+      ctx.onFailure(error);
+      await sleepUntil(bootRetryDelayMs(attempt, error), ctx.signal);
+      if (!ctx.isCurrent()) throw error;
+    }
+  }
+}
+
+/**
  * `Promise.all` with a concurrency bound, for the boot reads that genuinely
  * need one request per item. The pool behind `/v2` is small (8 by default)
  * and shared by every tab; an unbounded fan-out of N kind queries plus one
@@ -1087,6 +1208,13 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     };
   }, [seam, spaceId]);
 
+  const [bootError, setBootError] = useState<string | null>(null);
+  // Set from the SAME error as `bootError`, at every site, so the message and
+  // the code can never describe two different failures. See the field's
+  // docblock for why the code has to survive the trip.
+  const [bootErrorCode, setBootErrorCode] = useState<string | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
+
   /**
    * Hydration is written as ONE idempotent, re-runnable function from day one
    * (§10.2.5): `onResync` means catch-up integrity was lost, and the only
@@ -1109,12 +1237,81 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
    *
    * Nothing is dropped. Every read still happens, with the same soft-fail
    * posture it had; it happens AFTER the workspace opens instead of before.
+   *
+   * THE THIRD PROPERTY, ADDED ALONGSIDE THE SPLIT: a failed read retries ITSELF.
+   * Both halves route through `retryBootRead`, which re-issues only the read that
+   * failed. `hydrate` remains ONE idempotent, re-runnable function — `onResync`
+   * still re-runs all of it, and the whole-reset path in the space-open effect
+   * still owns `openSpace` failures and FINAL answers. The two halves differ only
+   * in what a failure is allowed to cost, which is exactly the split's logic:
+   *
+   *   `gating`     — retries FOREVER and shows `bootError` while it works. The
+   *                  workspace is not open; giving up would strand it.
+   *   `recovering` — retries on a BUDGET and says nothing. The workspace is
+   *                  already open, nothing is waiting on these, and an unbounded
+   *                  invisible background loop is worse than one that stops.
    */
   const hydrate = useCallback(
-    async (space: SpaceId, generation = spaceGeneration.current) => {
-      const isCurrent = () => generation === spaceGeneration.current;
+    async (space: SpaceId, generation = spaceGeneration.current, signal?: AbortSignal) => {
+      const isCurrent = () =>
+        generation === spaceGeneration.current && signal?.aborted !== true;
+      /** A read the workspace cannot open without. Retries forever, visibly. */
+      const gating = <T,>(run: () => Promise<T>): Promise<T> =>
+        retryBootRead(run, {
+          isCurrent,
+          signal,
+          onFailure: (error: unknown) => {
+            if (!isCurrent()) return;
+            setBootError(String((error as { message?: string })?.message ?? error));
+            setBootErrorCode(error instanceof CollabError ? error.code : null);
+          },
+        });
+      /* A read that runs AFTER first paint. Retries on a budget, silently, and
+         still resolves to `undefined` when the budget runs out — so each unit
+         below keeps EXACTLY the soft-fail posture it has today and none of them
+         can reach the space-open effect's catch and restart a boot that already
+         succeeded.
+
+         WHY BOUNDED HERE AND FOREVER ON THE GATE. The gate retries forever
+         because an unreachable node is normal and transient and a boot that
+         gives up leaves an error card only a reload clears — there is a user
+         staring at a spinner. Past `setReady(true)` none of that holds: the
+         workspace is open and usable, nothing is blocked, and `bootError` is
+         deliberately NOT set, so a forever loop here would be an invisible,
+         unbounded background load against a node that may be permanently unable
+         to answer. `READ_MAX_ATTEMPTS` on the same overload-aware ladder spans
+         several minutes — ample for a blip, and it terminates.
+
+         WHY IT DOES NOT SET `bootError`. These run after the workspace opened.
+         Painting a boot error over a working workspace because the linked-project
+         list is late would be a new and dishonest error surface.
+
+         WHAT HAPPENS WHEN THE BUDGET IS EXHAUSTED, stated so it is not left to be
+         discovered. The unit resolves `undefined` and keeps exactly the soft-fail
+         posture it would have had with a bare `.catch`: the linked-projects list
+         stays empty, the viewer's face stays absent, the pickers keep serving the
+         seeded (stale) option set. Nothing is retried again by this closure.
+
+         THAT STATE IS RECOVERABLE, and by triggers that occur on their own rather
+         than only by reload. The space-open effect re-runs `hydrate` — deferred
+         half included, on a fresh budget — whenever `spaceId`, `seam` or
+         `bootRevision` changes. So:
+           - `onResync` bumps `bootRevision` (see its effect below), and a resync
+             is exactly what a dropped-then-recovered connection produces — the
+             same class of outage that exhausted the budget in the first place;
+           - switching space and back re-runs it;
+           - switching server remounts the hook (App.tsx keys GateApp by server id).
+         Each of those resets these surfaces first, so the re-run repopulates from
+         a clean slate rather than merging into a half-filled one. */
+      const recovering = <T,>(run: () => Promise<T>): Promise<T | undefined> =>
+        retryBootRead(run, {
+          isCurrent,
+          signal,
+          maxAttempts: READ_MAX_ATTEMPTS,
+          onFailure: () => {},
+        }).catch(() => undefined);
       const [settings] = await Promise.all([
-        seam.spaceSettings(space),
+        gating(() => seam.spaceSettings(space)),
         loadGraph(space, DEFAULT_WINDOW, generation),
       ]);
       if (!isCurrent()) return;
@@ -1172,7 +1369,13 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
         // still the picker's complete option set, and taking the server's
         // default here would silently shorten it. See the deferred read below
         // for why that limit exists at all.
-        const items = await load(kind, LAUNCH_SOURCE_KINDS.has(kind) ? MAX_COLLECTION_LIMIT : undefined);
+        // Retried PER KIND. One panel kind's query failing used to cost the
+        // other panel's rows and the settings read with it; now it costs one
+        // request. `mapLimit` still bounds how many can be in flight, so a
+        // finer-grained retry cannot become a faster storm.
+        const items = await gating(() =>
+          load(kind, LAUNCH_SOURCE_KINDS.has(kind) ? MAX_COLLECTION_LIMIT : undefined),
+        );
         return { kind, items };
       });
       if (!isCurrent()) return;
@@ -1229,7 +1432,12 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
               //
               // Which is also why they do not gate: 0.33s of every boot, for
               // 200 rows nobody can see until they open the launch sheet.
-              const items = await load(kind, MAX_COLLECTION_LIMIT).catch(() => undefined);
+              //
+              // RECOVERED rather than merely absorbed: a failure here does not
+              // corrupt anything (`launchReadFailed` keeps the seed standing
+              // instead of retracting the picker), but it does leave the option
+              // set STALE for the session, and nothing else ever re-reads it.
+              const items = await recovering(() => load(kind, MAX_COLLECTION_LIMIT));
               if (items === undefined) {
                 launchReadFailed = true;
                 return;
@@ -1241,6 +1449,12 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
             // (A1c), which is why every renderer below takes `liveIds` as a
             // plain array. Live dots are not a reason to hold the workspace
             // shut — they light up when the snapshot lands.
+            //
+            // NOT RETRIED, DELIBERATELY. This read SELF-HEALS: `liveness.onChange`
+            // publishes every cadence snapshot into the same two setters below,
+            // so a failed initial refresh is corrected by the next tick. Live dots
+            // come on late, not never. A retry here would add requests to buy a
+            // result that is already arriving.
             async () => {
               const snapshot = await seam.liveness.refresh(space).catch(() => undefined);
               if (!snapshot || !isCurrent()) return;
@@ -1255,6 +1469,13 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
             // `Promise.resolve().then(...)` rather than a bare call: it
             // converts a SYNCHRONOUS throw into a rejection the `.catch` can
             // absorb.
+            //
+            // NOT RETRIED, DELIBERATELY, for the same reason as liveness above:
+            // this read SELF-HEALS. The durable stream drives a debounced re-read
+            // on any entity event, and `refreshCounts()` fires after local
+            // actions, so a failed initial read is corrected by the next event in
+            // the space. Until then the rail draws NOTHING rather than zeros,
+            // which is `countsFor`'s documented posture and not a new surface.
             async () => {
               const counts = await Promise.resolve()
                 .then(() => seam.counts(space))
@@ -1267,15 +1488,35 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
             // is precisely why it can arrive a moment late. `memberActors` is
             // closed over from the SETTINGS read that gated paint, so this
             // unit needs no second membership read.
+            //
+            // RECOVERED: the deferred unit is the ONLY writer of `viewerActor`,
+            // so a failure leaves the viewer's own face absent for the whole
+            // session. That was already true on main (`identity` was
+            // `.catch(() => null)` inside the gating `Promise.all`, so a failure
+            // was already permanent) — this is not a regression being repaired,
+            // it is a standing gap the retry machinery can now close for free.
             async () => {
-              const identity = await seam.identity().catch(() => null);
+              const identity = (await recovering(() => seam.identity())) ?? null;
               if (!isCurrent()) return;
               const viewerMemberId = identity?.memberships
                 .find((membership) => membership.spaceId === space)?.memberId;
               setViewerActor(memberActors.find((member) => member.id === viewerMemberId) ?? null);
             },
+            /* RECOVERED, AND THIS ONE IS A REPAIR RATHER THAN AN IMPROVEMENT.
+               `projects` is the single read whose recoverability the gate split
+               reduced: on main it had no `.catch`, so a failure rejected into the
+               space-open effect's catch and bought a full retry that would
+               eventually succeed. Taking it off the gate removed that — correctly,
+               because a late linked-projects list must not restart a workspace —
+               but it left the list empty for the session with no second writer.
+
+               Retrying the read itself restores the recoverability without
+               restoring the cost: the workspace keeps its paint, and the list
+               fills in when the node answers. This is deliberately the same
+               machinery as every other retry in this file rather than a bespoke
+               one — see the note on `recovering`. */
             async () => {
-              const projects = await seam.projects(space).catch(() => undefined);
+              const projects = await recovering(() => seam.projects(space));
               if (projects && isCurrent()) setLinkedProjects(projects);
             },
           ];
@@ -1401,13 +1642,6 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
    * overtaken. See that pass in `hydrate`'s deferred block.
    */
   const seededIds = useRef(new Map<string, SeededRow[]>());
-
-  const [bootError, setBootError] = useState<string | null>(null);
-  // Set from the SAME error as `bootError`, at every site, so the message and
-  // the code can never describe two different failures. See the field's
-  // docblock for why the code has to survive the trip.
-  const [bootErrorCode, setBootErrorCode] = useState<string | null>(null);
-  const [authRequired, setAuthRequired] = useState(false);
 
   // Fetch the viewer's spaces. Opening and hydrating the selected space
   // is a separate effect below so the tab bar is a real switch, not a painted
@@ -1599,6 +1833,13 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     // strand the workspace on an error card (or, before the transport timeout
     // existed, on a spinner) until reload.
     let delayHandle: ReturnType<typeof setTimeout> | undefined;
+    /* Cancellation for the per-read retries inside `hydrate`, on BOTH sides of
+       the split. The generation counter alone is not enough: an UNMOUNT sets
+       `cancelled` without bumping the generation, so a read retrying in place
+       would keep its backoff timer alive past the component — and the deferred
+       half runs after this effect's async body has already returned, so it has
+       no other teardown signal at all. Aborting here ends the wait and the loop. */
+    const bootAbort = new AbortController();
     void (async () => {
       for (let attempt = 0; !cancelled; attempt++) {
         try {
@@ -1607,7 +1848,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
             if (openedSpace.current !== spaceId) seam.closeSpace(spaceId);
             return;
           }
-          const deferred = await hydrate(spaceId, generation);
+          const deferred = await hydrate(spaceId, generation, bootAbort.signal);
           if (cancelled || generation !== spaceGeneration.current) {
             if (openedSpace.current !== spaceId) seam.closeSpace(spaceId);
             return;
@@ -1627,6 +1868,40 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
           }
           return;
         } catch (error: unknown) {
+          /* WHAT STILL REACHES HERE, now that a transient read retries itself:
+             an `openSpace` failure (nothing was fetched, so there is nothing to
+             preserve), and a FINAL answer from a gating read — `unauthenticated`,
+             404/403/400 — which `isRetryableBootError` hands back deliberately.
+             Both want the old full-reset re-run, so it is kept verbatim. The
+             deferred half can never reach here: every unit absorbs its own
+             rejection, which is what stops a late read restarting a live boot.
+
+             ON THE BUFFER, which is the subtle half. `beginEventBuffering` only
+             sets the flag and cancels the pending flush — it does NOT clear
+             `queuedEvents` (see `domain-store.ts`). Only `discardBufferedEvents`
+             drops events, and that is reached solely on a real space switch. So
+             the queue has always SURVIVED this reset, and the re-arm below exists
+             to re-raise the flag that `releaseBufferedEvents` would have lowered,
+             not to start a fresh buffer.
+
+             That is exactly why the partial-retry path needs no buffering work of
+             its own: the bracket armed at effect setup is still armed (nothing
+             between here and `releaseBufferedEvents` lowers it), and the queue
+             keeps accumulating across the retry. Keeping it is not merely safe,
+             it is REQUIRED — those events describe mutations to the rows the
+             partial retry deliberately kept, and the server cannot re-send an
+             event this client already received, so discarding them would strand
+             those rows stale with no later correction. The queue also grows for a
+             SHORTER window than before, because recovery is now one read rather
+             than a re-boot.
+
+             THE BRACKET ENDS AT `releaseBufferedEvents`, WHICH IS BEFORE THE
+             DEFERRED HALF RUNS, and that is correct rather than incidental. A
+             retry in the deferred half is a read racing a LIVE stream, not a
+             buffered one — which is precisely the condition the tombstone pass
+             was version-guarded for when it moved off the gate. A recovered
+             launch read is therefore reconciled against the store's current
+             version, exactly like the first attempt would have been. */
           if (cancelled || generation !== spaceGeneration.current) return;
           seam.closeSpace(spaceId);
           setBootError(String((error as { message?: string })?.message ?? error));
@@ -1642,6 +1917,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     })();
     return () => {
       cancelled = true;
+      bootAbort.abort();
       if (delayHandle !== undefined) clearTimeout(delayHandle);
     };
   }, [seam, spaceId, hydrate, domain, bootRevision]);
