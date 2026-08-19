@@ -88,10 +88,20 @@ describe('the transcript stylesheet cascade', () => {
    * the same instrument the cascade assertions above use.
    */
   it('leaves the frame to the card — the foot draws no border of its own', () => {
-    const foot = /\.tr-surface__foot\s*\{([^}]*)\}/.exec(RULES);
-    expect(foot, '.tr-surface__foot must still exist — it owns the placement').not.toBeNull();
-    expect(foot![1]).not.toMatch(/border/);
-    expect(foot![1]).not.toMatch(/background/);
+    /* EVERY RULE THAT REACHES THE FOOT, not the first one that mentions it.
+       Written as a first-match regex to begin with, and the negative control
+       caught it: appending a SECOND `.tr-surface__foot { border-top: … }`
+       restored the exact defect the user circled and reddened NOTHING, because
+       the assertion never looked past the first block. A cascade is the sum of
+       its rules, so the assertion has to be too. */
+    const blocks = [...RULES.matchAll(/([^{}]*)\{([^}]*)\}/g)]
+      .filter(([, selector]) => selector.includes('tr-surface__foot'));
+    expect(blocks.length, '.tr-surface__foot must still exist — it owns the placement')
+      .toBeGreaterThan(0);
+    for (const [, selector, body] of blocks) {
+      expect(body, `${selector.trim()} draws a second frame around the card`)
+        .not.toMatch(/border|background|box-shadow/);
+    }
   });
 
   // The retired paragraph. Its class going but a stale rule staying is how a
