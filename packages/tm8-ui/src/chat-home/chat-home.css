@@ -1616,10 +1616,32 @@ button.tch-entity-chip:hover {
 /* The greeting takes the canvas; the composer takes the foot. `margin-top:
    auto` on the wrap is what docks it, and it beats `[data-empty]`'s centring
    pair (same specificity, later in the file) so a NEW conversation docks too —
-   which is the state the screen is in almost every time it is opened. */
+   which is the state the screen is in almost every time it is opened.
+
+   NO `justify-content: center` HERE, AND THAT IS THE FIX FOR A REPORTED BUG,
+   not a tidy-up. This rule carried one, and on a scroller it is data loss:
+   `justify-content` distributes NEGATIVE free space as readily as positive, so
+   once a conversation is taller than the box, half the overflow is placed ABOVE
+   `scrollTop: 0` where no gesture can reach it. Measured on the phone harness
+   at 390x844 with 30 turns: with the transcript scrolled as far up as it will
+   go, the first turn's top sat 2607px above the box's own top edge. The
+   reader's own words, on task 01a01c3f: "the chat is not going up after a
+   point ... it should be scrollable till the begining."
+
+   NOTHING IS LOST BY REMOVING IT, which is what made this the fix rather than a
+   trade. It was never what centred the greeting: `.tch-welcome` is `flex: 1`
+   with `margin: auto` and its own `justify-content: center`, so it fills this
+   box and centres its contents unaided. An item that fills its container leaves
+   no free space for `justify-content` to distribute — the declaration was inert
+   in the one state it was added for and destructive in every other. Verified
+   both ways on the harness: the welcome state is pixel-identical, and
+   `firstTurnHiddenAboveTop` goes 2607 → 0.
+
+   WHY NOT `safe center`. It would also stop the clipping, and it would keep a
+   centring nothing wants: a two-turn conversation floating in the middle of the
+   canvas is not what any chat draws. Turns start at the top and grow down. */
 .cv2-root[data-shell='mobile'] .tch-conversation .tch-transcript {
   flex: 1;
-  justify-content: center;
   margin-top: 0;
 }
 .cv2-root[data-shell='mobile'] .tch-conversation .tch-composer-wrap {
