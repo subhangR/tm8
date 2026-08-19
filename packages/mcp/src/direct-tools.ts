@@ -131,28 +131,23 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   {
     name: 'explain_code',
     description: 'Present an exact repository excerpt or clearly-labelled illustrative code inline with line numbers, syntax colour, highlights and annotations.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        title: stringProp('Optional visible title.'),
-        path: stringProp('Project-relative repository path. Supply path or code, never both.'),
-        code: stringProp('Illustrative source text. Supply code or path, never both.'),
-        language: stringProp('Optional syntax language; inferred from path when omitted.'),
-        startLine: integerProp('First repository line, or first displayed illustrative line.', 1, 1_000_000),
-        endLine: integerProp('Last repository line. At most 500 lines are displayed.', 1, 1_000_000),
-        highlights: {
-          type: 'array', maxItems: 24,
-          items: objectSchema({
-            startLine: integerProp('First highlighted displayed line.', 1, 1_000_000),
-            endLine: integerProp('Last highlighted displayed line.', 1, 1_000_000),
-            label: stringProp('Optional annotation shown with the range.'),
-            tone: { type: 'string', enum: ['focus', 'note', 'warning'] },
-          }, ['startLine', 'endLine']),
-        },
+    inputSchema: objectSchema({
+      title: stringProp('Optional visible title.'),
+      path: stringProp('Project-relative repository path. Supply exactly one of path or code, never both.'),
+      code: stringProp('Illustrative source text. Supply exactly one of code or path, never both.'),
+      language: stringProp('Optional syntax language; inferred from path when omitted.'),
+      startLine: integerProp('First repository line, or first displayed illustrative line.', 1, 1_000_000),
+      endLine: integerProp('Last repository line. At most 500 lines are displayed.', 1, 1_000_000),
+      highlights: {
+        type: 'array', maxItems: 24,
+        items: objectSchema({
+          startLine: integerProp('First highlighted displayed line.', 1, 1_000_000),
+          endLine: integerProp('Last highlighted displayed line.', 1, 1_000_000),
+          label: stringProp('Optional annotation shown with the range.'),
+          tone: { type: 'string', enum: ['focus', 'note', 'warning'] },
+        }, ['startLine', 'endLine']),
       },
-      oneOf: [{ required: ['path'] }, { required: ['code'] }],
-      additionalProperties: false,
-    },
+    }),
     annotations: annotations(true),
   },
   {

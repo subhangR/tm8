@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CatalogTransport } from '../src/catalog-client.js';
 import { CHAT_MODES, exposedToolNames, parseChatMode, toolPermission } from '../src/modes.js';
-import { MCP_TOOL_NAMES, Tm8ToolRouter } from '../src/tools.js';
+import { MCP_TOOL_NAMES, TM8_MCP_TOOLS, Tm8ToolRouter } from '../src/tools.js';
 
 const transport: CatalogTransport = { invoke: async () => ({ ok: true }) };
 
@@ -57,6 +57,21 @@ describe('chat mode policy', () => {
     // The durable equivalents remain available in every mode too.
     expect(toolPermission('ask', 'doc_create')).toBe('allow');
     expect(toolPermission('orchestrate', 'artifact_create')).toBe('allow');
+  });
+
+  it('never puts oneOf/anyOf/allOf at the top level of a tool schema', () => {
+    // The defect this pins: explain_code expressed "path XOR code" as a
+    // top-level `oneOf`, and the Messages API rejects the WHOLE request with
+    // `tools.N.custom.input_schema: input_schema does not support oneOf, allOf,
+    // or anyOf at the top level` — so one bad schema killed every Chat turn in
+    // every mode. Nested combinators are fine; the top level is not.
+    for (const tool of TM8_MCP_TOOLS) {
+      expect([tool.name, tool.inputSchema.type]).toEqual([tool.name, 'object']);
+      for (const combinator of ['oneOf', 'anyOf', 'allOf']) {
+        expect([tool.name, combinator, combinator in tool.inputSchema])
+          .toEqual([tool.name, combinator, false]);
+      }
+    }
   });
 
   it('omits provider-native replacements from registration and invocation', async () => {
