@@ -1467,3 +1467,48 @@ button.tch-entity-chip:hover {
 .cv2-root[data-shell='mobile'] .tch-tray__tabs .tch-entity-chip__title {
   min-width: 0;
 }
+
+
+/* --- THE COLUMN COLLECTS ON §3's PROMISE — task 2, composer visibility ----- */
+
+/* `.tch-root` carries `flex: 1` and no height. **THE `flex: 1` IS INERT ON THE
+   PHONE**: `.mobile-frame__content` is a BLOCK (`mobile.css` sets `min-height`
+   and `overflow-y` on it and no `display`), sitting on `.mobile-frame`'s
+   `1fr` grid row — so it has a definite height and is not a flex container.
+   A flex property on a child of a block parent applies to nothing.
+
+   Left at `height: auto`, this grid grows to its content, overflows the frame's
+   content box, and `.mobile-frame__content` scrolls instead. Measured on merged
+   main at 390: `contentScroll.overflowBy` 219, with the composer 200px down.
+
+   THE COLUMN'S OWN DESIGN IS ALREADY RIGHT AND HAS NEVER BEEN REACHABLE.
+   `.tch-transcript` is `flex: 1; min-height: 0; overflow-y: auto` and
+   `.tch-composer-wrap` is `flex: none` — that pair pins the composer and
+   scrolls the transcript INSIDE a bounded column. It cannot do either until
+   something bounds the column.
+
+   WHY THIS AND NOT A STICKY COMPOSER. CONTRACT.md §3: the frame is
+   `calc(100dvh - var(--mobile-keyboard-inset))`, so "the whole frame shrinks,
+   and header, content, notices, tab bar and sheets all stay above the keyboard
+   WITHOUT KNOWING THE KEYBOARD EXISTS." Anchoring the composer would add a
+   second keyboard arithmetic to a surface the contract deliberately keeps
+   ignorant of the keyboard — the "three surfaces, three arithmetics, three
+   bugs" §3 forbids. A column that FILLS the frame gets the outcome for free.
+
+   THE `flex: 1` IS LEFT ALONE. It is a base rule and may well be live on the
+   desktop, whose host region this file does not own. Adding the height here is
+   phone-scoped and desktop-neutral; removing the flex would not be.
+
+   NOT VERIFIED. This changes the scroll behaviour of the phone's default
+   screen and will move `belowFoldCount`, `overflowBy` and the composer's
+   geometry — so it SUPERSEDES those fields in the verdict already held on
+   `daebad80`, and needs its own before/after.
+
+   FALSIFIER, stated before the number exists: if this does not reduce
+   `overflowBy`, the column is not what overflows, the content genuinely
+   exceeds a bounded frame, and SCROLL-REACHABLE is the honest answer — in
+   which case anchoring is the only route to visible and this rule should be
+   reverted rather than tuned. */
+.cv2-root[data-shell='mobile'] .tch-root {
+  height: 100%;
+}
