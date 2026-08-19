@@ -70,6 +70,8 @@ import {
   type ControlHost,
 } from './controls/EntityControls';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
+import { CategoryGlyph } from './list/CategoryGlyph';
+import { MobileSheet, useMobileSurface } from '../mobile';
 import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
 import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
@@ -83,6 +85,16 @@ import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQui
 import { newLaunchMutationId } from '../domain/launch';
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
+
+/**
+ * The four narrowing controls, named once.
+ *
+ * A UNION AND NOT FOUR BOOLEANS: one popover at a time is the rule the filter
+ * bar has always enforced, and four independent flags would let the sort menu
+ * and a filter picker sit open over each other. On the phone each of these is a
+ * bottom sheet, where two at once is not a cosmetic problem but two scrims.
+ */
+export type ListPicker = 'filters' | 'people' | 'sets' | 'sort';
 
 /**
  * The live-session kind for the tile's LEADING relation chip, selected by
@@ -250,6 +262,30 @@ export interface EntityListPanelProps {
    */
   groupBy?: GroupByKey;
   onGroupBy?: (groupBy: GroupByKey) => void;
+
+  /**
+   * WHICH NARROWING CONTROL IS OPEN — held by the HOST when the host has
+   * another way to open one, and locally otherwise.
+   *
+   * On the phone the filter bar is not on screen (`mobile-screens.css` §9): its
+   * four triggers moved into the floating action button, which `EntityView`
+   * owns because a FAB is a property of the SCREEN and not of a panel that also
+   * renders inside a workspace column. So the button that opens `filter` and
+   * the popovers that ARE `filter` sit in two different components, and one of
+   * them has to hold the choice.
+   *
+   * It is held HERE and lifted UP rather than duplicated: the option lists, the
+   * selections and the toggles are all this panel's state, so a second copy of
+   * "which one is open" in `EntityView` could disagree with the sheet that is
+   * actually mounted — and the disagreement would look like a sheet that will
+   * not close.
+   *
+   * Absent ⇒ this host offers no second opener and the panel owns the choice
+   * itself, which is every desktop mount. Same shape as `mode` / `groupBy`
+   * above, for the same reason.
+   */
+  picker?: ListPicker | null;
+  onPicker?: (picker: ListPicker | null) => void;
 
   /**
    * Focus handle for the D36 `list.search` command (`f`). The keyboard
@@ -504,6 +540,13 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const groupBy = props.groupBy ?? localGroupBy ?? list.board?.groupBy ?? 'status';
   const setGroupBy = props.onGroupBy ?? setLocalGroupBy;
 
+  /* The open narrowing control — see `picker` on the props. `!== undefined`
+     rather than `??` because `null` is a MEANINGFUL host answer here ("nothing
+     is open"), and `??` would fall through it to the local copy on every close. */
+  const [localPicker, setLocalPicker] = useState<ListPicker | null>(null);
+  const picker = props.picker !== undefined ? props.picker : localPicker;
+  const setPicker = props.onPicker ?? setLocalPicker;
+
   /**
    * The open tab — AND `null` IN BOARD MODE, deliberately.
    *
@@ -632,6 +675,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
 
       <FilterRow
         config={config}
+        picker={picker}
+        onPicker={setPicker}
         selected={selected}
         onToggleOption={(specId, optionId, multi) =>
           setSelected((prev) => {
@@ -1352,6 +1397,25 @@ function CategoryTabs({
   /** Already rendered — `50+` when the page is saturated, `50` when it is all. */
   tabLabel: (tab: StatusCategoryTab) => string;
 }) {
+  /*
+   * THE PHONE DRAWS THE MARKS AND NOT THE WORDS — owner ruling, 2026-08-19.
+   *
+   * `To Do 266` × 4 does not fit across 390px, so the row was `overflow-x:
+   * auto`: four 44px-tall tabs on a scroller, of which two and a bit were ever
+   * on screen. A control whose fourth position is reachable only by a
+   * horizontal flick inside a vertically-scrolling screen is one most readers
+   * never discover — and this is the axis the whole list is filtered on.
+   *
+   * Four marks fit at 97px each with the touch floor cleared twice over, and
+   * the row stops scrolling. The COUNTS are not dropped, they move to
+   * `aria-label` ("To Do, 266"): a screen reader still reads them, and so does
+   * the tap census, which is how this program checks its own targets.
+   *
+   * `oneSurface`, NOT a media query — `mobile/CONTRACT.md` and the same seam
+   * every other phone branch in a shared screen uses. It is false on every
+   * desktop mount by construction, so the desktop DOM is byte-identical.
+   */
+  const { oneSurface } = useMobileSurface();
   if (!tabs || tabs.length === 0) return null;
   return (
     <div className="lp__tierrow" role="tablist" aria-label="Lifecycle">
@@ -1363,8 +1427,9 @@ function CategoryTabs({
           aria-selected={tab.id === activeTabId}
           className={tab.id === activeTabId ? 'lp__tab lp__tab--active' : 'lp__tab'}
           onClick={() => onTab(tab.id)}
+          {...(oneSurface ? { 'aria-label': `${tab.label}, ${tabLabel(tab)}` } : {})}
         >
-          {`${tab.label} ${tabLabel(tab)}`}
+          {oneSurface ? <CategoryGlyph category={tab.id} /> : `${tab.label} ${tabLabel(tab)}`}
         </button>
       ))}
     </div>
@@ -1373,6 +1438,8 @@ function CategoryTabs({
 
 function FilterRow({
   config,
+  picker,
+  onPicker,
   selected,
   onToggleOption,
   sortKey,
@@ -1388,6 +1455,9 @@ function FilterRow({
   onLens,
 }: {
   config: KindConfig;
+  /** Which of the four is open. Held by the panel — see `ListPicker`. */
+  picker: ListPicker | null;
+  onPicker: (picker: ListPicker | null) => void;
   selected: Readonly<Record<string, readonly string[]>>;
   onToggleOption: (specId: string, optionId: string, multi: boolean) => void;
   sortKey: SortKey | undefined;
@@ -1406,11 +1476,24 @@ function FilterRow({
   lensSet: EntitySummary | null;
   onLens: (setId: string | null) => void;
 }) {
-  // One popover at a time, sort included. Two independent booleans would let
-  // the sort menu and a filter picker sit open over each other.
-  const [picker, setPicker] = useState<'filters' | 'people' | 'sets' | 'sort' | null>(null);
+  const setPicker = onPicker;
   const barRef = useRef<HTMLDivElement>(null);
-  useDismissable(picker !== null, barRef, useCallback(() => setPicker(null), []));
+  /*
+   * THE PHONE'S SHEETS ARE PORTALLED, SO OUTSIDE-CLICK IS THE WRONG DISMISSAL.
+   *
+   * `useDismissable` closes when a pointer lands outside `barRef`. On the phone
+   * the bar itself is `display: none` (`mobile-screens.css` §9) and the picker
+   * is a `MobileSheet` — a portal into the frame's sheet host, which is by
+   * definition outside that ref. So the FIRST tap inside the sheet would close
+   * it, and the sheet would read as one that refuses to stay open.
+   *
+   * The sheet already carries all three dismissal routes of its own (the ✕, the
+   * backdrop, Escape) through one callback, so nothing is lost by standing this
+   * down where it does not apply.
+   */
+  const { oneSurface, sheetHost } = useMobileSurface();
+  const inSheet = oneSurface && sheetHost !== null;
+  useDismissable(!inSheet && picker !== null, barRef, useCallback(() => setPicker(null), [setPicker]));
   const sort = config.list.sort;
   const current = sort.find((s) => s.key === sortKey) ?? sort[0];
 
@@ -1420,6 +1503,45 @@ function FilterRow({
       return option ? [{ spec, option }] : [];
     }),
   );
+
+  /**
+   * ONE BODY, TWO CONTAINERS — a hanging popover on a desktop, a bottom sheet
+   * on a phone.
+   *
+   * The four option lists are the same lists either way; what differs is the
+   * surface they arrive on. Writing them twice is how the phone's copy of the
+   * collection lens ends up a release behind the desktop's, which is the
+   * failure `MobileSheet`'s own header comment describes for the aux column.
+   *
+   * `.lp__filtermenu` CANNOT BE THE SHEET'S CONTAINER: it is `position:
+   * absolute` at `176px` wide with a `240px` scroll cap, sized to hang off a
+   * 32px row. Inside a 72%-tall sheet that is a small floating card pinned to
+   * the sheet's top-left corner. So the sheet gets its own container and the
+   * body it wraps is identical.
+   */
+  const narrowing = (
+    key: ListPicker,
+    title: string,
+    testId: string,
+    menuClass: string,
+    body: ReactNode,
+  ): ReactNode => {
+    if (picker !== key) return null;
+    if (!inSheet) {
+      return (
+        <div className={menuClass} role="menu" data-testid={testId}>
+          {body}
+        </div>
+      );
+    }
+    return (
+      <MobileSheet title={title} onDismiss={() => setPicker(null)} testId={`list-sheet-${key}`}>
+        <div className="lp__sheetmenu" role="menu" data-testid={testId}>
+          {body}
+        </div>
+      </MobileSheet>
+    );
+  };
 
   return (
     <div className="lp__filterbar" ref={barRef}>
@@ -1466,7 +1588,7 @@ function FilterRow({
         <button
           type="button"
           className="lp__chip"
-          onClick={() => setPicker((open) => open === 'filters' ? null : 'filters')}
+          onClick={() => setPicker(picker === 'filters' ? null : 'filters')}
           aria-expanded={picker === 'filters'}
           aria-haspopup="menu"
           data-testid="filter-trigger"
@@ -1478,7 +1600,7 @@ function FilterRow({
         <button
           type="button"
           className={selectedPeople.length > 0 ? 'lp__chip lp__chip--active' : 'lp__chip'}
-          onClick={() => setPicker((open) => open === 'people' ? null : 'people')}
+          onClick={() => setPicker(picker === 'people' ? null : 'people')}
           aria-expanded={picker === 'people'}
           aria-haspopup="menu"
           data-testid="people-filter-trigger"
@@ -1506,7 +1628,7 @@ function FilterRow({
           <button
             type="button"
             className="lp__chip"
-            onClick={() => setPicker((open) => (open === 'sets' ? null : 'sets'))}
+            onClick={() => setPicker(picker === 'sets' ? null : 'sets')}
             aria-expanded={picker === 'sets'}
             aria-haspopup="menu"
             data-testid="collection-lens-trigger"
@@ -1527,7 +1649,7 @@ function FilterRow({
         <button
           type="button"
           className="lp__chip"
-          onClick={() => setPicker((p) => (p === 'sort' ? null : 'sort'))}
+          onClick={() => setPicker(picker === 'sort' ? null : 'sort')}
           aria-expanded={picker === 'sort'}
           aria-haspopup="menu"
           title={`Sorted by ${current.label}`}
@@ -1540,8 +1662,8 @@ function FilterRow({
       ) : null}
 
     </div>
-      {picker === 'sort' ? (
-        <div className="lp__filtermenu lp__filtermenu--sort" role="menu" data-testid="sort-menu">
+      {narrowing('sort', 'Sort', 'sort-menu', 'lp__filtermenu lp__filtermenu--sort', (
+        <>
           <div className="lp__filtergroup">SORT BY</div>
           {sort.map((spec) => (
             <button
@@ -1561,14 +1683,14 @@ function FilterRow({
               {spec.key === current?.key ? <span className="lp__filtercheck">✓</span> : null}
             </button>
           ))}
-        </div>
-      ) : null}
+        </>
+      ))}
       {/* Rendered OUTSIDE the clipping row, inside the positioned bar: the row
           keeps `overflow: hidden` as its floor guard, and the picker is still
           free to overflow it. No hardcoded offset — `top: 100%` of the bar
           works whether or not this kind renders a header-actions row. */}
-      {picker === 'filters' ? (
-        <div className="lp__filtermenu" role="menu" data-testid="filter-menu">
+      {narrowing('filters', 'Filter', 'filter-menu', 'lp__filtermenu', (
+        <>
           {config.list.filters.map((spec) => (
             <div key={spec.id}>
               <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
@@ -1601,10 +1723,10 @@ function FilterRow({
               })}
             </div>
           ))}
-        </div>
-      ) : null}
-      {picker === 'sets' && membership ? (
-        <div className="lp__filtermenu" role="menu" data-testid="collection-lens-menu">
+        </>
+      ))}
+      {membership ? narrowing('sets', membership.label, 'collection-lens-menu', 'lp__filtermenu', (
+        <>
           <div className="lp__filtergroup">{membership.label.toUpperCase()}</div>
           {(membershipSets ?? []).length === 0 ? (
             /* An empty page is a real answer, said in its own words — never a
@@ -1637,10 +1759,10 @@ function FilterRow({
               );
             })
           )}
-        </div>
-      ) : null}
-      {picker === 'people' ? (
-        <div className="lp__filtermenu" role="menu" data-testid="people-filter-menu">
+        </>
+      )) : null}
+      {narrowing('people', 'People', 'people-filter-menu', 'lp__filtermenu', (
+        <>
           <div className="lp__filtergroup">PEOPLE</div>
           {people.map((person) => {
             const on = selectedPeople.includes(person.id);
@@ -1665,8 +1787,8 @@ function FilterRow({
               </button>
             );
           })}
-        </div>
-      ) : null}
+        </>
+      ))}
     </div>
   );
 }
@@ -3224,6 +3346,11 @@ export function Tile({
       data-tree={config.list.tree ? 'true' : undefined}
       data-children={childCount > 0 ? childCount : undefined}
       data-flow={flowRef ? 'open' : undefined}
+      /* The task tile has carried this since #435; the standard anatomy needed
+         it for the same reason. The phone drops the row's verbs while the row
+         is CLOSED, and "closed" is a fact only this tile knows — a descendant
+         selector cannot read a sibling's `useState`. */
+      data-details={detailsExpanded ? 'open' : undefined}
       data-streaming={streaming ? 'true' : 'false'}
     >
       <div className="lp__tile-main" onClick={() => props.onSelect?.(row.id)}>
@@ -3363,8 +3490,15 @@ export function Tile({
                    one trails the row, matching the control-card's `pn-tt__ind`. */
                 <button
                   type="button"
+                  /* `--ind` names it the OPENER, the way `pn-tt__ind` does on
+                     the task tile. The phone hides this cluster's verbs while
+                     the row is closed and must keep exactly this one; a
+                     structural selector would break the day a verb is added
+                     after it. */
                   className={
-                    detailsExpanded ? 'lp__rowaction lp__rowaction--on' : 'lp__rowaction'
+                    detailsExpanded
+                      ? 'lp__rowaction lp__rowaction--ind lp__rowaction--on'
+                      : 'lp__rowaction lp__rowaction--ind'
                   }
                   title="Details"
                   aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} details for ${row.title}`}

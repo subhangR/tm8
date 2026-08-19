@@ -40,6 +40,7 @@ import {
   EmptyBody,
   type ControlHost,
   type DetailReasons,
+  type ListPicker,
   type PanelTab,
 } from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
@@ -235,6 +236,24 @@ export function EntityView(props: EntityViewProps) {
     [kind], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const [aux, setAux] = useState<AuxTarget | null>(null);
+  /*
+   * THE FOUR NARROWING CONTROLS, HELD HERE BECAUSE THEIR TRIGGERS MOVED HERE.
+   *
+   * `.lp__filterbar` is 101px of permanent chrome on a 844px phone — a fifth
+   * of the screen spent on four chips that are used once a session. It is
+   * `display: none` on the phone now and its four verbs hang off the floating
+   * cluster below, so the list keeps that height. The BODIES still belong to
+   * the panel (they are made of its filter specs, its people, its collections
+   * and its sort keys), so only the "which one is open" answer is lifted —
+   * the same route-vs-local shape `mode` and `groupBy` already use.
+   *
+   * ONE UNION, NOT FOUR BOOLEANS: on the phone each of these is a bottom
+   * sheet, and two at once is two scrims.
+   */
+  const [picker, setPicker] = useState<ListPicker | null>(null);
+  /* Whether the cluster is expanded. Collapsed it is one thumb-sized button;
+     four permanently-drawn pills would occlude the rows they narrow. */
+  const [dialOpen, setDialOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<PanelTab>('content');
   const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface>>({});
   const resolvingAttention = useRef(new Set<EntityId>());
@@ -920,6 +939,11 @@ export function EntityView(props: EntityViewProps) {
           mode={mode}
           groupBy={props.groupBy}
           onGroupBy={props.onGroupBy}
+          /* The open narrowing control. Held here because its TRIGGERS moved
+             here (see the state's own note) — the bodies are still the
+             panel's, and it still renders them. */
+          picker={picker}
+          onPicker={setPicker}
           members={data.members}
           ctx={ctx}
           createSlot={
@@ -1025,6 +1049,99 @@ export function EntityView(props: EntityViewProps) {
         >
           <span aria-hidden>＋</span>
         </button>
+      ) : null}
+
+      {/*
+        ── THE NARROWING CLUSTER ────────────────────────────────────────────
+        The four verbs that used to be `.lp__filterbar`, a permanent 101px band
+        — a fifth of a 844px phone spent on controls that are touched once a
+        session, above a list that had 478px left for its rows. They float now,
+        collapsed to ONE button, and the band is gone from the chrome.
+
+        SEPARATE FROM THE CREATE FAB, not folded into it. Create is the verb a
+        thumb reaches for constantly and it stays ONE tap; putting it behind a
+        dial would tax the common action to pay for the rare ones. It is also
+        gated differently — a kind with no wired create still filters and sorts
+        — so one control gated on both would be wrong for half the kinds.
+
+        WORDS, NOT GLYPHS, unlike the lifecycle row. Those four are one axis
+        with an obvious order, which is what makes a glyph family readable;
+        these four are unrelated verbs over unrelated vocabularies, and a
+        funnel, a face, a folder and an arrow share nothing to read.
+
+        EACH ONE IS OFFERED ONLY WHEN IT HAS SOMETHING TO SAY — the same four
+        conditions `FilterRow` renders its chips under, read off the same
+        registry data, so the cluster and the (hidden) bar cannot disagree.
+      */}
+      {oneSurface && !selectedId ? (
+        <div className="ev-narrow" data-testid="entity-view-narrow">
+          {dialOpen ? (
+            <div className="ev-narrow__dial" role="group" aria-label="Narrow the list">
+              {config.list.filters.length > 0 ? (
+                <button
+                  type="button"
+                  className="ev-narrow__item"
+                  data-testid="narrow-filters"
+                  onClick={() => {
+                    setPicker('filters');
+                    setDialOpen(false);
+                  }}
+                >
+                  filter
+                </button>
+              ) : null}
+              {data.members.length > 1 ? (
+                <button
+                  type="button"
+                  className="ev-narrow__item"
+                  data-testid="narrow-people"
+                  onClick={() => {
+                    setPicker('people');
+                    setDialOpen(false);
+                  }}
+                >
+                  people
+                </button>
+              ) : null}
+              {config.list.membership && rowLifecycle.membershipSets !== undefined ? (
+                <button
+                  type="button"
+                  className="ev-narrow__item"
+                  data-testid="narrow-sets"
+                  onClick={() => {
+                    setPicker('sets');
+                    setDialOpen(false);
+                  }}
+                >
+                  {config.list.membership.label.toLowerCase()}
+                </button>
+              ) : null}
+              {config.list.sort.length > 0 ? (
+                <button
+                  type="button"
+                  className="ev-narrow__item"
+                  data-testid="narrow-sort"
+                  onClick={() => {
+                    setPicker('sort');
+                    setDialOpen(false);
+                  }}
+                >
+                  sort
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="ev-narrow__toggle"
+            data-testid="entity-view-narrow-toggle"
+            aria-expanded={dialOpen}
+            aria-label={dialOpen ? 'Close narrowing options' : 'Narrow the list'}
+            onClick={() => setDialOpen((open) => !open)}
+          >
+            <NarrowGlyph open={dialOpen} />
+          </button>
+        </div>
       ) : null}
 
       {/* The detail column's drag handle — the control the panel it sizes
@@ -1213,4 +1330,30 @@ export function EntityView(props: EntityViewProps) {
 function auxCrumb(aux: AuxTarget, title: string | undefined): string {
   if (aux.sort === 'tab') return aux.tab;
   return title ?? 'loading…';
+}
+
+/**
+ * The narrowing cluster's own mark: a funnel closed, an ✕ open.
+ *
+ * SVG in a 16 viewBox with `currentColor`, the same idiom as the tile's
+ * chevrons and the lifecycle row's rings, and for the same reason — a
+ * typographic glyph sits on its own font's baseline, so `⌄` and `✕` land at
+ * different optical heights inside one round button.
+ *
+ * The ✕ is right HERE and nowhere else in this cluster: this is a dismiss, and
+ * the dismiss glyph is what this product already uses for one.
+ */
+function NarrowGlyph({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden focusable="false">
+      <path
+        d={open ? 'M4 4L12 12M12 4L4 12' : 'M2.5 3.5H13.5L9.25 8.5V13L6.75 11.5V8.5Z'}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
