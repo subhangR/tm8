@@ -385,6 +385,40 @@
   color: var(--pn-ink-3);
 }
 
+/*
+ * THE BOOT WAIT, which is a different screen from the three above.
+ *
+ * `.mobile-empty` is for a REFUSAL — a statement the reader is meant to read
+ * and act on. Boot is not a statement; it is the kit's `BootLoader`, and this
+ * class exists only to give it a box to centre in. Reusing `.mobile-empty`
+ * would have restyled the loader's own parts through its `> :first-child`
+ * serif rule and clamped the wordmark to a 34ch reading measure.
+ *
+ * `min-block-size: 100%` plus a flex column is the whole rule, and both halves
+ * are load-bearing: `main.mobile-frame__content` is a BLOCK, so `.kit-boot`'s
+ * `flex: 1` has nothing to resolve against there and the mark would sit
+ * against the header rather than in the middle of the screen.
+ */
+.mobile-boot {
+  box-sizing: border-box;
+  min-block-size: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The gate's mark is sized for a desktop viewport. A 390px phone is the
+   narrowest surface it will ever draw on, and 96px of serif wordmark reads as
+   a splash screen rather than a wait. Scoped to this host so the desktop gate
+   is untouched. One knob, as `kit.css` intends — the ribbon follows in `em`.
+
+   `.cv2-root` is carried deliberately: `kit.css` scopes its own rule the same
+   way, so a bare `.mobile-boot .kit-boot__mark` would tie on specificity and
+   the winner would be decided by stylesheet ORDER — which nothing here
+   guarantees. */
+.cv2-root .mobile-boot .kit-boot__mark {
+  font-size: 64px;
+}
+
 /* ==========================================================================
    SCREEN MOTION
    ========================================================================== */
