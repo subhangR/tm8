@@ -1,44 +1,62 @@
 /**
- * CRAFT'S REGION C — the entity detail column, mounted from the SAME shared
- * `AuxEntityPanel` every other three-region screen mounts.
+ * THE HOSTED ENTITY COLUMN — `AuxEntityPanel` plus the six hooks that feed it,
+ * behind one component a screen can mount with a single prop bundle.
  *
- * NOT A NEW PANEL. `views/auxPanel.tsx` is the app's one detail mount (Home
- * uses it twice; Channel, Entity, Workspace and Graph mount the panel beneath
- * it), and its docblock states the ruling this file obeys: it is a MOUNT, not
- * a layout — the aside, its header and its close affordance stay with the
- * host, and `onOpenEntity` REPLACES this column's subject rather than opening
- * a fourth one. Writing a Craft-specific detail panel would have been the
- * fifth dialect of the same surface.
+ * WHAT THIS IS AND IS NOT. It is NOT a panel: `views/auxPanel.tsx` is still the
+ * app's one detail mount, and its docblock's ruling holds here unchanged — this
+ * is a MOUNT, not a layout. The aside, its header and its close affordance stay
+ * with the host, and `onOpenEntity` REPLACES the column's subject rather than
+ * opening a second one.
  *
- * WHY IT IS ITS OWN COMPONENT rather than a branch inside `CraftScreen`.
- * The host bundle is built from six hooks (`useLaunchPort`,
- * `usePanelPrimaries`, `useRowLifecycle`, `useMembershipSurface`,
- * `attachmentsFor`, plus the control host), and every one of them needs
- * `GateData`. `CraftScreen` mounts without `GateData` in both the vitest
- * suite and the pixel harness, and hooks cannot be called conditionally — so
- * the bundle lives behind a component that only mounts when the shell has
- * actually supplied the data. Absent shell data, Craft renders no column at
- * all, which is the honest state rather than an empty aside.
+ * WHY IT IS ITS OWN COMPONENT rather than a branch inside each host. The bundle
+ * is built from six hooks (`useLaunchPort`, `usePanelPrimaries`,
+ * `useRowLifecycle`, `useMembershipSurface`, `attachmentsFor`, plus the control
+ * host) and every one of them needs `GateData`. Screens mount without
+ * `GateData` in the vitest suite and in the pixel harnesses, and hooks cannot
+ * be called conditionally — so the bundle lives behind a component that only
+ * mounts when the shell has actually supplied the data. Absent the bundle a
+ * host renders no column at all, which is the honest state rather than an
+ * empty aside.
+ *
+ * IT ARRIVED AS `craft/CraftEntityColumn` (Craft P1) and moved here when Help
+ * needed the identical mount. Two copies of this file would have been the
+ * second dialect of a surface whose whole point is that there is one.
  */
 import { useMemo } from 'react';
 import type { EntityId } from '@tm8/contract';
-import type { ControlHost } from '../panels';
+import type { ControlHost, DetailReasons } from '../panels';
 import { attachmentsFor } from '../files/port';
-import { AuxEntityPanel, type AuxPanelHost } from '../views/auxPanel';
-import { useLaunchPort } from '../views/useLaunchPort';
-import { useMembershipSurface } from '../views/membershipSurface';
-import { usePanelPrimaries } from '../views/usePanelPrimaries';
-import { useRowLifecycle } from '../views/useRowLifecycle';
-import type { CraftPanelHostProps } from './types';
+import { AuxEntityPanel, type AuxPanelHost } from './auxPanel';
+import { useLaunchPort } from './useLaunchPort';
+import { useMembershipSurface } from './membershipSurface';
+import { usePanelPrimaries } from './usePanelPrimaries';
+import { useRowLifecycle } from './useRowLifecycle';
+import type { GateData } from './useGateData';
 
-export interface CraftEntityColumnProps extends CraftPanelHostProps {
+/**
+ * The shell bundle a hosted column needs — the same four values every
+ * three-region screen takes (`HomeViewProps`, `ChannelViewProps`).
+ *
+ * OPTIONAL AS A GROUP wherever a host declares it, and that is the point: a
+ * screen that demanded `GateData` to render its other regions could not be
+ * mounted by the fixture suites at all.
+ */
+export interface HostedColumnBundle {
+  data: GateData & { pull?: (id: string) => void };
+  reasons: DetailReasons;
+  serverBaseUrl?: string | undefined;
+  viewerMemberId?: string | null | undefined;
+  onNotice?: ((text: string) => void) | undefined;
+}
+
+export interface HostedEntityColumnProps extends HostedColumnBundle {
   entityId: EntityId;
   /** Drilling from inside the panel REPLACES the subject (the auxPanel law). */
   onOpenEntity(id: EntityId): void;
   onClose(): void;
 }
 
-export function CraftEntityColumn({
+export function HostedEntityColumn({
   data,
   reasons,
   serverBaseUrl,
@@ -47,7 +65,7 @@ export function CraftEntityColumn({
   entityId,
   onOpenEntity,
   onClose,
-}: CraftEntityColumnProps) {
+}: HostedEntityColumnProps) {
   const notify = (text: string) => onNotice?.(text);
 
   const launchPort = useLaunchPort(data, {});

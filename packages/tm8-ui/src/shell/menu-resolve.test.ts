@@ -141,9 +141,12 @@ describe('the shipped default menu', () => {
     // `messages` joined 2026-08-13 (the cross-entity conversation browser),
     // same additive R4 widening as the two above. `board` joined 2026-08-16
     // (the task kanban tab), same posture; `craft` the same day (the
-    // blueprint studio, Craft P1), same posture again.
+    // blueprint studio, Craft P1), same posture again. `help` joined
+    // 2026-08-19 (the Help shelf) — and it is the first ref to join this table
+    // WITHOUT joining the shipped default spine: it is here so the menu editor
+    // can offer it, not because any group places it.
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['board', 'channels', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'inbox', 'messages', 'settings', 'workspace'].sort(),
+      ['board', 'channels', 'craft', 'dashboard', 'feed', 'files', 'git', 'graph', 'help', 'inbox', 'messages', 'settings', 'workspace'].sort(),
     );
   });
 });

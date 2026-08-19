@@ -164,6 +164,10 @@ export type NavView =
   | { view: 'board' }
   /* The Craft studio (2026-08-16): whole-centre split pane, flat segment. */
   | { view: 'craft' }
+  /* The Help shelf (2026-08-19): whole-centre contents + reader, flat segment.
+     Addressable even though Help is not in the default tab spine — its door is
+     a bar control, and a screen without a URL could not be linked to at all. */
+  | { view: 'help' }
   /*
    * BOARD V2 (2026-08-18, Kind/Status/Category/Workflow program): the
    * universal board — any entity kind, columns = the four status categories

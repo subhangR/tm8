@@ -2318,7 +2318,16 @@ export type InvitePreview =
  * split-pane blueprint studio — a craft-mode chat anchored to a `graph`
  * entity beside a canvas rendering that entity's row. A VIEW over the new
  * `graph` kind's rows; the kind itself stays an ordinary collection kind. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft';
+/** `help` added 2026-08-19 (same R4 additive widening): the Help shelf — a
+ * curated reading order over `artifact` rows, read from the Space's own graph
+ * (a `collection` and its ordered `contains` edges), rendered through the
+ * existing artifact-preview path. A VIEW over an existing kind, so no kind ref
+ * moves. It is menu-ELIGIBLE but NOT in the shipped default spine: the seven
+ * default groups are surfaces you inhabit and Help is a reference you consult,
+ * so its default door is a control on the tab bar (the `inbox` precedent). The
+ * registry row exists all the same, because an operator who places Help in
+ * their own menu must not be refused by the server validator. */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings' | 'git' | 'messages' | 'board' | 'craft' | 'help';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a

@@ -38,6 +38,10 @@ export const VIEW_REF_SCREENS = {
   board: 'mounted',
   /* The Craft studio (2026-08-16): the blueprint split pane, mounted below. */
   craft: 'mounted',
+  /* Help (2026-08-19): the shelf and reader, mounted below AND on the phone —
+     it is one of the few screens with a stacked arrangement, so it never
+     reaches the refusal card. */
+  help: 'mounted',
   workspace: 'workspace',
   /* The last genuinely unbuilt view ref. */
   feed: 'unbuilt',

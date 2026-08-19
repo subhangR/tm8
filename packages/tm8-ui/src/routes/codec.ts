@@ -356,6 +356,9 @@ function parseTarget(
     case 'craft':
       /* The Craft studio (2026-08-16) — same flat whole-centre posture. */
       return { view: 'craft' };
+    case 'help':
+      /* The Help shelf (2026-08-19) — same flat whole-centre posture. */
+      return { view: 'help' };
     case 'board-v2':
       /* Board v2 (2026-08-18) — hyphenated segment, camel member, exactly the
          `new-session` precedent. */
@@ -459,6 +462,8 @@ function pathOf(route: Route): string {
       return `${base}/board`;
     case 'craft':
       return `${base}/craft`;
+    case 'help':
+      return `${base}/help`;
     case 'boardV2':
       return `${base}/board-v2`;
     case 'newSession':

@@ -230,6 +230,9 @@ const RAILLESS_VIEW_REFS: ReadonlySet<MenuViewRef> = new Set<MenuViewRef>([
   // in a group must see them. Only a group whose whole content is a lone
   // childless `workspace` goes full-bleed, which is exactly the new default.
   'workspace',
+  // 2026-08-19 (Help): the shelf carries its OWN contents column, so a menu
+  // rail beside it would be a second list of the same pages.
+  'help',
 ]);
 
 /**
@@ -314,4 +317,10 @@ export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: strin
   // Craft P1 (2026-08-16): the blueprint studio. Label "Craft" — it names the
   // ACTIVITY (sketching a flow with a teammate), not the graph kind it edits.
   craft: { label: 'Craft', icon: '✎', art: VIEW_ART.craft },
+  // Help (2026-08-19): the curated shelf of Help pages. Label "Help" — the
+  // word a reader looks for; "Docs" would promise API reference this is not.
+  // Present here so an operator can PLACE Help in their own menu even though
+  // it is not in the shipped default spine (`availableViewRefs` reads this
+  // table): a ref the editor could not offer would be unreachable by choice.
+  help: { label: 'Help', icon: '?', art: VIEW_ART.help },
 };
