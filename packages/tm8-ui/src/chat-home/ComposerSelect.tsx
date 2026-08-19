@@ -167,12 +167,29 @@ export function ComposerSelect({
     </div>
   );
 
+  /*
+   * A TRIGGER THAT DRAWS A FACE CAN AFFORD TO LOSE ITS WORD; ONE THAT IS ONLY A
+   * WORD CANNOT. In a narrow foot the three triggers have to give something
+   * back, and the honest thing to give is the teammate's NAME — because the
+   * avatar beside it already says which teammate, so nothing is actually lost.
+   * Doing the same to mode or model would leave a caret with no subject.
+   *
+   * The flag is "has an avatar", not "is the teammate picker": the picker that
+   * carries a face is the one that can stand without a label, and keying on the
+   * face means a fourth setting gets the right behaviour for free.
+   */
+  const faced = Boolean(selected?.actor);
+
   return (
-    <span className="tch-pick" ref={boxRef}>
+    <span className={faced ? 'tch-pick tch-pick--faced' : 'tch-pick'} ref={boxRef}>
       <button
         type="button"
         className="tch-pick__trigger"
         data-testid={testId}
+        /* The value is ellipsized at every width and hidden outright on a
+           narrow foot, so the tooltip is where the full selection stays
+           readable. It does NOT carry the accessible name — see below. */
+        title={selected?.label}
         /* The name is the LABEL alone. Folding the selection into it would
            rename the control every time it is used, and every query that
            found it once would stop finding it. */
