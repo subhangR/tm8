@@ -317,14 +317,11 @@
   padding-block: calc((var(--mobile-touch-min) - 1.3em) / 2);
 }
 
-/* --- 7e′. THE TASK TITLE — WRAPPED TO ITS OWN LINE, AND ELLIPSISED INSIDE
-       A BOX WITH ROOM FOR THE WHOLE STRING. Two defects, one row. ---------- */
+/* --- 7e′. THE TITLE WAS LINE-BROKEN BEFORE IT WAS EVER SHRUNK ------------- */
 
 /* MEASURED on the live node, Tasks at 390x844 dpr3, 43 rows: heights were
-   `104 x17 · 121 x4 · 129 x1 · 152 x18 · 169 x3` (mean 130.8, TWO rows visible
-   in the 398.8px list), and 15 of 43 titles carried a `…`.
-
-   ── ONE. THE TITLE WAS LINE-BROKEN BEFORE IT WAS EVER SHRUNK ──────────────
+   `104 x17 · 121 x4 · 129 x1 · 152 x18 · 169 x3` — mean 130.8, and TWO rows
+   visible in a 398.8px list.
 
    `.pn-tt__title` is `flex: 1 1 auto` — basis `auto`, so its flex basis is its
    OWN CONTENT WIDTH, and a real title measures 425-464px. DEF-036 made
@@ -339,54 +336,19 @@
    desktop container is `nowrap`, so this never happened there; jsdom has no
    layout, so nothing in this repo could see it.
 
-   `flex-basis: 0` is the whole fix, and it is measured: `152 -> 104`,
-   `169 -> 121`, mean row `130.8 -> 107.3`, titles on their own line `18 -> 0`,
-   rows fully visible `2 -> 3`. No band moves; only the wrap.
+   ONE DECLARATION, and it changes nothing else: `152 -> 104`, `169 -> 121`,
+   titles on their own line `18 -> 0`. No band moves; only the wrap.
 
-   ── TWO. THE SECOND LINE OF TITLE IS FREE ─────────────────────────────────
-
-   7e above makes this box 44px tall to hold ONE 16.25px line — 27.75px of it
-   is dead space. TWO lines is 32.5px, still under the touch floor, so the
-   second line costs ZERO row height. With the basis fixed the title band is
-   308px wide, and two lines of it is 616px against a worst case of 464.
-   Measured: titles still truncated `15 -> 1`, row heights unchanged.
-
-   ── WHY THIS NEEDS THE SPAN, AND WHY 7e'S WARNING DOES NOT FORBID IT ──────
-
-   7e says `padding-block` AND NOT `display: flex`, because `text-overflow`
-   does not apply to a flex container. That is true and it is why this rule
-   does not use `text-overflow` at all: a two-line clamp is
-   `-webkit-line-clamp`, which needs `display: -webkit-box` on the element
-   holding the TEXT — a different mechanism, with its own ellipsis.
-
-   THE CLAMP AND THE PADDING MUST NOT SHARE AN ELEMENT, and finding that out
-   cost a rewrite. `overflow: hidden` clips at the PADDING box, not the content
-   box. Clamped on the padded button, a title needing a third line drew that
-   line INTO the 5.75px of bottom padding and was sliced horizontally through
-   the letterforms — section 4's defect exactly. Every rect measured clean
-   (box 44, content 32.5), `overflowCount` scored 0 and the tap census passed
-   it; it was visible ONLY by opening the capture. So the button becomes a
-   flex centring box with NO padding, and `.pn-tt__titleText` carries the
-   clamp, where there is no padding to bleed into. Verified live: button 44px,
-   text 16px (one line) or 33px (two), zero bleed by rect AND by eye, and the
-   6 genuinely-three-line titles ellipsise honestly.
-
-   `.lp__title` is deliberately NOT in this rule. It is the other tile tree,
-   its container does not wrap, and it has no span to clamp — it keeps 7e. */
+   THE ROW STAYS ONE LINE OF TITLE, which is a ruling and not an omission. A
+   two-line clamp fits inside the same 44px touch box for free (two 16.25px
+   lines is 32.5px) and would end every truncation on the screen — it was
+   built, measured and then withdrawn, because a list is for SCANNING and a
+   uniform one-line row is what makes a flick down it legible. The whole title
+   is one tap away and is already on the button's `title` attribute. 7e's
+   single-line `white-space: nowrap` + `text-overflow: ellipsis` therefore
+   stands, and this rule adds nothing to it but the basis. */
 .cv2-root[data-shell='mobile'] .pn-tt__title {
   flex-basis: 0;
-  display: flex;
-  align-items: center;
-  padding-block: 0;
-  white-space: normal;
-}
-
-.cv2-root[data-shell='mobile'] .pn-tt__titleText {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  min-width: 0;
-  overflow: hidden;
 }
 
 /* --- 7f. DEF-017 — the row state dot (16x16) ----------------------------- */
@@ -470,6 +432,65 @@
   min-inline-size: var(--mobile-touch-min);
   min-block-size: var(--mobile-touch-min);
   padding-inline: var(--pn-space-3);
+}
+
+
+/* ==========================================================================
+   7j. THE FOUR ROW VERBS MOVE BEHIND THE ROW'S OWN DISCLOSURE
+       — amends DEF-030 / DEF-036, and says so.
+
+   WHAT DEF-036 DID AND WHY IT WAS RIGHT AT THE TIME. `.pn-tt__actions` is a
+   desktop hover affordance: `opacity: 0; pointer-events: none` at rest,
+   revealed under `:hover`. On touch there is no hover, so the cluster did not
+   merely look hidden — it did not EXIST (`inertCount` 67 over 46 rows). The fix
+   revealed it under `(pointer: coarse)` and `[data-shell='mobile']`, and took
+   it out of the float onto its own line, because a permanently-revealed
+   floating cluster sits opaque on top of the title and steals the tap that
+   opens the row. Both halves were necessary and both are still here.
+
+   WHAT THAT COSTS, MEASURED. The extra line is 44px + 4px row-gap = **48px on
+   EVERY row** — 46% of a 104px row. The band is 359px wide and holds 228px of
+   buttons, so 131px (36%) of it is empty. Across the list it is the single
+   largest consumer of the phone's vertical budget: with it, THREE rows fit in
+   the 428px list; without it, SIX.
+
+   WHY IT IS NOT A HOVER FIX ANY MORE. Revealing a cluster on a pointer that is
+   already over the row costs a desktop reader nothing — it appears where they
+   are already looking and vanishes again. Pinning that same cluster open on
+   EVERY row of a touch list is a different thing wearing the same CSS: four
+   verbs the reader did not ask for, repeated 43 times, between them and the
+   next title. The affordance that made sense as a reveal does not make sense as
+   a permanent fixture.
+
+   THE AMENDMENT, AND THE LINE IT KEEPS. DEF-030's requirement is that these
+   verbs be REACHABLE ON TOUCH, and that requirement is met here: the row's
+   disclosure (`.pn-tt__ind`, grown to the 44px floor and moved onto the title's
+   line) opens the row, and the full cluster is there when it does. What is
+   given up is "visible without asking", which is a weaker promise than the one
+   the ledger rows were opened for. The verbs are ONE 44px TAP away, not gone,
+   and `pointer-events: auto` above is untouched — a row that is open behaves
+   exactly as it did.
+
+   NOT `display: none` ON THE CONTAINER. The container keeps the disclosure, so
+   it must stay laid out; only the verbs inside it are dropped, and only while
+   the row is closed. Hiding the container would take the opener with it and
+   leave a row that can never be expanded — the exact absence DEF-030 is about.
+   ========================================================================== */
+.cv2-root[data-shell='mobile'] .pn-tt:not([data-details='open']) .pn-tt__actions {
+  flex: 0 0 auto;
+}
+
+.cv2-root[data-shell='mobile'] .pn-tt:not([data-details='open']) .pn-tt__actions > *:not(.pn-tt__ind) {
+  display: none;
+}
+
+/* The opener carries the whole promise now, so it takes the whole floor. */
+.cv2-root[data-shell='mobile'] .pn-tt__ind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
 }
 
 

@@ -152,15 +152,6 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           <span className="pn-tt__status-text">{status.label}</span>
         </span>
 
-        {/* THE TEXT IS ITS OWN ELEMENT, and the phone is the whole reason.
-            `overflow: hidden` clips at the PADDING box, not the content box, so
-            a two-line clamp declared on a padded button paints the first
-            overflowing line INTO that padding and slices it horizontally
-            through the letterforms. `mobile-screens.css` §7e′ therefore puts
-            the 44px touch box on the BUTTON with no padding, and the clamp on
-            this span, where there is no padding to bleed into. On the desktop
-            the span is a plain inline box and the button's single-line
-            ellipsis is unchanged. */}
         <button
           type="button"
           className="pn-tt__title"
@@ -171,7 +162,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
             onSelect?.();
           }}
         >
-          <span className="pn-tt__titleText">{title}</span>
+          {title}
         </button>
 
         {assignees.length > 0 ? (
