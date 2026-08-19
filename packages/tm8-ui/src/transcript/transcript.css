@@ -30,23 +30,32 @@
   padding: var(--pn-space-4) var(--pn-space-4) var(--pn-space-2);
 }
 
+/*
+ * THE FOOT OWNS PLACEMENT AND SPACING. IT DRAWS NOTHING.
+ *
+ * ⚠ NO `border-top` HERE, AND THAT IS THE FIX rather than an omission. This
+ * region had one, and inside it `ComposerCard` renders `.ri-card` — which is
+ * ITSELF a bordered, shadowed card. Two frames around one control, which is
+ * exactly what the user circled on 2026-08-20 ("there is one extra box outside
+ * the composer not needed"). The card's own border and `--pn-sh-md` are what
+ * separate the composer from the turns above it; a rule as well is a second
+ * frame, and the same "the panel is the frame" ruling the artifact panel
+ * already carries applies here unchanged.
+ *
+ * The bottom padding is deliberately larger than the top: the card floats, and
+ * a floating card needs more air under it than over it or it reads as having
+ * fallen to the bottom of the pane.
+ */
 .tr-surface__foot {
   flex: none;
-  padding: var(--pn-space-2) var(--pn-space-4) var(--pn-space-3);
-  border-top: 1px solid var(--pn-line);
+  padding: var(--pn-space-2) var(--pn-space-4) var(--pn-space-4);
 }
 
-/*
- * The composer's standing disclosure. This is not decoration: the input writes
- * to the session's PTY, which is a different destination from every other
- * composer in the app, and a reader who assumes otherwise is owed the
- * correction before they type rather than after.
- */
-.tr-surface__foot-note {
-  margin: var(--pn-space-2) 0 0;
-  color: var(--pn-ink-3);
-  font-size: 10px;
-}
+/* The rejected injection, in the card's `above` slot. It borrows the shared
+   refusal chip (`.ri-attachments__refusal`) so a failed send and a failed
+   attach read as the same kind of event, and only restates the margin the chip
+   assumes from its list parent. */
+.tr-composer__error { margin: 9px 11px 0; }
 
 .tr-surface__state {
   padding: var(--pn-space-5) var(--pn-space-4);
@@ -74,24 +83,11 @@
   outline-offset: 1px;
 }
 
-/* Lifted from `.tch-send` (chat-home.css:735) so the primary action looks the
-   same in both places, keyboard ring included. */
-.tr-send {
-  margin-left: var(--pn-space-2);
-  border-color: transparent;
-  background: var(--pn-brand-2);
-  color: var(--pn-card);
-}
-
-.tr-send:focus-visible {
-  outline: 2px solid var(--pn-brand);
-  outline-offset: 1px;
-}
-
-.tr-send:disabled {
-  opacity: 0.42;
-  cursor: default;
-}
+/* NO `.tr-send` ANY MORE. This surface hand-rolled a bare `<button>` with a
+   third copy of chat's Send treatment; it now uses `.ri-send` in
+   `rich-input.css`, promoted there with `.ri-attach` when this became the
+   third foot to want them. See that file's docblock for what was and was not
+   converted with it. */
 
 /* ---- turns ------------------------------------------------------------- */
 
@@ -121,12 +117,39 @@
   height: 1px;
 }
 
+/*
+ * THE BOUNDARY READS AS A BOUNDARY. It was 10px centred grey text floating in
+ * the column, which is the shape of a caption rather than of an edge — and
+ * what it marks IS an edge: the top of everything this reader has. Two hair
+ * rules either side of the words say that without adding a control, a colour
+ * or a pixel of height beyond the line itself. `flex` + `gap` rather than a
+ * pseudo-element on each side so the rules grow into whatever space the words
+ * leave and the row still centres when the text wraps.
+ */
 .tr-turns__boundary {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
   margin: 0 0 var(--pn-space-4);
   color: var(--pn-ink-3);
   font-size: 10px;
   text-align: center;
 }
+
+.tr-turns__boundary::before,
+.tr-turns__boundary::after {
+  content: '';
+  /* The rules are what may give; the words are not. `flex: 1 1 auto` on the
+     rules and `flex: 0 1 auto` + `min-width: 0` on the text means the free
+     space collects on the lines, and in a panel too narrow for both the text
+     wraps as a paragraph instead of a word at a time beside two long rules. */
+  flex: 1 1 auto;
+  min-width: var(--pn-space-3);
+  height: 1px;
+  background: var(--pn-line);
+}
+
+.tr-turns__boundary-text { flex: 0 1 auto; min-width: 0; }
 
 .tr-turns__boundary-error {
   color: var(--pn-bad, var(--pn-ink-2));

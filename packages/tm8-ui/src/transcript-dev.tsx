@@ -5,6 +5,7 @@ import './styles/canvas-extra.css';
 import './styles/app.css';
 import './kit/kit.css';
 import './panels/panels.css';
+import { ptyTransport } from './terminal/pty/ptyTransport';
 import { TranscriptSurface } from './transcript/TranscriptSurface';
 
 /**
@@ -26,9 +27,19 @@ import { TranscriptSurface } from './transcript/TranscriptSurface';
  *
  * The seam pages for real: five 12-turn windows keyed by byte cursor, the last
  * one landing on 0 so `hasOlder` goes false and the earned beginning claim can
- * be seen. `liveness: 'not-running'` so no poll competes with the measurement.
+ * be seen.
  *
- * Usage: /transcript-dev.html
+ * LIVENESS IS A QUERY PARAMETER, because the two things this harness has to
+ * show are mutually exclusive under one hardcoded value. The scroll rules want
+ * `not-running`, so no poll competes with the measurement; the COMPOSER only
+ * renders when the session is live, and the composer is the other half of what
+ * cannot be seen in jsdom (a card has no border there, and no upload can round
+ * trip). Default stays `not-running` so every measurement taken against this
+ * file before today still reproduces.
+ *
+ * Usage:
+ *   /transcript-dev.html                  — the scroll rules (no poll)
+ *   /transcript-dev.html?liveness=live    — the composer, attach, paste, drop
  */
 
 const SESSION = '01900000-0000-7000-8000-0000000000a1' as EntityId;
@@ -89,6 +100,55 @@ const seam = {
   commands: { prompt: () => Promise.resolve({ ok: true }) },
 } as never;
 
+const params = new URLSearchParams(location.search);
+const liveness = params.get('liveness') === 'live' ? 'live' : 'not-running';
+
+/**
+ * THE UPLOAD, STUBBED AT THE TRANSPORT and nowhere higher up.
+ *
+ * `uploadClipboardFile` is left completely intact and really runs: it reads the
+ * node from `ptyTransport.endpointFor`, builds the headers, and POSTs the raw
+ * bytes. What is faked is the two things a harness cannot have — a node to be
+ * bound to, and a server at the other end. Stubbing any higher (an injected
+ * uploader prop, say) would leave the header assembly, the endpoint lookup and
+ * the error path untested by the only thing that can run them.
+ *
+ * `endpointFor` is a method on a plain object, so overriding it here is a
+ * dev-harness edit and not a seam in the product.
+ */
+if (liveness === 'live') {
+  ptyTransport.endpointFor = (id: string) =>
+    id === SESSION ? { baseUrl: 'http://transcript-dev.invalid', authToken: 'dev' } : null;
+
+  const realFetch = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (!url.startsWith('http://transcript-dev.invalid')) return realFetch(input, init);
+    const name = (init?.headers as Record<string, string> | undefined)?.['x-tm8-filename']
+      ?? 'pasted-file';
+    /* FAIL ON DEMAND, so the failure path is reachable by hand: any file whose
+       name contains `fail` comes back the way the node's own refusals do. */
+    if (/fail/i.test(name)) {
+      return Promise.resolve(new Response(
+        JSON.stringify({ error: { message: 'the node refused these bytes' } }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ));
+    }
+    /* Latency, because an instant insert hides the busy chip and the Send gate
+       that hangs off it. */
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(Response.json({
+          path: `/Users/agent/.tm8/clipboard/${SESSION}/${name}`,
+          filename: name,
+          mimeType: 'application/octet-stream',
+          bytes: 4096,
+        }));
+      }, 900);
+    });
+  }) as typeof fetch;
+}
+
 document.body.className = 'cv2-root';
 document.body.setAttribute('data-theme', 'dark');
 document.body.style.margin = '0';
@@ -98,7 +158,7 @@ createRoot(document.getElementById('root')!).render(
     {/* The panel body's box: a bounded height with a min-height:0 child, which
         is what turns `.tr-surface__scroll` into an actual scroll container. */}
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <TranscriptSurface seam={seam} sessionId={SESSION} liveness="not-running" />
+      <TranscriptSurface seam={seam} sessionId={SESSION} liveness={liveness} />
     </div>
   </div>,
 );

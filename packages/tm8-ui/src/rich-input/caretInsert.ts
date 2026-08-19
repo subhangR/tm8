@@ -39,6 +39,22 @@ function escapeLabel(name: string): string {
 }
 
 /**
+ * How the inserted text is separated from what surrounds it.
+ *
+ * `'block'` — a blank line either side, which is what a markdown draft needs:
+ * a block-level image glued onto the end of a sentence renders INSIDE that
+ * paragraph.
+ *
+ * `'inline'` — a single space, AND NEVER A NEWLINE. This exists for the
+ * destination the transcript composer writes to: a PTY prompt, where the draft
+ * is one line someone is still composing and a newline in it is a SUBMIT. The
+ * terminal's own paste path has always injected `path + ' '` for exactly this
+ * reason (`LiveTerminal`'s `injectFiles`), and a shared splice that could only
+ * emit `\n\n` is a splice that surface could not use.
+ */
+export type SpliceSeparator = 'block' | 'inline';
+
+/**
  * The splice, and where the caret lands after it.
  *
  * Returned rather than applied so the caller can apply both the draft and the
@@ -54,18 +70,29 @@ export function spliceInto(
   start: number,
   end: number,
   text: string,
+  separator: SpliceSeparator = 'block',
 ): { body: string; caret: number } {
   const from = Math.max(0, Math.min(start, source.length));
   const to = Math.max(from, Math.min(end, source.length));
   /*
-   * A block-level image glued onto the end of a sentence renders INSIDE that
-   * paragraph. Padding is added only where the neighbouring character is not
-   * already a newline, so an insert into an empty line stays a single line.
+   * Padding is added only where the neighbour does not already supply it, so
+   * an insert into an empty line stays a single line — and, in `inline` mode,
+   * a path dropped after a space does not get a second one.
    */
   const before = source.slice(0, from);
   const after = source.slice(to);
-  const lead = before === '' || before.endsWith('\n') ? '' : '\n\n';
-  const trail = after === '' || after.startsWith('\n') ? '' : '\n\n';
+  const pad = separator === 'block' ? '\n\n' : ' ';
+  const has = separator === 'block'
+    ? { lead: (s: string) => s.endsWith('\n'), trail: (s: string) => s.startsWith('\n') }
+    : { lead: (s: string) => /\s$/.test(s), trail: (s: string) => /^\s/.test(s) };
+  const lead = before === '' || has.lead(before) ? '' : pad;
+  /* `inline` ALWAYS lays down its trailing space, even at the end of the
+     draft, so the writer's next word does not fuse onto the path. `block`
+     keeps its original rule: a trailing blank line at the end of a document is
+     noise nobody asked for. */
+  const trail = separator === 'inline'
+    ? (has.trail(after) ? '' : pad)
+    : (after === '' || has.trail(after) ? '' : pad);
   const piece = `${lead}${text}${trail}`;
   return { body: `${before}${piece}${after}`, caret: from + piece.length };
 }

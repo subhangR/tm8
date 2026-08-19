@@ -69,6 +69,98 @@
    so an attachment reads as part of the message being written. */
 .ri-card .ri-attachments { padding: 9px 11px 0; }
 
+/**
+ * THE FOOT'S TWO UNIVERSAL CONTROLS — attach, and the primary action.
+ *
+ * PROMOTED HERE RATHER THAN LIFTED A THIRD TIME. Chat Home drew `.tch-attach`
+ * and `.tch-send`; the channel composer drew `.chs-iconbtn` and its own send;
+ * the transcript composer was about to draw a third pair. Three copies of one
+ * treatment is the drift `ComposerCard` already exists to stop, and the CARD
+ * is shared while the CONTROLS INSIDE IT were not, which is precisely the
+ * seam a reader would expect to be shared.
+ *
+ * IT LIVES IN THIS FILE FOR A LOADING REASON, not a filing one — the same one
+ * the phone rules at the end of this file give: `chat-home.css` is only in the
+ * document once the lazy chat home has mounted, and `channel-screen.css` only
+ * once a channel has. `rich-input/index.ts` imports this file, so it is
+ * present wherever a composer is.
+ *
+ * WHAT IS NOT DONE HERE, stated so the omission is a decision and not a
+ * half-finish: Chat Home and the channel are NOT converted onto these classes.
+ * `.tch-send` carries a running-turn variant and a ribbon mark, `.chs-iconbtn`
+ * is a different shape used in six other places on its screen, and both have
+ * phone rules and container queries keyed to their own names. Converting them
+ * is a real change with its own verification, and doing it as a side effect of
+ * a transcript task is how a shared class ends up half-adopted. The next
+ * surface to draw a composer foot should use THESE.
+ */
+.ri-attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* NOT SHRINKABLE. A 24px square with the default `flex-shrink: 1` is a 24px
+     square right up until the row runs out of room, and then it is a squashed
+     glyph — the box is the affordance, so it holds its size. */
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-right: var(--pn-space-1);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-label) var(--pn-ui);
+  cursor: pointer;
+}
+.ri-attach:hover:not(:disabled) { border-color: var(--pn-line-2); color: var(--pn-ink); }
+.ri-attach:disabled { opacity: 0.42; cursor: default; }
+.ri-attach:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+/* Reachable by its accessible name, invisible on screen — see
+   `files/ChooseFilesControl` for why the input is not `display: none`. */
+.ri-attach__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/**
+ * SEND NEVER GIVES. This is the rule the chat composer's overlap bug (#442)
+ * was missing, carried here so the next foot does not rediscover it: every
+ * other item in `.ri-card__foot` is a flex item with the automatic
+ * `min-width: auto` and therefore holds its content width, which leaves Send
+ * as the ONLY item with any give. Squeezed, its label wraps to two lines, the
+ * button grows, the row still does not fit, and `.ri-card` is
+ * `overflow: visible` so the neighbour PAINTS underneath it rather than being
+ * clipped. `flex: none` plus `nowrap` means the primary action keeps one line
+ * and its full footprint at every width.
+ */
+.ri-send {
+  flex: none;
+  margin-left: var(--pn-space-2);
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.ri-send:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.ri-send:disabled { opacity: 0.42; cursor: default; }
+
+/* The give in the row is the SPACER, which has no content to protect. It also
+   carries the `auto` margin that pushes Send to the right edge — so when the
+   row runs out of slack the gap collapses and the controls still do not touch,
+   because Send keeps its own margin. */
+.ri-card__foot .ri-foot-gap { flex: 1 1 auto; min-width: 0; }
+
 .ri-popover {
   position: absolute;
   bottom: 100%;
@@ -292,6 +384,22 @@
 .cv2-root[data-shell='mobile'] .ri-popover__empty { font-size: 13px; }
 .cv2-root[data-shell='mobile'] .ri-field__hint,
 .cv2-root[data-shell='mobile'] .ri-field__why { font-size: 12px; }
+
+/* THE PROMOTED FOOT CONTROLS TAKE THE SAME FLOOR the per-screen copies do.
+   Written here beside the classes themselves so a surface that adopts
+   `.ri-attach`/`.ri-send` is phone-correct on arrival rather than measuring
+   under the 44px bar until somebody runs the census on it. */
+.cv2-root[data-shell='mobile'] .ri-attach {
+  width: auto;
+  height: auto;
+  min-width: var(--mobile-touch-min);
+  min-height: var(--mobile-touch-min);
+}
+.cv2-root[data-shell='mobile'] .ri-send {
+  min-height: var(--mobile-touch-min);
+  padding-inline: var(--pn-space-3);
+  font-size: 13px;
+}
 
 /* The attachment chip's remove button and the popover's rows are controls, not
    copy. The popover rows are already 36px; on a phone they take the floor. */

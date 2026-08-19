@@ -9,11 +9,44 @@
  * merely look wrong.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionTranscriptPage } from '@tm8/contract';
 import { TranscriptSurface } from './TranscriptSurface';
 
+/**
+ * THE UPLOAD IS MOCKED AT THE MODULE, which is the only seam there is — the
+ * composer calls `uploadClipboardFile` directly and deliberately (see its
+ * docblock for why the `useRichInput` attachments spec could not be satisfied
+ * honestly). Mocking it here is what lets the SPLICE be asserted: what these
+ * tests are about is which string lands in the draft, and where.
+ */
+vi.mock('../terminal/clipboardUpload', () => ({
+  uploadClipboardFile: vi.fn(),
+}));
+const { uploadClipboardFile } = await import('../terminal/clipboardUpload');
+const upload = vi.mocked(uploadClipboardFile);
+
 const SESSION = '01900000-0000-7000-8000-0000000000a1';
+
+const NODE_PATH = '/Users/agent/.tm8/clipboard/shot.png';
+
+function uploaded(path = NODE_PATH, filename = 'shot.png') {
+  return { path, filename, mimeType: 'image/png', bytes: 12 };
+}
+
+/** A `DataTransfer` good enough for `extractReadableFiles`, which reads
+ *  `items`, `files` and `types` and nothing else. */
+function transfer(files: File[], text = '') {
+  return {
+    items: files.map((file) => ({ getAsFile: () => file })),
+    files,
+    types: files.length ? ['Files'] : text ? ['text/plain'] : [],
+    getData: () => text,
+  };
+}
+
+const png = (name = 'shot.png') => new File(['x'], name, { type: 'image/png' });
+const zip = () => new File(['x'], 'bundle.zip', { type: 'application/zip' });
 
 function page(over: Partial<SessionTranscriptPage> = {}): SessionTranscriptPage {
   return {
@@ -85,6 +118,14 @@ const turn = (text: string) => ({
 });
 
 describe('the Transcript surface', () => {
+  beforeEach(() => {
+    upload.mockReset();
+    upload.mockResolvedValue(uploaded());
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('renders the turns oldest-first, as the server sends them', async () => {
     render(<TranscriptSurface seam={seamWith(page())} sessionId={SESSION} liveness="live" />);
     const turns = await screen.findByTestId('transcript-turns');
@@ -402,10 +443,225 @@ describe('the Transcript surface', () => {
       });
     });
 
-    it('says plainly that input goes to the terminal, not to a message feed', async () => {
+    /**
+     * THE DISCLOSURE MOVED; IT DID NOT GO. It used to be a 10px paragraph
+     * hanging under the card, which the user asked to have removed and which
+     * this test used to find in `document.body.textContent`. The FACT is
+     * load-bearing — this is the one composer here that does not post a
+     * message — so it now rides the field's accessible name, its `title` and
+     * its placeholder, and this test follows it there rather than being
+     * deleted with the paragraph. All three are asserted, because each answers
+     * a different reader: a screen reader on focus, a hover, and a glance.
+     */
+    it('still tells a reader the input goes to a terminal, on the field itself', async () => {
       render(<TranscriptSurface seam={seamWith(page())} sessionId={SESSION} liveness="live" />);
+      const field = await screen.findByLabelText(/send input to this session/i);
+      const disclosure = /not posted as a message/i;
+      expect(field.getAttribute('aria-label')).toMatch(disclosure);
+      expect(field.getAttribute('title')).toMatch(disclosure);
+      expect(field.getAttribute('placeholder')).toMatch(/terminal/i);
+    });
+
+    /**
+     * THE DOUBLE BOX, held as a class seam. jsdom loads no stylesheets, so no
+     * test in this file can see a border — `transcript-css.test.ts` asserts the
+     * rule's absence in the sheet. What IS assertable here is the structure the
+     * rule hung off: the foot holds the card and NOTHING ELSE, so there is one
+     * frame's worth of markup to draw and no paragraph under it.
+     */
+    it('puts nothing in the foot but the card', async () => {
+      const { container } = render(
+        <TranscriptSurface seam={seamWith(page())} sessionId={SESSION} liveness="live" />,
+      );
       await screen.findByTestId('transcript-composer');
-      expect(document.body.textContent).toMatch(/typed into the session’s terminal, not posted as a message/i);
+      const foot = container.querySelector('.tr-surface__foot')!;
+      expect(foot.children).toHaveLength(1);
+      expect(foot.firstElementChild!.classList.contains('ri-card')).toBe(true);
+      // The retired paragraph, by its own class and by its old words.
+      expect(container.querySelector('.tr-surface__foot-note')).toBeNull();
+      expect(foot.textContent).not.toMatch(/appears above only if the agent/i);
+    });
+
+    /**
+     * THE CONTROL VOCABULARY IS CHAT'S — the shared card, the shared attach
+     * control and the promoted Send — and it stops exactly there. The thread
+     * pickers configure a chat THREAD; a PTY has no mode, no teammate and no
+     * model to set, so offering them would be three controls that cannot
+     * perform.
+     */
+    it('adopts chat’s card, attach and Send — and none of its thread pickers', async () => {
+      const { container } = render(
+        <TranscriptSurface seam={seamWith(page())} sessionId={SESSION} liveness="live" />,
+      );
+      const card = await screen.findByTestId('transcript-composer');
+      expect(card.classList.contains('ri-card')).toBe(true);
+      expect(container.querySelector('.ri-card__foot .ri-attach')).not.toBeNull();
+      expect(container.querySelector('.ri-card__foot .ri-send')).not.toBeNull();
+      // The drift this ends: a hand-rolled third copy of chat's Send.
+      expect(container.querySelector('.tr-send')).toBeNull();
+      expect(container.querySelector('.ri-card__foot select')).toBeNull();
+      expect(screen.queryByLabelText(/chat mode|teammate|model/i)).toBeNull();
+    });
+  });
+
+  /**
+   * ATTACHMENTS — a file becomes a PATH IN THE DRAFT, never a graph reference.
+   *
+   * The destination decides the transport: Send here is `execution.prompt`,
+   * which injects into the PTY, and a `tm8://file/<id>` typed at an agent's
+   * stdin resolves to nothing. Every agent CLI we support reads files by path.
+   */
+  describe('attaching a file to a terminal draft', () => {
+    const live = () => {
+      const view = render(
+        <TranscriptSurface seam={seamWith(page())} sessionId={SESSION} liveness="live" />,
+      );
+      return view;
+    };
+
+    async function field() {
+      return (await screen.findByLabelText(/send input to this session/i)) as HTMLTextAreaElement;
+    }
+
+    it('uploads to the session’s node and writes the returned PATH into the draft', async () => {
+      const { container } = live();
+      const area = await field();
+      fireEvent.change(area, { target: { value: 'what is wrong with' } });
+
+      const picker = container.querySelector('.ri-attach__input') as HTMLInputElement;
+      fireEvent.change(picker, { target: { files: [png()] } });
+
+      await waitFor(() => {
+        expect(upload).toHaveBeenCalledWith(expect.any(File), SESSION);
+      });
+      await waitFor(() => {
+        expect(area.value).toContain(NODE_PATH);
+      });
+      // The path, and nothing that resolves to nothing at a stdin.
+      expect(area.value).not.toMatch(/tm8:\/\/file\//);
+      expect(area.value).not.toMatch(/!\[/);
+    });
+
+    /**
+     * THE RULE THAT HAS BEEN GOT WRONG BEFORE. A carriage return with the path
+     * submits a bare path as the whole message, before the human has said what
+     * they wanted asked about it. The separator is a SPACE — the same one
+     * `LiveTerminal`'s `injectFiles` has always injected.
+     */
+    it('never puts a newline in with the path', async () => {
+      const { container } = live();
+      const area = await field();
+      fireEvent.change(area, { target: { value: 'read this' } });
+      fireEvent.change(container.querySelector('.ri-attach__input')!, {
+        target: { files: [png()] },
+      });
+
+      await waitFor(() => expect(area.value).toContain(NODE_PATH));
+      expect(area.value).not.toMatch(/[\r\n]/);
+      expect(area.value).toBe(`read this ${NODE_PATH} `);
+    });
+
+    // The human is still composing; the path is one more word in their
+    // sentence, dropped where the cursor was rather than appended at the end.
+    it('splices at the caret, not at the end', async () => {
+      const { container } = live();
+      const area = await field();
+      fireEvent.change(area, { target: { value: 'before after' } });
+      area.setSelectionRange(6, 6);
+      fireEvent.change(container.querySelector('.ri-attach__input')!, {
+        target: { files: [png()] },
+      });
+
+      await waitFor(() => expect(area.value).toContain(NODE_PATH));
+      expect(area.value).toBe(`before ${NODE_PATH} after`);
+    });
+
+    it('takes a pasted file the same way the attach button does', async () => {
+      live();
+      const area = await field();
+      fireEvent.paste(area, { clipboardData: transfer([png()]) });
+      await waitFor(() => expect(upload).toHaveBeenCalledOnce());
+      await waitFor(() => expect(area.value).toContain(NODE_PATH));
+    });
+
+    it('takes a dropped file the same way', async () => {
+      live();
+      const area = await field();
+      fireEvent.drop(area, { dataTransfer: transfer([png()]) });
+      await waitFor(() => expect(upload).toHaveBeenCalledOnce());
+      await waitFor(() => expect(area.value).toContain(NODE_PATH));
+    });
+
+    // Files win over text; a text-only paste is not intercepted at all, or the
+    // composer would have stolen the ordinary paste from the person typing.
+    it('leaves a text-only paste to the browser', async () => {
+      live();
+      const area = await field();
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', { value: transfer([], 'ls -la') });
+      area.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(upload).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A REFUSAL IS SAID OUT LOUD, with the user's own file name in it. A paste
+     * that visibly does nothing reads as a broken composer rather than as a
+     * refusal — the same reason `LiveTerminal` supplies an `onRefused`.
+     */
+    it('names a file it will not take, and why', async () => {
+      live();
+      const area = await field();
+      fireEvent.paste(area, { clipboardData: transfer([zip()]) });
+
+      const said = await screen.findByRole('alert');
+      expect(said.textContent).toMatch(/bundle\.zip/);
+      expect(said.textContent).toMatch(/agents cannot read/i);
+      expect(upload).not.toHaveBeenCalled();
+      // Dismissible: it is a fact about one paste, not a standing condition.
+      fireEvent.click(screen.getByLabelText('Dismiss'));
+      await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    });
+
+    it('reports an upload that failed instead of dropping the file silently', async () => {
+      upload.mockRejectedValue(new Error('the node refused these bytes'));
+      const { container } = live();
+      await field();
+      fireEvent.change(container.querySelector('.ri-attach__input')!, {
+        target: { files: [png()] },
+      });
+
+      const said = await screen.findByRole('alert');
+      expect(said.textContent).toMatch(/shot\.png could not be attached/i);
+      expect(said.textContent).toMatch(/the node refused these bytes/);
+    });
+
+    /**
+     * SEND IS HELD WHILE THE FILE IS IN FLIGHT. Sending now would deliver the
+     * sentence WITHOUT the path it is about, and the path would then land in an
+     * empty draft the agent never sees.
+     */
+    it('holds Send until the upload has landed', async () => {
+      let land!: (value: ReturnType<typeof uploaded>) => void;
+      upload.mockReturnValue(new Promise((resolve) => { land = resolve; }));
+      const { container } = live();
+      const area = await field();
+      fireEvent.change(area, { target: { value: 'look' } });
+
+      const send = screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
+      expect(send.disabled).toBe(false);
+      fireEvent.change(container.querySelector('.ri-attach__input')!, {
+        target: { files: [png()] },
+      });
+
+      await waitFor(() => expect(send.disabled).toBe(true));
+      // The wait is stated, not just enforced.
+      expect((await screen.findByTestId('transcript-attachments')).textContent)
+        .toMatch(/shot\.png/);
+      expect(send.title).toMatch(/uploading/i);
+
+      land(uploaded());
+      await waitFor(() => expect(send.disabled).toBe(false));
     });
 
     // A session with no live PTY has nowhere to put the bytes. Hiding the box
