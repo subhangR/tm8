@@ -433,7 +433,14 @@ export interface SpaceSummary {
   name: string;
   description: string;
   memberCount: number;
-  unreadTotal: number;
+  /**
+   * `null` ⇒ not measured. Counting unread means scanning `public.messages`
+   * under an RLS policy that costs >1.2 s however the count is phrased, and
+   * `spaces.list` is the request that gates boot — so no path that builds a
+   * `SpaceSummary` counts it. `SpaceNavigation.unreadTotal` below is the
+   * measured per-space number and is read lazily. Mirrors `@tm8/contract`.
+   */
+  unreadTotal: number | null;
   githubRepo?: string | null;
   createdAt: string;
 }

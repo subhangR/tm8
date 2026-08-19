@@ -34,7 +34,10 @@ const SPACE_ROW = {
   github_repo: null,
   created_at: new Date('2026-08-06T04:00:00.000Z'),
   member_count: '1',
-  unread_total: '0',
+  // No `unread_total`: 161 took it off `SPACE_COLUMNS`, so the select this row
+  // stands in for no longer returns the column and `SpaceRow` no longer has the
+  // field. Left in place it would be a fixture claiming a shape the handler
+  // cannot produce.
 };
 
 class FakeDb implements Db {

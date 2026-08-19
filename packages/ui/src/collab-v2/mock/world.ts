@@ -2018,17 +2018,36 @@ export class MockWorld {
     return [...this.spaces.values()].map((s) => this.spaceSummaryOf(s));
   }
 
+  /**
+   * The unread total for a space — the number `spaces.navigation` reports.
+   *
+   * It lives here, and NOT on `spaceSummaryOf`, for the same reason the server
+   * stopped putting it there: counting it is the expensive part of the read,
+   * and `SpaceSummary` is what the space LIST returns. A mock that hands the
+   * number out for free on the cheap read would let a screen depend on
+   * something no server can afford to send.
+   */
+  private unreadTotalOf(spaceId: SpaceId): number {
+    if (!this.viewerId) return 0;
+    let unreadTotal = 0;
+    for (const rec of this.entities.values()) {
+      if (rec.spaceId !== spaceId || rec.deletedAt != null) continue;
+      if (rec.kind === 'channel') unreadTotal += this.unreadCountFor(rec.id, this.viewerId);
+    }
+    return unreadTotal;
+  }
+
   private spaceSummaryOf(s: SpaceRec): SpaceSummary {
     let memberCount = 0;
-    let unreadTotal = 0;
     for (const rec of this.entities.values()) {
       if (rec.spaceId !== s.id || rec.deletedAt != null) continue;
       if (rec.kind === 'member') memberCount += 1;
-      if (rec.kind === 'channel' && this.viewerId) unreadTotal += this.unreadCountFor(rec.id, this.viewerId);
     }
     return {
       id: s.id, name: s.name, description: s.description, memberCount,
-      unreadTotal, githubRepo: s.githubRepo, createdAt: iso(s.createdAt),
+      // `null`, matching the server: NOT MEASURED on this path. See the field's
+      // note in types/contract.ts.
+      unreadTotal: null, githubRepo: s.githubRepo, createdAt: iso(s.createdAt),
     };
   }
 
@@ -2045,7 +2064,7 @@ export class MockWorld {
     return {
       spaceId,
       viewer: this.actorSummary(this.viewerId),
-      unreadTotal: this.spaceSummaryOf(space).unreadTotal,
+      unreadTotal: this.unreadTotalOf(spaceId),
       channels: channelRoots.map(toNode),
     };
   }

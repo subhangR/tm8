@@ -28,13 +28,20 @@ function expectSummaryShape(s: EntitySummary): void {
 }
 
 describe('spaces & navigation', () => {
-  it('lists the seeded space with members and unread', async () => {
+  it('lists the seeded space with members, and does NOT count unread', async () => {
     const { facade } = createRig();
     const spaces = await facade.listSpaces();
     expect(spaces).toHaveLength(1);
     expect(spaces[0].name).toBe('maestro-core');
     expect(spaces[0].memberCount).toBe(2);
-    expect(spaces[0].unreadTotal).toBe(1); // Forge's #v2-build message after the read mark
+    // There IS one unread message here — Forge's #v2-build message after the
+    // read mark — and the space list still reports `null`, because the list is
+    // the read that gates boot and counting unread means scanning every message
+    // under RLS. The number is not lost; the test below reads it off
+    // `navigation`, which is where it moved. `null` rather than `0` is what
+    // keeps "not counted" from posing as "nothing to catch up on" — and the
+    // seed proves the difference is real, since `0` here would be flatly wrong.
+    expect(spaces[0].unreadTotal).toBeNull();
   });
 
   it('returns the channel tree with viewer and unread rollup', async () => {

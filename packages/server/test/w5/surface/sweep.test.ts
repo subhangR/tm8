@@ -737,7 +737,31 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     //   ls db/migrations/*.sql | wc -l                             -> 150
     //   git ls-tree --name-only origin/main db/migrations/ | grep -c sql -> 150
     //   (this branch adds NO migration; 150 is main's own count.)
-    expect(server.appliedMigrations.length).toBe(150);
+    // 150 -> 151 (2026-08-19): 161_space_summary_drops_unread_total.sql —
+    // `w2_update_space` stops building an `unread_total` key now that no
+    // `SpaceSummary` reports one.
+    //
+    // This lane is the one the 148 row names as holding 157, and it is also the
+    // lane that hit the row above from the other side: rebasing onto main is
+    // how it found main red on this assertion, independently of the repair.
+    //
+    // The file has been renumbered TWICE. Written as 157; moved to 159 when 158
+    // landed; moved again to 161 because 159 (flatten_rls_predicates) and 160
+    // (menu_help_view) both filled while it waited its turn in the merge order.
+    // So 157 is now a hole nobody holds — this lane gave it up — and the highest
+    // prefix (161) and the count (151) sit ten apart. That divergence is not a
+    // defect to tidy; it is the whole reason this assertion counts FILES and
+    // never reads the highest prefix. A lane that reserves a number and then
+    // waits in a queue should expect to renumber, and renumbering is cheap
+    // precisely because nothing here is derived from the number.
+    //
+    // MEASURED on the REBASED tree, on top of the repair above — not by adding
+    // one to 150, and not by taking either side of the merge conflict this row
+    // arrived in:
+    //   ls db/migrations/*.sql | wc -l                             -> 151
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 151
+    //   (origin/main is 150, now that #451 has made its pin agree with itself.)
+    expect(server.appliedMigrations.length).toBe(151);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

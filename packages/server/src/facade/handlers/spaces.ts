@@ -39,7 +39,6 @@ export interface SpaceRow {
   github_repo: string | null;
   created_at: Date | string;
   member_count: string;
-  unread_total: string;
 }
 
 export function toSpaceSummary(row: SpaceRow): SpaceSummary {
@@ -48,31 +47,64 @@ export function toSpaceSummary(row: SpaceRow): SpaceSummary {
     name: row.name,
     description: row.description,
     memberCount: Number(row.member_count),
-    unreadTotal: Number(row.unread_total),
+    // NOT MEASURED ON THIS PATH — see SPACE_COLUMNS. `null`, never `0`: a zero
+    // here would be indistinguishable from "you have read everything", and
+    // messages-model.ts already settled that unread is reported as
+    // `number | null` precisely so an unmeasured count cannot pose as a
+    // measured one. `spaces.navigation` is where the real number lives.
+    unreadTotal: null,
     githubRepo: row.github_repo,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : new Date(row.created_at).toISOString(),
   };
 }
 
+/**
+ * WHY THERE IS NO `unread_total` HERE, AND WHY THERE CANNOT BE ONE.
+ *
+ * `spaces.list` is the FIRST request of workspace boot and it gates every other
+ * read, so its cost is paid before anything can paint. It used to carry
+ * `unread_total` as a correlated subquery — messages ⋈ entities ⋈ entities ⋈
+ * members ⋈ read_marks, evaluated once PER SPACE the viewer belongs to.
+ * Measured on prod (2026-08-19, 5 spaces / 7 099 entities / 4 542 messages,
+ * `set role tm8_app`, inside a rolled-back transaction, before/after taken
+ * back-to-back in one session):
+ *
+ *                          spaces.list        spaces.settings
+ *   as it was              4 553 ms           1 842 ms
+ *                          125 388 buffers     79 671 buffers
+ *   without unread_total       0.5 ms              0.4 ms
+ *                               30 buffers          22 buffers
+ *
+ * Both handlers share these columns, so one edit fixes both: ~6.4 s of Postgres
+ * time off boot, to produce — in `spaces.list`'s case — a 379-byte response.
+ * Trust the BUFFER counts over the milliseconds: this box has 4 cores and runs
+ * several sessions at once, so absolute latency is noisy. 205 059 shared buffer
+ * hits down to 52 is not.
+ *
+ * `member_count` is sub-millisecond and ~20 buffers of that, so `unread_total`
+ * was the entire cost. It is NOT a data-volume problem. The floor is the RLS
+ * policy on `public.messages`, which applies `internal.entity_readable()` to
+ * both `entity_id` and `anchor_id` per row. Those are SECURITY DEFINER, so the
+ * planner cannot inline them and they run as real per-row calls — the plan is a
+ * `Seq Scan on messages` with a ~90 000-buffer filter, looped once per space.
+ *
+ * So "compute it set-based instead of per-space" — the obvious fix — does not
+ * reach the boot gate's budget either: nothing that scans `public.messages`
+ * under that policy does. Changing the policy is a separate, unproven fix and
+ * is deliberately out of scope here.
+ *
+ * So unread moved OFF this path rather than being made faster on it. The
+ * truthful per-space number is `SpaceNavigation.unreadTotal` (`spaces.navigation`,
+ * from `public.unread_counts`), which is already a per-space lazy read and is
+ * already not part of boot; per-channel unread is unaffected and still resolves
+ * through `assembleSummaries`. Nothing was traded away — `spaces.list` never had
+ * a consumer for this field: the shipped shell (`packages/tm8-ui`, the bundle
+ * prod serves) reads `unreadTotal` off `SpaceSummary` in test fixtures only.
+ */
 export const SPACE_COLUMNS = `
   s.id, s.name, s.description, s.github_repo, s.created_at,
   (select count(*)::text from public.members member_count_row
-    where member_count_row.space_id = s.id) as member_count,
-  coalesce((
-    select count(*)::text
-      from public.messages message_row
-      join public.entities message_entity
-        on message_entity.id = message_row.entity_id and message_entity.deleted_at is null
-      join public.entities anchor_entity
-        on anchor_entity.id = message_row.anchor_id and anchor_entity.space_id = s.id
-      join public.members viewer
-        on viewer.space_id = s.id and viewer.identity_id = internal.identity_id()
-      left join public.read_marks mark_row
-        on mark_row.anchor_id = message_row.anchor_id and mark_row.member_id = viewer.entity_id
-     where message_row.author_id is distinct from viewer.entity_id
-       and (mark_row.last_read_at is null
-         or message_row.entity_id > internal.uuid_at(mark_row.last_read_at))
-  ), '0') as unread_total`;
+    where member_count_row.space_id = s.id) as member_count`;
 
 export const SPACE_FROM = `from public.spaces s`;
 

@@ -114,7 +114,12 @@ export const HOLLOW_FIELDS: Readonly<Record<string, string>> = {
   // not built". The RPC has in fact existed since 016, and the field is now
   // resolved from it on BOTH the read path and the event feed, so the entry
   // was removed rather than left as a claim that hides a working field.
-  'space.unreadTotal': 'always 0 — unread aggregation not built',
+  // This entry used to read "always 0 — unread aggregation not built", and it
+  // was wrong twice over: the aggregation IS built (`public.unread_counts`),
+  // and the server was really counting, at ~6 s on the request that gates boot.
+  // The count came off this path 2026-08-19; the field is now `null`, which is
+  // the field SAYING it is hollow instead of this table saying it for it.
+  'space.unreadTotal': 'always null — not measured on any SpaceSummary path; use spaces.navigation',
   'navigation.unreadTotal': 'always 0 — unread aggregation not built',
   'member.state.taskDoneCount': 'always 0 — completion tally not built',
   'team_member.state.liveWork': 'always null — live-work projection not built',

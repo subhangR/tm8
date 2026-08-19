@@ -175,6 +175,14 @@ const FROZEN_SETTINGS_VIEW: SpaceSettingsView = {
     name: 'G14 Space',
     description: 'Menu test',
     memberCount: 1,
+    // Deliberately a NUMBER, and deliberately left one after 161 made every
+    // freshly-built `SpaceSummary.unreadTotal` null. This projection is a
+    // FROZEN ledger row replayed verbatim — it never passes through
+    // `toSpaceSummary` — so it is exactly the shape a `spaces.update` recorded
+    // before 161 still has stored. Widening the field to `number | null` rather
+    // than dropping it is what keeps this row replayable, and this fixture is
+    // the thing that proves it: change it to `null` and that guarantee stops
+    // being tested.
     unreadTotal: 0,
     githubRepo: null,
     createdAt: '2026-07-26T00:00:00.000Z',

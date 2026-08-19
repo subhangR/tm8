@@ -3349,7 +3349,11 @@ export const SpaceSummarySchema: z.ZodType<SpaceSummary> = z.object({
   name: z.string(),
   description: z.string(),
   memberCount: z.number().int().nonnegative(),
-  unreadTotal: z.number().int().nonnegative(),
+  // Nullable, not optional: absent would be a THIRD state to interpret, and a
+  // node that cannot measure unread should still say so out loud. See the
+  // field's note on `SpaceSummary` — a number stays valid, so a response from
+  // an older node parses unchanged.
+  unreadTotal: z.number().int().nonnegative().nullable(),
   githubRepo: z.string().nullable().optional(),
   createdAt: IsoTimestamp,
 }).strict();
