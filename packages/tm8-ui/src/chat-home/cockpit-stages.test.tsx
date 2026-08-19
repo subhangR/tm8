@@ -139,63 +139,65 @@ describe('the conversation header belongs to the conversation', () => {
   });
 });
 
-describe('the composer belongs to the conversation too', () => {
+describe('the WHOLE bottom berth belongs to the conversation', () => {
   /**
-   * Same report, other half. With the head gone the panel was still wrapped
-   * from below: the tray AND `Reply in this thread…` kept the bottom berth,
-   * ~200px of chat chrome under a running terminal — addressed to a thread
-   * that is not what is on screen, and inset to `min(760px, 100% - 32px)`
-   * under a full-bleed panel so the two read as unrelated surfaces.
+   * Same report, other half — and then its amendment.
    *
-   * THE TRAY STAYS (2026-08-18 Cockpit ruling): it is the way back, and one
-   * row of tabs is the cheapest form of it. So these assert a PAIR — composer
-   * gone, tray present — because either alone is a different bug: dropping
-   * both strands you on the panel, dropping neither is the report.
+   * First pass: with the head gone the panel was still wrapped from below by
+   * the tray AND `Reply in this thread…`, ~200px of chat chrome under a
+   * running terminal, addressed to a thread that is not what is on screen.
+   * The composer stood down; the tray was kept as the way back.
+   *
+   * The user's answer, seeing that ship: `why still the chat, fleet, graph is
+   * showing at the bottom`. So the berth goes ENTIRELY. These now assert the
+   * absence of the whole wrap rather than a composer/tray pair — and the
+   * `way back is always on screen` suite below carries the weight that the
+   * tray used to, because Escape and the host's own ✕ are the exit now.
    */
   const composer = (container: HTMLElement) =>
     container.querySelector('textarea[aria-label="Message the chat agent"]');
+  const berth = (container: HTMLElement) => container.querySelector('.tch-composer-wrap');
 
   it('is drawn while the conversation itself is in the berth', async () => {
     const { container } = mount();
     await screen.findByTestId('chat-entity-tray');
     expect(composer(container)).not.toBeNull();
+    expect(berth(container)).not.toBeNull();
   });
 
-  it('stands down over a host entity panel — and the tray stays as the way back', async () => {
-    const onShowChat = vi.fn();
+  it('goes ENTIRELY over a host entity panel — composer, tray and wrap', async () => {
     const { container } = mount({
       centerOverride: <div data-testid="host-entity-panel" />,
       onStageChange: vi.fn(),
-      onShowChat,
+      onShowChat: vi.fn(),
     });
     await screen.findByTestId('host-entity-panel');
     expect(composer(container)).toBeNull();
-    expect(screen.getByTestId('chat-entity-tray')).toBeTruthy();
-    // The way back is a CONTROL, not just a row: click it and the host is asked
-    // for the chat. A tray drawn without its ⌂ tab would pass a mere presence
-    // check and still strand you on the panel.
-    const back = container.querySelector<HTMLButtonElement>('.tch-tray__chat');
-    expect(back).not.toBeNull();
-    fireEvent.click(back!);
-    expect(onShowChat).toHaveBeenCalled();
+    expect(screen.queryByTestId('chat-entity-tray')).toBeNull();
+    // The WRAP too, not just its contents: an empty wrap still spends its
+    // bottom margin, which is the pixel complaint this whole change is about.
+    expect(berth(container)).toBeNull();
   });
 
-  it('stands down over a stage too — same reason, different occupant', async () => {
+  it('goes entirely over a stage too — same reason, different occupant', async () => {
     const { container } = mount({ stage: 'fleet', onStageChange: vi.fn() });
     await screen.findByTestId('cockpit-fleet');
     expect(composer(container)).toBeNull();
-    expect(screen.getByTestId('chat-entity-tray')).toBeTruthy();
+    expect(screen.queryByTestId('chat-entity-tray')).toBeNull();
+    expect(berth(container)).toBeNull();
   });
 
-  it('the berth goes full-bleed, so the tray is not inset under a full-width panel', async () => {
-    const { container } = mount({
+  it('the ⌂ Chat / Fleet / Graph tabs are gone with it — nothing of the chat is left', async () => {
+    mount({
       centerOverride: <div data-testid="host-entity-panel" />,
       onStageChange: vi.fn(),
+      onShowChat: vi.fn(),
     });
     await screen.findByTestId('host-entity-panel');
-    // jsdom rasterizes nothing; the ATTRIBUTE is the contract the stylesheet
-    // keys on (`.tch-composer-wrap[data-chrome='tray']`), so pin that.
-    expect(container.querySelector('.tch-composer-wrap')?.getAttribute('data-chrome')).toBe('tray');
+    // Named explicitly because these three are what the user pointed at.
+    expect(screen.queryByText('Fleet')).toBeNull();
+    expect(screen.queryByText('Graph')).toBeNull();
+    expect(screen.queryByText('Chat')).toBeNull();
   });
 
   it('comes BACK when the berth returns to the conversation', async () => {
@@ -212,11 +214,11 @@ describe('the composer belongs to the conversation too', () => {
     );
     const { container, rerender } = render(screenWith(true));
     await screen.findByTestId('host-entity-panel');
-    expect(composer(container)).toBeNull();
+    expect(berth(container)).toBeNull();
 
     rerender(screenWith(false));
     await waitFor(() => expect(composer(container)).not.toBeNull());
-    expect(container.querySelector('.tch-composer-wrap')?.getAttribute('data-chrome')).toBeNull();
+    await screen.findByTestId('chat-entity-tray');
   });
 });
 
@@ -269,12 +271,17 @@ describe('the dock-down flip (visual lane handoff note)', () => {
     );
     const { container, rerender } = render(screenWith('fleet'));
     await screen.findByTestId('cockpit-fleet');
-    const wrap = container.querySelector('.tch-composer-wrap') as HTMLElement;
+    // The berth is UNMOUNTED under a stage now (task 01a017d3 amendment), so
+    // there is no wrap to hold a reference to across the transition — it has
+    // to be read after it comes back. That the ref is null for the duration is
+    // exactly why the effect guards on `wrap` before measuring.
+    expect(container.querySelector('.tch-composer-wrap')).toBeNull();
 
     rerender(screenWith(null));
     await waitFor(() =>
       expect(container.querySelector('.tch-conversation')?.getAttribute('data-empty')).toBe('true'),
     );
+    const wrap = container.querySelector('.tch-composer-wrap') as HTMLElement;
     // No inverted start was committed, so nothing is mid-journey.
     expect(wrap.style.transform).toBe('');
     expect(wrap.style.transition).toBe('');
