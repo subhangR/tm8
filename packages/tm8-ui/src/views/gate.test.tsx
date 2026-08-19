@@ -278,32 +278,42 @@ describe('THE GATE — composed T0-1 master screen', () => {
       // reaches the sheet — and the Sessions header must not be counted as if
       // it did.
       //
-      // THE ASSERTION MOVED IN 101, AND AGAIN ON 2026-08-17. THE RULE HAS NOT
-      // MOVED EITHER TIME. It was once "that header row does not exist",
-      // because the only thing in it was a DISABLED `Launch session ▸`
-      // sentence that had been miscounted as proof of reachability. Then the
-      // row earned its place by carrying `▮ Terminal`, which performs a real
-      // act (a vanilla shell session). Now the disabled sentence is gone too,
-      // by user ruling: the header can never name a launch subject, so that
-      // refusal was permanent furniture rather than a gap anyone could close.
+      // THE ASSERTION HAS MOVED THREE TIMES. THE RULE HAS NOT MOVED ONCE.
+      // It was first "that header row does not exist", because the only thing
+      // in it was a DISABLED `Launch session ▸` sentence that had been
+      // miscounted as proof of reachability. Then the row earned its place by
+      // carrying `▮ Terminal`, which performs a real act (a vanilla shell
+      // session). Then the disabled sentence went, by the 2026-08-17 ruling:
+      // the header can never name a launch subject, so that refusal was
+      // permanent furniture rather than a gap anyone could close.
       //
-      // Through all three versions the check is written against the thing that
+      // NOW THE ROW ITSELF IS GONE (user ruling 2026-08-19) and the terminal
+      // verb has moved UP into the root header's kind cell — the ＋ half,
+      // which is where a reader looks for "make me one of these". The row sat
+      // one line below the cell that now owns it.
+      //
+      // Through all four versions the check is written against the thing that
       // was actually wrong — an ENABLED control that opens nothing — never
       // against the row that happened to contain one.
-      // ASSERTED, NOT GUARDED. An `if (header)` here would go green the day
-      // the header stops rendering — which is precisely the defect 101 closed
-      // (no mount passed `onAction`, so the row drew nothing). A conditional
-      // assertion about a control that must exist cannot notice the control
-      // disappearing.
-      const header = container.querySelector('[data-kind="work_session"] .lp__actions');
-      expect(header).toBeTruthy();
-      const enabled = [...(header as HTMLElement).querySelectorAll('button')].map((b) => b.textContent ?? '');
-      expect(enabled.some((label) => /launch/i.test(label))).toBe(false);
-      // The row still has to CARRY something — `▮ Terminal`. Asserting only
-      // the absence above would pass just as happily on an empty row, which
-      // is the 101 defect wearing a different face.
-      expect(enabled.some((label) => /terminal/i.test(label))).toBe(true);
-      expect(header?.textContent ?? '').not.toMatch(/launch session/i);
+      const list = container.querySelector('[data-kind="work_session"]');
+      // ASSERTED, NOT GUARDED. An `if (list)` here would go green the day the
+      // sessions column stops rendering, which is a bigger defect than the one
+      // this test was written for.
+      expect(list).toBeTruthy();
+      // The retired row. Its absence is half the ruling; the other half is
+      // that the verb LANDED somewhere, asserted next.
+      expect((list as HTMLElement).querySelector('.lp__actions')).toBeNull();
+      // The root header is this column's first child, above the list.
+      const bar = (list as HTMLElement).previousElementSibling;
+      const birth = bar?.querySelector('.tch-rootcell--kind .tch-rootcell__plus');
+      expect(birth).toBeTruthy();
+      // `▮ Terminal`, not `＋ New session`: sessions are STARTED, and the cell
+      // wears its kind's own birth verb. Asserting only the row's absence
+      // would pass just as happily on a surface with no way to get a session
+      // at all, which is the 101 defect wearing a different face.
+      expect(birth?.getAttribute('aria-label') ?? '').toMatch(/terminal/i);
+      expect(birth?.getAttribute('aria-disabled')).not.toBe('true');
+      expect(bar?.textContent ?? '').not.toMatch(/launch session/i);
     }
   });
 

@@ -50,6 +50,8 @@ export interface ChatHomeSurfaceProps {
   onShowChat?: ChatHomeScreenProps['onShowChat'];
   onNewEntity?: ChatHomeScreenProps['onNewEntity'];
   newEntityUnavailable?: ChatHomeScreenProps['newEntityUnavailable'];
+  onCreateKind?: ChatHomeScreenProps['onCreateKind'];
+  createKindUnavailable?: ChatHomeScreenProps['createKindUnavailable'];
   routeThreadId?: ChatHomeScreenProps['routeThreadId'];
   onThreadSelected?: ChatHomeScreenProps['onThreadSelected'];
   /** Craft's solo conversation + the two publishes a hosted picker needs. */

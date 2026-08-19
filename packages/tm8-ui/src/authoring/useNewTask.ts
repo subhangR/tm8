@@ -44,7 +44,32 @@ export interface NewTaskHandle {
    * does nothing (R7 / charter R5 finding "I click run and nothing happens").
    */
   unavailable: { cause: string; remedy: string } | null;
-  create(): Promise<void>;
+  /**
+   * The same question for a kind this flow is NOT bound to — what the root
+   * header's menu asks, once per row.
+   *
+   * `unavailable` is exactly `unavailableFor(kind)`, so the two cannot drift.
+   * The caller's own `refusal` is NOT applied here: it is a statement about
+   * the bound kind ("sessions aren't created from here"), and answering it for
+   * every other kind is how one refused row refuses fourteen. A caller that
+   * has a per-kind refusal of its own supplies it beside this answer.
+   */
+  unavailableFor(kind: EntityKind): { cause: string; remedy: string } | null;
+  /**
+   * `target` OVERRIDES the bound kind for one create, and it exists for exactly
+   * one caller: the root header's kind MENU, where every row carries its own ＋
+   * and the row you press is almost never the kind the list is showing.
+   *
+   * The alternative was to switch the root first and create on the next render,
+   * which cannot work — `kind` is host state, so the create in the same tick
+   * would still make the OLD kind. It would have made "＋ on the Docs row"
+   * create a task, which is the `createTask` defect this flow already fixed
+   * once (see `commands.ts`'s docblock) coming back through the front door.
+   *
+   * Both members travel together on purpose: a kind with the previous kind's
+   * placeholder is an "Untitled task" that is a doc.
+   */
+  create(target?: { kind: EntityKind; placeholderTitle: string }): Promise<void>;
   dismiss(): void;
 }
 
@@ -96,12 +121,19 @@ export function useNewTask(options: NewTaskOptions): NewTaskHandle {
   const [state, setState] = useState<NewTaskPhase>({ phase: 'idle' });
 
   const creatable = creatableKind(kind);
-  const unavailable = commands === null
-    ? NO_EXECUTOR
-    : creatable === null ? NOT_CREATABLE : (refusal ?? null);
+  const unavailableFor = useCallback(
+    (target: EntityKind) =>
+      commands === null ? NO_EXECUTOR : creatableKind(target) === null ? NOT_CREATABLE : null,
+    [commands],
+  );
+  const unavailable = unavailableFor(kind) ?? refusal ?? null;
 
-  const create = useCallback(async () => {
-    if (commands === null || creatable === null) return;
+  const create = useCallback(async (target?: { kind: EntityKind; placeholderTitle: string }) => {
+    /* The TARGET's creatability, not the bound kind's — a menu row for a kind
+       the generic create cannot make must refuse, whatever the list is on. */
+    const madeKind = target ? creatableKind(target.kind) : creatable;
+    const madeTitle = target ? target.placeholderTitle : placeholderTitle;
+    if (commands === null || madeKind === null) return;
     /**
      * THE DOUBLE-PRESS GUARD, and it is not a nicety. The oracle's promise is
      * that the row exists the instant you press; a second press during the
@@ -115,7 +147,7 @@ export function useNewTask(options: NewTaskOptions): NewTaskHandle {
     setState({ phase: 'creating' });
     try {
       const result = await commands.createEntity(
-        newEntityInput(spaceId, creatable, placeholderTitle, parentId),
+        newEntityInput(spaceId, madeKind, madeTitle, parentId),
       );
       const id = createdIdOf(result);
       if (id === null) {
@@ -148,7 +180,7 @@ export function useNewTask(options: NewTaskOptions): NewTaskHandle {
 
   const dismiss = useCallback(() => setState({ phase: 'idle' }), []);
 
-  return { state, unavailable, create, dismiss };
+  return { state, unavailable, unavailableFor, create, dismiss };
 }
 
 /**

@@ -17,6 +17,7 @@ export {
 } from './EntityListPanel';
 export {
   ListRootHeader,
+  rootBirthAction,
   type ListRootChatsCell,
   type ListRootHeaderProps,
   type ListRootOption,

@@ -43,6 +43,30 @@ Differ-hash: distinct (asserted from comparison, not from having clicked a toggl
 |---|---|---|
 | `T0-1-filter-row-postfix.jpg` | 2026-07-28 ~16:52 | **Byte-identical to `T0-1-gate-light-final.jpg` (same sha256)** — the same full-screen capture under two names; A1c committed it in 52a0751 five minutes before the final-pair naming existed. Do not compare the two "against" each other. Its capture was preceded by the live picker-dismissal verification and deliberately re-shot so the evidence shows the committed state |
 
+## KIND-MENU BIRTH VERB (2026-08-19 ruling — task 01a019e2)
+
+Captured OFF THE APP, on purpose: `ListRootHeader` mounted alone in a throwaway
+`roothdr-dev.html` harness (the repo's own `*-dev.html` pattern), headless Chrome
+driven by raw CDP at dpr 2, dark ground. The dev server's auth wall needs a human;
+the harness does not, and the question here is one control's CSS, not a screen.
+
+| File | Taken | Shows | sha256 |
+|---|---|---|---|
+| `kind-menu-hover-doc.png` | 2026-08-19, HEAD `b2422424` | The Docs row of the kind menu revealing its `＋`. Every other row's control is present in the LAYOUT at `opacity: 0`, which is why no label shifts as the pointer travels down. | `4a10d3ee…1d1fdd2` |
+| `kind-menu-hover-sessions.png` | 2026-08-19, HEAD `b2422424` | The same menu with the SESSIONS row revealed: `▮`, not `＋`. Sessions declare `list.quickStart` in the registry, so their birth is a verb (start a terminal), not an authored entity. | `a9123077…7feb4c7` |
+| `kind-cell-sessions-terminal.png` | 2026-08-19, HEAD `b2422424` | The cell reading the same helper: on the Sessions root its `＋` half IS the terminal button. This replaced the `▮ Terminal` row that used to sit one line below it in the panel header. | `63e2ecf5…ff04880` |
+
+The reveal is forced by a probe class in the two menu frames, because a headless
+capture has no pointer. **The real `:hover` and `:focus-within` paths were driven
+interactively first** (extension-driven Chrome, same harness): hovering a row took
+its control from `opacity: 0` to `1`, focusing either half of the row did the same,
+and all 19 rows measured one shared column (x/w/h identical) once
+`min-inline-size: 29px` landed — without it the fullwidth `＋` and the narrow `▮`
+sized their controls differently and the glyph jumped 6px sideways between
+neighbours. That run also caught the inverted refusal: a bare
+`[aria-disabled] { opacity: .55 }` outranked the base `opacity: 0` and left the
+one REFUSED row as the only `＋` visible on a closed menu.
+
 ## DEFECT ARTIFACT (deliberately preserved — read it first)
 
 | File | Taken | Shows |
