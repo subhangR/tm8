@@ -1730,16 +1730,35 @@ const ROWS: readonly KindConfig[] = [
       tile: { badges: [] },
     }),
     panel: {
-      // Same shape `file` uses: a preview block first, then the detail fields.
-      // The viewer block carries NO label (owner ruling 2026-08-18): an eyebrow
-      // reading PREVIEW over a frame that is visibly a preview is a row of
-      // height spent on a word, and this panel's whole job is the frame.
+      /*
+       * THE PANEL IS THE FRAME, AND NOW IT IS ONLY THE FRAME — owner ruling
+       * 2026-08-20, closing what the 2026-08-18 ruling started.
+       *
+       * That pass took the banner, the PREVIEW eyebrow and the empty ＋ tile,
+       * and the screen still read as a small window with a filing cabinet under
+       * it: DETAILS (five rows of manifest bookkeeping), COLLECTIONS (chips
+       * plus an add control), the attachment strip and the footer together held
+       * ~320px below a frame floored at 420. `composition: 'frame'` retires the
+       * last three at once, and the two blocks come off here.
+       *
+       * NOTHING IS STRANDED BY THE TWO BLOCKS LEAVING, which is why they could
+       * go rather than shrink:
+       *   · COLLECTIONS was `contains`/incoming — the same edge the CONNECTIONS
+       *     TAB lists, so the membership is still on screen, one tab over. The
+       *     WRITE side lives on the collection's own panel ("+ add entity",
+       *     membership/outgoing), so adding an artifact to a collection is
+       *     untouched.
+       *   · Of DETAILS' rows, revision · file count · total size are already in
+       *     the frame's accessible name, and entrypoint · manifest sha256 ride
+       *     the revision picker's tooltip (see `ArtifactPreviewBlock`).
+       *
+       * The viewer block still carries NO label: an eyebrow reading PREVIEW
+       * over a frame that is visibly a preview is a row of height spent on a
+       * word, and this panel's whole job is the frame.
+       */
       archetype: 'generic',
-      blocks: [
-        { block: 'artifact-preview' },
-        { block: 'fields', label: 'DETAILS' },
-        COLLECTIONS_BLOCK,
-      ],
+      composition: 'frame',
+      blocks: [{ block: 'artifact-preview' }],
     },
   },
 

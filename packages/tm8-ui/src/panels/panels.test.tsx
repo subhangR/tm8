@@ -2014,15 +2014,20 @@ describe('EntityDetailPanel — attachments ride in the content body (D3 intact)
     expect(queryByTestId('attachment-strip')).toBeNull();
   });
 
-  it('is kind-agnostic: EVERY non-terminal, non-chat kind with a fixture mounts the strip', () => {
+  it('is kind-agnostic: EVERY kind with a fixture whose body does not own its bottom edge mounts the strip', () => {
     // The claim the brief made ("wire it into the shared/generic body path so
     // it appears for task, doc, work_session etc.") measured rather than
     // asserted once on a task and generalised.
     //
-    // D2 (session-UI design v1, 2026-08-06) narrows "every non-terminal kind"
-    // — deliberately overturning the earlier universal half of this test:
-    // a `composition: 'chat'` body (channel's hub) ends at its composer, whose
-    // + button already owns attach, so the strip there was duplication.
+    // TWO NARROWINGS OF "every non-terminal kind", both deliberate overturns of
+    // the earlier universal half of this test, and both read off `composition`
+    // by PRESENCE so a third one cannot arrive and silently fail here:
+    //   · D2 (session-UI design v1, 2026-08-06) — a `composition: 'chat'` body
+    //     ends at its composer, whose ＋ already owns attach, so the strip there
+    //     was duplication.
+    //   · owner ruling 2026-08-20 — a `composition: 'frame'` body IS a viewport
+    //     the panel exists to fill, and the artifact screen's whole complaint
+    //     was the chrome stacked under it.
     const covered = allKinds()
       .map((config) => ({
         config,
@@ -2032,7 +2037,7 @@ describe('EntityDetailPanel — attachments ride in the content body (D3 intact)
         (r) =>
           r.detail != null &&
           r.config.panel.archetype !== 'terminal' &&
-          r.config.panel.composition !== 'chat',
+          r.config.panel.composition == null,
       );
     expect(covered.length).toBeGreaterThan(8);
 
@@ -2058,6 +2063,63 @@ describe('EntityDetailPanel — attachments ride in the content body (D3 intact)
     );
     expect(getByTestId('entity-detail-panel')).toBeTruthy();
     expect(queryByTestId('attachment-strip')).toBeNull();
+  });
+
+  /**
+   * The other half of the sweep above, and the reason it is written as its own
+   * case rather than trusted to the filter: the sweep's `composition == null`
+   * would keep passing if `composition: 'frame'` were silently dropped from the
+   * registry — the artifact would simply rejoin the covered set. This asserts
+   * the ABSENCE that the ruling actually bought, so removing the flag reds
+   * something.
+   */
+  it('a frame composition (artifact) mounts NO strip — the panel exists to show the frame', () => {
+    const artifact = Object.values(fixtureDetails).find(
+      (d) => d.kind === 'artifact' && d.deletedAt == null,
+    );
+    expect(artifact, 'no artifact fixture to measure').toBeTruthy();
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel detail={withAttachment(artifact!)} reasons={REASONS} ctx={ctx} />,
+    );
+    expect(getByTestId('entity-detail-panel')).toBeTruthy();
+    expect(queryByTestId('attachment-strip')).toBeNull();
+    // The footer goes with it — one ruling, three regions.
+    expect(queryByTestId('panel-footer')).toBeNull();
+  });
+
+  /**
+   * A NARROW PANEL KEEPS ITS TABS, AND KEEPS ITS CONTROLS.
+   *
+   * `.pn-tabs` is the only flexible child of the panel bar and its scrollbar is
+   * hidden, so an over-wide end cluster scrolls tab labels out of view with
+   * nothing on screen saying so. MEASURED in Chrome: the cluster goes 102px →
+   * 278px with the viewer's controls in it, the three tabs need 233px, and at a
+   * 387px panel that loses Connections and Discussion outright. So the panel
+   * offers the bar slot only above `FRAME_CONTROLS_MIN_PANEL_PX` and the block
+   * draws in place below it.
+   *
+   * jsdom reports every `clientWidth` as 0 and implements no ResizeObserver, so
+   * a jsdom mount is ALWAYS the narrow arm — which is exactly what makes it
+   * assertable here. The roomy arm is a real-Chrome measurement and the portal
+   * itself is covered directly in `ArtifactViewer.test.tsx`; what this pins is
+   * that the fallback is REACHED rather than merely reachable, and that nothing
+   * is lost when it is.
+   */
+  it('a frame panel too narrow for the bar keeps its controls, in the body', () => {
+    const artifact = Object.values(fixtureDetails).find(
+      (d) => d.kind === 'artifact' && d.deletedAt == null,
+    );
+    const { getByTestId } = render(
+      <EntityDetailPanel detail={artifact!} reasons={REASONS} ctx={ctx} />,
+    );
+    const panel = getByTestId('entity-detail-panel');
+    expect(panel.querySelector('.pn-panelbar__end [data-testid="artifact-chrome"]')).toBeNull();
+    expect(panel.querySelector('.pn-body [data-testid="artifact-chrome"]')).not.toBeNull();
+    // Reached the fallback WITHOUT losing a verb — the failure a required
+    // portal would produce is silent, so absence is what needs asserting.
+    for (const name of ['Restart', 'Fullscreen', 'Download']) {
+      expect(panel.querySelector(`[aria-label="${name}"]`), name).not.toBeNull();
+    }
   });
 });
 
@@ -2230,8 +2292,12 @@ describe('EntityDetailPanel — the attention section has exactly one home per k
       }))
       .filter((r) => r.detail != null)
       .filter((r) => {
+        /* The EXACT predicate the panel uses, and it reads `composition` by
+           PRESENCE for the same reason the panel does: a body that declares one
+           owns its own bottom edge, whichever way it owns it. Today that is
+           'chat' (ends at its composer) and 'frame' (an artifact viewport). */
         const overflow =
-          r.config.panel.archetype === 'terminal' || r.config.panel.composition === 'chat';
+          r.config.panel.archetype === 'terminal' || r.config.panel.composition != null;
         return overflow === relocated;
       });
   }
@@ -2254,9 +2320,9 @@ describe('EntityDetailPanel — the attention section has exactly one home per k
     }
   });
 
-  it('mounts on the CONNECTIONS tab — and NOT in the content body — for terminal and chat', () => {
+  it('mounts on the CONNECTIONS tab — and NOT in the content body — for every body that owns its bottom edge', () => {
     const relocated = kindsBy(true);
-    // work_session (terminal) and channel/voice_channel (chat) today.
+    // work_session (terminal), channel/voice_channel (chat), artifact (frame).
     expect(relocated.length).toBeGreaterThan(0);
 
     for (const { config, detail } of relocated) {

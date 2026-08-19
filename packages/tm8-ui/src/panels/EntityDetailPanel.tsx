@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   CommandResult,
   Connections,
@@ -93,6 +93,27 @@ import { MergePullRequestFlow } from './pull-requests/MergePullRequestFlow';
  * rather than a placeholder. An honest partial beats a "coming soon".
  */
 const DEFAULT_BLOCKS: readonly ContentBlockRef[] = [{ block: 'fields' }];
+
+/**
+ * The narrowest panel that can seat a `composition: 'frame'` body's controls in
+ * the panel bar without the tab labels paying for them — see `barHasRoom`.
+ *
+ * ADDED UP FROM MEASUREMENTS, not chosen: the three tabs want 233px and the end
+ * cluster with the viewer's controls in it is 278px. `.pn-panelbar` adds no
+ * padding of its own (measured: 280 + 278 = 558 = the panel's whole width), so
+ * 511 — rounded to 520. Below it the block keeps its controls and spends a row
+ * on them, the arrangement it had before the bar existed.
+ *
+ * IT IS AN UNZOOMED NUMBER, and that is the whole reason this comment is long.
+ * `.cv2-root` carries a CSS zoom, so `getBoundingClientRect` comes back SCALED
+ * while `offsetWidth`/`clientWidth`/`scrollWidth` do not — the same panel reads
+ * 616 one way and 558 the other. Every part width above is an `offsetWidth`, and
+ * `ResizeObserver`'s `contentRect` is in that same unzoomed system, which is why
+ * `barHasRoom` observes rather than measuring a rect. A threshold compared
+ * against a rect is wrong by the zoom factor, in the direction that silently
+ * keeps the controls in a bar too narrow to hold them.
+ */
+const FRAME_CONTROLS_MIN_PANEL_PX = 520;
 
 /**
  * Does this kind declare anything for the strip to draw?
@@ -489,6 +510,65 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   const [surfaceSlot, setSurfaceSlot] = useState<HTMLDivElement | null>(null);
 
   /**
+   * IS THERE ROOM IN THE BAR FOR THE FRAME'S CONTROLS? — measured, not assumed.
+   *
+   * `.pn-tabs` is the only flexible child of `.pn-panelbar` and its scrollbar is
+   * hidden, so anything the end cluster takes is paid for by the TAB LABELS with
+   * nothing on screen saying it happened. MEASURED in Chrome on the artifact
+   * panel: the cluster goes 102px → 278px when the viewer's controls join it,
+   * and the three tabs need 233px. At a 616px panel that fits with room to
+   * spare; at a 428px one it does not, and Connections and Discussion are
+   * scrolled clean out of the document view.
+   *
+   * So the panel decides, from its own width, and the block DEGRADES: with no
+   * slot it draws the controls in place above the frame, which is one ~34px row
+   * — a fair price for a panel that can still be navigated. That fallback is the
+   * same path a fixture or the dev harness takes, so it is the tested one rather
+   * than a special case invented here.
+   *
+   * A MEASUREMENT AND NOT A MEDIA QUERY, because the panel is a column inside a
+   * stack: its width is a layout outcome, not the viewport's. Two panels of
+   * different widths can be on screen at once and a media query would give them
+   * the same answer.
+   */
+  const [panelEl, setPanelEl] = useState<HTMLElement | null>(null);
+  const [barHasRoom, setBarHasRoom] = useState(false);
+  /* Read off the DETAIL rather than off `config`, because `config` is resolved
+     below the early returns and this is a hook — hooks go above them all. */
+  const framed = detail ? getKind(detail.kind).panel.composition === 'frame' : false;
+  useEffect(() => {
+    /*
+     * ONLY THE ONE COMPOSITION THAT USES THE ANSWER, and only where the
+     * platform can give one.
+     *
+     * The `framed` gate is not an optimisation — it is the blast radius. Every
+     * kind renders this component, so an unconditional observer put a
+     * ResizeObserver on nineteen panels to answer a question one of them asks.
+     * MEASURED: jsdom does not implement ResizeObserver, and the unconditional
+     * version threw `ReferenceError` out of 113 tests across 12 files that have
+     * nothing to do with artifacts.
+     *
+     * The feature check is the same fact stated for the runtime: where there is
+     * no observer, `barHasRoom` keeps its initial FALSE and the block draws its
+     * controls in place. That is the arrangement that is always correct, just
+     * not always the roomiest — the right way round for a fallback.
+     */
+    if (!framed || panelEl === null || typeof ResizeObserver === 'undefined') return;
+    const measure = (width: number) => setBarHasRoom(width >= FRAME_CONTROLS_MIN_PANEL_PX);
+    /* `clientWidth`, NOT a rect — the threshold is an unzoomed number and
+       `.cv2-root`'s zoom would scale a rect out of that system. See the
+       constant's docblock; this is the first-paint answer, before the observer's
+       own callback arrives. */
+    measure(panelEl.clientWidth);
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) measure(entry.contentRect.width);
+    });
+    ro.observe(panelEl);
+    return () => ro.disconnect();
+  }, [framed, panelEl]);
+
+  /**
    * D44 — which flow verb's config is expanded on the action bar, if any.
    *
    * ABOVE EVERY EARLY RETURN for the same reason `surfaceSlot` is: hooks do.
@@ -609,6 +689,33 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   const alwaysDark = isTerminal;
 
   /**
+   * THE BODY ENDS THE PANEL — the three trailing regions are off.
+   *
+   * ONE PREDICATE for the attachment strip, the attention section and the
+   * footer, because they are one decision: does anything belong between this
+   * body and the panel's bottom edge? The terminal archetype has always
+   * answered no through its own arm; `composition` is how a kind answers no
+   * WITHOUT being a terminal, and it is read as PRESENCE rather than value by
+   * design — a third composition arriving must not silently inherit a footer
+   * nobody chose for it. Today: `chat` (a conversation ends at its composer)
+   * and `frame` (an artifact viewport takes the pixels).
+   */
+  const bodyOwnsBottom = isTerminal || config.panel.composition != null;
+
+  /**
+   * THE CONTROLS RIDE THE PANEL BAR — the same slot, for the second reason.
+   *
+   * `pn-panelbar__surface` was opened for the work session's five surface
+   * chips; `composition: 'frame'` is the other kind of body that has controls
+   * belonging to a viewport rather than to a row above it. The slot is
+   * `display: contents`, so an unused one costs no box, and the body portals
+   * into it only if it is there (see `WorkSessionContent`'s `switchSlot`, the
+   * pattern this follows) — a mount that renders no slot still gets its
+   * controls, in place, rather than losing them.
+   */
+  const controlsRideBar = isTerminal || config.panel.composition === 'frame';
+
+  /**
    * WHAT THE MERGE CONFIRM WOULD NAME — `repo#n`, or null when this row does
    * not read as a pull request at all.
    *
@@ -709,6 +816,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       className={`${alwaysDark ? 'cv2-root ' : ''}pn-panel pn-panel--${host}${isTombstone ? ' pn-panel--tombstone' : ''}`}
       data-theme={alwaysDark ? 'dark' : undefined}
       data-always-dark={alwaysDark ? 'true' : undefined}
+      /* Measured by `barHasRoom` above — a frame body's controls only ride the
+         bar where the tabs are not the ones paying for them. */
+      ref={setPanelEl}
       data-testid="entity-detail-panel"
       data-host={host}
       data-archetype={config.panel.archetype}
@@ -760,7 +870,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         }}
         end={
           <>
-            {isTerminal ? (
+            {controlsRideBar ? (
               <div
                 className="pn-panelbar__surface"
                 ref={setSurfaceSlot}
@@ -951,12 +1061,15 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               serves task, doc, work_session and every custom kind, and no
               future archetype can forget to include it.
 
-              THREE EXCLUSIONS, all structural, none a kind check. The
-              terminal archetype owns its full height (a live PTY canvas with a
-              strip stapled under it is not a design, it is a leak), a
-              tombstone shows only its tombstone, and a composition:'chat'
-              body ends at its composer — the composer's + button already owns
-              attach, so a strip below it is duplication.
+              THREE EXCLUSIONS, all structural, none a kind check, and two of
+              them now ride ONE predicate (`bodyOwnsBottom`, above): a tombstone
+              shows only its tombstone, and every other exclusion is the same
+              question — does anything belong between this body and the panel's
+              bottom edge? The terminal archetype answers no (a live PTY canvas
+              with a strip stapled under it is not a design, it is a leak), and
+              so does any declared `composition`: 'chat' ends at its composer,
+              where the ＋ already owns attach, and 'frame' is a viewport the
+              panel exists to fill.
 
               PLACEMENT is the body's (2026-08-16 addendum): the subtree
               archetype consumes the slot inside its description block; every
@@ -965,10 +1078,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
             */}
             {(() => {
               const attachmentSlot =
-                tab === 'content' &&
-                !isTombstone &&
-                config.panel.archetype !== 'terminal' &&
-                config.panel.composition !== 'chat' ? (
+                tab === 'content' && !isTombstone && !bodyOwnsBottom ? (
                   <AttachmentStrip
                     anchorId={detail.id}
                     files={attachedFiles(detail)}
@@ -993,10 +1103,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                  goes into the subtree body's slot: that slot is the description
                  block's, and a scored queue is not a description. */
               const attentionSlot =
-                tab === 'content' &&
-                !isTombstone &&
-                config.panel.archetype !== 'terminal' &&
-                config.panel.composition !== 'chat'
+                tab === 'content' && !isTombstone && !bodyOwnsBottom
                   ? props.attentionSection
                   : null;
               return (
@@ -1007,6 +1114,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     tab={tab}
                     save={save}
                     surfaceSlot={surfaceSlot}
+                    barSlot={barHasRoom ? surfaceSlot : null}
                     attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
                   />
                   {attentionSlot}
@@ -1024,10 +1132,10 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           other archetype: the reading it carries (presence · author · version)
           is honest chrome for a document, and only the terminal has a primary
           surface whose whole value is the pixels this row was taking.
-          composition:'chat' joins the exclusion for the same structural
-          reason: a conversation ends at its composer, not at a chrome strip
-          below it. */}
-      {isTerminal || config.panel.composition === 'chat' ? null : (
+          A declared `composition` joins the exclusion for the same structural
+          reason: a conversation ends at its composer and an artifact frame ends
+          at the panel edge, not at a chrome strip below either. */}
+      {bodyOwnsBottom ? null : (
         <PanelFooter
           detail={detail}
           presenceHollowReason={reasons.presenceHollow}
@@ -1058,6 +1166,9 @@ function PanelBody(
     save: TaskSaveHandle;
     /** The panel bar's slot node for the terminal/chat switch. Null elsewhere. */
     surfaceSlot?: HTMLElement | null;
+    /** The SAME node, offered to a `composition: 'frame'` body only when the bar
+        has room for its controls — see `barHasRoom`. Null ⇒ draw them in place. */
+    barSlot?: HTMLElement | null;
     /** The attachment tiles, built by the panel; the subtree body places them
         inside its description block. Null for every other archetype. */
     attachmentSlot?: ReactNode;
@@ -1088,13 +1199,14 @@ function PanelBody(
   }
   if (tab === 'connections') {
     /**
-     * THE ATTENTION SECTION'S OVERFLOW HOME, for the two archetypes that
-     * cannot take it inline — terminal (a live PTY owning its full height) and
-     * chat (a body that ends at its composer). Those two are excluded from the
-     * content-body mount for the same structural reasons the attachment strip
-     * excludes them, and a work session is one of the most-escalated things in
-     * a space, so dropping the section for them would have made session
-     * attention history reachable only from the CLI (user ruling 2026-08-16).
+     * THE ATTENTION SECTION'S OVERFLOW HOME, for the bodies that cannot take
+     * it inline — terminal (a live PTY owning its full height) and any declared
+     * `composition` (a chat that ends at its composer, an artifact frame that
+     * fills the panel). Those are excluded from the content-body mount for the
+     * same structural reasons the attachment strip excludes them, and a work
+     * session is one of the most-escalated things in a space, so dropping the
+     * section for them would have made session attention history reachable only
+     * from the CLI (user ruling 2026-08-16).
      *
      * IT MOVED HERE FROM THE ACTIVITY TAB when that tab was removed
      * (2026-08-19). Connections is where it belongs of the two remaining: an
@@ -1110,7 +1222,7 @@ function PanelBody(
      * the peer list has no natural end to append below.
      */
     const overflow =
-      config.panel.archetype === 'terminal' || config.panel.composition === 'chat';
+      config.panel.archetype === 'terminal' || config.panel.composition != null;
     return (
       <>
         {overflow ? props.attentionSection : null}
@@ -1381,6 +1493,12 @@ function PanelBody(
       detail={detail}
       blocks={config.panel.blocks ?? DEFAULT_BLOCKS}
       onOpenEntity={onOpenEntity}
+      /* The panel bar's end slot, for a block whose controls belong to the bar
+         rather than to a row above itself — `composition: 'frame'`. Null for
+         every other kind AND for a panel too narrow to seat them (`barHasRoom`),
+         and a block that gets null renders its controls in place — so this is an
+         ARRANGEMENT and never a requirement. */
+      barSlot={props.barSlot}
       commands={props.commands}
       onSaved={props.onSaved}
       downloadHref={props.attachments?.downloadHref}
