@@ -40,7 +40,7 @@ import { CopyLinkControl } from '../share';
 import { Avatar, VectorIcon } from '../kit';
 import type { Theme } from '../theme/useTheme';
 import { isUnbuiltViewRef } from './view-ref-screens';
-import { CHANNEL_KIND, KIND_ART, VIEW_ART, getKind, slugOfKind, type KindArt } from '../domain';
+import { CHANNEL_KIND, getKind, slugOfKind, type KindArt } from '../domain';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
@@ -54,7 +54,7 @@ import { openEntityOnPhone } from './openEntityOnPhone';
 import { ChatHomeSurface } from '../chat-home';
 import type { ChatThreadSummary } from '../chat-home/types';
 import type { ChatHomeL2Bridge } from '../chat-home/real-port';
-import { MobileChatsSheet } from '../chat-home/MobileChatsSheet';
+import { MobileDrawer, anyUnseen } from '../mobile/MobileDrawer';
 import type { GateData } from './useGateData';
 
 export interface MobileShellProps {
@@ -149,26 +149,28 @@ export interface MobileShellProps {
   onLaunchDispatch?(request: DispatchSelection): void;
 }
 
-/**
- * The bottom destinations. Deliberately FEW: a tab bar is a promise that these
- * are the places you go, and a phone that promises nine is promising nothing.
- * Each is a real route, so every tab is a shareable address.
- */
 /*
- * The marks are the REGISTRY'S artwork (`domain/kind-art.ts`) — the same paths
- * the desktop icon rail draws for these same destinations. Not a phone icon
- * set: a second icon language would be the clearest possible statement that
- * this is a different product, and the tab bar is where a viewer would see it
- * first. `VectorIcon` strokes them in `currentColor` on a 16x16 grid, so the
- * active state below is a colour change and nothing else.
+ * ── THE TAB BAR IS GONE, AND THE DRAWER IS WHERE IT WENT ──────────────────
+ *
+ * `TABS` used to live here: five destinations, drawn in the frame's `tabBar`
+ * region. Owner ruling 1 (2026-08-19) removed it, and the reason is a
+ * measurement rather than a taste. A tab bar is a PROMISE that the places it
+ * names are the places you go; this space registers 19 collection kinds and 12
+ * view refs — 31 destinations — and the bar reached five of them, 16%. Docs,
+ * Projects, PRs, Worktrees, Commits, Files, Artifacts, Memories, Collections,
+ * Spells, Skills, Loops, Teammates, Members, Graphs, Board, Craft, Code and
+ * Settings were unreachable on a phone except by pasting a URL, and the bar
+ * spent ~49px plus the home-indicator inset on every screen to say so.
+ *
+ * THE FRAME'S `tabBar` REGION STAYS. It is a frame slot, and removing a region
+ * is a different change with a different blast radius; this shell simply stops
+ * filling it, and `MobileFrame` already renders every optional region
+ * conditionally, so an unfilled slot leaves no dead chrome.
+ *
+ * WHAT REPLACES IT is `MobileDrawer` — the DESKTOP RAIL, not a phone menu:
+ * same `VIEW_PRESENTATION` words, same registry marks, same order. See that
+ * file's head for the whole account.
  */
-const TABS: readonly { readonly label: string; readonly art: KindArt; readonly target: MenuTarget }[] = [
-  { label: 'Home', art: VIEW_ART.dashboard, target: { type: 'view', ref: 'dashboard' } },
-  { label: 'Tasks', art: KIND_ART.task, target: { type: 'kind', ref: 'task' } },
-  { label: 'Sessions', art: KIND_ART.work_session, target: { type: 'kind', ref: 'work_session' } },
-  { label: 'Channels', art: KIND_ART.channel, target: { type: 'kind', ref: 'channel' } },
-  { label: 'Inbox', art: VIEW_ART.inbox, target: { type: 'view', ref: 'inbox' } },
-];
 
 /** The chevron's own geometry, on `VectorIcon`'s 16x16 grid. */
 const CHEVRON_UP_ART: KindArt = ['M10.4 3.6 5.6 8l4.8 4.4'];
@@ -179,27 +181,31 @@ const CHEVRON_UP_ART: KindArt = ['M10.4 3.6 5.6 8l4.8 4.4'];
  *  mark in this header. */
 const MENU_ART: KindArt = ['M2.5 4.25h11', 'M2.5 8h11', 'M2.5 11.75h7'];
 
-function sameTarget(a: MenuTarget | null, b: MenuTarget): boolean {
-  if (!a || a.type !== b.type) return false;
-  if (a.type === 'view' && b.type === 'view') return a.ref === b.ref;
-  if (a.type === 'kind' && b.type === 'kind') return a.ref === b.ref;
-  return false;
-}
-
 /**
  * The screen's own name, for the header.
  *
- * Derived from the SAME `activeTarget` the tab bar highlights, so the header
- * and the selected tab cannot disagree — there is one fact and two renderings
- * of it.
+ * ── IT MATTERS MORE NOW, NOT LESS (owner ruling 6) ────────────────────────
  *
- * A destination with NO tab is the interesting case: a refusal screen reached
- * by a shared link. `VIEW_PRESENTATION` is the registry the desktop rail names
- * its rows from, so `settings` reads "Settings" and `files` reads "File
- * browser" — the same word the viewer saw on the desktop they copied the link
- * off. Falling through to the bare ref (which is what the header did first, and
- * what the screenshot caught: a lowercase `settings` under the Space name) puts
- * an internal slug in the one place the screen states where you are.
+ * With the tab bar gone there is no highlighted tab saying where you are, so
+ * the header is the ONLY thing that names the screen — on every mobile screen
+ * EXCEPT the chat screen, which stays bare because a blank canvas with a
+ * composer needs no caption (PR #427 removed the eyebrow and title there for
+ * exactly that reason).
+ *
+ * THE `TABS` LOOKUP THAT USED TO LEAD THIS FUNCTION IS GONE, and nothing was
+ * lost with it: it returned "Home" for `dashboard`, "Tasks" for `task`,
+ * "Inbox" for `inbox`, and the two lookups below already answer identically —
+ * `VIEW_PRESENTATION.dashboard.label` IS "Home" and `getKind('task')
+ * .labelPlural` IS "Tasks". The tab list was a third copy of two registries,
+ * and deleting it makes the header read from the same tables the drawer and
+ * the desktop rail read from, which is ruling 2 applied to the header.
+ *
+ * `VIEW_PRESENTATION` is the registry the desktop rail names its rows from, so
+ * `settings` reads "Settings" and `files` reads "File browser" — the same word
+ * the viewer saw on the desktop they copied the link off. Falling through to
+ * the bare ref (which is what the header did first, and what the screenshot
+ * caught: a lowercase `settings` under the Space name) puts an internal slug in
+ * the one place the screen states where you are.
  *
  * The raw ref REMAINS on the refusal card itself, quoted, and that is correct:
  * the card explains which arrangement has no phone layout, and naming the thing
@@ -207,8 +213,6 @@ function sameTarget(a: MenuTarget | null, b: MenuTarget): boolean {
  */
 function titleOf(activeTarget: MenuTarget | null, nameOfEntity?: (target: { ref: string; kind: string }) => string | null): string {
   if (!activeTarget) return 'Not found';
-  const tab = TABS.find((t) => sameTarget(activeTarget, t.target));
-  if (tab) return tab.label;
 
   /*
    * DEF-034 — AN ENTITY SCREEN IS NAMED BY THE ENTITY, NOT BY ITS ID.
@@ -365,37 +369,56 @@ export function MobileShell(props: MobileShellProps) {
    * with the desktop, since one codec serves both shells — and it is
    * deliberately not smuggled in here.
    */
-  const [chatsOpen, setChatsOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [threadId, setThreadId] = useState<EntityId | null>(null);
   const onChatScreen = activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
+
+  /*
+   * ── UNSEEN HAD TO SURVIVE THE TAB BAR (owner ruling 5) ──────────────────
+   *
+   * Inbox left the always-visible row, so without this the drawer would be a
+   * strictly worse Inbox and the whole change would be a regression. The ☰
+   * carries the indicator; the drawer's kind rows carry their own numbers.
+   *
+   * THREE-VALUED, and that is the point: `null` means nothing could be counted
+   * — `useGateData` swallows a failed `spaces.counts` so the counters can never
+   * cost the boot — and a dot there would claim an all-clear nobody
+   * established. ABSENT IS NOT ZERO, and it is not "unread" either.
+   */
+  const unseen = anyUnseen(data.countsFor);
 
   /* The link affordance is in the header for the same reason it is in the
      desktop tab bar: the thing being shared is THE PAGE. On a phone it matters
      more, not less — a phone is where links are received and forwarded. */
   const header = (
     <div className="mobile-header" data-chrome={onChatScreen ? 'chat' : undefined}>
-      {/* ☰ — THE CHAT SCREEN'S ONLY LEFT-HAND CONTROL, and it replaces the
-          band of chrome that used to sit inside the screen. It opens the
-          conversation inventory as a sheet; see the state above for why the
-          column is hosted rather than hidden. There is no chevron here because
-          Home is a screen root: nothing is open to go up from. */}
-      {onChatScreen ? (
-        <button
-          type="button"
-          className="mobile-header__menu"
-          data-testid="mobile-chats-menu"
-          aria-haspopup="dialog"
-          aria-expanded={chatsOpen}
-          aria-label="Conversations"
-          onClick={() => setChatsOpen(true)}
-        >
-          <VectorIcon paths={MENU_ART} size={20} strokeWidth={1.6} />
-        </button>
-      ) : null}
+      {/* ☰ — ON EVERY SCREEN NOW (owner ruling 4), because it is the only
+          navigation this shell has left. It used to appear on the chat screen
+          alone and open the conversation inventory; the drawer's FIRST section
+          is that same inventory, so nothing was taken away — the control's
+          reach was widened and its contents grew by 26 destinations.
+
+          IT CARRIES THE UNREAD FACT. `unseen === true` draws the indicator;
+          `false` and `null` both draw nothing, and they are different states
+          for a reason the `unseen` block above states in full. */}
+      <button
+        type="button"
+        className="mobile-header__menu"
+        data-testid="mobile-drawer-menu"
+        aria-haspopup="dialog"
+        aria-expanded={drawerOpen}
+        aria-label={unseen === true ? 'Navigation, unread items' : 'Navigation'}
+        onClick={() => setDrawerOpen(true)}
+      >
+        <VectorIcon paths={MENU_ART} size={20} strokeWidth={1.6} />
+        {unseen === true ? <span className="mobile-header__dot" aria-hidden /> : null}
+      </button>
       {/* Rendered ONLY when something is open. A chevron at a screen root would
-          be dead chrome that either does nothing or leaves the app, and the tab
-          bar is already the navigation there. */}
+          be dead chrome that either does nothing or leaves the app; the ☰
+          beside it is the navigation there. The two coexist and mean different
+          things — ☰ goes to a destination, the chevron goes UP one screen —
+          which is exactly the distinction the tab bar could never draw. */}
       {showUp && !onChatScreen ? (
         <button
           type="button"
@@ -484,33 +507,12 @@ export function MobileShell(props: MobileShellProps) {
     </div>
   );
 
-  const tabBar = (
-    <ul className="mobile-tabs">
-      {TABS.map((tab) => (
-        <li key={tab.label}>
-          <button
-            type="button"
-            className="mobile-tabs__tab"
-            aria-current={sameTarget(activeTarget, tab.target) ? 'page' : undefined}
-            onClick={() => navigateTo(tab.target)}
-          >
-            {/* The mark is decorative HERE and only here: the word is drawn
-                right beside it, so a title on the icon would make every tab
-                announce its own name twice. */}
-            <span className="mobile-tabs__icon" aria-hidden="true">
-              <VectorIcon paths={tab.art} size={20} />
-            </span>
-            <span className="mobile-tabs__label">{tab.label}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-
   return (
+    /* NO `tabBar`. The region is still a frame slot and `MobileFrame` renders
+       it conditionally, so an unfilled one leaves no dead band — see the block
+       where `TABS` used to be for why it is unfilled. */
     <MobileFrame
       header={header}
-      tabBar={tabBar}
       notices={props.notices}
       sheet={<div className="msheet-host" ref={setSheetHost} />}
     >
@@ -525,23 +527,42 @@ export function MobileShell(props: MobileShellProps) {
             routeThreadId: threadId,
             onThreadsChange: setThreads,
           })}
-          {/* THE CONVERSATION INVENTORY. Rendered beside the screen rather than
-              inside it, exactly like the account sheet above: a sheet portals
-              through the surface context, and a sheet that unmounted with its
-              screen could not survive the screen changing under it. */}
-          {chatsOpen ? (
-            <MobileChatsSheet
+          {/* THE DRAWER. Rendered beside the screen rather than inside it,
+              exactly like the account sheet below: it portals through the
+              surface context, and a panel that unmounted with its screen could
+              not survive the screen changing under it — which for a NAVIGATION
+              panel is the whole job, since navigating is what changes the
+              screen.
+
+              PICKING A CONVERSATION ALSO NAVIGATES. The thread selection is
+              shell state (there is still no `?thread=` route, see above), so a
+              thread picked from the Docs screen has to send the viewer to the
+              chat screen or the pick would silently do nothing visible. */}
+          {drawerOpen ? (
+            <MobileDrawer
+              spaceLabel={props.spaceLabel ?? 'tm8'}
+              activeTarget={activeTarget}
+              navigateTo={navigateTo}
+              countsFor={data.countsFor}
               threads={threads}
-              selectedId={threadId}
-              onSelect={(id) => {
+              selectedThreadId={threadId}
+              onSelectThread={(id) => {
                 setThreadId(id);
-                setChatsOpen(false);
+                if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
+                setDrawerOpen(false);
               }}
-              onNew={() => {
+              onNewThread={() => {
                 setThreadId(null);
-                setChatsOpen(false);
+                if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
+                setDrawerOpen(false);
               }}
-              onDismiss={() => setChatsOpen(false)}
+              {...(props.viewerActor
+                ? {
+                    onOpenAccount: () => setAccountOpen(true),
+                    accountName: props.viewerActor.displayName,
+                  }
+                : {})}
+              onDismiss={() => setDrawerOpen(false)}
             />
           ) : null}
           {/*

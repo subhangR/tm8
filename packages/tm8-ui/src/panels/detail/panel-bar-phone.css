@@ -91,8 +91,8 @@
    I wrote both declarations in one commit and justified this one with a case
    the other already handled. Recorded rather than deleted, because it is a real
    fallback the moment anyone removes the child's floor — the same disposition
-   this codebase applies to `mobile.css:112`, whose parent floor is likewise
-   unreachable while `.mobile-tabs__tab` carries the same token.
+   this codebase applies to `mobile.css`'s `.mobile-frame__tabbar` floor, which
+   is likewise unreachable — now because nothing fills that region at all.
 
    YOU CANNOT TELL WHETHER A FLOOR BINDS BY READING THE FLOOR. It depends on
    what else sizes the box, and that is as invisible at fifteen lines as it is

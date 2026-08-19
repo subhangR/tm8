@@ -82,12 +82,27 @@ describe('§3.6 — the two structural facts that exist nowhere else in this cod
   });
 
   it('exposes the insets as TOKENS, so §7.3 composes against them instead of re-deriving them', () => {
-    // The drop notice has to sit ABOVE the tab bar and INSIDE the bottom inset.
-    // If those numbers are inlined rather than named, the notice re-derives
-    // them and the two drift the first time either changes.
+    // The drop notice has to sit ABOVE the bottom chrome and INSIDE the bottom
+    // inset. If those numbers are inlined rather than named, the notice
+    // re-derives them and the two drift the first time either changes.
+    //
+    // THE CHROME IT CLEARS CHANGED, AND THIS ASSERTION MOVED WITH IT rather
+    // than being deleted. The tab bar was removed (owner ruling 2026-08-19) and
+    // the floating create button took that corner, so the notice composes
+    // against `--mobile-fab-reserve` now. THE PROPERTY BEING PINNED IS
+    // UNCHANGED: whatever sits at the bottom of the frame is named ONCE as a
+    // token, and the notice offsets by that name rather than by a literal.
+    // Left pointing at the tab bar's floor this would have passed while drawing
+    // a 49px gap over nothing on every screen without a FAB, and a notice
+    // sitting ON the button on every screen with one — which is the exact drift
+    // §7.3 wrote these tokens to prevent.
     expect(css).toMatch(/--mobile-safe-bottom:/);
+    expect(css).toMatch(/--mobile-fab-reserve:/);
+    expect(css).toMatch(/bottom:\s*calc\(var\(--mobile-safe-bottom\)\s*\+\s*var\(--mobile-fab-reserve\)\)/);
+    // The tab bar's own floor stays DECLARED: the region is still a frame slot
+    // (only its filling went), and a slot with no floor is one that collapses
+    // the day something fills it again.
     expect(css).toMatch(/--mobile-tabbar-min:/);
-    expect(css).toMatch(/bottom:\s*calc\(var\(--mobile-safe-bottom\)\s*\+\s*var\(--mobile-tabbar-min\)\)/);
   });
 });
 

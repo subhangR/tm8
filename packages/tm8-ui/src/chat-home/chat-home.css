@@ -1661,59 +1661,9 @@ button.tch-entity-chip:hover {
 
 /* --- THE CONVERSATION SHEET (`MobileShell`'s ☰) --------------------------- */
 
-/* Rows are `--mobile-touch-min` tall by real padding, never a pseudo-element
-   hit area — CONTRACT.md §7, and the audit instrument measures the ELEMENT. */
-.mchats {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.mchats__new,
-.mchats__row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  min-block-size: var(--mobile-touch-min);
-  padding: var(--pn-space-2) var(--pn-space-3);
-  border: 0;
-  border-radius: var(--pn-r-sm);
-  background: transparent;
-  color: var(--pn-ink);
-  text-align: start;
-  font: inherit;
-  cursor: pointer;
-}
-
-.mchats__new {
-  justify-content: center;
-  color: var(--pn-brand);
-  font-weight: 600;
-}
-
-.mchats__row[aria-current='true'] { background: var(--pn-surface-2); }
-
-.mchats__title {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-weight: 600;
-}
-
-.mchats__preview {
-  overflow: hidden;
-  color: var(--pn-ink-3);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: var(--pn-fs-micro);
-}
-
-.mchats__empty {
-  padding: var(--pn-space-3);
-  color: var(--pn-ink-3);
-  font-size: var(--pn-fs-micro);
-}
+/* RETIRED 2026-08-19 with `MobileChatsSheet`. The ☰ now opens `MobileDrawer`,
+   whose FIRST section IS the conversation list — so the sheet was a second door
+   to the same rows and its `.mchats*` rules styled markup nothing emits. The
+   rows kept their properties in the move: real `min-block-size` padding, never
+   a pseudo-element hit area (CONTRACT.md §7 — the audit measures the ELEMENT).
+   See `mobile/mobile-drawer.css`. */

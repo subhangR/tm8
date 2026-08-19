@@ -981,6 +981,52 @@ export function EntityView(props: EntityViewProps) {
       </section>
       )}
 
+      {/*
+        ── THE FLOATING CREATE BUTTON (owner answers A–D, 2026-08-19) ────────
+        A. IN ADDITION TO THE HEADER'S ＋, not instead of it. `[◫ Kind ＋ ▾]` is
+           untouched. Two create affordances on a phone is the owner's explicit
+           choice: the header ＋ is where you look when you are ALREADY thinking
+           about the kind, and the FAB is where your thumb is when you have just
+           finished reading the list.
+
+        B. THE SAME VERB, NOT A SECOND CREATE PATH. `createFlow` is the very
+           `useNewTask` handle the header's ＋ performs, with the same
+           `onCreated` that opens the new entity with its title focused (D3).
+           Writing a second path here is how the two drift into making
+           differently-shaped entities.
+
+        C. ABSENT, NOT INERT, for a kind with no wired create. The gate is
+           `config.list.quickCreate` — REGISTRY DATA, and deliberately the same
+           expression `createSlot` is gated on six lines above, so the FAB and
+           the header ＋ can never disagree about whether this kind can be born.
+           Commits, worktrees and PRs are observed rather than authored, and a
+           refused FAB would be a permanent 56px control that exists to say no.
+           The header ＋ still refuses out loud with its reason; that sentence
+           is said once, where there is room for it.
+
+        D. ALWAYS VISIBLE. No hide-on-scroll: a control that disappears while
+           you read is a control you have to go looking for, and the list
+           reserves room for it so the last row is never trapped underneath
+           (see `.ev-fab` in `mobile-screens.css`).
+
+        ONE SURFACE ONLY. `oneSurface` is false on every desktop mount by
+        construction, so this whole branch is unreachable there — the seam's own
+        safety argument. And it is not drawn over an OPEN entity: at that point
+        the list is unmounted and the screen is the entity, where a create
+        button would make something the surface cannot show.
+      */}
+      {oneSurface && !selectedId && config.list.quickCreate ? (
+        <button
+          type="button"
+          className="ev-fab"
+          data-testid="entity-view-fab"
+          aria-label={`New ${config.label.toLowerCase()}`}
+          onClick={() => void createFlow.create()}
+        >
+          <span aria-hidden>＋</span>
+        </button>
+      ) : null}
+
       {/* The detail column's drag handle — the control the panel it sizes
           hangs on, exactly as in the workspace. `side="right"` because the
           column it controls sits to the handle's right.

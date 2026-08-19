@@ -32,7 +32,22 @@
 
   /* Chrome floors. Touch targets, not desktop ones. */
   --mobile-header-min: 44px;
+  /* The tab bar's floor. `MobileShell` no longer FILLS that region (owner
+     ruling 2026-08-19 — the drawer replaced the bar), but the region is still a
+     frame slot and this is still what would size it. */
   --mobile-tabbar-min: 49px;
+
+  /*
+   * HOW MUCH ROOM THE BOTTOM-RIGHT FLOATING CREATE BUTTON NEEDS, and it is a
+   * FRAME token for the same reason the tab bar's was: two regions compose
+   * against it and neither owns it. The entity list reserves this much padding
+   * so its last row is never trapped under the control (`mobile-screens.css`),
+   * and the notice host below sits above the same number.
+   *
+   * ~72px: a 56px control plus a `--pn-space-3` gap. It REPLACES the tab bar's
+   * ~49px rather than adding to it, so a phone list is net taller than it was.
+   */
+  --mobile-fab-reserve: 72px;
 
   /*
    * THE TOUCH FLOOR, AS ONE NAMED NUMBER (shell contract, DEF-013…020).
@@ -134,15 +149,24 @@
 }
 
 /*
- * Notices sit ABOVE the tab bar and inside the bottom inset (§7.3). A screen
- * cannot place these for itself because a screen does not know where the tab
- * bar is — which is exactly why this is a frame region.
+ * Notices sit ABOVE the bottom chrome and inside the bottom inset (§7.3). A
+ * screen cannot place these for itself because a screen does not know what is
+ * down there — which is exactly why this is a frame region.
+ *
+ * THE THING THEY CLEAR CHANGED, so the number they compose against changed with
+ * it. It used to be the tab bar's floor; the bar is gone (owner ruling
+ * 2026-08-19) and the floating create button now occupies that corner, so the
+ * notice clears the FAB's reserve instead. Left as `--mobile-tabbar-min` this
+ * would have been a 49px gap over nothing on the screens with no FAB and a
+ * notice sitting ON the FAB on the screens with one — which is the failure this
+ * whole token arrangement exists to prevent: §7.3's own docblock says a notice
+ * must compose against the same numbers rather than re-deriving them.
  */
 .mobile-frame__notices {
   position: absolute;
   left: var(--mobile-safe-left);
   right: var(--mobile-safe-right);
-  bottom: calc(var(--mobile-safe-bottom) + var(--mobile-tabbar-min));
+  bottom: calc(var(--mobile-safe-bottom) + var(--mobile-fab-reserve));
   z-index: 20;
   pointer-events: none;
 }
