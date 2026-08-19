@@ -292,6 +292,16 @@ export function landingOfRoute(view: NavView): Landing | null {
          seeded onto that screen's stack. With no `origin` the caller applies the
          §2.2 canonical-reload rule against the registry strategy — it needs the
          entity's kind, which is a read, so it cannot be resolved here. */
+
+      /* A VIEW COMPANION RESOLVES WITHOUT A REGISTRY LOOKUP, because the ref IS
+         the screen. `messages`, `inbox` and `dashboard` are `MenuViewRef`s and
+         have no kind slug, which is exactly why the collection form could not
+         express them and why both halves of the route<->stack loop skipped a
+         view screen carrying an open entity. Checked BEFORE `origin`, because
+         the codec guarantees only one of the two is ever present. */
+      if (view.originView) {
+        return { target: { type: 'view', ref: view.originView }, openEntity: view.entityId };
+      }
       if (!view.origin) return null;
       const kind = kindOfSlug(view.origin.slug);
       if (!kind) return null;
@@ -321,6 +331,14 @@ export function landingOfRoute(view: NavView): Landing | null {
 export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = null): NavView | null {
   switch (target.type) {
     case 'view': {
+      /* AN OPEN ENTITY PROMOTES A VIEW SCREEN TO THE `e/{id}` FORM, exactly as
+         it does for a kind screen below — which is what makes an entity opened
+         on a view screen shareable at all. `channels` is excluded because it is
+         an ALIAS that normalizes to the channel collection; promoting it would
+         emit an address whose companion contradicts the screen it resolves to. */
+      if (openEntity && target.ref !== 'channels') {
+        return { view: 'entity', entityId: openEntity, origin: null, originView: target.ref };
+      }
       if (target.ref === 'channels') {
         /* Normalized to the collection it actually is, so the URL a viewer sees
            and the URL they share are the same string. */

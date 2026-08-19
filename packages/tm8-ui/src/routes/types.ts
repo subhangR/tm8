@@ -5,7 +5,7 @@
  * `collab-v2/shell/router.ts:buildHash` is CONDEMNED (channel-route asymmetry,
  * SPEC-FINAL C-7) and is never imported, adapted, or consulted for shape.
  */
-import type { EntityId, SpaceId } from '@tm8/contract';
+import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
 import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain';
 
 /** The four outer panel tabs (D3: always four, fixed order). */
@@ -108,7 +108,28 @@ export type NavView =
   | { view: 'inbox' }
   | { view: 'workspace' }
   | { view: 'kind'; slug: string; mode: CollectionMode | null; q: QValue | null }
-  | { view: 'entity'; entityId: EntityId; origin: Origin | null }
+  /*
+   * `originView` — THE COMPANION THAT IS A VIEW RATHER THAN A COLLECTION.
+   *
+   * `origin` names a KIND's collection and is registry-validated against a
+   * slug, which is right for every screen the rail reaches by kind. It has no
+   * way to name a VIEW: `messages`, `inbox` and `dashboard` are `MenuViewRef`s,
+   * not kinds, so a view screen could not carry an open entity in its address
+   * and both halves of the route<->stack loop skipped it.
+   *
+   * ADDITIVE RATHER THAN A WIDENED `Origin`, deliberately. Making `Origin` a
+   * union would be tidier and would touch every consumer that reads
+   * `origin.slug` — `companionOf`, `landingOfRoute`, `routeViewOf`, the codec —
+   * and this lands on the router, which is the highest-risk file in this
+   * program and cannot be captured until the instrument queue clears. A second
+   * optional field breaks nothing that exists today and is deletable if the
+   * union is later preferred.
+   *
+   * MUTUALLY EXCLUSIVE WITH `origin` BY CONSTRUCTION, not by assertion: the
+   * codec reads ONE `origin=` parameter and decides which shape it is from the
+   * `v-` prefix, so an address cannot carry both.
+   */
+  | { view: 'entity'; entityId: EntityId; origin: Origin | null; originView?: MenuViewRef | null }
   | { view: 'channels' }
   | { view: 'channel'; channelId: EntityId; msg: EntityId | null }
   | { view: 'settings'; section: 'projects' | 'menu' | null }

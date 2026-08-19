@@ -30,6 +30,7 @@ import {
 import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
 import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
+import type { ScreenKey } from '../stores/screenStackStore';
 import { attachRouter, navStore, selectAutoOpenSession, useNavStore } from '../stores/navStore';
 import { UNADDRESSED_HASH, createBrowserTarget, type RouterTarget } from '../routes';
 import { forgetSpaceScopedPanels } from '../auth/session-reset';
@@ -232,6 +233,34 @@ export interface GateAppProps {
  * layout effect on the first commit.
  */
 type BootRoute = 'pending' | 'addressable' | 'none';
+
+/**
+ * A TARGET'S SCREEN KEY — one derivation, exported, for every site that needs it.
+ *
+ * `kind` screens have hosted a stack since the router mounted. VIEW screens could
+ * not, and that was a WIRING GAP rather than a decision: `screenKeyOf.view`
+ * already existed and `CraftScreen` already used it — for surviving unmount, in
+ * memory, with the open entity never reaching the URL. The key existed, the
+ * screen existed, and only the route<->stack loop skipped it.
+ *
+ * A PURE MODULE FUNCTION RATHER THAN A `useCallback` INSIDE THE COMPONENT, and
+ * that is the whole reason it is here: it has no dependencies, so a hook bought
+ * nothing, and a second module needing the same derivation would otherwise have
+ * to write its own. Two spellings of "which key does this target use" is the
+ * failure this file family keeps finding in other guises — one fact, two
+ * implementations, drifting silently. Lane B flagged that its own
+ * `openEntityOnPhone` will be the fourth site; this is the answer to that.
+ *
+ * `entity` targets deliberately get NO key. An entity target IS the leaf; what it
+ * would stack has not been ruled, and inventing an answer in a shared helper is
+ * how a design decision gets made by accident.
+ */
+export function screenKeyOfTarget(target: MenuTarget | null): ScreenKey | null {
+  if (!target) return null;
+  if (target.type === 'kind') return screenKeyOf.kind(target.ref);
+  if (target.type === 'view') return screenKeyOf.view(target.ref);
+  return null;
+}
 
 export function GateApp(props: GateAppProps = {}) {
   // null when this GateApp is not inside an <AuthGate> — the shell tests, and
@@ -689,8 +718,14 @@ export function GateApp(props: GateAppProps = {}) {
     /* Only a kind screen can host one today: `landingOfRoute` produces an
        `openEntity` for the `entity` route alone, and that route's target is
        always a kind. Narrowed rather than assumed. */
-    if (!landing.target || landing.target.type !== 'kind') return;
-    screenStackStore.getState().open(screenKeyOf.kind(landing.target.ref), landing.openEntity);
+    /* Both halves of this loop now cover VIEW targets as well as kind ones.
+       Previously narrowed to `kind` with the note that "only a kind screen can
+       host one today" — which was true of what `landingOfRoute` could produce,
+       not of what a screen can host. A view companion changes the first without
+       changing the second. */
+    const seedKey = screenKeyOfTarget(landing.target);
+    if (!seedKey) return;
+    screenStackStore.getState().open(seedKey, landing.openEntity);
   }, [navView, navSpaceId, landing]);
 
   /**
@@ -715,7 +750,10 @@ export function GateApp(props: GateAppProps = {}) {
    * never re-asserts one, which is what keeps R22 open.
    */
   const openOnScreen = useScreenStackStore((s) =>
-    activeTarget?.type === 'kind' ? topOf(s, screenKeyOf.kind(activeTarget.ref)) : null,
+    (() => {
+      const key = screenKeyOfTarget(activeTarget);
+      return key ? topOf(s, key) : null;
+    })(),
   );
   /**
    * R15 — A COLD ENTRY'S FIRST STEP UP IS A REPLACE, NEVER A PUSH.
@@ -735,7 +773,8 @@ export function GateApp(props: GateAppProps = {}) {
    * only moment the fact is readable.
    */
   useEffect(() => {
-    if (!activeTarget || activeTarget.type !== 'kind') return;
+    const openKey = screenKeyOfTarget(activeTarget);
+    if (!activeTarget || !openKey) return;
     /* READ THE STORE, NOT THE RENDERED VALUE — and this is a correctness fix,
        not a style choice. The seed effect above runs in the same pass as this
        one and opens the entity the address named; `openOnScreen` is this
@@ -746,7 +785,7 @@ export function GateApp(props: GateAppProps = {}) {
 
        `openOnScreen` stays in the deps because it is what WAKES this effect
        when the stack changes; it is never what the effect acts on. */
-    const open = topOf(screenStackStore.getState(), screenKeyOf.kind(activeTarget.ref));
+    const open = topOf(screenStackStore.getState(), openKey);
     const next = routeViewOf(activeTarget, open);
     if (!next || sameDestination(navView, next)) return;
     const steppingUp = navView.view === 'entity' && next.view !== 'entity';

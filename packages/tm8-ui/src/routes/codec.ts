@@ -17,8 +17,8 @@
  *     is never rewritten, because a Phase-2 deep link authored today must not
  *     be made lossy by a Phase-1 client.
  */
-import type { EntityId, SpaceId } from '@tm8/contract';
-import { ALL_MODES, kindBySlug } from '../domain';
+import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
+import { ALL_MODES, VIEW_REF_ROUTE, kindBySlug } from '../domain';
 import type { CollectionMode } from '../domain';
 import { decodeQ, encodeQ } from './q';
 import type {
@@ -168,6 +168,9 @@ function parseOrigin(raw: string | null, onDrop: () => void): Origin | null {
   const modeRaw = dot === -1 ? null : raw.slice(dot + 1);
   // Registry-validated: a slug no row (and no `c-` custom kind) answers to is
   // not an origin we can honestly render a companion for.
+  /* A `v-` value belongs to `parseOriginView`; returning null here without
+     dropping keeps the two parsers from reporting the same parameter twice. */
+  if (raw.startsWith('v-')) return null;
   const known = kindBySlug(slug) !== null || (slug.startsWith('c-') && slug.length > 2);
   if (!known || slug.length === 0) {
     onDrop();
@@ -178,6 +181,35 @@ function parseOrigin(raw: string | null, onDrop: () => void): Origin | null {
     return null;
   }
   return { slug, mode: (modeRaw as CollectionMode | null) ?? null };
+}
+
+/**
+ * `origin=v-{ref}` — the VIEW companion, told apart from a collection origin by
+ * a prefix that cannot collide.
+ *
+ * WHY A PREFIX AND NOT A SECOND PARAMETER. One `origin=` carries one companion,
+ * so an address can never name two, and the mutual exclusion is structural
+ * rather than something a reader has to check. The `c-` custom-kind prefix is
+ * the existing precedent for discriminating inside this value.
+ *
+ * `v-` CANNOT COLLIDE: a collection origin is a registry slug or a `c-` custom
+ * kind, and no kind's slug begins `v-`. `kindBySlug` is consulted first for the
+ * unprefixed form, so the two parsers never see each other's input.
+ *
+ * REGISTRY-VALIDATED LIKE ITS SIBLING. `VIEW_REF_ROUTE` is `Record<MenuViewRef,
+ * …>`, so a ref no view answers to is dropped rather than carried — the same
+ * honesty `parseOrigin` applies to an unknown slug, for the same reason: a
+ * companion we cannot render is worse than no companion.
+ */
+function parseOriginView(raw: string | null, onDrop: () => void): MenuViewRef | null {
+  if (raw === null) return null;
+  if (!raw.startsWith('v-') || raw.length <= 2) return null;
+  const ref = dec(raw.slice(2)) ?? '';
+  if (!Object.prototype.hasOwnProperty.call(VIEW_REF_ROUTE, ref)) {
+    onDrop();
+    return null;
+  }
+  return ref as MenuViewRef;
 }
 
 function parseMode(raw: string | null, onDrop: () => void): CollectionMode | null {
@@ -371,7 +403,15 @@ function parseTarget(
     case 'e': {
       const entityId = rest[1];
       if (!entityId) return { view: 'home' };
-      return { view: 'entity', entityId, origin: parseOrigin(query.get('origin'), drop('origin')) };
+      {
+        const rawOrigin = query.get('origin');
+        const originView = parseOriginView(rawOrigin, drop('origin'));
+        /* The view form wins when present, and the collection parser is not
+           consulted for it — see `parseOriginView`. */
+        return originView
+          ? { view: 'entity', entityId, origin: null, originView }
+          : { view: 'entity', entityId, origin: parseOrigin(rawOrigin, drop('origin')) };
+      }
     }
     default:
       // An unknown view segment is not a partial route: fall back to the
@@ -470,7 +510,11 @@ export function build(route: Route): BuildOutcome {
   } else if (t.view === 'kind') {
     if (t.mode) viewParams.push(['mode', t.mode]);
   } else if (t.view === 'entity') {
-    if (t.origin) {
+    if (t.originView) {
+      /* Same parameter, prefixed form — so the address carries exactly one
+         companion and round-trips through `parseOriginView`. */
+      viewParams.push(['origin', `v-${enc(t.originView)}`]);
+    } else if (t.origin) {
       const value = t.origin.mode ? `${enc(t.origin.slug)}.${t.origin.mode}` : enc(t.origin.slug);
       viewParams.push(['origin', value]);
     }
