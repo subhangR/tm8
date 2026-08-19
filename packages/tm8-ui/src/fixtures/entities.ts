@@ -122,8 +122,13 @@ const FIXTURE_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
   blocked: 'in_progress',
   done: 'done',
   cancelled: 'cancelled',
-  // work_session
-  spawning: 'in_progress',
+  // work_session. `spawning -> to_do` mirrors migration 155's
+  // `internal.session_status_category`, and it is not a taste call there
+  // either: `execution_resume` returns an exited session to `spawning`, which
+  // under `in_progress` would be the `done -> in_progress` move 149 refuses
+  // outright. This entry said `in_progress` after 155 landed — the fixture
+  // lying about the server in exactly the way this file's header forbids.
+  spawning: 'to_do',
   running: 'in_progress',
   idle: 'in_progress',
   exited: 'done',

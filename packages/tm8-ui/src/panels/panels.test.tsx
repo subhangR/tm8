@@ -687,24 +687,32 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(getByRole('button', { name: 'Expand details' }));
     expect(tile.textContent).toContain(taskGuideLines.title);
     /**
-     * TERMINATE IS REFUSED HERE, AND THAT IS THE FIX.
+     * TERMINATE IS OFFERED HERE, AND *THAT* IS THE FIX — 2026-08-19.
      *
-     * This row is `status: 'exited'` with `livenessOf → 'not-running'`. It used
-     * to carry a hand-rolled "Close session" button that this test clicked and
-     * that fired `onTerminate` — but that button was wired to the SAME executor
-     * the registry's `terminate` uses (`handleSessionTerminate = primaries.terminate`),
-     * minus its liveness gate. So it dispatched `execution.terminate` at a
-     * session with no process left to kill: a live-looking control whose command
-     * could only be refused downstream.
+     * Read what this row actually is: `state.status = 'exited'` and
+     * `livenessOf → 'not-running'`, but its `category` is still `in_progress`,
+     * because it is `sessionLive` with the status field overwritten. That is
+     * not an artificial fixture — it is exactly the GHOST the user reported:
+     * a row whose process is gone while the envelope still files it under
+     * In Progress.
      *
-     * The session tile now renders the registry cluster like the other two
-     * anatomies, so `terminate` arrives with its gate attached and says why.
-     * Same verb, same executor, one spelling of it.
+     * This block used to assert `hon-disabled`, on the reasoning that there is
+     * no process left to kill so the control should say so. The reasoning was
+     * wrong about the node. `SpawnService.terminate` states the opposite in
+     * its own comment — "'not_found' is not an error: terminating an
+     * already-dead session is the user cancelling something that just
+     * finished" — and writes `exited` regardless, which since 155 files the
+     * row under Done. The client was refusing an operation the server performs,
+     * and the cost was rows nobody could retire.
+     *
+     * So the verb is live and the click reaches the executor. What refuses
+     * Terminate now is the CATEGORY, not the verdict — see 'a session under
+     * DONE refuses Terminate' below.
      */
     const terminate = getByRole('button', { name: 'Terminate' });
-    expect(terminate.className).toContain('hon-disabled');
+    expect(terminate.className).not.toContain('hon-disabled');
     fireEvent.click(terminate);
-    expect(onTerminate).not.toHaveBeenCalled();
+    expect(onTerminate).toHaveBeenCalledWith(exited.id);
     expect(getByRole('button', { name: 'Copy session ID' })).toBeTruthy();
   });
 
@@ -751,6 +759,45 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         livenessOf={(id) => (id === sessionLive.id ? 'live' : 'stale')}
       />,
     );
+    expect(getByTestId('list-live-count').textContent).toContain('1');
+  });
+
+  it('and it counts the OPEN TAB, not the whole kind', () => {
+    /**
+     * USER REPORT 2026-08-19: "live session count is shown in both in progress
+     * and done. does it make sense".
+     *
+     * It did not. `liveCountFor` asked `rowsFor(spec.filter)` and never applied
+     * the tab, so one unchanging number sat beside a tab row whose every other
+     * number moved — reading, under Done, as a claim that Done holds live
+     * sessions.
+     *
+     * That was merely confusing while nothing live could BE under Done. The
+     * tick makes it wrong: a session marked done keeps running, so "live, under
+     * Done" is a real population and the badge has to be able to state its
+     * size. Both rows below are live; they sit under different tabs.
+     */
+    const inProgress = { ...sessionLive, id: 'sess-wip', category: 'in_progress' as const };
+    const filed = { ...sessionLive, id: 'sess-filed', category: 'done' as const };
+    const { getByTestId, getByRole } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={(filter) => {
+          const want = (filter as { category?: string[] }).category;
+          const rows = [inProgress, filed];
+          return want ? rows.filter((r) => want.includes(r.category)) : rows;
+        }}
+        ctx={ctx}
+        liveIds={[inProgress.id, filed.id]}
+        livenessOf={() => 'live'}
+      />,
+    );
+
+    // Both rows are live, so the OLD unnarrowed count said 2 on every tab.
+    fireEvent.click(getByRole('tab', { name: /In Progress/ }));
+    expect(getByTestId('list-live-count').textContent).toContain('1');
+
+    fireEvent.click(getByRole('tab', { name: /Done/ }));
     expect(getByTestId('list-live-count').textContent).toContain('1');
   });
 
@@ -1340,11 +1387,22 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(fired).toEqual(['terminate']);
   });
 
-  it('an EXITED session still refuses Terminate, with the liveness reason', () => {
-    // Wiring the handler must not defeat the availability gate: there is no
-    // process to signal, and the honest control says so rather than sending a
-    // command the node would refuse.
-    const detail = fixtureDetails[sessionStale.id]!;
+  it('a session under DONE refuses Terminate — it has already ended', () => {
+    /**
+     * WHAT CHANGED, 2026-08-19. This used to assert that an EXITED session
+     * refuses Terminate "with the liveness reason", on the reasoning that
+     * there is no process to signal. That reasoning was wrong about the node:
+     * `SpawnService.terminate` treats a missing PTY as success and writes
+     * `exited` anyway, and the user's report was that it left ghost rows —
+     * stale, unknown, stuck in To Do — with a dead button and no way out.
+     *
+     * So the gate moved from LIVENESS to CATEGORY. The refusal that survives
+     * is the true one: a row already under Done cannot be ended again. The
+     * `liveness="exited"` here is now incidental — what refuses this control
+     * is the category the detail carries.
+     */
+    const source = fixtureDetails[sessionStale.id]!;
+    const detail = { ...source, category: 'done' as const };
     const { getByTestId } = render(
       <EntityDetailPanel
         detail={detail}
@@ -1358,6 +1416,29 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const bar = getByTestId('panel-action-bar');
     expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBeGreaterThan(0);
     expect(bar.textContent).toContain('Terminate');
+  });
+
+  it('but a GHOST session offers it — that is the row the ruling is about', () => {
+    /* USER RULING 2026-08-19: "if session is alive, or in progress or to do the
+       terminate button should always be available … this removes the cases
+       where some sessions are terminated, but have no terminate button
+       enabled". A node restart leaves rows at `running` with no PTY: not live,
+       not finished, and under the old liveness gate un-retirable. */
+    const source = fixtureDetails[sessionStale.id]!;
+    const detail = { ...source, category: 'in_progress' as const };
+    const { getByTestId } = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        liveness="unknown"
+        onAction={() => {}}
+        wiredActions={['terminate']}
+      />,
+    );
+    const bar = getByTestId('panel-action-bar');
+    expect(bar.textContent).toContain('Terminate');
+    expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBe(0);
   });
 
   it('DEFECT: Run on a task panel expands the SAME quick config the list rows open', () => {

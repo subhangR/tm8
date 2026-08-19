@@ -599,7 +599,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
               ? `${tabCounts.reduce((n, c) => n + c.n, 0)}${anyTabTruncated ? '+' : ''}`
               : undefined
           }
-          liveCount={liveCountFor(props, config)}
+          liveCount={liveCountFor(props, config, activeTab)}
           onKindChange={props.onKindChange}
           mode={mode}
           onMode={setMode}
@@ -1004,11 +1004,31 @@ function LensNote({
  * The '● N live' count is rows ∩ the SEAM LIVE SET. Never a count of rows
  * whose record says "running" — that number would include every stale session
  * and would be exactly the overstatement the liveness read exists to fix.
+ *
+ * IT COUNTS THE OPEN TAB, not the kind (user report 2026-08-19: "live session
+ * count is shown in both in progress and done, does it make sense"). It was
+ * `rowsFor(spec.filter)` with the tab never applied, so one unchanging number
+ * sat beside a tab row whose every other number moved — reading, under Done,
+ * as a claim that Done holds live sessions.
+ *
+ * That was merely confusing while nothing live could BE under Done. It stops
+ * being merely confusing with the tick: a session marked done keeps running,
+ * so "live, under Done" is now a real and useful population, and a badge that
+ * cannot tell you its size is answering the wrong question.
+ *
+ * `narrow` returns null for a contradiction — a tab whose filter cannot
+ * intersect the spec's. That is zero rows and therefore zero live, which is
+ * what `NO_ROWS` produces without asking the seam.
  */
-function liveCountFor(props: EntityListPanelProps, config: KindConfig): string | null {
+function liveCountFor(
+  props: EntityListPanelProps,
+  config: KindConfig,
+  tab: StatusCategoryTab | null,
+): string | null {
   const spec = config.list.liveCount;
   if (!spec || !props.liveIds) return null;
-  const rows = props.rowsFor(spec.filter);
+  const merged = narrow(spec.filter, tab?.filter);
+  const rows = merged === null ? NO_ROWS : props.rowsFor(merged);
   const live = new Set(props.liveIds);
   return spec.label(rows.filter((r) => live.has(r.id)).length);
 }

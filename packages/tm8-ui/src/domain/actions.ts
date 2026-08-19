@@ -49,6 +49,7 @@ export const REASONS = {
   cannotReact: 'Reactions are not available on this entity.',
   cannotGrantPoints: 'You do not have permission to grant points here.',
   notLive: 'This session is not live — there is nothing running to act on.',
+  alreadyEnded: 'This session has already ended — it is under Done.',
   livenessUnknown: 'Liveness is unverified on this node right now — the session cannot be acted on until it is confirmed.',
   // §10.7 deferred seam amendments (dual re-consensus pending)
   handoffSendDeferred:
@@ -97,6 +98,36 @@ function capabilityGate(
   if (!ctx.entityId) return disabled(REASONS.noEntity);
   if (ctx.capabilities == null) return disabled(REASONS.unknownCapabilities);
   return ctx.capabilities[flag] ? null : disabled(reason);
+}
+
+/**
+ * A verb that retires a row: permitted until the row has already reached its
+ * end. USER RULING 2026-08-19 — "if session is alive, or in progress or to do
+ * the terminate button should always be available, hitting that should
+ * terminate it and move it to done. this removes the cases where some sessions
+ * are terminated, but have no terminate button enabled".
+ *
+ * THE OLD GATE WAS THE WRONG QUESTION. `terminate` was `livenessGate`d, which
+ * permits it only on a `live` seam verdict — so a session that is `stale` or
+ * `unknown` drew a dead Terminate button. Those are precisely the rows that
+ * need retiring: a ghost left `running` by a node restart is not live, is not
+ * finished, and sat in To Do or In Progress with no way to move it.
+ *
+ * The server was never the obstacle. `SpawnService.terminate` already treats a
+ * missing PTY as success — "'not_found' is not an error: terminating an
+ * already-dead session is the user cancelling something that just finished" —
+ * and writes `status: 'exited'` regardless, which since migration 155 files the
+ * row under Done. The client was refusing an operation the node performs.
+ *
+ * `done` is the one refusal left, and it is a statement rather than a
+ * capability guess: a row that already ended cannot be ended again. Absent
+ * category ⇒ PERMITTED, not refused — the same posture `capabilityGate` takes
+ * for a missing flag inverted, because here the failure mode of guessing wrong
+ * is a harmless second terminate rather than a stuck row.
+ */
+function endableGate(ctx: ActionContext): ActionAvailability | null {
+  if (!ctx.entityId) return disabled(REASONS.noEntity);
+  return ctx.category === 'done' ? disabled(REASONS.alreadyEnded) : null;
 }
 
 /** A verdict-gated session verb: only a `live` seam verdict permits it. */
@@ -343,7 +374,11 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
     'terminate',
     'Terminate',
     '⏻',
-    (ctx) => opGate(ctx, 'execution.terminate') ?? livenessGate(ctx) ?? AVAILABLE,
+    /* `endableGate`, NOT `livenessGate` — see that function for the ruling and
+       for why the node was never the obstacle. Terminate is how a row REACHES
+       Done, so refusing it on everything that is not currently answering was
+       refusing the one verb that fixes a stuck row. */
+    (ctx) => opGate(ctx, 'execution.terminate') ?? endableGate(ctx) ?? AVAILABLE,
   ),
 
   'prompt-session': define(

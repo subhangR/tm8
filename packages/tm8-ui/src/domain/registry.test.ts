@@ -225,19 +225,26 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // shape here is asymmetric with the task's on purpose — `status: true`
     // would mount a picker over a value no client may write.
     expect(session.inlineEdit).toEqual({ title: true });
-    // Terminate alone since 2026-08-19 — see `5c` below for the three separate
-    // things that refused the tick on a session row.
-    expect(session.rowActions).toEqual(['terminate']);
+    // The tick and Terminate, since 156 gave the tick a door (see `5c` below).
+    // Note this sits directly under `inlineEdit` refusing `status: true` and
+    // does NOT contradict it: the tick writes the ENVELOPE's category, never
+    // `work_sessions.status`, which remains the PTY's to report.
+    expect(session.rowActions).toEqual(['complete', 'terminate']);
   });
 
   it('keeps Terminate as the session verb, on the row and in the compact toolbar', () => {
     // USER RULING 2026-07-29: terminal panels use the Task panel's pressure
     // budget — one primary beside tabs and window controls. Terminate is that
-    // primary, and since the tick left `rowActions` it is the session's only
-    // verb in both places, which is the honest shape: a session's status is
-    // observed, and Terminate is the one thing a user can DO to a run.
+    // primary, and it stays the ONLY panel primary even now that the tick is
+    // back on the row: the panel's budget is one verb, and between "stop this
+    // process" and "file this away" the destructive one is the one that must
+    // not be buried.
+    //
+    // The ROW has room for both, and needs both — the tick is how you clear a
+    // running session off In Progress without killing it, which is exactly the
+    // thing you want to do from a list rather than from inside the session.
     const session = getKind('work_session');
-    expect(session.list.rowActions).toEqual(['terminate']);
+    expect(session.list.rowActions).toEqual(['complete', 'terminate']);
     expect(session.panel.primaries).toEqual(['terminate']);
   });
 
@@ -343,18 +350,20 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     ]);
   });
 
-  it('5c. a session declares no verb the node refuses — the tick is gone', () => {
-    // `complete` was declared here and was dead three times over: the server
-    // computes `canComplete` off `tasks.work_status` (NULL for a session), the
-    // door is `complete_task` (`where kind = 'task'`), and a session's status is
-    // OBSERVED so there is nothing for the verb to write. It rendered
-    // permanently disabled-with-reason on every session row.
+  it('5c. a session declares the two verbs the node now answers — the tick is BACK', () => {
+    // `complete` was removed from here because it was dead three times over:
+    // the server computed `canComplete` off `tasks.work_status` (NULL for a
+    // session), the door was `complete_task` (`where kind = 'task'`), and there
+    // was nothing for it to write. All three were true, and none of them said
+    // the verb is meaningless for a session — they said nobody had built it.
     //
-    // Terminate is the verb that produces a session's `done` (`exited`), and as
-    // of migration 155 that actually moves the row's category — so the tick's
-    // apparent job is done by the lifecycle rather than by a refused button.
+    // Migration 156 builds it (user ruling 2026-08-19). The tick now files a
+    // session under Done WITHOUT stopping it, which is a thing terminate
+    // cannot do and a thing the lifecycle cannot do for you. The two verbs sit
+    // side by side because they answer different questions: terminate ends the
+    // PROCESS, complete ends the row's claim on your attention.
     const rowActions = getKind('work_session').list.rowActions ?? [];
-    expect(rowActions).not.toContain('complete');
+    expect(rowActions).toContain('complete');
     expect(rowActions).toContain('terminate');
     // `run` stays out for its own reason: `derive_task_for_entity` raises for a
     // work_session, which is what `NOT_LAUNCHABLE` records.
@@ -1123,17 +1132,59 @@ describe('the ActionRef registry (§2.5)', () => {
     });
   });
 
-  it('refuses session verbs on any verdict but live, and says which', () => {
+  it('refuses PROMPT on any verdict but live, and says which', () => {
+    // Prompt genuinely needs a process to talk to, so it keeps `livenessGate`.
     const base = { spaceId: 's', entityId: 'sess-1' } as const;
-    expect(resolveAction('terminate').availability({ ...base, liveness: 'live' })).toEqual({
+    expect(resolveAction('prompt-session').availability({ ...base, liveness: 'live' })).toEqual({
       kind: 'available',
     });
     for (const verdict of ['stale', 'not-running', 'unknown'] as const) {
-      const result = resolveAction('terminate').availability({ ...base, liveness: verdict });
+      const result = resolveAction('prompt-session').availability({ ...base, liveness: verdict });
       expect(result.kind).toBe('disabled');
     }
     // No verdict at all is NOT permission — unknown is never treated as live.
-    expect(resolveAction('terminate').availability(base).kind).toBe('disabled');
+    expect(resolveAction('prompt-session').availability(base).kind).toBe('disabled');
+  });
+
+  it('but TERMINATE is offered on every verdict — it is how a row reaches Done', () => {
+    /**
+     * USER RULING 2026-08-19: "if session is alive, or in progress or to do the
+     * terminate button should always be available … this removes the cases
+     * where some sessions are terminated, but have no terminate button
+     * enabled".
+     *
+     * Terminate was `livenessGate`d, which refused it on every `stale` and
+     * `unknown` verdict — precisely the rows that need retiring. A ghost left
+     * `running` by a node restart is not live, is not finished, and had no way
+     * out of In Progress.
+     *
+     * The node was never the obstacle: `SpawnService.terminate` treats a
+     * missing PTY as success and writes `exited` regardless, which since 155
+     * files the row under Done. The client was refusing an operation the
+     * server performs.
+     */
+    const base = { spaceId: 's', entityId: 'sess-1' } as const;
+    for (const verdict of ['live', 'stale', 'not-running', 'unknown'] as const) {
+      expect(resolveAction('terminate').availability({ ...base, liveness: verdict })).toEqual({
+        kind: 'available',
+      });
+    }
+    // No verdict at all is now PERMISSION, inverting the old posture on
+    // purpose: the cost of guessing wrong here is a harmless second terminate,
+    // where the cost of the old guess was a row nobody could retire.
+    expect(resolveAction('terminate').availability(base)).toEqual({ kind: 'available' });
+  });
+
+  it('and refuses it on a row that has already ended', () => {
+    // The one refusal left, and it is a statement rather than a capability
+    // guess: a row under Done cannot be ended again.
+    const result = resolveAction('terminate').availability({
+      spaceId: 's',
+      entityId: 'sess-1',
+      liveness: 'not-running',
+      category: 'done',
+    });
+    expect(result.kind).toBe('disabled');
   });
 
   it('never runs a disabled action', async () => {

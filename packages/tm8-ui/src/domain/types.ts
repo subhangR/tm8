@@ -403,6 +403,18 @@ export interface ActionContext {
   /** Seam verdict for work_session targets. Never computed here. */
   liveness?: SessionLiveness;
   /**
+   * The target's CATEGORY — which of the four tabs it is under. Server truth,
+   * arriving on the row (`EntitySummary.category`); never derived here.
+   *
+   * Distinct from `liveness`, and the distinction is the point. Liveness is
+   * "is a process answering right now"; category is "has this reached its
+   * end". A stale session is not live and is not finished, and `terminate`
+   * needs the second question, not the first — gating it on liveness left
+   * every stale and unknown session with a dead Terminate button, which is
+   * exactly the row that needs retiring (user report 2026-08-19).
+   */
+  category?: StatusCategory;
+  /**
    * WHO IS LOOKING — the viewer's own actor id in this space, resolved by the
    * shell from the identity read.
    *

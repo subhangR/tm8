@@ -692,11 +692,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 145 -> 146 (2026-08-19): 155_session_status_category.sql — the bridge
     // that makes a work_session's envelope category follow its lifecycle, which
     // is what 152 left undone for the one kind whose status has its own detail
-    // table. MEASURED on this branch, freshly branched from main, not derived:
-    //   ls db/migrations/*.sql | wc -l                             -> 146
-    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 146
-    //   (origin/main is 145; this branch is the +1.)
-    expect(server.appliedMigrations.length).toBe(146);
+    // table. 156 then gave the USER a way to write that category — the tick —
+    // and guarded 155's bridge so a marked-done session survives its own
+    // process going idle. MEASURED on this branch, freshly branched from main,
+    // not derived by adding one to the number that was here:
+    //   ls db/migrations/*.sql | wc -l                             -> 147
+    //   git ls-tree --name-only HEAD db/migrations/ | grep -c sql  -> 147
+    //   (origin/main is 146; this branch is the +1.)
+    expect(server.appliedMigrations.length).toBe(147);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
